@@ -349,11 +349,14 @@ See `/tmp/grace-restart-validation-receipt.json`,
 The ordinary random lifecycle inputs exercise startup. The restart and sleep
 walkthroughs use directed lifecycle inputs. The preparation conversion passed
 its three proofs with the changed Workspace dependency. The updated Workspace
-proof is running with the confirmed owner rules. The new durable-record law
-also passed focused Dafny verification using an index witness for every parked
-payment. A separate 250-sample Quint probe with profile seed 2 retained 24
+proof first passed 1,314 of 1,315 obligations, with the lifecycle and browser
+page clauses passing isolated verification. The sole outstanding obligation
+was the new durable-record law. Its index-witness proof passed a focused
+Dafny run and the full run with that proof has started. A separate
+250-sample Quint probe with profile seed 2 retained 24
 traces. All 480 steps replayed against the generated TypeScript and preserved
-the Workspace rules. See `/tmp/grace-restart-record-law-proof-3.log` and
+the Workspace rules. See `/tmp/grace-restart-workspace-proof-5jumWS/result.json`,
+`/tmp/grace-restart-final-proof-queue.log`, `/tmp/grace-restart-record-law-proof-3.log` and
 `/tmp/grace-restart-sampled-replay.json`.
 
 The retained template passed 34 root tests, three app tests and one Chromium
