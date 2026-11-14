@@ -1,11 +1,9 @@
 # Specification validation status
 
-The 20 Grace domain units have successful individual proof verdicts covering
-**4,282 obligations**. The retained template scaffold adds six, for
-**4,288 obligations across 21 proof-bearing units**. Each final result below
-has zero unproved obligations, exhausted obligations and errors. The complete
-combined model check and larger profile remain pending. The isolated baseline
-passed installation, its existing tests and both builds.
+At `d193137`, the 20 Grace domain units and template scaffold passed all
+**4,288 individual proof obligations**. The wake type correction changed the
+Workspace proof unit after that checkpoint. Its current proof is running.
+The combined model check and larger profile remain pending.
 
 ## Scope and review
 
@@ -94,11 +92,11 @@ source comparison and header alignment do not replace that check.
 ## Validation target and completed commands
 
 Concurrent application work began in the original checkout after the model
-checkpoint was pushed. Validation uses an isolated checkout of `develop` at
-the specification checkpoint `d193137`. The concurrent application changes
-belong to the following implementation phase.
+checkpoint was pushed. Validation uses an isolated checkout of `develop`.
+The concurrent application changes belong to the following implementation
+phase.
 
-The isolated checkpoint passed these commands:
+The isolated baseline passed these commands:
 
 | Command | Result | Log |
 |---|---|---|
@@ -109,15 +107,22 @@ The isolated checkpoint passed these commands:
 | `pnpm -C apps/app build` | Passed | `/tmp/grace-isolated-app-build.log` |
 | `pnpm build` | Passed, six tasks successful | `/tmp/grace-isolated-root-build.log` |
 
-These tests exercise the retained template and tooling. Grace's provider and
-device journeys will be implemented in the next phase.
+At `22a5c3d`, `pnpm gen`, root TypeScript, app VibeLang type checking, the
+three app unit tests, the Chromium journey and the app build passed. The
+template's conformance driver passed its journey, five malformed inputs and
+1,000 walks with seed 1. The root suite passed 33 tests and timed out in the
+generated-test fixture at its 120-second limit. That fixture timed out again
+when retried on its own. The root build encountered the active check's
+generation lock and awaits a retry. These tests exercise the retained template
+and tooling. Grace's provider and device journeys belong to the implementation
+phase.
 
-The specification checkpoint `d193137` is merged and pushed to `develop`.
+The specification checkpoint `22a5c3d` is merged and pushed to `develop`.
 The original checkout was fast-forwarded after checking that its concurrent
 application edits did not overlap the incoming files. Those edits remain in
 progress. Validation continues in the isolated checkout.
 
-The [GitHub CI run for this checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43554896412)
+The [GitHub CI run for this checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43562047472)
 ended before any job steps ran. Its annotation reports failed account payments
 or a spending-limit restriction. Hosted CI needs the account billing issue
 resolved before it can supply a verification result.
@@ -147,10 +152,9 @@ while the complete safety and replay checks remain part of the combined run.
 
 ## Combined validation still pending
 
-The previous isolated combined run parsed all 23 modules and produced 19
-passing simulation and replay receipts. It ended without a final report or
-completed receipts for Email and Workspace. The current run is recorded in
-`/tmp/grace-isolated-check-4.log`.
+The current combined run parsed all 23 modules and has 19 passing simulation
+and replay receipts. Email and Workspace remain in progress. The run is
+recorded in `/tmp/grace-isolated-check-5.log`.
 The Email profile uses one coherent mailbox, five metadata records and eight
 read receipts. Listing samples include Trash and Drafts requests issued at
 generations two through four, with the matching draft restore generations.
