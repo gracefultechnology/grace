@@ -287,6 +287,22 @@ declared sample values, including photo paging, Back and restoring drafts.
 The generated Email runtime and complete proof unit remained byte-identical.
 See `/tmp/grace-email-late-manifest-Duh2Yn/frontier-replay.json`.
 
+## Preparation and payment review handoff
+
+The stateless conversion carries the exact verified preparation choice and
+evidence into Workspace using the captured device, browser, task, payment
+revision and attempt. It validates both current owners. The host must consume
+the conversion and dispatch the existing Workspace review in one synchronous
+update. The separate revision counters reflect each owner's lifecycle.
+
+The conversion generated and compiled, and Dafny proved all three laws.
+A directed trace checked 23 guarded owner transitions, a successful
+preparation at version 4 entering payment revision 0, and 20 refusals for
+stale context or changed choice, source and account. The review consumes the
+payment revision so the original conversion cannot be submitted twice.
+See `/tmp/grace-preparation-review-joxWTJ/proof-result.json` and
+`/tmp/grace-preparation-review-joxWTJ/probe-results.json`.
+
 ## Current combined validation
 
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
@@ -298,7 +314,8 @@ admissions: Undo Trash, Restore Draft, Back to Message and Move Photo.
 
 Workspace's Keep Task reachability search wrote a complete valid witness.
 Quint's piped output ended during its state printout, before the marker used
-by the check. Independent replay of 425 Workspace traces and 9,053 steps
+by the check. Repeating the exact search with Quint's supported verbosity
+option produced the marker and an identical 40-step witness. Independent replay of 425 Workspace traces and 9,053 steps
 found no model violation, saw all 16 goal predicates true somewhere and
 recorded 48 of 54 guard admissions. The dedicated spoken approval search
 and six independent guard searches still need passing receipts. The current
