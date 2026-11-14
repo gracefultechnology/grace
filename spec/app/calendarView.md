@@ -478,6 +478,7 @@ pure val receiptValues = Set(
   { occurrenceId: "visitA", revision: 1, definitionVersion: -1, schedules: List({ id: "visitA", include: true, startAt: 5, endAt: 6 }), verified: true, persisted: true },
   { occurrenceId: "visitA", revision: 3, definitionVersion: -1, schedules: List({ id: "visitA", include: true, startAt: 5, endAt: 6 }), verified: true, persisted: true },
   { occurrenceId: "periodA", revision: 1, definitionVersion: -1, schedules: List(), verified: false, persisted: false },
+  { occurrenceId: "periodA", revision: 2, definitionVersion: -1, schedules: List({ id: "periodA", include: true, startAt: 5, endAt: 6 }), verified: true, persisted: true },
   { occurrenceId: "periodA", revision: 2, definitionVersion: 0, schedules: List(), verified: false, persisted: false },
   { occurrenceId: "periodA", revision: 1, definitionVersion: -1, schedules: List(), verified: true, persisted: true })
 pure val weight_publishOccurrence = 5

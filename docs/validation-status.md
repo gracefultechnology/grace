@@ -161,6 +161,22 @@ seeds with unchanged runtime and proof text. The trial record is
 `/tmp/grace-guidance-sampling-N98qrA/summary.json`; it establishes those paths,
 while the complete safety and replay checks remain part of the combined run.
 
+## Current Calendar and Workspace follow-up
+
+The Workspace sampler now includes compatible observation, verification and
+completion reports for the second origin already present in task requests.
+Its 11-event directed trace completed and rejected the first origin's
+observation and endpoint. Generation preserved Workspace's runtime TypeScript
+and proof unit byte for byte. The earlier combined run is still evaluating
+the preceding sampler.
+
+Calendar's failed-save transition now retires the approved revision without
+changing the draft or committed entry. Generated traces reproduced the old
+callback collision in single and recurring saves. With the fix, both routes
+reject success and failure callbacks from the previous attempt, accept the new
+revision's result and preserve the invariants. The hidden-failure/reopen path
+also passed. Current proof results for Calendar and its dependents are pending.
+
 ## Combined validation still pending
 
 The combined run for `22a5c3d` parsed all 23 modules and recorded 19 passing

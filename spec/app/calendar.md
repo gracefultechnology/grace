@@ -115,6 +115,9 @@ unsaved draft until the user approves it. Confirmation names that draft revision
 cannot consume an old approval. The storage adapter commits durably before
 publishing this transition; failed storage leaves the draft visible and retryable
 with an explicit SaveFailure result. Retrying requires another user approval.
+Discovered by retry review: a failed write retires its revision. Without that
+fence, another Save of the same draft could accept a delayed acknowledgment
+from the failed attempt. Retrying the unchanged draft uses the new revision.
 Calendar provider synchronization, when present, may report pending or failure
 separately and never turns a local save into a claimed remote acknowledgment.
 
@@ -133,7 +136,15 @@ pure def save(c: Calendar, revision: int, persisted: bool, by: CalendarActor): C
 pure def canSaveFailed(c: Calendar, revision: int, by: CalendarActor): bool =
   by == CalendarStore and c.phase == Editing and revision == c.revision and c.approvedRevision == revision
 pure def saveFailed(c: Calendar, revision: int, by: CalendarActor): Calendar =
-  { ...c, approvedRevision: -1, storageError: SaveFailure }
+  { ...c, revision: c.revision + 1, approvedRevision: -1, storageError: SaveFailure }
+pure def lawSaveFailureRetiresRevision(c: Calendar, revision: int, by: CalendarActor): bool =
+  val failed = saveFailed(c, revision, by)
+  val retried = approveSave(failed, failed.revision, CalendarUser)
+  canSaveFailed(c, revision, by) implies
+    failed.draft == c.draft and failed.committed == c.committed and failed.hasSaved == c.hasSaved and
+    failed.revision == c.revision + 1 and failed.approvedRevision == -1 and
+    not(canSave(retried, revision, true, CalendarStore)) and
+    not(canSaveFailed(retried, revision, CalendarStore))
 pure def sometimesSaveFailure(c: Calendar): bool = c.storageError == SaveFailure
 pure def alwaysIdentityIsBound(c: Calendar): bool =
   c.phase != Empty implies validIdentity(c.identity)
@@ -404,6 +415,7 @@ pure def lawUpsertLeavesOne(entries: List[Calendar], incoming: Calendar): bool =
 pure def lawRefusedUpsertPreservesEntries(entries: List[Calendar], incoming: Calendar): bool =
   not(admissibleOccurrence(entries, incoming)) implies upsertOccurrence(entries, incoming) == entries
 pure val cValues = Set(initial,
+  approveSave(create(initial, appointmentIdentity, timedDetails, CalendarUser), 1, CalendarUser),
   save(approveSave(create(initial, appointmentIdentity, timedDetails, CalendarUser), 1, CalendarUser), 1, true, CalendarStore),
   save(approveSave(create(initial, billIdentity, repeatingDetails, CalendarUser), 1, CalendarUser), 1, true, CalendarStore))
 pure val leftValues = cValues
