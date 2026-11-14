@@ -47,7 +47,7 @@ the validation report. A reviewed rule is not user acceptance.
 | Files catalog replacement | A catalog read is unloaded and has no old selection/search result. Without that invariant, a returned catalog could retain an ID absent from the new entries. Background loading for attachment saves clears only an unloaded stale view. |
 | Files identity and callbacks | Immutable source identity, rather than filename, deduplicates saves. Reads, search, imports, delete, share and print bind the current owner, asset and request generation; late results cannot reopen a closed search. |
 | Printing and reopening | An unsaved email PDF can be printed directly without a fictitious library save. A pending or uncertain print survives reopening with its known feedback; reopening cannot hide uncertainty or authorize a duplicate print. |
-| Memory deletion | Clear all covers proposed, queued, saved and tombstoned facts. Removal revokes queued reuse, and old chat does not recreate permission to persist or fill the deleted value. |
+| Memory deletion | Clear all covers proposed, queued, saved and tombstoned facts. A fill can still be waiting in the browser outbox after Memory has emitted its receipt. The final guard checks the original receipt against the current Workspace and the exact approved fact. Other queued work, such as navigation based on a saved biller, checks its original fact key and revision before acting. Old chat cannot restore the deleted value or its authorization. |
 
 ## Review method and boundaries
 

@@ -26,6 +26,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [One canonical bill across Email, Calendar and browser entry points](./handoffs.md)
 - [Composed navigation, interruption and execution](./workspace.md)
 - [Actuator checks for emitted browser and payment commands](./actuation.md)
+- [Current saved-value authority for queued website fills](./memoryActuation.md)
 
 Personal memory, task state and provider records have distinct lifecycles. Deleting a calendar item or remembered fact never cancels a payment or removes unresolved evidence. New sessions and different surfaces cannot create a new identity for the same provider bill. Scheduled and accepted are not settlement. Unsupported sites, missing evidence, unavailable sign-in challenges and privacy failures stop with an explanation and a usable manual path.
 

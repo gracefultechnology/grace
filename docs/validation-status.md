@@ -391,6 +391,19 @@ dependency closure matched the previous output byte for byte. See
 `/tmp/grace-workspace-two-origins-witness.json` and
 `/tmp/grace-workspace-two-origins-comparison.json`.
 
+The saved-value actuation library generated and passed root and app
+typechecking. Dafny proved all 11 laws with no assumed obligations. Fifteen
+directed Quint cases and a separate generated-TypeScript walk exercised
+correction, deletion, Clear all, Stop, owner/task/origin
+correlation, and the distinction between contact email and a verified sign-in
+identifier. The generated walk checked 98 guarded applications and 36
+assertions. Navigation derived from an approved biller used the original fact
+revision and rejected it after deletion while Workspace remained current. See
+`/tmp/grace-memory-actuation-q5j6etpv/proof/result.json`,
+`/tmp/grace-memory-actuation-q5j6etpv/quint-witness.json`,
+`/tmp/grace-memory-actuation-q5j6etpv/witness.json` and
+`/tmp/grace-memory-actuation-dependency-alignment.json`.
+
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
 All 23 model declarations compiled. Handoffs passed 12,000 safety traces,
 all four named goals, all five guard admissions and refusals, and 404
@@ -421,7 +434,14 @@ run for `4225150` has started and compiled all 24 models. See
 `/tmp/grace-isolated-check-8.log`, `/tmp/grace-check8-recovery-IUddJN/replay-report.json`
 and `/tmp/grace-isolated-check-9.log`.
 
-[Hosted CI for this commit](https://github.com/gracefultechnology/grace-new/actions/runs/43578198572)
+An interim replay from the `4225150` run compared 827 retained Quint traces
+and 16,408 steps against generated TypeScript without a rule violation. Those
+traces reached all 17 Email goals and 10 of the 16 Workspace goals. They show
+28/33 Email and 35/54 Workspace guard admissions, and all guard refusals.
+The active searches can still add witnesses. See
+`/tmp/grace-check9-recovery-jxSuKA/replay-report.json`.
+
+[Hosted CI at `ec81474`](https://github.com/gracefultechnology/grace-new/actions/runs/43633492783)
 ran zero steps. GitHub reported a billing or spending-limit restriction.
 The [d904d56 run](https://github.com/gracefultechnology/grace-new/actions/runs/43622371337)
 reported the same restriction before any verification step started.
