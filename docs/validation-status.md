@@ -381,12 +381,15 @@ interruptions. See `/tmp/grace-actuation-proof-1HGxP3/result.json`,
 and `/tmp/grace-actuation-witness.json`.
 
 The Workspace sampler now supplies the second biller's matching review,
-outcome and receipt-save inputs. Eight guarded generated steps from a
-retained second-biller Draft reached durable completion. The same path
-rejected a result and receipt save for the first biller. All 11 generated
-runtime modules and proof units in its dependency closure matched the
-previous output byte for byte. See `/tmp/grace-workspace-two-origins-witness.json`
-and `/tmp/grace-workspace-two-origins-comparison.json`.
+outcome and receipt-save inputs. A 16-step guarded Quint walk from startup
+confirmed that all three inputs are in the sample domains and reached durable
+completion. The final eight steps also completed from a retained second-biller
+Draft in generated TypeScript. Both walks rejected the first biller's result
+and receipt save. All 11 generated runtime modules and proof units in its
+dependency closure matched the previous output byte for byte. See
+`/tmp/grace-workspace-two-origins-quint-2.log`,
+`/tmp/grace-workspace-two-origins-witness.json` and
+`/tmp/grace-workspace-two-origins-comparison.json`.
 
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
 All 23 model declarations compiled. Handoffs passed 12,000 safety traces,
