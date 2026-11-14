@@ -28,21 +28,21 @@ lemma RegistryFilterView(r: Registry)
 lemma resolve_ensures(r: Registry, expectedVersion: int, recordRef: string, by_: RegistryActor)
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysPendingBelongsToOwner(resolve(r, expectedVersion, recordRef, by_).state))
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysRequestVersion(resolve(r, expectedVersion, recordRef, by_).state))
-  ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysSelectedBelongsToOwner(resolve(r, expectedVersion, recordRef, by_).state))
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysResolutionError(resolve(r, expectedVersion, recordRef, by_).state))
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysMappingsAreValid(resolve(r, expectedVersion, recordRef, by_).state))
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysOneRecordPerBill(resolve(r, expectedVersion, recordRef, by_).state))
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysOneBillPerRecord(resolve(r, expectedVersion, recordRef, by_).state))
+  ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> alwaysSelectedBelongsToOwner(resolve(r, expectedVersion, recordRef, by_).state))
   ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> stepMappingsAreRetained(r, resolve(r, expectedVersion, recordRef, by_).state))
-  ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> stepHandoffIsOnlyNavigation(r, resolve(r, expectedVersion, recordRef, by_).state, resolve(r, expectedVersion, recordRef, by_).out))
+  ensures (inv(r) ==> canResolve(r, expectedVersion, recordRef, by_) ==> stepResolutionCarriesCapturedRequest(r, resolve(r, expectedVersion, recordRef, by_).state, resolve(r, expectedVersion, recordRef, by_).out))
 {
   if inv(r) && canResolve(r, expectedVersion, recordRef, by_) {
-    LookupBindings(r.bindings, r.pending.key, noBinding);
+    LookupBindings(r.bindings, r.pending.source.key, noBinding);
     var after := resolve(r, expectedVersion, recordRef, by_).state;
     RegistryFilterView(r);
     RegistryFilterView(after);
-    if bindingFor(r, r.pending.key).recordRef == "" {
-      var added := Binding(r.pending.key, recordRef);
+    if bindingFor(r, r.pending.source.key).recordRef == "" {
+      var added := Binding(r.pending.source.key, recordRef);
       assert forall row :: row in r.bindings ==> row.key != added.key;
       assert forall row :: row in r.bindings ==> row.recordRef != added.recordRef;
       forall row | row in after.bindings
@@ -59,9 +59,24 @@ lemma resolve_ensures(r: Registry, expectedVersion: int, recordRef: string, by_:
         }
       }
     } else {
-      var selected := bindingFor(r, r.pending.key);
+      var selected := bindingFor(r, r.pending.source.key);
       assert selected in r.bindings;
       assert selected.key.owner == r.owner && selected.recordRef == recordRef;
     }
+  }
+}
+
+// spec/app/handoffs.md, "A resolved bill is presented only in the still-current source context"
+lemma lawCurrentResolutionCanNavigate_ensures(r: Registry, expectedVersion: int, recordRef: string, by_: RegistryActor)
+  ensures (lawCurrentResolutionCanNavigate(r, expectedVersion, recordRef, by_) == true)
+{
+  if canResolve(r, expectedVersion, recordRef, by_) && validOpening(r.pending) {
+    var after := resolve(r, expectedVersion, recordRef, by_).state;
+    if bindingFor(r, r.pending.source.key).recordRef == "" {
+      var added := Binding(r.pending.source.key, recordRef);
+      ProofLib.FoldLeftAppend((found: Binding, row: Binding) => (if (row.key == r.pending.source.key) then row else found), noBinding, r.bindings, added);
+      assert after.bindings == r.bindings + [added];
+    }
+    assert bindingFor(after, r.pending.source.key).recordRef == recordRef;
   }
 }

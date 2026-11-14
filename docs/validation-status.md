@@ -1,6 +1,6 @@
 # Specification validation status
 
-The current specification passed **4,310 individual proof obligations**
+The current specification passed **4,316 individual proof obligations**
 across 20 Grace domain units and the retained template scaffold.
 The Workspace sampling update preserves the generated runtime and proof unit
 byte for byte. The combined model check and larger profile remain pending.
@@ -42,7 +42,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Email message lifecycle | 54/54 | `/tmp/grace-repeat-proof-x8JiBb/app__emailItem.ts.json` |
 | Email mailbox | 905/905 | `/tmp/grace-email-bill-selection-af5941p3/result.json` |
 | Website execution | 112/112 | `/tmp/grace-execution-proof-4IMCiq/app__execution.ts.json` |
-| Cross-application handoffs | 60/60 | `/tmp/grace-calendar-owned-handoffs-5stmBc/app__handoffs.ts.result.json` |
+| Cross-application handoffs | 66/66 | `/tmp/grace-handoff-context-proof-xDGJy5/result.json` |
 | Assistant interaction dispatcher | 1/1 | `/tmp/grace-guidance-final-proof-XomBfx/app__interaction.ts.json` |
 | Memory | 60/60 | `/tmp/grace-memory-proof/result.json` |
 | Network | 53/53 | `/tmp/grace-system-final-proof/app__network.ts.result.json` |
@@ -203,6 +203,9 @@ the exact displayed mailbox/message identity, read generation and canonical
 bill identity. The current Email unit proved all 905 obligations, including
 refusal of any mismatched selection and preservation of the reviewed identity.
 The sidecar proof bodies did not change.
+Four directed Quint traces covered valid read generations 3, 4 and 5 and
+a replacement candidate. All 43 guarded transitions agreed with generated
+TypeScript. See `/tmp/grace-email-bill-selection-af5941p3/directed-replay.json`.
 
 A 77-transition directed trace checked Email confirmation, canonical
 handoff, two unrelated provider origins and accounts, voice and manual
@@ -216,8 +219,34 @@ retained distinct records. See
 
 Clean snapshot generation, root TypeScript and app VibeLang type checking
 passed. The retained scaffold passed 34 root tests, three app unit tests
-and one Chromium test. The app build passed after the design-system build
-generated the CSS package exports in the clean snapshot.
+and one Chromium test. After the design-system task generated the CSS package
+exports, the app build passed. The root build passed all six tasks on the
+Email checkpoint.
+
+## Current bill-handoff navigation
+
+Guarded traces reproduced delayed navigation after Calendar Close, Back and
+deletion, and after leaving or trashing the selected Email. The registry now
+stores the opening's exact source and device context. Storage returns a
+resolved candidate for that request. The host must independently project the
+live source and consume the candidate by committing Browser navigation in the
+same update. Cancellation preserves the canonical mapping and payment evidence.
+
+The updated whole-tree generation and both type checks passed. Dafny proved
+all 66 Handoff obligations. Its sidecar proves that an admitted lookup carries
+the captured request, retains a unique canonical mapping and supplies a
+candidate usable in the unchanged context. The new positive proof uses the
+existing list-fold append lemma. A 1,000-trace Quint safety shard found no
+violation; one directed Quint trace matched seven generated TypeScript states.
+A directed
+cross-source payment trace passed 88 transitions and 37 refusal checks,
+including the same raw message ID in two mailboxes, Calendar Back/reselect,
+and a ticket replay after the Browser visit. Both provider origins kept their
+separate durable outcomes. An independent set of 17 directed checks covers
+Calendar Close/reopen, deletion, Email Trash, cancellation before or after
+resolution and a Browser visit when Browser is already selected. See
+`/tmp/grace-handoff-context-shared-bill-witness.json` and
+`/tmp/grace-handoff-context-witness.json`.
 
 ## Combined validation still pending
 

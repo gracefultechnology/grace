@@ -23,20 +23,30 @@ import files as F from "./files"
 import emailItem as I from "./emailItem"
 import calendar as C from "./calendar"
 import calendarView as V from "./calendarView"
+import shell as S from "./shell"
+import browser as B from "./browser"
 type SourceKind = EmailSource | CalendarSource | BrowserSource
 type BillSource = { key: P::BillKey, kind: SourceKind, reference: str }
 type Binding = { key: P::BillKey, recordRef: str }
+type SourceLocation = NoLocation
+  | MailLocation({ selection: E::BillSelection })
+  | CalendarLocation({ owner: str, calendarId: str, occurrenceId: str, generation: int, revision: int })
+  | BrowserLocation({ owner: str, tab: int, revision: int })
+type NavigationContext = { deviceVersion: int, location: SourceLocation }
+type BillOpening = { source: BillSource, context: NavigationContext }
 type RegistryActor = RegistryUser | RegistryStore
 type Registry = {
-  owner: str, bindings: List[Binding], pending: BillSource,
+  owner: str, bindings: List[Binding], pending: BillOpening,
   waiting: bool, requestVersion: int, selected: str, resolutionError: bool
 }
-type HandoffEffect = OpenBill({ key: P::BillKey, recordRef: str, source: BillSource })
+type HandoffEffect = ResolvedBill({ key: P::BillKey, recordRef: str, source: BillSource, requestVersion: int, context: NavigationContext })
 type HandoffResult = { state: Registry, out: List[HandoffEffect] }
 pure val noSource: BillSource = { key: P::emptyKey, kind: BrowserSource, reference: "" }
+pure val noContext: NavigationContext = { deviceVersion: -1, location: NoLocation }
+pure val noOpening: BillOpening = { source: noSource, context: noContext }
 pure val noBinding: Binding = { key: P::emptyKey, recordRef: "" }
 pure val initial: Registry = {
-  owner: "", bindings: List(), pending: noSource, waiting: false, requestVersion: 0, selected: "", resolutionError: false
+  owner: "", bindings: List(), pending: noOpening, waiting: false, requestVersion: 0, selected: "", resolutionError: false
 }
 pure def emailSource(mail: E::Mailbox): BillSource = {
   key: if (E::billReady(mail)) { owner: mail.owner, origin: mail.billOrigin, account: mail.billAccount, bill: mail.billRef } else P::emptyKey,
@@ -59,6 +69,36 @@ pure def bindingFor(r: Registry, key: P::BillKey): Binding =
   r.bindings.foldl(noBinding, (found, row) => if (row.key == key) row else found)
 pure def accessibleRecord(r: Registry, key: P::BillKey): str =
   if (r.owner != "" and key.owner == r.owner) bindingFor(r, key).recordRef else ""
+pure def emailOpening(mail: E::Mailbox, device: S::Shell): BillOpening = {
+  source: emailSource(mail),
+  context: if (device.readiness == S::Ready and device.surface == S::Email and E::billReady(mail))
+    { deviceVersion: device.contextVersion, location: MailLocation({ selection: E::billSelection(mail) }) } else noContext
+}
+pure def calendarOpening(calendar: V::CalendarView, device: S::Shell): BillOpening = {
+  source: currentCalendarSource(calendar),
+  context: if (device.readiness == S::Ready and device.surface == S::Calendar and usableSource(currentCalendarSource(calendar)))
+    { deviceVersion: device.contextVersion, location: CalendarLocation({ owner: calendar.owner, calendarId: calendar.calendarId,
+      occurrenceId: calendar.selectedId, generation: calendar.generation, revision: V::selectedOccurrence(calendar).revision }) } else noContext
+}
+pure def browserOpening(source: BillSource, browser: B::Browser, device: S::Shell): BillOpening = {
+  source: source,
+  context: if (device.readiness == S::Ready and device.surface == S::Browser and source.kind == BrowserSource and usableSource(source))
+    { deviceVersion: device.contextVersion, location: BrowserLocation({ owner: source.key.owner, tab: browser.selected, revision: browser.revision }) } else noContext
+}
+pure def validOpening(opening: BillOpening): bool =
+  val location = opening.context.location
+  usableSource(opening.source) and opening.context.deviceVersion >= 0 and
+  (match location {
+    | NoLocation => false
+    | MailLocation(data) => opening.source.kind == EmailSource and I::validIdentity(data.selection.source) and
+        data.selection.generation >= 0 and data.selection.source.owner == opening.source.key.owner and
+        data.selection.source.ref == opening.source.reference and data.selection.billRef == opening.source.key.bill and
+        data.selection.origin == opening.source.key.origin and data.selection.account == opening.source.key.account
+    | CalendarLocation(data) => opening.source.kind == CalendarSource and data.owner == opening.source.key.owner and
+        data.calendarId != "" and data.occurrenceId == opening.source.reference and data.generation >= 0 and data.revision >= 0
+    | BrowserLocation(data) => opening.source.kind == BrowserSource and data.owner == opening.source.key.owner and
+        data.tab >= 0 and data.revision >= 0
+  })
 pure val sourceValues = Set(
   { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: EmailSource, reference: "message" },
   { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: CalendarSource, reference: "calendar-entry" },
@@ -80,6 +120,24 @@ pure val entryValues = Set(C::initial,
     identity: { owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", sourceRef: "message",
       kind: C::Bill, billRef: "bill", billOrigin: "https://utility.example", billAccount: "account" },
     committed: { ...C::noDetails, title: "Bill", startAt: 1, endAt: 2, timezone: "UTC" } })
+pure val openingValues = Set(
+  { source: { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: EmailSource, reference: "message" },
+    context: { deviceVersion: 3, location: MailLocation({ selection: { source: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
+      generation: 0, billRef: "bill", origin: "https://utility.example", account: "account" } }) } },
+  { source: { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: CalendarSource, reference: "calendar-entry" },
+    context: { deviceVersion: 3, location: CalendarLocation({ owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", generation: 0, revision: 0 }) } },
+  { source: { key: { owner: "owner", origin: "https://credit.example", account: "account", bill: "other-bill" }, kind: BrowserSource, reference: "page" },
+    context: { deviceVersion: 3, location: BrowserLocation({ owner: "owner", tab: B::initial.selected, revision: B::initial.revision }) } },
+  { source: noSource, context: noContext }
+)
+pure val liveValues = openingValues
+pure val deviceValues = Set(S::initial, { ...S::initial, readiness: S::Ready, surface: S::Email, contextVersion: 3 },
+  { ...S::initial, readiness: S::Ready, surface: S::Calendar, contextVersion: 3 },
+  { ...S::initial, readiness: S::Ready, surface: S::Browser, contextVersion: 3 })
+pure val browserValues = Set(B::initial)
+pure val resolvedValues = openingValues.map(opening => ResolvedBill({ key: opening.source.key, recordRef: "record-1",
+  source: opening.source, requestVersion: 2, context: opening.context }))
+pure val afterVisitValues = openingValues.map(opening => { ...opening, context: { ...opening.context, deviceVersion: opening.context.deviceVersion + 1 } })
 pure val firstValues = sourceValues
 pure val secondValues = sourceValues
 pure val ownerValues = Set("owner", "other", "")
@@ -95,40 +153,40 @@ The surrounding application clears the former owner's browser session and person
 ```quint
 pure def canChooseOwner(r: Registry, by: RegistryActor): bool = by == RegistryUser
 pure def chooseOwner(r: Registry, owner: str, by: RegistryActor): Registry =
-  { ...r, owner: owner, pending: noSource, waiting: false, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
+  { ...r, owner: owner, pending: noOpening, waiting: false, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
 pure def lawOtherOwnerHasNoAccessibleRecord(r: Registry, key: P::BillKey): bool =
   key.owner != r.owner implies accessibleRecord(r, key) == ""
 ```
 
 ### Selecting a bill records its source and waits for the canonical durable mapping
 
-Repeated or changed selections replace the pending request, not the payment record. Calendar preview, reminder delivery and mere email receipt do not trigger this event; the person chooses Open bill or asks for help with that selected bill.
+Repeated or changed selections replace the pending request, not the payment record. The opening includes the independently derived current source and device context; it stays pending until the canonical mapping resolves and the host commits navigation in that same context. Calendar preview, reminder delivery and mere email receipt do not trigger this event; the person chooses Open bill or asks for help with that selected bill.
 
 ```quint
-pure def canRequestOpen(r: Registry, source: BillSource, by: RegistryActor): bool =
-  usableSource(source) and r.owner != "" and source.key.owner == r.owner and by == RegistryUser
-pure def requestOpen(r: Registry, source: BillSource, by: RegistryActor): Registry =
-  { ...r, pending: source, waiting: true, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
+pure def canRequestOpen(r: Registry, opening: BillOpening, by: RegistryActor): bool =
+  validOpening(opening) and r.owner != "" and opening.source.key.owner == r.owner and by == RegistryUser
+pure def requestOpen(r: Registry, opening: BillOpening, by: RegistryActor): Registry =
+  { ...r, pending: opening, waiting: true, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
 pure def alwaysPendingBelongsToOwner(r: Registry): bool =
-  r.waiting implies usableSource(r.pending) and r.pending.key.owner == r.owner and r.owner != ""
+  r.waiting implies validOpening(r.pending) and r.pending.source.key.owner == r.owner and r.owner != ""
 pure def alwaysRequestVersion(r: Registry): bool = r.requestVersion >= 0
 ```
 
 ### One provider bill resolves to exactly one payment record across all entry points
 
-If the bill already has a mapping, storage must return that record. A different bill cannot reuse its record reference. Failure to save or resolve records a visible error and leaves the request pending for retry without any payment effect. Retrying the same selection creates a new request revision; failure callbacks for an earlier selection are refused. A stale callback cannot open an old source.
+If the bill already has a mapping, storage must return that record. A different bill cannot reuse its record reference. Failure to save or resolve records a visible error and leaves the request pending for retry without any payment effect. Retrying the same selection creates a new request revision; failure callbacks for an earlier selection are refused. A stale callback cannot replace the current request. Resolution only produces a candidate for the host navigation boundary below; it cannot itself open a source.
 
 ```quint
 pure def canResolve(r: Registry, expectedVersion: int, recordRef: str, by: RegistryActor): bool =
   r.waiting and expectedVersion == r.requestVersion and recordRef != "" and by == RegistryStore and
-  (bindingFor(r, r.pending.key).recordRef == "" or bindingFor(r, r.pending.key).recordRef == recordRef) and
-  r.bindings.every(row => row.recordRef != recordRef or row.key == r.pending.key)
+  (bindingFor(r, r.pending.source.key).recordRef == "" or bindingFor(r, r.pending.source.key).recordRef == recordRef) and
+  r.bindings.every(row => row.recordRef != recordRef or row.key == r.pending.source.key)
 pure def resolve(r: Registry, expectedVersion: int, recordRef: str, by: RegistryActor): HandoffResult = {
   state: {
     ...r, waiting: false, selected: recordRef, resolutionError: false,
-    bindings: if (bindingFor(r, r.pending.key).recordRef == "") r.bindings.append({ key: r.pending.key, recordRef: recordRef }) else r.bindings
+    bindings: if (bindingFor(r, r.pending.source.key).recordRef == "") r.bindings.append({ key: r.pending.source.key, recordRef: recordRef }) else r.bindings
   },
-  out: List(OpenBill({ key: r.pending.key, recordRef: recordRef, source: r.pending }))
+  out: List(ResolvedBill({ key: r.pending.source.key, recordRef: recordRef, source: r.pending.source, requestVersion: r.requestVersion, context: r.pending.context }))
 }
 pure def canResolutionFailed(r: Registry, expectedVersion: int, by: RegistryActor): bool =
   r.waiting and expectedVersion == r.requestVersion and by == RegistryStore
@@ -145,21 +203,86 @@ pure def alwaysSelectedBelongsToOwner(r: Registry): bool =
   r.selected == "" or r.bindings.some(row => row.recordRef == r.selected and row.key.owner == r.owner)
 pure def stepMappingsAreRetained(before: Registry, after: Registry): bool =
   before.bindings.every(row => after.bindings.includes(row))
-pure def stepHandoffIsOnlyNavigation(before: Registry, after: Registry, out: List[HandoffEffect]): bool =
-  out.length() > 0 implies before.waiting and not(after.waiting) and after.selected != ""
+pure def stepResolutionCarriesCapturedRequest(before: Registry, after: Registry, out: List[HandoffEffect]): bool =
+  out.every(effect => match effect {
+    | ResolvedBill(data) => before.waiting and not(after.waiting) and data.recordRef == after.selected and data.recordRef != "" and
+        data.key == before.pending.source.key and data.source == before.pending.source and
+        data.context == before.pending.context and data.requestVersion == before.requestVersion
+  })
 pure def lawSameBillHasSameRecord(r: Registry, first: BillSource, second: BillSource): bool =
   first.key == second.key implies accessibleRecord(r, first.key) == accessibleRecord(r, second.key)
-pure def sometimesBillOpened(r: Registry): bool = r.selected != ""
+pure def sometimesBillResolved(r: Registry): bool = r.selected != ""
 pure def sometimesMoreThanOneBill(r: Registry): bool = r.bindings.length() >= 2
-pure def sometimesCalendarHandoff(r: Registry): bool = r.selected != "" and r.pending.kind == CalendarSource
+pure def sometimesCalendarHandoff(r: Registry): bool = r.selected != "" and r.pending.source.kind == CalendarSource
+```
+
+### A resolved bill is presented only in the still-current source context
+
+Discovered by a guarded trace: Calendar Close, Back or deletion and Email Back
+or Trash could invalidate the selected bill while an earlier registry lookup
+still emitted navigation. A source reference alone also confused two mailboxes
+with the same message ID. The request now captures the exact source identity,
+source generation and device context together with the person's selection.
+
+The application constructs `opening` from its actual owned states through the
+projections above. Storage receives only the bill key and request revision; it
+returns the canonical record reference and cannot supply current UI evidence.
+`ResolvedBill` is a candidate, not an instruction to navigate. At the eventual
+navigation boundary the host independently rebuilds `live` from its actual
+states and checks `navigationAllowed`. Neither a stored callback nor website
+content may supply that live value or overwrite the captured request context.
+
+The host checks the predicate and commits workspace `visit(Browser)` plus
+any destination navigation through the existing browser control synchronously,
+without an await or queued page change between them. `visit(Browser)` advances
+the device context even when Browser was already selected, consuming this
+candidate once. Check the source before this transition hides Calendar or
+Email; the consumed receipt cannot authorize a later page change. A Browser
+source must contain verified bill identity for the actual current tab, never
+identity asserted by arbitrary page text.
+
+This handoff needs no new approval, starts no task by itself, and grants no
+personal-data access or payment authorization. Existing task replacement rules
+still apply before starting new assisted work.
+
+Existing Close, Back (including Back followed by reselecting the same bill), Trash/deletion, explicit Stop, source/account replacement
+and user navigation cancel the pending/resolved navigation intent before leaving
+or changing that context. A closed-and-reopened source is a new context, even
+if its visible bill is identical. Cancel preserves the canonical mappings and
+all independently owned payment evidence. It is not a new product button.
+
+```quint
+pure def navigationAllowed(r: Registry, resolved: HandoffEffect, live: BillOpening): bool = match resolved {
+  | ResolvedBill(data) => not(r.waiting) and r.selected != "" and data.requestVersion == r.requestVersion and
+      data.key == r.pending.source.key and data.recordRef == r.selected and data.source == r.pending.source and
+      data.context == r.pending.context and bindingFor(r, data.key).recordRef == data.recordRef and
+      validOpening(live) and live.source == data.source and live.context == data.context
+}
+pure def lawCurrentResolutionCanNavigate(r: Registry, expectedVersion: int, recordRef: str, by: RegistryActor): bool =
+  val resolved = resolve(r, expectedVersion, recordRef, by)
+  (canResolve(r, expectedVersion, recordRef, by) and validOpening(r.pending)) implies
+    (resolved.out.length() == 1 and resolved.out.every(effect => navigationAllowed(resolved.state, effect, r.pending)))
+pure def lawDifferentLiveContextCannotNavigate(r: Registry, resolved: HandoffEffect, live: BillOpening): bool = match resolved {
+  | ResolvedBill(data) => live.context != data.context implies not(navigationAllowed(r, resolved, live))
+}
+pure def lawDifferentLiveSourceCannotNavigate(r: Registry, resolved: HandoffEffect, live: BillOpening): bool = match resolved {
+  | ResolvedBill(data) => live.source != data.source implies not(navigationAllowed(r, resolved, live))
+}
+pure def lawConsumedDeviceContextCannotNavigate(r: Registry, resolved: HandoffEffect, live: BillOpening, afterVisit: BillOpening): bool =
+  (navigationAllowed(r, resolved, live) and live.context.deviceVersion != afterVisit.context.deviceVersion) implies
+    not(navigationAllowed(r, resolved, afterVisit))
+pure def lawUnresolvedRequestCannotNavigate(r: Registry, resolved: HandoffEffect, live: BillOpening): bool =
+  r.waiting implies not(navigationAllowed(r, resolved, live))
 ```
 
 ### Canceling a handoff does not delete a payment record
 
 ```quint
-pure def canCancel(r: Registry, by: RegistryActor): bool = r.waiting and by == RegistryUser
+pure def canCancel(r: Registry, by: RegistryActor): bool = (r.waiting or r.selected != "") and by == RegistryUser
 pure def cancel(r: Registry, by: RegistryActor): Registry =
-  { ...r, waiting: false, pending: noSource, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
+  { ...r, waiting: false, pending: noOpening, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
+pure def lawCanceledNavigationIsRejected(r: Registry, resolved: HandoffEffect, live: BillOpening, by: RegistryActor): bool =
+  canCancel(r, by) implies not(navigationAllowed(cancel(r, by), resolved, live))
 ```
 
 ## Story: Return to the bill and see its actual result

@@ -10,6 +10,7 @@ the validation report. A reviewed rule is not user acceptance.
 | Area | Finding and resulting contract |
 |---|---|
 | Canonical payment identity | A task or calendar row is not a bill. Payment records use owner, verified provider origin, account and invoice/cycle identity. Switching tasks or entry points retains the same durable uncertainty and outcome. |
+| Bill handoff navigation | A lookup can complete after Calendar closes or leaves the selected event, or after Email leaves or trashes the message. The storage result retains the canonical mapping. Navigation uses the original request snapshot and commits only in the matching current device and source context. |
 | Receipt routing | Looking up a retained payment and applying its storage acknowledgment must use the same active-record predicate. An abstract empty active slot can carry a matching key; it must not intercept an acknowledgment intended for the retained record. |
 | Outcome evidence | Missing confirmation cannot justify retry. Pending, scheduled, accepted, completed, failed and returned are distinct; a later authoritative return can supersede an earlier positive result. Receipt-storage failure does not undo the observed payment. |
 | Inductive payment facts | Reviews require evidence; an attempt requires its review evidence; a saved outcome requires an attempt. Without these facts, abstract states admitted by the earlier invariants could manufacture authorization or durable confirmation. |
