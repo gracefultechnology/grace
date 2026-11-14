@@ -14,3 +14,5 @@ generated/
 storybook-static/
 .vibe/
 build/
+# Storybook writes it when a run fails.
+debug-storybook.log

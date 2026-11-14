@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher distribution is the tablet's Home, and joins Wi-Fi in Grace's own settings
+     (spec/app/network.md) through upstream WiFiPlugin (ElizaWiFi), which MainActivity registers here
+     only. Its Wi-Fi permissions come from the plugin's library manifest
+     (plugins/plugin-native-wifi/android/src/main/AndroidManifest.xml); the standalone flavor
+     removes them. Location is both flavors' (../AndroidManifest.xml). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <!-- Not an install requirement: without it Grace's Wi-Fi settings report Wi-Fi unavailable. -->
+ <uses-feature android:name="android.hardware.wifi" android:required="false" />
+ <application>
+  <activity android:name=".MainActivity" android:exported="true">
+   <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+  </activity>
+ </application>
+</manifest>

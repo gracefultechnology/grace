@@ -1,11 +1,10 @@
-import { Layer, ManagedRuntime } from "effect";
-import * as KeyValueStore from "effect/persistence/KeyValueStore";
+import "@fontsource-variable/figtree";
+import { ManagedRuntime } from "effect";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { stored } from "./greeter.vibe";
+import { application } from "./app.vibe";
+import { devicePlugin, wifiPlugin } from "./surfacePlugin.ts";
 import "./main.css";
 
-const runtime = ManagedRuntime.make(Layer.provide(stored, KeyValueStore.layerStorage(() => localStorage)));
-
-createRoot(document.getElementById("root")!).render(<StrictMode><App runtime={runtime} /></StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin))} /></StrictMode>);

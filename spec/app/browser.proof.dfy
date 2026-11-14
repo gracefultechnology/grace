@@ -52,6 +52,74 @@ lemma navigate_ensures(b: Browser, url: string)
   }
 }
 
+// A page moving by itself changes the tabs and counters as navigate does, and only the address edit differs.
+lemma pageMoved_ensures(b: Browser, url: string)
+  ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysTabsAreWellFormed(pageMoved(b, url)))
+  ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysTabIdentifiersAreUnique(pageMoved(b, url)))
+  ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysBrowserCountersAreValid(pageMoved(b, url)))
+  ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysSelectedTabExists(pageMoved(b, url)))
+  ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysRecentDestinationsAreDistinct(pageMoved(b, url)))
+  ensures (inv(b) ==> canPageMoved(b, url) ==> stepRevisionNeverMovesBack(b, pageMoved(b, url)))
+{
+  if inv(b) && canPageMoved(b, url) {
+    navigate_ensures(b, url);
+    var n := navigate(b, url);
+    assert pageMoved(b, url) == n.(editingAddress := b.editingAddress, addressDraft := b.addressDraft, emptyAddressNotice := b.emptyAddressNotice);
+    assert pageMoved(b, url).tabs == n.tabs && pageMoved(b, url).selected == n.selected;
+  }
+}
+
+// The selected tab moves as pageMoved does; any other tab only gains a history entry and keeps its load.
+lemma tabMoved_ensures(b: Browser, id: int, url: string)
+  ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysTabsAreWellFormed(tabMoved(b, id, url)))
+  ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysTabIdentifiersAreUnique(tabMoved(b, id, url)))
+  ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysBrowserCountersAreValid(tabMoved(b, id, url)))
+  ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysSelectedTabExists(tabMoved(b, id, url)))
+  ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysRecentDestinationsAreDistinct(tabMoved(b, id, url)))
+  ensures (inv(b) ==> canTabMoved(b, id, url) ==> stepRevisionNeverMovesBack(b, tabMoved(b, id, url)))
+{
+  if inv(b) && canTabMoved(b, id, url) {
+    if id == b.selected {
+      pageMoved_ensures(b, url);
+    } else {
+      MappedTabKeys(b, tabMoved(b, id, url));
+      forall t | t in b.tabs && t.id == id
+        ensures |navigated(t, url, t.loadVersion).history| == t.cursor + 2
+      { HistoryPrefixLength(t.history, t.cursor); }
+    }
+  }
+}
+
+// Every tab with the selected id is the same after the move, position by position, so the lookup finds the same tab.
+lemma lawABackgroundTabMovingKeepsTheSelectedPage_ensures(b: Browser, id: int, url: string)
+  ensures (lawABackgroundTabMovingKeepsTheSelectedPage(b, id, url) == true)
+{
+  if canTabMoved(b, id, url) && id != b.selected {
+    var after := tabMoved(b, id, url);
+    ProofLib.FilterPointwise((t: Tab) => (t.id == b.selected), (t: Tab) => (t.id == b.selected),
+      (x: Tab, y: Tab) => (x.id == b.selected ==> x == y), b.tabs, after.tabs);
+    LookupFilter(b, b.selected);
+    LookupFilter(after, after.selected);
+    var before := ProofLib.Filter((t: Tab) => (t.id == b.selected), b.tabs);
+    if |before| > 0 {
+      ProofLib.FilterMember((t: Tab) => (t.id == b.selected), b.tabs, before[|before|-1]);
+    }
+  }
+}
+
+// A background tab moves only when not loading, and the move keeps each matching tab's load, position by position.
+lemma lawNoLoadFinishesOnABackgroundTabsMove_ensures(b: Browser, id: int, url: string, loadVersion: int, result: Load)
+  ensures (lawNoLoadFinishesOnABackgroundTabsMove(b, id, url, loadVersion, result) == true)
+{
+  if canTabMoved(b, id, url) && id != b.selected {
+    var after := tabMoved(b, id, url);
+    ProofLib.FilterPointwise((t: Tab) => (t.id == id), (t: Tab) => (t.id == id),
+      (x: Tab, y: Tab) => (x.id == id ==> x.load == y.load), b.tabs, after.tabs);
+    LookupFilter(b, id);
+    LookupFilter(after, id);
+  }
+}
+
 lemma goBack_ensures(b: Browser)
   ensures (inv(b) ==> canGoBack(b) ==> alwaysTabsAreWellFormed(goBack(b)))
   ensures (inv(b) ==> canGoBack(b) ==> alwaysTabIdentifiersAreUnique(goBack(b)))

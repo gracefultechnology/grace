@@ -56,7 +56,7 @@ type Availability = {
 type Lifecycle = StartupSucceeded | StartupFailed | RetryStartup | SleepDevice | WakeDevice | RestartDevice
 type TaskRequest = { owner: str, task: str, goal: str, origin: str }
 type LoadReport = { id: int, version: int, result: B::Load }
-type UnexpectedNavigation = { id: int, revision: int, destination: str }
+type UnexpectedNavigation = { id: int, revision: int, loadVersion: int, destination: str }
 type CurrentObservation = {
   deviceVersion: int, browserRevision: int, taskVersion: int,
   website: X::ObservationReport, checkpoint: str
@@ -673,7 +673,7 @@ pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: Workspac
     w.payment.stage == P::Checking and w.payment.dispatched and
     progress.paymentRevision == w.payment.revision and progress.attempt == w.payment.attempt))
 pure def receiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): Workspace = {
-  ...w, browser: if (progress.destination == "") B::pageChanged(w.browser) else B::navigate(w.browser, progress.destination),
+  ...w, browser: if (progress.destination == "") B::pageChanged(w.browser) else B::pageMoved(w.browser, progress.destination),
   execution: X::invalidate(w.execution, X::BrowserBridge),
   payment: if (P::canInvalidate(w.payment, P::BrowserHost)) P::invalidate(w.payment, P::BrowserHost) else w.payment,
   assistant: if (progress.kind == OrdinaryProgress)
@@ -685,7 +685,7 @@ pure def canUnexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: W
   unexpected.id == w.browser.selected and unexpected.revision == w.browser.revision and
   B::canNavigate(w.browser, unexpected.destination)
 pure def unexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): Workspace =
-  interrupted(w.device, B::navigate(w.browser, unexpected.destination), w)
+  interrupted(w.device, B::pageMoved(w.browser, unexpected.destination), w)
 pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
   (unexpected.id != w.browser.selected or unexpected.revision != w.browser.revision)
   implies not(canUnexpectedPage(w, unexpected, by))
@@ -696,6 +696,30 @@ pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::resume(w.assistant, C::ConversationUser), execution: X::resume(w.execution, X::User),
   payment: if (P::canResume(w.payment, P::Person)) P::resume(w.payment, P::Person) else w.payment,
   wake: W::cancel(w.wake, W::WakeUser)
+}
+```
+
+### A page that moves by itself where the person is not looking only records where it went
+
+A page in a tab that is not selected, or the selected one while the browser
+is not the ready surface, keeps running and can move by itself. The host
+reports it as for the page in view, and the browser records it on that tab.
+Nothing is interrupted. Grace's website work needs the selected page in
+view on the ready browser, so a task continues past a tab in the
+background, whose move leaves the selected page and the revision as they
+were; the selected page's own move, while hidden, changes the revision as
+any page moving by itself does. The host names the tab's load version it
+saw with the move, and a report is refused once that tab has started
+another load; what happens in other tabs, or to the browser's revision,
+never makes it late.
+
+```quint
+pure def canUnwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
+  by == Host and unexpected.loadVersion == B::tabById(w.browser, unexpected.id).loadVersion and
+  not(w.device.readiness == S::Ready and w.device.surface == S::Browser and unexpected.id == w.browser.selected) and
+  B::canTabMoved(w.browser, unexpected.id, unexpected.destination)
+pure def unwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): Workspace = {
+  ...w, browser: B::tabMoved(w.browser, unexpected.id, unexpected.destination)
 }
 ```
 
@@ -1105,9 +1129,9 @@ pure val taskRequestValues = Set(
   { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" })
 pure val browserInputValues = BC::browserInputValues
 pure val unexpectedValues = Set(
-  { id: 1, revision: 2, destination: "https://utility.example/updated" },
-  { id: 2, revision: 2, destination: "https://credit.example" },
-  { id: 1, revision: 0, destination: "https://utility.example/updated" })
+  { id: 1, revision: 2, loadVersion: 1, destination: "https://utility.example/updated" },
+  { id: 2, revision: 2, loadVersion: 0, destination: "https://credit.example" },
+  { id: 1, revision: 0, loadVersion: 0, destination: "https://utility.example/updated" })
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded }, { id: 1, version: 1, result: B::LoadFailed },
   { id: 1, version: 3, result: B::Loaded })

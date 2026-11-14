@@ -108,6 +108,8 @@ it("plays a disabled or loading story to check that a click, Enter or Space call
   for (const line of [
     'import { expect, fn, isMockFunction, userEvent } from "storybook/test";',
     "const refuses = async ({ args, canvasElement }) => {",
+    // A spy another story of the file called is not this story's doing.
+    "  for (const value of Object.values(args)) if (isMockFunction(value)) value.mockClear();",
     "export const Loading = { args: { ...base, loading: true, onClick: fn() }, play: refuses };",
   ])
     expect(file).toContain(line);
@@ -166,9 +168,13 @@ it("rewrites only what a change touches, and removes what a deleted component le
   edit("src/Table.meta.ts", (text) => text.replace("rows: [{ id: 1 }],", "...{ rows: [{ id: 1 }] },"));
   // A field ComponentMeta does not have, such as the `snapshot` it once had, is reported, not ignored.
   edit("src/Meter.meta.ts", (text) => text.replace("[0, full]", "full").replace("decorator:", 'snapshot: ["Failed"],\n  decorator:'));
+  // A `@model` naming a spec with no state machine, such as a stateless dispatcher, is reported, not dropped.
+  writeFileSync(join(root, "gen/views.ts"), 'export type Event = { type: "open" };\n');
+  edit("src/Tag.tsx", (text) => text.replace("export function Tag", "/** @model spec/views.md */\nexport function Tag"));
   expect(run().diagnostics).toEqual([
     'Meter: `bounds` of "value" must be written out as two numbers, `[least, greatest]`, in Meter.meta.ts',
     "Meter: `snapshot` is no field of ComponentMeta (vibestack/stories/meta.ts) and is not read; remove it from Meter.meta.ts",
+    "Tag: @model spec/views.md has no state to show: views.ts exports no `initial`; name the spec whose model holds what it shows",
   ]);
 
   rmSync(join(root, "src/Chip.tsx"));

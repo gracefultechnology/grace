@@ -1,0 +1,38 @@
+import type { ComponentProps } from "react";
+import { cn } from "../lib/cn.ts";
+
+export type TabletScreenProps = ComponentProps<"div"> & {
+  /** The wash behind everything: `soft` is Grace's washes at half strength over white (Home, apps); `frame` the full-strength one. */
+  background?: "soft" | "frame";
+  /** Draws the tablet's dark bezel around the screen. */
+  device?: boolean;
+};
+
+/**
+ * The tablet's 1280×800 screen: what every screen-level view is drawn on. Its children are placed absolutely,
+ * as the rail, windows and Grace are.
+ * @model spec/app/shell.md
+ * @design packages/design-system/design.md#glass
+ */
+export function TabletScreen({ background = "soft", device = false, className, children, ...props }: TabletScreenProps) {
+  // Prototype `.screen` and `.screen.chat-white .sbg`.
+  const screen = (
+    <div
+      className={cn(
+        "relative isolate h-[800px] w-[1280px] shrink-0 overflow-hidden rounded-screen bg-screen font-sans text-grace-ink",
+        background === "soft" ? "bg-gradient-frame-soft" : "bg-gradient-frame",
+        !device && className,
+      )}
+      {...(device ? {} : props)}
+    >
+      {children}
+    </div>
+  );
+  if (!device) return screen;
+  // Prototype `.device`: the bezel, 18px around the screen.
+  return (
+    <div className={cn("box-content w-[1280px] shrink-0 rounded-device bg-device p-[18px] shadow-device", className)} {...props}>
+      {screen}
+    </div>
+  );
+}

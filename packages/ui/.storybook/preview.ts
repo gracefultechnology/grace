@@ -1,3 +1,4 @@
+import "@fontsource-variable/figtree";
 import "@repo/design-system/theme.css";
 
 /** The toolbar's theme switch sets the class the tokens' dark values hang on. */

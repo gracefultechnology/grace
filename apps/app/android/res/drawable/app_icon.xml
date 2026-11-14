@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <!-- The script G from the Grace logotype on a paper tile,
+       60 of 108 tall so the splash screen's circular crop keeps the whole letter. -->
+  <path android:fillColor="#FAF8F3" android:pathData="M0,0h108v108h-108z"/>
+  <path android:pathData="M66.77 63.03Q65.05 72.18 62.32 77.41Q59.58 82.63 55.43 82.63Q53.17 82.63 51.8 81.21Q50.38 79.84 50.38 77.58Q50.38 75.56 51.27 73.43Q52.22 71.35 54.77 68.55Q57.27 65.76 61.9 62.2L62.02 61.37Q58.57 62.85 55.19 62.85Q50.26 62.85 46.57 60.95Q42.83 58.99 40.75 55.49Q38.67 51.98 38.67 47.29Q38.67 40.81 41.11 35.82Q43.6 30.83 47.94 28.1Q52.28 25.31 57.62 25.31Q62.79 25.31 65.35 27.74Q67.9 30.12 67.9 34.1Q67.9 36.65 66.95 38.26Q66 39.8 64.28 39.8Q63.09 39.8 62.38 39.21Q61.6 38.67 61.6 37.66Q61.6 37.19 61.78 36.18Q62.08 34.93 62.08 34.22Q62.08 32.38 60.95 31.37Q59.82 30.36 57.21 30.36Q54 30.36 51.21 32.2Q48.48 34.04 46.81 37.72Q45.15 41.41 45.15 46.51Q45.15 51.8 48 54.65Q50.91 57.56 56.38 57.56Q59.41 57.56 62.67 56.2L63.27 50.85H58.81Q57.56 50.85 56.91 50.26Q56.26 49.66 56.26 48.3Q56.26 47.05 56.91 46.34Q57.56 45.62 58.69 45.62H66.89Q67.84 45.62 68.5 46.28Q69.15 46.93 69.03 48.12Q68.85 49.49 68.14 54.48L67.66 57.8ZM60.95 67.43Q57.62 70.28 56.14 72.59Q54.65 74.85 54.65 76.63Q54.65 78.36 55.9 78.36Q57.03 78.36 58.4 75.74Q59.76 73.19 60.95 67.43Z">
+    <aapt:attr name="android:fillColor">
+      <gradient android:type="linear" android:startX="37.37" android:startY="24.00" android:endX="70.63" android:endY="33.98">
+        <item android:offset="0" android:color="#FF2E2650"/>
+        <item android:offset="0.5" android:color="#FF5E52A3"/>
+        <item android:offset="1" android:color="#FF4C7DAD"/>
+      </gradient>
+    </aapt:attr>
+  </path>
+</vector>

@@ -1119,8 +1119,42 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
 {
   if inv(w) && canUnexpectedPage(w, unexpected, by_) {
     ComponentInvariants(w);
-    app__browser_navigate_ensures(w.browser, unexpected.destination);
-    InterruptedInvariant(w.device, app__browser_navigate(w.browser, unexpected.destination), w);
+    app__browser_pageMoved_ensures(w.browser, unexpected.destination);
+    InterruptedInvariant(w.device, app__browser_pageMoved(w.browser, unexpected.destination), w);
+  }
+}
+
+// A background tab's move keeps the selected page and the revision (the browser's law), and website work needs the selected page in view.
+lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysOneTask(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedTogether(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysOperationHasVisibleTask(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysEvidenceVersionsAreNonnegative(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysWakeRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysActiveWakePausesWebsiteWork(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPreferencesRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysDeviceRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysBrowserRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysAssistantRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysExecutionRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentRules(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentRegistryIsCanonical(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentAssociation(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentUsesCanonicalIdentity(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentReviewUsesCurrentContext(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepInterruptionsKeepTask(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepWakeNeverDispatchesWebsite(w, "unwatchedPage", unwatchedPage(w, unexpected, by_), []))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepEffectsRequireCurrentContext(w, unwatchedPage(w, unexpected, by_), []))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepDepartureKeepsPaymentAttempt(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepPaymentSwitchRetainsRecords(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
+{
+  if inv(w) && canUnwatchedPage(w, unexpected, by_) {
+    ComponentInvariants(w);
+    app__browser_tabMoved_ensures(w.browser, unexpected.id, unexpected.destination);
+    app__browser_lawABackgroundTabMovingKeepsTheSelectedPage_ensures(w.browser, unexpected.id, unexpected.destination);
   }
 }
 
@@ -1193,7 +1227,7 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
     if progress.destination == "" {
       app__browser_pageChanged_ensures(w.browser);
     } else {
-      app__browser_navigate_ensures(w.browser, progress.destination);
+      app__browser_pageMoved_ensures(w.browser, progress.destination);
     }
     app__execution_invalidate_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
     if app__payment_canInvalidate(w.payment, app__payment_PaymentActor.BrowserHost) {

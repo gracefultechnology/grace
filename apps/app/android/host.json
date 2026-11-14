@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "sdk": { "min": 29, "target": 36, "compile": 36 },
+  "releaseMinify": false,
+  "kotlin": false,
+  "modules": [
+    { "name": "capacitor-android", "source": { "root": "dependencies", "path": "capacitor" } },
+    { "name": "eliza-browser-surface", "source": { "root": "upstream", "path": "plugins/plugin-native-browser-surface/android" } },
+    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "plugins/plugin-native-wifi/android" } }
+  ],
+  "signing": { "storeFile": "GRACE_KEYSTORE", "storePassword": "GRACE_KEYSTORE_PASSWORD", "keyAlias": "GRACE_KEY_ALIAS", "keyPassword": "GRACE_KEY_PASSWORD" },
+  "manifest": { "root": "consumer", "path": "android/AndroidManifest.xml" },
+  "flavors": [
+    {
+      "name": "standalone",
+      "buildConfigFields": [{ "name": "IS_LAUNCHER", "type": "boolean", "value": false }],
+      "manifest": { "root": "consumer", "path": "android/standalone/AndroidManifest.xml" }
+    },
+    {
+      "name": "launcher",
+      "buildConfigFields": [{ "name": "IS_LAUNCHER", "type": "boolean", "value": true }],
+      "manifest": { "root": "consumer", "path": "android/launcher/AndroidManifest.xml" }
+    }
+  ],
+  "sourceSets": {
+    "main": {
+      "java": [{ "root": "consumer", "path": "android/java" }],
+      "res": [{ "root": "consumer", "path": "android/res" }]
+    }
+  },
+  "dependencies": [
+    { "configuration": "implementation", "module": "androidx.appcompat:appcompat", "toolchainVersion": "androidxAppCompatVersion" }
+  ]
+}

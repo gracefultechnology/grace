@@ -28,7 +28,10 @@ jobs:
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
       TURBO_CACHE: ${{ github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r' }}
     steps:
+      # apps/app/scripts import upstream Eliza's Android tools from the vendor/eliza submodule.
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - uses: ./.github/actions/setup
       - run: pnpm verify --continue
       - if: always()

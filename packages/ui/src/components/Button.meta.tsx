@@ -1,3 +1,4 @@
+import { Pause, Pencil, X } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { ButtonProps } from "./Button.tsx";
@@ -24,7 +25,14 @@ export const meta: ComponentMeta<ButtonProps> = {
     "Loading link": { ...loadingLink, loading: true },
     // A button without text is named by `aria-label`.
     Empty: { size: "icon", "aria-label": "Add", children: undefined },
+    // The tablet's three kinds, from Grace's header and the Email window (prototype .pill, .pill.prom, .winx, .a-btn).
+    Glass: { variant: "glass", size: "pill", children: <><Pause size={22} strokeWidth={2.2} aria-hidden />Pause</> },
+    Prominent: { variant: "prominent", size: "pill", children: <><Pencil size={22} strokeWidth={2.2} aria-hidden />Write</> },
+    Capsule: { variant: "capsule", size: "pill", children: "Change" },
+    Plain: { variant: "plain", size: "pill-icon", "aria-label": "Close", children: <X size={26} strokeWidth={2.2} aria-hidden /> },
   },
+  // The tablet's buttons sit on its frame, where clear glass shows.
+  decorator: (story) => <div className="bg-gradient-frame p-6">{story()}</div>,
   // The generated play of a disabled or loading story checks that it refuses clicks and keys; these check what a person is told.
   play: {
     AsChild: async ({ args, canvasElement }: { args: ButtonProps; canvasElement: HTMLElement }) => {

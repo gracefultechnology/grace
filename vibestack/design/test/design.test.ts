@@ -43,6 +43,19 @@ test("apply accepts a valid change and rejects an unknown path, an invalid color
   expect(() => applyChanges(tokens, [{ path: primary.path, value: primary.value }])).toThrow(/reason/)
   const { radius: _, ...rest } = tokens
   expect(() => parseTokens({ ...rest, spacing: "1rem" })).toThrow("unknown token path: spacing\nradius: missing")
+  // A palette color is named in light; dark may override it but never introduce one.
+  expect(() => parseTokens({ ...tokens, color: { ...tokens.color, dark: { ...tokens.color.dark, brand: "oklch(0.5 0.1 200)" } } })).toThrow("color.dark.brand: no light value")
+  expect(() => parseTokens({ ...tokens, text: { body: "20" } })).toThrow("text.body: expected a length in rem or px")
+  expect(() => parseTokens({ ...tokens, keyframes: { blink: "opacity:0" } })).toThrow("keyframes.blink: expected keyframe stops")
+  expect(() => parseTokens({ ...tokens, text: { ...tokens.text, glass: "1rem" } })).toThrow("text.glass: also a color")
+})
+
+test("a palette color, radius, size, blur and gradient each become a utility; a palette color without a dark value keeps its light one", () => {
+  const next = parseTokens({ ...tokens, color: { light: { ...tokens.color.light, brand: "oklch(0.5 0.1 200)" }, dark: tokens.color.dark }, rounded: { pill: "999px" }, text: { hero: "3rem" }, blur: { frost: "20px" }, keyframes: { blink: "50%{opacity:0}" }, animate: { blink: "blink 1s step-end infinite" }, gradient: { sky: "linear-gradient(var(--brand), var(--primary))" } })
+  const [css, theme] = [tokensCss(next), themeCss(next)]
+  expect(css.match(/--brand: [^;]+;/g)).toEqual(["--brand: oklch(0.5 0.1 200);"])
+  for (const line of ["--color-brand: var(--brand);", "--radius-pill: 999px;", "--text-hero: 3rem;", "--blur-frost: 20px;", "--animate-blink: blink 1s step-end infinite;", "@keyframes blink { 50%{opacity:0} }", "@utility bg-gradient-sky {"]) expect(theme).toContain(line)
+  expect(css).toContain("--gradient-sky: linear-gradient(var(--brand), var(--primary));")
 })
 
 test("check passes on the project's tokens and design.md, and detects a stale design.md", () => {

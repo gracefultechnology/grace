@@ -12,11 +12,16 @@
       "node",
       "vite/client"
     ],
-    "rootDir": ".",
+    "rootDir": "../..",
     "rootDirs": [
       ".",
-      ".vibe/declarations"
-    ]
+      ".vibe/declarations/apps/app"
+    ],
+    "paths": {
+      "@capacitor/core": [
+        "./node_modules/@capacitor/core"
+      ]
+    }
   },
   "include": [
     "src",

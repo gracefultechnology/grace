@@ -10,12 +10,15 @@ export type EmptyStateProps = Omit<ComponentProps<"div">, "title"> & {
   children?: ReactNode;
 };
 
-/** Stands where a list or view has nothing to show yet. */
+/**
+ * Stands where a list or view has nothing to show yet (prototype "Nothing here.", `.a-s`).
+ * @design packages/design-system/design.md#windows
+ */
 export function EmptyState({ title, icon, className, children, ...props }: EmptyStateProps) {
   return (
-    <div className={cn("flex flex-col items-center gap-4 p-8 text-center", className)} {...props}>
-      {icon ? <div aria-hidden className="text-muted-foreground">{icon}</div> : null}
-      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+    <div className={cn("flex flex-col items-start gap-4 px-1 py-[30px]", className)} {...props}>
+      {icon ? <div aria-hidden className="text-chevron">{icon}</div> : null}
+      <p className="text-body leading-[26px] font-medium text-muted-foreground">{title}</p>
       {children}
     </div>
   );

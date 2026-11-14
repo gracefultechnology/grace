@@ -9,15 +9,18 @@ export type ProgressProps = Omit<ComponentProps<typeof ProgressPrimitive.Root>, 
   max?: number;
 };
 
-/** A bar for work whose length is known. Name it with `aria-label`. */
+/**
+ * A bar for work whose length is known, the indigo fill of the prototype's `.vol .tr`. Name it with `aria-label`.
+ * @design packages/design-system/design.md#selected
+ */
 export function Progress({ value, max = 100, className, ...props }: ProgressProps) {
   // Radix reads a value outside 0 to `max` as unknown, so it is given the one the bar shows.
   const done = value == null ? null : Math.min(Math.max(value, 0), max);
   return (
-    <ProgressPrimitive.Root value={done} max={max} className={cn("h-2 w-full overflow-hidden rounded-lg bg-secondary", className)} {...props}>
+    <ProgressPrimitive.Root value={done} max={max} className={cn("h-3 w-full overflow-hidden rounded-full bg-primary/12", className)} {...props}>
       <ProgressPrimitive.Indicator
-        className={cn("size-full origin-left bg-primary transition-transform", done === null && "animate-pulse")}
-        style={done === null ? undefined : { transform: `scaleX(${done / max})` }}
+        className={cn("size-full origin-left rounded-full bg-primary transition-transform duration-slow", done === null && "animate-pulse motion-reduce:animate-none")}
+        style={done === null ? undefined : { transform: `translateX(${(done / max - 1) * 100}%)` }}
       />
     </ProgressPrimitive.Root>
   );
