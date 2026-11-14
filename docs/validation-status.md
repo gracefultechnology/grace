@@ -52,7 +52,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Application shell | 52/52 | `/tmp/grace-system-final-proof/app__shell.ts.result.json` |
 | Wake | 17/17 | `/tmp/grace-wake-proof/app__wake.ts.result.json` |
 | Workspace composition before the restart correction | 1,312/1,312 | `/tmp/grace-account-bound-proof-bmarEo/app__workspace.result.json` |
-| Preparation and payment review conversion before the restart correction | 3/3 | `/tmp/grace-preparation-review-joxWTJ/proof-result.json` |
+| Preparation and payment review conversion | 3/3 | `/tmp/grace-restart-workspace-proof-9iXcvA/result.json` |
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
 The scaffold is the template's greeting example, not a Grace feature or a proof
@@ -333,19 +333,23 @@ Workspace clears the transient chat, draft, guidance and browser session and
 retires outstanding operations. The payment ledger restores each record's
 durable outcome. Sleep retains the paused task and requires deliberate Resume.
 
-The changed specification passed full generation. A 42-transition generated
-walkthrough checked 38 conditions and refusals, including sleep and deliberate
-Resume, an unsaved confirmation returning to durable Unknown, and a new task
-reconciling the original payment without a second submission. A second
+The changed specification passed full generation and root and app typechecking.
+Five directed Quint cases passed on the same Workspace source. A 42-transition
+generated walkthrough checked 38 conditions and refusals, including sleep and
+deliberate Resume, an unsaved confirmation returning to durable Unknown, and a
+new task reconciling the original payment without a second submission. A second
 114-transition walkthrough checked 59 refusals across two providers. It kept a
 completed receipt while a different active payment was Unknown, cleared a
 pending browser-history prompt, then reconciled the latter using fresh evidence.
-See `/tmp/grace-restart-directed-witness.json` and
+See `/tmp/grace-restart-validation-receipt.json`,
+`/tmp/grace-restart-directed-quint.json`,
+`/tmp/grace-restart-directed-witness.json` and
 `/tmp/grace-restart-multi-record-witness.json`.
 
 The ordinary random lifecycle inputs exercise startup. The restart and sleep
-walkthroughs use directed lifecycle inputs. Workspace and preparation conversion
-proofs are running with the new source and unchanged imported owner rules.
+walkthroughs use directed lifecycle inputs. The preparation conversion passed
+its three proofs with the changed Workspace dependency. The updated Workspace
+proof is running with the confirmed owner rules.
 
 ## Current combined validation
 
@@ -373,6 +377,8 @@ The combined log is `/tmp/grace-isolated-check-7.log`.
 ran zero steps. GitHub reported a billing or spending-limit restriction.
 The [d904d56 run](https://github.com/gracefultechnology/grace-new/actions/runs/43622371337)
 reported the same restriction before any verification step started.
+The [b53524a run](https://github.com/gracefultechnology/grace-new/actions/runs/43624458272)
+also reported the restriction and started zero verification steps.
 
 The current read-only review inventory contains 241 entries across 24
 specifications. Every story has rules and every rule has a Quint block.
