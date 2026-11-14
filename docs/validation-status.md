@@ -1,10 +1,11 @@
 # Specification validation status
 
-The current specification passed **4,321 individual Dafny proof obligations**
-across 21 Grace domain units and the retained template scaffold. This includes
-1,312 for Workspace with verified account identity and three for the bill
-preparation conversion. The combined normal check is still in progress. The
-nightly profile remains pending.
+The `eb1c1e7` specification passed **4,321 individual Dafny proof obligations**
+across 21 Grace domain units and the retained template scaffold. The restart
+correction changes Workspace and the proof bundle that imports it. Generation
+and directed restart walkthroughs passed for the changed model. The updated
+proofs and combined checks are tracked below. The nightly profile remains
+pending.
 
 ## Scope and review
 
@@ -50,8 +51,8 @@ describe earlier snapshots; the selected results below supersede them.
 | Preferences | 40/40 | `/tmp/grace-files-handproof/app__preferences.ts.result.json` |
 | Application shell | 52/52 | `/tmp/grace-system-final-proof/app__shell.ts.result.json` |
 | Wake | 17/17 | `/tmp/grace-wake-proof/app__wake.ts.result.json` |
-| Workspace composition | 1,312/1,312 | `/tmp/grace-account-bound-proof-bmarEo/app__workspace.result.json` |
-| Preparation and payment review conversion | 3/3 | `/tmp/grace-preparation-review-joxWTJ/proof-result.json` |
+| Workspace composition before the restart correction | 1,312/1,312 | `/tmp/grace-account-bound-proof-bmarEo/app__workspace.result.json` |
+| Preparation and payment review conversion before the restart correction | 3/3 | `/tmp/grace-preparation-review-joxWTJ/proof-result.json` |
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
 The scaffold is the template's greeting example, not a Grace feature or a proof
@@ -95,11 +96,12 @@ the actual CLI headers: `/tmp/grace-cli-header-audit/current-headers.json`.
 The combined check still needs to verify the complete current emitted output;
 source comparison and header alignment do not replace that check.
 
-For the current model tree, all 22 generated TypeScript units matched the CLI
+For the `eb1c1e7` model tree, all 22 generated TypeScript units matched the CLI
 output byte for byte. The Execution, Workspace and preparation conversion
 proof units also matched their proof runs' text, meaning and imported
 declarations byte for byte. See
-`/tmp/grace-current-proof-unit-alignment.json` and the proof results above.
+`/tmp/grace-current-proof-unit-alignment.json`,
+`/tmp/grace-current-all-proof-source-alignment.json` and the proof results above.
 
 ## Validation target and completed commands
 
@@ -323,6 +325,27 @@ to its amount, fee, date and funding method and a manual website tap. Each
 receipt remained scoped to its own bill. Stale forms, a different account and
 a duplicate conversion were refused. The walkthrough used synthetic browser
 and store reports. See `/tmp/grace-preparation-cross-source-witness.json`.
+
+## Restart and sleep
+
+ANDROID 09 and the replacement prototype reset the active task at restart.
+Workspace clears the transient chat, draft, guidance and browser session and
+retires outstanding operations. The payment ledger restores each record's
+durable outcome. Sleep retains the paused task and requires deliberate Resume.
+
+The changed specification passed full generation. A 42-transition generated
+walkthrough checked 38 conditions and refusals, including sleep and deliberate
+Resume, an unsaved confirmation returning to durable Unknown, and a new task
+reconciling the original payment without a second submission. A second
+114-transition walkthrough checked 59 refusals across two providers. It kept a
+completed receipt while a different active payment was Unknown, cleared a
+pending browser-history prompt, then reconciled the latter using fresh evidence.
+See `/tmp/grace-restart-directed-witness.json` and
+`/tmp/grace-restart-multi-record-witness.json`.
+
+The ordinary random lifecycle inputs exercise startup. The restart and sleep
+walkthroughs use directed lifecycle inputs. Workspace and preparation conversion
+proofs are running with the new source and unchanged imported owner rules.
 
 ## Current combined validation
 

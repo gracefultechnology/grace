@@ -206,9 +206,23 @@ This includes restoration: reconnecting, touch waking and granting a permission
 cannot silently restart work or a microphone. The host reports the operating
 system's current access, not an optimistic result before a permission prompt.
 Startup failure and retry stay distinct from a usable device.
-Sleep and restart hide Grace after pausing it, preserving the task, transcript
-and draft. Touch waking restores the application surface without reopening
-Grace; an enabled wake phrase can explicitly open a new exchange.
+Sleep hides Grace after pausing it, preserving the task, transcript and draft.
+Touch waking restores the application surface without reopening Grace; an
+enabled wake phrase can explicitly open a new exchange. Native lock blocks
+application access until OS authentication permits it. The model relies on the
+host supplying `WakeDevice` or an admitted `WakeDetection.context.ready` only
+after Grace may be shown. Unlocking alone does not resume the task.
+
+Discovered by requirements review: applying the same pause to Restart retained
+an executable pre-crash task, contrary to ANDROID 09. Restart clears the active
+task, conversation, unsent chat draft and guidance, and retires website work.
+The prototype's Restart also returns Home with a fresh blank browser tab
+(1765–1767). Recent destinations remain; native cookie/session restoration is
+not evidence of authentication and must be reobserved. Callback generations
+advance rather than returning to initial zeroes. Confirmed preferences and
+every canonical payment record survive; a volatile payment observation restores
+from its durable outcome, including Unknown. Restart never reports a completed
+task or retries a payment.
 
 ```quint
 pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
@@ -220,6 +234,16 @@ pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceAct
     | WakeDevice => S::canWake(w.device)
     | RestartDevice => true
   }
+pure def restartedAssistant(a: A::Assistant): A::Assistant = {
+  ...A::initial, workVersion: a.workVersion + 1,
+  guidance: { ...A::noGuidance, revision: a.guidance.revision + 1 },
+  conversation: { ...C::initial, generation: a.conversation.generation + 1,
+    draftRevision: a.conversation.draftRevision + 1 }
+}
+pure def pausedLifecycle(device: S::Shell, hide: bool, w: Workspace): Workspace =
+  val stopped = interrupted(device, w.browser, w)
+  if (hide and A::isVisible(stopped.assistant))
+    { ...stopped, assistant: A::close(stopped.assistant, C::ConversationUser) } else stopped
 pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): Workspace =
   val device = match lifecycle {
     | StartupSucceeded => S::finishStartup(w.device, true)
@@ -229,14 +253,57 @@ pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor)
     | WakeDevice => S::wake(w.device)
     | RestartDevice => S::restart(w.device)
   }
-  val stopped = interrupted(device, w.browser, w)
-  val hidden = if ((lifecycle == SleepDevice or lifecycle == RestartDevice) and A::isVisible(stopped.assistant))
-    { ...stopped, assistant: A::close(stopped.assistant, C::ConversationUser) } else stopped
-  val restored = if (lifecycle == RestartDevice) { ...hidden, preferences: R::restart(w.preferences, R::PreferenceStore) } else hidden
-  if (lifecycle == RestartDevice and P::canRestart(w.payment, P::DurableStore))
-    { ...restored, payment: P::restart(w.payment, P::DurableStore),
+  if (lifecycle == RestartDevice)
+    { ...w, device: device, browser: { ...B::closeBrowser(w.browser), clearRequested: false },
+      assistant: restartedAssistant(w.assistant),
+      execution: if (X::canRetire(w.execution, X::BrowserBridge)) X::retire(w.execution, X::BrowserBridge) else w.execution,
+      paymentTask: "", preferences: R::restart(w.preferences, R::PreferenceStore),
+      wake: W::cancel(w.wake, W::WakeHost),
+      payment: if (P::canRestart(w.payment, P::DurableStore)) P::restart(w.payment, P::DurableStore) else w.payment,
       otherPayments: w.otherPayments.listMap(p => P::restart(p, P::DurableStore)) }
-  else restored
+  else pausedLifecycle(device, lifecycle == SleepDevice, w)
+pure def lawNonRestartKeepsSession(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
+  val after = changeLifecycle(w, lifecycle, by)
+  (alwaysAssistantRules(w) and canChangeLifecycle(w, lifecycle, by) and lifecycle != RestartDevice) implies
+    after.assistant.taskId == w.assistant.taskId and after.assistant.goal == w.assistant.goal and
+    after.assistant.checkpoint == w.assistant.checkpoint and
+    after.assistant.conversation.messages == w.assistant.conversation.messages and
+    after.assistant.conversation.draft == w.assistant.conversation.draft and
+    not(after.assistant.conversation.voice) and
+    (lifecycle == SleepDevice implies after.assistant.presentation == A::Closed and
+      (A::unfinished(w.assistant) implies after.assistant.activity == A::Paused))
+pure def lawRestartClearsSession(w: Workspace, by: WorkspaceActor): bool =
+  val after = changeLifecycle(w, RestartDevice, by)
+  canChangeLifecycle(w, RestartDevice, by) implies
+    after.device.readiness == S::Starting and after.device.surface == S::Home and
+    after.assistant.activity == A::NoTask and after.assistant.taskId == "" and
+    after.assistant.goal == "" and after.assistant.checkpoint == "" and after.assistant.operation == "" and
+    after.assistant.replacementId == "" and after.assistant.replacementGoal == "" and
+    after.assistant.outcome == A::Unfinished and after.assistant.evidence == "" and
+    after.assistant.presentation == A::Closed and after.assistant.keyboard == A::NoKeyboard and
+    after.assistant.guidance.target == "" and not(after.assistant.guidance.shown) and
+    after.assistant.workVersion > w.assistant.workVersion and
+    after.assistant.guidance.revision > w.assistant.guidance.revision and
+    after.assistant.conversation.messages == List() and after.assistant.conversation.draft == "" and
+    after.assistant.conversation.turn == C::Ready and not(after.assistant.conversation.voice) and
+    after.assistant.conversation.generation > w.assistant.conversation.generation and
+    after.assistant.conversation.draftRevision > w.assistant.conversation.draftRevision and
+    after.execution.phase == X::Idle and after.paymentTask == "" and after.wake.phase == W::Dormant and
+    after.device.contextVersion > w.device.contextVersion and after.wake.generation > w.wake.generation and
+    after.execution.generation >= w.execution.generation and
+    (w.execution.phase != X::Idle implies after.execution.generation > w.execution.generation) and
+    after.browser.tabs == List(B::blankTab(w.browser.nextId, w.browser.serial + 1)) and
+    after.browser.revision > w.browser.revision and after.browser.recent == w.browser.recent and
+    not(after.browser.editingAddress) and not(after.browser.clearRequested)
+pure def lawRestartKeepsPaymentRecords(w: Workspace, by: WorkspaceActor): bool =
+  val after = changeLifecycle(w, RestartDevice, by)
+  canChangeLifecycle(w, RestartDevice, by) implies
+    after.payment.key == w.payment.key and after.payment.attempt == w.payment.attempt and
+    after.payment.durable == w.payment.durable and
+    (w.payment.stage != P::Empty implies after.payment.result == w.payment.durable.result) and
+    after.otherPayments.listMap(p => { key: p.key, attempt: p.attempt, durable: p.durable }) ==
+      w.otherPayments.listMap(p => { key: p.key, attempt: p.attempt, durable: p.durable }) and
+    after.otherPayments.every(p => p.result == p.durable.result and not(p.live) and not(p.fresh))
 pure def canSetAvailability(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
   by == Host and (availability.connection != w.device.connectivity or
     availability.reasoning != w.device.reasoningAvailable or
@@ -473,7 +540,7 @@ pure def canDismissPopover(w: Workspace, by: WorkspaceActor): bool = by == Perso
 pure def dismissPopover(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::dismissPopover(w.device), w.browser, w)
 pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace): bool =
-  (via == "changeLifecycle" or via == "setAvailability" or via == "visit" or
+  (via == "setAvailability" or via == "visit" or
    via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
    (via == "changePage" and after.browser.revision != before.browser.revision) or
    via == "chooseHomePage" or via == "chooseSettingsPage" or via == "togglePopover" or via == "dismissPopover")
