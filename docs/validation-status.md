@@ -151,8 +151,11 @@ The previous isolated combined run parsed all 23 modules and produced 19
 passing simulation and replay receipts. It ended without a final report or
 completed receipts for Email and Workspace. The current run is recorded in
 `/tmp/grace-isolated-check-4.log`.
-The current Email profile uses one coherent mailbox, five listing scopes
-and five metadata records, and eight read receipts. Its explicit domain audit
+The Email profile uses one coherent mailbox, five metadata records and eight
+read receipts. Listing samples include Trash and Drafts requests issued at
+generations two through four, with the matching draft restore generations.
+Direct guarded paths confirmed permanent deletion and durable draft retirement
+using the added samples. The explicit domain audit of the original focused profile
 still reaches all 33 transitions and 17 goals, observes all 33 guards refusing,
 and checks 17 stale/identity/approval cases. Direct PDF opening and multiple
 mailbox/message cases remain explicit witness and universal-proof coverage.

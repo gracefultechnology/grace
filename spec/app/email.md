@@ -781,6 +781,8 @@ pure val messageReceiptValues = I::receiptValues
 pure val sampleScope: ListingScope = { owner: "ownerA", provider: "providerA", account: "accountA", folder: I::InboxFolder, query: "", generation: 2 }
 pure val scopeValues = Set({ ...sampleScope, query: "messageA" }, { ...sampleScope, query: "attachmentA" },
   { ...sampleScope, folder: I::DraftsFolder }, { ...sampleScope, folder: I::TrashFolder },
+  { ...sampleScope, folder: I::DraftsFolder, generation: 3 }, { ...sampleScope, folder: I::DraftsFolder, generation: 4 },
+  { ...sampleScope, folder: I::TrashFolder, generation: 3 }, { ...sampleScope, folder: I::TrashFolder, generation: 4 },
   { ...sampleScope, query: "messageA", generation: 3 })
 pure val mValues = Set(initial,
   { ...initial, owner: "ownerA", provider: "providerA", account: "accountA", connection: Connected,
@@ -794,7 +796,7 @@ pure val billRefValues = Set("billA")
 pure val originValues = Set("https://biller.example")
 pure val billAccountValues = Set("billerAccount")
 pure val draftIdValues = Set("draftA", "messageA")
-pure val generationValues = Set(1, 3)
+pure val generationValues = Set(1, 3, 4, 5)
 pure val revisionValues = Set(1, 2, 3)
 pure val requestValues = Set(1, 2)
 pure val draftRevisionValues = Set(1, 2, 3)
