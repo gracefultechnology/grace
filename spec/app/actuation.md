@@ -105,7 +105,7 @@ pure def paymentSample(observed: WS::Workspace): WS::WorkspaceResult = {
   val journalTokens = { ...tokens, attempt: 1 }
   val approved = WS::approveSpokenPayment(listening, journalTokens, { token: listening.assistant.conversation.generation,
     text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, WS::Person)
-  WS::submitPayment(approved, journalTokens, WS::Actuator)
+  WS::submitPayment(approved, { ...journalTokens, taskVersion: approved.assistant.workVersion }, WS::Actuator)
 }
 pure val pendingEffectValues = {
   val observed = observedSample(WS::initial)
