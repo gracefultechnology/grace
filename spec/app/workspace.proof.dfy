@@ -1324,6 +1324,30 @@ lemma RestartedAssistantInvariant(a: app__assistant_Assistant)
   app__conversation_initialHolds_ensures();
 }
 
+lemma lawRestartKeepsPaymentRecords_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (lawRestartKeepsPaymentRecords(w, by_) == true)
+{
+  if canChangeLifecycle(w, Lifecycle.RestartDevice, by_) {
+    var after := changeLifecycle(w, Lifecycle.RestartDevice, by_);
+    assert |after.otherPayments| == |w.otherPayments|;
+    forall prior | prior in w.otherPayments
+      ensures (exists restored :: restored in after.otherPayments && sameDurablePaymentRecord(prior, restored))
+    {
+      var i :| 0 <= i < |w.otherPayments| && w.otherPayments[i] == prior;
+      var restored := after.otherPayments[i];
+      assert restored == app__payment_restart(prior, app__payment_PaymentActor.DurableStore);
+      assert restored in after.otherPayments;
+      assert sameDurablePaymentRecord(prior, restored);
+    }
+    forall restored | restored in after.otherPayments
+      ensures restored.result == restored.durable.result && !restored.live && !restored.fresh_
+    {
+      var i :| 0 <= i < |after.otherPayments| && after.otherPayments[i] == restored;
+      assert restored == app__payment_restart(w.otherPayments[i], app__payment_PaymentActor.DurableStore);
+    }
+  }
+}
+
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOneTask(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedTogether(changeLifecycle(w, lifecycle, by_)))
