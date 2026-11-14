@@ -240,9 +240,9 @@ pure def restartedAssistant(a: A::Assistant): A::Assistant = {
   conversation: { ...C::initial, generation: a.conversation.generation + 1,
     draftRevision: a.conversation.draftRevision + 1 }
 }
-pure def pausedLifecycle(device: S::Shell, hide: bool, w: Workspace): Workspace =
+pure def pausedLifecycle(device: S::Shell, closeAfterPause: bool, w: Workspace): Workspace =
   val stopped = interrupted(device, w.browser, w)
-  if (hide and A::isVisible(stopped.assistant))
+  if (closeAfterPause and A::isVisible(stopped.assistant))
     { ...stopped, assistant: A::close(stopped.assistant, C::ConversationUser) } else stopped
 pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): Workspace =
   val device = match lifecycle {
@@ -295,14 +295,16 @@ pure def lawRestartClearsSession(w: Workspace, by: WorkspaceActor): bool =
     after.browser.tabs == List(B::blankTab(w.browser.nextId, w.browser.serial + 1)) and
     after.browser.revision > w.browser.revision and after.browser.recent == w.browser.recent and
     not(after.browser.editingAddress) and not(after.browser.clearRequested)
+pure def sameDurablePaymentRecord(priorPayment: P::Payment, restoredPayment: P::Payment): bool =
+  priorPayment.key == restoredPayment.key and priorPayment.attempt == restoredPayment.attempt and
+    priorPayment.durable == restoredPayment.durable
 pure def lawRestartKeepsPaymentRecords(w: Workspace, by: WorkspaceActor): bool =
   val after = changeLifecycle(w, RestartDevice, by)
   canChangeLifecycle(w, RestartDevice, by) implies
-    after.payment.key == w.payment.key and after.payment.attempt == w.payment.attempt and
-    after.payment.durable == w.payment.durable and
+    sameDurablePaymentRecord(w.payment, after.payment) and
     (w.payment.stage != P::Empty implies after.payment.result == w.payment.durable.result) and
-    after.otherPayments.listMap(p => { key: p.key, attempt: p.attempt, durable: p.durable }) ==
-      w.otherPayments.listMap(p => { key: p.key, attempt: p.attempt, durable: p.durable }) and
+    after.otherPayments.length() == w.otherPayments.length() and
+    w.otherPayments.every(prior => after.otherPayments.some(restored => sameDurablePaymentRecord(prior, restored))) and
     after.otherPayments.every(p => p.result == p.durable.result and not(p.live) and not(p.fresh))
 pure def canSetAvailability(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
   by == Host and (availability.connection != w.device.connectivity or
@@ -1150,6 +1152,8 @@ pure val xValues = Set(X::initial,
   X::pause(X::start(X::initial, "owner", "task", "https://utility.example", X::User), X::User))
 pure val pValues = Set(P::initial, P::bind(P::initial, P::exampleKey, P::Person))
 pure val paymentValues = pValues
+pure val priorPaymentValues = pValues
+pure val restoredPaymentValues = pValues
 pure val recordsValues = Set(List(), List(P::bind(P::initial, P::exampleKey, P::Person)))
 pure val deviceValues = Set(S::initial, S::finishStartup(S::initial, true))
 pure val browserValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
