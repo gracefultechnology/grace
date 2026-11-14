@@ -403,6 +403,8 @@ revision and rejected it after deletion while Workspace remained current. See
 `/tmp/grace-memory-actuation-q5j6etpv/quint-witness.json`,
 `/tmp/grace-memory-actuation-q5j6etpv/witness.json` and
 `/tmp/grace-memory-actuation-dependency-alignment.json`.
+The 220-sample Quint probe also passed, with 60 retained steps replayed
+against generated TypeScript. See `/tmp/grace-memory-actuation-simulate.log`.
 
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
 All 23 model declarations compiled. Handoffs passed 12,000 safety traces,
@@ -441,7 +443,7 @@ traces reached all 17 Email goals and 10 of the 16 Workspace goals. They show
 The active searches can still add witnesses. See
 `/tmp/grace-check9-recovery-jxSuKA/replay-report.json`.
 
-[Hosted CI at `ec81474`](https://github.com/gracefultechnology/grace-new/actions/runs/43633492783)
+[Hosted CI at `de1d909`](https://github.com/gracefultechnology/grace-new/actions/runs/43634326542)
 ran zero steps. GitHub reported a billing or spending-limit restriction.
 The [d904d56 run](https://github.com/gracefultechnology/grace-new/actions/runs/43622371337)
 reported the same restriction before any verification step started.
@@ -450,9 +452,9 @@ also reported the restriction and started zero verification steps.
 The [4225150 run](https://github.com/gracefultechnology/grace-new/actions/runs/43627126215)
 reported the same restriction before starting any steps.
 
-The current read-only review inventory contains 241 entries across 24
+The `de1d909` read-only review inventory contains 251 entries across 26
 specifications. Every story has rules and every rule has a Quint block.
-The review ledger is unchanged. See `/tmp/grace-develop-readonly-review.json`.
+The review ledger is unchanged. See `/tmp/grace-current-review-report.json`.
 
 ## Prior simulation runs
 
