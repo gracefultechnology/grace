@@ -112,10 +112,11 @@ three app unit tests, the Chromium journey and the app build passed. The
 template's conformance driver passed its journey, five malformed inputs and
 1,000 walks with seed 1. The root suite passed 33 tests and timed out in the
 generated-test fixture at its 120-second limit. That fixture timed out again
-when retried on its own. The root build encountered the active check's
-generation lock and awaits a retry. These tests exercise the retained template
-and tooling. Grace's provider and device journeys belong to the implementation
-phase.
+when retried on its own. The root build initially waited for the active check's generation lock. It
+then passed all six tasks on the Workspace sampling checkpoint. The log is
+`/tmp/grace-current-root-build-after-check.log`. The root suite retry precedes
+the next combined run. These tests exercise the retained template and tooling.
+Grace's provider and device journeys belong to the implementation phase.
 
 A separate guarded model trace exercised Calendar bill selection, browser
 evidence, approval, durable payment results and Calendar updates across 61
