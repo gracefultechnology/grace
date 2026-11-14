@@ -306,6 +306,15 @@ payment revision so the original conversion cannot be submitted twice.
 See `/tmp/grace-preparation-review-joxWTJ/proof-result.json` and
 `/tmp/grace-preparation-review-joxWTJ/probe-results.json`.
 
+A combined generated-model walkthrough used the conversion for two unrelated
+biller origins. It passed 104 guarded transitions and 53 refusals. One bill
+matched across Email and Calendar and completed through voice approval. The
+other went through private sign-in and a challenge, then through a correction
+to its amount, fee, date and funding method and a manual website tap. Each
+receipt remained scoped to its own bill. Stale forms, a different account and
+a duplicate conversion were refused. The walkthrough used synthetic browser
+and store reports. See `/tmp/grace-preparation-cross-source-witness.json`.
+
 ## Current combined validation
 
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
