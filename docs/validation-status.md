@@ -1,9 +1,9 @@
 # Specification validation status
 
-The specification at `22a5c3d` passed all **4,288 individual proof obligations**
-across 20 Grace domain units and the retained template scaffold. The subsequent
-Workspace sampling change preserves the generated runtime and proof unit byte
-for byte. The combined model check and larger profile remain pending.
+The current specification at `d9bdca0` passed **4,308 individual proof
+obligations** across 20 Grace domain units and the retained template scaffold.
+The Workspace sampling update preserves the generated runtime and proof unit
+byte for byte. The combined model check and larger profile remain pending.
 
 ## Scope and review
 
@@ -36,13 +36,13 @@ describe earlier snapshots; the selected results below supersede them.
 | Bill preparation | 75/75 | `/tmp/grace-billpay-current-proof/app__billpay.ts.result.json` |
 | Browser | 118/118 | `/tmp/grace-browser-proof-3/result.json` |
 | Browser controls | 2/2 | `/tmp/grace-browser-controls-modular-proof/result.json` |
-| Calendar occurrence | 172/172 | `/tmp/grace-expanded-proof-pVJ0jQ/app__calendar.ts.json` |
-| Calendar view and series | 189/189 | `/tmp/grace-calendar-import-proof-yUUnxd/app__calendarView.ts.json` |
+| Calendar occurrence | 173/173 | `/tmp/grace-calendar-retry-checked-uGltq8/app__calendar.ts.result.json` |
+| Calendar view and series | 208/208 | `/tmp/grace-calendar-home-proof-5MwT6g/result.json` |
 | Files | 192/192 | `/tmp/grace-files-final-feedback/app__files.ts.result.json` |
 | Email message lifecycle | 54/54 | `/tmp/grace-repeat-proof-x8JiBb/app__emailItem.ts.json` |
 | Email mailbox | 903/903 | `/tmp/grace-email-current-proof-N7bbTr/result.json` |
 | Website execution | 112/112 | `/tmp/grace-execution-proof-4IMCiq/app__execution.ts.json` |
-| Cross-application handoffs | 60/60 | `/tmp/grace-expanded-proof-VpSzue/app__handoffs.ts.json` |
+| Cross-application handoffs | 60/60 | `/tmp/grace-calendar-owned-handoffs-5stmBc/app__handoffs.ts.result.json` |
 | Assistant interaction dispatcher | 1/1 | `/tmp/grace-guidance-final-proof-XomBfx/app__interaction.ts.json` |
 | Memory | 60/60 | `/tmp/grace-memory-proof/result.json` |
 | Network | 53/53 | `/tmp/grace-system-final-proof/app__network.ts.result.json` |
@@ -178,8 +178,8 @@ revision's result and preserve the invariants. The hidden-failure/reopen path
 also passed. The exact updated Calendar and CalendarView units passed 173
 and 189 obligations respectively. The proof results are in
 `/tmp/grace-calendar-retry-checked-uGltq8`. Handoffs also passed 60 obligations
-against the initial retry-fence trial. Its run against the final law text and
-dependent units will accompany the appointment confirmation update.
+against the initial retry-fence trial and again against the final Calendar and
+CalendarView definitions after the appointment confirmation update.
 
 Calendar now accepts an exact, current appointment confirmation while the
 person stays on Home or in another app. Existing Calendar state owns the
