@@ -369,6 +369,17 @@ profile for that driver. Full-tree nightly validation remains pending. See
 
 ## Current combined validation
 
+The browser actuation library generated and passed root and app typechecking.
+Dafny proved all three laws independently. Two directed Quint cases and a
+220-sample probe passed, with 60 retained steps replayed in TypeScript. A
+separate generated-code walkthrough admitted the two current effects and
+refused 39 altered or interrupted commands. The covered cases include wrong
+actors, Stop, Home, Close Grace, restart, changed pages and revoked observation
+permission. The payment attempt and its durable evidence survive those
+interruptions. See `/tmp/grace-actuation-proof-nYv6oO/result.json`,
+`/tmp/grace-actuation-directed-quint-2.log`, `/tmp/grace-actuation-simulate-2.log`
+and `/tmp/grace-actuation-witness.json`.
+
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
 All 23 model declarations compiled. Handoffs passed 12,000 safety traces,
 all four named goals, all five guard admissions and refusals, and 404
