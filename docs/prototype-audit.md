@@ -110,8 +110,11 @@ Calendar source is 1894–1954 and 2157–2178. It now has week/month views,
 selected day, detail, New/Edit forms, recurrence/reminder choices, save/cancel,
 recurrence-aware deletion controls and Home reminder banners. Prototype
 calendar data and simplistic date arithmetic require the real occurrence,
-provider-revision and reminder contracts. Calls and directions still only
-produce placeholder toasts (2177–2178).
+provider-revision and reminder contracts. The `call` and `dir` switch cases
+(2177–2178) are unreachable leftover toast handlers: no rendered control or
+header action invokes them. Calendar detail renders Edit and Delete, with
+Back and Close in its header (1897–1903); it does not demonstrate calling a
+clinic or opening directions. Those dead handlers do not add an MVP flow.
 
 Email source is 1955–1977 and 2179–2205. It now includes folders/search,
 reading, recipient selection, reply/forward/compose, draft retention,

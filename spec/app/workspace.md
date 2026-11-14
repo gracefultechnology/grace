@@ -329,6 +329,7 @@ pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): b
   (by == Person or by == Host) and w.device.readiness == S::Ready and
   (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
+  (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
   I::canInteract(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime)
 pure def afterInteraction(changed: A::Assistant, geometry: bool, content: bool, w: Workspace): Workspace = {
   val fencesTask = content or geometry
@@ -403,6 +404,54 @@ source route, retires the old operation generation and starts observation
 without changing any old payment record. A new conversation is available
 only after the task is finished or explicitly abandoned; it clears the old
 conversation link, never the payment ledger.
+
+### Guidance is visible only on its current surface and target
+
+The assistant owns one target and its visibility; the instruction comes from
+its existing checkpoint or response. Publication is authenticated host evidence,
+not a planner assertion. It names the current device, browser, task, conversation
+and guidance revisions. Dismiss and Show use the shared interaction route and
+never execute, pause or complete the task. Native app layout changes retire the
+target through `invalidateGuidance` before the changed controls can be shown.
+Page, keyboard, surface and task changes make old guidance unavailable immediately.
+The UI renders the ring and label only through `guidanceVisible`.
+
+```quint
+pure def guidanceIsCurrent(w: Workspace): bool =
+  w.device.readiness == S::Ready and A::guidanceIsCurrent(w.assistant) and
+  w.assistant.guidance.deviceVersion == w.device.contextVersion and
+  w.assistant.guidance.browserRevision == w.browser.revision
+pure def guidanceVisible(w: Workspace): bool = guidanceIsCurrent(w) and w.assistant.guidance.shown
+pure def canPublishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, by: WorkspaceActor): bool =
+  by == Host and w.device.readiness == S::Ready and
+  guidanceReport.deviceVersion == w.device.contextVersion and guidanceReport.browserRevision == w.browser.revision and
+  A::canPublishGuidance(w.assistant, guidanceReport, C::ConversationRuntime)
+pure def publishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, by: WorkspaceActor): Workspace = {
+  ...w, assistant: A::publishGuidance(w.assistant, guidanceReport, C::ConversationRuntime)
+}
+pure def canInvalidateGuidance(w: Workspace, guidanceRevision: int, by: WorkspaceActor): bool =
+  by == Host and A::canInvalidateGuidance(w.assistant, guidanceRevision, C::ConversationRuntime)
+pure def invalidateGuidance(w: Workspace, guidanceRevision: int, by: WorkspaceActor): Workspace = {
+  ...w, assistant: A::invalidateGuidance(w.assistant, guidanceRevision, C::ConversationRuntime)
+}
+pure def lawStaleGuidanceIsHidden(w: Workspace): bool =
+  (w.assistant.guidance.deviceVersion != w.device.contextVersion or
+    w.assistant.guidance.browserRevision != w.browser.revision) implies not(guidanceVisible(w))
+pure def lawGuidanceControlsKeepExecution(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
+  I::needsCurrentGuidance(input) and canInteract(w, input, by) implies
+    (interact(w, input, by).execution == w.execution and interact(w, input, by).payment == w.payment and
+      interact(w, input, by).assistant.checkpoint == w.assistant.checkpoint and
+      interact(w, input, by).assistant.conversation == w.assistant.conversation)
+pure def sometimesGuidanceShown(w: Workspace): bool = guidanceVisible(w)
+pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) and not(w.assistant.guidance.shown)
+pure val guidanceRevisionValues = Set(0, 1, 2)
+pure val guidanceReportValues = Set(
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 6, browserRevision: 2, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 6, browserRevision: 2, verified: true },
+  { target: "control", revision: 0, workVersion: 0, conversationVersion: 2, deviceVersion: 2, browserRevision: 0, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 5, browserRevision: 2, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 6, browserRevision: 2, verified: false })
+```
 
 ### Home pages and rail overlays invalidate the covered page
 
@@ -1006,11 +1055,7 @@ arbitrary request identifiers, nonempty destinations and integer generations.
 
 ```quint
 pure val availabilityValues = Set(
-  { connection: S::Online, reasoning: true, microphone: true, observation: true },
-  { connection: S::Offline, reasoning: false, microphone: false, observation: false },
-  { connection: S::Offline, reasoning: true, microphone: true, observation: false },
-  { connection: S::Online, reasoning: true, microphone: false, observation: true },
-  { connection: S::Online, reasoning: true, microphone: true, observation: false })
+  { connection: S::Online, reasoning: true, microphone: true, observation: true })
 pure val aValues = Set(A::initial,
   A::pause(A::beginTask(A::open(A::initial, C::ConversationUser),
     "task", "Read the account", C::ConversationUser), C::ConversationUser))
@@ -1043,6 +1088,8 @@ pure val inputValues = I::inputValues
 pure val requestedTaskValues = Set("other", "")
 pure val requestedGoalValues = Set("Read another account", "")
 pure val spokenValues = Set(
+  { token: 3, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
+  { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 2, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 1, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 2, text: "Yes, but change the amount.", owner: C::HumanAudio, complete: true, approves: true, correction: true },
@@ -1111,21 +1158,31 @@ pure val progressValues = Set(
     generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
   { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: PaymentProgress, destination: "" })
-pure val weight_changeLifecycle = 1
-pure val weight_setAvailability = 2
-pure val weight_visit = 2
-pure val weight_openGrace = 2
-pure val weight_begin = 5
-pure val weight_receiveLoad = 5
-pure val weight_observe = 5
-pure val weight_prepare = 5
-pure val weight_dispatch = 5
-pure val weight_verify = 5
-pure val weight_bindPayment = 5
-pure val weight_reviewPayment = 5
-pure val weight_readBackPayment = 5
-pure val weight_journalPayment = 5
-pure val weight_approveSpokenPayment = 5
-pure val weight_submitPayment = 5
-pure val weight_recordPayment = 5
+pure val weight_changeLifecycle = 4
+pure val weight_setAvailability = 4
+pure val weight_visit = 12
+pure val weight_openGrace = 12
+pure val weight_begin = 24
+pure val weight_receiveLoad = 24
+pure val weight_observe = 24
+pure val weight_prepare = 24
+pure val weight_dispatch = 24
+pure val weight_verify = 24
+pure val weight_bindPayment = 24
+pure val weight_reviewPayment = 24
+pure val weight_readBackPayment = 4
+pure val weight_journalPayment = 24
+pure val weight_approveSpokenPayment = 24
+pure val weight_submitPayment = 24
+pure val weight_recordPayment = 24
+pure val weight_completeOrdinary = 24
+pure val weight_savePayment = 24
+pure val weight_talk = 8
+pure val weight_interact = 8
+pure val weight_detectWake = 8
+pure val weight_wakeNoSpeech = 8
+pure val weight_wakeReturn = 8
+pure val tokenValues = Set(-1, 2)
+pure val destinationValues = Set(S::Browser, S::Home, S::DeviceSettings)
+pure val lifecycleValues = Set(StartupSucceeded)
 ```

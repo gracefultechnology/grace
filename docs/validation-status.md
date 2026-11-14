@@ -1,11 +1,14 @@
 # Specification validation status
 
-As of November 13, 2026, the 20 Grace domain units have successful individual
+At checkpoint `887d411`, the 20 Grace domain units had successful individual
 proof verdicts covering **4,197 obligations**. The retained template scaffold
 adds six, for **4,203 obligations across 21 proof-bearing units**. Each result
 listed below has zero unproved obligations, exhausted obligations and errors.
-The current combined `pnpm check` is still running; this is not a claim that
-the complete project check, larger profile, final build or user acceptance passed.
+The guidance dismissal/restoration addition is undergoing fresh verification;
+its affected Assistant, Interaction and Workspace results will supersede the
+checkpoint results below. The complete combined model check and larger profile remain pending. The
+isolated checkout has passed installation, its existing tests and both builds.
+User acceptance remains a later step.
 
 ## Scope and review
 
@@ -91,42 +94,60 @@ the actual CLI headers: `/tmp/grace-cli-header-audit/current-headers.json`.
 The combined check still needs to verify the complete current emitted output;
 source comparison and header alignment do not replace that check.
 
+## Validation target and completed commands
+
+Concurrent application work began in the original checkout after the model
+checkpoint was pushed. Validation continues in an isolated clone based on
+`887d4119403ea1f5e513b9168dd8bc11b4ec1c44`, on branch
+`codex/grace-spec-validation`. The concurrent application changes belong to
+the following implementation phase.
+
+The isolated checkpoint passed these commands:
+
+| Command | Result | Log |
+|---|---|---|
+| `pnpm install --frozen-lockfile` | Passed, including prepare/build and generation | `/tmp/grace-isolated-install.log` |
+| `pnpm test` | 34 tests passed | `/tmp/grace-isolated-root-tests.log` |
+| `pnpm -C apps/app test` | 3 tests passed | `/tmp/grace-isolated-app-tests.log` |
+| `pnpm -C apps/app test:browser` | 1 Chromium journey passed | `/tmp/grace-isolated-browser-tests.log` |
+| `pnpm -C apps/app build` | Passed | `/tmp/grace-isolated-app-build.log` |
+| `pnpm build` | Passed, six tasks successful | `/tmp/grace-isolated-root-build.log` |
+
+These tests exercise the retained template and tooling. Grace's provider and
+device journeys will be implemented in the next phase.
+
 ## Simulation input coverage
 
-The final sample domains include two-photo and photo/PDF Email manifests,
-complete two-occurrence Calendar series schedules, and Workspace payment
-failure/return paths followed by a later retry. Guarded reducer walks checked
-these paths and wake timers against the generated invariants. The runtime
-TypeScript and proof units remained identical after these sample additions.
+The sample domains include two-photo and photo/PDF Email manifests, complete
+two-occurrence Calendar series schedules, and Workspace payment failure/return
+paths followed by a later retry. Guarded reducer walks checked these paths and
+wake timers against the generated invariants. The runtime TypeScript and proof
+units remained identical after these sample additions.
 
-Website-execution exploration gives the five existing progress actions a
-weight of 100 while retaining every original input domain. In an isolated copy
-of the actual CLI harness, the normal profile reached the retry-stop goal in
-140.2 seconds and the changed-approach goal in 98.9 seconds. Its runtime
-TypeScript was unchanged. The measurement is recorded at
-`/tmp/grace-execution-cli-sampling-SpSlAK/summary.json`; the combined run below
-must still validate the complete current source.
+The execution sampler uses representative task/owner identities, bounded
+counter examples and progress weights of 10. All callback records, both
+website origins, operation kinds and caller roles remain represented. Wrong
+identities, stale reports, private input and missing redaction remain in the
+examples. The selected trial passed a 2,500-trace safety shard and both retry
+goals under the normal and nightly seeds. Evidence is recorded at
+`/tmp/grace-execution-total-iU3HJT/summary.json` and
+`/tmp/grace-execution-final-equivalence-hCqVcM/result.json`.
 
 ## Combined validation still pending
 
-The current run is recorded in `/tmp/grace-check-11.log`. This run starts from
-the current source and the completed simulation input review. It has not yet
-produced a complete success verdict. No
-claim is made yet for combined simulation, reachability, replay, type checking,
-proof, tests or conformance completion.
+Earlier combined runs were stopped as the model definitions and simulation
+inputs were corrected. Their partial results cannot certify the final source.
+The next complete run must check invariant simulation, reachability, TypeScript
+replay, generated types, proof obligations, tests and conformance together.
+Email and Workspace sampling are being reviewed to keep that full run practical
+while preserving their adversarial cases and all product rules.
 
-An earlier template build completed six tasks successfully, as recorded in
-`/tmp/grace-build.log`. It predates later specification changes and is not a
-final-source build receipt. The final larger/nightly check profile and final
-build also remain pending. No simulated-only proof acceptance has been recorded,
-and `pnpm accept` has not been run.
-
-The remaining technical work is to finish the current combined check, resolve
-any reported failures, run the larger profile and final build, and review the
-final PRD/prototype coverage and prose/Quint agreement. Product review and
+The larger/nightly profile remains pending. No simulated-only proof acceptance
+has been recorded, and `pnpm accept` has not been run. The remaining technical
+work is to finish the combined check and larger profile and review the final
+PRD/prototype coverage and prose/Quint agreement. Product review and
 `pnpm accept` remain the user's sign-off step after technical validation.
 
-Real provider, device, visual and service behavior remains outside these model
-proofs. The journeys in [implementation acceptance](implementation-acceptance.md)
-must validate those boundaries when the VibeLang shell and React interface are
-implemented; this models-only phase does not claim that acceptance.
+The journeys in [implementation acceptance](implementation-acceptance.md)
+cover real provider, device, visual and service boundaries when the VibeLang
+shell and React interface are implemented.

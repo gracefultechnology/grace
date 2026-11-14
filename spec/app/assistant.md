@@ -26,15 +26,27 @@ type Presentation = Closed | Compact | Expanded
 type KeyboardOwner = NoKeyboard | ChatKeyboard | WebsiteKeyboard
 type Assistance = NoTask | ReadyForStep | DoingWork | WebsiteWait | UserWait | Paused | Rechecking | Finished
 type TaskOutcome = Unfinished | Completed | VerifiedFailure | Abandoned
+type Guidance = {
+  target: str, revision: int, workVersion: int, conversationVersion: int,
+  deviceVersion: int, browserRevision: int, shown: bool
+}
+type GuidanceReport = {
+  target: str, revision: int, workVersion: int, conversationVersion: int,
+  deviceVersion: int, browserRevision: int, verified: bool
+}
+pure val noGuidance: Guidance = {
+  target: "", revision: 0, workVersion: 0, conversationVersion: 0,
+  deviceVersion: 0, browserRevision: 0, shown: false
+}
 type Assistant = {
-  presentation: Presentation, keyboard: KeyboardOwner,
+  presentation: Presentation, keyboard: KeyboardOwner, guidance: Guidance,
   conversation: C::Conversation, activity: Assistance,
   taskId: str, goal: str, checkpoint: str, operation: str,
   workVersion: int, outcome: TaskOutcome, evidence: str,
   replacementId: str, replacementGoal: str
 }
 pure val initial: Assistant = {
-  presentation: Closed, keyboard: NoKeyboard, conversation: C::initial,
+  presentation: Closed, keyboard: NoKeyboard, guidance: noGuidance, conversation: C::initial,
   activity: NoTask, taskId: "", goal: "", checkpoint: "", operation: "",
   workVersion: 0, outcome: Unfinished, evidence: "",
   replacementId: "", replacementGoal: ""
@@ -197,6 +209,85 @@ pure def finishTask(a: Assistant, task: str, version: int, result: TaskOutcome, 
     workVersion: a.workVersion + 1, replacementId: "", replacementGoal: "" }
 ```
 
+## Story: Dismiss guidance without stopping the task
+
+> As a person reading a website or app, I can hide the target label and ring,
+> keep the instruction in Grace, and show that guidance again while it is current.
+
+### Guidance belongs to the current instruction and never grants action authority
+
+PRD INT 12 and the prototype's `gclose` control distinguish hiding a label from
+Close or Stop. The label reuses the current task checkpoint, or the latest Grace
+response when no task is active. It does not store another instruction. A trusted
+host locates one semantic target and supplies the current device, page, task,
+conversation and guidance revisions. This may point to an app control or private
+sign-in field without authorizing input or exposing that field's contents.
+
+A new instruction, task, conversation, page or layout retires the old target.
+The workspace checks device/page versions; app adapters explicitly invalidate
+before moving or removing a target. Close and Stop invalidate the work version.
+A delayed target report cannot undo a newer publication, dismissal or invalidation.
+
+```quint
+pure def guidanceInstruction(a: Assistant): str =
+  if (unfinished(a)) a.checkpoint else C::latestGraceText(a.conversation)
+pure def guidanceIsCurrent(a: Assistant): bool =
+  isVisible(a) and a.guidance.target != "" and guidanceInstruction(a) != "" and
+  a.activity != Paused and a.activity != Rechecking and
+  a.guidance.workVersion == a.workVersion and a.guidance.conversationVersion == a.conversation.generation
+pure def canPublishGuidance(a: Assistant, report: GuidanceReport, by: C::ConversationActor): bool =
+  by == C::ConversationRuntime and isVisible(a) and guidanceInstruction(a) != "" and
+  a.conversation.turn != C::Thinking and a.activity != Paused and a.activity != Rechecking and report.verified and report.target != "" and
+  report.revision == a.guidance.revision and report.workVersion == a.workVersion and
+  report.conversationVersion == a.conversation.generation and report.deviceVersion >= 0 and report.browserRevision >= 0
+pure def publishGuidance(a: Assistant, report: GuidanceReport, by: C::ConversationActor): Assistant = {
+  ...a, guidance: { target: report.target, revision: a.guidance.revision + 1,
+    workVersion: report.workVersion, conversationVersion: report.conversationVersion,
+    deviceVersion: report.deviceVersion, browserRevision: report.browserRevision, shown: true }
+}
+pure def canInvalidateGuidance(a: Assistant, revision: int, by: C::ConversationActor): bool =
+  by == C::ConversationRuntime and revision == a.guidance.revision and a.guidance.target != ""
+pure def invalidateGuidance(a: Assistant, revision: int, by: C::ConversationActor): Assistant = {
+  ...a, guidance: { ...a.guidance, target: "", shown: false, revision: a.guidance.revision + 1 }
+}
+```
+
+### Dismiss hides only the label and Show restores only a still-current target
+
+Both controls carry the displayed guidance revision. Dismiss preserves the
+instruction, task, microphone, draft, and execution permissions. Show restores
+that same target and instruction; it does not reobserve or resume work. When a
+target is stale, the host must locate it again before Show becomes available.
+
+```quint
+pure def canDismissGuidance(a: Assistant, revision: int, by: C::ConversationActor): bool =
+  by == C::ConversationUser and guidanceIsCurrent(a) and a.guidance.shown and revision == a.guidance.revision
+pure def dismissGuidance(a: Assistant, revision: int, by: C::ConversationActor): Assistant = {
+  ...a, guidance: { ...a.guidance, shown: false, revision: a.guidance.revision + 1 }
+}
+pure def canShowGuidance(a: Assistant, revision: int, by: C::ConversationActor): bool =
+  by == C::ConversationUser and guidanceIsCurrent(a) and not(a.guidance.shown) and revision == a.guidance.revision
+pure def showGuidance(a: Assistant, revision: int, by: C::ConversationActor): Assistant = {
+  ...a, guidance: { ...a.guidance, shown: true, revision: a.guidance.revision + 1 }
+}
+pure def lawDismissOnlyChangesGuidance(a: Assistant, revision: int, by: C::ConversationActor): bool =
+  dismissGuidance(a, revision, by) == { ...a, guidance: { ...a.guidance, shown: false, revision: a.guidance.revision + 1 } }
+pure def lawShowKeepsTheTarget(a: Assistant, revision: int, by: C::ConversationActor): bool =
+  canShowGuidance(a, revision, by) implies
+    (showGuidance(a, revision, by).guidance.target == a.guidance.target and guidanceIsCurrent(showGuidance(a, revision, by)))
+pure def lawStaleGuidanceCannotReturn(a: Assistant, revision: int, by: C::ConversationActor): bool =
+  (a.guidance.workVersion != a.workVersion or a.guidance.conversationVersion != a.conversation.generation) implies
+    not(canShowGuidance(a, revision, by))
+pure def sometimesGuidanceShown(a: Assistant): bool = guidanceIsCurrent(a) and a.guidance.shown
+pure def sometimesGuidanceDismissed(a: Assistant): bool = guidanceIsCurrent(a) and not(a.guidance.shown)
+pure val reportValues = Set(
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: true },
+  { target: "control", revision: 0, workVersion: 0, conversationVersion: 2, deviceVersion: 0, browserRevision: 0, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 0, browserRevision: 0, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: false },
+  { target: "", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: true })
+```
+
 ## Story: Keep voice and typing available in either Grace window
 
 > As an older adult, I want the same controls and conversation in either
@@ -305,7 +396,7 @@ pure def alwaysHiddenIsQuiet(a: Assistant): bool =
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)
 pure def alwaysTaskContextExists(a: Assistant): bool =
   (a.activity != NoTask implies a.taskId != "" and a.goal != "" and a.checkpoint != "") and
-  (a.activity == NoTask implies a.taskId == "" and a.goal == "" and a.checkpoint == "") and a.workVersion >= 0
+  (a.activity == NoTask implies a.taskId == "" and a.goal == "" and a.checkpoint == "") and a.workVersion >= 0 and a.guidance.revision >= 0
 pure def alwaysOperationsBelongToWorkingTasks(a: Assistant): bool =
   (a.activity == DoingWork or a.activity == WebsiteWait) iff a.operation != ""
 pure def alwaysOnlyVerifiedEndpointsClaimCompletion(a: Assistant): bool =

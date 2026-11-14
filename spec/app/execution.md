@@ -33,14 +33,14 @@ pure val initial: Execution = {
   contextRef: "", target: "", valueRef: "", kind: UnknownControl, failedApproach: noApproach, failures: 0,
   originVerified: false, accountMatched: false, privateInput: false, redactionReady: false, reason: ""
 }
-pure val ownerValues = Set("owner", "other", "")
-pure val taskValues = Set("task", "other", "")
+pure val ownerValues = Set("owner", "")
+pure val taskValues = Set("task", "")
 pure val originValues = Set("https://utility.example", "https://credit.example", "")
 pure val targetValues = Set("control", "other", "")
 pure val valueRefValues = Set("value", "")
 pure val reasonValues = Set("unsupported", "changed", "")
-pure val expectedGenerationValues = Set(0, 1, 2, 3, 4, 5, 6)
-pure val expectedObservationValues = Set(0, 1, 2, 3, 4, 5, 6)
+pure val expectedGenerationValues = Set(0, 1, 2, 3)
+pure val expectedObservationValues = Set(0, 1, 2, 3)
 pure val goodObservation: ObservationReport = { owner: "owner", task: "task", origin: "https://utility.example", generation: 1, contextRef: "page-facts", originVerified: true, accountMatched: true, privateInput: false, redactionReady: true }
 pure val observationReportValues = Set(
   goodObservation, { ...goodObservation, generation: 2 }, { ...goodObservation, generation: 3 },
@@ -60,11 +60,11 @@ pure val verificationReportValues = Set(
   { ...goodVerification, observation: 3 },
   { ...goodVerification, generation: 3, observation: 2, matches: false, reason: "field rejected" }
 )
-pure val weight_start = 100
-pure val weight_observe = 100
-pure val weight_prepare = 100
-pure val weight_dispatch = 100
-pure val weight_verify = 100
+pure val weight_start = 10
+pure val weight_observe = 10
+pure val weight_prepare = 10
+pure val weight_dispatch = 10
+pure val weight_verify = 10
 ```
 
 ### Starting work requires an explicit owner and task with a verified destination

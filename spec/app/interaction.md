@@ -29,8 +29,11 @@ type Interaction = TypeIntoChat | StopVoice | ReadLatest | RepeatReply | ShowCha
   | Respond({ token: int, text: str, isQuestion: bool }) | FinishSpeech({ token: int })
   | ServiceFailure({ token: int, text: str }) | Silence({ token: int })
   | UnusableSpeech({ token: int, owner: C::AudioOwner })
+  | DismissGuidance({ revision: int }) | ShowGuidance({ revision: int })
 
 pure def canInteract(a: A::Assistant, input: Interaction, by: C::ConversationActor): bool = match input {
+  | DismissGuidance(data) => A::canDismissGuidance(a, data.revision, by)
+  | ShowGuidance(data) => A::canShowGuidance(a, data.revision, by)
   | TypeIntoChat => A::canChooseType(a, by)
   | StopVoice => by == C::ConversationUser and A::canQuiet(a, by)
   | EditDraft(data) => A::canEditDraft(a, data.text, by)
@@ -51,6 +54,8 @@ pure def canInteract(a: A::Assistant, input: Interaction, by: C::ConversationAct
   | UnusableSpeech(data) => A::canUnusableSpeech(a, data.token, data.owner, by)
 }
 pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor): A::Assistant = match input {
+  | DismissGuidance(data) => A::dismissGuidance(a, data.revision, by)
+  | ShowGuidance(data) => A::showGuidance(a, data.revision, by)
   | TypeIntoChat => A::chooseType(a, by)
   | StopVoice => A::quiet(a, by)
   | EditDraft(data) => A::editDraft(a, data.text, by)
@@ -87,6 +92,11 @@ submitted response while muting it; stopping voice is distinct from stopping
 the entire website task.
 
 ```quint
+pure def needsCurrentGuidance(input: Interaction): bool = match input {
+  | DismissGuidance(_) => true
+  | ShowGuidance(_) => true
+  | _ => false
+}
 pure def submitsContent(input: Interaction): bool = match input {
   | SendDraft(data) => true
   | ChooseAnswer(data) => true
@@ -114,8 +124,18 @@ pure def targetsWebsite(input: Interaction): bool = match input {
   | _ => false
 }
 pure val aValues = Set(A::initial, A::open(A::initial, C::ConversationUser),
-  A::talk(A::open(A::initial, C::ConversationUser), C::ConversationUser))
-pure val inputValues = Set(TypeIntoChat, StopVoice, ReadLatest, RepeatReply, ShowChat, DismissKeyboard, FocusWebsite,
+  A::talk(A::open(A::initial, C::ConversationUser), C::ConversationUser),
+  A::publishGuidance(
+    A::beginTask(A::open(A::initial, C::ConversationUser), "task", "Choose the control", C::ConversationUser),
+    { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: true },
+    C::ConversationRuntime),
+  A::dismissGuidance(A::publishGuidance(
+    A::beginTask(A::open(A::initial, C::ConversationUser), "task", "Choose the control", C::ConversationUser),
+    { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: true },
+    C::ConversationRuntime), 1, C::ConversationUser))
+
+pure val inputValues = Set(DismissGuidance({ revision: 1 }), ShowGuidance({ revision: 2 }),
+  DismissGuidance({ revision: 0 }), ShowGuidance({ revision: 0 }), TypeIntoChat, StopVoice, ReadLatest, RepeatReply, ShowChat, DismissKeyboard, FocusWebsite,
   EditDraft({ text: "Hello" }), EditDraft({ text: "" }), SendDraft({ revision: 1 }), SendDraft({ revision: 0 }),
   ChooseAnswer({ token: 1, text: "Yes" }), ChooseAnswer({ token: 2, text: "Please explain" }),
   ReadEarlier({ position: 0 }), Resize({ expanded: true }), Resize({ expanded: false }),

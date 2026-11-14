@@ -304,8 +304,9 @@ Native Close also resolves the visible form through its owning application
 before going Home.
 
 Calendar Close first uses Calendar's `closeCalendar` operation to cancel an
-unsaved form and clear its detail selection, then routes the workspace Home.
-It does not fabricate a saved occurrence. Email Close first uses
+unsubmitted form, then routes the workspace Home. Submitted save/deletion
+targets remain owned while hidden until acknowledgment; ordinary detail
+selection clears. Close does not fabricate a saved occurrence. Email Close first uses
 `preserveDraft` for the current editable draft or the person's explicit
 `discardDraft` choice. A save may finish after the composer hides, but failure
 reopens that same recoverable editor; the host brings the failed save to the
