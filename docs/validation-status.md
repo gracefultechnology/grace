@@ -1,11 +1,10 @@
 # Specification validation status
 
-The `8d41fd0` specification passed **4,316 individual proof obligations**
-across 20 Grace domain units and the retained template scaffold. Later
-revisions add verified account identity and the preparation-to-review
-conversion. Execution passed 112 obligations with the account change and
-the new conversion passed three. The updated Workspace proof and combined
-validation remain in progress. The larger profile still needs a run.
+The current specification passed **4,321 individual Dafny proof obligations**
+across 21 Grace domain units and the retained template scaffold. This includes
+1,312 for Workspace with verified account identity and three for the bill
+preparation conversion. The combined normal check is still in progress. The
+nightly profile remains pending.
 
 ## Scope and review
 
@@ -43,7 +42,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Files | 192/192 | `/tmp/grace-files-final-feedback/app__files.ts.result.json` |
 | Email message lifecycle | 54/54 | `/tmp/grace-repeat-proof-x8JiBb/app__emailItem.ts.json` |
 | Email mailbox | 905/905 | `/tmp/grace-email-bill-selection-af5941p3/result.json` |
-| Website execution | 112/112 | `/tmp/grace-execution-proof-4IMCiq/app__execution.ts.json` |
+| Website execution | 112/112 | `/tmp/grace-account-bound-proof-bmarEo/app__execution.result.json` |
 | Cross-application handoffs | 66/66 | `/tmp/grace-handoff-context-proof-xDGJy5/result.json` |
 | Assistant interaction dispatcher | 1/1 | `/tmp/grace-guidance-final-proof-XomBfx/app__interaction.ts.json` |
 | Memory | 60/60 | `/tmp/grace-memory-proof/result.json` |
@@ -51,7 +50,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Preferences | 40/40 | `/tmp/grace-files-handproof/app__preferences.ts.result.json` |
 | Application shell | 52/52 | `/tmp/grace-system-final-proof/app__shell.ts.result.json` |
 | Wake | 17/17 | `/tmp/grace-wake-proof/app__wake.ts.result.json` |
-| Workspace composition at `8d41fd0` | 1,310/1,310 | `/tmp/grace-guidance-workspace-proof-rzEKJQ/result.json` |
+| Workspace composition | 1,312/1,312 | `/tmp/grace-account-bound-proof-bmarEo/app__workspace.result.json` |
 | Preparation and payment review conversion | 3/3 | `/tmp/grace-preparation-review-joxWTJ/proof-result.json` |
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
@@ -66,15 +65,19 @@ and Close retaining submitted save/deletion targets. Handoffs includes atomic
 photo-to-draft transfer preserving all seven Files and all 23 Email invariants.
 Workspace includes the actual child states, canonical payment registry,
 conversation/browser control routes, wake lifecycle and interruption fences.
+The first Workspace verification needed assertion isolation for lifecycle and
+page changes. All 1,258 isolated assertions passed, leaving no unresolved
+proof obligations. Verification included the imported lemmas already proved by
+their owning units.
 
 ## Source alignment
 
-At checkpoint `887d411`, the CLI model cache was read without changing it, and all 23 generated
-model TypeScript files were regenerated in memory. They matched the current
-`gen/*.ts` files byte for byte. The resulting proof units are at
+At checkpoint `887d411`, the CLI model cache was read without changing it, and
+all generated model TypeScript files were regenerated in memory. They matched
+that checkpoint's `gen/*.ts` files byte for byte. Its proof units are at
 `/tmp/grace-cli-header-audit/units.json`.
 
-The selected 21 proof snapshots were compared against those CLI proof units,
+The 21 proof snapshots for that checkpoint were compared against those units,
 including their imported declarations and contract clauses. The comparison
 found no added, missing or changed declarations after normalizing declaration
 order, generated local-variable names, pure invariant-conjunction order and
@@ -91,6 +94,12 @@ without changing their clause sets or proof bodies. All nine sidecars now match
 the actual CLI headers: `/tmp/grace-cli-header-audit/current-headers.json`.
 The combined check still needs to verify the complete current emitted output;
 source comparison and header alignment do not replace that check.
+
+For the current model tree, all 22 generated TypeScript units matched the CLI
+output byte for byte. The Execution, Workspace and preparation conversion
+proof units also matched their proof runs' text, meaning and imported
+declarations byte for byte. See
+`/tmp/grace-current-proof-unit-alignment.json` and the proof results above.
 
 ## Validation target and completed commands
 
@@ -339,6 +348,12 @@ The combined log is `/tmp/grace-isolated-check-7.log`.
 
 [Hosted CI for this commit](https://github.com/gracefultechnology/grace-new/actions/runs/43578198572)
 ran zero steps. GitHub reported a billing or spending-limit restriction.
+The [d904d56 run](https://github.com/gracefultechnology/grace-new/actions/runs/43622371337)
+reported the same restriction before any verification step started.
+
+The current read-only review inventory contains 241 entries across 24
+specifications. Every story has rules and every rule has a Quint block.
+The review ledger is unchanged. See `/tmp/grace-develop-readonly-review.json`.
 
 ## Prior simulation runs
 
