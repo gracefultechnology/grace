@@ -803,6 +803,9 @@ pure val sampleScope: ListingScope = { owner: "ownerA", provider: "providerA", a
 pure val scopeValues = Set({ ...sampleScope, query: "messageA" }, { ...sampleScope, query: "attachmentA" },
   { ...sampleScope, folder: I::DraftsFolder }, { ...sampleScope, folder: I::TrashFolder },
   { ...sampleScope, folder: I::DraftsFolder, generation: 3 }, { ...sampleScope, folder: I::DraftsFolder, generation: 4 },
+  { ...sampleScope, folder: I::DraftsFolder, generation: 5 },
+  { ...sampleScope, folder: I::DraftsFolder, query: "messageA", generation: 4 },
+  { ...sampleScope, folder: I::DraftsFolder, query: "messageA", generation: 5 },
   { ...sampleScope, folder: I::TrashFolder, generation: 3 }, { ...sampleScope, folder: I::TrashFolder, generation: 4 },
   { ...sampleScope, query: "messageA", generation: 3 })
 pure val mValues = Set(initial,
@@ -826,22 +829,27 @@ pure val billRefValues = Set("billA")
 pure val originValues = Set("https://biller.example")
 pure val billAccountValues = Set("billerAccount")
 pure val draftIdValues = Set("draftA", "messageA")
-pure val generationValues = Set(1, 3, 4, 5)
+pure val generationValues = Set(1, 3, 4, 5, 6)
 pure val revisionValues = Set(1, 2, 3)
 pure val requestValues = Set(1, 2)
 pure val draftRevisionValues = Set(1, 2, 3)
 pure val assetIdValues = Set("photo", "missing")
 pure val mailAsset: F::SavedFile = { ...F::samplePhoto, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentA" }
 pure val assetValues = Set(mailAsset, F::samplePdf)
-pure val readReceiptValues = Set(
-  { generation: 2, succeeded: true, assets: List() },
-  { generation: 2, succeeded: false, assets: List() },
-  { generation: 3, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" }) },
-  { generation: 3, succeeded: true, assets: List() },
-  { generation: 3, succeeded: false, assets: List() },
-  { generation: 4, succeeded: true, assets: List() },
-  { generation: 5, succeeded: true, assets: List() },
-  { generation: 6, succeeded: true, assets: List() })
+pure val readReceiptValues = {
+  val completeManifest = List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" })
+  Set(
+    { generation: 2, succeeded: true, assets: List() },
+    { generation: 2, succeeded: false, assets: List() },
+    { generation: 3, succeeded: true, assets: completeManifest },
+    { generation: 4, succeeded: true, assets: completeManifest },
+    { generation: 5, succeeded: true, assets: completeManifest },
+    { generation: 3, succeeded: true, assets: List() },
+    { generation: 3, succeeded: false, assets: List() },
+    { generation: 4, succeeded: true, assets: List() },
+    { generation: 5, succeeded: true, assets: List() },
+    { generation: 6, succeeded: true, assets: List() })
+}
 pure val snapshotValues = Set(
   { id: "messageA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
   { id: "messageA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },

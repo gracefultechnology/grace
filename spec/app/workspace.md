@@ -163,8 +163,9 @@ pure def matchingPayment(w: Workspace): bool =
   w.payment.key.owner == w.execution.owner and w.payment.key.origin == w.execution.origin
 pure def currentPaymentContext(w: Workspace): bool =
   mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  w.execution.originVerified and w.execution.accountMatched and w.execution.redactionReady and
-  not(w.execution.privateInput) and matchingPayment(w) and w.paymentTask == w.assistant.taskId
+  w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
+  matchingPayment(w) and w.execution.matchedAccount == w.payment.key.account and
+  w.execution.matchedAccount != "" and w.paymentTask == w.assistant.taskId
 pure def alwaysPaymentAssociation(w: Workspace): bool =
   w.paymentTask != "" implies w.payment.stage != P::Empty and w.paymentTask == w.assistant.taskId
 pure def alwaysPaymentUsesCanonicalIdentity(w: Workspace): bool =
@@ -840,6 +841,11 @@ Selecting a different bill retains the old aggregate in the inactive registry
 and selects its existing record or creates a previously unseen identity.
 Reopening the same bill retrieves its existing durable attempt. Browser tasks
 on any provider remain available while previous uncertain attempts are retained.
+Discovered by a guarded trace: a true account-match flag and verified origin
+alone let two accounts at the same provider pass the same observation. The
+opaque account in the bill key must match the verified account in current
+browser evidence before attaching the bill or advancing its payment flow.
+Leaving that account revokes readiness while the durable record remains.
 `paymentTask` is a link to the assistant-owned task, not another task state.
 An explicit bill selection attaches the existing record to a new task; an
 old payment result cannot silently finish an unrelated later conversation.
@@ -849,9 +855,14 @@ its owning machine; event input cannot assign an arbitrary payment state.
 ```quint
 pure def canBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
   by == Person and mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  w.execution.originVerified and w.execution.accountMatched and w.execution.redactionReady and
-  not(w.execution.privateInput) and key.owner == w.execution.owner and key.origin == w.execution.origin and
+  w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
+  key.owner == w.execution.owner and key.origin == w.execution.origin and key.account == w.execution.matchedAccount and
   w.paymentTask == "" and P::validKey(key)
+pure def lawMismatchedAccountCannotBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
+  key.account != w.execution.matchedAccount implies not(canBindPayment(w, key, by))
+pure def lawMismatchedAccountCannotAdvancePayment(w: Workspace): bool =
+  (w.execution.matchedAccount == "" or w.execution.matchedAccount != w.payment.key.account) implies
+    not(currentPaymentContext(w))
 pure def bindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): Workspace =
   val existing = if (w.payment.stage != P::Empty and w.payment.key == key) w.payment
     else storedPayment(key, w.otherPayments)
@@ -1135,7 +1146,9 @@ pure val currentVerificationValues = Set({ deviceVersion: 6, browserRevision: 2,
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Current account read", needsUser: false },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
-    website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true })
+    website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    website: { ...X::goodVerification, task: "other" }, checkpoint: "Please check the account details", needsUser: true })
 pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
   deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 1
@@ -1165,6 +1178,8 @@ pure val saveReportValues = Set(
   { key: P::exampleKey, revision: 4, succeeded: true },
   { key: P::exampleKey, revision: 3, succeeded: false })
 pure val progressValues = Set(
+  { owner: "owner", task: "other", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
   { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
   { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,

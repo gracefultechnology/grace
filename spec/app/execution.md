@@ -16,14 +16,14 @@ The caller identity comes from the authenticated shell, separately from event JS
 type ExecutionActor = User | BrowserBridge | Planner | Dispatcher
 type OperationPhase = Idle | NeedObservation | Observed | Queued | InFlight | Verified | Blocked | Paused
 type OperationKind = ReadPage | Navigate | FillOrdinary | FillSignInIdentifier | PrivateEntry | FinalSubmit | ConsentChoice | UnknownControl
-type ObservationReport = { owner: str, task: str, origin: str, generation: int, contextRef: str, originVerified: bool, accountMatched: bool, privateInput: bool, redactionReady: bool }
+type ObservationReport = { owner: str, task: str, origin: str, generation: int, contextRef: str, originVerified: bool, matchedAccount: str, privateInput: bool, redactionReady: bool }
 type VerificationReport = { owner: str, task: str, generation: int, observation: int, matches: bool, reason: str }
 type Approach = { contextRef: str, target: str, valueRef: str, kind: OperationKind }
 type Execution = {
   owner: str, task: str, origin: str, phase: OperationPhase, generation: int,
   observation: int, contextRef: str, target: str, valueRef: str, kind: OperationKind,
   failedApproach: Approach, failures: int,
-  originVerified: bool, accountMatched: bool, privateInput: bool, redactionReady: bool, reason: str
+  originVerified: bool, matchedAccount: str, privateInput: bool, redactionReady: bool, reason: str
 }
 type WebsiteEffect = Operate({ owner: str, task: str, origin: str, generation: int, observation: int, target: str, valueRef: str, kind: OperationKind })
 type ExecutionResult = { state: Execution, out: List[WebsiteEffect] }
@@ -31,7 +31,7 @@ pure val noApproach: Approach = { contextRef: "", target: "", valueRef: "", kind
 pure val initial: Execution = {
   owner: "", task: "", origin: "", phase: Idle, generation: 0, observation: 0,
   contextRef: "", target: "", valueRef: "", kind: UnknownControl, failedApproach: noApproach, failures: 0,
-  originVerified: false, accountMatched: false, privateInput: false, redactionReady: false, reason: ""
+  originVerified: false, matchedAccount: "", privateInput: false, redactionReady: false, reason: ""
 }
 pure val ownerValues = Set("owner", "")
 pure val taskValues = Set("task", "")
@@ -41,13 +41,13 @@ pure val valueRefValues = Set("value", "")
 pure val reasonValues = Set("unsupported", "changed", "")
 pure val expectedGenerationValues = Set(0, 1, 2, 3)
 pure val expectedObservationValues = Set(0, 1, 2, 3)
-pure val goodObservation: ObservationReport = { owner: "owner", task: "task", origin: "https://utility.example", generation: 1, contextRef: "page-facts", originVerified: true, accountMatched: true, privateInput: false, redactionReady: true }
+pure val goodObservation: ObservationReport = { owner: "owner", task: "task", origin: "https://utility.example", generation: 1, contextRef: "page-facts", originVerified: true, matchedAccount: "account", privateInput: false, redactionReady: true }
 pure val observationReportValues = Set(
   goodObservation, { ...goodObservation, generation: 2 }, { ...goodObservation, generation: 3 },
   { ...goodObservation, generation: 4 }, { ...goodObservation, generation: 5 }, { ...goodObservation, generation: 6 },
   { ...goodObservation, origin: "https://credit.example" }, { ...goodObservation, owner: "other" },
   { ...goodObservation, originVerified: false }, { ...goodObservation, redactionReady: false },
-  { ...goodObservation, privateInput: true }, { ...goodObservation, accountMatched: false },
+  { ...goodObservation, privateInput: true }, { ...goodObservation, matchedAccount: "" },
   { ...goodObservation, contextRef: "changed-page-facts" }, { ...goodObservation, contextRef: "" }
 )
 pure val goodVerification: VerificationReport = { owner: "owner", task: "task", generation: 1, observation: 1, matches: true, reason: "" }
@@ -83,7 +83,7 @@ pure def alwaysGenerations(x: Execution): bool = x.generation >= 0 and x.observa
 
 ### Observation is fresh, origin-bound and privacy-filtered
 
-The bridge emits this only after validating the active tab, document, frame, viewport and task. Any change to them must invalidate this observation before dispatch. It may observe public sign-in instructions without an authenticated account, but no fill of personal information is allowed until account matching succeeds. When reliable redaction is unavailable, capture stops. Private fields are handled by the user and never included as values here.
+The bridge emits this only after validating the active tab, document, frame, viewport and task. Any change to them or the authenticated account invalidates this observation before dispatch. A nonempty matched account is the opaque identity of the verified account for this task. The bridge leaves it empty while sign-in is unavailable or the account cannot be matched. Public sign-in guidance remains available; filling personal information requires the matched account. When reliable redaction is unavailable, capture stops. Private fields are handled by the user and never included as values here.
 
 ```quint
 pure def canObserve(x: Execution, observationReport: ObservationReport, by: ExecutionActor): bool =
@@ -93,7 +93,7 @@ pure def canObserve(x: Execution, observationReport: ObservationReport, by: Exec
   observationReport.originVerified and observationReport.redactionReady and by == BrowserBridge
 pure def observe(x: Execution, observationReport: ObservationReport, by: ExecutionActor): Execution = {
   ...x, phase: Observed, observation: x.observation + 1, contextRef: observationReport.contextRef, originVerified: observationReport.originVerified,
-  accountMatched: observationReport.accountMatched, privateInput: observationReport.privateInput,
+  matchedAccount: observationReport.matchedAccount, privateInput: observationReport.privateInput,
   redactionReady: observationReport.redactionReady, target: "", valueRef: "", kind: UnknownControl, reason: ""
 }
 ```
@@ -112,13 +112,13 @@ pure def retryPrompt(x: Execution, target: str, valueRef: str, kind: OperationKi
 pure def canPrepare(x: Execution, target: str, valueRef: str, kind: OperationKind, expectedObservation: int, by: ExecutionActor): bool =
   x.phase == Observed and expectedObservation == x.observation and target != "" and ordinary(kind) and
   x.contextRef != "" and x.originVerified and x.redactionReady and not(x.privateInput) and mayTryApproach(x, target, valueRef, kind) and
-  (kind == FillOrdinary implies x.accountMatched and valueRef != "") and
+  (kind == FillOrdinary implies x.matchedAccount != "" and valueRef != "") and
   (kind == FillSignInIdentifier implies valueRef != "") and by == BrowserBridge
 pure def prepare(x: Execution, target: str, valueRef: str, kind: OperationKind, expectedObservation: int, by: ExecutionActor): Execution =
   { ...x, phase: Queued, target: target, valueRef: valueRef, kind: kind }
 pure def alwaysPrepared(x: Execution): bool =
   (x.phase == Queued or x.phase == InFlight) implies x.contextRef != "" and x.target != "" and ordinary(x.kind) and x.originVerified and x.redactionReady and not(x.privateInput) and
-    (x.kind == FillOrdinary implies x.accountMatched and x.valueRef != "") and
+    (x.kind == FillOrdinary implies x.matchedAccount != "" and x.valueRef != "") and
     (x.kind == FillSignInIdentifier implies x.valueRef != "")
 ```
 
@@ -187,7 +187,7 @@ pure def pause(x: Execution, by: ExecutionActor): Execution =
   { ...x, phase: Paused, generation: x.generation + 1, redactionReady: false, target: "", valueRef: "", kind: UnknownControl }
 pure def canResume(x: Execution, by: ExecutionActor): bool = x.phase == Paused and by == User
 pure def resume(x: Execution, by: ExecutionActor): Execution =
-  { ...x, phase: NeedObservation, generation: x.generation + 1, accountMatched: false, privateInput: false, reason: "" }
+  { ...x, phase: NeedObservation, generation: x.generation + 1, matchedAccount: "", privateInput: false, reason: "" }
 pure def canInvalidate(x: Execution, by: ExecutionActor): bool = x.phase != Idle and x.phase != Paused and by == BrowserBridge
 pure def invalidate(x: Execution, by: ExecutionActor): Execution =
   { ...x, phase: NeedObservation, generation: x.generation + 1, redactionReady: false, target: "", valueRef: "", kind: UnknownControl }

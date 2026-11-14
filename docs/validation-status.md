@@ -248,7 +248,70 @@ resolution and a Browser visit when Browser is already selected. See
 `/tmp/grace-handoff-context-shared-bill-witness.json` and
 `/tmp/grace-handoff-context-witness.json`.
 
-## Combined validation still pending
+## Verified account identity
+
+The website observation carries a verified, opaque account reference. A
+guarded witness showed that the old match flag let two accounts under the
+same origin attach to one observation. The changed Workspace accepts a bill
+only when the current observed account matches its canonical key. The same
+predicate governs payment review, submission and provider outcome reports.
+The account switch invalidates old approval and retains the durable attempt.
+
+The updated build from the model tree passed generation, root TypeScript and
+app VibeLang type checking. The two-origin cross-source trace still completed
+88 transitions and 39 refusals, including a same-origin different account
+on each route. A separate 58-transition, 22-refusal trace changed the
+authenticated account on the same page and revisited it after Resume. It
+rejected old-account review, outcome and submission even with new page
+tokens, retained the uncertain journal, and attached the new account only
+after an explicit new task. See
+`/tmp/grace-account-bound-shared-bill-witness.json` and
+`/tmp/grace-account-bound-diagnostic.json`.
+
+Two additional simulation reports represent ordinary progress and a
+manual-wait verification for the second sampled task. They preserve the
+generated runtime. A direct Quint path passed all six guard admissions
+missed by the preceding combined run in 33 guarded transitions. It
+included the second task's page progress and Continue, then a new task's
+payment submit, result, save and fresh-review retry. The generated
+TypeScript followed the same states. These are directed witnesses.
+See `/tmp/grace-check7-account-guards-quint-run.log` and
+`/tmp/grace-check7-account-guards.json`.
+
+Email's representative records now include complete photo and PDF manifests
+at two later read generations and Drafts listing callbacks for later
+requests with empty or typed queries. The previous run reached those body
+read and listing states without matching rich manifests or metadata samples.
+Five guarded continuations from its retained traces passed using only
+declared sample values, including photo paging, Back and restoring drafts.
+The generated Email runtime and complete proof unit remained byte-identical.
+See `/tmp/grace-email-late-manifest-Duh2Yn/frontier-replay.json`.
+
+## Current combined validation
+
+The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
+All 23 model declarations compiled. Handoffs passed 12,000 safety traces,
+all four named goals, all five guard admissions and refusals, and 404
+TypeScript replays. Email passed the same safety budget, all 17 goals and
+the generated TypeScript replay. The bounded search did not witness four
+admissions: Undo Trash, Restore Draft, Back to Message and Move Photo.
+
+Workspace's Keep Task reachability search wrote a complete valid witness.
+Quint's piped output ended during its state printout, before the marker used
+by the check. Independent replay of 425 Workspace traces and 9,053 steps
+found no model violation, saw all 16 goal predicates true somewhere and
+recorded 48 of 54 guard admissions. The dedicated spoken approval search
+and six independent guard searches still need passing receipts. The current
+normal result skipped its downstream types, proofs, tests and conformance
+stages. The independent results above remain the evidence for those checks.
+The frozen source, generated artifacts, traces and replay are recorded in
+`/tmp/grace-check7-recovery-04R4vs/replay-report.json`.
+The combined log is `/tmp/grace-isolated-check-7.log`.
+
+[Hosted CI for this commit](https://github.com/gracefultechnology/grace-new/actions/runs/43578198572)
+ran zero steps. GitHub reported a billing or spending-limit restriction.
+
+## Prior simulation runs
 
 The combined run for `22a5c3d` parsed all 23 modules and recorded 19 passing
 simulation and replay receipts. Email's Undo Trash guard search reached the
