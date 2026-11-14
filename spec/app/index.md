@@ -1,7 +1,12 @@
-# App
+# Template validation scaffold
 
-What the application in `apps/app` does: it greets a person by name and
-counts the greetings.
+The unmodified starter application in `apps/app` greets a person by name and
+counts the greetings. It remains solely to exercise the existing source,
+proof and conformance pipeline during the models-only rebuild. This is not a
+Grace product feature. No Grace model imports it. Replace this scaffold and
+its source, tests and driver together in the subsequent application phase.
+
+[Grace's product requirements and models](./product.md) are separate below this package's spec area.
 
 ## Story: Say hello
 

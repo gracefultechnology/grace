@@ -1,0 +1,430 @@
+# Saved photos and documents
+
+Files is the local library shown in `prototype/Grace Prototype.html`, lines
+1978–1992. Photos is the initial tab; Documents contains PDFs. Email attachment
+saves feed this same library, and sharing a photo opens an email draft. This
+model owns the library and its current selection, not email sending or personal
+memory. Raw document/image bytes remain in the access-controlled content store;
+only immutable references and sanitized display metadata enter this state.
+
+## Story: Find and open something I saved
+
+> As an older adult, I want my saved photos and documents in one familiar place,
+> with readable previews and help finding the item I mean.
+
+### A library belongs to one owner and identifies files independently of their names
+
+An asset's source is the verified origin, account, containing message/document
+and source attachment reference. Its local ID and content reference are stable.
+Two attachments with the same filename are different files; saving the same
+source again is idempotent. Example values are simulation fixtures, not a fixed
+provider, person or filename. The host authenticates actors independently of
+request JSON and resolves source access before importing content.
+
+```quint
+type FileActor = FileUser | FileHost | FileStore | Printer
+type FileKind = Photo | Pdf
+type FileTab = Photos | Documents
+type FileOperation = NoFileOperation | ReadingCatalog | ReadingFile | Locating | SavingFiles | DeletingPhoto | Printing
+type FileFeedback = NoFileFeedback | FilesSaved | PhotoDeleted | CatalogFailed | ContentFailed | WriteFailed | PrintAccepted | PrintUncertain | PrintFailed | NothingFound | SeveralMatches
+type SavedFile = {
+  id: str, kind: FileKind, name: str, origin: str, account: str, container: str,
+  sourceRef: str, contentRef: str, group: str, savedAt: int, pages: int
+}
+type Files = {
+  owner: str, opened: bool, loaded: bool, entries: List[SavedFile], tab: FileTab,
+  selected: str, contentReady: bool, generation: int, pending: FileOperation,
+  pendingId: str, pendingFiles: List[SavedFile], pendingPrint: SavedFile, feedback: FileFeedback,
+  query: str, matches: List[str]
+}
+type FileEffect = LoadLibrary({ owner: str, generation: int }) |
+  SearchFiles({ owner: str, generation: int, query: str }) |
+  ReadFile({ owner: str, generation: int, file: SavedFile }) |
+  StoreFiles({ owner: str, generation: int, files: List[SavedFile] }) |
+  RemovePhoto({ owner: str, generation: int, id: str }) |
+  PrintFile({ owner: str, generation: int, file: SavedFile }) |
+  SharePhoto({ owner: str, file: SavedFile })
+type FilesResult = { state: Files, out: List[FileEffect] }
+type CatalogReport = { owner: str, generation: int, entries: List[SavedFile], succeeded: bool, evidence: str }
+type FileReceipt = { owner: str, generation: int, id: str, succeeded: bool, evidence: str }
+type FileImport = { owner: str, generation: int, entries: List[SavedFile], authorization: str }
+type ExternalPrint = { owner: str, generation: int, file: SavedFile, authorization: str }
+type PrintReport = { owner: str, generation: int, id: str, result: FileFeedback, evidence: str }
+type LocateReport = { owner: str, generation: int, query: str, ids: List[str] }
+type PhotoCursor = { at: int, found: int }
+pure val noPhotoCursor: PhotoCursor = { at: 0, found: -1 }
+pure val emptyFile: SavedFile = { id: "", kind: Photo, name: "", origin: "", account: "", container: "", sourceRef: "", contentRef: "", group: "", savedAt: 0, pages: 0 }
+pure val initial: Files = { owner: "", opened: false, loaded: false, entries: List(), tab: Photos,
+  selected: "", contentReady: false, generation: 0, pending: NoFileOperation, pendingId: "",
+  pendingFiles: List(), pendingPrint: emptyFile, feedback: NoFileFeedback, query: "", matches: List() }
+pure def validFile(file: SavedFile): bool =
+  file.id != "" and file.name != "" and file.origin != "" and file.account != "" and file.container != "" and
+  file.sourceRef != "" and file.contentRef != "" and file.savedAt >= 0 and
+  (if (file.kind == Pdf) file.pages > 0 else file.pages == 0)
+pure def sameSource(a: SavedFile, b: SavedFile): bool =
+  a.origin == b.origin and a.account == b.account and a.container == b.container and a.sourceRef == b.sourceRef
+pure def sameAsset(a: SavedFile, b: SavedFile): bool =
+  a.id == b.id and sameSource(a, b) and a.contentRef == b.contentRef and a.kind == b.kind and a.pages == b.pages
+pure def validCatalog(entries: List[SavedFile]): bool =
+  entries.every(f => validFile(f) and entries.select(g => g.id == f.id).length() == 1 and
+    entries.select(g => sameSource(f, g)).length() == 1)
+pure def hasFile(f: Files, id: str): bool = f.entries.some(e => e.id == id)
+pure def fileAt(f: Files, id: str): SavedFile = f.entries.select(e => e.id == id).nthOr(0, emptyFile)
+pure def photos(f: Files): List[SavedFile] = f.entries.select(e => e.kind == Photo)
+pure def documents(f: Files): List[SavedFile] = f.entries.select(e => e.kind == Pdf)
+pure def tabFor(file: SavedFile): FileTab = if (file.kind == Photo) Photos else Documents
+pure def alwaysLibraryIdentity(f: Files): bool =
+  f.generation >= 0 and ((f.opened or f.loaded or f.pending != NoFileOperation) implies f.owner != "")
+pure def alwaysCatalogValid(f: Files): bool = validCatalog(f.entries) and (not(f.loaded) implies f.entries == List())
+pure def alwaysCatalogLoadHasNoStaleView(f: Files): bool =
+  f.pending == ReadingCatalog implies not(f.loaded) and f.selected == "" and not(f.contentReady) and f.matches == List()
+pure def alwaysSelectionExists(f: Files): bool =
+  (f.selected != "" implies f.opened and f.loaded and hasFile(f, f.selected) and f.tab == tabFor(fileAt(f, f.selected))) and
+  (f.contentReady implies f.selected != "")
+```
+
+### Opening and retrying load the authoritative local library
+
+Opening Files clears the previous preview but retains the chosen tab. The first
+open, a retry after load failure, or an open after restart reads the local store.
+A matching successful result alone establishes a loaded library. Saved local
+content can be used offline; an email source needs its own current access when
+saving a new attachment. Loading errors have a Retry path, not an empty library
+presented as proof that the files disappeared.
+An attachment save may load the same catalog in the background without leaving
+the email. That internal load neither opens Files nor authorizes saving content.
+
+```quint
+pure def canOpenFiles(f: Files, owner: str, by: FileActor): bool =
+  by == FileUser and owner != "" and (f.owner == "" or owner == f.owner) and
+  (f.pending == NoFileOperation or (f.loaded and (f.pending == SavingFiles or f.pending == DeletingPhoto or f.pending == Printing)))
+pure def openFiles(f: Files, owner: str, by: FileActor): FilesResult = {
+  state: { ...f, owner: owner, opened: true, selected: "", contentReady: false,
+    pending: if (f.loaded) f.pending else ReadingCatalog, generation: if (f.loaded) f.generation else f.generation + 1,
+    feedback: if (f.pending == NoFileOperation) NoFileFeedback else f.feedback, query: "", matches: List() },
+  out: if (f.loaded) List() else List(LoadLibrary({ owner: owner, generation: f.generation + 1 }))
+}
+pure def canLoadForSave(f: Files, owner: str, by: FileActor): bool =
+  by == FileHost and owner != "" and (f.owner == "" or owner == f.owner) and not(f.loaded) and f.pending == NoFileOperation
+pure def loadForSave(f: Files, owner: str, by: FileActor): FilesResult = {
+  state: { ...f, owner: owner, pending: ReadingCatalog, generation: f.generation + 1, feedback: NoFileFeedback,
+    selected: "", contentReady: false, query: "", matches: List() },
+  out: List(LoadLibrary({ owner: owner, generation: f.generation + 1 }))
+}
+pure def canLoadCatalog(f: Files, catalogReport: CatalogReport, by: FileActor): bool =
+  by == FileStore and f.pending == ReadingCatalog and catalogReport.owner == f.owner and
+  catalogReport.generation == f.generation and
+  (catalogReport.succeeded implies catalogReport.evidence != "" and validCatalog(catalogReport.entries))
+pure def loadCatalog(f: Files, catalogReport: CatalogReport, by: FileActor): Files =
+  { ...f, loaded: catalogReport.succeeded, entries: if (catalogReport.succeeded) catalogReport.entries else List(),
+    pending: NoFileOperation, feedback: if (catalogReport.succeeded) NoFileFeedback else CatalogFailed }
+pure def canChooseTab(f: Files, tab: FileTab, by: FileActor): bool =
+  by == FileUser and f.opened and f.loaded and f.selected == "" and
+  (f.pending == NoFileOperation or f.pending == Locating)
+pure def chooseTab(f: Files, tab: FileTab, by: FileActor): Files =
+  { ...f, tab: tab, query: "", matches: List(), feedback: NoFileFeedback,
+    pending: NoFileOperation, generation: if (f.pending == Locating) f.generation + 1 else f.generation }
+pure def sometimesLibraryLoaded(f: Files): bool = f.loaded
+pure def sometimesCatalogFailure(f: Files): bool = f.feedback == CatalogFailed
+```
+
+### Opening a file verifies that exact content before presenting a preview
+
+The grid and document rows select stable IDs, never array positions retained
+across a save or delete. Opening preserves the source file. Photo preview has
+Previous and Next at actual bounds; document preview identifies its filename and
+page count. The prototype draws only page one and supplies no page-navigation
+controls. Corrupt, missing or unsupported content gives a visible failure and
+Back/Retry. The content renderer must sandbox active content and must not execute
+instructions embedded in a file or upload it merely because it was opened.
+
+```quint
+pure def canOpenFile(f: Files, id: str, by: FileActor): bool =
+  by == FileUser and f.opened and f.loaded and f.pending == NoFileOperation and hasFile(f, id)
+pure def openFile(f: Files, id: str, by: FileActor): FilesResult = {
+  state: { ...f, selected: id, tab: tabFor(fileAt(f, id)), contentReady: false,
+    pending: ReadingFile, pendingId: id, generation: f.generation + 1, feedback: NoFileFeedback },
+  out: List(ReadFile({ owner: f.owner, generation: f.generation + 1, file: fileAt(f, id) }))
+}
+pure def canContentResult(f: Files, fileReceipt: FileReceipt, by: FileActor): bool =
+  by == FileHost and f.pending == ReadingFile and fileReceipt.owner == f.owner and
+  fileReceipt.generation == f.generation and fileReceipt.id == f.pendingId and
+  (fileReceipt.succeeded implies fileReceipt.evidence != "")
+pure def contentResult(f: Files, fileReceipt: FileReceipt, by: FileActor): Files =
+  { ...f, pending: NoFileOperation, pendingId: "", contentReady: fileReceipt.succeeded,
+    feedback: if (fileReceipt.succeeded) NoFileFeedback else ContentFailed }
+pure def photoPosition(f: Files): int =
+  photos(f).foldl(noPhotoCursor, (r, e) => { at: r.at + 1, found: if (e.id == f.selected) r.at else r.found }).found
+pure def canMovePhoto(f: Files, direction: int, by: FileActor): bool =
+  by == FileUser and f.opened and f.pending == NoFileOperation and f.selected != "" and
+  fileAt(f, f.selected).kind == Photo and (direction == -1 or direction == 1) and
+  photoPosition(f) + direction >= 0 and photoPosition(f) + direction < photos(f).length()
+pure def movePhoto(f: Files, direction: int, by: FileActor): FilesResult =
+  openFile(f, photos(f).nthOr(photoPosition(f) + direction, emptyFile).id, by)
+pure def canBackToFiles(f: Files, by: FileActor): bool =
+  by == FileUser and f.opened and f.selected != "" and (f.pending == NoFileOperation or f.pending == ReadingFile)
+pure def backToFiles(f: Files, by: FileActor): Files =
+  { ...f, selected: "", contentReady: false, pending: NoFileOperation, pendingId: "", generation: f.generation + 1, feedback: NoFileFeedback }
+pure def alwaysPendingFileExists(f: Files): bool =
+  ((f.pending == ReadingFile or f.pending == DeletingPhoto) implies
+    f.loaded and hasFile(f, f.pendingId)) and
+  ((f.pending == NoFileOperation or f.pending == ReadingCatalog or f.pending == Locating or f.pending == SavingFiles) implies f.pendingId == "") and
+  (f.pending == ReadingFile implies f.opened and f.selected == f.pendingId and not(f.contentReady)) and
+  (f.pending == DeletingPhoto implies fileAt(f, f.pendingId).kind == Photo) and
+  (if (f.pending == Printing) validFile(f.pendingPrint) and f.pendingPrint.kind == Pdf and f.pendingId == f.pendingPrint.id
+    else f.pendingPrint == emptyFile)
+pure def sometimesPhotoOpened(f: Files): bool = f.contentReady and fileAt(f, f.selected).kind == Photo
+pure def sometimesDocumentOpened(f: Files): bool = f.contentReady and fileAt(f, f.selected).kind == Pdf
+pure def sometimesContentFailure(f: Files): bool = f.feedback == ContentFailed
+```
+
+### Find help distinguishes one match, multiple matches and no match
+
+“Ask Grace to find anything” uses only the owner's permitted file metadata or
+explicitly authorized content. The retrieval adapter supplies current stable
+IDs. A single result highlights the actual row and selects its tab; multiple
+matches ask which item rather than guessing from a repeated name. No match
+states that plainly. Finding does not open, print, share or delete content.
+Each explicit find request carries a new generation. A new query replaces the
+old request; Close cancels it. A result must match the owner, generation and
+exact requested query, so stale retrieval cannot reopen Files or replace the
+current answer.
+
+```quint
+pure def canFindFiles(f: Files, query: str, by: FileActor): bool =
+  by == FileUser and f.loaded and (f.pending == NoFileOperation or f.pending == Locating) and query != ""
+pure def findFiles(f: Files, query: str, by: FileActor): FilesResult = {
+  state: { ...f, opened: true, selected: "", contentReady: false, pending: Locating,
+    query: query, matches: List(), generation: f.generation + 1, feedback: NoFileFeedback },
+  out: List(SearchFiles({ owner: f.owner, generation: f.generation + 1, query: query }))
+}
+pure def canLocate(f: Files, locateReport: LocateReport, by: FileActor): bool =
+  by == FileHost and f.loaded and f.opened and f.pending == Locating and locateReport.owner == f.owner and
+  locateReport.generation == f.generation and locateReport.query == f.query and
+  locateReport.ids.every(id => hasFile(f, id) and locateReport.ids.select(other => other == id).length() == 1)
+pure def locate(f: Files, locateReport: LocateReport, by: FileActor): Files =
+  { ...f, pending: NoFileOperation, selected: "", contentReady: false, matches: locateReport.ids,
+    tab: if (locateReport.ids.length() == 1) tabFor(fileAt(f, locateReport.ids.nthOr(0, ""))) else f.tab,
+    feedback: if (locateReport.ids.length() == 0) NothingFound else if (locateReport.ids.length() > 1) SeveralMatches else NoFileFeedback }
+pure def highlightedFile(f: Files): str = if (f.matches.length() == 1) f.matches.nthOr(0, "") else ""
+pure def alwaysMatchesExist(f: Files): bool = f.matches.every(id => hasFile(f, id)) and
+  ((f.matches.length() > 0 or f.pending == Locating) implies f.query != "") and
+  (f.pending == Locating implies f.opened and f.loaded)
+pure def sometimesSeveralMatches(f: Files): bool = f.feedback == SeveralMatches
+pure def sometimesNothingFound(f: Files): bool = f.feedback == NothingFound
+```
+
+## Story: Save, share, print and remove the chosen file
+
+> As an older adult, I want a clear result when I save an attachment, share a
+> photo, print a document or delete a local photo, without changing the wrong item.
+
+### Saving one attachment or all selected photos is one acknowledged local transaction
+
+The Email Save/Save all action supplies an authorized source-bound batch. The
+host must verify the current owner, source attachment and immutable content;
+planner text cannot manufacture this receipt. New files appear first in supplied
+save order, while repeated saves retain existing entries. The prototype's
+filename-only document deduplication is not carried forward. A collision between
+an ID and another source/content is refused. The store stages bytes and commits
+the complete batch atomically, or leaves the library unchanged and offers Retry.
+
+```quint
+pure def compatibleImport(f: Files, incoming: List[SavedFile]): bool =
+  incoming.every(a => f.entries.every(b => (a.id == b.id or sameSource(a, b)) implies sameAsset(a, b)))
+pure def mergeFiles(existing: List[SavedFile], incoming: List[SavedFile]): List[SavedFile] =
+  incoming.select(a => not(existing.some(b => b.id == a.id))).concat(existing)
+pure def canSaveFiles(f: Files, fileImport: FileImport, by: FileActor): bool =
+  by == FileHost and f.loaded and f.pending == NoFileOperation and fileImport.owner == f.owner and
+  fileImport.generation == f.generation and fileImport.authorization != "" and fileImport.entries.length() > 0 and validCatalog(fileImport.entries) and compatibleImport(f, fileImport.entries)
+pure def saveFiles(f: Files, fileImport: FileImport, by: FileActor): FilesResult = {
+  state: { ...f, pending: SavingFiles, pendingFiles: fileImport.entries, generation: f.generation + 1, feedback: NoFileFeedback },
+  out: List(StoreFiles({ owner: f.owner, generation: f.generation + 1, files: fileImport.entries }))
+}
+pure def canDeletePhoto(f: Files, id: str, generation: int, by: FileActor): bool =
+  by == FileUser and f.opened and f.loaded and f.pending == NoFileOperation and f.selected != "" and
+  id == f.selected and generation == f.generation and fileAt(f, f.selected).kind == Photo
+pure def deletePhoto(f: Files, id: str, generation: int, by: FileActor): FilesResult = {
+  state: { ...f, pending: DeletingPhoto, pendingId: f.selected, generation: f.generation + 1, feedback: NoFileFeedback },
+  out: List(RemovePhoto({ owner: f.owner, generation: f.generation + 1, id: f.selected }))
+}
+pure def canWriteResult(f: Files, fileReceipt: FileReceipt, by: FileActor): bool =
+  by == FileStore and (f.pending == SavingFiles or f.pending == DeletingPhoto) and
+  fileReceipt.owner == f.owner and fileReceipt.generation == f.generation and fileReceipt.id == f.pendingId and
+  (fileReceipt.succeeded implies fileReceipt.evidence != "")
+pure def writeResult(f: Files, fileReceipt: FileReceipt, by: FileActor): Files =
+  val deleting = f.pending == DeletingPhoto and fileReceipt.succeeded
+  { ...f, entries: if (not(fileReceipt.succeeded)) f.entries else if (deleting) f.entries.select(e => e.id != f.pendingId) else mergeFiles(f.entries, f.pendingFiles),
+    selected: if (deleting) "" else f.selected, contentReady: if (deleting) false else f.contentReady,
+    pending: NoFileOperation, pendingId: "", pendingFiles: List(), query: "", matches: List(),
+    feedback: if (not(fileReceipt.succeeded)) WriteFailed else if (deleting) PhotoDeleted else FilesSaved }
+pure def alwaysPendingImportValid(f: Files): bool =
+  if (f.pending == SavingFiles) f.loaded and f.pendingFiles.length() > 0 and validCatalog(f.pendingFiles) and compatibleImport(f, f.pendingFiles)
+  else f.pendingFiles == List()
+pure def stepFailedWriteKeepsLibrary(before: Files, via: str, after: Files): bool =
+  (via == "writeResult" and after.feedback == WriteFailed) implies after.entries == before.entries
+pure def sometimesSavedFiles(f: Files): bool = f.feedback == FilesSaved
+pure def sometimesDeletedPhoto(f: Files): bool = f.feedback == PhotoDeleted
+pure def sometimesWriteFailure(f: Files): bool = f.feedback == WriteFailed
+```
+
+### Delete is the explicit local action and does not delete its source email
+
+The photo viewer's Delete button is the user's choice; no extra confirmation
+screen is introduced. The selected photo remains available until the store
+acknowledges removal. Failure retains it and allows Retry. There is no document
+Delete, folder manager, trash manager, upload or editing surface in this
+prototype. Deleting the local copy does not delete its source message, revoke a
+sent attachment or alter transaction evidence. A later deliberate Save may
+import the source again.
+
+```quint
+pure def stepOnlyAcknowledgedWritesChangeLibrary(before: Files, via: str, after: Files): bool =
+  (via != "loadCatalog" and via != "writeResult" and via != "restartFiles") implies after.entries == before.entries
+```
+
+### Sharing a photo opens a draft without sending it
+
+Share uses the exact selected, readable local photo and opens Email's recipient
+chooser with that attachment. Recipient choice, editing, review and explicit
+Send belong to Email. This effect contains no recipient or permission to send,
+so sharing cannot become silent publication.
+
+```quint
+pure def canSharePhoto(f: Files, id: str, generation: int, by: FileActor): bool =
+  by == FileUser and f.opened and f.contentReady and f.pending == NoFileOperation and
+  id == f.selected and generation == f.generation and fileAt(f, f.selected).kind == Photo
+pure def sharePhoto(f: Files, id: str, generation: int, by: FileActor): FilesResult = {
+  state: { ...f, selected: "", contentReady: false },
+  out: List(SharePhoto({ owner: f.owner, file: fileAt(f, f.selected) }))
+}
+```
+
+### Printing reports actual printer acceptance and preserves an uncertain request
+
+Print is available for a document row or its preview, and directly from a
+readable Email PDF without saving it first. The latter carries the current
+mail-source authorization and explicit Print choice; its immutable descriptor
+is held only for the pending job and never inserted into the saved catalog. It requests that exact
+content from the native print service. A prototype toast is not printer evidence:
+accepted means the print service accepted the job, not that paper came out.
+Failure permits an explicit retry. An uncertain result retains the current job
+and blocks another print request until the service resolves it. Old owner,
+request or file callbacks cannot report success for a different selection.
+
+```quint
+pure def canPrintDocument(f: Files, id: str, by: FileActor): bool =
+  by == FileUser and f.opened and f.loaded and f.pending == NoFileOperation and hasFile(f, id) and fileAt(f, id).kind == Pdf
+pure def printDocument(f: Files, id: str, by: FileActor): FilesResult = {
+  state: { ...f, pending: Printing, pendingId: id, pendingPrint: fileAt(f, id), generation: f.generation + 1, feedback: NoFileFeedback },
+  out: List(PrintFile({ owner: f.owner, generation: f.generation + 1, file: fileAt(f, id) }))
+}
+pure def canPrintFromEmail(f: Files, externalPrint: ExternalPrint, by: FileActor): bool =
+  by == FileHost and f.pending == NoFileOperation and externalPrint.owner != "" and
+  (f.owner == "" or f.owner == externalPrint.owner) and externalPrint.generation == f.generation and
+  validFile(externalPrint.file) and externalPrint.file.kind == Pdf and externalPrint.authorization != ""
+pure def printFromEmail(f: Files, externalPrint: ExternalPrint, by: FileActor): FilesResult = {
+  state: { ...f, owner: externalPrint.owner, pending: Printing, pendingId: externalPrint.file.id,
+    pendingPrint: externalPrint.file, generation: f.generation + 1, feedback: NoFileFeedback },
+  out: List(PrintFile({ owner: externalPrint.owner, generation: f.generation + 1, file: externalPrint.file }))
+}
+pure def canPrintResult(f: Files, printReport: PrintReport, by: FileActor): bool =
+  by == Printer and f.pending == Printing and printReport.owner == f.owner and printReport.generation == f.generation and printReport.id == f.pendingId and
+  (printReport.result == PrintAccepted or printReport.result == PrintUncertain or printReport.result == PrintFailed) and
+  (printReport.result == PrintAccepted implies printReport.evidence != "")
+pure def printResult(f: Files, printReport: PrintReport, by: FileActor): Files =
+  { ...f, pending: if (printReport.result == PrintUncertain) Printing else NoFileOperation,
+    pendingId: if (printReport.result == PrintUncertain) f.pendingId else "",
+    pendingPrint: if (printReport.result == PrintUncertain) f.pendingPrint else emptyFile, feedback: printReport.result }
+pure def sometimesPrintAccepted(f: Files): bool = f.feedback == PrintAccepted
+pure def sometimesPrintUncertain(f: Files): bool = f.feedback == PrintUncertain
+```
+
+### Close and restart stop previews without inventing a storage or printer result
+
+Close returns Home and clears the preview while preserving the tab and saved
+library. A loaded library can reopen while a write/print finishes; reopening
+does not change that pending request generation. Tab choice cancels a pending
+find request before showing the chosen index. Reads are cancelled; a storage or print operation already dispatched
+may finish and report its matching result. Restart discards the view and reloads
+the durable catalog on the next open. The store serializes commits or compares
+request versions at commit; a rejected late callback cannot overwrite newer
+storage. Already accepted print jobs are not promised cancelled by Close or a
+restart. Printing again after restart requires another explicit user action.
+
+```quint
+pure def canCloseFiles(f: Files, by: FileActor): bool = by == FileUser and f.opened
+pure def closeFiles(f: Files, by: FileActor): Files =
+  val reading = f.pending == ReadingCatalog or f.pending == ReadingFile or f.pending == Locating
+  { ...f, opened: false, selected: "", contentReady: false,
+    pending: if (reading) NoFileOperation else f.pending, pendingId: if (reading) "" else f.pendingId,
+    generation: if (reading) f.generation + 1 else f.generation }
+pure def canRestartFiles(f: Files, by: FileActor): bool = by == FileHost and f.owner != ""
+pure def restartFiles(f: Files, by: FileActor): Files =
+  { ...initial, owner: f.owner, tab: f.tab, generation: f.generation + 1 }
+pure def stepOwnerDoesNotChange(before: Files, after: Files): bool = before.owner != "" implies after.owner == before.owner
+```
+
+### Local save, preview, recovery and handoff paths have representative inputs
+
+```quint
+pure val samplePhoto: SavedFile = { id: "photo", kind: Photo, name: "Recital.jpg", origin: "https://mail.example", account: "mail-account", container: "message", sourceRef: "attachment-photo", contentRef: "blob-photo", group: "This week", savedAt: 1, pages: 0 }
+pure val sampleOtherPhoto: SavedFile = { ...samplePhoto, id: "photo2", sourceRef: "attachment-photo2", contentRef: "blob-photo2" }
+pure val samplePdf: SavedFile = { ...samplePhoto, id: "document", kind: Pdf, name: "Visit form.pdf", sourceRef: "attachment-pdf", contentRef: "blob-pdf", pages: 2 }
+pure val ownerValues = Set("owner", "other", "")
+pure val idValues = Set("photo", "photo2", "document", "missing", "")
+pure val directionValues = Set(-1, 1, 0)
+pure val queryValues = Set("", "recital", "form", "photos", "missing", "bad")
+pure val catalogReportValues = Set(
+  { owner: "owner", generation: 1, entries: List(samplePhoto, sampleOtherPhoto, samplePdf), succeeded: true, evidence: "catalog" },
+  { owner: "owner", generation: 1, entries: List(), succeeded: true, evidence: "empty-catalog" },
+  { owner: "owner", generation: 2, entries: List(samplePhoto, samplePdf), succeeded: true, evidence: "catalog" },
+  { owner: "owner", generation: 3, entries: List(samplePhoto, samplePdf), succeeded: true, evidence: "catalog" },
+  { owner: "owner", generation: 1, entries: List(), succeeded: false, evidence: "" },
+  { owner: "other", generation: 1, entries: List(samplePhoto), succeeded: true, evidence: "catalog" })
+pure val fileImportValues = Set(
+  { owner: "owner", generation: 1, entries: List(samplePhoto, sampleOtherPhoto), authorization: "save-all-choice" },
+  { owner: "owner", generation: 1, entries: List(samplePdf), authorization: "save-choice" },
+  { owner: "owner", generation: 1, entries: List(samplePhoto), authorization: "save-choice" },
+  { owner: "other", generation: 1, entries: List(samplePhoto), authorization: "save-choice" },
+  { owner: "owner", generation: 1, entries: List(samplePhoto), authorization: "" },
+  { owner: "owner", generation: 2, entries: List(samplePhoto), authorization: "save-choice" },
+  { owner: "owner", generation: 3, entries: List(samplePhoto), authorization: "save-choice" },
+  { owner: "owner", generation: 1, entries: List({ ...samplePhoto, contentRef: "different-content" }), authorization: "save-choice" })
+pure val fileReceiptValues = Set(
+  { owner: "owner", generation: 2, id: "photo", succeeded: true, evidence: "read" },
+  { owner: "owner", generation: 2, id: "photo2", succeeded: true, evidence: "read" },
+  { owner: "owner", generation: 2, id: "document", succeeded: true, evidence: "read" },
+  { owner: "owner", generation: 2, id: "photo", succeeded: false, evidence: "" },
+  { owner: "owner", generation: 2, id: "", succeeded: true, evidence: "saved" },
+  { owner: "owner", generation: 2, id: "", succeeded: false, evidence: "" },
+  { owner: "owner", generation: 3, id: "photo", succeeded: true, evidence: "stored" },
+  { owner: "owner", generation: 3, id: "photo2", succeeded: true, evidence: "read" },
+  { owner: "owner", generation: 3, id: "photo", succeeded: false, evidence: "" },
+  { owner: "owner", generation: 4, id: "photo2", succeeded: true, evidence: "read" },
+  { owner: "owner", generation: 4, id: "document", succeeded: true, evidence: "read" },
+  { owner: "other", generation: 2, id: "photo", succeeded: true, evidence: "wrong-owner" })
+pure val externalPrintValues = Set(
+  { owner: "owner", generation: 0, file: samplePdf, authorization: "email-print-choice" },
+  { owner: "owner", generation: 1, file: samplePdf, authorization: "email-print-choice" },
+  { owner: "owner", generation: 1, file: samplePhoto, authorization: "email-print-choice" },
+  { owner: "other", generation: 1, file: samplePdf, authorization: "email-print-choice" },
+  { owner: "owner", generation: 1, file: samplePdf, authorization: "" })
+pure val printReportValues = Set(
+  { owner: "owner", generation: 2, id: "document", result: PrintAccepted, evidence: "job-accepted" },
+  { owner: "owner", generation: 1, id: "document", result: PrintAccepted, evidence: "job-accepted" },
+  { owner: "owner", generation: 2, id: "document", result: PrintUncertain, evidence: "" },
+  { owner: "owner", generation: 2, id: "document", result: PrintFailed, evidence: "" },
+  { owner: "other", generation: 2, id: "document", result: PrintAccepted, evidence: "wrong-owner" })
+pure val locateReportValues = Set(
+  { owner: "owner", generation: 2, query: "recital", ids: List("photo") }, { owner: "owner", generation: 2, query: "form", ids: List("document") },
+  { owner: "owner", generation: 2, query: "photos", ids: List("photo", "photo2") }, { owner: "owner", generation: 2, query: "missing", ids: List() },
+  { owner: "owner", generation: 2, query: "bad", ids: List("missing") }, { owner: "owner", generation: 2, query: "", ids: List() },
+  { owner: "owner", generation: 1, query: "recital", ids: List("photo") }, { owner: "other", generation: 2, query: "recital", ids: List("photo") })
+pure val weight_openFiles = 3
+pure val weight_loadCatalog = 5
+pure val weight_openFile = 3
+pure val weight_contentResult = 4
+pure val weight_saveFiles = 3
+pure val weight_writeResult = 4
+```

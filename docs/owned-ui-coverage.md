@@ -1,0 +1,35 @@
+# Owned UI operation inventory
+
+`Workspace` owns the actual Shell, Browser, Assistant/Conversation, Preferences,
+Wake, Execution and payment states. A component must dispatch through that
+owning aggregate rather than instantiate a second child machine. The two
+stateless interaction libraries call child guards and transitions on those
+same stored values. This inventory concerns specified routes, not an implemented
+React/VibeLang interface or hardware acceptance.
+
+| Owned state and operation | Canonical workspace route |
+|---|---|
+| Startup success/failure/retry, sleep, touch wake, restart | `changeLifecycle`; restart also restores durable preferences/payment records and fences callbacks |
+| Connectivity, reasoning route, microphone permission, observation permission | `setAvailability` with actual host evidence |
+| Home, Calendar, Email, Internet, Files, Settings, return to application | `visit`, `returnToApplication` |
+| Home carousel, Settings page, Wi-Fi/Volume popover toggle and dismissal | `chooseHomePage`, `chooseSettingsPage`, `togglePopover`, `dismissPopover` |
+| New/select/close tab, address typing, empty Go, dismiss address keyboard, navigate/back/forward/reload | Typed `changePage` through `browserControls`; Close browser remains `closeBrowser` because it also returns Home |
+| Measured tab capacity, current scroll/page-panel state, zoom and manual page/form/account changes | Typed `changePage`; host reports name the current browser revision, with selected-tab identity for page changes |
+| Recent shortcut removal, Clear question and answer | Typed `changePage`; these update Browser history UI without changing the website or interrupting its task |
+| Website load, expected authorized progress, unexpected navigation | `receiveLoad`, `receiveProgress`, `unexpectedPage`; these are separate authenticated host routes, with unexpected navigation bound to the selected tab and revision |
+| Open/Close Grace, Stop, Talk, privacy removal | `openGrace`, `closeGrace`, `stop`, `talk`, `purgePrivate` |
+| Type/edit/send, answer chip, heard human utterance, service reply/error/silence/unusable speech, speech completion | `interact` through `interaction`; callback generation and audio provenance remain checked |
+| Resize Grace, Show chat, website keyboard focus/dismissal, read history/latest, Repeat, stop output voice | `interact`; keyboard/geometry changes invalidate targets while preserving an explicit wait for the person's answer |
+| Task begin, pause/resume, replacement/keep/confirm, Continue, abandon, new conversation | `begin`, `stop`, `resume`, `requestReplacement`, `keepTask`, `replaceTask`, `continueTask`, `abandonTask`, `newConversation` |
+| Reconciliation, ordinary step, website waiting, verified endpoint | `observe`, `prepare`, `dispatch`, `verify`, `completeOrdinary`; payment waiting/completion use the payment routes |
+| Text size, brightness/night dimming, speech pace/output, system volume/mute, wake preference | `changePreferences`; validated setting values come from the existing Preferences helpers |
+| Undo, automatic save/retry, success/failure acknowledgement, voice/system sound sample | `undoPreferences`, `savePreferences`, `preferencesSaved`, `samplePreferences`; samples carry the current preference revision |
+| Enabled wake detection, silence notice, return to prior window, cancellation | `detectWake`, `wakeNoSpeech`, `wakeReturn`, `cancelWake` |
+
+Address-keyboard changes, text-size changes and native/browser geometry use the
+same target invalidation contract. Volume, pace and recent-shortcut edits do
+not imply a changed webpage. Generic task observation, preparation and completion
+wait for pending reasoning and unanswered questions. A fully classified spoken
+payment approval has its separate atomic transcript-and-authorization route;
+website taps use the actual browser-host report. Neither path creates a second
+payment ledger or a second conversation.
