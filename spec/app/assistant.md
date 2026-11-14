@@ -423,4 +423,7 @@ pure def sometimesCompleted(a: Assistant): bool = a.outcome == Completed
 pure def sometimesFailed(a: Assistant): bool = a.outcome == VerifiedFailure
 pure def sometimesAbandoned(a: Assistant): bool = a.outcome == Abandoned
 pure def sometimesKeyboardCaption(a: Assistant): bool = keyboardCaptionVisible(a)
+pure val weight_publishGuidance = 10
+pure val weight_dismissGuidance = 10
+pure val weight_showGuidance = 10
 ```

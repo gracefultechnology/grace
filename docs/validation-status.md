@@ -116,6 +116,16 @@ The isolated checkpoint passed these commands:
 These tests exercise the retained template and tooling. Grace's provider and
 device journeys will be implemented in the next phase.
 
+The specification checkpoint `7aa6ea1` is merged and pushed to `develop`.
+The original checkout was fast-forwarded after checking that its concurrent
+application edits did not overlap the incoming files. Those edits remain in
+progress. Validation continues in the isolated checkout.
+
+The [GitHub CI run for this checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43547183011)
+ended before any job steps ran. Its annotation reports failed account payments
+or a spending-limit restriction. Hosted CI needs the account billing issue
+resolved before it can supply a verification result.
+
 ## Simulation input coverage
 
 The sample domains include two-photo and photo/PDF Email manifests, complete
@@ -132,6 +142,12 @@ examples. The selected trial passed a 2,500-trace safety shard and both retry
 goals under the normal and nightly seeds. Evidence is recorded at
 `/tmp/grace-execution-total-iU3HJT/summary.json` and
 `/tmp/grace-execution-final-equivalence-hCqVcM/result.json`.
+
+Assistant guidance publication, dismissal and restoration have sampling
+weights of 10. Both guidance goals were reached under the normal and nightly
+seeds with unchanged runtime and proof text. The trial record is
+`/tmp/grace-guidance-sampling-N98qrA/summary.json`; it establishes those paths,
+while the complete safety and replay checks remain part of the combined run.
 
 ## Combined validation still pending
 
