@@ -160,9 +160,11 @@ while the complete safety and replay checks remain part of the combined run.
 ## Combined validation still pending
 
 The combined run for `22a5c3d` parsed all 23 modules and recorded 19 passing
-simulation and replay receipts. Email is still running. Workspace's search for
-ordinary completion reached the tool's one-hour limit. The run is recorded in
-`/tmp/grace-isolated-check-5.log`.
+simulation and replay receipts. Email's Undo Trash guard search reached the
+one-hour tool timeout. Workspace saved a valid guidance-dismissal witness, but
+the CLI output lacked the result marker that Vibestack recognizes. The check
+therefore did not reach its types, proof, tests or conformance stages. The run
+is recorded in `/tmp/grace-isolated-check-5.log`.
 The Email profile uses one coherent mailbox, five metadata records and eight
 read receipts. Listing samples include Trash and Drafts requests issued at
 generations two through four, with the matching draft restore generations.
@@ -180,7 +182,7 @@ guard admissions. The additional random witness admitted Forward message.
 Directed Quint paths exercised all seven guards that were originally pending
 and matched the generated TypeScript through 64 transitions. See
 `/tmp/grace-email-directed-quint.log` and `/tmp/grace-email-directed-replay.log`.
-The standard run is still searching for six admissions.
+Six admissions remained without a passing standard-run receipt.
 
 The updated Workspace unit has 1,310 obligations. Its first proof attempt
 exhausted resources on `changeLifecycle_ensures` and `changePage_ensures`;
@@ -189,8 +191,8 @@ current sidecar adds smaller invariant steps for closing a quiet workspace
 and changing only keyboard ownership. The page-change lemma then passed on
 the first pass and the lifecycle lemma passed on the automatic isolated retry.
 The CalendarView sampler gives the deletion question, Keep and approval equal
-weights of five. Workspace gives guidance publication a weight of twelve. These changes affect exploration
-only; the generic task API and all product transitions remain present.
+weights of five. Workspace gives guidance publication a weight of twelve.
+These weights only affect exploration.
 
 A direct TypeScript check exposed a widened keyboard type in the generated
 wake window. The spec now constructs that window through a function with an
@@ -218,9 +220,9 @@ Four directed Quint traces exercised ordinary goal completion, spoken approval,
 manual payment result persistence and task replacement. All 46 transitions
 replayed against the generated TypeScript with the Workspace invariants intact.
 The traces and replay log are at `/tmp/grace-workspace-next-WvoVXq` and
-`/tmp/grace-workspace-directed-replay.log`. The bounded 5,000-trace search
-for ordinary completion did not reach its goal. The full exploration profile
-is still required.
+`/tmp/grace-workspace-directed-replay.log`. The bounded searches of 5,000 traces per goal did not reach ordinary
+completion, spoken approval or payment-result completion. The full exploration
+profile is still required.
 
 Earlier combined runs were stopped as the model definitions and simulation
 inputs were corrected. Their partial results cannot certify the final source.
