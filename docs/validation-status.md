@@ -129,7 +129,7 @@ The original checkout was fast-forwarded after checking that its concurrent
 application edits did not overlap the incoming files. Those edits remain in
 progress. Validation continues in the isolated checkout.
 
-The [GitHub CI run for this checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43562047472)
+The [GitHub CI run for the Workspace sampling checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43570162711)
 ended before any job steps ran. Its annotation reports failed account payments
 or a spending-limit restriction. Hosted CI needs the account billing issue
 resolved before it can supply a verification result.
@@ -209,7 +209,15 @@ confirmation input. Visit returns to its default weight after earlier traces
 showed that repeated navigation advanced device versions before matching
 callbacks could arrive. All four actors and all other existing input examples
 remain available. The scratch build at `/tmp/grace-workspace-next-WvoVXq`
-reproduced the current runtime and Workspace proof unit exactly.
+reproduced the current runtime and Workspace proof unit exactly. The matching
+generated harness has sampled input choices for all 54 guarded transitions.
+Four directed Quint traces exercised ordinary goal completion, spoken approval,
+manual payment result persistence and task replacement. All 46 transitions
+replayed against the generated TypeScript with the Workspace invariants intact.
+The traces and replay log are at `/tmp/grace-workspace-next-WvoVXq` and
+`/tmp/grace-workspace-directed-replay.log`. The bounded 5,000-trace search
+for ordinary completion did not reach its goal. The full exploration profile
+is still required.
 
 Earlier combined runs were stopped as the model definitions and simulation
 inputs were corrected. Their partial results cannot certify the final source.
