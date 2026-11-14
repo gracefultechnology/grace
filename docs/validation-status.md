@@ -169,6 +169,15 @@ one-hour tool timeout. Workspace saved a valid guidance-dismissal witness, but
 the CLI output lacked the result marker that Vibestack recognizes. The check
 therefore did not reach its types, proof, tests or conformance stages. The run
 is recorded in `/tmp/grace-isolated-check-5.log`.
+
+A one-step Quint reproduction confirmed the output problem. At default
+verbosity, the CLI returned exit 1 and wrote the complete ITF witness, but
+its piped console output ended before the result marker. The same command
+with Quint's `--verbosity=1` kept the marker and the complete witness. An
+out-of-bounds expression still reported a runtime error. That error's ITF
+file also carried the `violation` label, so the ITF label by itself cannot
+identify a successful reachability search. The reproduction and its results
+are at `/tmp/grace-quint-results.dir` and `/tmp/grace-quint-results.log`.
 The Email profile uses one coherent mailbox, five metadata records and eight
 read receipts. Listing samples include Trash and Drafts requests issued at
 generations two through four, with the matching draft restore generations.

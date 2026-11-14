@@ -27,7 +27,7 @@ the replacement Calendar JavaScript has no payment action.
 | CAL-05 | Saved reminder eligibility, explicit snooze/dismiss, no reminders after deletion, no automatic execution. Explicit user flow, legacy reminder semantics. | `calendarView.changeOccurrence` routes clock/show/snooze/dismiss to the same row scoped deletion changes; `calendar.md` reminder invariants |
 | CAL-06 | Calendar bill uses owner/origin/account/unique invoice; UI occurrence ID cannot create duplicate payment attempt. Explicit user Calendar → bill-pay requirement and current TXN 01–02. | `billAvailable`, `occurrenceBill`, `billOrigin`, `billAccount`; current `calendarView.selectedOccurrence` and canonical handoff/payment registry |
 | CAL-07 | Distinct recurring occurrences, new invoice/source for next cycle, prior receipt never reused. Explicit user scope/current INV 07. | `followingAllowed`, `followingIdentity`, `lawFollowingKeepsAccount`, series tombstones |
-| CAL-08 | Close returns Home, cancelling unsubmitted form edits; already-submitted save/deletion outcomes reconcile while hidden and reopen with their pending/error state. HTML 2156, plus required asynchronous storage behavior. | `closeCalendar`, `openCalendar`, `lawClosingKeepsSubmittedSave`, approved-revision fences and occurrence-bound `SeriesReceipt` |
+| CAL-08 | Close returns Home, cancelling unsubmitted form edits; in-flight saves and deletions reconcile while hidden. Reopening shows a pending write or a failure that arrived while hidden. HTML 2156, plus required asynchronous storage behavior. | `closeCalendar`, `openCalendar`, `lawClosingKeepsSubmittedSave`, approved-revision fences and occurrence-bound `SeriesReceipt` |
 | CAL-09 | Own-calendar filtering, no duplicate row, stale upsert refused, missing/ambiguous/deleted selection safe. Current INV 01 and prototype list/detail behavior. | `calendar.md` collection helpers/laws; `calendarView.md` registry/selection invariants |
 
 ## Prototype corrections and explicit extensions
@@ -127,8 +127,11 @@ detail before the shell returns Home. An already-submitted save keeps its exact
 draft revision and occurrence ID while hidden; edit, cancel and repeated Save
 are fenced until its acknowledgment. Success clears the hidden detail, while
 failure retains the draft and storage error for reopening. An already-pending
-deletion likewise keeps its hidden target and status. Neither write makes the
-user wait inside Calendar, and Close never claims to undo a submitted write.
+deletion likewise keeps its hidden target and status. After reopening a failed
+write, Close dismisses the deletion error or cancels the unapproved edit. A
+previously saved occurrence keeps its committed data. A never-saved occurrence
+is removed and its ID is retired. The pending write can finish while Calendar
+is hidden.
 Previews read committed fields. Store imports validate the complete
 child state and preserve its full identity, including bill source and invoice;
 content revision alone cannot retarget an existing occurrence. Clock and
