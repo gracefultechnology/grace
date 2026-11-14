@@ -175,7 +175,11 @@ changing the draft or committed entry. Generated traces reproduced the old
 callback collision in single and recurring saves. With the fix, both routes
 reject success and failure callbacks from the previous attempt, accept the new
 revision's result and preserve the invariants. The hidden-failure/reopen path
-also passed. Current proof results for Calendar and its dependents are pending.
+also passed. The exact updated Calendar and CalendarView units passed 173
+and 189 obligations respectively. The proof results are in
+`/tmp/grace-calendar-retry-checked-uGltq8`. Handoffs also passed 60 obligations
+against the initial retry-fence trial. Its run against the final law text and
+dependent units will accompany the appointment confirmation update.
 
 ## Combined validation still pending
 
