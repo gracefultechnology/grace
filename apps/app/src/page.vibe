@@ -299,8 +299,9 @@ export const pageHost = Layer.effect(PageHost, effect {
     const before = try workspace.get()
     const shown = before.browser.tabs.find((t) => t.id === tab)
     if (moved && shown !== undefined && shown.load !== "Loading" && event.url !== tabUrl(shown)) {
-      const unexpected = { id: tab, revision: before.browser.revision, destination: event.url }
-      // spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"
+      // spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went": the move
+      // belongs to the load the page last started, so it is late once the tab has asked for another (none started yet: always late).
+      const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: event.url }
       try report(canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
     }
     const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)

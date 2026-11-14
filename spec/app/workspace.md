@@ -708,10 +708,10 @@ Nothing is interrupted. Grace's website work needs the selected page in
 view on the ready browser, so a task continues past a tab in the
 background, whose move leaves the selected page and the revision as they
 were; the selected page's own move, while hidden, changes the revision as
-any page moving by itself does. The host names the tab's load version it
-saw with the move, and a report is refused once that tab has started
-another load; what happens in other tabs, or to the browser's revision,
-never makes it late.
+any page moving by itself does. The host names the load version of the
+load the page was running when it moved, and a report is refused once that
+tab has started another load; what happens in other tabs, or to the
+browser's revision, never makes it late.
 
 ```quint
 pure def canUnwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
