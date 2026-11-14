@@ -1115,6 +1115,7 @@ pure val observed: CurrentObservation = {
   deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
 pure val currentObservationValues = Set(observed,
+  { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } },
   { ...observed, browserRevision: 3, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 3, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 4, taskVersion: 3,
@@ -1132,12 +1133,16 @@ pure val tokensValues = Set(
 pure val currentVerificationValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1,
   website: X::goodVerification, checkpoint: "Current account read", needsUser: false },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    website: { ...X::goodVerification, task: "other" }, checkpoint: "Current account read", needsUser: false },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true })
 pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
   deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 1
 }
-pure val completionValues = Set(completedGoal, { ...completedGoal, evidence: "" },
+pure val completionValues = Set(completedGoal,
+  { ...completedGoal, task: "other", goal: "Read another account" },
+  { ...completedGoal, evidence: "" },
   { ...completedGoal, taskVersion: 1 }, { ...completedGoal, goal: "Another goal" })
 pure val paymentTokensValues = Set(
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 0 },
