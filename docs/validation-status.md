@@ -188,8 +188,12 @@ from the currently shown question. Both Home and already-open Calendar
 paths passed directed Quint and matched generated TypeScript state by
 state. The tests also reject changed details, the wrong actor and replayed
 approval. See `/tmp/grace-calendar-home-directed.log` and
-`/tmp/grace-calendar-home-replay.log`. The updated CalendarView proof is
-running.
+`/tmp/grace-calendar-home-replay.log`. The updated CalendarView unit passed
+all 208 obligations in `/tmp/grace-calendar-home-proof-5MwT6g/result.json`.
+The new proof establishes that confirmation preserves the Calendar invariants,
+keeps the current view, consumes one approval and leaves an unsaved approved
+row for the durable write. The combined run for this source is queued behind
+the active run.
 
 ## Combined validation still pending
 
