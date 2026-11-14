@@ -351,6 +351,14 @@ walkthroughs use directed lifecycle inputs. The preparation conversion passed
 its three proofs with the changed Workspace dependency. The updated Workspace
 proof is running with the confirmed owner rules.
 
+The retained template passed 34 root tests, three app tests and one Chromium
+test on the corrected sources. The scaffold's conformance driver passed its
+journey, five malformed inputs and 20,000 walks with seed 2. This is the larger
+profile for that driver. Full-tree nightly validation remains pending. See
+`/tmp/grace-restart-root-tests-resolved.log`, `/tmp/grace-restart-app-tests-final.log`,
+`/tmp/grace-restart-browser-tests-final.log` and
+`/tmp/grace-restart-scaffold-larger-conformance.log`.
+
 ## Current combined validation
 
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
