@@ -21,7 +21,7 @@ the replacement Calendar JavaScript has no payment action.
 | EMAIL-10 | Delete moves selected message to Trash, Undo targets that exact mutation, Restore uses prior folder, Delete forever is irreversible; read/unread and provider mutation failures do not fake success. HTML 1964, 1970, 2205–2208. | `email.md`: canonical `messages` registry, `changeSelectedMessage`, `undoMessageTrash`, `completeMessageChange`; these apply `emailItem.md` reducers to the actual selected/provider-addressed record |
 | EMAIL-11 | Bill extraction carries independently verified invoice/account and user-confirmed source; reading never pays. Explicit user scope, legacy connector requirements, current INV 01/06. | `receiveBill`, `confirmBill`, `billReady`; canonical `handoffs.md` and `payment.md` |
 | CAL-01 | Week/Month, Today, prior/next period, month-day → Week, selected day, upcoming rows and exact detail identity. HTML 1895–1918, 2157–2163. | `calendarView.md`: `openCalendar`, `navigate`, `openOccurrence`, `selectedOccurrence`, `visibleOccurrences` |
-| CAL-02 | Add/Edit/Cancel/Save title/day/time/location; detail includes participant, notes, reminder and repeat. Visible Save approves current revision; assistant-created draft is unsaved until confirmed. HTML 1904–1907, 1921–1931, 2133–2136, 2164–2173. | `calendarView.md`: `createOccurrence`, `changeOccurrence` route to the actual owned `calendar.md` state |
+| CAL-02 | Add/Edit/Cancel/Save title/day/time/location; detail includes participant, notes, reminder and repeat. Visible Save approves the current revision. Grace can propose and confirm an appointment without opening Calendar. HTML 1904–1907, 1921–1931, 2133–2136, 2164–2173. | `calendarView.md`: `createOccurrence`, `changeOccurrence`, `confirmAppointment` use the owned `calendar.md` lifecycle |
 | CAL-03 | Real timezone/date intervals and duration, all-day support; Never/weekly/monthly recurrence; No/Day before/1 hour before reminder choices. Editing a repetition edits its series through the existing form. HTML 1894, 1924–1928, 2165, 2171 plus legacy recurrence. | `EntryDetails`, `Recurrence`, `SeriesDefinition`, `saveSeries`, complete version-bound schedules; validated calendar adapter boundary |
 | CAL-04 | Delete/Keep modal; recurring one/all choice; single deletion preserves other occurrences; whole-series deletion prevents future resurrection. HTML 1931, 2174–2176. | occurrence tombstones; `calendarView.md` `requestDeletion`, `approveDeletion`, `deletionResult`, `deletedSeries`, deletion laws |
 | CAL-05 | Saved reminder eligibility, explicit snooze/dismiss, no reminders after deletion, no automatic execution. Explicit user flow, legacy reminder semantics. | `calendarView.changeOccurrence` routes clock/show/snooze/dismiss to the same row scoped deletion changes; `calendar.md` reminder invariants |
@@ -142,6 +142,13 @@ Unrelated or identical imports preserve an open detail and its deletion question
 a changed selected target invalidates that question, and deletion clears the
 selection. Whole-series deletion requires the selected recurring event's
 nonempty series identity throughout the pending operation.
+
+An assistant-proposed appointment uses the current conversation question. It
+can appear as an unsaved preview in an open Calendar. Exact confirmed intent
+creates the approved row in `confirmAppointment` without navigating. The
+adapter authenticates the current question and complete user approval. Calendar
+consumes the review generation and rejects changed details or duplicate
+confirmation. Only the existing store result makes the row saved.
 
 A repeating event has one versioned series definition. Edit opens its anchor
 date and settings, and the existing Save action applies the changed definition

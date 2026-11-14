@@ -181,6 +181,16 @@ and 189 obligations respectively. The proof results are in
 against the initial retry-fence trial. Its run against the final law text and
 dependent units will accompany the appointment confirmation update.
 
+Calendar now accepts an exact, current appointment confirmation while the
+person stays on Home or in another app. Existing Calendar state owns the
+approved draft and its storage result. The adapter authenticates consent
+from the currently shown question. Both Home and already-open Calendar
+paths passed directed Quint and matched generated TypeScript state by
+state. The tests also reject changed details, the wrong actor and replayed
+approval. See `/tmp/grace-calendar-home-directed.log` and
+`/tmp/grace-calendar-home-replay.log`. The updated CalendarView proof is
+running.
+
 ## Combined validation still pending
 
 The combined run for `22a5c3d` parsed all 23 modules and recorded 19 passing

@@ -35,7 +35,7 @@ cannot establish the collection's independently chosen display timezone.
 ```quint
 import calendar as C from "./calendar"
 
-type ViewActor = ViewUser | ViewStore | ViewClock
+type ViewActor = ViewUser | ViewStore | ViewClock | ViewConsent
 type ViewMode = WeekView | MonthView
 type Navigation = Today | Earlier | Later | SelectDay | SwitchMode
 type ViewWindow = { mode: ViewMode, anchorDay: int, selectedDay: int, fromTime: int, untilTime: int }
@@ -230,14 +230,16 @@ pure def ownedEntryResult(v: CalendarView, c: C::Calendar, command: OccurrenceAc
       else C::beginEdit(c, C::CalendarUser)
     | _ => changeEntry(c, command)
   }
-pure def canCreateOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): bool =
-  by == ViewUser and v.opened and v.deletion == NoDeletion and not(hasEditing(v)) and
+pure def freshEntryAllowed(v: CalendarView, entry: EntrySeed): bool =
+  v.deletion == NoDeletion and not(hasEditing(v)) and
   C::canCreate(C::initial, entry.identity, C::CalendarUser) and
   entry.identity.owner == v.owner and entry.identity.calendarId == v.calendarId and
   not(v.cancelledIds.contains(entry.identity.occurrenceId)) and
   v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
   (entry.details.seriesId == "" or seriesAt(v, entry.details.seriesId).version == -1) and
   not(v.deletedSeries.contains(entry.details.seriesId))
+pure def canCreateOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): bool =
+  by == ViewUser and v.opened and freshEntryAllowed(v, entry)
 pure def createOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): CalendarView =
   { ...v, entries: v.entries.append(C::create(C::initial, entry.identity, entry.details, C::CalendarUser)),
     selectedId: entry.identity.occurrenceId }
@@ -264,6 +266,78 @@ pure def sometimesUnsavedEntryCancelled(v: CalendarView): bool = v.cancelledIds.
 pure def sometimesEntrySaveFailed(v: CalendarView): bool = v.entries.some(c => c.storageError == C::SaveFailure)
 pure def sometimesOwnedReminderShown(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderShown)
 pure def sometimesOwnedReminderDismissed(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderDismissed)
+```
+
+### An exact confirmed appointment enters the calendar without opening it
+
+Grace can propose an appointment while the person stays on Home or another
+screen (`Grace Prototype.html:2105–2106,2133–2137`). The displayed question
+owns one immutable proposal until it is confirmed, corrected or cancelled.
+An open Calendar may show that proposal as an unsaved preview. It has no
+scheduled reminder and cannot start a write.
+
+The trusted adapter supplies `ViewConsent` only for the person's complete
+approval of the current exact question. It checks the conversation generation,
+work version and visibility before processing voice, a chip or a typed answer.
+Correction, Close, cancellation and a superseding question retire that review.
+The adapter consumes spoken intent against the pre-utterance question before
+recording the answer. The renderer and approval adapter use the same proposal.
+
+The calendar checks equality with the reviewed identity and details and consumes
+the review's calendar generation. A repeated approval cannot create a second
+occurrence. A first confirmed appointment binds the chosen calendar and display
+timezone without changing the current screen. One approved draft enters the
+owned collection. Calendar's existing acknowledgment records the durable result
+and schedules reminders. Failure preserves the draft and requires renewed
+approval at a new revision.
+
+```quint
+type AppointmentReview = {
+  entry: EntrySeed, calendarGeneration: int, displayTimezone: str
+}
+type ConfirmedAppointment = { entry: EntrySeed, review: AppointmentReview }
+pure def canConfirmAppointment(v: CalendarView, request: ConfirmedAppointment, by: ViewActor): bool =
+  val bound = { ...v, owner: request.entry.identity.owner, calendarId: request.entry.identity.calendarId,
+    timezone: request.review.displayTimezone }
+  by == ViewConsent and request.entry == request.review.entry and
+  request.review.calendarGeneration == v.generation and request.review.displayTimezone != "" and
+  request.entry.identity.kind == C::Appointment and C::validDetails(request.entry.details) and
+  (v.owner == "" or (v.owner == bound.owner and v.calendarId == bound.calendarId and v.timezone == bound.timezone)) and
+  freshEntryAllowed(bound, request.entry)
+pure def confirmAppointment(v: CalendarView, request: ConfirmedAppointment, by: ViewActor): CalendarView =
+  val created = C::create(C::initial, request.entry.identity, request.entry.details, C::CalendarUser)
+  val approved = C::approveSave(created, created.revision, C::CalendarUser)
+  { ...v, owner: request.entry.identity.owner, calendarId: request.entry.identity.calendarId,
+    timezone: request.review.displayTimezone, generation: v.generation + 1,
+    entries: v.entries.append(approved), selectedId: request.entry.identity.occurrenceId }
+pure def lawChangedAppointmentCannotConfirm(v: CalendarView, request: ConfirmedAppointment, by: ViewActor): bool =
+  request.entry != request.review.entry implies not(canConfirmAppointment(v, request, by))
+pure def lawStaleAppointmentReviewCannotConfirm(v: CalendarView, request: ConfirmedAppointment, by: ViewActor): bool =
+  request.review.calendarGeneration != v.generation implies not(canConfirmAppointment(v, request, by))
+pure def lawAppointmentReviewIsConsumedOnce(v: CalendarView, request: ConfirmedAppointment, again: ConfirmedAppointment, by: ViewActor): bool =
+  canConfirmAppointment(v, request, by) and again.review.calendarGeneration == request.review.calendarGeneration implies
+    not(canConfirmAppointment(confirmAppointment(v, request, by), again, by))
+pure def lawConfirmedAppointmentKeepsCalendarView(v: CalendarView, request: ConfirmedAppointment, by: ViewActor): bool =
+  confirmAppointment(v, request, by).opened == v.opened and confirmAppointment(v, request, by).window == v.window
+pure def lawConfirmedAppointmentStillNeedsStorage(v: CalendarView, request: ConfirmedAppointment, by: ViewActor): bool =
+  val after = confirmAppointment(v, request, by)
+  val entry = after.entries.nthOr(v.entries.length(), C::initial)
+  canConfirmAppointment(v, request, by) implies
+    entry.phase == C::Editing and not(entry.hasSaved) and entry.draft == request.review.entry.details and
+    entry.approvedRevision == entry.revision
+pure val reviewedAppointment: ConfirmedAppointment = {
+  entry: { identity: C::appointmentIdentity, details: C::timedDetails },
+  review: { entry: { identity: C::appointmentIdentity, details: C::timedDetails },
+    calendarGeneration: 0, displayTimezone: "America/New_York" }
+}
+pure val requestValues = Set(
+  reviewedAppointment,
+  { ...reviewedAppointment, review: { ...reviewedAppointment.review, calendarGeneration: 1 } },
+  { ...reviewedAppointment, entry: { ...reviewedAppointment.entry,
+    details: { ...C::timedDetails, title: "Changed appointment" } } },
+  { ...reviewedAppointment, entry: { ...reviewedAppointment.entry,
+    identity: { ...C::appointmentIdentity, occurrenceId: "different-visit" } } })
+pure val againValues = requestValues
 ```
 
 ### Saving a repeating event updates its whole series through the same form

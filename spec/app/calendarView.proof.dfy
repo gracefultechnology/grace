@@ -854,3 +854,41 @@ lemma closeCalendar_ensures(v: CalendarView, by_: ViewActor)
     }
   }
 }
+
+lemma confirmAppointment_ensures(v: CalendarView, request: ConfirmedAppointment, by_: ViewActor)
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysOccurrenceIsUnique(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEditingIsSelected(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysCancelledIdsAreAbsent(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSeriesDefinitions(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysViewIdentity(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysViewWindow(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEntriesBelongToCalendar(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEntriesUseSeries(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSelectionIsCurrent(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletionHasSelection(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletedSeriesStayDeleted(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletedSeriesIdsAreNonempty(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSeriesDeletionIsRecurring(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> stepOccurrenceIdentityIsFixed(v, confirmAppointment(v, request, by_)))
+{
+  if inv(v) && canConfirmAppointment(v, request, by_) {
+    var created := app__calendar_create(app__calendar_initial, request.entry.identity, request.entry.details, app__calendar_CalendarActor.CalendarUser);
+    var approved := app__calendar_approveSave(created, created.revision, app__calendar_CalendarActor.CalendarUser);
+    var after := confirmAppointment(v, request, by_);
+    app__calendar_initialHolds_ensures();
+    app__calendar_create_ensures(app__calendar_initial, request.entry.identity, request.entry.details, app__calendar_CalendarActor.CalendarUser);
+    app__calendar_approveSave_ensures(created, created.revision, app__calendar_CalendarActor.CalendarUser);
+    CalendarUniqueDistinct(v);
+    ProofLib.DistinctByConcat(v.entries, [approved], (c: app__calendar_Calendar) => (c.identity.owner, c.identity.calendarId, c.identity.occurrenceId));
+    CalendarDistinctUnique(after);
+    assert alwaysEntriesBelongToCalendar(after);
+    CalendarEntryFind(after, approved);
+    forall prior, laterEntry | prior in v.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
+      ensures prior.identity == laterEntry.identity
+    {
+      assert laterEntry != approved;
+      assert laterEntry in v.entries;
+      CalendarSameKey(v, prior, laterEntry);
+    }
+  }
+}
