@@ -1,3 +1,9 @@
+This checkout contains the Grace MVP specification rebuild. Start with the
+[product contract](spec/index.md), [requirements coverage](docs/requirements-coverage.md)
+and [validation status](docs/validation-status.md). The current phase specifies
+and verifies the product before application implementation. The Vibestack
+reference documentation follows.
+
 <div align="center">
 
 # Vibestack

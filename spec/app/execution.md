@@ -60,11 +60,11 @@ pure val verificationReportValues = Set(
   { ...goodVerification, observation: 3 },
   { ...goodVerification, generation: 3, observation: 2, matches: false, reason: "field rejected" }
 )
-pure val weight_start = 2
-pure val weight_observe = 2
-pure val weight_prepare = 2
-pure val weight_dispatch = 2
-pure val weight_verify = 2
+pure val weight_start = 100
+pure val weight_observe = 100
+pure val weight_prepare = 100
+pure val weight_dispatch = 100
+pure val weight_verify = 100
 ```
 
 ### Starting work requires an explicit owner and task with a verified destination

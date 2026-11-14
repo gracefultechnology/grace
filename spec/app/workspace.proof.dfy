@@ -1,4 +1,5 @@
-// spec/app/workspace.md, "The workspace contains the actual device, page, conversation and operation"
+// Proofs for the owned workspace and its canonical payment registry.
+
 lemma ComponentInvariants(w: Workspace)
   requires inv(w)
   ensures app__shell_inv(w.device)
@@ -42,6 +43,12 @@ lemma InterruptedInvariant(device: app__shell_Shell, browser: app__browser_Brows
 {
   QuietComponents(w);
   app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  var leaves := device.surface != w.device.surface || !device.readiness.Ready?;
+  var quiet := quietAssistant(w.assistant);
+  if leaves && browser.editingAddress { app__browser_dismissAddress_ensures(browser); }
+  if leaves && app__assistant_canDismissKeyboard(quiet, app__conversation_ConversationActor.ConversationUser) {
+    app__assistant_dismissKeyboard_ensures(quiet, app__conversation_ConversationActor.ConversationUser);
+  }
 }
 
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
@@ -73,7 +80,7 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   if inv(w) && canOpenGrace(w, by_) {
     ComponentInvariants(w);
     app__assistant_open_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
-    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
+    AfterInteractionInvariant(app__assistant_open(w.assistant, app__conversation_ConversationActor.ConversationUser), w.browser.editingAddress, false, w);
   }
 }
 
@@ -140,7 +147,7 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
   if inv(w) && canTalk(w, by_) {
     ComponentInvariants(w);
     app__assistant_talk_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
-    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
+    AfterInteractionInvariant(app__assistant_talk(w.assistant, app__conversation_ConversationActor.ConversationUser), w.assistant.keyboard != app__assistant_KeyboardOwner.NoKeyboard || w.browser.editingAddress, false, w);
   }
 }
 
@@ -407,8 +414,6 @@ lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
   }
 }
 
-
-// spec/app/workspace.md, "The active bill is bound to the observed owner and origin once"
 lemma RegistryFilterView(w: Workspace)
   ensures alwaysPaymentRegistryIsCanonical(w) == (forall p :: p in w.otherPayments ==>
     !p.stage.Empty? && !p.live && !p.fresh_ && !p.readBack &&
@@ -503,6 +508,7 @@ lemma RegistryBind(w: Workspace, key: app__payment_BillKey, by_: WorkspaceActor)
   ensures alwaysPaymentRules(bindPayment(w, key, by_))
   ensures alwaysPaymentRegistryIsCanonical(bindPayment(w, key, by_))
   ensures stepPaymentSwitchRetainsRecords(w, "bindPayment", bindPayment(w, key, by_))
+  ensures bindPayment(w, key, by_).payment.key == key && !bindPayment(w, key, by_).payment.stage.Empty?
 {
   RegistryDistinct(w);
   RegistryFilterView(w);
@@ -843,16 +849,8 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   if inv(w) && canInteract(w, input, by_) {
     ComponentInvariants(w);
     var actor := if by_ == WorkspaceActor.Person then app__conversation_ConversationActor.ConversationUser else app__conversation_ConversationActor.ConversationRuntime;
-    app__interaction_lawInteractionPreservesAssistant_ensures(w.assistant, input, actor);
-    if app__interaction_submitsContent(input) || app__interaction_changesGeometry(input) {
-      if app__execution_canInvalidate(w.execution, app__execution_ExecutionActor.BrowserBridge) {
-        app__execution_invalidate_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
-      }
-      if app__payment_canInvalidate(w.payment, app__payment_PaymentActor.BrowserHost) {
-        app__payment_invalidate_ensures(w.payment, app__payment_PaymentActor.BrowserHost);
-      }
-    }
-    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+    InteractionFrame(w.assistant, input, actor);
+    AfterInteractionInvariant(app__interaction_interact(w.assistant, input, actor), app__interaction_changesGeometry(input), app__interaction_submitsContent(input), w);
   }
 }
 
@@ -918,4 +916,441 @@ lemma savePayment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceAc
     ComponentInvariants(w);
     RegistrySave(w, saveReport, by_);
   }
+}
+
+lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
+  requires inv(w)
+  requires app__assistant_inv(changed)
+  requires changed.taskId == w.assistant.taskId
+  requires app__assistant_unfinished(changed) == app__assistant_unfinished(w.assistant)
+  requires changed.activity.Paused? == w.assistant.activity.Paused?
+  requires !(geometry || content) ==> changed.activity.DoingWork? == w.assistant.activity.DoingWork?
+  requires changed.conversation.voice ==> w.device.readiness.Ready? && w.device.microphoneAllowed && app__shell_mayRequestReasoning(w.device) && app__assistant_isVisible(changed)
+  ensures inv(afterInteraction(changed, geometry, content, w))
+{
+  assert app__browser_inv(w.browser);
+  assert app__execution_inv(w.execution);
+  assert app__payment_inv(w.payment);
+  assert app__wake_inv(w.wake);
+  if geometry || content {
+    if app__execution_canInvalidate(w.execution, app__execution_ExecutionActor.BrowserBridge) {
+      app__execution_invalidate_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+    }
+    if app__payment_canInvalidate(w.payment, app__payment_PaymentActor.BrowserHost) {
+      app__payment_invalidate_ensures(w.payment, app__payment_PaymentActor.BrowserHost);
+    }
+  }
+  if geometry && w.browser.editingAddress && !changed.keyboard.WebsiteKeyboard? {
+    app__browser_dismissAddress_ensures(w.browser);
+  }
+  var browser := if geometry && w.browser.editingAddress && !changed.keyboard.WebsiteKeyboard? then app__browser_dismissAddress(w.browser) else w.browser;
+  if geometry { app__browser_pageChanged_ensures(browser); }
+  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  var after := afterInteraction(changed, geometry, content, w);
+  assert app__assistant_inv(after.assistant);
+}
+
+lemma InteractionFrame(a: app__assistant_Assistant, input: app__interaction_Interaction, by_: app__conversation_ConversationActor)
+  requires app__assistant_inv(a)
+  requires app__interaction_canInteract(a, input, by_)
+  ensures app__assistant_inv(app__interaction_interact(a, input, by_))
+  ensures app__interaction_interact(a, input, by_).taskId == a.taskId
+  ensures app__assistant_unfinished(app__interaction_interact(a, input, by_)) == app__assistant_unfinished(a)
+  ensures app__interaction_interact(a, input, by_).activity.Paused? == a.activity.Paused?
+  ensures !(app__interaction_changesGeometry(input) || app__interaction_submitsContent(input)) ==> app__interaction_interact(a, input, by_).activity.DoingWork? == a.activity.DoingWork?
+  ensures app__interaction_interact(a, input, by_).conversation.voice ==> a.conversation.voice
+{
+  app__interaction_lawInteractionPreservesAssistant_ensures(a, input, by_);
+  match input {
+    case UnusableSpeech(token, owner) => assert a.conversation.voice;
+    case _ => assert true;
+  }
+}
+
+lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysOneTask(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedTogether(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysRecordingHasPermission(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysOperationHasVisibleTask(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysEvidenceVersionsAreNonnegative(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysWakeRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysActiveWakePausesWebsiteWork(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPreferencesRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysDeviceRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysBrowserRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysAssistantRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysExecutionRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentRules(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentRegistryIsCanonical(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentAssociation(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedPaymentCannotSubmit(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentUsesCanonicalIdentity(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentReviewUsesCurrentContext(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepInterruptionsKeepTask(w, "begin", begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepWakeNeverDispatchesWebsite(w, "begin", begin(w, taskRequest, by_), []))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepEffectsRequireCurrentContext(w, begin(w, taskRequest, by_), []))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepDepartureKeepsPaymentAttempt(w, "begin", begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepPaymentSwitchRetainsRecords(w, "begin", begin(w, taskRequest, by_)))
+{
+  if inv(w) && canBegin(w, taskRequest, by_) {
+    ComponentInvariants(w);
+    QuietComponents(w);
+    app__browser_navigate_ensures(w.browser, taskRequest.origin);
+    app__assistant_beginTask_ensures(w.assistant, taskRequest.task, taskRequest.goal, app__conversation_ConversationActor.ConversationUser);
+    app__execution_start_ensures(w.execution, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
+  }
+}
+
+lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysOneTask(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedTogether(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysRecordingHasPermission(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysOperationHasVisibleTask(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysEvidenceVersionsAreNonnegative(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysWakeRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysActiveWakePausesWebsiteWork(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPreferencesRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysDeviceRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysBrowserRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysAssistantRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysExecutionRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentRules(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentRegistryIsCanonical(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentAssociation(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedPaymentCannotSubmit(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentUsesCanonicalIdentity(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentReviewUsesCurrentContext(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepInterruptionsKeepTask(w, "replaceTask", replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepWakeNeverDispatchesWebsite(w, "replaceTask", replaceTask(w, taskRequest, by_), []))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepEffectsRequireCurrentContext(w, replaceTask(w, taskRequest, by_), []))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepDepartureKeepsPaymentAttempt(w, "replaceTask", replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepPaymentSwitchRetainsRecords(w, "replaceTask", replaceTask(w, taskRequest, by_)))
+{
+  if inv(w) && canReplaceTask(w, taskRequest, by_) {
+    ComponentInvariants(w);
+    QuietComponents(w);
+    app__browser_navigate_ensures(w.browser, taskRequest.origin);
+    app__assistant_chooseReplacement_ensures(w.assistant, true, app__conversation_ConversationActor.ConversationUser);
+    app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.User);
+    var retired := app__execution_retire(w.execution, app__execution_ExecutionActor.User);
+    app__execution_start_ensures(retired, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
+  }
+}
+
+lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysOneTask(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedTogether(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysRecordingHasPermission(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysOperationHasVisibleTask(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysWakeRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysActiveWakePausesWebsiteWork(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPreferencesRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysDeviceRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysBrowserRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysAssistantRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysExecutionRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentRules(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentRegistryIsCanonical(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentAssociation(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedPaymentCannotSubmit(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCurrentBeforeAction(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepInterruptionsKeepTask(w, "closeBrowser", closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "closeBrowser", closeBrowser(w, by_), []))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepEffectsRequireCurrentContext(w, closeBrowser(w, by_), []))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepDepartureKeepsPaymentAttempt(w, "closeBrowser", closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepPaymentSwitchRetainsRecords(w, "closeBrowser", closeBrowser(w, by_)))
+{
+  if inv(w) && canCloseBrowser(w, by_) {
+    ComponentInvariants(w);
+    app__browser_closeBrowser_ensures(w.browser);
+    app__shell_openSurface_ensures(w.device, app__shell_Surface.Home);
+    InterruptedInvariant(app__shell_openSurface(w.device, app__shell_Surface.Home), app__browser_closeBrowser(w.browser), w);
+  }
+}
+
+lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysOneTask(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedTogether(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysOperationHasVisibleTask(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysEvidenceVersionsAreNonnegative(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysWakeRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysActiveWakePausesWebsiteWork(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPreferencesRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysDeviceRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysBrowserRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysAssistantRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysExecutionRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentRules(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentRegistryIsCanonical(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentAssociation(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentUsesCanonicalIdentity(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentReviewUsesCurrentContext(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepInterruptionsKeepTask(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepWakeNeverDispatchesWebsite(w, "unexpectedPage", unexpectedPage(w, unexpected, by_), []))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepEffectsRequireCurrentContext(w, unexpectedPage(w, unexpected, by_), []))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepDepartureKeepsPaymentAttempt(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepPaymentSwitchRetainsRecords(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
+{
+  if inv(w) && canUnexpectedPage(w, unexpected, by_) {
+    ComponentInvariants(w);
+    app__browser_navigate_ensures(w.browser, unexpected.destination);
+    InterruptedInvariant(w.device, app__browser_navigate(w.browser, unexpected.destination), w);
+  }
+}
+
+lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysOneTask(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedTogether(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysRecordingHasPermission(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysOperationHasVisibleTask(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysEvidenceVersionsAreNonnegative(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysWakeRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysActiveWakePausesWebsiteWork(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPreferencesRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysDeviceRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysBrowserRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysAssistantRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysExecutionRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentRules(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentRegistryIsCanonical(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentAssociation(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedPaymentCannotSubmit(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCurrentBeforeAction(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentUsesCanonicalIdentity(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentReviewUsesCurrentContext(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepInterruptionsKeepTask(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepWakeNeverDispatchesWebsite(w, "receiveLoad", receiveLoad(w, loadReport, by_), []))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepEffectsRequireCurrentContext(w, receiveLoad(w, loadReport, by_), []))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepDepartureKeepsPaymentAttempt(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepPaymentSwitchRetainsRecords(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
+{
+if inv(w) && canReceiveLoad(w, loadReport, by_) {
+  ComponentInvariants(w);
+  app__browser_finishLoad_ensures(w.browser, loadReport.id, loadReport.version, loadReport.result);
+  var browser := app__browser_finishLoad(w.browser, loadReport.id, loadReport.version, loadReport.result);
+  if loadReport.id == w.browser.selected && ((loadReport.result != app__browser_Load.Loaded && app__assistant_unfinished(w.assistant)) || w.execution.phase == app__execution_OperationPhase.Observed || w.execution.phase == app__execution_OperationPhase.Queued || w.execution.phase == app__execution_OperationPhase.InFlight) {
+    InterruptedInvariant(w.device, browser, w);
+  } else if loadReport.id != w.browser.selected {
+    BackgroundLoadKeepsSelected(w.browser, loadReport.id, loadReport.version, loadReport.result);
+  }
+}
+}
+
+lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysOneTask(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedTogether(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysRecordingHasPermission(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysOperationHasVisibleTask(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysEvidenceVersionsAreNonnegative(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysWakeRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysActiveWakePausesWebsiteWork(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPreferencesRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysDeviceRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysBrowserRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysAssistantRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysExecutionRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentRules(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentRegistryIsCanonical(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentAssociation(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedPaymentCannotSubmit(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCurrentBeforeAction(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentUsesCanonicalIdentity(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentReviewUsesCurrentContext(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepInterruptionsKeepTask(w, "receiveProgress", receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepWakeNeverDispatchesWebsite(w, "receiveProgress", receiveProgress(w, progress, by_), []))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepEffectsRequireCurrentContext(w, receiveProgress(w, progress, by_), []))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepDepartureKeepsPaymentAttempt(w, "receiveProgress", receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepPaymentSwitchRetainsRecords(w, "receiveProgress", receiveProgress(w, progress, by_)))
+{
+  if inv(w) && canReceiveProgress(w, progress, by_) {
+    ComponentInvariants(w);
+    if progress.destination == "" {
+      app__browser_pageChanged_ensures(w.browser);
+    } else {
+      app__browser_navigate_ensures(w.browser, progress.destination);
+    }
+    app__execution_invalidate_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+    if app__payment_canInvalidate(w.payment, app__payment_PaymentActor.BrowserHost) {
+      app__payment_invalidate_ensures(w.payment, app__payment_PaymentActor.BrowserHost);
+    }
+    if progress.kind == ProgressKind.OrdinaryProgress {
+      app__assistant_receiveStep_ensures(w.assistant, w.assistant.taskId, progress.taskVersion, w.assistant.operation, "Inspect the updated page", false, app__conversation_ConversationActor.ConversationRuntime);
+    }
+  }
+}
+
+lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysOneTask(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedTogether(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysRecordingHasPermission(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysOperationHasVisibleTask(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysEvidenceVersionsAreNonnegative(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysWakeRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysActiveWakePausesWebsiteWork(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPreferencesRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysDeviceRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysBrowserRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysAssistantRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysExecutionRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentRules(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentRegistryIsCanonical(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentAssociation(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedPaymentCannotSubmit(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCurrentBeforeAction(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentUsesCanonicalIdentity(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentReviewUsesCurrentContext(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepInterruptionsKeepTask(w, "changePage", changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepWakeNeverDispatchesWebsite(w, "changePage", changePage(w, browserInput, by_), []))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepEffectsRequireCurrentContext(w, changePage(w, browserInput, by_), []))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepDepartureKeepsPaymentAttempt(w, "changePage", changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepPaymentSwitchRetainsRecords(w, "changePage", changePage(w, browserInput, by_)))
+{
+if inv(w) && canChangePage(w, browserInput, by_) {
+  ComponentInvariants(w);
+  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
+  app__browserControls_lawControlsPreserveBrowser_ensures(w.browser, browserInput, actor);
+  app__browserControls_lawRecentEditsKeepPage_ensures(w.browser, browserInput, actor);
+  var browser := app__browserControls_control(w.browser, browserInput, actor);
+  if browser.revision != w.browser.revision {
+    InterruptedInvariant(w.device, browser, w);
+  } else {
+    BrowserControlKeepsPage(w.browser, browserInput, actor);
+  }
+  var updated := if browser.revision != w.browser.revision then interrupted(w.device, browser, w) else w.(browser := browser, wake := app__wake_cancel(w.wake, app__wake_WakeActor.WakeHost));
+  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  assert inv(updated);
+  if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser) {
+    app__assistant_focusWebsite_ensures(updated.assistant, app__conversation_ConversationActor.ConversationUser);
+  } else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard {
+    app__assistant_dismissKeyboard_ensures(updated.assistant, app__conversation_ConversationActor.ConversationUser);
+  }
+}
+}
+
+lemma initialHolds_ensures()
+  ensures inv(initialHolds())
+{
+  app__shell_initialHolds_ensures();
+  app__browser_initialHolds_ensures();
+  app__assistant_initialHolds_ensures();
+  app__conversation_initialHolds_ensures();
+  app__execution_initialHolds_ensures();
+  app__payment_initialHolds_ensures();
+  app__preferences_initialHolds_ensures();
+  app__wake_initialHolds_ensures();
+}
+
+lemma BrowserLookupFilter(b: app__browser_Browser, id: int)
+  ensures app__browser_tabById(b, id) == (var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs); if |matches| > 0 then matches[|matches|-1] else app__browser_blankTab(0, 0))
+{}
+lemma BrowserKeysFilter(b: app__browser_Browser)
+  ensures app__browser_alwaysTabIdentifiersAreUnique(b) == !(exists t :: t in b.tabs && !(|ProofLib.Filter((other: app__browser_Tab) => (other.id == t.id), b.tabs)| == 1))
+{}
+lemma BrowserLookupMember(b: app__browser_Browser, id: int, t: app__browser_Tab)
+  requires app__browser_inv(b) && t in b.tabs && t.id == id
+  ensures app__browser_tabById(b, id) == t
+{
+  BrowserLookupFilter(b, id);
+  BrowserKeysFilter(b);
+  var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs);
+  ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, t);
+  assert |matches| == 1;
+  assert matches[0] == t;
+}
+lemma BackgroundLoadKeepsSelected(b: app__browser_Browser, id: int, version: int, result: app__browser_Load)
+  requires app__browser_inv(b) && app__browser_canFinishLoad(b, id, version, result)
+  requires id != b.selected
+  ensures app__browser_activeTab(app__browser_finishLoad(b, id, version, result)) == app__browser_activeTab(b)
+  ensures app__browser_finishLoad(b, id, version, result).revision == b.revision
+{
+  app__browser_finishLoad_ensures(b, id, version, result);
+  var t :| t in b.tabs && t.id == b.selected;
+  var i :| 0 <= i < |b.tabs| && b.tabs[i] == t;
+  var after := app__browser_finishLoad(b, id, version, result);
+  assert after.tabs[i] == t;
+  BrowserLookupMember(b, b.selected, t);
+  BrowserLookupMember(after, after.selected, t);
+}
+lemma BrowserControlKeepsPage(b: app__browser_Browser, input: app__browserControls_BrowserInput, by_: app__browserControls_BrowserControlActor)
+  requires app__browser_inv(b) && app__browserControls_canControl(b, input, by_)
+  requires app__browserControls_control(b, input, by_).revision == b.revision
+  ensures app__browserControls_control(b, input, by_).tabs == b.tabs
+  ensures app__browserControls_control(b, input, by_).selected == b.selected
+{
+  match input {
+    case EditAddress(text) => assert b.editingAddress;
+    case ExplainEmptyAddress => assert true;
+    case RemoveRecent(url) => assert true;
+    case RequestClearHistory => assert true;
+    case AnswerClearHistory(confirmed) => assert true;
+    case _ => assert false;
+  }
+}
+
+lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOneTask(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedTogether(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysRecordingHasPermission(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOperationHasVisibleTask(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysEvidenceVersionsAreNonnegative(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysWakeRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysActiveWakePausesWebsiteWork(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPreferencesRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysDeviceRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysBrowserRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysAssistantRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysExecutionRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentRules(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentRegistryIsCanonical(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentAssociation(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedPaymentCannotSubmit(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCurrentBeforeAction(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentUsesCanonicalIdentity(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentReviewUsesCurrentContext(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepInterruptionsKeepTask(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepWakeNeverDispatchesWebsite(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_), []))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepEffectsRequireCurrentContext(w, changeLifecycle(w, lifecycle, by_), []))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepDepartureKeepsPaymentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepPaymentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
+{
+if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
+  ComponentInvariants(w);
+  match lifecycle {
+    case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
+    case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
+    case RetryStartup => app__shell_retryStartup_ensures(w.device);
+    case SleepDevice => app__shell_sleep_ensures(w.device);
+    case WakeDevice => app__shell_wake_ensures(w.device);
+    case RestartDevice => app__shell_restart_ensures(w.device);
+  }
+  var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
+    else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
+    else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
+    else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
+    else if lifecycle.WakeDevice? then app__shell_wake(w.device)
+    else app__shell_restart(w.device);
+  InterruptedInvariant(device, w.browser, w);
+  var stopped := interrupted(device, w.browser, w);
+  if (lifecycle.SleepDevice? || lifecycle.RestartDevice?) && app__assistant_isVisible(stopped.assistant) {
+    app__assistant_close_ensures(stopped.assistant, app__conversation_ConversationActor.ConversationUser);
+  }
+  if lifecycle.RestartDevice? {
+    app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
+    if app__payment_canRestart(w.payment, app__payment_PaymentActor.DurableStore) {
+      app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
+    }
+  }
+  RegistryRestart(w, lifecycle, by_);
+}
+
 }

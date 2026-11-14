@@ -7,7 +7,11 @@ stateless interaction libraries call child guards and transitions on those
 same stored values. This inventory concerns specified routes, not an implemented
 React/VibeLang interface or hardware acceptance.
 
-| Owned state and operation | Canonical workspace route |
+Files, Email and Calendar retain their own canonical state. The stateless
+`Handoffs.trySharePhoto` operation updates Files and the chosen mailbox together;
+its returned pair replaces those owners' values and is not another store.
+
+| Owned state and operation | Canonical route |
 |---|---|
 | Startup success/failure/retry, sleep, touch wake, restart | `changeLifecycle`; restart also restores durable preferences/payment records and fences callbacks |
 | Connectivity, reasoning route, microphone permission, observation permission | `setAvailability` with actual host evidence |
@@ -25,6 +29,8 @@ React/VibeLang interface or hardware acceptance.
 | Text size, brightness/night dimming, speech pace/output, system volume/mute, wake preference | `changePreferences`; validated setting values come from the existing Preferences helpers |
 | Undo, automatic save/retry, success/failure acknowledgement, voice/system sound sample | `undoPreferences`, `savePreferences`, `preferencesSaved`, `samplePreferences`; samples carry the current preference revision |
 | Enabled wake detection, silence notice, return to prior window, cancellation | `detectWake`, `wakeNoSpeech`, `wakeReturn`, `cancelWake` |
+| Share the current readable Files photo into a chosen mailbox | `Handoffs.trySharePhoto`; preflight the current file and mailbox before clearing preview, then create an unsent draft with that exact photo |
+| Close Calendar or Email | Calendar `closeCalendar`, or Email `preserveDraft` / explicit `discardDraft`, precedes workspace `visit(Home)`; pending operations remain owned and recoverable |
 
 Address-keyboard changes, text-size changes and native/browser geometry use the
 same target invalidation contract. Volume, pace and recent-shortcut edits do

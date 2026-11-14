@@ -931,6 +931,11 @@ another submission. Grace shows the observed result and a receipt-save retry
 while retaining this unfinished bookkeeping, so restart cannot retain a
 completed task beside a lost receipt.
 
+Discovered by the proof review: editing recent history is not a departure from
+the current page. Every browser-control edit preserves the payment attempt and
+durable record. Only a changed page or geometry revision revokes readiness;
+history-only edits retain the current readiness.
+
 ```quint
 pure def terminalPayment(result: P::PaymentOutcome): bool =
   P::positiveOutcome(result) or result == P::VerifiedFailure or result == P::Returned
@@ -976,12 +981,15 @@ pure def stepPaymentSwitchRetainsRecords(before: Workspace, via: str, after: Wor
     paymentRecords(after).some(record => record.key == prior.key and
       record.attempt == prior.attempt and record.durable == prior.durable and record.result == prior.result))
 pure def stepDepartureKeepsPaymentAttempt(before: Workspace, via: str, after: Workspace): bool =
-  (via == "changeLifecycle" or via == "setAvailability" or via == "visit" or
+  (via == "changePage" implies after.payment.attempt == before.payment.attempt and
+    after.payment.durable == before.payment.durable) and
+  ((via == "changeLifecycle" or via == "setAvailability" or via == "visit" or
     via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
-    via == "changePage" or via == "unexpectedPage" or via == "purgePrivate" or via == "abandonTask" or
+    (via == "changePage" and before.browser.revision != after.browser.revision) or
+    via == "unexpectedPage" or via == "purgePrivate" or via == "abandonTask" or
     via == "chooseHomePage" or via == "chooseSettingsPage" or via == "togglePopover" or via == "dismissPopover")
   implies after.payment.attempt == before.payment.attempt and after.payment.durable == before.payment.durable and
-    not(after.payment.fresh) and (after.payment.stage == P::Empty or not(after.payment.live))
+    not(after.payment.fresh) and (after.payment.stage == P::Empty or not(after.payment.live)))
 pure def sometimesPaymentAuthorized(w: Workspace): bool = w.payment.stage == P::Authorized
 pure def sometimesPaymentDispatched(w: Workspace): bool = w.payment.stage == P::Checking and w.payment.dispatched
 pure def sometimesInterruptedPaymentIsUncertain(w: Workspace): bool =
@@ -1057,7 +1065,9 @@ pure val currentObservationValues = Set(observed,
   { ...observed, browserRevision: 3, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 3, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 4, taskVersion: 3,
-    website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } })
+    website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } },
+  { ...observed, browserRevision: 4, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
+  { ...observed, browserRevision: 4, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
 pure val operation: OperationRequest = {
   deviceVersion: 6, browserRevision: 2, taskVersion: 1,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage
@@ -1085,8 +1095,13 @@ pure val currentReviewValues = Set({ deviceVersion: 6, browserRevision: 2, taskV
 pure val currentOutcomeValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::exampleOutcome },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: P::exampleOutcome },
   { deviceVersion: 6, browserRevision: 3, taskVersion: 1, report: { ...P::exampleOutcome, revision: 3 } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::exampleOutcome, result: P::Pending, reference: "" } })
-pure val currentPriorValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::examplePrior })
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::exampleOutcome, result: P::Pending, reference: "" } },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::VerifiedFailure, reference: "" } },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::Returned, reference: "" } })
+pure val currentPriorValues = Set(
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::examplePrior },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::examplePrior, result: P::VerifiedFailure, reference: "" } },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::examplePrior, result: P::Returned, reference: "" } })
 pure val saveReportValues = Set(
   { key: P::exampleKey, revision: 3, succeeded: true },
   { key: P::exampleKey, revision: 4, succeeded: true },

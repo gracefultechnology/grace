@@ -1,8 +1,12 @@
-# One bill across Email, Calendar and the browser
+# Handoffs between Files, Email, Calendar and the browser
 
 This registry maps a canonical bill to its one durable [payment](./payment.md) aggregate. It owns references, not a second copy of payment status. Calendar occurrence IDs, email message IDs, chat IDs and browser tabs are source locations; none changes payment identity. The bill reference identifies the provider's unique obligation or invoice cycle, not merely a recurring merchant relationship.
 
 The shell constructs sources through the projections below from decoded domain state, then authenticates the person's selection separately from planner output. Storage resolves the registry atomically with aggregate creation; a competing creation returns the existing mapping. Selecting a source never sends money. This integrates the previously separate legacy guide and bill stores identified in `MoneyEffect` and `BillAttempt`.
+
+The photo handoff below is a stateless operation over the actual Files and
+chosen mailbox states. An accepted result replaces those two states atomically;
+a declined result supplies no replacement. It is not another Files or Email store.
 
 ## Story: Open the same bill from any surface
 
@@ -10,7 +14,7 @@ The shell constructs sources through the projections below from decoded domain s
 
 ### Domain projections retain the same provider bill identity
 
-Only a confirmed bill from the selected connected mailbox or a saved bill occurrence is a usable source. The mailbox resolves selection against its current owned message record, so Trash, purge or a stale reference cannot retain source authority. Calendar callers resolve the selected occurrence through the current collection, so a deleted entry or series cannot supply an old cached bill. Email text and calendar titles are not destination authority. The browser still verifies origin and account through the preparation model before using personal data.
+Only a confirmed bill from the selected connected mailbox or a saved bill occurrence is a usable source. The mailbox resolves selection against its current owned message record, so Trash, purge or a stale reference cannot retain source authority. Calendar callers resolve the selected occurrence through the current collection, so a deleted entry or series cannot supply an old cached bill. The calendar must be open and outside its deletion flow; a hidden selection retained for a pending deletion is not an actionable bill. Email text and calendar titles are not destination authority. The browser still verifies origin and account through the preparation model before using personal data.
 
 ```quint
 import payment as P from "./payment"
@@ -43,10 +47,12 @@ pure def calendarSource(entry: C::Calendar): BillSource = {
   kind: CalendarSource, reference: if (C::billAvailable(entry)) entry.identity.occurrenceId else ""
 }
 pure def currentCalendarSource(calendar: V::CalendarView): BillSource =
-  calendarSource(V::selectedOccurrence(calendar))
+  if (calendar.opened and calendar.deletion == V::NoDeletion) calendarSource(V::selectedOccurrence(calendar)) else noSource
 pure def usableSource(source: BillSource): bool = P::validKey(source.key) and source.reference != ""
 pure def lawAbsentCalendarBillHasNoSource(calendar: V::CalendarView): bool =
   not(C::billAvailable(V::selectedOccurrence(calendar))) implies not(usableSource(currentCalendarSource(calendar)))
+pure def lawHiddenCalendarSelectionHasNoSource(calendar: V::CalendarView): bool =
+  (not(calendar.opened) or calendar.deletion != V::NoDeletion) implies not(usableSource(currentCalendarSource(calendar)))
 pure def lawUnavailableMessageHasNoSource(mail: E::Mailbox): bool =
   not(E::selectedMessageIsCurrent(mail)) implies not(usableSource(emailSource(mail)))
 pure def bindingFor(r: Registry, key: P::BillKey): Binding =
@@ -59,7 +65,10 @@ pure val sourceValues = Set(
   { key: { owner: "owner", origin: "https://credit.example", account: "account", bill: "other-bill" }, kind: BrowserSource, reference: "page" },
   noSource
 )
-pure val mailValues = Set(E::initial,
+pure val photoMailbox: E::Mailbox = { ...E::initial, owner: "owner", provider: "mail-provider", account: "mail-account" }
+pure val mailValues = Set(E::initial, photoMailbox,
+  E::startDraft(photoMailbox, false, E::MailUser),
+  E::preserveDraft(E::startDraft(photoMailbox, false, E::MailUser), "photo-draft", E::MailUser),
   { ...E::initial, owner: "owner", provider: "mail-provider", account: "mail-account", connection: E::Connected, canRead: true,
     messages: List(I::loadMessage(I::initial,
       { identity: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
@@ -176,3 +185,132 @@ pure val paymentValues = Set(P::initial,
   { ...P::initial, key: P::exampleKey, proposal: P::exampleProposal, stage: P::Resolved, result: P::Completed, reference: "receipt" },
   { ...P::initial, key: P::exampleKey, proposal: P::exampleProposal, stage: P::Checking, result: P::Unknown })
 ```
+
+## Story: Share the photo I am viewing through my chosen mailbox
+
+> As a person viewing a saved photo, I can choose Share, choose a recipient in
+> Email, and review the draft before deciding whether to send it.
+
+### Files closes the preview only when Email accepts that exact photo into a new draft
+
+The selected photo, Files generation, mailbox identity, mailbox generation and
+mailbox revision must still match when the person chooses Share. The operation
+first checks that Email can create a draft and accept the selected attachment.
+Only then does it consume Files' Share result and install the new Email draft.
+The subject starts as “A photo”, as in the prototype, and the recipient remains
+empty; choosing Share never approves or sends mail.
+
+If another composer is open, save or explicitly discard it through Email's
+existing controls, then return to the unchanged photo and choose Share again.
+A draft-save or discard request must finish before it can be replaced. A failed
+save leaves the recoverable composer intact. An unresolved send must be
+reconciled through Email before starting another draft. A disconnected but
+already identified mailbox can still create the local draft under Email's
+existing rules. Changing either source or destination invalidates the old Share
+request; no attachment is silently redirected into a different draft or account.
+An accepted handoff preserves every Files and Email state invariant, including
+their catalog, message, draft, persistence and send-recovery rules.
+
+```quint
+type PhotoShareRequest = {
+  id: str, fileGeneration: int, owner: str, provider: str, account: str,
+  mailGeneration: int, mailRevision: int
+}
+type PhotoHandoff = ShareDeclined | SharedPhoto({ files: F::Files, mail: E::Mailbox })
+pure def validFiles(files: F::Files): bool =
+  F::alwaysLibraryIdentity(files) and F::alwaysCatalogValid(files) and
+  F::alwaysCatalogLoadHasNoStaleView(files) and F::alwaysSelectionExists(files) and
+  F::alwaysPendingFileExists(files) and F::alwaysMatchesExist(files) and F::alwaysPendingImportValid(files)
+pure def validMailbox(mail: E::Mailbox): bool =
+  E::alwaysConnectedIdentity(mail) and E::alwaysAccountIdentityIsBound(mail) and
+  E::alwaysGenerationAndRevision(mail) and E::alwaysReadAccess(mail) and
+  E::alwaysReadSelectionIsBound(mail) and E::alwaysSelectedContent(mail) and
+  E::alwaysMessageRegistry(mail) and E::alwaysListedMessagesAreCurrent(mail) and
+  E::alwaysSelectionUsesCanonicalMessage(mail) and E::alwaysFolderIsVisible(mail) and
+  E::alwaysSearchMatchesQuery(mail) and E::alwaysBillProvenance(mail) and
+  E::alwaysResultPersistenceHasTerminal(mail) and E::alwaysSendHasRecipient(mail) and
+  E::alwaysSendEvidence(mail) and E::alwaysApprovalIsCurrent(mail) and
+  E::alwaysDraftHasAccount(mail) and E::alwaysDraftStoreHasRevision(mail) and
+  E::alwaysRetirementHasMailbox(mail) and E::alwaysDraftVersions(mail) and
+  E::alwaysEditableDraftIsNotRetired(mail) and E::alwaysDraftAssetsAreValid(mail) and
+  E::alwaysMessageAssetsAreBound(mail)
+pure def photoDraft(mail: E::Mailbox): E::Mailbox =
+  E::editDraft(E::startDraft(mail, false, E::MailUser), { ...E::emptyContent, subject: "A photo" }, E::MailUser)
+pure def maySharePhoto(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  val draft = photoDraft(mail)
+  by == RegistryUser and files.owner == mail.owner and photoRequest.owner == mail.owner and
+  photoRequest.provider == mail.provider and photoRequest.account == mail.account and
+  photoRequest.mailGeneration == mail.generation and photoRequest.mailRevision == mail.revision and
+  F::canSharePhoto(files, photoRequest.id, photoRequest.fileGeneration, F::FileUser) and
+  E::canStartDraft(mail, false, E::MailUser) and
+  E::canEditDraft(E::startDraft(mail, false, E::MailUser), E::MailUser) and
+  E::canAttachAsset(draft, files.owner, F::fileAt(files, files.selected), draft.revision, true, E::MailHost)
+pure def trySharePhoto(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): PhotoHandoff =
+  val draft = photoDraft(mail)
+  if (maySharePhoto(files, mail, photoRequest, by)) SharedPhoto({
+    files: F::sharePhoto(files, photoRequest.id, photoRequest.fileGeneration, F::FileUser).state,
+    mail: E::attachAsset(draft, files.owner, F::fileAt(files, files.selected), draft.revision, true, E::MailHost)
+  }) else ShareDeclined
+pure def lawRejectedShareKeepsBoth(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  val handoff = trySharePhoto(files, mail, photoRequest, by)
+  not(maySharePhoto(files, mail, photoRequest, by)) implies (match handoff {
+    | ShareDeclined => true
+    | SharedPhoto(_) => false
+  })
+pure def lawShareUsesTheSelectedPhoto(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  val handoff = trySharePhoto(files, mail, photoRequest, by)
+  maySharePhoto(files, mail, photoRequest, by) implies (match handoff {
+    | ShareDeclined => false
+    | SharedPhoto(result) => result.files.selected == "" and not(result.files.contentReady) and
+        result.mail.draftAttachments == List(F::fileAt(files, files.selected)) and
+        result.mail.draftTo == "" and result.mail.draftSubject == "A photo" and
+        result.mail.composeVisible and result.mail.sendStatus == E::Composing
+  })
+pure def lawStaleShareCannotSwitchDestination(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  (photoRequest.id != files.selected or photoRequest.fileGeneration != files.generation or
+    photoRequest.owner != mail.owner or photoRequest.provider != mail.provider or photoRequest.account != mail.account or
+    photoRequest.mailGeneration != mail.generation or photoRequest.mailRevision != mail.revision) implies
+    not(maySharePhoto(files, mail, photoRequest, by))
+pure def lawShareNeverSends(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  val handoff = trySharePhoto(files, mail, photoRequest, by)
+  match handoff {
+    | ShareDeclined => true
+    | SharedPhoto(result) => result.mail.issuedSends.subseteq(mail.issuedSends) and
+        mail.issuedSends.subseteq(result.mail.issuedSends) and result.mail.sendStatus == E::Composing
+  }
+pure def lawShareKeepsSavedFiles(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  val handoff = trySharePhoto(files, mail, photoRequest, by)
+  match handoff {
+    | ShareDeclined => true
+    | SharedPhoto(result) => result.files.entries == files.entries
+  }
+pure def lawSharePreservesOwnedState(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
+  val handoff = trySharePhoto(files, mail, photoRequest, by)
+  validFiles(files) and validMailbox(mail) implies (match handoff {
+    | ShareDeclined => true
+    | SharedPhoto(result) => validFiles(result.files) and validMailbox(result.mail)
+  })
+pure val filesValues = Set(F::initial,
+  { ...F::initial, owner: "owner", opened: true, loaded: true, entries: List(F::samplePhoto),
+    selected: "photo", contentReady: true, generation: 3 })
+pure val photoRequestValues = Set(
+  { id: "photo", fileGeneration: 3, owner: "owner", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 0 },
+  { id: "photo", fileGeneration: 2, owner: "owner", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 0 },
+  { id: "photo", fileGeneration: 3, owner: "other", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 0 },
+  { id: "photo", fileGeneration: 3, owner: "owner", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 1 })
+```
+
+Native Close also resolves the visible form through its owning application
+before going Home.
+
+Calendar Close first uses Calendar's `closeCalendar` operation to cancel an
+unsaved form and clear its detail selection, then routes the workspace Home.
+It does not fabricate a saved occurrence. Email Close first uses
+`preserveDraft` for the current editable draft or the person's explicit
+`discardDraft` choice. A save may finish after the composer hides, but failure
+reopens that same recoverable editor; the host brings the failed save to the
+person's attention. Pending or uncertain sends remain in their original
+mailbox for reconciliation. Only after this owning-state operation does the
+host call workspace `visit(Home)`, which pauses assistance without deleting
+mail or calendar state. Closing the window is never an implicit Send, save
+success, discard confirmation or payment outcome.

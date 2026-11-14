@@ -38,6 +38,7 @@ type Connection = Disconnected | Authorizing | Connected | Expired | Revoked | U
 type MailView = Inbox | Message | Attachment
 type ReadStatus = ReadIdle | Reading | ReadFailed
 type ReadKind = Search | OpenMessage | OpenAttachment
+type ReadReceipt = { generation: int, succeeded: bool, assets: List[F::SavedFile] }
 type SendStatus = NoDraft | Composing | Reviewing | Sending | Sent | SendFailed | SendUnknown
 type DraftStorage = DraftUnstored | DraftSaving | DraftDeleting | DraftSaved | DraftStoreFailed
 type DraftContent = { to: str, cc: Set[str], bcc: Set[str], subject: str, body: str }
@@ -49,7 +50,7 @@ type Mailbox = {
   connection: Connection, canRead: bool, canSend: bool,
   view: MailView, folder: I::Folder, query: str, readStatus: ReadStatus, readKind: ReadKind,
   requestedRef: str, messageRef: str, attachmentRef: str,
-  messages: List[I::MessageRecord], messageRefs: Set[str], attachmentRefs: Set[str], assets: List[F::SavedFile],
+  messages: List[I::MessageRecord], messageRefs: Set[str], assets: List[F::SavedFile],
   draftTo: str, draftCc: Set[str], draftBcc: Set[str], draftSubject: str, draftBody: str, replyTo: str,
   draftAttachments: List[F::SavedFile], draftId: str, draftVersion: int, retiredDrafts: str -> int, composeVisible: bool, draftStorage: DraftStorage, storedRevision: int, draftRequest: int,
   revision: int, approvedRevision: int, sendStatus: SendStatus,
@@ -62,7 +63,7 @@ pure val initial: Mailbox = {
   connection: Disconnected, canRead: false, canSend: false,
   view: Inbox, folder: I::InboxFolder, query: "", readStatus: ReadIdle, readKind: Search,
   requestedRef: "", messageRef: "", attachmentRef: "",
-  messages: List(), messageRefs: Set(), attachmentRefs: Set(), assets: List(),
+  messages: List(), messageRefs: Set(), assets: List(),
   draftTo: "", draftCc: Set(), draftBcc: Set(), draftSubject: "", draftBody: "", replyTo: "",
   draftAttachments: List(), draftId: "", draftVersion: 0, retiredDrafts: Map(), composeVisible: false, draftStorage: DraftUnstored, storedRevision: -1, draftRequest: 0,
   revision: 0, approvedRevision: -1, sendStatus: NoDraft,
@@ -113,7 +114,7 @@ pure def connect(m: Mailbox, owner: str, provider: str, account: str, by: MailAc
   { ...m, owner: owner, provider: provider, account: account,
     generation: m.generation + 1, connection: Authorizing,
     canRead: false, canSend: false, readStatus: ReadIdle, view: Inbox, folder: I::InboxFolder, query: "",
-    messageRef: "", attachmentRef: "", messageRefs: Set(), attachmentRefs: Set(), assets: List(),
+    messageRef: "", attachmentRef: "", messageRefs: Set(), assets: List(),
     billRef: "", billOrigin: "", billAccount: "", billSourceRef: "", billConfirmed: false }
 pure def canAuthorize(m: Mailbox, generation: int, verified: bool, readGranted: bool, by: MailActor): bool =
   (by == MailConnector) and m.connection == Authorizing and generation == m.generation and verified and readGranted
@@ -147,8 +148,12 @@ pure def sometimesRevoked(m: Mailbox): bool = m.connection == Revoked
 ### Each search or content read needs current access and the user's choice
 
 Only message references returned by this mailbox's current authenticated search
-can be opened. Attachment references belong to the selected message and its
-current response generation. Reconnecting clears cached selection authority;
+can be opened. Attachment references come only from the complete descriptor manifest returned
+atomically with the selected message and its current response generation.
+A successful body read must include every original attachment, including a
+valid empty manifest; partial metadata is not a successful message read. The
+connector supplies that completeness fact, validated against provider identity.
+Until then Reply, Forward and attachment export remain unavailable. Reconnecting clears cached selection authority;
 late metadata cannot populate another account or another read generation.
 A metadata search is distinct from opening a body or attachment. Search text may
 be empty to show the inbox. An attachment read retains its parent message. An
@@ -164,7 +169,7 @@ pure def canReadMail(m: Mailbox, kind: ReadKind, ref: str, approved: bool, by: M
   (by == MailUser) and m.connection == Connected and m.canRead and approved and m.readStatus != Reading and
   (kind == Search or (ref != "" and
     ((kind == OpenMessage and m.messageRefs.contains(ref) and availableMessage(m, ref)) or
-      (kind == OpenAttachment and selectedMessageIsCurrent(m) and m.attachmentRefs.contains(ref)))))
+      (kind == OpenAttachment and selectedMessageIsCurrent(m) and m.assets.some(asset => asset.sourceRef == ref)))))
 pure def readMail(m: Mailbox, kind: ReadKind, ref: str, approved: bool, by: MailActor): Mailbox =
   { ...m, readStatus: Reading, readKind: kind, requestedRef: ref, generation: m.generation + 1,
     query: if (kind == Search) ref else m.query,
@@ -188,30 +193,28 @@ pure def receiveMessage(m: Mailbox, scope: ListingScope, listing: I::MetadataRec
     messages: if (not(hasMessage(m, listing.seed.identity.ref))) putMessage(m.messages, I::loadMessage(I::initial, listing.seed, I::MessageProvider))
       else if (I::canRefreshMetadata(record, listing, I::MessageProvider)) putMessage(m.messages, I::refreshMetadata(record, listing, I::MessageProvider))
       else m.messages }
-pure def canReceiveAttachment(m: Mailbox, generation: int, parent: str, ref: str, by: MailActor): bool =
-  (by == MailConnector) and m.connection == Connected and m.readStatus == ReadIdle and selectedMessageIsCurrent(m) and
-  generation == m.generation and parent == m.messageRef and ref != ""
-pure def receiveAttachment(m: Mailbox, generation: int, parent: str, ref: str, by: MailActor): Mailbox =
-  { ...m, attachmentRefs: m.attachmentRefs.union(Set(ref)) }
-pure def canReadResult(m: Mailbox, generation: int, by: MailActor): bool =
-  (by == MailConnector) and m.connection == Connected and m.readStatus == Reading and generation == m.generation
-pure def readResult(m: Mailbox, generation: int, succeeded: bool, by: MailActor): Mailbox =
-  { ...m, readStatus: if (succeeded) ReadIdle else ReadFailed,
-    messages: if (succeeded and m.readKind == OpenMessage and
+pure def canReadResult(m: Mailbox, readReceipt: ReadReceipt, by: MailActor): bool =
+  by == MailConnector and m.connection == Connected and m.readStatus == Reading and readReceipt.generation == m.generation and
+  (if (readReceipt.succeeded and m.readKind == OpenMessage)
+    F::validCatalog(readReceipt.assets) and readReceipt.assets.every(asset => asset.origin == m.provider and
+      asset.account == m.account and asset.container == m.requestedRef)
+    else readReceipt.assets == List())
+pure def readResult(m: Mailbox, readReceipt: ReadReceipt, by: MailActor): Mailbox =
+  { ...m, readStatus: if (readReceipt.succeeded) ReadIdle else ReadFailed,
+    messages: if (readReceipt.succeeded and m.readKind == OpenMessage and
       I::canChangeMessage(messageRecord(m, m.requestedRef), I::ReadMessage, I::MessageUser))
       putMessage(m.messages, I::changeMessage(messageRecord(m, m.requestedRef), I::ReadMessage, I::MessageUser)) else m.messages,
-    view: if (not(succeeded)) m.view else if (m.readKind == Search) Inbox
+    view: if (not(readReceipt.succeeded)) m.view else if (m.readKind == Search) Inbox
       else if (m.readKind == OpenMessage) Message else Attachment,
-    messageRef: if (succeeded and m.readKind == OpenMessage) m.requestedRef else m.messageRef,
-    attachmentRef: if (succeeded and m.readKind == OpenAttachment) m.requestedRef
-      else if (succeeded and m.readKind == OpenMessage) "" else m.attachmentRef,
-    attachmentRefs: if (succeeded and m.readKind == OpenMessage) Set() else m.attachmentRefs,
-    assets: if (succeeded and m.readKind == OpenMessage) List() else m.assets,
-    billRef: if (succeeded) "" else m.billRef,
-    billOrigin: if (succeeded) "" else m.billOrigin,
-    billAccount: if (succeeded) "" else m.billAccount,
-    billSourceRef: if (succeeded) "" else m.billSourceRef,
-    billConfirmed: if (succeeded) false else m.billConfirmed }
+    messageRef: if (readReceipt.succeeded and m.readKind == OpenMessage) m.requestedRef else m.messageRef,
+    attachmentRef: if (readReceipt.succeeded and m.readKind == OpenAttachment) m.requestedRef
+      else if (readReceipt.succeeded and m.readKind == OpenMessage) "" else m.attachmentRef,
+    assets: if (readReceipt.succeeded and m.readKind == OpenMessage) readReceipt.assets else m.assets,
+    billRef: if (readReceipt.succeeded) "" else m.billRef,
+    billOrigin: if (readReceipt.succeeded) "" else m.billOrigin,
+    billAccount: if (readReceipt.succeeded) "" else m.billAccount,
+    billSourceRef: if (readReceipt.succeeded) "" else m.billSourceRef,
+    billConfirmed: if (readReceipt.succeeded) false else m.billConfirmed }
 pure def canShowInbox(m: Mailbox, by: MailActor): bool = (by == MailUser) and (m.view != Inbox or m.readStatus != ReadIdle)
 pure def showInbox(m: Mailbox, by: MailActor): Mailbox =
   { ...m, view: Inbox, readStatus: ReadIdle, generation: m.generation + 1 }
@@ -221,7 +224,7 @@ pure def alwaysReadSelectionIsBound(m: Mailbox): bool =
   m.readStatus == Reading implies
     ((m.readKind == OpenMessage implies (m.requestedRef != "" and m.messageRefs.contains(m.requestedRef))) and
       (m.readKind == OpenAttachment implies
-        (m.requestedRef != "" and m.messageRef != "" and m.attachmentRefs.contains(m.requestedRef))))
+        (m.requestedRef != "" and selectedMessageIsCurrent(m) and m.assets.some(asset => asset.sourceRef == m.requestedRef))))
 pure def alwaysSelectedContent(m: Mailbox): bool =
   (m.view == Message implies m.messageRef != "") and
   (m.view == Attachment implies (m.messageRef != "" and m.attachmentRef != ""))
@@ -248,7 +251,7 @@ pure def canChooseFolder(m: Mailbox, folder: I::Folder, by: MailActor): bool =
 pure def chooseFolder(m: Mailbox, folder: I::Folder, by: MailActor): Mailbox = {
   ...m, folder: folder, query: "", view: Inbox, readStatus: Reading, readKind: Search,
   requestedRef: "", generation: m.generation + 1, messageRef: "", attachmentRef: "",
-  messageRefs: Set(), attachmentRefs: Set(), assets: List(),
+  messageRefs: Set(), assets: List(),
   billRef: "", billOrigin: "", billAccount: "", billSourceRef: "", billConfirmed: false
 }
 pure def alwaysMessageRegistry(m: Mailbox): bool =
@@ -302,7 +305,7 @@ pure def changeSelectedMessage(m: Mailbox, target: MessageTarget, change: I::Mes
   ...m, messages: putMessage(m.messages, I::changeMessage(messageRecord(m, target.ref), change, I::MessageUser)),
   messageRefs: m.messageRefs.exclude(Set(target.ref)), generation: m.generation + 1,
   view: Inbox, readStatus: ReadIdle, requestedRef: "", messageRef: "", attachmentRef: "",
-  attachmentRefs: Set(), assets: List(), billRef: "", billOrigin: "", billAccount: "", billSourceRef: "", billConfirmed: false
+  assets: List(), billRef: "", billOrigin: "", billAccount: "", billSourceRef: "", billConfirmed: false
 }
 pure def canUndoMessageTrash(m: Mailbox, target: MessageTarget, by: MailActor): bool =
   by == MailUser and m.connection == Connected and m.canRead and
@@ -315,7 +318,7 @@ pure def undoMessageTrash(m: Mailbox, target: MessageTarget, by: MailActor): Mai
     generation: if (affected) m.generation + 1 else m.generation,
     view: if (affected) Inbox else m.view, readStatus: if (affected) ReadIdle else m.readStatus,
     requestedRef: if (affected) "" else m.requestedRef, messageRef: if (affected) "" else m.messageRef,
-    attachmentRef: if (affected) "" else m.attachmentRef, attachmentRefs: if (affected) Set() else m.attachmentRefs,
+    attachmentRef: if (affected) "" else m.attachmentRef,
     assets: if (affected) List() else m.assets, billRef: if (affected) "" else m.billRef,
     billOrigin: if (affected) "" else m.billOrigin, billAccount: if (affected) "" else m.billAccount,
     billSourceRef: if (affected) "" else m.billSourceRef, billConfirmed: if (affected) false else m.billConfirmed }
@@ -333,7 +336,7 @@ pure def completeMessageChange(m: Mailbox, messageReceipt: I::ChangeReceipt, by:
     generation: if (affected) m.generation + 1 else m.generation,
     view: if (affected) Inbox else m.view, readStatus: if (affected) ReadIdle else m.readStatus,
     requestedRef: if (affected) "" else m.requestedRef, messageRef: if (affected) "" else m.messageRef,
-    attachmentRef: if (affected) "" else m.attachmentRef, attachmentRefs: if (affected) Set() else m.attachmentRefs,
+    attachmentRef: if (affected) "" else m.attachmentRef,
     assets: if (affected) List() else m.assets, billRef: if (affected) "" else m.billRef,
     billOrigin: if (affected) "" else m.billOrigin, billAccount: if (affected) "" else m.billAccount,
     billSourceRef: if (affected) "" else m.billSourceRef, billConfirmed: if (affected) false else m.billConfirmed }
@@ -392,7 +395,9 @@ pure def sometimesBillReady(m: Mailbox): bool = billReady(m)
 The draft belongs to a chosen mailbox, including while that mailbox is offline;
 an unbound mailbox cannot create or persist a draft. The draft contains
 sanitized message content, never credentials or tokens.
-Switching screens or disconnecting does not discard it. Reply uses the selected
+Switching screens or disconnecting does not discard it. A hidden draft may be
+replaced only after its exact contents are durably saved; a failed or unsaved
+hidden draft remains recoverable and cannot be silently overwritten. Reply uses the selected
 message reference; the adapter supplies and validates the actual recipient,
 including a reply-to address that differs from the sender. No reply is sent
 merely by selecting an email. Trash exposes Restore and Delete forever, so
@@ -402,7 +407,7 @@ reply and forwarding are unavailable until that message is restored.
 pure def canStartDraft(m: Mailbox, reply: bool, by: MailActor): bool =
   (by == MailUser) and m.owner != "" and m.provider != "" and m.account != "" and
   not(heldSend(m)) and not(draftStoreBusy(m)) and
-  (m.sendStatus == NoDraft or m.sendStatus == Sent or not(m.composeVisible)) and
+  (m.sendStatus == NoDraft or m.sendStatus == Sent or (not(m.composeVisible) and m.draftStorage == DraftSaved)) and
   (not(reply) or (m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle))
 pure def startDraft(m: Mailbox, reply: bool, by: MailActor): Mailbox =
   { ...m, sendStatus: Composing, draftTo: "", draftCc: Set(), draftBcc: Set(), draftSubject: "", draftBody: "",
@@ -641,7 +646,7 @@ pure def restartMailbox(m: Mailbox, by: MailActor): Mailbox =
   { ...endConnection(m, Disconnected, MailUser), view: Inbox, readStatus: ReadIdle,
     sendStatus: if (terminalUnsaved(m)) SendUnknown else if (m.sendStatus == Sending) SendUnknown else if (m.sendStatus == Reviewing) Composing else m.sendStatus,
     sendEvidence: if (terminalUnsaved(m)) "" else m.sendEvidence,
-    messageRef: "", attachmentRef: "", requestedRef: "", messageRefs: Set(), attachmentRefs: Set(), assets: List(),
+    messageRef: "", attachmentRef: "", requestedRef: "", messageRefs: Set(), assets: List(),
     billRef: "", billOrigin: "", billAccount: "", billSourceRef: "", billConfirmed: false }
 pure def stepMailboxIdentityIsFixed(before: Mailbox, after: Mailbox): bool =
   before.owner != "" implies (after.owner == before.owner and after.provider == before.provider and after.account == before.account)
@@ -683,10 +688,12 @@ pure def sometimesDraftRetired(m: Mailbox): bool = m.draftId != "" and retiredVe
 The gallery shows the selected photo and moves only within this message's
 ordered photos. PDF Back returns to its message. Save one, Save all, Forward,
 Print and Files sharing carry immutable source/content IDs. File names are
-labels. The connector supplies new assets in provider order; replaying a known
-immutable asset never reorders the gallery. Camera, Photos and file-picker results require an explicit user selection
+labels. The atomic message-read manifest supplies all assets in provider order, with
+unique immutable IDs and sources. Forwarding a whole message always copies this
+complete manifest; individual-attachment forwarding copies only the selection. Camera, Photos and file-picker results require an explicit user selection
 and a trusted host grant for this owner; no sample photo is injected. Canceling
-any picker leaves the draft unchanged. Forwarding copies sanitized selected
+any picker leaves the draft unchanged. Its result must match the exact composer
+revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
 content and attachments into a new editable draft and never sends it.
 
 Saving and printing are dispatched to [Files](./files.md). `mayExportAttachments`
@@ -699,14 +706,6 @@ prototype's fixed two-page sample. Dangerous links/content cannot authorize an
 action, including when a scam warning is displayed.
 
 ```quint
-pure def canReceiveAsset(m: Mailbox, asset: F::SavedFile, generation: int, by: MailActor): bool =
-  by == MailConnector and m.connection == Connected and m.readStatus == ReadIdle and selectedMessageIsCurrent(m) and
-  generation == m.generation and F::validFile(asset) and asset.origin == m.provider and
-  asset.account == m.account and asset.container == m.messageRef and
-  m.assets.every(a => (a.id != asset.id and not(F::sameSource(a, asset))) or F::sameAsset(a, asset))
-pure def receiveAsset(m: Mailbox, asset: F::SavedFile, generation: int, by: MailActor): Mailbox =
-  { ...m, assets: if (m.assets.some(a => a.id == asset.id)) m.assets else m.assets.append(asset),
-    attachmentRefs: m.attachmentRefs.union(Set(asset.sourceRef)) }
 pure def canForwardMessage(m: Mailbox, by: MailActor): bool =
   by == MailUser and m.connection == Connected and m.canRead and selectedMessageIsCurrent(m) and
   m.folder != I::TrashFolder and m.readStatus == ReadIdle and m.messageRef != "" and canStartDraft(m, false, by)
@@ -737,12 +736,14 @@ pure def selectedAssets(m: Mailbox, refs: Set[str]): List[F::SavedFile] =
 pure def mayExportAttachments(m: Mailbox, refs: Set[str]): bool =
   m.connection == Connected and m.canRead and m.readStatus == ReadIdle and selectedMessageIsCurrent(m) and
   refs.size() > 0 and refs.forall(ref => m.assets.some(a => a.sourceRef == ref))
-pure def canAttachAsset(m: Mailbox, owner: str, asset: F::SavedFile, selected: bool, by: MailActor): bool =
-  by == MailHost and owner == m.owner and m.owner != "" and selected and F::validFile(asset) and
+pure def canAttachAsset(m: Mailbox, owner: str, asset: F::SavedFile, draftRevision: int, selected: bool, by: MailActor): bool =
+  by == MailHost and owner == m.owner and m.owner != "" and draftRevision == m.revision and selected and F::validFile(asset) and
   canEditDraft(m, MailUser) and m.draftAttachments.every(a => a.id != asset.id and not(F::sameSource(a, asset)))
-pure def attachAsset(m: Mailbox, owner: str, asset: F::SavedFile, selected: bool, by: MailActor): Mailbox =
+pure def attachAsset(m: Mailbox, owner: str, asset: F::SavedFile, draftRevision: int, selected: bool, by: MailActor): Mailbox =
   { ...m, draftAttachments: m.draftAttachments.append(asset), draftVersion: m.draftVersion + 1, revision: m.revision + 1,
     approvedRevision: -1, sendStatus: Composing, draftStorage: DraftUnstored, sendResultSaved: false }
+pure def lawStalePickerCannotAttach(m: Mailbox, owner: str, asset: F::SavedFile, draftRevision: int, selected: bool, by: MailActor): bool =
+  draftRevision != m.revision implies not(canAttachAsset(m, owner, asset, draftRevision, selected, by))
 pure def canRemoveAsset(m: Mailbox, assetId: str, by: MailActor): bool =
   canEditDraft(m, by) and m.draftAttachments.some(a => a.id == assetId)
 pure def removeAsset(m: Mailbox, assetId: str, by: MailActor): Mailbox =
@@ -763,7 +764,7 @@ support or content length. The real registry supplies any valid identity.
 pure val ownerValues = Set("", "ownerA", "ownerB")
 pure val providerValues = Set("", "providerA", "providerB")
 pure val accountValues = Set("", "accountA", "accountB")
-pure val refValues = Set("", "messageA", "messageB", "attachmentA")
+pure val refValues = Set("", "messageA", "messageB", "attachmentA", "attachmentPdf")
 pure val listingValues = Set(
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: true }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageB" }, folder: I::InboxFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
@@ -776,7 +777,6 @@ pure val listingValues = Set(
 pure val targetValues = Set({ ref: "messageA", revision: 0 }, { ref: "messageA", revision: 1 },
   { ref: "messageA", revision: 2 }, { ref: "messageA", revision: 3 }, { ref: "missing", revision: 0 })
 pure val messageReceiptValues = I::receiptValues
-pure val parentValues = Set("", "messageA", "attachmentA")
 pure val sampleScope: ListingScope = { owner: "ownerA", provider: "providerA", account: "accountA", folder: I::InboxFolder, query: "", generation: 2 }
 pure val scopeValues = Set(sampleScope, { ...sampleScope, generation: 3 }, { ...sampleScope, generation: 4 },
   { ...sampleScope, folder: I::SentFolder }, { ...sampleScope, folder: I::DraftsFolder },
@@ -794,15 +794,27 @@ pure val billRefValues = Set("", "billA")
 pure val originValues = Set("", "https://biller.example")
 pure val billAccountValues = Set("", "billerAccount")
 pure val draftIdValues = Set("", "draftA", "messageA")
+pure val draftRevisionValues = Set(0, 1, 2, 3, 4, 5)
 pure val assetIdValues = Set("", "photo", "missing")
 pure val mailAsset: F::SavedFile = { ...F::samplePhoto, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentA" }
 pure val assetValues = Set(F::emptyFile, mailAsset, F::samplePdf)
+pure val readReceiptValues = Set(
+  { generation: 2, succeeded: true, assets: List() },
+  { generation: 3, succeeded: true, assets: List(mailAsset) },
+  { generation: 3, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }) },
+  { generation: 3, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" }) },
+  { generation: 4, succeeded: true, assets: List() },
+  { generation: 5, succeeded: true, assets: List() },
+  { generation: 6, succeeded: true, assets: List() },
+  { generation: 2, succeeded: false, assets: List() },
+  { generation: 3, succeeded: false, assets: List() },
+  { generation: 3, succeeded: true, assets: List(F::samplePhoto) })
 pure val snapshotValues = Set(
   { id: "messageA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
   { id: "messageA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },
   { id: "messageA", version: 3, content: mailContent, attachments: List(), replyTo: "" })
 pure val directionValues = Set(-1, 0, 1)
-pure val refsValues = Set(Set("attachmentA"), Set("missing"), Set())
+pure val refsValues = Set(Set("attachmentA"), Set("attachmentPdf"), Set("attachmentA", "attachmentPdf"), Set("missing"), Set())
 pure val weight_completeMessageChange = 5
 pure val weight_changeSelectedMessage = 4
 pure val weight_readMail = 3
@@ -813,7 +825,6 @@ pure val weight_confirmVisibleSend = 5
 pure val weight_authorize = 5
 pure val weight_readResult = 3
 pure val weight_receiveMessage = 5
-pure val weight_receiveAttachment = 5
 pure val weight_receiveBill = 3
 pure val weight_confirmBill = 3
 pure val weight_editDraft = 5

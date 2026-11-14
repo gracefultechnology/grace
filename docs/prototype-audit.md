@@ -127,6 +127,13 @@ and photo removal. It must not retain the demo's hardcoded attachment or
 report successful printing before a real print result. See the accompanying
 Files source audit and Files model for the complete workflow.
 
+The Share handler's switch from photo preview to Email is modeled atomically
+by `Handoffs.trySharePhoto`: Files stays on the same photo when the chosen
+mailbox has an existing composer, pending save or unresolved send. Successful
+preflight opens a new recipient-empty draft with subject “A photo” carrying the
+exact selected photo; it does not send it. File generation and mailbox identity/generation/revision
+reject delayed handoffs to a different photo, account or composer.
+
 The detailed Email/Calendar and Files inventories are maintained with their
 respective models. Their source paths are the current prototype, not the
 obsolete single-flow file.
