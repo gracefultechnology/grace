@@ -483,6 +483,9 @@ pure val receiptValues = Set(
 pure val weight_publishOccurrence = 5
 pure val weight_openOccurrence = 5
 pure val weight_deletionResult = 5
+pure val weight_requestDeletion = 5
+pure val weight_keepOccurrence = 5
+pure val weight_approveDeletion = 5
 pure val weight_changeOccurrence = 8
 pure val weight_saveSeries = 6
 ```

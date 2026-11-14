@@ -71,7 +71,7 @@ conversation/browser control routes, wake lifecycle and interruption fences.
 
 ## Source alignment
 
-The current CLI model cache was read without changing it, and all 23 generated
+At checkpoint `887d411`, the CLI model cache was read without changing it, and all 23 generated
 model TypeScript files were regenerated in memory. They matched the current
 `gen/*.ts` files byte for byte. The resulting proof units are at
 `/tmp/grace-cli-header-audit/units.json`.
@@ -151,12 +151,36 @@ while the complete safety and replay checks remain part of the combined run.
 
 ## Combined validation still pending
 
+The earlier isolated combined run parsed all 23 modules. Sixteen units completed
+simulation and replay without failures. Email's long searches ended without a
+completed simulation receipt. That run was stopped after the sampling inputs
+changed, and the current combined run is `/tmp/grace-isolated-check-3.log`.
+The current Email profile uses one coherent mailbox, five listing scopes
+and five metadata records, and eight read receipts. Its explicit domain audit
+still reaches all 33 transitions and 17 goals, observes all 33 guards refusing,
+and checks 17 stale/identity/approval cases. Direct PDF opening and multiple
+mailbox/message cases remain explicit witness and universal-proof coverage.
+The exact omissions and audit artifacts are listed in
+`/tmp/grace-email-fallback-report.md`. The final pipeline must measure this
+profile before it can count as successful random simulation.
+
+The updated Workspace unit has 1,310 obligations. Its first proof attempt
+exhausted resources on `changeLifecycle_ensures` and `changePage_ensures`;
+the automatic isolated retry reached its 60-minute subprocess limit. The
+current sidecar adds smaller invariant steps for closing a quiet workspace
+and changing only keyboard ownership. Verification of that revision is active.
+The earlier Workspace proof total in the table remains checkpoint evidence.
+The CalendarView sampler gives the deletion question, Keep and approval equal
+weights of five. Workspace sampling starts from one coherent task and gives
+guidance publication a weight of twelve. These changes affect exploration
+only; the generic task API and all product transitions remain present.
+
 Earlier combined runs were stopped as the model definitions and simulation
 inputs were corrected. Their partial results cannot certify the final source.
 The next complete run must check invariant simulation, reachability, TypeScript
 replay, generated types, proof obligations, tests and conformance together.
-Email and Workspace sampling are being reviewed to keep that full run practical
-while preserving their adversarial cases and all product rules.
+The current sampling profiles focus coherent journeys, with separate negative
+case audits and universal proofs covering the retained product rules.
 
 The larger/nightly profile remains pending. No simulated-only proof acceptance
 has been recorded, and `pnpm accept` has not been run. The remaining technical

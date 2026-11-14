@@ -755,67 +755,61 @@ pure def alwaysMessageAssetsAreBound(m: Mailbox): bool =
 pure def sometimesDraftHasAttachment(m: Mailbox): bool = m.draftAttachments.length() > 0
 ```
 
-### Simulation covers competing accounts, stale callbacks, rejection and recovery
+### Simulation samples cover message and attachment lifecycles
 
 These are samples only, never limits on account names, message counts, provider
 support or content length. The real registry supplies any valid identity.
+The random walks use one coherent mailbox and current callback combinations
+to reach complete read, mutation, send and recovery paths. The universal rules
+cover arbitrary identities and collections; separate guarded witness checks
+exercise competing accounts, stale callbacks, rejection and multiple messages.
 
 ```quint
-pure val ownerValues = Set("", "ownerA")
-pure val providerValues = Set("", "providerA")
-pure val accountValues = Set("", "accountA")
-pure val refValues = Set("", "messageA", "messageB", "attachmentA", "attachmentPdf")
+pure val ownerValues = Set("ownerA")
+pure val providerValues = Set("providerA")
+pure val accountValues = Set("accountA")
+pure val refValues = Set("messageA", "attachmentA")
 pure val listingValues = Set(
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: true }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageB" }, folder: I::InboxFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
+  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::DraftsFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::TrashFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: I::noIdentity, folder: I::InboxFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: 0, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::TrashFolder, unread: false }, revision: 2, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: 3, evidence: "providerMetadata" })
+  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: 0, evidence: "providerMetadata" })
 pure val targetValues = Set({ ref: "messageA", revision: 0 }, { ref: "messageA", revision: 1 },
   { ref: "messageA", revision: 2 }, { ref: "messageA", revision: 3 }, { ref: "missing", revision: 0 })
 pure val messageReceiptValues = I::receiptValues
 pure val sampleScope: ListingScope = { owner: "ownerA", provider: "providerA", account: "accountA", folder: I::InboxFolder, query: "", generation: 2 }
-pure val scopeValues = Set({ ...sampleScope, provider: "providerB" }, { ...sampleScope, account: "accountB" }, sampleScope, { ...sampleScope, generation: 3 }, { ...sampleScope, generation: 4 },
-  { ...sampleScope, folder: I::SentFolder }, { ...sampleScope, folder: I::DraftsFolder },
-  { ...sampleScope, folder: I::TrashFolder }, { ...sampleScope, folder: I::TrashFolder, generation: 3 },
-  { ...sampleScope, query: "messageA" }, { ...sampleScope, owner: "ownerB" })
+pure val scopeValues = Set({ ...sampleScope, query: "messageA" }, { ...sampleScope, query: "attachmentA" },
+  { ...sampleScope, folder: I::DraftsFolder }, { ...sampleScope, folder: I::TrashFolder },
+  { ...sampleScope, query: "messageA", generation: 3 })
 pure val mValues = Set(initial,
   { ...initial, owner: "ownerA", provider: "providerA", account: "accountA", connection: Connected,
     canRead: true, readStatus: Reading, generation: 2 })
 pure val emptyContent: DraftContent = { to: "", cc: Set(), bcc: Set(), subject: "", body: "" }
 pure val mailContent: DraftContent = { to: "recipient@example.test", cc: Set("copy@example.test"), bcc: Set(), subject: "Subject", body: "Message" }
-pure val contentValues = Set(emptyContent, mailContent, { ...mailContent, bcc: Set("hidden@example.test"), body: "" })
-pure val operationIdValues = Set("", "sendA", "sendB")
-pure val evidenceValues = Set("", "providerEvidence")
-pure val billRefValues = Set("", "billA")
-pure val originValues = Set("", "https://biller.example")
-pure val billAccountValues = Set("", "billerAccount")
-pure val draftIdValues = Set("", "draftA", "messageA")
-pure val generationValues = Set(-1, 1, 2, 3, 4, 5, 6)
-pure val revisionValues = Set(-1, 0, 1, 2, 3)
-pure val requestValues = Set(-1, 1, 2)
-pure val draftRevisionValues = Set(0, 1, 2, 3, 4, 5)
-pure val assetIdValues = Set("", "photo", "missing")
+pure val contentValues = Set(mailContent, { ...mailContent, bcc: Set("hidden@example.test"), body: "" })
+pure val operationIdValues = Set("sendA", "sendB")
+pure val evidenceValues = Set("providerEvidence")
+pure val billRefValues = Set("billA")
+pure val originValues = Set("https://biller.example")
+pure val billAccountValues = Set("billerAccount")
+pure val draftIdValues = Set("draftA", "messageA")
+pure val generationValues = Set(1, 3)
+pure val revisionValues = Set(1, 2, 3)
+pure val requestValues = Set(1, 2)
+pure val draftRevisionValues = Set(1, 2, 3)
+pure val assetIdValues = Set("photo", "missing")
 pure val mailAsset: F::SavedFile = { ...F::samplePhoto, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentA" }
-pure val assetValues = Set(F::emptyFile, mailAsset, F::samplePdf)
+pure val assetValues = Set(mailAsset, F::samplePdf)
 pure val readReceiptValues = Set(
-  { generation: 3, succeeded: true, assets: List() },
-  { generation: 4, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" }) },
-  { generation: 5, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" }) },
-  { generation: 6, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" }) },
   { generation: 2, succeeded: true, assets: List() },
-  { generation: 3, succeeded: true, assets: List(mailAsset) },
-  { generation: 3, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }) },
+  { generation: 2, succeeded: false, assets: List() },
   { generation: 3, succeeded: true, assets: List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" }) },
+  { generation: 3, succeeded: true, assets: List() },
+  { generation: 3, succeeded: false, assets: List() },
   { generation: 4, succeeded: true, assets: List() },
   { generation: 5, succeeded: true, assets: List() },
-  { generation: 6, succeeded: true, assets: List() },
-  { generation: 2, succeeded: false, assets: List() },
-  { generation: 3, succeeded: false, assets: List() },
-  { generation: 3, succeeded: true, assets: List(F::samplePhoto) })
+  { generation: 6, succeeded: true, assets: List() })
 pure val snapshotValues = Set(
   { id: "messageA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
   { id: "messageA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },
@@ -824,20 +818,20 @@ pure val directionValues = Set(-1, 0, 1)
 pure val refsValues = Set(Set("attachmentA"), Set("attachmentPdf"), Set("attachmentA", "attachmentPdf"), Set("missing"), Set())
 pure val weight_connect = 8
 pure val weight_completeMessageChange = 8
-pure val weight_changeSelectedMessage = 4
-pure val weight_readMail = 4
+pure val weight_changeSelectedMessage = 8
+pure val weight_readMail = 8
 pure val weight_preserveDraft = 3
 pure val weight_draftStoreResult = 8
 pure val weight_attachAsset = 2
-pure val weight_confirmVisibleSend = 2
+pure val weight_confirmVisibleSend = 6
 pure val weight_authorize = 8
-pure val weight_readResult = 2
+pure val weight_readResult = 8
 pure val weight_receiveMessage = 12
-pure val weight_receiveBill = 3
-pure val weight_confirmBill = 3
+pure val weight_receiveBill = 6
+pure val weight_confirmBill = 6
 pure val weight_editDraft = 3
 pure val weight_reviewDraft = 3
-pure val weight_approveDraft = 1
-pure val weight_sendDraft = 5
-pure val weight_sendResult = 5
+pure val weight_approveDraft = 3
+pure val weight_sendDraft = 8
+pure val weight_sendResult = 8
 ```

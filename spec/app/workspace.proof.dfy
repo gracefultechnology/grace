@@ -51,6 +51,22 @@ lemma InterruptedInvariant(device: app__shell_Shell, browser: app__browser_Brows
   }
 }
 
+lemma KeyboardInvariant(w: Workspace, keyboard: app__assistant_KeyboardOwner)
+  requires inv(w)
+  ensures inv(w.(assistant := w.assistant.(keyboard := keyboard)))
+{
+}
+
+lemma CloseQuietWorkspace(w: Workspace)
+  requires inv(w)
+  requires w.execution.phase == app__execution_OperationPhase.Idle || w.execution.phase == app__execution_OperationPhase.Paused
+  requires app__assistant_isVisible(w.assistant)
+  ensures inv(w.(assistant := app__assistant_close(w.assistant, app__conversation_ConversationActor.ConversationUser)))
+{
+  ComponentInvariants(w);
+  app__assistant_close_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
+}
+
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysOneTask(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedTogether(openGrace(w, by_)))
@@ -1229,11 +1245,12 @@ if inv(w) && canChangePage(w, browserInput, by_) {
   var updated := if browser.revision != w.browser.revision then interrupted(w.device, browser, w) else w.(browser := browser, wake := app__wake_cancel(w.wake, app__wake_WakeActor.WakeHost));
   app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
   assert inv(updated);
-  if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser) {
-    app__assistant_focusWebsite_ensures(updated.assistant, app__conversation_ConversationActor.ConversationUser);
-  } else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard {
-    app__assistant_dismissKeyboard_ensures(updated.assistant, app__conversation_ConversationActor.ConversationUser);
-  }
+  var keyboard := if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser)
+    then app__assistant_KeyboardOwner.WebsiteKeyboard
+    else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard
+    then app__assistant_KeyboardOwner.NoKeyboard else updated.assistant.keyboard;
+  KeyboardInvariant(updated, keyboard);
+  assert changePage(w, browserInput, by_) == updated.(assistant := updated.assistant.(keyboard := keyboard));
 }
 }
 
@@ -1342,14 +1359,20 @@ if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
   InterruptedInvariant(device, w.browser, w);
   var stopped := interrupted(device, w.browser, w);
   if (lifecycle.SleepDevice? || lifecycle.RestartDevice?) && app__assistant_isVisible(stopped.assistant) {
-    app__assistant_close_ensures(stopped.assistant, app__conversation_ConversationActor.ConversationUser);
+    CloseQuietWorkspace(stopped);
   }
+  var hidden := if (lifecycle.SleepDevice? || lifecycle.RestartDevice?) && app__assistant_isVisible(stopped.assistant)
+    then stopped.(assistant := app__assistant_close(stopped.assistant, app__conversation_ConversationActor.ConversationUser)) else stopped;
+  assert inv(hidden);
   if lifecycle.RestartDevice? {
     app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
     if app__payment_canRestart(w.payment, app__payment_PaymentActor.DurableStore) {
       app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
     }
   }
+  var restored := if lifecycle.RestartDevice?
+    then hidden.(preferences := app__preferences_restart(w.preferences, app__preferences_PreferenceActor.PreferenceStore)) else hidden;
+  assert inv(restored);
   RegistryRestart(w, lifecycle, by_);
 }
 
