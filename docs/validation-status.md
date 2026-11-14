@@ -174,10 +174,13 @@ mailbox/message cases remain explicit witness and universal-proof coverage.
 The exact omissions and audit artifacts are listed in
 `/tmp/grace-email-fallback-report.md`. The final pipeline must measure this
 profile before it can count as successful random simulation. The run has reached
-all 17 Email goals. An independent replay of 417 saved Quint traces and 8,254
-steps agreed with generated TypeScript, including all 33 guard refusals and 26
-guard admissions. The standard run is still searching for the other seven
-admissions.
+all 17 Email goals. An independent replay of 418 saved Quint traces and 8,268
+steps agreed with generated TypeScript, including all 33 guard refusals and 27
+guard admissions. The additional random witness admitted Forward message.
+Directed Quint paths exercised all seven guards that were originally pending
+and matched the generated TypeScript through 64 transitions. See
+`/tmp/grace-email-directed-quint.log` and `/tmp/grace-email-directed-replay.log`.
+The standard run is still searching for six admissions.
 
 The updated Workspace unit has 1,310 obligations. Its first proof attempt
 exhausted resources on `changeLifecycle_ensures` and `changePage_ensures`;
