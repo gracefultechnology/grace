@@ -171,6 +171,18 @@ weights of five. Workspace sampling starts from one coherent task and gives
 guidance publication a weight of twelve. These changes affect exploration
 only; the generic task API and all product transitions remain present.
 
+A direct TypeScript check exposed a widened keyboard type in the generated
+wake window. The spec now constructs that window through a function with an
+explicit Assistant return type. The regenerated Workspace module passes strict
+TypeScript checking, and guarded traces still reach all 54 transitions and 16
+goals. A fresh Workspace proof is running against that generated unit. The
+Workspace proof in the table applies to the preceding source snapshot.
+
+Workspace exploration now tries ordinary preparation and repeated Talk less
+often. Ordinary preparation invalidates the payment review, while repeated Talk
+advances its speech token. The lower weights give the existing review, readback
+and approval sequence more chances to complete within the sampled walks.
+
 Earlier combined runs were stopped as the model definitions and simulation
 inputs were corrected. Their partial results cannot certify the final source.
 The next complete run must check invariant simulation, reachability, TypeScript

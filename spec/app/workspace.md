@@ -501,10 +501,12 @@ cancels that wake exchange before its timer can hide Grace.
 ```quint
 pure def priorWindow(a: A::Assistant): W::PriorWindow =
   if (a.presentation == A::Closed) W::WasClosed else if (a.presentation == A::Compact) W::WasCompact else W::WasExpanded
+pure def wakeWindow(a: A::Assistant, presentation: A::Presentation): A::Assistant =
+  { ...a, keyboard: A::NoKeyboard, presentation: presentation }
 pure def listeningAfterWake(w: Workspace): A::Assistant =
   val paused = quietAssistant(w.assistant)
-  val opened = { ...paused, keyboard: A::NoKeyboard, presentation: if (A::isVisible(paused)) paused.presentation
-    else if (w.device.surface == S::Home) A::Expanded else A::Compact }
+  val presentation = if (A::isVisible(paused)) paused.presentation else if (w.device.surface == S::Home) A::Expanded else A::Compact
+  val opened = wakeWindow(paused, presentation)
   if (w.device.reasoningAvailable) A::talk(opened, C::ConversationUser) else opened
 pure def canDetectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActor): bool =
   by == Host and W::canDetect(w.wake, detection, W::WakeHost) and
@@ -1168,7 +1170,7 @@ pure val weight_publishGuidance = 12
 pure val weight_begin = 24
 pure val weight_receiveLoad = 24
 pure val weight_observe = 24
-pure val weight_prepare = 24
+pure val weight_prepare = 2
 pure val weight_dispatch = 24
 pure val weight_verify = 24
 pure val weight_bindPayment = 24
@@ -1180,7 +1182,6 @@ pure val weight_submitPayment = 24
 pure val weight_recordPayment = 24
 pure val weight_completeOrdinary = 24
 pure val weight_savePayment = 24
-pure val weight_talk = 8
 pure val weight_interact = 8
 pure val weight_detectWake = 8
 pure val weight_wakeNoSpeech = 8
