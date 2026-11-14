@@ -1,9 +1,11 @@
 # Specification validation status
 
-The current specification passed **4,316 individual proof obligations**
-across 20 Grace domain units and the retained template scaffold.
-The Workspace sampling update preserves the generated runtime and proof unit
-byte for byte. The combined model check and larger profile remain pending.
+The `8d41fd0` specification passed **4,316 individual proof obligations**
+across 20 Grace domain units and the retained template scaffold. Later
+revisions add verified account identity and the preparation-to-review
+conversion. Execution passed 112 obligations with the account change and
+the new conversion passed three. The updated Workspace proof and combined
+validation remain in progress. The larger profile still needs a run.
 
 ## Scope and review
 
@@ -49,7 +51,8 @@ describe earlier snapshots; the selected results below supersede them.
 | Preferences | 40/40 | `/tmp/grace-files-handproof/app__preferences.ts.result.json` |
 | Application shell | 52/52 | `/tmp/grace-system-final-proof/app__shell.ts.result.json` |
 | Wake | 17/17 | `/tmp/grace-wake-proof/app__wake.ts.result.json` |
-| Workspace composition | 1,310/1,310 | `/tmp/grace-guidance-workspace-proof-rzEKJQ/result.json` |
+| Workspace composition at `8d41fd0` | 1,310/1,310 | `/tmp/grace-guidance-workspace-proof-rzEKJQ/result.json` |
+| Preparation and payment review conversion | 3/3 | `/tmp/grace-preparation-review-joxWTJ/proof-result.json` |
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
 The scaffold is the template's greeting example, not a Grace feature or a proof
