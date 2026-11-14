@@ -1,9 +1,8 @@
 # Specification validation status
 
-At `d193137`, the 20 Grace domain units and template scaffold passed all
-**4,288 individual proof obligations**. The wake type correction changed the
-Workspace proof unit after that checkpoint. Its current proof is running.
-The combined model check and larger profile remain pending.
+The specification at `22a5c3d` passed all **4,288 individual proof obligations**
+across 20 Grace domain units and the retained template scaffold. The combined
+model check and larger profile remain pending.
 
 ## Scope and review
 
@@ -49,7 +48,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Preferences | 40/40 | `/tmp/grace-files-handproof/app__preferences.ts.result.json` |
 | Application shell | 52/52 | `/tmp/grace-system-final-proof/app__shell.ts.result.json` |
 | Wake | 17/17 | `/tmp/grace-wake-proof/app__wake.ts.result.json` |
-| Workspace composition | 1,310/1,310 | `/tmp/grace-guidance-workspace-proof-lsMBF1/result.json` |
+| Workspace composition | 1,310/1,310 | `/tmp/grace-guidance-workspace-proof-rzEKJQ/result.json` |
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
 The scaffold is the template's greeting example, not a Grace feature or a proof
@@ -117,6 +116,13 @@ generation lock and awaits a retry. These tests exercise the retained template
 and tooling. Grace's provider and device journeys belong to the implementation
 phase.
 
+A separate guarded model trace exercised Calendar bill selection, browser
+evidence, approval, durable payment results and Calendar updates across 61
+transitions and 13 rejection checks. Two unrelated origins and accounts used
+the same invoice number and retained separate records and receipts. The
+spoken route emitted one current Pay command; observing the person's website
+tap emitted none. The record is `/tmp/grace-calendar-payment-witness.json`.
+
 The specification checkpoint `22a5c3d` is merged and pushed to `develop`.
 The original checkout was fast-forwarded after checking that its concurrent
 application edits did not overlap the incoming files. Those edits remain in
@@ -165,7 +171,11 @@ and checks 17 stale/identity/approval cases. Direct PDF opening and multiple
 mailbox/message cases remain explicit witness and universal-proof coverage.
 The exact omissions and audit artifacts are listed in
 `/tmp/grace-email-fallback-report.md`. The final pipeline must measure this
-profile before it can count as successful random simulation.
+profile before it can count as successful random simulation. The run has reached
+all 17 Email goals. An independent replay of 417 saved Quint traces and 8,254
+steps agreed with generated TypeScript, including all 33 guard refusals and 26
+guard admissions. The standard run is still searching for the other seven
+admissions.
 
 The updated Workspace unit has 1,310 obligations. Its first proof attempt
 exhausted resources on `changeLifecycle_ensures` and `changePage_ensures`;
@@ -182,8 +192,11 @@ A direct TypeScript check exposed a widened keyboard type in the generated
 wake window. The spec now constructs that window through a function with an
 explicit Assistant return type. The regenerated Workspace module passes strict
 TypeScript checking, and guarded traces still reach all 54 transitions and 16
-goals. A fresh Workspace proof is running against that generated unit. The
-Workspace proof in the table applies to the preceding source snapshot.
+goals. The Workspace unit for this source proved all 1,310 obligations. The
+isolated retry verified 655 assertion batches after the first pass exhausted
+resources on the lifecycle lemma. The 21 selected proof results and their
+current specification tree are recorded in
+`/tmp/grace-current-4288-evidence-confirmation.json`.
 
 Workspace exploration now tries ordinary preparation and repeated Talk less
 often. Ordinary preparation invalidates the payment review, while repeated Talk
