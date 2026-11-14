@@ -1,8 +1,9 @@
 # Specification validation status
 
 The specification at `22a5c3d` passed all **4,288 individual proof obligations**
-across 20 Grace domain units and the retained template scaffold. The combined
-model check and larger profile remain pending.
+across 20 Grace domain units and the retained template scaffold. The subsequent
+Workspace sampling change preserves the generated runtime and proof unit byte
+for byte. The combined model check and larger profile remain pending.
 
 ## Scope and review
 
@@ -158,9 +159,10 @@ while the complete safety and replay checks remain part of the combined run.
 
 ## Combined validation still pending
 
-The current combined run parsed all 23 modules and has 19 passing simulation
-and replay receipts. Email and Workspace remain in progress. The run is
-recorded in `/tmp/grace-isolated-check-5.log`.
+The combined run for `22a5c3d` parsed all 23 modules and recorded 19 passing
+simulation and replay receipts. Email is still running. Workspace's search for
+ordinary completion reached the tool's one-hour limit. The run is recorded in
+`/tmp/grace-isolated-check-5.log`.
 The Email profile uses one coherent mailbox, five metadata records and eight
 read receipts. Listing samples include Trash and Drafts requests issued at
 generations two through four, with the matching draft restore generations.
@@ -184,8 +186,7 @@ current sidecar adds smaller invariant steps for closing a quiet workspace
 and changing only keyboard ownership. The page-change lemma then passed on
 the first pass and the lifecycle lemma passed on the automatic isolated retry.
 The CalendarView sampler gives the deletion question, Keep and approval equal
-weights of five. Workspace sampling starts from one coherent task and gives
-guidance publication a weight of twelve. These changes affect exploration
+weights of five. Workspace gives guidance publication a weight of twelve. These changes affect exploration
 only; the generic task API and all product transitions remain present.
 
 A direct TypeScript check exposed a widened keyboard type in the generated
@@ -201,7 +202,14 @@ current specification tree are recorded in
 Workspace exploration now tries ordinary preparation and repeated Talk less
 often. Ordinary preparation invalidates the payment review, while repeated Talk
 advances its speech token. The lower weights give the existing review, readback
-and approval sequence more chances to complete within the sampled walks.
+and approval sequence more chances to complete within the sampled walks. The
+second-origin replacement now has a matching request in the finite domain.
+Previously, the harness could request that replacement but had no matching
+confirmation input. Visit returns to its default weight after earlier traces
+showed that repeated navigation advanced device versions before matching
+callbacks could arrive. All four actors and all other existing input examples
+remain available. The scratch build at `/tmp/grace-workspace-next-WvoVXq`
+reproduced the current runtime and Workspace proof unit exactly.
 
 Earlier combined runs were stopped as the model definitions and simulation
 inputs were corrected. Their partial results cannot certify the final source.

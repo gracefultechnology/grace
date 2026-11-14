@@ -1054,9 +1054,10 @@ pure def sometimesPaymentResultFinishesTask(w: Workspace): bool =
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
-Walks start from one coherent task. Replacement requests and other-site callbacks
-remain sampled; separate guarded traces cover second-origin starts and the
-permission, startup-failure and restart variants.
+Walks include an ordinary task and a replacement on another origin. Navigation
+uses its default weight, giving current callbacks a chance to arrive before
+a later visit advances the context. Separate guarded traces cover permission,
+startup-failure and restart variants.
 
 ```quint
 pure val availabilityValues = Set(
@@ -1100,7 +1101,8 @@ pure val spokenValues = Set(
   { token: 2, text: "Yes, but change the amount.", owner: C::HumanAudio, complete: true, approves: true, correction: true },
   { token: 2, text: "Yes", owner: C::HumanAudio, complete: false, approves: true, correction: false })
 pure val taskRequestValues = Set(
-  { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" })
+  { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" },
+  { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" })
 pure val browserInputValues = BC::browserInputValues
 pure val unexpectedValues = Set(
   { id: 1, revision: 2, destination: "https://utility.example/updated" },
@@ -1164,7 +1166,6 @@ pure val progressValues = Set(
     generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: PaymentProgress, destination: "" })
 pure val weight_changeLifecycle = 4
 pure val weight_setAvailability = 4
-pure val weight_visit = 12
 pure val weight_openGrace = 12
 pure val weight_publishGuidance = 12
 pure val weight_begin = 24

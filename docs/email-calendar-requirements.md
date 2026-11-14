@@ -28,7 +28,7 @@ the replacement Calendar JavaScript has no payment action.
 | CAL-06 | Calendar bill uses owner/origin/account/unique invoice; UI occurrence ID cannot create duplicate payment attempt. Explicit user Calendar → bill-pay requirement and current TXN 01–02. | `billAvailable`, `occurrenceBill`, `billOrigin`, `billAccount`; current `calendarView.selectedOccurrence` and canonical handoff/payment registry |
 | CAL-07 | Distinct recurring occurrences, new invoice/source for next cycle, prior receipt never reused. Explicit user scope/current INV 07. | `followingAllowed`, `followingIdentity`, `lawFollowingKeepsAccount`, series tombstones |
 | CAL-08 | Close returns Home, cancelling unsubmitted form edits; already-submitted save/deletion outcomes reconcile while hidden and reopen with their pending/error state. HTML 2156, plus required asynchronous storage behavior. | `closeCalendar`, `openCalendar`, `lawClosingKeepsSubmittedSave`, approved-revision fences and occurrence-bound `SeriesReceipt` |
-| CAL-08 | Own-calendar filtering, no duplicate row, stale upsert refused, missing/ambiguous/deleted selection safe. Current INV 01 and prototype list/detail behavior. | `calendar.md` collection helpers/laws; `calendarView.md` registry/selection invariants |
+| CAL-09 | Own-calendar filtering, no duplicate row, stale upsert refused, missing/ambiguous/deleted selection safe. Current INV 01 and prototype list/detail behavior. | `calendar.md` collection helpers/laws; `calendarView.md` registry/selection invariants |
 
 ## Prototype corrections and explicit extensions
 
