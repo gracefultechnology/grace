@@ -197,6 +197,14 @@ and matched the generated TypeScript through 64 transitions. See
 `/tmp/grace-email-directed-quint.log` and `/tmp/grace-email-directed-replay.log`.
 Six admissions remained without a passing standard-run receipt.
 
+A 2,500-trace comparison tested reducing Email's read weight from eight to
+four. Both runs preserved all invariants. The candidate reached Undo Trash
+once, while neither reached Restore draft or Forward attachment. The
+candidate also reached the attachment goal one fewer time. These mixed
+results do not establish an improvement for the full profile. The model
+and sampler remain at their existing settings. Logs are
+`/tmp/grace-email-weight-baseline.log` and `/tmp/grace-email-weight-trial.log`.
+
 The updated Workspace unit has 1,310 obligations. Its first proof attempt
 exhausted resources on `changeLifecycle_ensures` and `changePage_ensures`;
 the automatic isolated retry reached its 60-minute subprocess limit. The
