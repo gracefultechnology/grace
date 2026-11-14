@@ -386,12 +386,24 @@ The frozen source, generated artifacts, traces and replay are recorded in
 `/tmp/grace-check7-recovery-04R4vs/replay-report.json`.
 The combined log is `/tmp/grace-isolated-check-7.log`.
 
+The subsequent check at `2bdd8b7` compiled all 23 models and passed 19
+simulation/replay units. Quint reached its 60-minute subprocess limit during
+the Email Undo Trash guard search and the Workspace ordinary completion goal
+search. The run skipped the later combined stages. Its saved Email and
+Workspace traces replayed independently through 16,386 steps without a rule
+violation. This included states satisfying every Email goal. The combined
+run for `4225150` has started and compiled all 24 models. See
+`/tmp/grace-isolated-check-8.log`, `/tmp/grace-check8-recovery-IUddJN/replay-report.json`
+and `/tmp/grace-isolated-check-9.log`.
+
 [Hosted CI for this commit](https://github.com/gracefultechnology/grace-new/actions/runs/43578198572)
 ran zero steps. GitHub reported a billing or spending-limit restriction.
 The [d904d56 run](https://github.com/gracefultechnology/grace-new/actions/runs/43622371337)
 reported the same restriction before any verification step started.
 The [b53524a run](https://github.com/gracefultechnology/grace-new/actions/runs/43624458272)
 also reported the restriction and started zero verification steps.
+The [4225150 run](https://github.com/gracefultechnology/grace-new/actions/runs/43627126215)
+reported the same restriction before starting any steps.
 
 The current read-only review inventory contains 241 entries across 24
 specifications. Every story has rules and every rule has a Quint block.
