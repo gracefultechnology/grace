@@ -114,9 +114,12 @@ template's conformance driver passed its journey, five malformed inputs and
 generated-test fixture at its 120-second limit. That fixture timed out again
 when retried on its own. The root build initially waited for the active check's generation lock. It
 then passed all six tasks on the Workspace sampling checkpoint. The log is
-`/tmp/grace-current-root-build-after-check.log`. The root suite retry precedes
-the next combined run. These tests exercise the retained template and tooling.
-Grace's provider and device journeys belong to the implementation phase.
+`/tmp/grace-current-root-build-after-check.log`. The root suite retry passed all
+34 tests, including the generated-test fixture, in
+`/tmp/grace-current-root-tests-after-check.log`. The next combined run started
+after that retry and is recorded in `/tmp/grace-isolated-check-6.log`. These
+tests exercise the retained template and tooling. Grace's provider and device
+journeys belong to the implementation phase.
 
 A separate guarded model trace exercised Calendar bill selection, browser
 evidence, approval, durable payment results and Calendar updates across 61
