@@ -1,14 +1,11 @@
 # Specification validation status
 
-At checkpoint `887d411`, the 20 Grace domain units had successful individual
-proof verdicts covering **4,197 obligations**. The retained template scaffold
-adds six, for **4,203 obligations across 21 proof-bearing units**. Each result
-listed below has zero unproved obligations, exhausted obligations and errors.
-The guidance dismissal/restoration addition is undergoing fresh verification;
-its affected Assistant, Interaction and Workspace results will supersede the
-checkpoint results below. The complete combined model check and larger profile remain pending. The
-isolated checkout has passed installation, its existing tests and both builds.
-User acceptance remains a later step.
+The 20 Grace domain units have successful individual proof verdicts covering
+**4,282 obligations**. The retained template scaffold adds six, for
+**4,288 obligations across 21 proof-bearing units**. Each final result below
+has zero unproved obligations, exhausted obligations and errors. The complete
+combined model check and larger profile remain pending. The isolated baseline
+passed installation, its existing tests and both builds.
 
 ## Scope and review
 
@@ -36,7 +33,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Unit | Proved obligations | Exact result artifact |
 |---|---:|---|
 | Conversation | 201/201 | `/tmp/grace-wake-proof/app__conversation.ts.result.json` |
-| Assistant | 282/282 | `/tmp/grace-assistant-current-proof/app__assistant.ts.result.json` |
+| Assistant | 317/317 | `/tmp/grace-guidance-final-proof-XomBfx/app__assistant.ts.json` |
 | Payment | 354/354 | `/tmp/grace-payment-proof-2-0y6dup/result.json` |
 | Bill preparation | 75/75 | `/tmp/grace-billpay-current-proof/app__billpay.ts.result.json` |
 | Browser | 118/118 | `/tmp/grace-browser-proof-3/result.json` |
@@ -48,13 +45,13 @@ describe earlier snapshots; the selected results below supersede them.
 | Email mailbox | 903/903 | `/tmp/grace-email-current-proof-N7bbTr/result.json` |
 | Website execution | 112/112 | `/tmp/grace-execution-proof-4IMCiq/app__execution.ts.json` |
 | Cross-application handoffs | 60/60 | `/tmp/grace-expanded-proof-VpSzue/app__handoffs.ts.json` |
-| Assistant interaction dispatcher | 1/1 | `/tmp/grace-interaction-proof/result.json` |
+| Assistant interaction dispatcher | 1/1 | `/tmp/grace-guidance-final-proof-XomBfx/app__interaction.ts.json` |
 | Memory | 60/60 | `/tmp/grace-memory-proof/result.json` |
 | Network | 53/53 | `/tmp/grace-system-final-proof/app__network.ts.result.json` |
 | Preferences | 40/40 | `/tmp/grace-files-handproof/app__preferences.ts.result.json` |
 | Application shell | 52/52 | `/tmp/grace-system-final-proof/app__shell.ts.result.json` |
 | Wake | 17/17 | `/tmp/grace-wake-proof/app__wake.ts.result.json` |
-| Workspace composition | 1,260/1,260 | `/tmp/grace-workspace-modular-proof-8/result.json` |
+| Workspace composition | 1,310/1,310 | `/tmp/grace-guidance-workspace-proof-lsMBF1/result.json` |
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
 The scaffold is the template's greeting example, not a Grace feature or a proof
@@ -97,10 +94,9 @@ source comparison and header alignment do not replace that check.
 ## Validation target and completed commands
 
 Concurrent application work began in the original checkout after the model
-checkpoint was pushed. Validation continues in an isolated clone based on
-`887d4119403ea1f5e513b9168dd8bc11b4ec1c44`, on branch
-`codex/grace-spec-validation`. The concurrent application changes belong to
-the following implementation phase.
+checkpoint was pushed. Validation uses an isolated checkout of `develop` at
+the specification checkpoint `d193137`. The concurrent application changes
+belong to the following implementation phase.
 
 The isolated checkpoint passed these commands:
 
@@ -116,12 +112,12 @@ The isolated checkpoint passed these commands:
 These tests exercise the retained template and tooling. Grace's provider and
 device journeys will be implemented in the next phase.
 
-The specification checkpoint `7aa6ea1` is merged and pushed to `develop`.
+The specification checkpoint `d193137` is merged and pushed to `develop`.
 The original checkout was fast-forwarded after checking that its concurrent
 application edits did not overlap the incoming files. Those edits remain in
 progress. Validation continues in the isolated checkout.
 
-The [GitHub CI run for this checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43547183011)
+The [GitHub CI run for this checkpoint](https://github.com/gracefultechnology/grace-new/actions/runs/43554896412)
 ended before any job steps ran. Its annotation reports failed account payments
 or a spending-limit restriction. Hosted CI needs the account billing issue
 resolved before it can supply a verification result.
@@ -151,10 +147,10 @@ while the complete safety and replay checks remain part of the combined run.
 
 ## Combined validation still pending
 
-The earlier isolated combined run parsed all 23 modules. Sixteen units completed
-simulation and replay without failures. Email's long searches ended without a
-completed simulation receipt. That run was stopped after the sampling inputs
-changed, and the current combined run is `/tmp/grace-isolated-check-3.log`.
+The previous isolated combined run parsed all 23 modules and produced 19
+passing simulation and replay receipts. It ended without a final report or
+completed receipts for Email and Workspace. The current run is recorded in
+`/tmp/grace-isolated-check-4.log`.
 The current Email profile uses one coherent mailbox, five listing scopes
 and five metadata records, and eight read receipts. Its explicit domain audit
 still reaches all 33 transitions and 17 goals, observes all 33 guards refusing,
@@ -168,8 +164,8 @@ The updated Workspace unit has 1,310 obligations. Its first proof attempt
 exhausted resources on `changeLifecycle_ensures` and `changePage_ensures`;
 the automatic isolated retry reached its 60-minute subprocess limit. The
 current sidecar adds smaller invariant steps for closing a quiet workspace
-and changing only keyboard ownership. Verification of that revision is active.
-The earlier Workspace proof total in the table remains checkpoint evidence.
+and changing only keyboard ownership. The page-change lemma then passed on
+the first pass and the lifecycle lemma passed on the automatic isolated retry.
 The CalendarView sampler gives the deletion question, Keep and approval equal
 weights of five. Workspace sampling starts from one coherent task and gives
 guidance publication a weight of twelve. These changes affect exploration
