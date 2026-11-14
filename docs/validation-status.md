@@ -1,7 +1,7 @@
 # Specification validation status
 
-The current specification at `d9bdca0` passed **4,308 individual proof
-obligations** across 20 Grace domain units and the retained template scaffold.
+The current specification passed **4,310 individual proof obligations**
+across 20 Grace domain units and the retained template scaffold.
 The Workspace sampling update preserves the generated runtime and proof unit
 byte for byte. The combined model check and larger profile remain pending.
 
@@ -40,7 +40,7 @@ describe earlier snapshots; the selected results below supersede them.
 | Calendar view and series | 208/208 | `/tmp/grace-calendar-home-proof-5MwT6g/result.json` |
 | Files | 192/192 | `/tmp/grace-files-final-feedback/app__files.ts.result.json` |
 | Email message lifecycle | 54/54 | `/tmp/grace-repeat-proof-x8JiBb/app__emailItem.ts.json` |
-| Email mailbox | 903/903 | `/tmp/grace-email-current-proof-N7bbTr/result.json` |
+| Email mailbox | 905/905 | `/tmp/grace-email-bill-selection-af5941p3/result.json` |
 | Website execution | 112/112 | `/tmp/grace-execution-proof-4IMCiq/app__execution.ts.json` |
 | Cross-application handoffs | 60/60 | `/tmp/grace-calendar-owned-handoffs-5stmBc/app__handoffs.ts.result.json` |
 | Assistant interaction dispatcher | 1/1 | `/tmp/grace-guidance-final-proof-XomBfx/app__interaction.ts.json` |
@@ -194,6 +194,30 @@ The new proof establishes that confirmation preserves the Calendar invariants,
 keeps the current view, consumes one approval and leaves an unsaved approved
 row for the durable write. The combined run for this source is queued behind
 the active run.
+
+## Email confirmation and cross-source payment
+
+A guarded trace showed that an earlier Email confirmation could accept a
+replacement candidate for the same message. The confirmation now carries
+the exact displayed mailbox/message identity, read generation and canonical
+bill identity. The current Email unit proved all 905 obligations, including
+refusal of any mismatched selection and preservation of the reviewed identity.
+The sidecar proof bodies did not change.
+
+A 77-transition directed trace checked Email confirmation, canonical
+handoff, two unrelated provider origins and accounts, voice and manual
+payment routes and matching durable receipts. It passed 23 refusal checks,
+including the replaced Email candidate, stale read generation, wrong mailbox,
+wrong provider account, duplicate submission and receipt display for the
+wrong bill. Email and Calendar independently resolved the same bill and
+showed the same receipt. The two providers reused an invoice number but
+retained distinct records. See
+`/tmp/grace-email-selection-shared-bill-witness.json`.
+
+Clean snapshot generation, root TypeScript and app VibeLang type checking
+passed. The retained scaffold passed 34 root tests, three app unit tests
+and one Chromium test. The app build passed after the design-system build
+generated the CSS package exports in the clean snapshot.
 
 ## Combined validation still pending
 

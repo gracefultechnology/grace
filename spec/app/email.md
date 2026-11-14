@@ -363,18 +363,39 @@ ledger under the unique provider invoice/cycle identity; calendar occurrence IDs
 do not split the ledger for the same bill. Reading an email supplies neither
 payment consent nor evidence that the bill is paid.
 
+Discovered by a guarded trace: a verified replacement candidate for the same
+message could arrive between displaying a bill and receiving the person's
+confirmation. A bare yes then confirmed the replacement instead. Confirmation
+now carries the exact displayed mailbox/message identity, read generation and
+provider bill identity. Every field must still match. The read generation keeps
+its existing meaning: receipt of another candidate does not pretend to start a
+new provider read. An identical candidate for the same source remains the same
+choice; a different source, account, invoice, origin or read generation needs a
+fresh displayed confirmation. The host authenticates the complete person's
+choice; planner or connector identity cannot supply it.
+
 ```quint
+type BillSelection = { source: I::MessageIdentity, generation: int, billRef: str, origin: str, account: str }
+pure def billSelection(m: Mailbox): BillSelection = {
+  source: messageIdentity(m, m.billSourceRef), generation: m.generation,
+  billRef: m.billRef, origin: m.billOrigin, account: m.billAccount
+}
 pure def canReceiveBill(m: Mailbox, generation: int, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): bool =
   by == MailConnector and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle and
   generation == m.generation and m.messageRef != "" and billRef != "" and origin != "" and billAccount != "" and verified
 pure def receiveBill(m: Mailbox, generation: int, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): Mailbox =
   { ...m, billRef: billRef, billOrigin: origin, billAccount: billAccount,
     billSourceRef: m.messageRef, billConfirmed: false }
-pure def canConfirmBill(m: Mailbox, confirmed: bool, by: MailActor): bool =
+pure def canConfirmBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
   by == MailUser and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle and
-  m.billRef != "" and m.billSourceRef == m.messageRef and confirmed
-pure def confirmBill(m: Mailbox, confirmed: bool, by: MailActor): Mailbox =
+  m.billRef != "" and m.billSourceRef == m.messageRef and confirmed and selection == billSelection(m)
+pure def confirmBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): Mailbox =
   { ...m, billConfirmed: true }
+pure def lawStaleBillSelectionCannotConfirm(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
+  selection != billSelection(m) implies not(canConfirmBill(m, selection, confirmed, by))
+pure def lawConfirmationKeepsDisplayedBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
+  canConfirmBill(m, selection, confirmed, by) implies
+    billSelection(confirmBill(m, selection, confirmed, by)) == selection
 pure def billReady(m: Mailbox): bool =
   m.billConfirmed and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and m.readStatus == ReadIdle and selectedMessageIsCurrent(m) and
   m.billSourceRef == m.messageRef
@@ -792,6 +813,15 @@ pure val mailContent: DraftContent = { to: "recipient@example.test", cc: Set("co
 pure val contentValues = Set(mailContent, { ...mailContent, bcc: Set("hidden@example.test"), body: "" })
 pure val operationIdValues = Set("sendA", "sendB")
 pure val evidenceValues = Set("providerEvidence")
+pure val selectedBill: BillSelection = {
+  source: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" },
+  generation: 3, billRef: "billA", origin: "https://biller.example", account: "billerAccount"
+}
+pure val selectionValues = Set(selectedBill,
+  { ...selectedBill, generation: 4 }, { ...selectedBill, generation: 5 },
+  { ...selectedBill, generation: 2 }, { ...selectedBill, billRef: "otherInvoice" },
+  { ...selectedBill, source: { ...selectedBill.source, ref: "otherMessage" } },
+  { ...selectedBill, account: "otherBillerAccount" })
 pure val billRefValues = Set("billA")
 pure val originValues = Set("https://biller.example")
 pure val billAccountValues = Set("billerAccount")
