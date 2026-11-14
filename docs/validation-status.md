@@ -376,9 +376,17 @@ separate generated-code walkthrough admitted the two current effects and
 refused 39 altered or interrupted commands. The covered cases include wrong
 actors, Stop, Home, Close Grace, restart, changed pages and revoked observation
 permission. The payment attempt and its durable evidence survive those
-interruptions. See `/tmp/grace-actuation-proof-nYv6oO/result.json`,
-`/tmp/grace-actuation-directed-quint-2.log`, `/tmp/grace-actuation-simulate-2.log`
+interruptions. See `/tmp/grace-actuation-proof-1HGxP3/result.json`,
+`/tmp/grace-actuation-directed-quint-3.log`, `/tmp/grace-actuation-simulate-3.log`
 and `/tmp/grace-actuation-witness.json`.
+
+The Workspace sampler now supplies the second biller's matching review,
+outcome and receipt-save inputs. Eight guarded generated steps from a
+retained second-biller Draft reached durable completion. The same path
+rejected a result and receipt save for the first biller. All 11 generated
+runtime modules and proof units in its dependency closure matched the
+previous output byte for byte. See `/tmp/grace-workspace-two-origins-witness.json`
+and `/tmp/grace-workspace-two-origins-comparison.json`.
 
 The combined `pnpm check` at `8d41fd0` finished with an unsuccessful verdict.
 All 23 model declarations compiled. Handoffs passed 12,000 safety traces,

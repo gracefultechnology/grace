@@ -1134,7 +1134,7 @@ pure def sometimesPaymentResultFinishesTask(w: Workspace): bool =
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
-Walks include an ordinary task and a replacement on another origin. Navigation
+Walks include an ordinary task and payments at two different origins. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Separate guarded traces cover permission,
 startup-failure and restart variants.
@@ -1233,13 +1233,18 @@ pure val paymentTokensValues = Set(
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, revision: 1, attempt: 1 },
   { deviceVersion: 0, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 })
-pure val currentReviewValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: P::exampleReview })
+pure val currentReviewValues = Set(
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: P::exampleReview },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    review: { ...P::exampleReview, key: { ...P::exampleKey, origin: "https://credit.example" } } })
 pure val currentOutcomeValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::exampleOutcome },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: P::exampleOutcome },
   { deviceVersion: 6, browserRevision: 3, taskVersion: 1, report: { ...P::exampleOutcome, revision: 3 } },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::exampleOutcome, result: P::Pending, reference: "" } },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::VerifiedFailure, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::Returned, reference: "" } })
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::Returned, reference: "" } },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 2,
+    report: { ...P::exampleOutcome, key: { ...P::exampleKey, origin: "https://credit.example" } } })
 pure val currentPriorValues = Set(
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::examplePrior },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::examplePrior, result: P::VerifiedFailure, reference: "" } },
@@ -1247,7 +1252,8 @@ pure val currentPriorValues = Set(
 pure val saveReportValues = Set(
   { key: P::exampleKey, revision: 3, succeeded: true },
   { key: P::exampleKey, revision: 4, succeeded: true },
-  { key: P::exampleKey, revision: 3, succeeded: false })
+  { key: P::exampleKey, revision: 3, succeeded: false },
+  { key: { ...P::exampleKey, origin: "https://credit.example" }, revision: 3, succeeded: true })
 pure val progressValues = Set(
   { owner: "owner", task: "other", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
