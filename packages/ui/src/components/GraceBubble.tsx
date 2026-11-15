@@ -60,7 +60,8 @@ export function GraceBubble({
           // Her words stay selectable under the app's select-none (apps/app/src/App.tsx).
           <span className="min-w-0 select-text">
             {children}
-            {rest && <span data-rest="" className="text-subtle"> {rest}</span>}
+            {/* Prototype `.pale`, in its own ink by the user's choice (.storybook/preview.ts, `data-prototype-ink`). */}
+            {rest && <span data-rest="" data-prototype-ink="" className="text-pale"> {rest}</span>}
             {stopped && (
               <>
                 — <span className="ml-3.5 text-lead-ink italic">{stopped}</span>

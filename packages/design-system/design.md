@@ -7,7 +7,9 @@ Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 pro
   glass over it; app windows are white (`background`). `panel` is a row or panel on white; `card` a white
   panel on glass; `sidebar` a side list inside a window.
 - **Text.** `foreground` in apps and on Home, `grace-ink` in Grace's window and on glass buttons, `chrome`
-  for the rail and window buttons, `muted-foreground` for what matters less. Each pair meets WCAG AA.
+  for the rail and window buttons, `muted-foreground` for what matters less. Each pair meets WCAG AA, except three of the prototype's own pale
+  inks, kept exactly by choice: `pale` for Grace's unspoken words, `outside-day` for days outside the month and
+  `alert` on the week strip's Today. Each is marked `data-prototype-ink`, the one place axe skips contrast.
 - **Meaning.** `primary` (indigo) is the one next step, the selected label and the focus ring. `guide` is
   Grace pointing; `ok` done; `alert` today and what is due; `destructive` a warning about safety.
 - **Shape.** `radius` is 12px (`rounded-sm` 8 … `rounded-xl` 16); named radii by role: `rounded-row` 22,
