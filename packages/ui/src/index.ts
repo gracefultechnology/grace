@@ -26,6 +26,7 @@ export * from "./components/CalendarIcon.tsx";
 export * from "./components/CalendarMonth.tsx";
 export * from "./components/CalendarNav.tsx";
 export * from "./components/CalendarWeekStrip.tsx";
+export * from "./components/CameraApp.tsx";
 export * from "./components/CaptionStrip.tsx";
 export * from "./components/Card.tsx";
 export * from "./components/Checkbox.tsx";
