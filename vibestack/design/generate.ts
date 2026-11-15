@@ -15,12 +15,15 @@ const fixed = (tokens: Tokens, duration: string) => [
 /** Plain custom properties, usable without Tailwind. */
 export const tokensCss = (tokens: Tokens) =>
   block(":root", [...scheme(tokens, "light"), `--radius: ${tokens.radius};`, ...fixed(tokens, "duration-"), ...vars("gradient-", tokens.gradient)]) +
+  block(".light", scheme(tokens, "light")) +
   block(".dark", scheme(tokens, "dark")) +
   `@media (prefers-color-scheme: dark) {\n${block(":root:not(.light)", scheme(tokens, "dark"), "  ")}}\n`
 
 /** The Tailwind v4 entry: utilities named after the tokens. */
 export const themeCss = (tokens: Tokens) =>
-  `@import "tailwindcss";\n@import "./tokens.css";\n@custom-variant dark (&:is(.dark *));\n` +
+  `@import "tailwindcss";\n@import "./tokens.css";\n` +
+  // As tokens.css chooses the dark values: under `.dark`, or on a dark system outside `.light`.
+  `@custom-variant dark {\n  &:is(.dark, .dark *) {\n    @slot;\n  }\n  @media (prefers-color-scheme: dark) {\n    &:not(:is(.light, .light *)) {\n      @slot;\n    }\n  }\n}\n` +
   block("@theme inline", [
     ...names(tokens).map((name) => `--color-${name}: var(--${name});`),
     // Inline, so Tailwind splits a multi-layer value into one drop-shadow() per layer.

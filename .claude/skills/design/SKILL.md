@@ -94,14 +94,17 @@ it, `node ../../spec.ts` in an example. In `@repo/ui`: `pnpm gen` (the stories),
 - **Colors, radii, shadows and fonts are tokens.** A color may not share a
   text size's name, since `text-<name>` would set only the color. Use the utilities named
   after them (`bg-primary`, `text-muted-foreground`, `rounded-md`); the lint
-  rules of `vibestack/design/eslint.ts` refuse a palette class, an arbitrary
-  color, an arbitrary shadow or filter, and a literal color in a style. A shadow
-  that follows a shape's outline is a `dropShadow` token (`drop-shadow-<name>`). Merge classes with `cn()`; use CVA
+  rules of `vibestack/design/eslint.ts` refuse a palette class (`white` and
+  `black` too), an arbitrary or named color, a radius, shadow or font the
+  tokens do not define, an arbitrary shadow or filter, and a literal or named
+  color in a style. A shadow that follows a shape's outline is a `dropShadow`
+  token (`drop-shadow-<name>`). Merge classes with `cn()`; use CVA
   only where a component has real variants.
 - **A design change is a token change.** Describe it in `design.md`, write
   it as `[{ "path": "color.light.primary", "value": "oklch(…)", "reason": "…" }]`,
   and run `spec tokens apply changes.json`: it refuses an
-  unknown path, an invalid value and a contrast below WCAG AA, and prints
+  unknown path, an invalid value and a contrast below WCAG AA (4.5:1 for
+  text, 3:1 for the edge of a control, `input`), and prints
   the diff; `--write` applies it and rebuilds the CSS. Prose is never read
   as tokens.
 
