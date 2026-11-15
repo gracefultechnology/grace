@@ -52,7 +52,7 @@ export function WebsiteFileRequestDialog({ site, accept = "any", onChoose, onCan
     <BrowserDialog
       open={open}
       title={labels.title(site, accept)}
-      icon={<FileUp size={28} strokeWidth={2.2} />}
+      icon={<FileUp size={28} strokeWidth={2} />}
       onEscape={onCancel}
       className={className}
       actions={

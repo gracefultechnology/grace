@@ -87,7 +87,7 @@ export function BrowserNoticeDialog({ title, message, onClose, closeLabel = "Clo
       open={open}
       title={title}
       tone="caution"
-      icon={<TriangleAlert size={28} strokeWidth={2.2} />}
+      icon={<TriangleAlert size={28} strokeWidth={2} />}
       onEscape={onClose}
       className={className}
       actions={

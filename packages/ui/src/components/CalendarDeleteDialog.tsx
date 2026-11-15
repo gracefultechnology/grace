@@ -43,7 +43,8 @@ const defaultLabels = {
  */
 export function CalendarDeleteDialog({ title, description, repeating = false, onDelete, onKeep, error, pending = false, labels = defaultLabels, className, ...props }: CalendarDeleteDialogProps) {
   const choice = (scope: CalendarDeleteScope, label: string) => (
-    <Button key={scope} variant="warn" size="pill" loading={pending} onClick={() => onDelete?.(scope)}>
+    // Prototype `.a-btn`: `20px/1`, no transition.
+    <Button key={scope} variant="warn" size="pill" className="leading-none transition-none" loading={pending} onClick={() => onDelete?.(scope)}>
       {!pending && <CalendarGlyph name="trash" size={22} />}
       {label}
     </Button>
@@ -68,7 +69,7 @@ export function CalendarDeleteDialog({ title, description, repeating = false, on
         )}
         <DialogActions>
           {repeating ? [choice("occurrence", labels.occurrence), choice("series", labels.series)] : choice("occurrence", labels.one)}
-          <Button variant="capsule" size="pill" disabled={pending} onClick={onKeep}>
+          <Button variant="capsule" size="pill" className="leading-none transition-none" disabled={pending} onClick={onKeep}>
             {labels.keep}
           </Button>
         </DialogActions>

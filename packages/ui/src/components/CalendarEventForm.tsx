@@ -52,9 +52,9 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
           <span className="flex shrink-0">{icon}</span>
           <span className="min-w-0 flex-1 truncate py-1 leading-none">{value}</span>
           <Popover.Trigger asChild>
-            {/* Prototype `.a-fld .v .a-btn`: 48px, 18px words, its edge 8px from the capsule's. */}
+            {/* Prototype `.a-fld .v .a-btn`: 48px, `18px/1` words with no transition, its edge 8px from the capsule's. */}
             {/* Disabled, it keeps its ink: the capsule around it already fades. */}
-            <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-lg disabled:text-grace-ink" aria-label={`${changeLabel} ${label}`} disabled={disabled}>
+            <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-lg leading-none transition-none disabled:text-grace-ink" aria-label={`${changeLabel} ${label}`} disabled={disabled}>
               {changeLabel}
             </Button>
           </Popover.Trigger>
@@ -80,7 +80,8 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
                 type="button"
                 aria-pressed={choice.value === selected}
                 onClick={() => onPick?.(choice.value)}
-                className={menuOption({ surface: "page", selected: choice.value === selected })}
+                // Merged, so the chosen option's white wins over `.apop .spdo`'s pale fill (prototype line 621).
+                className={cn(menuOption({ surface: "page", selected: choice.value === selected }))}
               >
                 {choice.label}
               </button>

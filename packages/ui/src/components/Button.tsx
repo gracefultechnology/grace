@@ -50,8 +50,8 @@ const buttonVariants = cva(
     compoundVariants: [
       // A plain .pill, Grace's glass on her own surface, sits 2px tighter than .pill.main.
       { variant: "glass", size: "pill", class: "pr-6 pl-5" },
-      // "#ahdr .hgrp .pill.prom": 56px tall but keeps .pill.main's padding.
-      { variant: "prominent", size: "compact", class: "pr-[26px] pl-[22px]" },
+      // "#ahdr .hgrp .pill.prom": 56px tall but keeps .pill.main's padding; pressed it stays indigo ("#ahdr .pill.prom", ".a-btn.prom" !important over .pill.prom:active).
+      { variant: "prominent", size: "compact", class: "pr-[26px] pl-[22px] active:bg-primary" },
     ],
     defaultVariants: { variant: "primary", size: "md" },
   },

@@ -131,7 +131,8 @@ export function GraceHeader({
           <Size size={20} strokeWidth={2.2} aria-hidden />
           {expanded ? collapseLabel : expandLabel}
         </GracePill>
-        <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose}>
+        {/* .winx: its pressed disc shows at once, with no fade. */}
+        <Button variant="plain" size="compact-icon" className="transition-none" aria-label={closeLabel} onClick={onClose}>
           <X size={24} strokeWidth={1.75} aria-hidden />
         </Button>
       </GraceCapsule>

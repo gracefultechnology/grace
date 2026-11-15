@@ -31,7 +31,8 @@ export type MailRecipientChipProps = ComponentProps<"span"> & {
 export function MailRecipientChip({ contact, onRemove, removeLabel = `Remove ${contact.name}`, className, ...props }: MailRecipientChipProps) {
   return (
     <span className={cn("inline-flex h-[60px] items-center gap-3 rounded-full bg-panel pr-5 pl-2 text-body-lg leading-none font-bold text-chrome", className)} {...props}>
-      <MailContactAvatar contact={contact} size={46} aria-hidden />
+      {/* Prototype `av(…, 46)`: the initial at 18px. */}
+      <MailContactAvatar contact={contact} size={46} style={{ fontSize: 18 }} aria-hidden />
       {contact.name}
       {onRemove && (
         // Prototype `.rcx`.

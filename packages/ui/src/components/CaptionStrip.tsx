@@ -111,7 +111,8 @@ export function CaptionStrip({
           <span className="flex size-[27px] items-center justify-center rounded-full bg-glass text-caption font-bold text-primary">{graceInitial}</span>
         </span>
       ) : (
-        <span className="flex-none text-body font-bold text-label-ink">{youLabel}</span>
+        // .capstrip .who: 20px bold at the normal line height.
+        <span className="flex-none text-body leading-[normal] font-bold text-label-ink">{youLabel}</span>
       )}
       {answers?.length ? (
         <AnswerChips className="flex-1 flex-nowrap gap-3">
@@ -147,7 +148,7 @@ export function CaptionStrip({
       {/* spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target". */}
       {onShowGuide && <GuideShowButton surface="strip" label={showGuideLabel} onSelect={onShowGuide} />}
       {/* .capstrip .pill: the toolbar's tinted glass, so it shows on the pale strip. */}
-      <Button variant="glass" size="pill" className="bg-primary/8 shadow-none inset-ring inset-ring-primary/12 inset-shadow-2xs inset-shadow-glass/80" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
+      <Button variant="glass" size="pill" className="bg-primary/8 shadow-strip-pill" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
         {chatIcon}
         {showChatLabel}
       </Button>

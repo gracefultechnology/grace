@@ -35,12 +35,13 @@ export function GuideAnchor({ children, radius = 12, kind = "point", title, onCl
       {children}
       <GuideRing gap={gap} radius={Math.min(radius + gap, 999)} tone={kind === "confirm" ? "ok" : "guide"} motion={instruction ? "tap" : "pulse"} />
       {instruction && title && (
-        // `.glab.anch`: 22px right of the target, its bottom 22px below the target's middle (at most 40px down).
+        // `.glab.anch`: 22px right of the target, its bottom 22px below the target's middle (at most 40px down); it takes taps,
+        // unlike `#ov .glab` over a website.
         <GuideLabel
           title={title}
           onClose={onClose}
           closeLabel={closeLabel}
-          className="absolute top-[calc(min(50%,40px)+22px)] left-[calc(100%+22px)] z-6 -translate-y-full"
+          className="pointer-events-auto absolute top-[calc(min(50%,40px)+22px)] left-[calc(100%+22px)] z-6 -translate-y-full"
         />
       )}
     </span>

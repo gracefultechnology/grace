@@ -12,7 +12,7 @@ const marks = {
   // `.gmk`: Grace's G in her gradient ring.
   grace: (
     <span className={cn(markBox, "bg-gradient-ring")}>
-      <b className="flex size-[27px] items-center justify-center rounded-full bg-glass text-caption font-bold text-primary">G</b>
+      <b className="flex size-[27px] items-center justify-center rounded-full bg-glass text-caption leading-[normal] font-bold text-primary">G</b>
     </span>
   ),
   // `.kbmk`: a field to type in.
@@ -83,7 +83,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         below ? (end ? "rounded-tr-none" : "rounded-tl-none") : "rounded-bl-none",
         // `.glab.wl`: filled violet, white words, in sooner; `#ov .glab`: the outline below, after the ring, its shadow following the tail.
         working
-          ? "bg-guide text-glass shadow-tag [animation-duration:.25s]"
+          ? "z-2 bg-guide text-glass shadow-tag [animation-duration:.25s]"
           : "text-grace-ink drop-shadow-label [animation-delay:.25s]",
         className,
       )}
@@ -120,7 +120,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         </Words>
         {onClose && !working && (
           // `.glab .glx`: a ghost close, 44px, pulled into the label's padding.
-          <Button variant="plain" aria-label={closeLabel} onClick={(event) => { event.stopPropagation(); onClose(); }} className="pointer-events-auto relative -my-2.5 -mr-4 ml-1 size-11 cursor-pointer p-0 text-guide-close active:bg-primary/8">
+          <Button variant="plain" aria-label={closeLabel} onClick={(event) => { event.stopPropagation(); onClose(); }} className="pointer-events-auto relative -my-2.5 -mr-4 ml-1 size-11 cursor-pointer p-0 text-guide-close transition-none active:bg-primary/8">
             <X size={20} strokeWidth={2.2} aria-hidden />
           </Button>
         )}

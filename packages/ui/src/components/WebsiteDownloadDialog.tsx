@@ -56,7 +56,7 @@ export function WebsiteDownloadDialog({ offer, onSave, onDecline, open = true, l
     <BrowserDialog
       open={open}
       title={labels.title(offer.site)}
-      icon={<Download size={28} strokeWidth={2.2} />}
+      icon={<Download size={28} strokeWidth={2} />}
       onEscape={onDecline}
       className={className}
       actions={

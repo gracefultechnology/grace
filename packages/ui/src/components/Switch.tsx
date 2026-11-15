@@ -10,7 +10,7 @@ const track = cva("group inline-flex shrink-0 items-center rounded-full bg-prima
   variants: {
     size: {
       // .trk: transition:background .2s (CSS ease); .a-sw has none.
-      sm: "h-[26px] w-11 p-[3px] transition-colors duration-quick ease-css-default data-[state=unchecked]:bg-track-off",
+      sm: "h-[26px] w-11 p-[3px] transition-[background-color] duration-quick ease-css-default data-[state=unchecked]:bg-track-off",
       md: "h-[38px] w-16 p-1 data-[state=unchecked]:bg-switch-off",
     },
   },

@@ -1,5 +1,6 @@
 import { ChevronDown, MessageSquarePlus, RotateCcw } from "lucide-react";
 import { cn } from "../lib/cn.ts";
+import { press } from "./Button.tsx";
 import { GracePill } from "./GraceHeader.tsx";
 import { Menu, MenuLabel, MenuOption, type MenuProps } from "./Menu.tsx";
 import { SwitchTrack } from "./Switch.tsx";
@@ -85,11 +86,11 @@ export function GraceVoiceMenu({
       }
       {...props}
     >
-      {/* #voiceC: a 56px header pill with no fill; the menu stays open so the switch's new state shows. */}
+      {/* #voiceC: a 56px header pill with no fill that grows on a tap (.pill:active); the menu stays open so the switch's new state shows. */}
       <MenuOption
         role="menuitemcheckbox"
         aria-checked={voiceOn}
-        className="h-14 justify-between gap-2.5 bg-transparent pr-5 pl-4 data-[highlighted]:bg-transparent"
+        className={cn(press, "h-14 justify-between gap-2.5 bg-transparent pr-5 pl-4 data-[highlighted]:bg-transparent")}
         onSelect={(event) => {
           event.preventDefault();
           onVoiceChange?.(!voiceOn);

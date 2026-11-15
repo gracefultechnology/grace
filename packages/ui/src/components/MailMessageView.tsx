@@ -37,7 +37,7 @@ export type MailPhotoGridProps = Omit<ComponentProps<"ul">, "onSelect"> & {
   onSelect?: (index: number) => void;
 };
 
-/** An email's photos, three to a row, each opening the viewer (prototype `.a-photos`). */
+/** An email's photos, three to a row, each opening the viewer (prototype `.a-photos`; a `.a-photo` has no press scale). */
 export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPhotoGridProps) {
   return (
     <ul className={cn("m-0 grid list-none grid-cols-3 gap-4 p-0", className)} {...props}>
@@ -46,7 +46,7 @@ export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPho
           <button
             type="button"
             onClick={() => onSelect?.(i)}
-            className={cn(focusRing, "block h-[190px] w-full cursor-pointer overflow-hidden rounded-photo shadow-photo-tile transition-transform duration-press ease-spring active:scale-[.99]")}
+            className={cn(focusRing, "block h-[190px] w-full cursor-pointer overflow-hidden rounded-photo shadow-photo-tile")}
           >
             <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
           </button>

@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { cn } from "../lib/cn.ts";
 import { ListRow, type ListRowProps } from "./ListRow.tsx";
 import { Switch } from "./Switch.tsx";
 
@@ -30,7 +31,8 @@ export function SettingsSwitchRow({ title, subtitle, checked, onCheckedChange, d
       // A setting's hint wraps rather than being cut short (ListRow truncates its subtitle).
       subtitle={subtitle ? <span className="whitespace-normal">{subtitle}</span> : undefined}
       trailing={<Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />}
-      className={className}
+      // Prototype `#awin .a-row[data-ax]:active`: the row presses in wherever it is tapped.
+      className={cn(!disabled && "active:scale-[.99]", className)}
       {...props}
       // The label is the row's target: the row never becomes a button of its own.
       onClick={undefined}

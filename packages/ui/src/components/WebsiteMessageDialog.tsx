@@ -70,7 +70,7 @@ export function WebsiteMessageDialog({ kind, site, message, defaultText = "", on
     <BrowserDialog
       open={open}
       title={leaving ? labels.leaveTitle : labels.says(site)}
-      icon={leaving ? <LogOut size={28} strokeWidth={2.2} /> : <MessageSquareText size={28} strokeWidth={2.2} />}
+      icon={leaving ? <LogOut size={28} strokeWidth={2} /> : <MessageSquareText size={28} strokeWidth={2} />}
       onEscape={() => answer(kind === "alert")}
       className={className}
       actions={

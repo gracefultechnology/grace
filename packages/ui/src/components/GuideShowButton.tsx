@@ -19,9 +19,11 @@ export type GuideShowButtonProps = Omit<ButtonProps, "variant" | "size" | "child
  * @design packages/design-system/design.md#guidance
  */
 export function GuideShowButton({ onSelect, onClick, label = "Show me again", surface = "strip", className, ...props }: GuideShowButtonProps) {
+  const header = surface === "header";
   const content = (
     <>
-      <Eye size={22} strokeWidth={2} aria-hidden />
+      {/* Its neighbours' icons: Show chat's on the strip (`stripBtn()`), Expand's in the header (`ICON.exp`). */}
+      <Eye size={header ? 20 : 22} strokeWidth={header ? 2.2 : 2} aria-hidden />
       {label}
     </>
   );
@@ -31,7 +33,7 @@ export function GuideShowButton({ onSelect, onClick, label = "Show me again", su
     onClick?.(event);
     onSelect?.();
   };
-  return surface === "header" ? (
+  return header ? (
     <GracePill onClick={select} className={className} {...props}>{content}</GracePill>
   ) : (
     // `.capstrip .pill`: the toolbar's tinted glass, as Show chat beside it.
@@ -39,7 +41,7 @@ export function GuideShowButton({ onSelect, onClick, label = "Show me again", su
       variant="glass"
       size="pill"
       onClick={select}
-      className={cn("bg-primary/8 shadow-none inset-ring inset-ring-primary/12 inset-shadow-2xs inset-shadow-glass/80", className)}
+      className={cn("bg-primary/8 shadow-strip-pill", className)}
       {...props}
     >
       {content}
