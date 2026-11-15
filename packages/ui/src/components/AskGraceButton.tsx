@@ -9,8 +9,6 @@ export type AskGraceButtonProps = ComponentProps<"button"> & {
   selected?: boolean;
   /** The orb's glow: `welcome` pulses at start-up, `rest` while Grace is closed, `off` while she is open. */
   glow?: GraceOrbProps["glow"];
-  /** Grace is listening, thinking or speaking: the orb moves. */
-  active?: boolean;
 };
 
 /**
@@ -18,7 +16,7 @@ export type AskGraceButtonProps = ComponentProps<"button"> & {
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#selected
  */
-export function AskGraceButton({ label = "Ask Grace", selected = false, glow = "rest", active = false, type = "button", className, ...props }: AskGraceButtonProps) {
+export function AskGraceButton({ label = "Ask Grace", selected = false, glow = "rest", type = "button", className, ...props }: AskGraceButtonProps) {
   // Prototype `.rail .ask`, `.rail .ask.on`.
   return (
     <button
@@ -32,7 +30,7 @@ export function AskGraceButton({ label = "Ask Grace", selected = false, glow = "
       )}
       {...props}
     >
-      <GraceOrb glow={glow} active={active} />
+      <GraceOrb glow={glow} />
       {label}
     </button>
   );
