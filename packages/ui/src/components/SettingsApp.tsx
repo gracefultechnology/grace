@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Info, Shield, Wifi } from "lucide-react";
+import { CircleUserRound, Info, Shield, Wifi } from "lucide-react";
 import { GearIcon, SpeakerIcon } from "../icons.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
@@ -8,7 +8,7 @@ import { SettingsLargeTitleContext } from "./SettingsPageHeading.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
 
 /** Settings' pages, in the side list's order. */
-export type SettingsPage = "text-size" | "brightness" | "voice" | "wifi" | "privacy" | "about";
+export type SettingsPage = "text-size" | "brightness" | "voice" | "wifi" | "account" | "privacy" | "about";
 
 const icons: Record<SettingsPage, ReactNode> = {
   "text-size": (
@@ -22,11 +22,12 @@ const icons: Record<SettingsPage, ReactNode> = {
   brightness: <SunIcon size={26} />,
   voice: <SpeakerIcon className="size-[26px]" strokeWidth={2} />,
   wifi: <Wifi size={26} strokeWidth={2} aria-hidden />,
+  account: <CircleUserRound size={26} strokeWidth={2} aria-hidden />,
   privacy: <Shield size={26} strokeWidth={2} aria-hidden />,
   about: <Info size={26} strokeWidth={2} aria-hidden />,
 };
 
-/** The prototype's side list (`setView()`); the app adds "privacy" where saved details are kept. */
+/** The prototype's side list (`setView()`); the app adds "account" after Wi-Fi and "privacy" where saved details are kept (senior-care `SettingsScreen` `SECTIONS`). */
 const prototypePages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "about"];
 
 const defaultLabels: Record<SettingsPage, string> = {
@@ -34,6 +35,7 @@ const defaultLabels: Record<SettingsPage, string> = {
   brightness: "Brightness",
   voice: "Grace’s voice",
   wifi: "Wi-Fi",
+  account: "Account",
   privacy: "Privacy",
   about: "About this tablet",
 };
@@ -57,7 +59,7 @@ export type SettingsAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
   title?: string;
   /** The side list's words, by page. */
   labels?: Partial<Record<SettingsPage, string>>;
-  /** The open page: `SettingsTextSize`, `SettingsBrightness`, `SettingsVoice`, `WifiNetworkList` or `WifiJoinForm`, `SettingsPrivacy`, `SettingsAbout`. */
+  /** The open page: `SettingsTextSize`, `SettingsBrightness`, `SettingsVoice`, `WifiNetworkList` or `WifiJoinForm`, `AccountOverview`, `SettingsPrivacy`, `SettingsAbout`. */
   children: ReactNode;
 };
 
