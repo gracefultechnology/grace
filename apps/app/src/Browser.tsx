@@ -86,7 +86,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         </OverPage>
       )}
       {(active.load === "LoadFailed" || active.load === "SecurityBlocked") && (
-        // Grace's own view over the page, which would show Android's error page; a security block offers no way past it.
+        // Grace's own view over the page, which would show Android's error page: only Reload, which asks again, never a way past a security block.
         <OverPage className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-b-window bg-card">
           <EmptyState className="items-center" title={failures[active.load].title} icon={failures[active.load].icon}>
             <Button variant="capsule" size="pill" disabled={!offered({ tag: "Reload" })} onClick={() => edit({ tag: "Reload" })}><RotateCw aria-hidden />Reload</Button>

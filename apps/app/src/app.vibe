@@ -6,7 +6,7 @@ import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
 import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces, machine as workspaces } from "../gen/app__workspace.effect.vibe"
 import { nativePage } from "./nativePage.vibe"
-import { type SurfacePlugin, type WiFiPlugin, browserOnline, onNetworkChange } from "./surfacePlugin.ts"
+import { type SurfacePlugin, type WiFiPlugin, webView } from "./surfacePlugin.ts"
 import { pageHost } from "./page.vibe"
 
 // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
@@ -18,24 +18,28 @@ const started = Layer.effectDiscard(effect {
 export service Keyboard { readonly height: Stream.Stream<number> }
 
 /** The connection as the launcher's Wi-Fi plugin reads it, or as the WebView knows it where there is none, or the plugin fails. */
-function readConnectivity(wifi: WiFiPlugin | undefined): Promise<Connectivity> {
-  const browser: Connectivity = browserOnline() ? "Online" : "Offline"
-  return wifi === undefined ? Promise.resolve(browser)
-    : wifi.getConnectivity().then((c) => c.captivePortal ? "CaptivePortal" : c.online ? "Online" : "Offline", () => browser)
+effect function readConnectivity(wifi: WiFiPlugin | undefined): Connectivity!! {
+  const browser: Connectivity = (try webView.online) ? "Online" : "Offline"
+  if (wifi === undefined) return browser
+  const c = tryPromise(() => wifi.getConnectivity()) catch () => undefined
+  return c === undefined ? browser : c.captivePortal ? "CaptivePortal" : c.online ? "Online" : "Offline"
 }
 
 /**
  * Reports the connection to the workspace when it changes. The WebView announces going online or offline,
- * and the interface coming back; a captive portal or a validation the WebView does not announce is read every half minute.
+ * and the interface coming back; a captive portal or a validation the WebView does not announce is read every half minute
+ * while the interface is shown.
  */
 const connectivity = (wifi: WiFiPlugin | undefined) => Layer.effectDiscard(effect {
   const workspace = try Workspaces
-  const changes = Stream.merge(
-    Stream.tick("30 seconds"),
-    Stream.callback<void>((queue) => acquireRelease(sync(() => onNetworkChange(() => { Queue.offerUnsafe(queue, undefined) })), (stop) => sync(stop)))
-  )
+  const changes = Stream.mergeAll([
+    Stream.filter(Stream.tick("30 seconds"), () => !webView.hidden()),
+    Stream.fromEventListener(webView.window, "online"),
+    Stream.fromEventListener(webView.window, "offline"),
+    Stream.fromEventListener(webView.document, "visibilitychange")
+  ], { concurrency: "unbounded" })
   // spec/app/workspace.md, "Story: Leave and return without hidden work": the host reports availability; what else it holds is unchanged.
-  try fork.scoped Stream.runForEach(Stream.mapEffect(changes, () => promise(() => readConnectivity(wifi))), effect (connection) => {
+  try fork.scoped Stream.runForEach(Stream.mapEffect(changes, () => readConnectivity(wifi)), effect (connection) => {
     const { device } = try workspace.get()
     const availability = { connection, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed }
     if (connection !== device.connectivity) workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined

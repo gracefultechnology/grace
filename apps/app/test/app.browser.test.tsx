@@ -5,7 +5,7 @@ import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
@@ -22,7 +22,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
 /**
  * The plugin as the test sees it: every call, and the routing requests not yet answered; `android.allows` is Android's
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
- * the page starts what Grace asked only when the test says.
+ * the page starts what Grace asked only when the test says, and only what it asked last.
  */
 function fakePlugin() {
   const calls: Call[] = [];
@@ -46,7 +46,7 @@ function fakePlugin() {
       if (method === "purgeProfiles") return new Promise((resolve) => purges.push((clean) => resolve({ purged: 1, clean })));
       // Grace's own navigation ends what the page holds, then starts its next page (definitions.ts, pageStarted).
       if (hostNavigation.includes(method)) {
-        const start = () => emit("pageStarted", { id: options.id, url: "" });
+        const start = () => emit("pageStarted", { id: options.id, url: options.url ?? "" });
         return Promise.resolve().then(() => held.starts ? void starts.push(start) : start());
       }
       return method === "setOcclusionRects" ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
@@ -62,8 +62,8 @@ function fakePlugin() {
     plugin,
     android,
     held,
-    /** The pages start what Grace asked of them. */
-    start: () => Promise.all(starts.splice(0).map((start) => start())),
+    /** The page starts what Grace asked last: a command superseded before it started never starts. */
+    start: () => starts.splice(0).at(-1)?.(),
     calls: (method: string): Sent[] => calls.filter((c) => c.method === method).map((c) => ({ ...c.options, graceShown: c.graceShown })),
     /** Every call so far, in order, as its method and surface. */
     log: () => calls.map((c) => [c.method, c.options.id]),
@@ -76,6 +76,8 @@ function fakePlugin() {
     ask: (event: string, fields: Record<string, unknown>) => emit(event, fields),
     /** The page started its next page, whatever started it. */
     started: (id: string) => emit("pageStarted", { id, url: "" }),
+    /** The page's renderer is gone. */
+    crashed: (id: string) => emit("surfaceCrashed", { id }),
     /** The purge sent first ends, clean or not. */
     purged: (clean: boolean) => act(() => { purges.shift()!(clean); return Promise.resolve(); }),
   };
@@ -88,6 +90,9 @@ const rectOf = (element: Element, control = false): Rect => {
   return { x: start(left), y: start(top), width: end(right) - start(left), height: end(bottom) - start(top) };
 };
 
+/** Drawn over the page: Grace hides a control until the host routes its rect. */
+const shown = (locator: Locator) => locator.query()?.checkVisibility({ visibilityProperty: true }) ?? false;
+
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
 afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
@@ -97,8 +102,8 @@ it("Use the website under Grace's controls", async () => {
   const runtime = ManagedRuntime.make(application(native.plugin));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  /** The first tab as the workspace holds it. */
-  const firstTab = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === 1)!;
+  /** A tab as the workspace holds it. */
+  const tab = (id: number) => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === id)!;
 
   // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": Volume opens its popover, and a tap outside closes it.
   await act(() => userEvent.click(page.getByRole("button", { name: "Volume" })));
@@ -148,16 +153,17 @@ it("Use the website under Grace's controls", async () => {
     return JSON.stringify([routed, (placed.y as number) + (placed.height as number)]) === JSON.stringify([[{ ...at, cornerRadius: 0 }], at.y - 6]);
   }).toBe(true);
   await expect.element(page.getByRole("region", { name: "Grace" })).toBeVisible();
-  // A control that moves, as when the keyboard opens, stays drawn where it is routed until its new rect is routed beside it.
-  const routedAt = { ...rectOf(compact, true), cornerRadius: 0 };
+  // A control that moves, as when the keyboard opens, stays drawn, and painted, where it is routed until its new rect is routed beside it.
+  const painted = () => ({ ...rectOf(compact, true), cornerRadius: 0 });
+  const routedAt = painted();
   await page.viewport(1280, 700);
   await expect.poll(native.unanswered).toBe(1);
-  const movedTo = { ...rectOf(compact, true), cornerRadius: 0 };
-  expect(native.calls("setOcclusionRects").at(-1)?.rects).toEqual([movedTo, routedAt]);
+  const [movedTo, held] = native.calls("setOcclusionRects").at(-1)?.rects as Rect[];
+  expect([held, painted()]).toEqual([routedAt, routedAt]);
   await expect.element(compact).toBeVisible();
   await native.route();
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)?.rects).toEqual([movedTo]);
-  await expect.element(compact).toBeVisible();
+  await expect.poll(painted).toEqual(movedTo);
   await native.route();
 
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
@@ -186,11 +192,11 @@ it("Use the website under Grace's controls", async () => {
   await native.route();
   await act(() => userEvent.click(page.getByRole("button", { name: "Allow" })));
   // The notice is drawn once the host routes its new rect.
-  await expect.poll(async () => { await native.route(); return page.getByText("Android didn't allow your microphone.").query()?.closest(".invisible") === null; }).toBe(true);
+  await expect.poll(async () => { await native.route(); return shown(page.getByText("Android didn't allow your microphone.")); }).toBe(true);
   expect(native.calls("answerSitePermission").filter((c) => c.requestId === "microphone-1")).toMatchObject([{ grant: true }]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close" })));
   await microphone("microphone-2");
-  await expect.poll(async () => { await native.route(); return page.getByRole("button", { name: "Don't allow" }).query()?.closest(".invisible") === null; }).toBe(true);
+  await expect.poll(async () => { await native.route(); return shown(page.getByRole("button", { name: "Don't allow" })); }).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Don't allow" })));
   await expect.poll(() => native.calls("answerSitePermission").at(-1)).toMatchObject({ requestId: "microphone-2", grant: false });
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
@@ -202,7 +208,7 @@ it("Use the website under Grace's controls", async () => {
     return event.defaultPrevented;
   };
   /** The website's question is drawn once the host routes its rect. */
-  const asked = () => expect.poll(async () => { await native.route(); return page.getByRole("alertdialog").query()?.closest(".invisible") === null; }).toBe(true);
+  const asked = () => expect.poll(async () => { await native.route(); return shown(page.getByRole("alertdialog")); }).toBe(true);
   // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": Back closes a website's prompt as its Cancel does.
   await native.ask("dialogRequested", { id: "tab-1", dialogId: "name-1", kind: "prompt", message: "Your name?" });
   await asked();
@@ -230,7 +236,18 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.unanswered()).toBe(1);
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   await native.route();
-  await expect.poll(() => firstTab().load).toBe("SecurityBlocked");
+  await expect.poll(() => tab(1).load).toBe("SecurityBlocked");
+  // Grace's own view takes the page's place once the host routes its rect; its Reload asks again.
+  const failure = async (title: string) => {
+    await expect.poll(async () => { await native.route(); return shown(page.getByText(title)); }).toBe(true);
+    return page.getByText(title).element().parentElement!.querySelector("button")!;
+  };
+  const reload = await failure("This page isn't safe to open.");
+  await act(() => userEvent.click(reload));
+  await expect.poll(() => native.calls("reloadSurface")).toHaveLength(2);
+  // This time the page does not open.
+  await native.report("tab-1", "https://example.com/", 100, { pageError: "net::ERR_CONNECTION_RESET" });
+  await failure("This page didn't open.");
 
   // spec/app/browser.md, "Back and Forward stay within the selected tab's history": the tablet's Back key goes back in the page.
   const address = page.getByRole("textbox", { name: "Address" });
@@ -238,6 +255,9 @@ it("Use the website under Grace's controls", async () => {
   // spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
   await act(() => userEvent.type(address, "example"));
   await native.report("tab-1", "https://example.com/#moved", 100);
+  // The page arrived, and Grace's failure view is gone with the failure.
+  await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
+  await native.route();
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the page it leaves finishing
   // late does not finish the new one, which loads once it has started.
   native.held.starts = true;
@@ -246,20 +266,26 @@ it("Use the website under Grace's controls", async () => {
   await native.report("tab-1", "https://example.com/#moved", 100);
   // The fiber has heard the late report once it has had a moment.
   await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
-  expect(firstTab().load).toBe("Loading");
+  expect(tab(1).load).toBe("Loading");
+  // The person goes back to where the page is before it starts: the navigate superseded never starts, and the page's start is the new load's.
+  await act(() => userEvent.clear(address));
+  await act(() => userEvent.type(address, "example.com/#moved{Enter}"));
+  await expect.poll(() => native.calls("navigate")).toHaveLength(2);
   native.held.starts = false;
   await native.start();
-  await native.report("tab-1", "https://example.org/", 100);
-  await expect.poll(() => firstTab().load).toBe("Loaded");
-  // Two quick presses of the Back key go back two pages, past the page's own move, as two steps back.
+  await native.report("tab-1", "https://example.com/#moved", 100);
+  await expect.poll(() => tab(1).load).toBe("Loaded");
+  // Two quick presses of the Back key go back two pages, as two steps back.
   const twice = [new Event("hardware-back", { cancelable: true }), new Event("hardware-back", { cancelable: true })];
   await act(() => { twice.forEach((back) => window.dispatchEvent(back)); return Promise.resolve(); });
   expect(twice.map((back) => back.defaultPrevented)).toEqual([true, true]);
   await expect.poll(() => native.calls("goBack")).toMatchObject([{ id: "tab-1" }, { id: "tab-1" }]);
-  expect(native.calls("navigate")).toHaveLength(1);
-  expect(native.calls("reloadSurface")).toHaveLength(1);
+  expect(native.calls("navigate")).toHaveLength(2);
+  expect(native.calls("reloadSurface")).toHaveLength(2);
   // spec/app/deviceKeys.md, "Back closes the nearest open thing first and leaves only from a resting Home": Back steps back to the
   // tab's new-tab page, then goes Home, and on a resting Home it is left to Android.
+  expect(await pressBack()).toBe(true);
+  await expect.poll(() => native.calls("goBack")).toHaveLength(3);
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("destroySurface")).toMatchObject([{ id: "tab-1" }]);
   expect(await pressBack()).toBe(true);
@@ -270,7 +296,7 @@ it("Use the website under Grace's controls", async () => {
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": what covers a
   // page that may still be shown, Settings or Home, is drawn once the host routes it.
   const tapRouted = async (name: string) => {
-    await expect.poll(async () => { await native.route(); return page.getByRole("button", { name }).query()?.closest(".invisible") === null; }).toBe(true);
+    await expect.poll(async () => { await native.route(); return shown(page.getByRole("button", { name })); }).toBe(true);
     await act(() => userEvent.click(page.getByRole("button", { name })));
   };
   const openAbout = async () => {
@@ -308,7 +334,7 @@ it("Use the website under Grace's controls", async () => {
   await openAbout();
   // spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"
   await native.report("tab-1", "https://example.com/away", 100);
-  await expect.poll(firstTab).toMatchObject({ history: ["", "https://example.com/", "https://example.com/away"], load: "Loaded" });
+  await expect.poll(() => tab(1)).toMatchObject({ history: ["", "https://example.com/", "https://example.com/away"], load: "Loaded" });
   await askToClear();
   await act(() => userEvent.click(page.getByRole("button", { name: "Clear", exact: true })));
   await expect.poll(() => native.calls("purgeProfiles")).toMatchObject([{ profileKey: "grace" }]);
@@ -321,7 +347,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.log().slice(purging).filter(([method]) => method === "destroySurface" || method === "createSurface"))
     .toEqual([["destroySurface", "tab-1"], ["createSurface", "tab-1"]]);
   // The notice is drawn once the host routes it for the new page.
-  await expect.poll(async () => { await native.route(); return page.getByRole("alert").query()?.closest(".invisible") === null; }).toBe(true);
+  await expect.poll(async () => { await native.route(); return shown(page.getByRole("alert")); }).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close" })));
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
   await browse();
@@ -341,6 +367,31 @@ it("Use the website under Grace's controls", async () => {
   await native.purged(true);
   await expect.poll(() => native.calls("createSurface")).toHaveLength(4);
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
+
+  // spec/app/browser.md, "A tab whose page moves by itself while I am not looking at it records where it went"; spec/app/workspace.md,
+  // "A page that moves by itself where the person is not looking only records where it went": a second tab's page, in the background.
+  await browse();
+  await native.route();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Open a new tab" })));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.net{Enter}"));
+  await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-2");
+  await native.started("tab-2");
+  await native.report("tab-2", "https://example.net/", 100);
+  await expect.poll(async () => { await native.route(); return tab(2).load; }).toBe("Loaded");
+  await act(() => userEvent.click(page.getByRole("button", { name: "example.com", exact: true })));
+  await expect.poll(() => native.calls("presentSurface").at(-1)).toMatchObject({ id: "tab-1" });
+  const selected = tab(1);
+  await native.report("tab-2", "https://example.net/next", 100);
+  await expect.poll(() => tab(2)).toMatchObject({ history: ["", "https://example.net/", "https://example.net/next"], load: "Loaded" });
+  expect(tab(1)).toEqual(selected);
+  // spec/app/surface.md, "A new page waits for its first routing before it takes any touch": the background page, opened again
+  // once its renderer is gone, takes the rects already routed, and the shown page's routing does not start over.
+  const routing = native.calls("setOcclusionRects");
+  await native.crashed("tab-2");
+  await expect.poll(() => native.calls("setOcclusionRects").slice(routing.length)).toMatchObject([{ id: "tab-2", rects: routing.at(-1)!.rects }]);
+  await native.route();
+  expect(native.calls("createSurface").at(-1)).toMatchObject({ id: "tab-2", url: "https://example.net/next" });
+  expect(native.calls("setOcclusionRects")).toHaveLength(routing.length + 1);
 
   await act(() => Promise.resolve(root.unmount()));
   await runtime.dispose();
