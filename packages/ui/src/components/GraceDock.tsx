@@ -75,6 +75,8 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   /** Called by Type during set-up, to open the composer and the keyboard. */
   onType?: () => void;
   typeLabel?: string;
+  /** Set-up without internet: Talk gives way and Type is the main button (senior-care shared/verified/dock-phase.ts, `typeFirst`). */
+  offline?: boolean;
 };
 
 /**
@@ -109,6 +111,7 @@ export function GraceDock({
   composerOpen = false,
   onType,
   typeLabel = "Type",
+  offline = false,
   className,
   ...props
 }: GraceDockProps) {
@@ -164,7 +167,7 @@ export function GraceDock({
       )}
       <GraceCapsule className="self-end">
         {attach}
-        {setup ? (
+        {setup && offline && !listening ? null : setup ? (
           <Button
             variant={listening ? "capsule" : "prominent"}
             size="pill"
@@ -194,12 +197,19 @@ export function GraceDock({
           </GracePill>
         )}
         {/* senior-care dock-phase dockView(): set-up offers Type beside Talk until the composer opens; the tour's "Typing" step rings it. */}
-        {setup && !composerOpen && (
-          <GracePill data-open-keyboard onClick={onType}>
-            <Keyboard size={22} strokeWidth={2} aria-hidden />
-            {typeLabel}
-          </GracePill>
-        )}
+        {setup && !composerOpen ? (
+          offline && !listening ? (
+            <Button variant="prominent" size="pill" data-open-keyboard className="pr-[26px] pl-[22px] shadow-none" onClick={onType}>
+              <Keyboard size={22} strokeWidth={2} aria-hidden />
+              {typeLabel}
+            </Button>
+          ) : (
+            <GracePill data-open-keyboard onClick={onType}>
+              <Keyboard size={22} strokeWidth={2} aria-hidden />
+              {typeLabel}
+            </GracePill>
+          )
+        ) : null}
         {micUnavailable !== undefined && (
           <span id={reasonId} hidden>
             {micUnavailable}
