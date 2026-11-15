@@ -1,7 +1,7 @@
 import { Check, Wifi } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { Dialog, DialogContent, DialogTitle, type DialogContentProps } from "./Dialog.tsx";
+import { Dialog, DialogActions, DialogContent, DialogTitle, type DialogContentProps } from "./Dialog.tsx";
 import { Panel } from "./Panel.tsx";
 import { PageText } from "./PageHeading.tsx";
 
@@ -68,14 +68,14 @@ export function WifiTrustDialog({
           <div className="text-body-lg leading-[30px] font-bold text-chrome">{issuer}</div>
         </Panel>
         <PageText tone="secondary" className="mt-3.5">{advice}</PageText>
-        <div className="mt-6 flex flex-col gap-3">
+        <DialogActions>
           <Button variant="prominent" size="pill" onClick={onTrust}>
             <Check size={22} strokeWidth={2.4} aria-hidden />
             {trustLabel}
           </Button>
           <Button variant="capsule" size="pill" onClick={onAskGrace}>{askGraceLabel}</Button>
           <Button variant="capsule" size="pill" onClick={onCancel}>{cancelLabel}</Button>
-        </div>
+        </DialogActions>
       </DialogContent>
     </Dialog>
   );

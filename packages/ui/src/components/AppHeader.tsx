@@ -84,7 +84,7 @@ export function AppHeader({
     // corners the window's (`#awin.splitw .aphdr.bar`: the right one only).
     <header
       className={cn(
-        "pointer-events-none relative isolate flex items-center gap-2.5 p-6 font-sans transition-colors duration-quick",
+        "pointer-events-none relative isolate flex items-center gap-2.5 p-6 font-sans transition-colors duration-quick ease-css-default",
         // Its line is `box-shadow: 0 1px 0`, just below the bar.
         bar && "bg-background/92 backdrop-blur-frost backdrop-saturate-160 shadow-hairline",
         bar && (split ? "rounded-tr-window" : "rounded-t-window"),
@@ -115,7 +115,7 @@ export function AppHeader({
         <span
           aria-hidden
           className={cn(
-            "absolute top-1/2 left-1/2 -translate-1/2 text-body-lg leading-7 font-bold whitespace-nowrap text-foreground transition-opacity duration-quick",
+            "absolute top-1/2 left-1/2 -translate-1/2 text-body-lg leading-7 font-bold whitespace-nowrap text-foreground transition-opacity duration-quick ease-css-default",
             bar ? "opacity-100" : "opacity-0",
           )}
         >

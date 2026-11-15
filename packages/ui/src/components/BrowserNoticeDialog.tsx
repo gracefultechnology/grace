@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { Dialog, DialogContent, DialogTitle } from "./Dialog.tsx";
+import { Dialog, DialogActions, DialogContent, DialogTitle } from "./Dialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 
 export type BrowserDialogProps = {
@@ -43,8 +43,7 @@ export function BrowserDialog({ title, icon, tone = "plain", onEscape, open = tr
           <DialogTitle className="text-title leading-[34px]">{title}</DialogTitle>
         </div>
         {children}
-        {/* Prototype `.a-dlg .a-btns`: a column of full-width buttons, 24px under the words. */}
-        <div className="mt-6 flex flex-col gap-3 [&>button]:w-full">{actions}</div>
+        <DialogActions>{actions}</DialogActions>
       </DialogContent>
     </Dialog>
   );

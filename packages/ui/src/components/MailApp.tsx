@@ -88,7 +88,7 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
   onRetry?: () => void;
   /** Opens Wi-Fi to get back online. */
   onFixWifi?: () => void;
-  /** A note of what just happened, a `Toast` (with Undo after a delete), centered at the bottom of the screen. */
+  /** A note of what just happened, a `Toast` placed on the `screen` (with Undo after a delete). */
   toast?: ReactNode;
   /** The list's words, for another language. */
   labels?: Partial<MailAppLabels>;
@@ -155,7 +155,7 @@ export function MailApp({ folder, counts, messages, query = "", onQueryChange, o
           )}
         </div>
       </AppWindow>
-      {toast != null && <div className="absolute bottom-6 left-1/2 z-[45] -translate-x-1/2">{toast}</div>}
+      {toast}
     </>
   );
 }

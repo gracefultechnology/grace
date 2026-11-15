@@ -51,7 +51,7 @@ export function Keyboard({ layout = "letters", rows, shift = false, labels, name
     <div
       aria-hidden={!open || undefined}
       className={cn(
-        "absolute bottom-1.5 left-[144px] z-[6] box-border flex h-[300px] right-1.5 flex-col gap-[9px] overflow-hidden rounded-window bg-keyboard px-2.5 py-3.5 font-sans transition-transform duration-window motion-reduce:transition-none",
+        "absolute bottom-1.5 left-[144px] z-[6] box-border flex h-[300px] right-1.5 flex-col gap-[9px] overflow-hidden rounded-window bg-keyboard px-2.5 py-3.5 font-sans transition-transform duration-window ease-css-default motion-reduce:transition-none",
         !open && "translate-y-[calc(100%+6px)]",
         className,
       )}
@@ -76,7 +76,7 @@ export function Keyboard({ layout = "letters", rows, shift = false, labels, name
                   action && action !== "space" && "max-w-[140px] bg-key-fn text-[19px] leading-[normal] font-semibold",
                   action === "space" && "max-w-none flex-[5]",
                   action === "go" && "max-w-[150px]",
-                  action === "go" && ready && "bg-primary text-primary-foreground",
+                  action === "go" && ready && "bg-primary text-primary-foreground active:bg-primary",
                   action === "shift" && shift && "bg-card",
                 )}
               >

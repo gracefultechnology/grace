@@ -123,6 +123,7 @@ export const meta: ComponentMeta<AppWindowProps> = {
     },
     "Large title": { headerMode: "large", title: "Text size", nav: settingsNav, actions: undefined, children: textSize },
     "Large title, no list": { headerMode: "large", title: "Calendar", nav: undefined, actions: calendarActions, children: comingUp },
+    "Large title with Back": { headerMode: "large", title: detailTitle, backLabel: "Calendar", onBack: back, nav: undefined, actions: undefined, children: <CalendarEventDetail {...eventDetail} /> },
   },
   decorator: (story) => <TabletScreen>{story()}</TabletScreen>,
   play: {

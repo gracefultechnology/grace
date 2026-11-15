@@ -24,7 +24,7 @@ export type HomeEmailCardProps = Omit<LauncherCardProps, "title" | "children" | 
 export function HomeEmailCard({ title = "Email", messages, waiting, compact = false, size = "medium", ...props }: HomeEmailCardProps) {
   // Prototype `homeCards()`: the rows start 100px down, 12px apart, and keep to 12px above the card's bottom.
   return (
-    <LauncherCard title={title} size={size} {...props}>
+    <LauncherCard title={title} size={size} compact={compact} {...props}>
       <LauncherRows className="-mb-2.5 gap-y-3">
         {waiting ? <HomeWaiting message={waiting} /> : messages.slice(0, 2).map(({ id, ...mail }) => <HomeMailRow key={id} wrap={compact} {...mail} />)}
       </LauncherRows>

@@ -1,4 +1,4 @@
-import { Pen, X } from "lucide-react";
+import { ArrowUp, Pen, Trash, X } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { ButtonProps } from "./Button.tsx";
@@ -22,6 +22,8 @@ const refusesChild = async (anchor: HTMLElement, onClick: ReturnType<typeof fn>)
 };
 
 export const meta: ComponentMeta<ButtonProps> = {
+  // Default, Disabled and Loading show the tablet's capsule (.a-btn); Disabled fades its label as at prototype L674.
+  args: { variant: "capsule", size: "pill", children: <>{save}Save all to Files</> },
   examples: {
     // `asChild` needs an element to become, which no type can supply.
     AsChild: link(),
@@ -29,10 +31,11 @@ export const meta: ComponentMeta<ButtonProps> = {
     "Loading link": { ...loadingLink, loading: true },
     // A button without text is named by `aria-label`.
     Empty: { size: "icon", "aria-label": "Add", children: undefined },
-    // The tablet's kinds (prototype .pill, .pill.prom and .winx in the Email header, .a-btn in a read email).
+    // The tablet's kinds (prototype .pill, .pill.prom as #sendB and in the Email header, .a-btn.warn, .winx).
     Glass: { variant: "glass", size: "pill", children: <>{pause}Pause</> },
+    "Prominent pill": { variant: "prominent", size: "pill", children: <><ArrowUp size={24} strokeWidth={2.4} aria-hidden />Send</> },
     Prominent: { variant: "prominent", size: "compact", children: <><Pen size={22} strokeWidth={2.2} aria-hidden />Write</> },
-    Capsule: { variant: "capsule", size: "pill", children: <>{save}Save all to Files</> },
+    Warn: { variant: "warn", size: "pill", children: <><Trash size={22} strokeWidth={2.2} aria-hidden />Delete</> },
     Plain: { variant: "plain", size: "compact-icon", "aria-label": "Close Email", children: <X size={24} strokeWidth={1.75} aria-hidden /> },
   },
   // The tablet's buttons sit on its frame, where clear glass shows.

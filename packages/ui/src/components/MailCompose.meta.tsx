@@ -27,6 +27,7 @@ export const meta: ComponentMeta<MailComposeProps> = {
     onClose: fn(),
   },
   examples: {
+    "Large title": { headerMode: "large" },
     Blank: { to: [], subject: "", body: "", attachments: [] },
     "Attach open": { attachOpen: true },
     "With copies": { cc: [people.david], bcc: [people.joan] },

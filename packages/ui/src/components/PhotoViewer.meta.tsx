@@ -1,6 +1,6 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { flowersPhoto, mailScreen, stagePhoto, unfocus } from "./MailApp.meta.tsx";
+import { flowersPhoto, mailScreen, programPhoto, stagePhoto, unfocus } from "./MailApp.meta.tsx";
 import type { PhotoViewerProps } from "./PhotoViewer.tsx";
 
 const next = fn();
@@ -11,6 +11,7 @@ export const meta: ComponentMeta<PhotoViewerProps> = {
   args: { title: "Photo 2 of 3", src: flowersPhoto, alt: "Daisies", backLabel: "Susan’s email", onBack: fn(), onPrevious: fn(), onNext: next, onSave: fn(), onForward: fn(), onClose: fn() },
   examples: {
     First: { title: "Photo 1 of 3", src: stagePhoto, alt: "Lily on the stage", onPrevious: undefined },
+    Last: { title: "Photo 3 of 3", src: programPhoto, alt: "The recital program", onNext: undefined },
     Loading: { status: "loading" },
     "Couldn’t show": { status: "failed", onRetry: retry },
     Saved: { saveStatus: "saved" },

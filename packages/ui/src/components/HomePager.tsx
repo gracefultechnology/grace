@@ -30,7 +30,7 @@ export type HomePagerProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function HomePager({ page, count = 2, onPageChange, nextLabel = "More apps", backLabel = "Back to the first page", pageLabel = "Page", compact = false, arrows = true, className, ...props }: HomePagerProps) {
   // Prototype `hmChrome()`: 38px above the middle of the grid, which is 160–720px, or 96px to 24px from Home's bottom when compact.
-  const arrow = cn("pointer-events-auto absolute size-[76px] p-0 text-chrome", compact ? "top-[calc(50%-2px)]" : "top-[402px]");
+  const arrow = cn("pointer-events-auto absolute size-[76px] p-0 text-chrome transition-none active:scale-96", compact ? "top-[calc(50%-2px)]" : "top-[402px]");
   return (
     <div className={cn("pointer-events-none absolute inset-0 z-[300]", className)} {...props}>
       {/* Prototype `.harrow`, `#hArrowL` (lines 627, 653): halfway down the cards, at either edge. */}
@@ -55,7 +55,7 @@ export function HomePager({ page, count = 2, onPageChange, nextLabel = "More app
             onClick={() => onPageChange?.(i)}
             className={cn(
               focusRing,
-              "pointer-events-auto flex size-11 cursor-pointer items-center justify-center rounded-full after:h-4 after:rounded-full after:transition-[width,background-color] after:duration-slow after:ease-spring after:content-['']",
+              "pointer-events-auto flex size-11 cursor-pointer items-center justify-center rounded-full after:h-4 after:rounded-full after:transition-[width,background-color] after:duration-slow after:[transition-timing-function:var(--ease-settle),var(--ease-css-default)] after:content-['']",
               i === page ? "after:w-14 after:bg-primary" : "after:w-4 after:bg-pager",
             )}
           />

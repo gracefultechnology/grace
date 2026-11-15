@@ -6,15 +6,16 @@ import { cn, focusRing } from "../lib/cn.ts";
 type Size = "sm" | "md";
 
 // prototype .trk (sm: in Grace's Voice and Mic pills) and .a-sw (md: settings rows): indigo when on, grey when off.
-const track = cva("group inline-flex shrink-0 items-center rounded-full bg-primary transition-colors duration-slow", {
+const track = cva("group inline-flex shrink-0 items-center rounded-full bg-primary", {
   variants: {
     size: {
-      sm: "h-[26px] w-11 p-[3px] data-[state=unchecked]:bg-track-off",
+      // .trk: transition:background .2s (CSS ease); .a-sw has none.
+      sm: "h-[26px] w-11 p-[3px] transition-colors duration-quick ease-css-default data-[state=unchecked]:bg-track-off",
       md: "h-[38px] w-16 p-1 data-[state=unchecked]:bg-switch-off",
     },
   },
 });
-const knob = cva("block rounded-full bg-card transition-transform duration-base ease-standard motion-reduce:transition-none", {
+const knob = cva("block rounded-full bg-card", {
   variants: {
     size: {
       sm: "size-5 group-data-[state=checked]:translate-x-[18px]",

@@ -57,7 +57,7 @@ export function AnswerChips({ faded = false, className, ...props }: AnswerChipsP
   return (
     <div
       data-answers=""
-      className={cn("flex flex-none flex-wrap justify-end gap-4 transition-opacity duration-base", faded && "pointer-events-none opacity-0", className)}
+      className={cn("flex flex-none flex-wrap justify-end gap-4 transition-opacity duration-quick ease-css-default", faded && "pointer-events-none opacity-0", className)}
       {...props}
     />
   );

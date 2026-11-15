@@ -1,9 +1,45 @@
-import type { ComponentProps, ReactElement, ReactNode } from "react";
+import { createContext, use, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { cva } from "class-variance-authority";
 import { Check } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 
-export type MenuProps = Omit<ComponentProps<typeof DropdownMenu.Content>, "asChild"> & {
+/** Where a menu opens: over the frame as frosted glass (.spdpop), or over an app window's page (.apop). */
+export type MenuSurface = "glass" | "page";
+
+/** The panel of a menu, shared with a list built on another primitive, such as the Calendar form's picker. */
+export const menuPanel = cva("z-50 flex flex-col gap-2 rounded-menu p-2 outline-none", {
+  variants: {
+    surface: {
+      // .spdpop: 270px inside 8px of padding.
+      glass: "min-w-[286px] bg-glass/86 shadow-menu backdrop-blur-frost backdrop-saturate-160",
+      // .apop: near-white, no blur, 320px inside 8px of padding (content-box).
+      page: "min-w-[336px] bg-glass/95 shadow-popover",
+    },
+  },
+  defaultVariants: { surface: "glass" },
+});
+
+/** One option of a menu, shared as `menuPanel` is. */
+export const menuOption = cva(
+  [focusRing, "flex w-full cursor-pointer items-center gap-2 rounded-full px-[22px] text-body font-bold text-grace-ink outline-none select-none data-[disabled]:text-grace-ink/38"],
+  {
+    variants: {
+      surface: {
+        // .spdo
+        glass: "h-16 bg-glass/70 data-[highlighted]:bg-glass",
+        // "#awin .apop .spdo" and ".apop .spdo": 60px on a pale panel, reading from the left.
+        page: "h-15 flex-none justify-start bg-panel",
+      },
+      selected: { true: "bg-card text-primary shadow-raised data-[highlighted]:bg-card", false: "" },
+    },
+    defaultVariants: { surface: "glass", selected: false },
+  },
+);
+
+const SurfaceContext = createContext<MenuSurface>("glass");
+
+export type MenuProps = Omit<MenuPopoverProps, "asChild"> & {
   /** The button that opens the menu, such as Grace's Voice pill. */
   trigger: ReactElement;
   /** Its `MenuLabel`s, `MenuOption`s and any control that belongs in it. */
@@ -29,17 +65,17 @@ export function Menu({ trigger, children, open, defaultOpen, onOpenChange, ...pr
   );
 }
 
-export type MenuPopoverProps = ComponentProps<typeof DropdownMenu.Content>;
+export type MenuPopoverProps = ComponentProps<typeof DropdownMenu.Content> & {
+  /** `glass` over the frame (prototype .spdpop); `page` over an app window (.apop), whose options are 60px on a pale panel. */
+  surface?: MenuSurface;
+};
 
-/** The menu's frosted glass panel, 8px from a 64px button (prototype .spdpop: 270px inside 8px of padding). */
-export function MenuPopover({ className, sideOffset = 8, align = "start", ...props }: MenuPopoverProps) {
+/** The menu's panel, 8px from a 64px button. */
+export function MenuPopover({ surface = "glass", className, sideOffset = 8, align = "start", ...props }: MenuPopoverProps) {
   return (
-    <DropdownMenu.Content
-      sideOffset={sideOffset}
-      align={align}
-      className={cn("z-50 flex min-w-[286px] flex-col gap-2 rounded-menu bg-glass/86 p-2 shadow-menu backdrop-blur-frost backdrop-saturate-160 outline-none", className)}
-      {...props}
-    />
+    <SurfaceContext value={surface}>
+      <DropdownMenu.Content sideOffset={sideOffset} align={align} className={cn(menuPanel({ surface }), className)} {...props} />
+    </SurfaceContext>
   );
 }
 
@@ -57,18 +93,13 @@ export type MenuOptionProps = ComponentProps<typeof DropdownMenu.Item> & {
   selected?: boolean;
 };
 
-/** One choice in a menu: a 64px round option (prototype .spdo). */
+/** One choice in a menu: a round option (prototype .spdo), as tall as its panel's `surface` makes it. */
 export function MenuOption({ icon, selected, className, children, ...props }: MenuOptionProps) {
+  const surface = use(SurfaceContext);
   const choice = selected !== undefined && { role: "menuitemradio", "aria-checked": selected };
   return (
     <DropdownMenu.Item
-      className={cn(
-        focusRing,
-        "flex h-16 w-full cursor-pointer items-center gap-2 rounded-full bg-glass/70 px-[22px] text-body font-bold text-grace-ink outline-none select-none data-[disabled]:text-grace-ink/38 data-[highlighted]:bg-glass",
-        icon ? "justify-start" : "justify-center",
-        selected && "bg-card text-primary shadow-raised data-[highlighted]:bg-card",
-        className,
-      )}
+      className={cn(icon ? "justify-start" : "justify-center", menuOption({ surface, selected: !!selected }), className)}
       {...choice}
       {...props}
     >

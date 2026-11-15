@@ -261,7 +261,7 @@ export function MailCompose({
             {attachments.map((photo, i) => (
               <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
                 <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
-                <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment?.(i)}>
+                <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome transition-none active:scale-96" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment?.(i)}>
                   <X size={20} strokeWidth={2.4} aria-hidden />
                 </Button>
               </li>
@@ -291,11 +291,11 @@ export function MailCompose({
             }
             alignOffset={11}
             sideOffset={12}
-            className="min-w-[336px] bg-glass/95 shadow-popover backdrop-blur-none backdrop-saturate-100"
+            surface="page"
           >
-            <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("camera")}>{l.camera}</MenuOption>
-            <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("photos")}>{l.photos}</MenuOption>
-            <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("file")}>{l.file}</MenuOption>
+            <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach?.("camera")}>{l.camera}</MenuOption>
+            <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach?.("photos")}>{l.photos}</MenuOption>
+            <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach?.("file")}>{l.file}</MenuOption>
           </Menu>
         </div>
       </form>

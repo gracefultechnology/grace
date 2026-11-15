@@ -1,4 +1,4 @@
-import { useCallback, useState, type ComponentProps, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
 import { FilesCard, type FilesCardProps } from "./FilesCard.tsx";
 import { HomeCalendarCard, type HomeCalendarCardProps } from "./HomeCalendarCard.tsx";
@@ -47,6 +47,8 @@ const pages: HomePage[] = ["main", "files"];
 // Prototype `hmGeom()`: where each page starts along the row of cards, in mode G and when compact.
 const shifts: Record<HomePage, number> = { main: 0, files: 468 };
 const compactShifts: Record<HomePage, number> = { main: 0, files: 354 };
+// Prototype swipe (lines 2361–2365): a drag past 12px moves the cards, up to 60px past either page.
+const SWIPE = { threshold: 12, overscroll: 60 };
 // Prototype `hmGeom()` mode G: the cards in a 1042×560 grid; Email and Internet share one column.
 const slots = {
   calendar: { x: 0, top: 0, w: 480, h: 560 },
@@ -117,32 +119,82 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const across = (box.width - STAGE.rail) / (STAGE.width - STAGE.rail);
   const scale = Math.min(1, across, full ? box.height / STAGE.height : 1);
   const x = Math.max(0, (box.width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2);
+  const stops = full ? shifts : compactShifts;
+  // The shift while a finger drags the cards; the page's own shift otherwise.
+  const [dragShift, setDragShift] = useState<number | null>(null);
+  const dragRef = useRef<{ x: number; from: number; shift: number; moved: boolean; stop: AbortController } | null>(null);
+  useEffect(() => () => dragRef.current?.stop.abort(), []);
+  const shift = dragShift ?? stops[page];
+  const nearest: HomePage = shift > (stops.main + stops.files) / 2 ? "files" : "main";
+  // Prototype swipe handlers: follow the finger across the window, then settle on the nearer page.
+  const startDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (layout === "greeting" || (event.target as Element).closest("[data-home-pager] button")) return;
+    dragRef.current?.stop.abort();
+    const home = event.currentTarget;
+    const k = ((home.getBoundingClientRect().width / home.offsetWidth) || 1) * scale;
+    const stop = new AbortController();
+    const state = { x: event.clientX, from: shift, shift, moved: false, stop };
+    dragRef.current = state;
+    addEventListener("pointermove", (move) => {
+      const dx = (move.clientX - state.x) / k;
+      state.moved ||= Math.abs(dx) > SWIPE.threshold;
+      if (!state.moved) return;
+      state.shift = Math.max(stops.main - SWIPE.overscroll, Math.min(stops.files + SWIPE.overscroll, state.from - dx));
+      setDragShift(state.shift);
+    }, { signal: stop.signal });
+    const settle = () => {
+      stop.abort();
+      setDragShift(null);
+      if (state.moved) onPageChange?.(state.shift > (stops.main + stops.files) / 2 ? "files" : "main");
+    };
+    addEventListener("pointerup", settle, { signal: stop.signal });
+    addEventListener("pointercancel", settle, { signal: stop.signal });
+  };
+  // A swipe is not a tap on the card it started on.
+  const swallowSwipeClick = (event: MouseEvent) => {
+    if (!dragRef.current?.moved) return;
+    event.stopPropagation();
+    event.preventDefault();
+    dragRef.current = null;
+  };
   const place = (slot: keyof typeof slots, card: (turn: number) => ReactNode) => {
     // Compact, the cards slide flat (prototype `hmIs3D()` is false and `hmApply` translates them).
-    const { style, turn } = full ? drum(slots[slot], shifts[page]) : { turn: 0, style: { left: columns[slot], top: 0, width: 334, height: "100%", transform: `translateX(${-compactShifts[page]}px)` } };
+    const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { left: columns[slot], top: 0, width: 334, height: "100%", transform: `translateX(${-shift}px)` } };
+    const { transform, transformOrigin, ...frame } = style;
+    // Prototype `.lc` resizes over .3s settle (lines 389, 406); `hmGo()` turns the cards with easeOutCubic.
+    const still = dragShift !== null && "transition-none";
     return (
-      <div className="absolute transition-[transform,transform-origin,left,top,width,height] duration-slow ease-out will-change-transform motion-reduce:transition-none" style={style}>
-        {card(turn)}
+      <div className={cn("absolute transition-[left,top,width,height] duration-slow ease-settle motion-reduce:transition-none", still)} style={frame}>
+        <div className={cn("size-full transition-[transform,transform-origin] duration-slow ease-out-cubic will-change-transform motion-reduce:transition-none", still)} style={{ transform, transformOrigin }}>
+          {card(turn)}
+        </div>
       </div>
     );
   };
   // Prototype `.home` (left 6px under the rail), `.hgr`, `.hgrid` (lines 307–309, 644–650); `.home.cmp` (lines 389–401)
   // and `.home.tight .hgrid` (line 615).
   return (
-    <div ref={measure} className={cn("absolute inset-1.5 z-[1] overflow-hidden font-sans", className)} {...props}>
+    <div
+      ref={measure}
+      onPointerDown={startDrag}
+      onClickCapture={swallowSwipeClick}
+      // Prototype `.bwin,.home` (line 405): the bottom the app gives settles as Grace's window opens or closes.
+      className={cn("absolute inset-1.5 z-[1] overflow-hidden font-sans transition-[bottom] duration-slow ease-settle motion-reduce:transition-none", className)}
+      {...props}
+    >
       <div className="absolute top-0 left-0" style={{ width: STAGE.width, height: full ? STAGE.height : box.height / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
-        <HomeGreeting greeting={greeting} name={name} line={line} compact={compact} className={cn("absolute left-[182px] transition-[top] duration-window", full ? "top-[34px]" : "top-[22px]")} />
+        <HomeGreeting greeting={greeting} name={name} line={line} compact={compact} className={cn("absolute left-[182px] transition-[top] duration-slow ease-settle motion-reduce:transition-none", full ? "top-[34px]" : "top-[22px]")} />
         {/* Prototype `drawBanner()`: left 620px and right 26px of the screen, 22px down. */}
         {banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
         {layout !== "greeting" && (
-          <div className={cn("absolute left-[182px] w-[1042px]", full ? "top-40 h-[560px]" : "top-24 bottom-6")}>
+          <div className={cn("absolute left-[182px] w-[1042px] transition-[top,height] duration-slow ease-settle motion-reduce:transition-none", full ? "top-40 h-[560px]" : "top-24 h-[calc(100%-120px)]")}>
             {place("calendar", (turn) => <HomeCalendarCard {...calendar} compact={compact} turn={turn} className={cn("size-full", calendar.className)} />)}
             {place("email", (turn) => <HomeEmailCard {...email} compact={compact} turn={turn} className={cn("size-full", email.className)} />)}
             {place("internet", (turn) => <InternetCard {...internet} compact={compact} turn={turn} className={cn("size-full", internet.className)} />)}
             {place("files", (turn) => <FilesCard {...files} compact={compact} turn={turn} className={cn("size-full", files.className)} />)}
           </div>
         )}
-        <HomePager page={pages.indexOf(page)} count={pages.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(pages[i] ?? "main")} {...pager} />
+        <HomePager data-home-pager page={pages.indexOf(nearest)} count={pages.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(pages[i] ?? "main")} {...pager} />
       </div>
     </div>
   );

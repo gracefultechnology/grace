@@ -3,6 +3,7 @@ import { FileDocumentRow } from "./FileDocumentRow.tsx";
 import { FileTile } from "./FileTile.tsx";
 import { GuideRing } from "./GuideRing.tsx";
 import { ListRow } from "./ListRow.tsx";
+import type { MailPrintStatus } from "./MailActionStatus.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
@@ -30,6 +31,8 @@ export interface FilesDocument {
   name: string;
   /** Where it came from and when it was saved. */
   detail?: string;
+  /** What its last Print actually did. */
+  printStatus?: MailPrintStatus;
 }
 
 export type FilesTab = "photos" | "documents";
@@ -126,9 +129,9 @@ export function FilesApp({
 }: FilesAppProps) {
   const l = { ...filesAppLabels, ...labels };
   // spec/app/files.md, "Find help distinguishes one match, multiple matches and no match": Grace's ring on the one match.
-  // Half the gap to the neighbours less 4 (GuideRing), around the tile's 18px or the row's 22px corners.
-  const ring = (id: string, gap: number, radius: number) =>
-    id === highlightId && <GuideRing tight gap={gap} radius={radius + gap} motion="tap" />;
+  // Prototype axGuide() with kind `point` (JS 2146): the ring 8px outside the tile's 18px or the row's 22px corners, beating three times.
+  const ring = (id: string, radius: number) =>
+    id === highlightId && <GuideRing gap={8} radius={radius + 8} motion="pulse" />;
   return (
     <AppWindow
       title={title}
@@ -183,7 +186,7 @@ export function FilesApp({
                 {group.photos.map((photo) => (
                   <div key={photo.id} className="relative">
                     <FileTile src={photo.src} label={photo.label} aria-current={photo.id === highlightId || undefined} className="w-full" onClick={() => onOpenPhoto?.(photo.id)} />
-                    {ring(photo.id, 3, 18)}
+                    {ring(photo.id, 18)}
                   </div>
                 ))}
               </div>
@@ -199,8 +202,10 @@ export function FilesApp({
                     aria-current={document.id === highlightId || undefined}
                     onOpen={() => onOpenDocument?.(document.id)}
                     onPrint={() => onPrintDocument?.(document.id)}
+                    printStatus={document.printStatus}
+                    onRetryPrint={() => onPrintDocument?.(document.id)}
                   />
-                  {ring(document.id, 2, 22)}
+                  {ring(document.id, 22)}
                 </div>
               ))}
             </div>

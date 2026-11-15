@@ -10,6 +10,7 @@ import { CalendarEventRow, type CalendarEventRowProps } from "./CalendarEventRow
 import { CalendarMonth, type CalendarMonthProps } from "./CalendarMonth.tsx";
 import { CalendarNav, type CalendarMode, type CalendarNavProps } from "./CalendarNav.tsx";
 import { CalendarWeekStrip, type CalendarWeekStripProps } from "./CalendarWeekStrip.tsx";
+import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 
 /** An event in a list, with the id `onOpenEvent` is called with. */
@@ -17,7 +18,7 @@ export type CalendarEventItem = Omit<CalendarEventRowProps, "onClick"> & {
   id: string;
 };
 
-export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions" | "backLabel" | "onBack" | "nav" | "headerMode" | "children"> & {
+export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions" | "backLabel" | "onBack" | "nav" | "children"> & {
   /** What the window shows: the week or month, one event, or the form. */
   view: CalendarMode | "detail" | "form";
   /** The app's name, and where Back goes from an event or the form. */
@@ -61,6 +62,8 @@ export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions"
   onBack?: () => void;
   /** The words of the header's buttons. */
   labels?: { today: string; add: string; save: string };
+  /** Grace pointing at an event of the day or of what is coming up, by its id: `confirm` once she has added it. */
+  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel"> & { targetId: string };
 };
 
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
@@ -95,14 +98,18 @@ export function CalendarApp({
   saveError = "This wasn’t saved. Press Save to try again.",
   onBack,
   labels = defaultLabels,
+  guide,
   ...props
 }: CalendarAppProps) {
+  const { targetId, ...pointing } = guide ?? {};
   const rows = (items: CalendarEventItem[]) =>
     items.length > 0 && (
       <div className="flex flex-col gap-3">
-        {items.map(({ id, ...item }) => (
-          <CalendarEventRow key={id} {...item} onClick={() => onOpenEvent?.(id)} />
-        ))}
+        {items.map(({ id, ...item }) => {
+          const row = <CalendarEventRow key={id} {...item} onClick={() => onOpenEvent?.(id)} />;
+          // Prototype axGuide() on an `ev` row (JS 2136, 2137, 2172): the ring follows the row's 22px corners.
+          return id === targetId ? <GuideAnchor key={id} radius={22} className="flex" {...pointing}>{row}</GuideAnchor> : row;
+        })}
       </div>
     );
 

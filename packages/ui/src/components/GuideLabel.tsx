@@ -16,7 +16,7 @@ const marks = {
     </span>
   ),
   // `.kbmk`: a field to type in.
-  keyboard: <span className={cn(markBox, "bg-accent text-primary")}><Keyboard size={20} strokeWidth={2} /></span>,
+  keyboard: <span className={cn(markBox, "bg-key-mark text-primary")}><Keyboard size={20} strokeWidth={2} /></span>,
   // `.okmk`: done.
   done: <span className={cn(markBox, "bg-ok text-glass")}><Check size={18} strokeWidth={3} /></span>,
   // `.lspin` in `.glab.wl`: white arc on a white track at 35%.
@@ -73,7 +73,9 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
       ref={ref}
       className={cn(
         // Prototype `.glab`: 3px round the content, its square corner where the tail comes out.
-        "relative w-max max-w-[420px] rounded-window p-[3px] font-sans animate-label-in motion-reduce:animate-none",
+        "pointer-events-none relative w-max max-w-[420px] rounded-window p-[3px] font-sans animate-label-in motion-reduce:animate-none",
+        // `.glab.tap`: the whole label of a field to type in is the thing to tap; `.ov` lets every other tap through to the page.
+        onSelect && "pointer-events-auto cursor-pointer",
         below ? "rounded-tl-none" : "rounded-bl-none",
         // `.glab.wl`: filled violet, white words, in sooner; `#ov .glab`: the outline below, after the ring, its shadow following the tail.
         working
@@ -81,6 +83,8 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
           : "text-grace-ink drop-shadow-label [animation-delay:.25s]",
         className,
       )}
+      // The words are the keyboard path; a tap anywhere else on the label reaches them by bubbling here.
+      onClick={onSelect}
       {...props}
     >
       {working ? (
@@ -99,8 +103,8 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
       <div className={cn("relative flex gap-3 pr-[19px] pl-[15px]", working ? "items-start pt-[13px] pb-[15px]" : "items-center py-3.5")}>
         {/* `.glab.tap`: the label of a field to type in is itself the thing to tap. */}
         <Words
-          {...(onSelect && { type: "button", onClick: onSelect })}
-          className={cn("relative flex gap-3 text-left", working ? "items-start" : "items-center", onSelect && cn(focusRing, "cursor-pointer rounded-sm"))}
+          {...(onSelect && { type: "button" })}
+          className={cn("relative flex gap-3 text-left", working ? "items-start" : "items-center", onSelect && cn(focusRing, "flex-1 self-stretch cursor-pointer rounded-sm"))}
         >
           <span aria-hidden className="relative flex">{marks[mark ?? defaultMark[tone]]}</span>
           <span className="relative">
@@ -110,7 +114,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         </Words>
         {onClose && !working && (
           // `.glab .glx`: a ghost close, 44px, pulled into the label's padding.
-          <Button variant="plain" aria-label={closeLabel} onClick={onClose} className="relative -my-2.5 -mr-4 ml-1 size-11 p-0 text-guide-close active:bg-primary/8">
+          <Button variant="plain" aria-label={closeLabel} onClick={(event) => { event.stopPropagation(); onClose(); }} className="pointer-events-auto relative -my-2.5 -mr-4 ml-1 size-11 cursor-pointer p-0 text-guide-close active:bg-primary/8">
             <X size={20} strokeWidth={2.2} aria-hidden />
           </Button>
         )}

@@ -185,6 +185,9 @@ export const meta: ComponentMeta<CalendarAppProps> = {
   },
   examples: {
     Week: {},
+    // Prototype `hdr()` follows the one `X.hdrMode` in every app.
+    "Header Mode Large": { headerMode: "large" },
+    "Header Mode None": { headerMode: "none" },
     Month: { view: "month", nav: { period: "November 2026" } },
     Detail: { view: "detail" },
     Form: { view: "form" },
@@ -202,6 +205,12 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     "With a draft": {
       dayEvents: [bridgeDraft],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
+    },
+    // Prototype `formsave` (JS 2172): Margaret saved Bridge club herself, and Grace's green ring confirms the new row.
+    "Added By Margaret": {
+      dayEvents: [{ ...bridgeDraft, draft: false }],
+      week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
+      guide: { targetId: bridgeDraft.id, kind: "confirm" },
     },
   },
   decorator: onTablet,

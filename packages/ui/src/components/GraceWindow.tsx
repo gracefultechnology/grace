@@ -24,17 +24,15 @@ const COMPACT = 260;
 const LINE = 32;
 
 /**
- * Prototype `sizeCompact()`: 260 for a message of one line, a line more for a longer one, 70 more for a question with
- * its answers, and a line more for each line the draft grows by.
+ * Prototype `sizeCompact()`: 260 for a message of one line, a line more for a longer one, and 70 more for a question
+ * with its answers.
  */
 function fitted(section: HTMLElement): number {
   let current = section.querySelector("[role=log]")?.lastElementChild;
   const answers = current?.hasAttribute("data-answers") ?? false;
   if (answers) current = current?.previousElementSibling;
   const lines = current instanceof HTMLElement ? Math.round((current.offsetHeight - 20) / LINE) : 1;
-  const field = section.querySelector("textarea");
-  const draft = field ? Math.round(field.offsetHeight / LINE) : 1;
-  return COMPACT + (lines >= 2 ? LINE : 0) + (answers ? 70 : 0) + Math.max(0, draft - 1) * LINE;
+  return COMPACT + (lines >= 2 ? LINE : 0) + (answers ? 70 : 0);
 }
 
 /**
@@ -56,9 +54,10 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
       onHeightChange?.(next);
     };
     measure();
-    // A message rewraps as the window's width changes; the draft's field grows as it is typed.
+    // A message rewraps as the window's width changes.
     const observer = new ResizeObserver(measure);
-    section.querySelectorAll("[role=log], textarea").forEach((element) => observer.observe(element));
+    const log = section.querySelector("[role=log]");
+    if (log) observer.observe(log);
     return () => observer.disconnect();
   });
   const white = surface === "white";

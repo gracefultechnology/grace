@@ -48,6 +48,8 @@ export const meta: ComponentMeta<FilesAppProps> = {
   args: { tab: "photos", onTabChange: tab, onOpenPhoto: open, onClose: fn(), photoGroups, documents },
   examples: {
     Documents: { tab: "documents", onOpenDocument: fn(), onPrintDocument: fn() },
+    // spec/app/files.md, "Printing reports actual printer acceptance and preserves an uncertain request".
+    "Print unknown": { tab: "documents", documents: [{ ...documents[0], printStatus: "unknown" }, ...documents.slice(1)], onOpenDocument: fn(), onPrintDocument: fn() },
     "Header Mode Large": { headerMode: "large" },
     "Header Mode None": { headerMode: "none" },
     // spec/app/files.md, "Find help distinguishes one match, multiple matches and no match".

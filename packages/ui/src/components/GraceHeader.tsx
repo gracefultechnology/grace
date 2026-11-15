@@ -2,7 +2,8 @@ import type { ComponentProps, ReactNode } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { PlayIcon } from "../icons.tsx";
 import { cn } from "../lib/cn.ts";
-import { Button, type ButtonProps } from "./Button.tsx";
+import { Button, press, type ButtonProps } from "./Button.tsx";
+import { GuideShowButton } from "./GuideShowButton.tsx";
 
 // Prototype ICON.pause and ICON.play: solid, 20px.
 const pauseIcon = (
@@ -32,9 +33,12 @@ export function GraceCapsule({ className, ...props }: GraceCapsuleProps) {
 
 export type GracePillProps = Omit<ButtonProps, "variant" | "size">;
 
+// .gwin .hgrp .pill:not(.prom): a tap grows the pill (.pill:active) and its background stays clear.
+const pillPress = cn(press, "active:bg-transparent");
+
 /** A pill inside a `GraceCapsule`: no fill of its own, 56px tall (prototype `.gwin .hgrp .pill`). */
 export function GracePill({ className, ...props }: GracePillProps) {
-  return <Button variant="plain" size="compact" className={cn("text-grace-ink active:bg-glass/42", className)} {...props} />;
+  return <Button variant="plain" size="compact" className={cn("text-grace-ink", pillPress, className)} {...props} />;
 }
 
 export type GraceHeaderProps = ComponentProps<"div"> & {
@@ -48,6 +52,11 @@ export type GraceHeaderProps = ComponentProps<"div"> & {
   resumeLabel?: string;
   /** Her voice and speed menu, a `GraceVoiceMenu`. */
   voice?: ReactNode;
+  /** Show me again, after Voice: brings back the tip Margaret closed. Without it there is no such pill; the host offers it only
+   * while that tip's target is still current. */
+  onShowGuide?: () => void;
+  /** The words on Show me again. */
+  showGuideLabel?: string;
   /** Whether the window fills the screen; the pill offers the other size. */
   expanded?: boolean;
   /** Called with the size the pill asks for. */
@@ -75,6 +84,8 @@ export function GraceHeader({
   pauseLabel = "Pause",
   resumeLabel = "Resume",
   voice,
+  onShowGuide,
+  showGuideLabel,
   expanded = false,
   onExpandedChange,
   nudge = false,
@@ -99,12 +110,14 @@ export function GraceHeader({
           aria-label={`${paused ? resumeLabel : pauseLabel} ${title}`}
           aria-disabled={pause === "idle" || undefined}
           onClick={paused ? onResume : pause === "live" ? onPause : undefined}
-          className={cn("w-[150px] justify-center px-4 shadow-none", !paused && "text-grace-ink active:bg-glass/42 aria-disabled:text-grace-ink/32")}
+          className={cn("w-[150px] justify-center px-4 shadow-none", !paused && cn("text-grace-ink aria-disabled:text-grace-ink/32", pillPress))}
         >
           {paused ? playIcon : pauseIcon}
           {paused ? resumeLabel : pauseLabel}
         </Button>
         {voice}
+        {/* spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target". */}
+        {onShowGuide && <GuideShowButton surface="header" label={showGuideLabel} onSelect={onShowGuide} />}
       </GraceCapsule>
       <span className="flex-1" />
       <GraceCapsule>

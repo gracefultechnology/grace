@@ -9,6 +9,8 @@ export const meta: ComponentMeta<GraceBubbleProps> = {
     Thinking: { activity: "thinking", children: undefined, rest: undefined },
     // Prototype answerResume(): she carries on with the task she was doing.
     Working: { activity: "working", children: "Carrying on.", rest: undefined },
+    // Prototype renderGrace(): the spinner, the words said so far and the rest still pale.
+    "Working mid-sentence": { activity: "working", children: "Opening", rest: "Chase for you." },
     Paused: { activity: undefined, children: "Hi Margaret", rest: undefined, stopped: "Paused" },
     // Prototype renderGrace() while `stopped`: Margaret spoke over her, so her line ends where she was cut off.
     Interrupted: { activity: undefined, children: "Your statement balance is", rest: undefined, stopped: "Interrupted" },

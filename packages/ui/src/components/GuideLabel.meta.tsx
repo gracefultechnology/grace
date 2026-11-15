@@ -11,7 +11,7 @@ const besidePayCard = "absolute left-[189px] bottom-[268px]";
 
 export const meta: ComponentMeta<GuideLabelProps> = {
   // `GTXT.paycard`: Pay card, Grace's turn for Margaret.
-  args: { title: "Tap Pay card", onClose: close, className: besidePayCard },
+  args: { title: "Tap Pay card", onSelect: undefined, onClose: close, className: besidePayCard },
   examples: {
     // `.glab.tap` for a field (`GTXT.password`): the words themselves are the thing to tap.
     Field: { title: "Tap here, then type", mark: "keyboard", onSelect: select },

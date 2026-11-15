@@ -5,14 +5,14 @@ import { cn, focusRing } from "../lib/cn.ts";
 import { Spinner } from "./Spinner.tsx";
 
 // prototype .pill: a tap grows the button by 5% on a spring (.pill:active); reduced motion keeps it still.
-const press = "transition-[transform,background-color,box-shadow] duration-press ease-spring active:scale-105 motion-reduce:active:scale-100";
+export const press = "[transition:transform_var(--transition-duration-press)_var(--ease-spring),background-color_var(--transition-duration-press)_ease,box-shadow_var(--transition-duration-press)_ease] active:scale-105 motion-reduce:active:scale-100";
 // prototype .a-btn:not(.prom):active: a capsule sinks to 97% instead.
 const sink = "transition-[transform,background-color,box-shadow] duration-press ease-spring active:scale-97 motion-reduce:active:scale-100";
 // prototype ".bz-bar [aria-disabled], #ahdr [aria-disabled]": the label fades to 32% ink and the button keeps its glass.
 const fades = "disabled:text-grace-ink/32 disabled:opacity-100 aria-disabled:text-grace-ink/32 aria-disabled:opacity-100";
 
 const buttonVariants = cva(
-  [focusRing, "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50"],
+  [focusRing, "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50"],
   {
     variants: {
       variant: {

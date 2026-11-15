@@ -33,7 +33,7 @@ export function GraceOrb({ glow = "rest", size = 96, active = false, className, 
       {/* Prototype `.orb-w .gp1`: the soft glow, pulsing in `welcome`, held at 1.28 in `rest`. */}
       <i
         className={cn(
-          "pointer-events-none absolute inset-0 rounded-full bg-radial from-lavender/85 from-35% via-lavender/45 via-55% to-lavender/0 to-72% opacity-0 transition-opacity duration-slow motion-reduce:animate-none",
+          "pointer-events-none absolute inset-0 rounded-full bg-radial from-lavender/85 from-35% via-lavender/45 via-55% to-lavender/0 to-72% opacity-0 transition-opacity duration-glow motion-reduce:animate-none",
           glow === "welcome" && "animate-glow opacity-100",
           glow === "rest" && "scale-[1.28] opacity-70",
         )}

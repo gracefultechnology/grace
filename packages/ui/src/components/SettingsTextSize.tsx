@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
+import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
 import { PageText } from "./PageHeading.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 import { Panel } from "./Panel.tsx";
@@ -23,6 +24,8 @@ export type SettingsTextSizeProps = Omit<ComponentProps<"section">, "onChange"> 
   title?: string;
   /** What the setting changes, under the title. */
   description?: string;
+  /** Grace pointing at one of the sizes, by its name: `instruction` with "Tap Largest" for Margaret to choose it herself. */
+  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel"> & { targetId: string };
 };
 
 /**
@@ -41,9 +44,11 @@ export function SettingsTextSize({
   graceMessage,
   title = "Text size",
   description = "Changes the size of words everywhere on the tablet: Home, every app, websites, the left side and Grace’s messages.",
+  guide,
   className,
   ...props
 }: SettingsTextSizeProps) {
+  const { targetId, ...pointing } = guide ?? {};
   return (
     <section aria-label={title} className={cn("font-sans", className)} {...props}>
       <SettingsPageHeading>{title}</SettingsPageHeading>
@@ -59,13 +64,23 @@ export function SettingsTextSize({
           <div className="ml-2 rounded-day bg-bubble px-[22px] py-3 text-lead leading-8 font-medium text-grace-ink">{graceMessage}</div>
         </div>
       </Panel>
-      <SegmentedControl
-        aria-label={title}
-        className="mt-[22px]"
-        options={sizes.map((size) => ({ value: size, label: size }))}
-        value={value}
-        onValueChange={(next) => next && onValueChange?.(next)}
-      />
+      <div className="relative mt-[22px]">
+        <SegmentedControl
+          aria-label={title}
+          options={sizes.map((size) => ({ value: size, label: size }))}
+          value={value}
+          onValueChange={(next) => next && onValueChange?.(next)}
+        />
+        {guide && (
+          // Prototype axGuide() on a size: SegmentedControl's md geometry (8px inset, 10px gaps, 56px pills) drawn again over it,
+          // so the ring follows the one pill's round ends.
+          <div className="pointer-events-none absolute inset-0 flex gap-2.5 p-2">
+            {sizes.map((size) =>
+              size === targetId ? <GuideAnchor key={size} radius={999} className="h-14 flex-1" {...pointing}><span /></GuideAnchor> : <span key={size} className="flex-1" />,
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

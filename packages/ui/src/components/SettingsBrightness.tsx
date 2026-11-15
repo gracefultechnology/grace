@@ -7,8 +7,10 @@ import { SettingsSwitchRow } from "./SettingsSwitchRow.tsx";
 import { Slider } from "./Slider.tsx";
 
 export type SettingsBrightnessProps = Omit<ComponentProps<"section">, "onChange"> & {
-  /** Screen brightness, 0 to 100. */
+  /** Screen brightness, `min` to 100. */
   brightness: number;
+  /** The dimmest the screen goes (spec/app/preferences.md: never below 20). */
+  min?: number;
   /** Called with the new brightness: dragged, tapped or stepped by − and +. */
   onBrightnessChange?: (brightness: number) => void;
   /** The screen dims itself at night. */
@@ -51,6 +53,7 @@ export function SunIcon({ size = 28, ...props }: SunIconProps) {
  */
 export function SettingsBrightness({
   brightness,
+  min = 20,
   onBrightnessChange,
   nightDim,
   onNightDimChange,
@@ -80,6 +83,7 @@ export function SettingsBrightness({
           label={brightnessLabel}
           decreaseLabel={decreaseLabel}
           increaseLabel={increaseLabel}
+          min={min}
           value={brightness}
           onValueChange={onBrightnessChange}
         />

@@ -232,6 +232,8 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.print-top` | 0 0 0 6px #fff, 0 14px 24px rgb(60 70 110 / 0.2) |
 | `shadow.launcher` | inset 0 1px 0 rgb(255 255 255 / 0.95), 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 22px rgb(59 47 99 / 0.1) |
 | `shadow.hairline` | 0 1px 0 rgb(59 47 99 / 0.1) |
+| `shadow.arrow` | -1px 1px 0 rgb(255 255 255 / 0.85) |
+| `shadow.field-error` | 0 0 0 2.5px var(--destructive), 0 4px 14px rgb(59 47 99 / 0.12) |
 | `dropShadow.label` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 18px rgb(59 47 99 / 0.14) |
 | `dropShadow.calendar` | 0 14px 18px color-mix(in srgb, var(--calendar-shadow) 28%, transparent), 0 3px 4px rgb(59 47 99 / 0.12) |
 | `breakpoint.sm` | 40rem |
@@ -318,7 +320,10 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `duration.quick` | 200ms |
 | `duration.slow` | 300ms |
 | `duration.window` | 280ms |
+| `duration.glow` | 400ms |
 | `ease.standard` | cubic-bezier(0.4, 0, 0.2, 1) |
 | `ease.spring` | cubic-bezier(0.3, 0.7, 0.4, 1.4) |
 | `ease.settle` | cubic-bezier(0.3, 0.7, 0.3, 1) |
+| `ease.css-default` | cubic-bezier(0.25, 0.1, 0.25, 1) |
+| `ease.out-cubic` | cubic-bezier(0.33, 1, 0.68, 1) |
 <!-- tokens:end -->

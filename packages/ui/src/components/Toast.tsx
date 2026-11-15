@@ -9,6 +9,8 @@ export type ToastProps = ComponentProps<"div"> & {
   onUndo?: () => void;
   /** The Undo button's words. */
   undoLabel?: string;
+  /** `screen` centers it 24px above the bottom of a `TabletScreen`, over the windows; `inline` leaves it in the flow. */
+  placement?: "inline" | "screen";
 };
 
 /**
@@ -16,12 +18,14 @@ export type ToastProps = ComponentProps<"div"> & {
  * @model spec/app/surface.md
  * @design packages/design-system/design.md#windows
  */
-export function Toast({ open = true, onUndo, undoLabel = "Undo", className, children, ...props }: ToastProps) {
+export function Toast({ open = true, onUndo, undoLabel = "Undo", placement = "inline", className, children, ...props }: ToastProps) {
   return (
     <div
       role="status"
       className={cn(
-        "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 text-body leading-[normal] text-primary-foreground transition-opacity duration-slow",
+        "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 text-body leading-[normal] text-primary-foreground transition-opacity duration-quick ease-css-default",
+        // Prototype `.axtoast`, appended to `#screen`.
+        placement === "screen" && "absolute bottom-6 left-1/2 z-[45] -translate-x-1/2",
         open ? "opacity-100" : "pointer-events-none opacity-0",
         className,
       )}
