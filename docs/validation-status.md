@@ -520,10 +520,13 @@ resources on the lifecycle lemma. The 21 selected proof results and their
 current specification tree are recorded in
 `/tmp/grace-current-4288-evidence-confirmation.json`.
 
-Workspace exploration now tries ordinary preparation and repeated Talk less
-often. Ordinary preparation invalidates the payment review, while repeated Talk
-advances its speech token. The lower weights give the existing review, readback
-and approval sequence more chances to complete within the sampled walks. The
+Workspace exploration tries repeated Talk less often, because it advances the
+speech token and so spoils the payment review, readback and approval sequence.
+Ordinary preparation was lowered for the same reason and is back at the weight
+of the other website callbacks: at the lower weight the ordinary goal was not
+reached in 200,000 walks at depth 20 (2,742 s), and the payment goals were not
+reached at either weight; at the callback weight the same seed reaches the
+ordinary goal in about 12,200 walks (387 s). The
 second-origin replacement now has a matching request in the finite domain.
 Previously, the harness could request that replacement but had no matching
 confirmation input. Visit returns to its default weight after earlier traces

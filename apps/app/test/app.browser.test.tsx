@@ -230,11 +230,13 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("reloadSurface")).toMatchObject([{ id: "tab-1" }]);
   await expect.element(page.getByRole("alertdialog")).not.toBeInTheDocument();
   expect(native.calls("answerDialog").filter((c) => c.accept !== false)).toEqual([]);
+  // The closed dialog's rect is unrouted first, and the fiber takes no report until the host answers.
+  await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
+  expect(native.unanswered()).toBe(1);
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the site's certificate is refused this time.
   await native.report("tab-1", "https://example.com/", 100, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
-  // The closed dialog's rect is unrouted first: the fiber takes the report only once routing is answered.
-  await expect.poll(() => native.unanswered()).toBe(1);
-  await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
+  await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+  expect(tab(1).load).not.toBe("SecurityBlocked");
   await native.route();
   await expect.poll(() => tab(1).load).toBe("SecurityBlocked");
   // Grace's own view takes the page's place once the host routes its rect; its Reload asks again.

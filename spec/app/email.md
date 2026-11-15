@@ -577,8 +577,9 @@ atomically fences writes by that serial and retains deletion tombstones, so a
 delayed older Save cannot resurrect a deleted draft after restart. The composer may
 close while storage is pending but another draft cannot overwrite it. Failure
 reopens the recoverable draft. Reopening Drafts reads the selected provider draft
-and restores all recipients and attachments. Discard of an existing draft awaits
-durable deletion; the single Discard tap is the user's authorization.
+and restores all recipients and attachments, so a saved draft can be open in
+the composer again. Discard of an existing draft awaits durable deletion; the
+single Discard tap is the user's authorization.
 
 ```quint
 pure def canPreserveDraft(m: Mailbox, draftId: str, by: MailActor): bool =
@@ -623,6 +624,7 @@ pure def alwaysDraftStoreHasRevision(m: Mailbox): bool =
     m.sendStatus == Composing and not(m.composeVisible))
 pure def sometimesDraftSaved(m: Mailbox): bool = m.draftStorage == DraftSaved
 pure def sometimesDraftStorageFailed(m: Mailbox): bool = m.draftStorage == DraftStoreFailed
+pure def sometimesSavedDraftReopened(m: Mailbox): bool = m.composeVisible and m.draftStorage == DraftSaved
 ```
 
 ### Sending or discarding retires the completed draft revision without hiding newer work
@@ -707,11 +709,13 @@ pure def sometimesDraftRetired(m: Mailbox): bool = m.draftId != "" and retiredVe
 ### Attachment actions preserve exact asset and message identity
 
 The gallery shows the selected photo and moves only within this message's
-ordered photos. PDF Back returns to its message. Save one, Save all, Forward,
+ordered photos; after it moves past the first photo, Back still returns to its
+message. PDF Back returns to its message. Save one, Save all, Forward,
 Print and Files sharing carry immutable source/content IDs. File names are
 labels. The atomic message-read manifest supplies all assets in provider order, with
 unique immutable IDs and sources. Forwarding a whole message always copies this
-complete manifest; individual-attachment forwarding copies only the selection. Camera, Photos and file-picker results require an explicit user selection
+complete manifest; individual-attachment forwarding copies only the selection,
+so a new draft can carry exactly the attachment on screen. Camera, Photos and file-picker results require an explicit user selection
 and a trusted host grant for this owner; no sample photo is injected. Canceling
 any picker leaves the draft unchanged. Its result must match the exact composer
 revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
@@ -774,6 +778,12 @@ pure def alwaysDraftAssetsAreValid(m: Mailbox): bool = m.draftAttachments.every(
 pure def alwaysMessageAssetsAreBound(m: Mailbox): bool =
   m.assets.every(a => F::validFile(a) and a.origin == m.provider and a.account == m.account and a.container == m.messageRef)
 pure def sometimesDraftHasAttachment(m: Mailbox): bool = m.draftAttachments.length() > 0
+pure def sometimesBackFromLaterPhoto(m: Mailbox): bool =
+  m.view == Message and m.readStatus == ReadIdle and m.readKind == OpenAttachment and
+  photoAssets(m).some(a => a.sourceRef == m.requestedRef) and photoAssets(m).nthOr(0, F::emptyFile).sourceRef != m.requestedRef
+pure def sometimesForwardedViewedAttachment(m: Mailbox): bool =
+  m.composeVisible and m.view == Attachment and m.draftVersion == 0 and
+  m.draftAttachments.length() == 1 and m.draftAttachments == selectedAssets(m, Set(m.attachmentRef))
 ```
 
 ### Simulation samples cover message and attachment lifecycles
@@ -781,7 +791,10 @@ pure def sometimesDraftHasAttachment(m: Mailbox): bool = m.draftAttachments.leng
 These are samples only, never limits on account names, message counts, provider
 support or content length. The real registry supplies any valid identity.
 The random walks use one coherent mailbox and current callback combinations
-to reach complete read, mutation, send and recovery paths. The universal rules
+to reach complete read, mutation, send and recovery paths. Listing and read
+callbacks cover generations up to 12, so walks keep reading after repeated
+reads and reconnects, and a Drafts row separate from the inbox message lets a
+saved draft be reopened. The universal rules
 cover arbitrary identities and collections; separate guarded witness checks
 exercise competing accounts, stale callbacks, rejection and multiple messages.
 
@@ -789,13 +802,15 @@ exercise competing accounts, stale callbacks, rejection and multiple messages.
 pure val ownerValues = Set("ownerA")
 pure val providerValues = Set("providerA")
 pure val accountValues = Set("accountA")
-pure val refValues = Set("messageA", "attachmentA")
+pure val refValues = Set("messageA", "attachmentA", "draftA")
+pure val sampleGenerations = Set(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
 pure val listingValues = Set(
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: true }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::DraftsFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::TrashFolder, unread: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: 0, evidence: "providerMetadata" })
+  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false }, revision: 0, evidence: "providerMetadata" },
+  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "draftA" }, folder: I::DraftsFolder, unread: false }, revision: -1, evidence: "providerMetadata" })
 pure val targetValues = Set({ ref: "messageA", revision: 0 }, { ref: "messageA", revision: 1 },
   { ref: "messageA", revision: 2 }, { ref: "messageA", revision: 3 }, { ref: "missing", revision: 0 })
 pure val messageReceiptValues = I::receiptValues
@@ -808,6 +823,8 @@ pure val scopeValues = Set({ ...sampleScope, query: "messageA" }, { ...sampleSco
   { ...sampleScope, folder: I::DraftsFolder, query: "messageA", generation: 5 },
   { ...sampleScope, folder: I::TrashFolder, generation: 3 }, { ...sampleScope, folder: I::TrashFolder, generation: 4 },
   { ...sampleScope, query: "messageA", generation: 3 })
+  .union(sampleGenerations.map(g => { ...sampleScope, query: "messageA", generation: g }))
+  .union(sampleGenerations.map(g => { ...sampleScope, folder: I::DraftsFolder, generation: g }))
 pure val mValues = Set(initial,
   { ...initial, owner: "ownerA", provider: "providerA", account: "accountA", connection: Connected,
     canRead: true, readStatus: Reading, generation: 2 })
@@ -829,7 +846,7 @@ pure val billRefValues = Set("billA")
 pure val originValues = Set("https://biller.example")
 pure val billAccountValues = Set("billerAccount")
 pure val draftIdValues = Set("draftA", "messageA")
-pure val generationValues = Set(1, 3, 4, 5, 6)
+pure val generationValues = Set(1).union(sampleGenerations.exclude(Set(2)))
 pure val revisionValues = Set(1, 2, 3)
 pure val requestValues = Set(1, 2)
 pure val draftRevisionValues = Set(1, 2, 3)
@@ -849,29 +866,36 @@ pure val readReceiptValues = {
     { generation: 4, succeeded: true, assets: List() },
     { generation: 5, succeeded: true, assets: List() },
     { generation: 6, succeeded: true, assets: List() })
+    .union(sampleGenerations.map(g => { generation: g, succeeded: true, assets: List() }))
+    .union(sampleGenerations.exclude(Set(2)).map(g => { generation: g, succeeded: true, assets: completeManifest }))
 }
 pure val snapshotValues = Set(
-  { id: "messageA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
-  { id: "messageA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },
+  { id: "draftA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
+  { id: "draftA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },
   { id: "messageA", version: 3, content: mailContent, attachments: List(), replyTo: "" })
 pure val directionValues = Set(-1, 0, 1)
 pure val refsValues = Set(Set("attachmentA"), Set("attachmentPdf"), Set("attachmentA", "attachmentPdf"), Set("missing"), Set())
-pure val weight_connect = 8
-pure val weight_completeMessageChange = 8
-pure val weight_changeSelectedMessage = 8
-pure val weight_readMail = 8
+pure val weight_connect = 20
+pure val weight_completeMessageChange = 30
+pure val weight_changeSelectedMessage = 30
+pure val weight_readMail = 12
+pure val weight_chooseFolder = 3
+pure val weight_movePhoto = 20
+pure val weight_backToMessage = 20
+pure val weight_forwardAttachment = 10
 pure val weight_preserveDraft = 3
 pure val weight_draftStoreResult = 8
 pure val weight_attachAsset = 2
-pure val weight_confirmVisibleSend = 6
-pure val weight_authorize = 8
-pure val weight_readResult = 8
-pure val weight_receiveMessage = 12
+pure val weight_confirmVisibleSend = 20
+pure val weight_authorize = 20
+pure val weight_readResult = 30
+pure val weight_receiveMessage = 30
 pure val weight_receiveBill = 6
 pure val weight_confirmBill = 6
-pure val weight_editDraft = 3
+pure val weight_editDraft = 8
 pure val weight_reviewDraft = 3
 pure val weight_approveDraft = 3
-pure val weight_sendDraft = 8
-pure val weight_sendResult = 8
+pure val weight_sendDraft = 30
+pure val weight_sendResult = 30
+pure val weight_startDraft = 6
 ```
