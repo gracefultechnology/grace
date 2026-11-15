@@ -62,7 +62,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
       tabStrip={
         <BrowserTabStrip ref={strip} selectedId={browser.selected}
-          tabs={visibleTabs(browser).map((tab) => ({ id: tab.id, title: tabUrl(tab) === "" ? "New tab" : site(tabUrl(tab)), initial: site(tabUrl(tab)).slice(0, 1).toUpperCase() || "·" }))}
+          tabs={visibleTabs(browser).map((tab) => ({ id: tab.id, title: tabUrl(tab) === "" ? "New tab" : site(tabUrl(tab)), initial: site(tabUrl(tab)).slice(0, 1).toUpperCase() || undefined }))}
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
