@@ -163,8 +163,9 @@ pure def matchingPayment(w: Workspace): bool =
   w.payment.key.owner == w.execution.owner and w.payment.key.origin == w.execution.origin
 pure def currentPaymentContext(w: Workspace): bool =
   mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  w.execution.originVerified and w.execution.accountMatched and w.execution.redactionReady and
-  not(w.execution.privateInput) and matchingPayment(w) and w.paymentTask == w.assistant.taskId
+  w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
+  matchingPayment(w) and w.execution.matchedAccount == w.payment.key.account and
+  w.execution.matchedAccount != "" and w.paymentTask == w.assistant.taskId
 pure def alwaysPaymentAssociation(w: Workspace): bool =
   w.paymentTask != "" implies w.payment.stage != P::Empty and w.paymentTask == w.assistant.taskId
 pure def alwaysPaymentUsesCanonicalIdentity(w: Workspace): bool =
@@ -205,9 +206,23 @@ This includes restoration: reconnecting, touch waking and granting a permission
 cannot silently restart work or a microphone. The host reports the operating
 system's current access, not an optimistic result before a permission prompt.
 Startup failure and retry stay distinct from a usable device.
-Sleep and restart hide Grace after pausing it, preserving the task, transcript
-and draft. Touch waking restores the application surface without reopening
-Grace; an enabled wake phrase can explicitly open a new exchange.
+Sleep hides Grace after pausing it, preserving the task, transcript and draft.
+Touch waking restores the application surface without reopening Grace; an
+enabled wake phrase can explicitly open a new exchange. Native lock blocks
+application access until OS authentication permits it. The model relies on the
+host supplying `WakeDevice` or an admitted `WakeDetection.context.ready` only
+after Grace may be shown. Unlocking alone does not resume the task.
+
+Discovered by requirements review: applying the same pause to Restart retained
+an executable pre-crash task, contrary to ANDROID 09. Restart clears the active
+task, conversation, unsent chat draft and guidance, and retires website work.
+The prototype's Restart also returns Home with a fresh blank browser tab
+(1765–1767). Recent destinations remain; native cookie/session restoration is
+not evidence of authentication and must be reobserved. Callback generations
+advance rather than returning to initial zeroes. Confirmed preferences and
+every canonical payment record survive; a volatile payment observation restores
+from its durable outcome, including Unknown. Restart never reports a completed
+task or retries a payment.
 
 ```quint
 pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
@@ -219,6 +234,16 @@ pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceAct
     | WakeDevice => S::canWake(w.device)
     | RestartDevice => true
   }
+pure def restartedAssistant(a: A::Assistant): A::Assistant = {
+  ...A::initial, workVersion: a.workVersion + 1,
+  guidance: { ...A::noGuidance, revision: a.guidance.revision + 1 },
+  conversation: { ...C::initial, generation: a.conversation.generation + 1,
+    draftRevision: a.conversation.draftRevision + 1 }
+}
+pure def pausedLifecycle(device: S::Shell, closeAfterPause: bool, w: Workspace): Workspace =
+  val stopped = interrupted(device, w.browser, w)
+  if (closeAfterPause and A::isVisible(stopped.assistant))
+    { ...stopped, assistant: A::close(stopped.assistant, C::ConversationUser) } else stopped
 pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): Workspace =
   val device = match lifecycle {
     | StartupSucceeded => S::finishStartup(w.device, true)
@@ -228,14 +253,59 @@ pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor)
     | WakeDevice => S::wake(w.device)
     | RestartDevice => S::restart(w.device)
   }
-  val stopped = interrupted(device, w.browser, w)
-  val hidden = if ((lifecycle == SleepDevice or lifecycle == RestartDevice) and A::isVisible(stopped.assistant))
-    { ...stopped, assistant: A::close(stopped.assistant, C::ConversationUser) } else stopped
-  val restored = if (lifecycle == RestartDevice) { ...hidden, preferences: R::restart(w.preferences, R::PreferenceStore) } else hidden
-  if (lifecycle == RestartDevice and P::canRestart(w.payment, P::DurableStore))
-    { ...restored, payment: P::restart(w.payment, P::DurableStore),
+  if (lifecycle == RestartDevice)
+    { ...w, device: device, browser: { ...B::closeBrowser(w.browser), clearRequested: false },
+      assistant: restartedAssistant(w.assistant),
+      execution: if (X::canRetire(w.execution, X::BrowserBridge)) X::retire(w.execution, X::BrowserBridge) else w.execution,
+      paymentTask: "", preferences: R::restart(w.preferences, R::PreferenceStore),
+      wake: W::cancel(w.wake, W::WakeHost),
+      payment: if (P::canRestart(w.payment, P::DurableStore)) P::restart(w.payment, P::DurableStore) else w.payment,
       otherPayments: w.otherPayments.listMap(p => P::restart(p, P::DurableStore)) }
-  else restored
+  else pausedLifecycle(device, lifecycle == SleepDevice, w)
+pure def lawNonRestartKeepsSession(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
+  val after = changeLifecycle(w, lifecycle, by)
+  (alwaysAssistantRules(w) and canChangeLifecycle(w, lifecycle, by) and lifecycle != RestartDevice) implies
+    after.assistant.taskId == w.assistant.taskId and after.assistant.goal == w.assistant.goal and
+    after.assistant.checkpoint == w.assistant.checkpoint and
+    after.assistant.conversation.messages == w.assistant.conversation.messages and
+    after.assistant.conversation.draft == w.assistant.conversation.draft and
+    not(after.assistant.conversation.voice) and
+    (lifecycle == SleepDevice implies after.assistant.presentation == A::Closed and
+      (A::unfinished(w.assistant) implies after.assistant.activity == A::Paused))
+pure def lawRestartClearsSession(w: Workspace, by: WorkspaceActor): bool =
+  val after = changeLifecycle(w, RestartDevice, by)
+  canChangeLifecycle(w, RestartDevice, by) implies
+    after.device.readiness == S::Starting and after.device.surface == S::Home and
+    after.assistant.activity == A::NoTask and after.assistant.taskId == "" and
+    after.assistant.goal == "" and after.assistant.checkpoint == "" and after.assistant.operation == "" and
+    after.assistant.replacementId == "" and after.assistant.replacementGoal == "" and
+    after.assistant.outcome == A::Unfinished and after.assistant.evidence == "" and
+    after.assistant.presentation == A::Closed and after.assistant.keyboard == A::NoKeyboard and
+    after.assistant.guidance.target == "" and not(after.assistant.guidance.shown) and
+    after.assistant.workVersion > w.assistant.workVersion and
+    after.assistant.guidance.revision > w.assistant.guidance.revision and
+    after.assistant.conversation.messages == List() and after.assistant.conversation.draft == "" and
+    after.assistant.conversation.turn == C::Ready and not(after.assistant.conversation.voice) and
+    after.assistant.conversation.generation > w.assistant.conversation.generation and
+    after.assistant.conversation.draftRevision > w.assistant.conversation.draftRevision and
+    after.execution.phase == X::Idle and after.paymentTask == "" and after.wake.phase == W::Dormant and
+    after.device.contextVersion > w.device.contextVersion and after.wake.generation > w.wake.generation and
+    after.execution.generation >= w.execution.generation and
+    (w.execution.phase != X::Idle implies after.execution.generation > w.execution.generation) and
+    after.browser.tabs == List(B::blankTab(w.browser.nextId, w.browser.serial + 1)) and
+    after.browser.revision > w.browser.revision and after.browser.recent == w.browser.recent and
+    not(after.browser.editingAddress) and not(after.browser.clearRequested)
+pure def sameDurablePaymentRecord(priorPayment: P::Payment, restoredPayment: P::Payment): bool =
+  priorPayment.key == restoredPayment.key and priorPayment.attempt == restoredPayment.attempt and
+    priorPayment.durable == restoredPayment.durable
+pure def lawRestartKeepsPaymentRecords(w: Workspace, by: WorkspaceActor): bool =
+  val after = changeLifecycle(w, RestartDevice, by)
+  canChangeLifecycle(w, RestartDevice, by) implies
+    sameDurablePaymentRecord(w.payment, after.payment) and
+    (w.payment.stage != P::Empty implies after.payment.result == w.payment.durable.result) and
+    after.otherPayments.length() == w.otherPayments.length() and
+    w.otherPayments.every(prior => after.otherPayments.some(restored => sameDurablePaymentRecord(prior, restored))) and
+    after.otherPayments.every(p => p.result == p.durable.result and not(p.live) and not(p.fresh))
 pure def canSetAvailability(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
   by == Host and (availability.connection != w.device.connectivity or
     availability.reasoning != w.device.reasoningAvailable or
@@ -472,7 +542,7 @@ pure def canDismissPopover(w: Workspace, by: WorkspaceActor): bool = by == Perso
 pure def dismissPopover(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::dismissPopover(w.device), w.browser, w)
 pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace): bool =
-  (via == "changeLifecycle" or via == "setAvailability" or via == "visit" or
+  (via == "setAvailability" or via == "visit" or
    via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
    (via == "changePage" and after.browser.revision != before.browser.revision) or
    via == "chooseHomePage" or via == "chooseSettingsPage" or via == "togglePopover" or via == "dismissPopover")
@@ -864,6 +934,11 @@ Selecting a different bill retains the old aggregate in the inactive registry
 and selects its existing record or creates a previously unseen identity.
 Reopening the same bill retrieves its existing durable attempt. Browser tasks
 on any provider remain available while previous uncertain attempts are retained.
+Discovered by a guarded trace: a true account-match flag and verified origin
+alone let two accounts at the same provider pass the same observation. The
+opaque account in the bill key must match the verified account in current
+browser evidence before attaching the bill or advancing its payment flow.
+Leaving that account revokes readiness while the durable record remains.
 `paymentTask` is a link to the assistant-owned task, not another task state.
 An explicit bill selection attaches the existing record to a new task; an
 old payment result cannot silently finish an unrelated later conversation.
@@ -873,9 +948,14 @@ its owning machine; event input cannot assign an arbitrary payment state.
 ```quint
 pure def canBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
   by == Person and mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  w.execution.originVerified and w.execution.accountMatched and w.execution.redactionReady and
-  not(w.execution.privateInput) and key.owner == w.execution.owner and key.origin == w.execution.origin and
+  w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
+  key.owner == w.execution.owner and key.origin == w.execution.origin and key.account == w.execution.matchedAccount and
   w.paymentTask == "" and P::validKey(key)
+pure def lawMismatchedAccountCannotBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
+  key.account != w.execution.matchedAccount implies not(canBindPayment(w, key, by))
+pure def lawMismatchedAccountCannotAdvancePayment(w: Workspace): bool =
+  (w.execution.matchedAccount == "" or w.execution.matchedAccount != w.payment.key.account) implies
+    not(currentPaymentContext(w))
 pure def bindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): Workspace =
   val existing = if (w.payment.stage != P::Empty and w.payment.key == key) w.payment
     else storedPayment(key, w.otherPayments)
@@ -1078,7 +1158,7 @@ pure def sometimesPaymentResultFinishesTask(w: Workspace): bool =
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
-Walks include an ordinary task and a replacement on another origin. Navigation
+Walks include an ordinary task and payments at two different origins. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Separate guarded traces cover permission,
 startup-failure and restart variants.
@@ -1096,6 +1176,8 @@ pure val xValues = Set(X::initial,
   X::pause(X::start(X::initial, "owner", "task", "https://utility.example", X::User), X::User))
 pure val pValues = Set(P::initial, P::bind(P::initial, P::exampleKey, P::Person))
 pure val paymentValues = pValues
+pure val priorPaymentValues = pValues
+pure val restoredPaymentValues = pValues
 pure val recordsValues = Set(List(), List(P::bind(P::initial, P::exampleKey, P::Person)))
 pure val deviceValues = Set(S::initial, S::finishStartup(S::initial, true))
 pure val browserValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
@@ -1159,7 +1241,9 @@ pure val currentVerificationValues = Set({ deviceVersion: 6, browserRevision: 2,
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Current account read", needsUser: false },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
-    website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true })
+    website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    website: { ...X::goodVerification, task: "other" }, checkpoint: "Please check the account details", needsUser: true })
 pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
   deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 1
@@ -1173,13 +1257,18 @@ pure val paymentTokensValues = Set(
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, revision: 1, attempt: 1 },
   { deviceVersion: 0, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 })
-pure val currentReviewValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: P::exampleReview })
+pure val currentReviewValues = Set(
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: P::exampleReview },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    review: { ...P::exampleReview, key: { ...P::exampleKey, origin: "https://credit.example" } } })
 pure val currentOutcomeValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::exampleOutcome },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: P::exampleOutcome },
   { deviceVersion: 6, browserRevision: 3, taskVersion: 1, report: { ...P::exampleOutcome, revision: 3 } },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::exampleOutcome, result: P::Pending, reference: "" } },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::VerifiedFailure, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::Returned, reference: "" } })
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...P::exampleOutcome, result: P::Returned, reference: "" } },
+  { deviceVersion: 6, browserRevision: 2, taskVersion: 2,
+    report: { ...P::exampleOutcome, key: { ...P::exampleKey, origin: "https://credit.example" } } })
 pure val currentPriorValues = Set(
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: P::examplePrior },
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...P::examplePrior, result: P::VerifiedFailure, reference: "" } },
@@ -1187,8 +1276,11 @@ pure val currentPriorValues = Set(
 pure val saveReportValues = Set(
   { key: P::exampleKey, revision: 3, succeeded: true },
   { key: P::exampleKey, revision: 4, succeeded: true },
-  { key: P::exampleKey, revision: 3, succeeded: false })
+  { key: P::exampleKey, revision: 3, succeeded: false },
+  { key: { ...P::exampleKey, origin: "https://credit.example" }, revision: 3, succeeded: true })
 pure val progressValues = Set(
+  { owner: "owner", task: "other", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+    generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
   { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     generation: 1, observation: 1, paymentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
   { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,

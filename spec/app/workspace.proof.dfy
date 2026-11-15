@@ -613,8 +613,10 @@ lemma RegistryRestart(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
   RegistryDistinct(w);
   RegistryFilterView(w);
   var after := changeLifecycle(w, lifecycle, by_);
-  if lifecycle.RestartDevice? && app__payment_canRestart(w.payment, app__payment_PaymentActor.DurableStore) {
-    app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
+  if lifecycle.RestartDevice? {
+    if app__payment_canRestart(w.payment, app__payment_PaymentActor.DurableStore) {
+      app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
+    }
     forall i | 0 <= i < |w.otherPayments|
       ensures validPayment(after.otherPayments[i])
       ensures after.otherPayments[i].key == w.otherPayments[i].key
@@ -1348,6 +1350,38 @@ lemma BrowserControlKeepsPage(b: app__browser_Browser, input: app__browserContro
   }
 }
 
+lemma RestartedAssistantInvariant(a: app__assistant_Assistant)
+  requires app__assistant_inv(a)
+  ensures app__assistant_inv(restartedAssistant(a))
+{
+  app__assistant_initialHolds_ensures();
+  app__conversation_initialHolds_ensures();
+}
+
+lemma lawRestartKeepsPaymentRecords_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (lawRestartKeepsPaymentRecords(w, by_) == true)
+{
+  if canChangeLifecycle(w, Lifecycle.RestartDevice, by_) {
+    var after := changeLifecycle(w, Lifecycle.RestartDevice, by_);
+    assert |after.otherPayments| == |w.otherPayments|;
+    forall prior | prior in w.otherPayments
+      ensures (exists restored :: restored in after.otherPayments && sameDurablePaymentRecord(prior, restored))
+    {
+      var i :| 0 <= i < |w.otherPayments| && w.otherPayments[i] == prior;
+      var restored := after.otherPayments[i];
+      assert restored == app__payment_restart(prior, app__payment_PaymentActor.DurableStore);
+      assert restored in after.otherPayments;
+      assert sameDurablePaymentRecord(prior, restored);
+    }
+    forall restored | restored in after.otherPayments
+      ensures restored.result == restored.durable.result && !restored.live && !restored.fresh_
+    {
+      var i :| 0 <= i < |after.otherPayments| && after.otherPayments[i] == restored;
+      assert restored == app__payment_restart(w.otherPayments[i], app__payment_PaymentActor.DurableStore);
+    }
+  }
+}
+
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOneTask(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedTogether(changeLifecycle(w, lifecycle, by_)))
@@ -1374,40 +1408,49 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepDepartureKeepsPaymentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepPaymentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
 {
-if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
-  ComponentInvariants(w);
-  match lifecycle {
-    case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
-    case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
-    case RetryStartup => app__shell_retryStartup_ensures(w.device);
-    case SleepDevice => app__shell_sleep_ensures(w.device);
-    case WakeDevice => app__shell_wake_ensures(w.device);
-    case RestartDevice => app__shell_restart_ensures(w.device);
-  }
-  var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
-    else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
-    else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
-    else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
-    else if lifecycle.WakeDevice? then app__shell_wake(w.device)
-    else app__shell_restart(w.device);
-  InterruptedInvariant(device, w.browser, w);
-  var stopped := interrupted(device, w.browser, w);
-  if (lifecycle.SleepDevice? || lifecycle.RestartDevice?) && app__assistant_isVisible(stopped.assistant) {
-    CloseQuietWorkspace(stopped);
-  }
-  var hidden := if (lifecycle.SleepDevice? || lifecycle.RestartDevice?) && app__assistant_isVisible(stopped.assistant)
-    then stopped.(assistant := app__assistant_close(stopped.assistant, app__conversation_ConversationActor.ConversationUser)) else stopped;
-  assert inv(hidden);
-  if lifecycle.RestartDevice? {
-    app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
-    if app__payment_canRestart(w.payment, app__payment_PaymentActor.DurableStore) {
-      app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
+  if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
+    ComponentInvariants(w);
+    if lifecycle.RestartDevice? {
+      app__shell_restart_ensures(w.device);
+      app__browser_closeBrowser_ensures(w.browser);
+      RestartedAssistantInvariant(w.assistant);
+      if app__execution_canRetire(w.execution, app__execution_ExecutionActor.BrowserBridge) {
+        app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+      }
+      app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
+      app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+      RegistryRestart(w, lifecycle, by_);
+      if w.payment.stage.Empty? && w.payment.fresh_ {
+        assert currentPaymentContext(w);
+        assert app__assistant_unfinished(w.assistant);
+        assert w.assistant.taskId != "";
+        assert w.paymentTask != "";
+        assert false;
+      }
+      var after := changeLifecycle(w, lifecycle, by_);
+      assert inv(after);
+    } else {
+      match lifecycle {
+        case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
+        case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
+        case RetryStartup => app__shell_retryStartup_ensures(w.device);
+        case SleepDevice => app__shell_sleep_ensures(w.device);
+        case WakeDevice => app__shell_wake_ensures(w.device);
+        case RestartDevice => assert false;
+      }
+      var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
+        else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
+        else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
+        else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
+        else if lifecycle.WakeDevice? then app__shell_wake(w.device)
+        else app__shell_restart(w.device);
+      InterruptedInvariant(device, w.browser, w);
+      var stopped := interrupted(device, w.browser, w);
+      if lifecycle.SleepDevice? && app__assistant_isVisible(stopped.assistant) {
+        CloseQuietWorkspace(stopped);
+      }
+      var after := changeLifecycle(w, lifecycle, by_);
+      assert inv(after);
     }
   }
-  var restored := if lifecycle.RestartDevice?
-    then hidden.(preferences := app__preferences_restart(w.preferences, app__preferences_PreferenceActor.PreferenceStore)) else hidden;
-  assert inv(restored);
-  RegistryRestart(w, lifecycle, by_);
-}
-
 }
