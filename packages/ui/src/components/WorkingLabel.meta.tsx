@@ -11,6 +11,8 @@ export const meta: ComponentMeta<WorkingLabelProps> = {
   examples: {
     // `.glab.wl.below`: no room beside the field, so under it, 36px in.
     "Placement below": { placement: "below", className: "absolute left-[244px] top-[594px]" },
+    // showWork(el, text, true): her work is held, the pause sign in place of the spinner.
+    Paused: { paused: true },
   },
   decorator: (story) => (
     <TabletScreen>

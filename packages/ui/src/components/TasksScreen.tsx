@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import { CircleCheck, ListChecks } from "lucide-react";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
-import { EmptyState } from "./EmptyState.tsx";
-import { PageHeading } from "./PageHeading.tsx";
+import { PageHeading, PageText } from "./PageHeading.tsx";
 
 /** One group of the list, such as "Waiting on you" or "Finished". */
 export interface TaskGroup {
@@ -41,9 +40,12 @@ export function TasksScreen({ title = "Tasks", groups, emptyTitle = "Nothing wai
           ))}
         </div>
       ) : (
-        <EmptyState title={emptyTitle} icon={<CircleCheck size={64} strokeWidth={2} aria-hidden />} className="h-full">
-          {emptyText}
-        </EmptyState>
+        // senior-care tasks.css `.tasks-empty`: centred in the window, the mark, a 30px title and one line at most 420 wide.
+        <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+          <CircleCheck size={64} strokeWidth={2} aria-hidden className="text-chevron" />
+          <PageHeading level="page">{emptyTitle}</PageHeading>
+          {emptyText && <PageText className="max-w-[420px]">{emptyText}</PageText>}
+        </div>
       )}
     </AppWindow>
   );

@@ -35,7 +35,8 @@ export function HomeMailRow({ name, subject, src, tone, icon, unread = false, un
       <Avatar name={name} src={src} tone={tone} size={52} className="ring-3 ring-glass/90">
         {icon}
       </Avatar>
-      <div className="min-w-0">
+      {/* `#home .lpanel>div:last-child`: the words wrap and hyphenate inside the panel. */}
+      <div className="min-w-0 [overflow-wrap:break-word] hyphens-auto">
         <b className="block text-body-lg leading-7">
           {name}
           {unread && <> <UnreadDot label={unreadLabel} className="ml-1.5 size-2.5 align-middle" /></>}

@@ -6,7 +6,7 @@ import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { BillOffer, type BillDetails, type BillOfferLabels } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
-import { MailActionStatus, pendingMark, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
+import { MailActionStatus, appButton, headerPill, pendingMark, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
 import { MailAttachment } from "./MailAttachment.tsx";
 import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
 import { MailNotice } from "./MailNotice.tsx";
@@ -215,7 +215,8 @@ export function MailMessageView({
   // spec/app/email.md, "Each search or content read needs current access and the user's choice": Reply and Forward wait for the whole read.
   const held = status !== "ready";
   const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (
-    <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? undefined : "text-grace-ink"} disabled={disabled} onClick={onClick}>
+    // Prototype `#ahdr [aria-disabled="true"]`: held, Forward fades to 32% ink while Reply keeps its indigo and white (`#ahdr .pill.prom` is `!important`).
+    <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "disabled:text-primary-foreground disabled:opacity-100" : headerPill} disabled={disabled} onClick={onClick}>
       {icon}
       {label}
     </Button>
@@ -283,7 +284,7 @@ export function MailMessageView({
               <mailIcons.clip size={24} strokeWidth={2.2} aria-hidden />
               <span className="flex-1 text-body-lg leading-[30px] font-bold text-chrome">{l.photos(photos.length)}</span>
               {saveAllStatus && <MailActionStatus action="save" status={saveAllStatus} onRetry={onRetrySaveAll} />}
-              <Button variant="capsule" size="pill" aria-busy={saveAllStatus === "saving" || undefined} disabled={saveAllStatus === "saving"} onClick={onSaveAll}>
+              <Button variant="capsule" size="pill" className={appButton} aria-busy={saveAllStatus === "saving" || undefined} disabled={saveAllStatus === "saving"} onClick={onSaveAll}>
                 {pendingMark(saveAllStatus === "saving", <mailIcons.down {...pill} />)}
                 {l.saveAll}
               </Button>

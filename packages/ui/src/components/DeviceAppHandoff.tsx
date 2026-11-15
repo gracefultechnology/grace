@@ -32,10 +32,10 @@ export function DeviceAppHandoff({ text, openLabel, onOpen, busy = false, notice
         <Button variant="prominent" size="pill" loading={busy} onClick={onOpen}>
           {openLabel}
         </Button>
+        {error && <TaskProblem text={error} question={errorHelp} />}
         <div role="status" aria-live="polite" className="text-body leading-[26px] font-medium text-muted-foreground">
           {!error && notice}
         </div>
-        {error && <TaskProblem text={error} question={errorHelp} />}
       </div>
     </AppWindow>
   );

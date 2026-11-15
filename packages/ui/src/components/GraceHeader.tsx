@@ -110,7 +110,8 @@ export function GraceHeader({
           aria-label={`${paused ? resumeLabel : pauseLabel} ${title}`}
           aria-disabled={pause === "idle" || undefined}
           onClick={paused ? onResume : pause === "live" ? onPause : undefined}
-          className={cn("w-[150px] justify-center px-4 shadow-none", !paused && cn("text-grace-ink aria-disabled:text-grace-ink/32", pillPress))}
+          // .pill.prom:active: Grace's header is not #ahdr, so a pressed Resume takes the pressed indigo.
+          className={cn("w-[150px] justify-center px-4 shadow-none", paused ? "active:bg-primary-pressed" : cn("text-grace-ink aria-disabled:text-grace-ink/32", pillPress))}
         >
           {paused ? playIcon : pauseIcon}
           {paused ? resumeLabel : pauseLabel}

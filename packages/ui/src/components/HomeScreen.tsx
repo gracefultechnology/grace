@@ -101,6 +101,8 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
  * pager, and a banner when there is news. Above Grace's compact window the cards stand in four narrow columns that
  * slide flat; with the keyboard up as well, only the greeting stays. It lies under the rail, which is glass, so a card
  * rolling off the left shows through it. Place it on the `TabletScreen` beside the `Rail`.
+ * The prototype's `#home[data-hmode]` control-panel modes A–F and H are experiments; only mode G, progressive blur and
+ * its default, is the design.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
  */
@@ -161,11 +163,11 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     // Compact, the cards slide flat (prototype `hmIs3D()` is false and `hmApply` translates them).
     const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { left: columns[slot], top: 0, width: 334, height: "100%", transform: `translateX(${-shift}px)` } };
     const { transform, transformOrigin, ...frame } = style;
-    // Prototype `.lc` resizes over .3s settle (lines 389, 406); `hmGo()` turns the cards with easeOutCubic.
+    // Prototype `.lc` resizes over .3s settle (lines 389, 406); `hmGo()` turns the cards over 320ms with easeOutCubic.
     const still = dragShift !== null && "transition-none";
     return (
       <div className={cn("absolute transition-[left,top,width,height] duration-slow ease-settle motion-reduce:transition-none", still)} style={frame}>
-        <div className={cn("size-full transition-[transform,transform-origin] duration-slow ease-out-cubic will-change-transform motion-reduce:transition-none", still)} style={{ transform, transformOrigin }}>
+        <div className={cn("size-full transition-[transform,transform-origin] duration-[320ms] ease-out-cubic will-change-transform motion-reduce:transition-none", still)} style={{ transform, transformOrigin }}>
           {card(turn)}
         </div>
       </div>

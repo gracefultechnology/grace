@@ -119,6 +119,10 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `site` | oklch(0.972 0.003 247.9) | — |
 | `favicon` | oklch(0.64 0.022 291.9) | — |
 | `site-brand` | oklch(0.347 0.073 256.7) | — |
+| `site-ink` | oklch(0.267 0.028 248.9) | — |
+| `site-muted` | oklch(0.458 0.027 248.4) | — |
+| `site-line` | oklch(0.926 0.007 247.9) | — |
+| `site-border` | oklch(0.852 0.012 252.1) | — |
 | `field-placeholder` | oklch(0.562 0 0) | — |
 | `dim` | oklch(0 0 0) | — |
 | `thumb-ring` | oklch(0.203 0.039 282.3) | — |
@@ -238,6 +242,8 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.arrow` | -1px 1px 0 rgb(255 255 255 / 0.85) |
 | `shadow.field-error` | 0 0 0 2.5px var(--destructive), 0 4px 14px rgb(59 47 99 / 0.12) |
 | `shadow.strip-pill` | inset 0 0 0 1px rgb(59 47 99 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.8) |
+| `shadow.site-card` | 0 1px 3px rgb(0 0 0 / 0.12) |
+| `shadow.site-focus` | 0 0 0 2px rgb(31 58 95 / 0.25) |
 | `dropShadow.label` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 18px rgb(59 47 99 / 0.14) |
 | `dropShadow.calendar` | 0 14px 18px color-mix(in srgb, var(--calendar-shadow) 28%, transparent), 0 3px 4px rgb(59 47 99 / 0.12) |
 | `breakpoint.sm` | 40rem |
@@ -325,6 +331,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `duration.slow` | 300ms |
 | `duration.window` | 280ms |
 | `duration.glow` | 400ms |
+| `duration.progress` | 600ms |
 | `ease.standard` | cubic-bezier(0.4, 0, 0.2, 1) |
 | `ease.spring` | cubic-bezier(0.3, 0.7, 0.4, 1.4) |
 | `ease.settle` | cubic-bezier(0.3, 0.7, 0.3, 1) |

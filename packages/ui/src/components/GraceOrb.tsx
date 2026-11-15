@@ -75,7 +75,7 @@ export function GraceOrb({ glow = "rest", size = 96, active = false, className, 
   );
 }
 
-const markVariants = cva("flex shrink-0 items-center justify-center rounded-full bg-gradient-ring transition-shadow duration-slow", {
+const markVariants = cva("flex shrink-0 items-center justify-center rounded-full bg-gradient-ring transition-shadow duration-slow ease-css-default", {
   variants: { size: { md: "size-[76px]", sm: "size-14" }, halo: { true: "shadow-halo" } },
   defaultVariants: { size: "md" },
 });

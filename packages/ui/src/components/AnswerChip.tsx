@@ -7,6 +7,7 @@ export type AnswerChipProps = Omit<ComponentProps<"button">, "ref" | "type">;
 /**
  * An answer Margaret can tap: her words not yet said, a dashed outline of her bubble in her ink (prototype `.uchip`).
  * Tapped, it fills in and becomes her sent message.
+ * The prototype's "Glass (earlier)" chip style (`.chips-glass`) is its discarded earlier look and is left out.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */

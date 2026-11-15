@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { ArrowLeft, X } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { Button } from "./Button.tsx";
+import { Button, press } from "./Button.tsx";
 
 type HeaderMode = "icon" | "large" | "none";
 
@@ -98,7 +98,8 @@ export function AppHeader({
       )}
       {backLabel && (
         <div className={capsule}>
-          <Button variant="plain" size="compact" className="text-grace-ink" aria-label={backAriaLabel} onClick={onBack}>
+          {/* `#awin .aphdr .hgrp .pill:not(.prom)` with `#ahdr .pill:not(.prom):active`: it sinks to 97% and stays clear. */}
+          <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")} aria-label={backAriaLabel} onClick={onBack}>
             <ArrowLeft size={22} strokeWidth={2.2} aria-hidden />
             {backLabel}
           </Button>
@@ -125,7 +126,8 @@ export function AppHeader({
       <div className={capsule}>
         {actions}
         {onClose && (
-          <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose}>
+          // `#awin .aphdr .hgrp .winx`: transparent even while pressed.
+          <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="active:bg-transparent">
             <X size={24} strokeWidth={1.75} aria-hidden />
           </Button>
         )}

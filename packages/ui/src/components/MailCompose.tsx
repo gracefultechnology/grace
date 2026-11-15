@@ -4,7 +4,7 @@ import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
 import { Menu, MenuOption } from "./Menu.tsx";
-import { pendingMark } from "./MailActionStatus.tsx";
+import { appButton, appProminent, headerPill, pendingMark } from "./MailActionStatus.tsx";
 import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
 import type { MailPhoto } from "./MailMessageView.tsx";
 import { MailNotice } from "./MailNotice.tsx";
@@ -56,7 +56,7 @@ function Line({ label, htmlFor, children }: { label: string; htmlFor?: string; c
 }
 
 /** The round capsule that adds a recipient (prototype `.a-btn.rcadd`). */
-const addButton = "size-[52px] p-0";
+const addButton = cn(appButton, "size-[52px] p-0");
 
 /** The words of the email being written, for another language. */
 export type MailComposeLabels = {
@@ -210,7 +210,7 @@ export function MailCompose({
       backLabel={backLabel}
       actions={
         onDiscard && (
-          <Button variant="plain" size="compact" className="text-grace-ink" onClick={onDiscard}>
+          <Button variant="plain" size="compact" className={headerPill} onClick={onDiscard}>
             <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
             {l.discard}
           </Button>
@@ -233,7 +233,7 @@ export function MailCompose({
           </>
         ) : (
           <Line label={l.ccBcc}>
-            <Button variant="capsule" size="compact" className="h-[52px] gap-2.5 px-5" onClick={onOpenCc}>
+            <Button variant="capsule" size="compact" className={cn(appButton, "h-[52px] gap-2.5 px-5")} onClick={onOpenCc}>
               <Plus size={20} strokeWidth={2.4} aria-hidden />
               {l.add}
             </Button>
@@ -275,7 +275,7 @@ export function MailCompose({
           </MailNotice>
         )}
         <div className="mt-[18px] flex gap-3">
-          <Button type="submit" variant="prominent" size="pill" aria-busy={sending || undefined} disabled={sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
+          <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
             {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
             {l.send}
           </Button>
@@ -285,7 +285,7 @@ export function MailCompose({
             onOpenChange={onAttachOpenChange}
             trigger={
               // Open, Attach's label turns indigo; the glass capsule stays (prototype `.a-btn:not(.prom)` wins over its inline white).
-              <Button variant="capsule" size="pill" className="data-[state=open]:text-primary">
+              <Button variant="capsule" size="pill" className={cn(appButton, "data-[state=open]:text-primary")}>
                 <mailIcons.clip size={22} strokeWidth={2.2} aria-hidden />
                 {l.attach}
               </Button>

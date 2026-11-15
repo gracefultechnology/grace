@@ -7,13 +7,13 @@ import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 
 /** One piece of on-device speech software and the licence it ships under. */
 export interface VoiceCredit {
-  /** Its name, such as "Kokoro-82M". */
+  /** Its name, such as "Phonon-2". */
   name: string;
   /** Who made it. */
   by: string;
-  /** What it does on the tablet, such as "Grace’s voice". */
+  /** What it does on the tablet, such as "Listening". */
   part: string;
-  /** Its licence, such as "Apache License 2.0". */
+  /** Its licence, such as "Apache 2.0". */
   license: string;
   /** Any attribution its licence asks for. */
   note?: string;
@@ -31,6 +31,8 @@ export type SettingsAboutProps = ComponentProps<"section"> & {
   credits?: VoiceCredit[];
   /** The name of the section that lists `credits`. */
   creditsLabel?: string;
+  /** The line over the credits, such as that the software runs on the tablet (senior-care `VoiceNotices`). */
+  creditsIntro?: string;
   /** The credits start open. */
   defaultCreditsOpen?: boolean;
 };
@@ -46,6 +48,7 @@ export function SettingsAbout({
   title = "About this tablet",
   credits = [],
   creditsLabel = "Voice software and licences",
+  creditsIntro,
   defaultCreditsOpen = false,
   className,
   ...props
@@ -73,23 +76,26 @@ export function SettingsAbout({
             <ChevronDown aria-hidden size={26} strokeWidth={2.4} className={cn("flex-none text-chevron transition-transform duration-base motion-reduce:transition-none", open && "rotate-180")} />
           </button>
           {open && (
-            <ul id={listId} className="m-0 flex list-none flex-col gap-2.5 px-3.5 pt-0 pb-3.5">
-              {credits.map((credit) => (
-                <li key={credit.name} className="rounded-tab bg-card px-5 py-4">
-                  <div className="text-body-lg leading-[30px] font-bold text-chrome">{credit.name}</div>
-                  <PageText tone="secondary">{`${credit.part} · ${credit.by}`}</PageText>
-                  <PageText tone="secondary">{credit.license}</PageText>
-                  {credit.note && <PageText tone="secondary">{credit.note}</PageText>}
-                  <div className="mt-1.5 flex flex-wrap gap-x-5">
-                    {credit.links.map((link) => (
-                      <a key={link} href={link} className={cn(focusRing, "rounded-sm text-body leading-[26px] font-semibold break-all text-link underline underline-offset-2")}>
-                        {link.replace(/^https?:\/\//, "")}
-                      </a>
-                    ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div id={listId} className="px-3.5 pb-3.5">
+              {creditsIntro && <PageText tone="secondary" className="mb-3.5 px-2">{creditsIntro}</PageText>}
+              <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+                {credits.map((credit) => (
+                  <li key={credit.name} className="rounded-tab bg-card px-5 py-4">
+                    <div className="text-body-lg leading-[30px] font-bold text-chrome">{credit.name}</div>
+                    <PageText tone="secondary">{`${credit.part} · ${credit.by}`}</PageText>
+                    <PageText tone="secondary">{credit.license}</PageText>
+                    {credit.note && <PageText tone="secondary">{credit.note}</PageText>}
+                    <div className="mt-1.5 flex flex-wrap gap-x-5">
+                      {credit.links.map((link) => (
+                        <a key={link} href={link} className={cn(focusRing, "rounded-sm text-body leading-[26px] font-semibold break-all text-link underline underline-offset-2")}>
+                          {link.replace(/^https?:\/\//, "")}
+                        </a>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

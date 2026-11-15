@@ -1,9 +1,10 @@
 import { Calendar, Inbox, Info, Mail, Paperclip, Pen, PenLine, Plus, Send, Settings, Sun, Type, Volume2, Wifi } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { cn } from "../lib/cn.ts";
 import { Avatar } from "./Avatar.tsx";
 import { susan } from "./Avatar.meta.tsx";
-import { Button } from "./Button.tsx";
+import { Button, press } from "./Button.tsx";
 import { detail, upcoming } from "./CalendarApp.meta.tsx";
 import { CalendarEventDetail } from "./CalendarEventDetail.tsx";
 import { CalendarEventRow } from "./CalendarEventRow.tsx";
@@ -73,10 +74,10 @@ const comingUp = (
   </>
 );
 
-// Calendar's header: Today, and Add as the one next step.
+// Calendar's header: Today, and Add as the one next step; Today presses as CalendarApp's does.
 const calendarActions = (
   <>
-    <Button variant="plain" size="compact" className="text-grace-ink">Today</Button>
+    <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")}>Today</Button>
     <Button variant="prominent" size="compact">
       <Plus {...pill} />
       Add
@@ -123,6 +124,8 @@ export const meta: ComponentMeta<AppWindowProps> = {
     },
     "Large title": { headerMode: "large", title: "Text size", nav: settingsNav, actions: undefined, children: textSize },
     "Large title, no list": { headerMode: "large", title: "Calendar", nav: undefined, actions: calendarActions, children: comingUp },
+    // Prototype `data-hdr="none"`: Email with no title, its page column 18px under the window's top.
+    "No title": { headerMode: "none" },
     "Large title with Back": { headerMode: "large", title: detailTitle, backLabel: "Calendar", onBack: back, nav: undefined, actions: undefined, children: <CalendarEventDetail {...eventDetail} /> },
   },
   decorator: (story) => <TabletScreen>{story()}</TabletScreen>,

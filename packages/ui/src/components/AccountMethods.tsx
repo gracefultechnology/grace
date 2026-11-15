@@ -283,9 +283,10 @@ export function AccountMethods({
       </div>
       {problem == null ? null : <RetryNotice>{problem}</RetryNotice>}
       <Dialog open={phase === "remove" && asked != null} onOpenChange={(open) => (open ? undefined : onKeep?.())}>
-        <DialogContent>
+        {/* Prototype `calDlg`: the question, its line 8px under it in secondary ink, the buttons 24px under that. */}
+        <DialogContent className="gap-0">
           <DialogTitle>{asked ? l.removeTitle(asked.label) : null}</DialogTitle>
-          <PageText>{l.removeText}</PageText>
+          <PageText className="mt-2 text-muted-foreground">{l.removeText}</PageText>
           <DialogActions>
             <Button variant="warn" size="pill" loading={busy} onClick={onConfirmRemove}>{l.confirmRemove}</Button>
             <Button variant="capsule" size="pill" disabled={busy} onClick={onKeep}>{l.keep}</Button>

@@ -9,12 +9,16 @@ export type GraceCursorProps = Omit<ComponentProps<"div">, "children"> & {
   y: number;
   /** What she is doing, on a tag beside her G: "Paused" while her work is held. */
   tag?: string;
-  /** She is pressing: the G shrinks and a ring ripples out. */
+  /** She is pressing: a ring ripples out. */
   pressed?: boolean;
   /** Her work is held: the G fades and the tag turns white. */
   paused?: boolean;
   /** Near the right edge: the tag goes on the left of the G. */
   flip?: boolean;
+  /** She is dragging the page: no glide, so the caller moves her with the content frame by frame. */
+  dragging?: boolean;
+  /** She is tapping something in Grace's own window: above it. */
+  top?: boolean;
 };
 
 /**
@@ -22,12 +26,19 @@ export type GraceCursorProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/execution.md
  * @design packages/design-system/design.md#grace
  */
-export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip = false, className, style, ...props }: GraceCursorProps) {
+export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip = false, dragging = false, top = false, className, style, ...props }: GraceCursorProps) {
   return (
     // Prototype `.gcur`: it glides 1.4s from step to step, above the page and its guidance.
     <div
       role="status"
-      className={cn("pointer-events-none absolute z-6 size-0 transition-[left,top] duration-[1400ms] ease-standard motion-reduce:transition-none", className)}
+      className={cn(
+        "pointer-events-none absolute z-6 size-0 transition-[left,top] duration-[1400ms] ease-standard motion-reduce:transition-none",
+        // Prototype `dragScroll()`: `transition:none` while its frames move her with the page, 1100ms ease-in-out-quad.
+        dragging && "transition-none",
+        className,
+        // `.scur.top{z-index:7}`, over compact Grace's window.
+        top && "z-7",
+      )}
       style={{ left: x, top: y, ...style }}
       {...props}
     >
@@ -35,8 +46,9 @@ export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip =
       <GraceMark
         size="sm"
         className={cn(
-          "absolute -top-7 -left-7 shadow-cursor animate-orb-in transition-[scale] duration-[180ms] ease-spring motion-reduce:animate-none",
-          pressed && "scale-[.82]",
+          // `.gcur .orb.press{transform:scale(.82)}` never shows: `orbin`'s fill-mode `both` holds `transform:none`
+          // over it, so `curTap()` and `dragScroll()` press without a shrink.
+          "absolute -top-7 -left-7 shadow-cursor animate-orb-in motion-reduce:animate-none",
           paused && "opacity-80 saturate-30",
         )}
       />

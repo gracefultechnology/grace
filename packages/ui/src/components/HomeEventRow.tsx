@@ -21,7 +21,7 @@ export type HomeEventRowProps = Omit<ComponentProps<"div">, "title" | "children"
  * @design packages/design-system/design.md#glass
  */
 export function HomeEventRow({ weekday, time, title, detail, next = false, className, ...props }: HomeEventRowProps) {
-  // Prototype `homeCards()`: `.lpanel[data-ev]`; the time column fits its words (`#home .lpanel>div:first-child`).
+  // Prototype `homeCards()`: `.lpanel[data-ev]`; the time column fits its words (`#home .lpanel>div:first-child`), the words wrap and hyphenate (`#home .lpanel>div:last-child`).
   return (
     <Panel variant="white" className={cn("flex items-center gap-[18px]", className)} {...props}>
       <div className="min-w-[74px] flex-none text-center whitespace-nowrap">
@@ -29,7 +29,7 @@ export function HomeEventRow({ weekday, time, title, detail, next = false, class
         <span className="block text-body-lg leading-7 font-bold">{time}</span>
       </div>
       <div aria-hidden className={cn("w-0.5 self-stretch rounded-full", next ? "bg-rose" : "bg-lavender")} />
-      <div className="min-w-0 [overflow-wrap:break-word]">
+      <div className="min-w-0 [overflow-wrap:break-word] hyphens-auto">
         <b className="block text-lead leading-[30px]">{title}</b>
         {detail && <span className="block text-body leading-[26px] text-muted-foreground">{detail}</span>}
       </div>

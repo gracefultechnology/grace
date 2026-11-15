@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
-import { Camera, Image, Lock, SwitchCamera, Zap, ZapOff } from "lucide-react";
+import { Image, Lock, SwitchCamera, Zap, ZapOff } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
+import { CameraIcon } from "../icons.tsx";
 import { Button } from "./Button.tsx";
 import { EmptyState } from "./EmptyState.tsx";
+import { headerPill } from "./MailActionStatus.tsx";
+import { PageText } from "./PageHeading.tsx";
 
 export type CameraState = "starting" | "live" | "refused" | "failed" | "unavailable";
 
@@ -69,20 +72,27 @@ export function CameraApp({ state, preview, thumbnail, problem, zooms = [], zoom
   const l = { ...cameraAppLabels, ...labels };
   const ready = state === "live";
   const actions = flash !== undefined && ready && (
-    <Button variant="capsule" size="pill" aria-pressed={flash} onClick={onFlash}>
+    // Prototype `#awin .aphdr .hgrp .pill:not(.prom)`: clear in the header's capsule; pressed, it sinks to 97% (`#ahdr .pill:not(.prom):active`).
+    <Button variant="plain" size="compact" className={headerPill} aria-pressed={flash} onClick={onFlash}>
       {flash ? <Zap size={22} strokeWidth={2.2} aria-hidden /> : <ZapOff size={22} strokeWidth={2.2} aria-hidden />}
       {flash ? l.flashOn : l.flashOff}
     </Button>
   );
   return (
-    <AppWindow title={l.title} icon={<Camera size={26} strokeWidth={2} aria-hidden />} actions={actions || undefined} {...props}>
+    <AppWindow
+      title={l.title}
+      // Prototype `AXP.camera`, the glyph of "Take a photo".
+      icon={<CameraIcon size={26} strokeWidth={2} />}
+      actions={actions || undefined}
+      {...props}
+    >
       {state === "refused" || state === "failed" || state === "unavailable" ? (
         <EmptyState
           title={state === "refused" ? l.allowTitle : state === "failed" ? l.failedTitle : (problem ?? l.failedTitle)}
           icon={state === "refused" ? <Lock size={64} strokeWidth={2} aria-hidden /> : <Image size={64} strokeWidth={2} aria-hidden />}
           className="h-full"
         >
-          {state !== "unavailable" && problem && <p role="alert">{problem}</p>}
+          {state !== "unavailable" && problem && <PageText role="alert">{problem}</PageText>}
           {state !== "unavailable" && (
             <Button variant="prominent" size="pill" onClick={onRetry}>
               {state === "refused" ? l.allow : l.tryAgain}
@@ -114,7 +124,7 @@ export function CameraApp({ state, preview, thumbnail, problem, zooms = [], zoom
               onClick={ready ? onTake : undefined}
               className={cn(focusRing, "size-20 cursor-pointer rounded-full bg-primary ring-6 ring-primary/20 transition-transform duration-press ease-spring active:scale-95 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 motion-reduce:active:scale-100")}
             />
-            <Button variant="capsule" size="icon" aria-label={l.flip} aria-disabled={!ready || undefined} onClick={ready ? onFlip : undefined} className="size-16">
+            <Button variant="capsule" size="pill-icon" aria-label={l.flip} aria-disabled={!ready || undefined} onClick={ready ? onFlip : undefined}>
               <SwitchCamera size={28} strokeWidth={2} aria-hidden />
             </Button>
           </div>

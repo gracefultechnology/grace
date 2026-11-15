@@ -53,7 +53,8 @@ export function ShortcutTile({ label, icon = <Globe size={30} strokeWidth={2} ar
       <span className="text-primary">{icon}</span>
       <span className="text-body-lg leading-[30px] font-bold">{label}</span>
       {tag && (
-        <span className={cn("absolute top-4 right-4 rounded-tag px-2 text-caption leading-6 font-bold", tagTone === "warn" ? "bg-warn/12 text-warn" : "bg-primary/10 text-primary")}>{tag}</span>
+        // senior-care shortcut-management.css `.home-tile__tag`: a pill, 4px 12px, the small size (17px) in bold.
+        <span className={cn("absolute top-4 right-4 rounded-full px-3 py-1 text-label leading-[22px] font-bold", tagTone === "warn" ? "bg-warn/12 text-warn" : "bg-primary/10 text-primary")}>{tag}</span>
       )}
     </button>
   );

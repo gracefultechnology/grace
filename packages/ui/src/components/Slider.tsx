@@ -44,8 +44,8 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
       <Button variant="capsule" size="pill-icon" aria-label={decreaseLabel} disabled={disabled} onClick={() => set(current - step)} className={end}>
         <Minus size={28} strokeWidth={2.6} aria-hidden />
       </Button>
-      {/* .vol .tr: a 14px track, 22px in from the buttons; the thumb's centre travels its whole length, and the fill starts under the thumb at the low end. */}
-      <SliderPrimitive.Root value={[current]} onValueChange={([next]) => set(next)} min={min} max={max} step={1} disabled={disabled} className="relative mx-[22px] flex h-10 flex-1 touch-none items-center select-none">
+      {/* .vol .tr: a 14px track, 22px in from the buttons, under a pointer; the thumb's centre travels its whole length, and the fill starts under the thumb at the low end. */}
+      <SliderPrimitive.Root value={[current]} onValueChange={([next]) => set(next)} min={min} max={max} step={1} disabled={disabled} className="relative mx-[22px] flex h-10 flex-1 cursor-pointer touch-none items-center select-none data-disabled:cursor-not-allowed">
         <SliderPrimitive.Track className="relative h-3.5 grow rounded-full bg-primary/12">
           <SliderPrimitive.Range className="absolute -ml-[22px] h-full rounded-full bg-primary" />
         </SliderPrimitive.Track>

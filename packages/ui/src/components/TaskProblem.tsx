@@ -19,10 +19,11 @@ export type TaskProblemProps = Omit<AlertProps, "variant" | "children"> & {
 export function TaskProblem({ text, question, actions, ...props }: TaskProblemProps) {
   return (
     <Alert variant="caution" {...props}>
-      <span className="flex flex-col gap-3">
+      {/* senior-care bill-task.css `.bill-problem`: 8 between its lines, 4 more above the answers. */}
+      <span className="flex flex-col gap-2">
         <span>{text}</span>
         {question && <span className="font-bold">{question}</span>}
-        {actions ? <span className="flex flex-wrap gap-3">{actions}</span> : null}
+        {actions ? <span className="mt-1 flex flex-wrap gap-3">{actions}</span> : null}
       </span>
     </Alert>
   );

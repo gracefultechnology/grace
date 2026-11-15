@@ -1,7 +1,8 @@
 import type { ComponentProps } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { cn, focusRing } from "../lib/cn.ts";
+import { cn } from "../lib/cn.ts";
+import { Button } from "./Button.tsx";
 
 export type DialogProps = ComponentProps<typeof DialogPrimitive.Root>;
 export type DialogContentProps = ComponentProps<typeof DialogPrimitive.Content> & {
@@ -36,9 +37,14 @@ export function DialogContent({ closeLabel, className, children, ...props }: Dia
         {...props}
       >
         {children}
-        {closeLabel && <DialogPrimitive.Close aria-label={closeLabel} className={cn(focusRing, "absolute top-5 right-5 flex size-12 cursor-pointer items-center justify-center rounded-full text-chrome hover:bg-primary/8")}>
-          <X aria-hidden size={24} strokeWidth={1.75} />
-        </DialogPrimitive.Close>}
+        {closeLabel && (
+          // Prototype `.hgrp .winx`: a round 56px ✕ with no fill, `axi('x',24,1.75)`; a tap shows a faint disc (.winx:active).
+          <DialogPrimitive.Close asChild>
+            <Button variant="plain" size="compact-icon" aria-label={closeLabel} className="absolute top-5 right-5">
+              <X aria-hidden size={24} strokeWidth={1.75} />
+            </Button>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );

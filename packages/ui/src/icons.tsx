@@ -33,6 +33,12 @@ export const iconPaths = {
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
     </>
   ),
+  bell: (
+    <>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </>
+  ),
 };
 
 /** `AXP.trash`: delete, without Lucide's two inner lines. */
@@ -45,12 +51,7 @@ export const PencilIcon = outline(iconPaths.pencil);
 export const MailIcon = outline(iconPaths.mail);
 
 /** `AXP.bell`: a reminder. */
-export const BellIcon = outline(
-  <>
-    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-  </>,
-);
+export const BellIcon = outline(iconPaths.bell);
 
 /** `AXP.file`: a document. */
 export const FileIcon = outline(
@@ -87,5 +88,25 @@ export const SpeakerOffIcon = outline(
     <path d="M11 5 6 9H3v6h3l5 4z" />
     <path d="m22 9-6 6" />
     <path d="m16 9 6 6" />
+  </>,
+);
+
+/** `AXP.camera`: take a photo. */
+export const CameraIcon = outline(
+  <>
+    <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+    <circle cx="12" cy="13" r="3.5" />
+  </>,
+);
+
+/** `AXP.clip`: attach, the older paperclip. */
+export const PaperclipIcon = outline(<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6a4 4 0 0 1 5.7 5.7l-8.6 8.6a2 2 0 0 1-2.8-2.8l8-8" />);
+
+/** `AXP.printer`: print, with square corners unlike Lucide's. */
+export const PrinterIcon = outline(
+  <>
+    <path d="M6 9V2h12v7" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" />
   </>,
 );

@@ -48,8 +48,8 @@ export function SegmentedControl({ options, value, defaultValue, onValueChange, 
           onClick={(event) => event.currentTarget.dataset.state === "on" && event.preventDefault()}
           className={cn(
             focusRing,
-            "flex flex-1 items-center justify-center gap-2 rounded-full bg-transparent font-bold whitespace-nowrap text-grace-ink data-[state=on]:bg-card data-[state=on]:text-primary data-[state=on]:shadow-raised",
-            // "#awin .a-seg .spdo" keeps both at 56px; in a field the words are smaller and closer to the edge.
+            "flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-transparent font-bold whitespace-nowrap text-grace-ink data-[state=on]:bg-card data-[state=on]:text-primary data-[state=on]:shadow-raised",
+            // .spdo: a pointer; "#awin .a-seg .spdo" keeps both at 56px; in a field the words are smaller and closer to the edge.
             size === "md" ? "h-14 px-[22px] text-body" : "h-14 px-2.5 text-[19px]",
           )}
         >

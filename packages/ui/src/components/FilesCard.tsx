@@ -76,9 +76,10 @@ export function FilesCard({ title = "Files", photos, document, layout = "recent"
             <FileIcon strokeWidth={2} className="size-5.5" />
             {document.kind ?? "PDF"}
           </span>
-          <span className="min-w-0">
+          {/* `#home .lpanel>div:last-child`: name and sender wrap and hyphenate inside the panel. */}
+          <span className="min-w-0 [overflow-wrap:break-word] hyphens-auto">
             <b className="block text-body-lg leading-7">{document.name}</b>
-            {document.from && <span className="block truncate text-body leading-[26px] text-muted-foreground">{document.from}</span>}
+            {document.from && <span className="block text-body leading-[26px] text-muted-foreground">{document.from}</span>}
           </span>
         </Panel>
       )}

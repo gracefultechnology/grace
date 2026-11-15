@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 import { LogOut, RotateCw } from "lucide-react";
+import { cn } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
-import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "./Dialog.tsx";
+import { Dialog, DialogActions, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "./Dialog.tsx";
 import { ListRow } from "./ListRow.tsx";
+import { appButton, appProminent } from "./MailActionStatus.tsx";
 import { mailIcons } from "./MailMessageRow.tsx";
 import { MailNotice } from "./MailNotice.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
@@ -116,7 +118,7 @@ export function MailConnect({
   const disconnect = account && (
     <Dialog open={disconnectOpen} onOpenChange={onDisconnectOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="warn" size="pill" onClick={onDisconnect}>
+        <Button variant="warn" size="pill" className={appButton} onClick={onDisconnect}>
           <LogOut {...pill} />
           {l.disconnect}
         </Button>
@@ -131,17 +133,17 @@ export function MailConnect({
       >
         <DialogTitle>{l.confirmTitle(account)}</DialogTitle>
         <p className="m-0 mt-2 text-body-lg leading-[30px] text-muted-foreground">{l.confirmLine}</p>
-        <div className="mt-6 flex flex-col gap-3">
-          <Button variant="warn" size="pill" className="w-full" onClick={onConfirmDisconnect}>
+        <DialogActions>
+          <Button variant="warn" size="pill" className={appButton} onClick={onConfirmDisconnect}>
             <LogOut {...pill} />
             {l.disconnect}
           </Button>
           <DialogClose asChild>
-            <Button variant="capsule" size="pill" className="w-full">
+            <Button variant="capsule" size="pill" className={appButton}>
               {l.confirmKeep}
             </Button>
           </DialogClose>
-        </div>
+        </DialogActions>
       </DialogContent>
     </Dialog>
   );
@@ -154,7 +156,7 @@ export function MailConnect({
       <>
         <PageHeading>{l.connectHeading}</PageHeading>
         <PageText tone="secondary" className="mt-2">{l.officialPage}</PageText>
-        <Button variant="prominent" size="pill" className="mt-6" onClick={onConnect}>
+        <Button variant="prominent" size="pill" className={cn(appProminent, "mt-6")} onClick={onConnect}>
           <mailIcons.mail {...pill} />
           {l.connect}
         </Button>
@@ -167,7 +169,7 @@ export function MailConnect({
           <PageHeading>{l.waiting}</PageHeading>
         </div>
         <PageText tone="secondary" className="mt-2">{l.officialPage}</PageText>
-        <Button variant="capsule" size="pill" className="mt-6" onClick={onCancel}>
+        <Button variant="capsule" size="pill" className={cn(appButton, "mt-6")} onClick={onCancel}>
           {l.cancel}
         </Button>
       </>
@@ -177,7 +179,7 @@ export function MailConnect({
       <>
         <MailNotice className="mb-5 w-full max-w-[760px]">{l.readDenied}</MailNotice>
         {accountRow()}
-        <Button variant="prominent" size="pill" className="mt-6" onClick={onReconnect}>
+        <Button variant="prominent" size="pill" className={cn(appProminent, "mt-6")} onClick={onReconnect}>
           <RotateCw {...pill} />
           {l.reconnect}
         </Button>
@@ -204,7 +206,7 @@ export function MailConnect({
         <PageHeading className="mb-5">{l.otherAccount}</PageHeading>
         {accountRow()}
         <div className="mt-6 flex gap-3">
-          <Button variant="prominent" size="pill" onClick={onConnect}>
+          <Button variant="prominent" size="pill" className={appProminent} onClick={onConnect}>
             {l.keep}
           </Button>
           {disconnect}

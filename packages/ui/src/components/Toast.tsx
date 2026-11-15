@@ -11,6 +11,8 @@ export type ToastProps = ComponentProps<"div"> & {
   undoLabel?: string;
   /** `screen` centers it 24px above the bottom of a `TabletScreen`, over the windows; `inline` leaves it in the flow. */
   placement?: "inline" | "screen";
+  /** Compact Grace's window height while she is open: the toast rises to sit 24px above it instead of the screen's bottom. */
+  above?: number;
 };
 
 /**
@@ -18,17 +20,19 @@ export type ToastProps = ComponentProps<"div"> & {
  * @model spec/app/surface.md
  * @design packages/design-system/design.md#windows
  */
-export function Toast({ open = true, onUndo, undoLabel = "Undo", placement = "inline", className, children, ...props }: ToastProps) {
+export function Toast({ open = true, onUndo, undoLabel = "Undo", placement = "inline", above, className, style, children, ...props }: ToastProps) {
   return (
     <div
       role="status"
       className={cn(
-        "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 text-body leading-[normal] text-primary-foreground transition-opacity duration-quick ease-css-default",
+        "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 font-sans text-body leading-[normal] text-primary-foreground transition-opacity duration-quick ease-css-default",
         // Prototype `.axtoast`, appended to `#screen`.
         placement === "screen" && "absolute bottom-6 left-1/2 z-[45] -translate-x-1/2",
         open ? "opacity-100" : "pointer-events-none opacity-0",
         className,
       )}
+      // Prototype `axToast()`: `bottom` is Grace's window height + 24 while she is open and compact.
+      style={above === undefined ? style : { bottom: above + 24, ...style }}
       {...props}
     >
       {children}

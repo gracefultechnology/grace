@@ -102,7 +102,8 @@ export function BrowserTabStrip({
           </Popover.Trigger>
           <Popover.Portal>
             <BrowserPopoverContent aria-label={labels.moreTabs} align="start" className="w-[380px]">
-              <p className="mx-4 mt-1.5 mb-1 text-label leading-5 font-bold tracking-[.04em] text-label-ink uppercase">{labels.moreTabs}</p>
+              {/* Prototype `.spdl`: 6px over it and 16px in; the panel's 8px gap below. */}
+              <p className="mt-1.5 ml-4 text-label leading-5 font-bold tracking-[.04em] text-label-ink uppercase">{labels.moreTabs}</p>
               <ul className="flex flex-col gap-2">
                 {overflow.map((tab) => (
                   // Prototype `.spdo`: a 64px round row of the menu's glass, here with the tab's favicon, title and ✕.
