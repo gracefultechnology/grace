@@ -22,6 +22,8 @@ export const meta: ComponentMeta<GraceDockProps> = {
     "Set-up listening": { placeholder: "", listening: true, setup: true },
     // The composer is open with her answer: Type gives way to the keyboard.
     "Set-up typing": { value: "margaret.ellis@gmail.com", setup: true, composerOpen: true },
+    // Set-up without internet: Talk gives way and Type is the main button.
+    "Set-up offline": { placeholder: "Waiting for internet.", setup: true, offline: true },
     Listening: { listening: true, value: "Can you help me", placeholder: "" },
     "Grace's turn": { quiet: true, placeholder: "" },
     "Mic off": { mic: false, placeholder: "Tap to type a message, or turn on the mic" },
