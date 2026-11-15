@@ -4,9 +4,12 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
-import type { SettingsAppProps } from "./SettingsApp.tsx";
+import type { SettingsAppProps, SettingsPage } from "./SettingsApp.tsx";
 import { SettingsAbout } from "./SettingsAbout.tsx";
+import { voiceCredits } from "./SettingsAbout.meta.tsx";
 import { SettingsBrightness } from "./SettingsBrightness.tsx";
+import { SettingsPrivacy } from "./SettingsPrivacy.tsx";
+import { savedDetails } from "./SettingsPrivacy.meta.tsx";
 import { SettingsTextSize } from "./SettingsTextSize.tsx";
 import { SettingsVoice } from "./SettingsVoice.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
@@ -47,11 +50,13 @@ export const speeds = [
 export const textSizePreview = { greeting: "Good morning, Margaret", eventWhen: "SAT 10 am", eventTitle: "Doctor’s appointment", graceMessage: "Your doctor’s appointment is tomorrow at 10 am." };
 
 const pick = fn();
+const retrySave = fn();
+// The app's side list: the prototype's pages, with saved details before About.
+const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "privacy", "about"];
 
 export const meta: ComponentMeta<SettingsAppProps> = {
   args: { page: "text-size", onPageChange: pick, onClose: fn(), children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} /> },
   examples: {
-    "Text size": { page: "text-size" },
     Brightness: { page: "brightness", children: <SettingsBrightness brightness={100} nightDim nightDimHint="From 9 pm to 7 am, easier on the eyes" /> },
     Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake /> },
     "Wi-Fi": { page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
@@ -61,7 +66,25 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       onBack: fn(),
       children: <WifiJoinForm network="Sunrise Community Center" account userPlaceholder="For example: margaret" error="That account name or password didn’t work. Check both and try again." onAskGrace={fn()} />,
     },
-    About: { page: "about", children: <SettingsAbout device="Grace tablet · Prototype" status="Everything is up to date." /> },
+    // Prototype `X.hdrMode`: the large title names the page and the page leaves out its own (`axRender()`).
+    "Header Mode Large": { headerMode: "large" },
+    "Header Mode Large, Wi-Fi join": { headerMode: "large", page: "wifi", pageTitle: "Join Home Network", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
+    "Header Mode None": { headerMode: "none", page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
+    // spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence".
+    "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
+    // spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it".
+    "Brightness not changed": {
+      page: "brightness",
+      saveError: "The screen brightness couldn’t be changed.",
+      children: <SettingsBrightness brightness={100} nightDim nightDimHint="From 9 pm to 7 am, easier on the eyes" />,
+    },
+    "Saved details": { page: "privacy", pages: appPages, children: <SettingsPrivacy details={savedDetails} /> },
+    // Prototype "About this tablet" with the credits the app always ships; the bare page is SettingsAbout's Default.
+    "About with voice software": {
+      page: "about",
+      pages: appPages,
+      children: <SettingsAbout device="Grace tablet · Prototype" status="Everything is up to date." credits={voiceCredits} />,
+    },
   },
   decorator: (story) => onTablet(story, "Settings"),
   play: {
@@ -70,6 +93,15 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       await expect(list.getByRole("button", { name: "Text size" }).getAttribute("aria-current")).toBe("page");
       await userEvent.click(list.getByRole("button", { name: "Wi-Fi" }));
       await expect(pick).toHaveBeenCalledWith("wifi");
+    },
+    "Header Mode Large": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getAllByRole("heading", { name: "Text size" })).toHaveLength(1);
+      await expect(canvas.getByRole("button", { name: "Close Settings" })).toBeVisible();
+    },
+    "Not saved": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
+      await expect(retrySave).toHaveBeenCalled();
     },
   },
 };

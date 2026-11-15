@@ -56,6 +56,7 @@ export function designSystem<Plugin>({ tailwind, tokens, entryPoint }: { tailwin
     { pattern: `${variants}!?[a-z-]+-\\[[^\\]]*(?:#[\\da-fA-F]{3,8}|(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch|color)\\()[^\\]]*\\](?:/[^!]+)?!?$`, message: `"$0" is an arbitrary color. ${colors}` },
     { pattern: `${variants}rounded(?:-[a-z]{1,2})?-\\[.+\\]$`, message: `"$0" is an arbitrary radius. Use the radius token: rounded-sm, rounded-md, rounded-lg, rounded-xl.` },
     { pattern: `${variants}shadow-\\[.+\\]$`, message: `"$0" is an arbitrary shadow. Use a shadow token: ${names(tokens.shadow, "shadow-")}.` },
+    { pattern: `${variants}(?:drop-shadow-\\[.+\\]|\\[(?:box-shadow|filter):.+\\])$`, message: `"$0" is an arbitrary shadow or filter. Use a token: ${names(tokens.shadow, "shadow-")}, ${names(tokens.dropShadow, "drop-shadow-")}.` },
   ]
   return [{
     files: ["**/*.{ts,tsx}"],

@@ -16,6 +16,10 @@ export type HomePagerProps = Omit<ComponentProps<"div">, "children"> & {
   backLabel?: string;
   /** The accessible name of a dot, before its number: "Page". */
   pageLabel?: string;
+  /** Above Grace's compact window: the arrows halfway down Home's shorter grid, the dots 2px from the bottom. */
+  compact?: boolean;
+  /** The round arrows at the edges; left out when the cards are hidden. */
+  arrows?: boolean;
 };
 
 /**
@@ -24,23 +28,24 @@ export type HomePagerProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#buttons
  */
-export function HomePager({ page, count = 2, onPageChange, nextLabel = "More apps", backLabel = "Back to the first page", pageLabel = "Page", className, ...props }: HomePagerProps) {
-  const arrow = "pointer-events-auto absolute top-[402px] size-[76px] p-0 text-chrome";
+export function HomePager({ page, count = 2, onPageChange, nextLabel = "More apps", backLabel = "Back to the first page", pageLabel = "Page", compact = false, arrows = true, className, ...props }: HomePagerProps) {
+  // Prototype `hmChrome()`: 38px above the middle of the grid, which is 160–720px, or 96px to 24px from Home's bottom when compact.
+  const arrow = cn("pointer-events-auto absolute size-[76px] p-0 text-chrome", compact ? "top-[calc(50%-2px)]" : "top-[402px]");
   return (
     <div className={cn("pointer-events-none absolute inset-0 z-[300]", className)} {...props}>
       {/* Prototype `.harrow`, `#hArrowL` (lines 627, 653): halfway down the cards, at either edge. */}
-      {page > 0 && (
+      {arrows && page > 0 && (
         <Button variant="capsule" aria-label={backLabel} onClick={() => onPageChange?.(0)} className={cn(arrow, "left-[156px]")}>
           <ChevronLeft aria-hidden size={34} strokeWidth={2.6} />
         </Button>
       )}
-      {page < count - 1 && (
+      {arrows && page < count - 1 && (
         <Button variant="capsule" aria-label={nextLabel} onClick={() => onPageChange?.(page + 1)} className={cn(arrow, "right-[18px]")}>
           <ChevronRight aria-hidden size={34} strokeWidth={2.6} />
         </Button>
       )}
-      {/* Prototype `.hpager` (lines 630–633, 648): under the cards' column, 18px from the bottom. */}
-      <div className="absolute bottom-[18px] left-[182px] flex w-[1042px] items-center justify-center gap-1.5">
+      {/* Prototype `.hpager` (lines 630–634, 648): under the cards' column, 18px from the bottom, 2px when compact. */}
+      <div className={cn("absolute left-[182px] flex w-[1042px] items-center justify-center gap-1.5", compact ? "bottom-0.5" : "bottom-[18px]")}>
         {Array.from({ length: count }, (_, i) => (
           <button
             key={i}

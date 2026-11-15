@@ -44,7 +44,7 @@ export function SideNav({ className, children, ...props }: SideNavProps) {
     // Prototype `#awin.splitw .a-split>.a-nav`, last rule.
     <nav
       className={cn(
-        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-menu backdrop-blur-frost backdrop-saturate-150",
+        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-sidebar backdrop-blur-frost backdrop-saturate-160",
         className,
       )}
       {...props}

@@ -1,10 +1,13 @@
+import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { WifiNetworkRowProps } from "./WifiNetworkRow.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
+const retry = fn();
+
 export const meta: ComponentMeta<WifiNetworkRowProps> = {
   // A locked network nearby (prototype `X.wifi.nets`).
-  args: { name: "Sunrise Community Center", signal: 2, locked: true, onClick: () => {} },
+  args: { name: "Sunrise Community Center", signal: 2, locked: true, onClick: () => {}, onRetry: retry },
   examples: {
     Open: { name: "Riverside Library Guest", locked: false },
     Weak: { name: "Xfinity WiFi", signal: 1, locked: false },
@@ -13,4 +16,10 @@ export const meta: ComponentMeta<WifiNetworkRowProps> = {
     Connected: { name: "Home Network", signal: 3, connected: true, onClick: undefined },
   },
   decorator: settingsPage,
+  play: {
+    Failed: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
+      await expect(retry).toHaveBeenCalled();
+    },
+  },
 };

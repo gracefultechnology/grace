@@ -1,8 +1,10 @@
 import type { ComponentProps } from "react";
+import { PlayIcon } from "../icons.tsx";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { ListRow } from "./ListRow.tsx";
 import { PageHeading } from "./PageHeading.tsx";
+import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 import { SegmentedControl, type SegmentedOption } from "./SegmentedControl.tsx";
 import { SettingsSwitchRow } from "./SettingsSwitchRow.tsx";
 
@@ -28,6 +30,12 @@ export type SettingsVoiceProps = Omit<ComponentProps<"section">, "onChange"> & {
   wakeLabel?: string;
   /** What listening for "Hey Grace" means. */
   wakeHint?: string;
+  /** Why the tablet cannot listen for "Hey Grace" now, such as no microphone permission: its switch is off and waits. */
+  wakeUnavailable?: string;
+  /** Called by the button that fixes `wakeUnavailable`, such as "Allow microphone"; without it there is none. */
+  onFixWake?: () => void;
+  /** The words of that button. */
+  fixWakeLabel?: string;
 };
 
 /**
@@ -52,21 +60,21 @@ export function SettingsVoice({
   speaksLabel = "Grace speaks out loud",
   wakeLabel = "Listen for “Hey Grace”",
   wakeHint = "Works any time, even when the screen is asleep. Turn off to use Ask Grace only.",
+  wakeUnavailable,
+  onFixWake,
+  fixWakeLabel = "Allow microphone",
   className,
   ...props
 }: SettingsVoiceProps) {
   return (
     <section aria-label={title} className={cn("font-sans", className)} {...props}>
-      <PageHeading>{title}</PageHeading>
+      <SettingsPageHeading>{title}</SettingsPageHeading>
       <ListRow
         className="mt-[18px] min-h-[76px]"
         title={sampleTitle}
         trailing={
           <Button variant="capsule" size="pill" className="h-13 pr-[26px] pl-[22px]" onClick={onPlaySample}>
-            {/* Prototype `axi('play',20,2.2)`: a smaller, sharper triangle than Lucide's Play. */}
-            <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 5v14l12-7z" />
-            </svg>
+            <PlayIcon className="size-5" />
             {sampleLabel}
           </Button>
         }
@@ -74,7 +82,20 @@ export function SettingsVoice({
       <PageHeading level="section" className="mt-5">{speedLabel}</PageHeading>
       <SegmentedControl aria-label={speedLabel} className="mt-2.5" options={speeds} value={speed} onValueChange={(next) => next && onSpeedChange?.(next)} />
       <SettingsSwitchRow className="mt-3.5 min-h-[76px]" title={speaksLabel} checked={speaks} onCheckedChange={onSpeaksChange} />
-      <SettingsSwitchRow className="mt-2.5" title={wakeLabel} subtitle={wakeHint} checked={wake} onCheckedChange={onWakeChange} />
+      <SettingsSwitchRow
+        className="mt-2.5"
+        title={wakeLabel}
+        // spec/app/wake.md, "Only a current human wake detection can start the interaction": no detector, no listening.
+        subtitle={wakeUnavailable ? <span className="text-label-ink">{wakeUnavailable}</span> : wakeHint}
+        checked={wake && !wakeUnavailable}
+        onCheckedChange={onWakeChange}
+        disabled={!!wakeUnavailable}
+      />
+      {wakeUnavailable && onFixWake && (
+        <Button variant="capsule" size="pill" className="mt-3.5" onClick={onFixWake}>
+          {fixWakeLabel}
+        </Button>
+      )}
     </section>
   );
 }

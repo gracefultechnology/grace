@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, MessageSquarePlus, RotateCcw } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { GracePill } from "./GraceHeader.tsx";
 import { Menu, MenuLabel, MenuOption, type MenuProps } from "./Menu.tsx";
@@ -30,10 +30,20 @@ export type GraceVoiceMenuProps = Omit<MenuProps, "trigger" | "children"> & {
   speeds?: Record<Speed, string>;
   /** The pill's accessible name, saying the current voice and speed. */
   triggerLabel?: string;
+  /** Offers Say it again, which reads her latest message aloud even with the mic off: true when she has one, false
+   * (dimmed) before she has said anything; left out, there is no such option. */
+  canRepeat?: boolean;
+  onRepeat?: () => void;
+  repeatLabel?: string;
+  /** Offers New conversation; only when no unfinished task remains. */
+  canStartOver?: boolean;
+  onNewConversation?: () => void;
+  newConversationLabel?: string;
 };
 
 /**
- * Grace's Voice pill and its menu: voice on or off, and her speed (prototype `#spdB`, `#spdPop`). It opens upward
+ * Grace's Voice pill and its menu: voice on or off, her speed, and Say it again and New conversation where offered
+ * (prototype `#spdB`, `#spdPop`). It opens upward
  * over the page in the compact window; pass `side="bottom"` in the expanded one.
  * @model spec/app/assistant.md
  * @design packages/design-system/design.md#grace
@@ -48,6 +58,12 @@ export function GraceVoiceMenu({
   voiceOffLabel = "Voice off",
   speedLabel = "Speed",
   speeds = { slower: "Slower", normal: "Normal", faster: "Faster" },
+  canRepeat,
+  onRepeat,
+  repeatLabel = "Say it again",
+  canStartOver = false,
+  onNewConversation,
+  newConversationLabel = "New conversation",
   triggerLabel = `Grace’s voice: ${voiceOn ? "on" : "off"}, speed ${speeds[speed]}`,
   side = "top",
   sideOffset = 16,
@@ -73,7 +89,7 @@ export function GraceVoiceMenu({
       <MenuOption
         role="menuitemcheckbox"
         aria-checked={voiceOn}
-        className="h-14 justify-between gap-2.5 bg-transparent pr-5 pl-4"
+        className="h-14 justify-between gap-2.5 bg-transparent pr-5 pl-4 data-[highlighted]:bg-transparent"
         onSelect={(event) => {
           event.preventDefault();
           onVoiceChange?.(!voiceOn);
@@ -85,10 +101,23 @@ export function GraceVoiceMenu({
       </MenuOption>
       <MenuLabel className="leading-5">{speedLabel}</MenuLabel>
       {(Object.keys(speeds) as Speed[]).map((s) => (
-        <MenuOption key={s} selected={s === speed} onSelect={() => onSpeedChange?.(s)}>
+        // #spdPop .spdo.sel: ICON.check, 20px at stroke 2.4.
+        <MenuOption key={s} selected={s === speed} className="[&>svg]:size-5 [&>svg]:stroke-[2.4]" onSelect={() => onSpeedChange?.(s)}>
           {speeds[s]}
         </MenuOption>
       ))}
+      {/* spec/app/conversation.md, "Repeat reads the latest Grace response without turning on a muted microphone" */}
+      {canRepeat !== undefined && (
+        <MenuOption icon={<RotateCcw size={24} strokeWidth={2.2} aria-hidden />} disabled={!canRepeat} className="mt-2" onSelect={onRepeat}>
+          {repeatLabel}
+        </MenuOption>
+      )}
+      {/* spec/app/conversation.md, "A deliberate new conversation clears the old view but never reuses callback tokens" */}
+      {canStartOver && (
+        <MenuOption icon={<MessageSquarePlus size={24} strokeWidth={2.2} aria-hidden />} className={cn(canRepeat === undefined && "mt-2")} onSelect={onNewConversation}>
+          {newConversationLabel}
+        </MenuOption>
+      )}
     </Menu>
   );
 }

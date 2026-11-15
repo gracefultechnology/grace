@@ -1,5 +1,6 @@
 import { Check, ChevronRight } from "lucide-react";
 import { cn } from "../lib/cn.ts";
+import { Button } from "./Button.tsx";
 import { ListRow, type ListRowProps } from "./ListRow.tsx";
 import { WifiSignal } from "./WifiSignal.tsx";
 
@@ -14,12 +15,20 @@ export type WifiNetworkRowProps = Omit<ListRowProps, "title" | "subtitle" | "lea
   connected?: boolean;
   /** The tablet is joining this network now. */
   connecting?: boolean;
+  /** The last try to join this network failed: the row says so and offers Try again. */
+  failed?: boolean;
+  /** Called by Try again on a failed network. */
+  onRetry?: () => void;
   /** The line under a joined network's name. */
   connectedLabel?: string;
   /** The line under a network being joined. */
   connectingLabel?: string;
   /** The lock's accessible name. */
   lockedLabel?: string;
+  /** The line under a network that failed to join. */
+  failedLabel?: string;
+  /** The words of Try again. */
+  retryLabel?: string;
 };
 
 /**
@@ -34,9 +43,13 @@ export function WifiNetworkRow({
   locked = false,
   connected = false,
   connecting = false,
+  failed = false,
+  onRetry,
   connectedLabel = "Connected",
   connectingLabel = "Connecting…",
   lockedLabel = "Needs a password",
+  failedLabel = "Couldn’t connect",
+  retryLabel = "Try again",
   className,
   ...props
 }: WifiNetworkRowProps) {
@@ -55,7 +68,8 @@ export function WifiNetworkRow({
   return (
     <ListRow
       title={name}
-      subtitle={connecting ? connectingLabel : undefined}
+      // spec/app/network.md, "Only the current OS result can complete or challenge the join": a failure keeps an explicit retry.
+      subtitle={connecting ? connectingLabel : failed ? <span className="text-destructive">{failedLabel}</span> : undefined}
       leading={<WifiSignal strength={signal} />}
       trailing={
         <>
@@ -66,8 +80,14 @@ export function WifiNetworkRow({
               <rect x="5" y="11" width="14" height="10" rx="2" />
             </svg>
           )}
-          {/* Prototype `.chev` margin 14px plus the row's 20px gap. */}
-          <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-[34px] text-chevron" />
+          {failed && onRetry ? (
+            <Button variant="capsule" size="pill" className="ml-5 h-13" onClick={onRetry}>
+              {retryLabel}
+            </Button>
+          ) : (
+            // Prototype `.chev` margin 14px plus the row's 20px gap.
+            <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-[34px] text-chevron" />
+          )}
         </>
       }
       className={cn("min-h-[76px]", className)}

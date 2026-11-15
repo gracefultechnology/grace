@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
+import { PlayIcon } from "../icons.tsx";
 import { cn } from "../lib/cn.ts";
 import { Button, type ButtonProps } from "./Button.tsx";
 
@@ -10,11 +11,7 @@ const pauseIcon = (
     <rect x="14" y="5" width="4" height="14" rx="1" />
   </svg>
 );
-const playIcon = (
-  <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M7 5v14l12-7z" />
-  </svg>
-);
+const playIcon = <PlayIcon className="size-5" fill="currentColor" stroke="none" />;
 
 export type GraceCapsuleProps = ComponentProps<"div">;
 
@@ -25,7 +22,7 @@ export function GraceCapsule({ className, ...props }: GraceCapsuleProps) {
       className={cn(
         "flex h-16 shrink-0 items-center gap-0.5 rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
         // .hgrp on the frosted window: a white rim and a soft lift, no dark edge.
-        "group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost",
+        "group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost group-data-[surface=frost]/grace:backdrop-saturate-150",
         className,
       )}
       {...props}
@@ -55,6 +52,8 @@ export type GraceHeaderProps = ComponentProps<"div"> & {
   expanded?: boolean;
   /** Called with the size the pill asks for. */
   onExpandedChange?: (expanded: boolean) => void;
+  /** Rings and pulses Expand or Collapse, when Grace asks Margaret to change the size herself (prototype nudgeCollapse()). */
+  nudge?: boolean;
   expandLabel?: string;
   collapseLabel?: string;
   /** Called by ✕. */
@@ -78,6 +77,7 @@ export function GraceHeader({
   voice,
   expanded = false,
   onExpandedChange,
+  nudge = false,
   expandLabel = "Expand",
   collapseLabel = "Collapse",
   onClose,
@@ -108,7 +108,13 @@ export function GraceHeader({
       </GraceCapsule>
       <span className="flex-1" />
       <GraceCapsule>
-        <GracePill aria-expanded={expanded} onClick={() => onExpandedChange?.(!expanded)}>
+        {/* #expB.nudge: the guide ring, pulsing; the shadow set alone, without `shadow-*`'s empty layers, so the keyframe matches it layer for layer (as GuideRing). */}
+        <GracePill
+          aria-expanded={expanded}
+          onClick={() => onExpandedChange?.(!expanded)}
+          className={cn(nudge && "animate-guide-pulse motion-reduce:animate-none")}
+          style={nudge ? { boxShadow: "var(--shadow-guide-nudge)" } : undefined}
+        >
           <Size size={20} strokeWidth={2.2} aria-hidden />
           {expanded ? collapseLabel : expandLabel}
         </GracePill>

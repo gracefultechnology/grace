@@ -1,4 +1,5 @@
-import { Inbox, PenLine, Send, Trash, type LucideIcon } from "lucide-react";
+import { Inbox, type LucideIcon } from "lucide-react";
+import { mailIcons } from "./MailMessageRow.tsx";
 import { SideNav, SideNavItem, type SideNavProps } from "./SplitView.tsx";
 
 /** A folder of the mailbox (spec/app/emailItem.md, `Folder`). */
@@ -6,9 +7,9 @@ export type MailFolder = "inbox" | "sent" | "drafts" | "trash";
 
 const folders: [MailFolder, LucideIcon][] = [
   ["inbox", Inbox],
-  ["sent", Send],
-  ["drafts", PenLine],
-  ["trash", Trash],
+  ["sent", mailIcons.sent],
+  ["drafts", mailIcons.draft],
+  ["trash", mailIcons.trash],
 ];
 
 const folderNames: Record<MailFolder, string> = { inbox: "Inbox", sent: "Sent", drafts: "Drafts", trash: "Trash" };

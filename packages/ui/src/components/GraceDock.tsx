@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ComponentProps, type FocusEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, type ComponentProps, type FocusEvent, type ReactNode } from "react";
 import { ArrowUp } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
@@ -42,6 +42,13 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   /** Whether the microphone is on. */
   mic?: boolean;
   onMicChange?: (on: boolean) => void;
+  /** Why Grace cannot hear, such as no microphone permission or no speech service: the mic stays off, the reason takes the
+   * field's place-holder, and typing still works. */
+  micUnavailable?: string;
+  /** Called by the mic pill while the mic is unavailable and `fixMicLabel` is given, such as to open Settings. */
+  onFixMic?: () => void;
+  /** The mic pill's words when it offers a fix, such as "Allow mic"; without them the pill is a dimmed switch. */
+  fixMicLabel?: string;
   /** Grace's turn: the field dims and offers no Send, though tapping it still works. */
   quiet?: boolean;
   /** The most lines the field grows to before it scrolls: 4 compact, 6 expanded. */
@@ -71,6 +78,9 @@ export function GraceDock({
   listening = false,
   mic = true,
   onMicChange,
+  micUnavailable,
+  onFixMic,
+  fixMicLabel,
   quiet = false,
   maxLines = 4,
   attach,
@@ -83,7 +93,11 @@ export function GraceDock({
   ...props
 }: GraceDockProps) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const reasonId = useId();
   const draft = value.trim().length > 0;
+  // spec/app/shell.md, "Permission availability is separate from active recording or observation": without a usable
+  // microphone the switch is off and cannot turn on; typing stays.
+  const hears = mic && !micUnavailable;
   // Prototype autosize(): from two lines the capsule becomes a rounded rectangle (`.cap.multi`).
   useLayoutEffect(() => {
     const el = fieldRef.current;
@@ -100,17 +114,17 @@ export function GraceDock({
       <label
         className={cn(
           "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 transition-opacity data-multi:items-end data-multi:rounded-window",
-          "group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost",
+          "group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost group-data-[surface=frost]/grace:backdrop-saturate-150",
           quiet && "opacity-70",
         )}
       >
-        {!quiet && mic && (listening || !draft) && <VoiceBars state={listening ? "live" : "idle"} />}
+        {!quiet && hears && (listening || !draft) && <VoiceBars state={listening ? "live" : "idle"} />}
         <textarea
           ref={fieldRef}
           rows={1}
           aria-label={fieldLabel}
           value={value}
-          placeholder={placeholder}
+          placeholder={micUnavailable ?? placeholder}
           onChange={(event) => onValueChange?.(event.target.value)}
           onFocus={onFieldFocus}
           onKeyDown={(event) => {
@@ -130,11 +144,29 @@ export function GraceDock({
       )}
       <GraceCapsule className="self-end">
         {attach}
-        <GracePill role="switch" aria-checked={mic} onClick={() => onMicChange?.(!mic)} className="pr-3">
-          {micIcon(mic)}
-          {mic ? micOnLabel : micOffLabel}
-          <SwitchTrack checked={mic} />
-        </GracePill>
+        {micUnavailable === undefined ? (
+          <GracePill role="switch" aria-checked={mic} onClick={() => onMicChange?.(!mic)} className="pr-3">
+            {micIcon(mic)}
+            {mic ? micOnLabel : micOffLabel}
+            <SwitchTrack checked={mic} />
+          </GracePill>
+        ) : fixMicLabel ? (
+          <GracePill aria-describedby={reasonId} onClick={onFixMic}>
+            {micIcon(false)}
+            {fixMicLabel}
+          </GracePill>
+        ) : (
+          <GracePill role="switch" aria-checked={false} aria-disabled aria-describedby={reasonId} className="pr-3">
+            {micIcon(false)}
+            {micOffLabel}
+            <SwitchTrack checked={false} className="opacity-40" />
+          </GracePill>
+        )}
+        {micUnavailable !== undefined && (
+          <span id={reasonId} hidden>
+            {micUnavailable}
+          </span>
+        )}
       </GraceCapsule>
     </div>
   );

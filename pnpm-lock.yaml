@@ -12,7 +12,7 @@ catalogs:
     '@eslint/js':
       specifier: ^10.0.1
       version: 10.0.1
-    '@fontsource-variable/figtree':
+    '@fontsource/figtree':
       specifier: ^5.3.0
       version: 5.3.0
     '@radix-ui/react-checkbox':
@@ -255,9 +255,6 @@ importers:
       '@capacitor/core':
         specifier: 8.5.2
         version: 8.5.2
-      '@fontsource-variable/figtree':
-        specifier: 'catalog:'
-        version: 5.3.0
       '@repo/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
@@ -389,7 +386,7 @@ importers:
         specifier: 'catalog:'
         version: 3.7.0
     devDependencies:
-      '@fontsource-variable/figtree':
+      '@fontsource/figtree':
         specifier: 'catalog:'
         version: 5.3.0
       '@storybook/addon-a11y':
@@ -1259,8 +1256,8 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource-variable/figtree@5.3.0':
-    resolution: {integrity: sha512-VRVodD7OiG7apQwE8/2fMjaqpY/a0qRJqL5HtYj8CKIVps+9amaFcdfKmDIf7iqYQx6iPLlArVXAfKeIZmVcNQ==}
+  '@fontsource/figtree@5.3.0':
+    resolution: {integrity: sha512-/iTcTXL1eRBGhvD7NN9dnKzXzWqDLVZVEUFI9xIxAC1G/hXU8tCyYeXCAuPOuvSYPInFUP7H6KLGgygmDfy1SA==}
 
   '@grpc/grpc-js@1.14.7':
     resolution: {integrity: sha512-W4W/fcBMGRVtG6dW2c7cw2mnpS3hvbBd+oQXjh2iYFTZDk1JJmcNqkM5KSaPubQpamlUUurrlb7G1s9NJeERmQ==}
@@ -6391,7 +6388,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource-variable/figtree@5.3.0': {}
+  '@fontsource/figtree@5.3.0': {}
 
   '@grpc/grpc-js@1.14.7':
     dependencies:

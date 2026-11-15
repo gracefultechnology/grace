@@ -1,5 +1,7 @@
+import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
+import { GraceActionLine } from "./GraceActionLine.tsx";
 import { GraceBubble } from "./GraceBubble.tsx";
 import type { GraceMessagesProps } from "./GraceMessages.tsx";
 import { UserBubble } from "./UserBubble.tsx";
@@ -11,15 +13,15 @@ export const greeting = (
   </GraceBubble>
 );
 
-// Prototype: Margaret asks about her Chase bill and Grace asks which amount, with two answers to tap.
+// Prototype: Margaret asks about her Chase bill and Grace asks whether she wants to watch, with the prompt's two answers.
 export const conversation = (
   <>
     <GraceBubble>Hi Margaret. What can I help with?</GraceBubble>
     <UserBubble>Can you help me pay my Chase bill?</UserBubble>
-    <GraceBubble>Of course. Would you like to pay the full balance or a different amount?</GraceBubble>
+    <GraceBubble>I'll open Chase's website. Would you like to watch me do it?</GraceBubble>
     <AnswerChips>
-      <AnswerChip>Full balance</AnswerChip>
-      <AnswerChip>A different amount</AnswerChip>
+      <AnswerChip>Yes, show me</AnswerChip>
+      <AnswerChip>No, go ahead</AnswerChip>
     </AnswerChips>
   </>
 );
@@ -33,12 +35,38 @@ export const thinking = (
   </>
 );
 
+// Prototype siteEvent(): Margaret tapped Sign in herself, logged between Grace's two messages.
+export const action = (
+  <>
+    <UserBubble>Can you help me pay my Chase bill?</UserBubble>
+    <GraceBubble>Sure. Tap Sign in.</GraceBubble>
+    <GraceActionLine>You tapped Sign in.</GraceActionLine>
+    <GraceBubble>Good. Now tap Pay card.</GraceBubble>
+  </>
+);
+
+const jump = fn();
+
 export const meta: ComponentMeta<GraceMessagesProps> = {
   args: { children: conversation },
-  examples: { Greeting: { children: greeting }, Thinking: { children: thinking } },
+  examples: {
+    Greeting: { children: greeting },
+    Thinking: { children: thinking },
+    "Margaret acted": { children: action },
+    // Margaret reads earlier messages while a newer one has arrived.
+    "Reading earlier": { children: conversation, following: false, hasNewer: true, onJumpToLatest: jump },
+  },
   decorator: (story) => (
     <div className="group/grace flex h-[480px] w-[1130px] flex-col bg-background" data-surface="white" data-size="expanded">
       {story()}
     </div>
   ),
+  play: {
+    // Only the pill moves her to the newest message.
+    "Reading earlier": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      jump.mockClear();
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Newest message" }));
+      await expect(jump).toHaveBeenCalled();
+    },
+  },
 };

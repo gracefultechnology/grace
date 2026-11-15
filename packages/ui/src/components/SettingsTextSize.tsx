@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
-import { PageHeading, PageText } from "./PageHeading.tsx";
+import { PageText } from "./PageHeading.tsx";
+import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
 
@@ -45,7 +46,7 @@ export function SettingsTextSize({
 }: SettingsTextSizeProps) {
   return (
     <section aria-label={title} className={cn("font-sans", className)} {...props}>
-      <PageHeading>{title}</PageHeading>
+      <SettingsPageHeading>{title}</SettingsPageHeading>
       <PageText tone="secondary" className="mt-1.5">{description}</PageText>
       <Panel className="mt-[22px] flex flex-col gap-3.5">
         <div className="text-title-sm leading-[1.25] font-bold text-chrome">{greeting}</div>

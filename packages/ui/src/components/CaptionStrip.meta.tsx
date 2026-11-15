@@ -4,13 +4,13 @@ import type { CaptionStripProps } from "./CaptionStrip.tsx";
 
 const show = fn();
 
-// Prototype `.capstrip` over the keyboard while Margaret fills in Chase's sign-in.
+// Prototype `.capstrip` over the keyboard while Margaret fills in Chase's sign-in (lines from the prototype's prompt).
 export const meta: ComponentMeta<CaptionStripProps> = {
-  args: { placement: "inline", who: "grace", activity: "speaking", text: "Tap the box that says Username, and type the name you use for Chase.", onShowChat: show },
+  args: { placement: "inline", who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show },
   examples: {
-    Margaret: { who: "you", activity: "listening", text: "What was my username again" },
+    Margaret: { who: "you", activity: "listening", text: "Can you help me pay my Chase bill?" },
     Answers: { activity: undefined, answers: ["Yes, carry on", "No, thanks"] },
-    "Long line": { text: "I’ve filled in your username. Now tap the box that says Password, and type your password. I won’t look at what you type, and I won’t keep it anywhere." },
+    "Long line": { text: "Chase's sign-in page is open. I'll take you through it step by step. Tap the password box, then type your password." },
   },
   decorator: (story) => (
     <div className="group/grace w-[1170px] bg-gradient-frame-soft p-5" data-surface="white">

@@ -1,8 +1,8 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Calendar, Clock } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
+import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { fieldCapsule } from "./Input.tsx";
 import { Label } from "./Label.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
@@ -33,24 +33,27 @@ export type CalendarPickerFieldProps = {
   onPick?: (value: string) => void;
   /** The words on the button that opens the list. */
   changeLabel?: string;
+  /** The field waits, faded, while the form is being saved. */
+  disabled?: boolean;
 };
 
 /** A form field whose value is picked from a list under it: Day and Time (prototype `.a-fld` with `.apop`). */
-export function CalendarPickerField({ label, value, icon, choices, selected, open, onOpenChange, onPick, changeLabel = "Change" }: CalendarPickerFieldProps) {
+export function CalendarPickerField({ label, value, icon, choices, selected, open, onOpenChange, onPick, changeLabel = "Change", disabled = false }: CalendarPickerFieldProps) {
   const id = useId();
   return (
-    <div role="group" aria-labelledby={id} className="flex flex-col gap-2">
+    <div role="group" aria-labelledby={id} aria-disabled={disabled || undefined} className="flex flex-col gap-2">
       <Label id={id} className="pl-[26px]">
         {label}
       </Label>
       <Popover.Root open={open} onOpenChange={onOpenChange}>
         {/* Prototype `.a-fld .v`: 12px between icon, value and Change. */}
-        <Popover.Anchor className={cn(fieldCapsule, "gap-3")}>
+        <Popover.Anchor className={cn(fieldCapsule, "gap-3", disabled && "opacity-40")}>
           <span className="flex shrink-0">{icon}</span>
-          <span className="min-w-0 flex-1 truncate">{value}</span>
+          <span className="min-w-0 flex-1 truncate py-1 leading-none">{value}</span>
           <Popover.Trigger asChild>
             {/* Prototype `.a-fld .v .a-btn`: 48px, 18px words, its edge 8px from the capsule's. */}
-            <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-lg" aria-label={`${changeLabel} ${label}`}>
+            {/* Disabled, it keeps its ink: the capsule around it already fades. */}
+            <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-lg disabled:text-grace-ink" aria-label={`${changeLabel} ${label}`} disabled={disabled}>
               {changeLabel}
             </Button>
           </Popover.Trigger>
@@ -115,6 +118,8 @@ export type CalendarEventFormProps = Omit<ComponentProps<"div">, "title"> & {
   repeat: Choices;
   /** When to remind: "No", "Day before", "1 hour before". */
   remind: Choices;
+  /** Every field waits, faded, while the appointment is being saved. */
+  disabled?: boolean;
   /** The fields' names and the title's example. */
   labels?: {
     title: string;
@@ -140,7 +145,7 @@ const defaultLabels = {
 };
 
 /** A labelled choice of a few, side by side (prototype `.a-fld .a-seg`). */
-function ChoiceField({ label, options, value, onChange }: Choices & { label: string }) {
+function ChoiceField({ label, options, value, onChange, disabled }: Choices & { label: string; disabled: boolean }) {
   const id = useId();
   return (
     <div className="flex flex-col gap-2">
@@ -149,8 +154,9 @@ function ChoiceField({ label, options, value, onChange }: Choices & { label: str
       </Label>
       <SegmentedControl
         aria-labelledby={id}
-        className="p-1.5 [&>button]:px-2.5 [&>button]:text-[19px]"
+        className="p-1.5 [&>button]:px-2.5 [&>button]:text-[19px] [&>button]:leading-[normal]"
         value={value}
+        disabled={disabled}
         onValueChange={(v) => v && onChange?.(v)}
         options={options.map((o) => ({ value: o, label: o }))}
       />
@@ -163,17 +169,16 @@ function ChoiceField({ label, options, value, onChange }: Choices & { label: str
  * @model spec/app/calendar.md
  * @design packages/design-system/design.md#windows
  */
-export function CalendarEventForm({ title, onTitleChange, where, onWhereChange, day, time, repeat, remind, labels = defaultLabels, className, ...props }: CalendarEventFormProps) {
-  const glyph = { size: 24, strokeWidth: 2, "aria-hidden": true } as const;
+export function CalendarEventForm({ title, onTitleChange, where, onWhereChange, day, time, repeat, remind, disabled = false, labels = defaultLabels, className, ...props }: CalendarEventFormProps) {
   return (
     // Prototype `.a-form`: two columns, 16px between rows and 28px between columns.
     <div className={cn("grid grid-cols-2 gap-x-7 gap-y-4 font-sans", className)} {...props}>
-      <TextField className="col-span-2" label={labels.title} placeholder={labels.titlePlaceholder} value={title} onChange={(e) => onTitleChange?.(e.target.value)} />
-      <CalendarPickerField label={labels.day} icon={<Calendar {...glyph} />} {...day} />
-      <CalendarPickerField label={labels.time} icon={<Clock {...glyph} />} {...time} />
-      <TextField className="col-span-2" label={labels.where} placeholder={labels.wherePlaceholder} value={where} onChange={(e) => onWhereChange?.(e.target.value)} />
-      <ChoiceField label={labels.repeat} {...repeat} />
-      <ChoiceField label={labels.remind} {...remind} />
+      <TextField className="col-span-2" label={labels.title} placeholder={labels.titlePlaceholder} value={title} disabled={disabled} onChange={(e) => onTitleChange?.(e.target.value)} />
+      <CalendarPickerField label={labels.day} icon={<CalendarGlyph name="calendar" strokeWidth={2} />} disabled={disabled} {...day} />
+      <CalendarPickerField label={labels.time} icon={<CalendarGlyph name="clock" strokeWidth={2} />} disabled={disabled} {...time} />
+      <TextField className="col-span-2" label={labels.where} placeholder={labels.wherePlaceholder} value={where} disabled={disabled} onChange={(e) => onWhereChange?.(e.target.value)} />
+      <ChoiceField label={labels.repeat} disabled={disabled} {...repeat} />
+      <ChoiceField label={labels.remind} disabled={disabled} {...remind} />
     </div>
   );
 }

@@ -1,35 +1,58 @@
-import { Bell, Wifi, X } from "lucide-react";
+import { AlarmClockPlus, Wifi, X } from "lucide-react";
 import type { ComponentMeta } from "vibestack/stories";
+import { BellIcon } from "../icons.tsx";
 import type { BannerProps } from "./Banner.tsx";
 import { Button } from "./Button.tsx";
+import { WifiSlash } from "./Rail.tsx";
+
+// Prototype `drawBanner()`, X.banner = "rem": the doctor's appointment tomorrow.
+export const reminder: BannerProps = {
+  icon: <span className="flex text-alert"><BellIcon className="size-7.5" /></span>,
+  title: "Doctor’s appointment",
+  line: "Tomorrow at 10 am · Main St clinic",
+  actions: (
+    <>
+      <Button variant="prominent" size="compact">See details</Button>
+      <Button variant="plain" size="compact-icon" aria-label="Dismiss">
+        <X aria-hidden size={24} strokeWidth={1.75} />
+      </Button>
+    </>
+  ),
+};
+
+// spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task": a due reminder
+// can be put off, so Snooze stands beside See details: a round glass capsule with its word as its name.
+export const reminderSnooze: BannerProps = {
+  ...reminder,
+  actions: (
+    <>
+      <Button variant="prominent" size="compact">See details</Button>
+      <Button variant="capsule" size="compact-icon" aria-label="Snooze">
+        <AlarmClockPlus aria-hidden size={24} strokeWidth={2} />
+      </Button>
+      <Button variant="plain" size="compact-icon" aria-label="Dismiss">
+        <X aria-hidden size={24} strokeWidth={1.75} />
+      </Button>
+    </>
+  ),
+};
+
+// Prototype `drawBanner()` while X.online is false.
+export const offline: BannerProps = {
+  icon: <WifiSlash size={30} />,
+  title: "Not connected to the internet",
+  line: "Grace can help you reconnect.",
+  actions: (
+    <Button variant="prominent" size="compact">
+      <Wifi aria-hidden size={22} strokeWidth={2.2} />
+      Fix Wi-Fi
+    </Button>
+  ),
+};
 
 export const meta: ComponentMeta<BannerProps> = {
-  // The reminder on Home (prototype `drawBanner`, X.banner = "rem").
-  args: {
-    icon: <Bell size={30} strokeWidth={2.2} className="text-alert" />,
-    title: "Doctor’s appointment",
-    line: "Tomorrow at 10 am · Main St clinic",
-    actions: (
-      <>
-        <Button variant="prominent" size="compact">See details</Button>
-        <Button variant="plain" size="compact-icon" aria-label="Dismiss">
-          <X size={24} strokeWidth={1.75} />
-        </Button>
-      </>
-    ),
-  },
-  examples: {
-    Offline: {
-      icon: <Wifi size={30} strokeWidth={2} className="text-offline" />,
-      title: "Not connected to the internet",
-      line: "Grace can help you reconnect.",
-      actions: (
-        <Button variant="prominent" size="compact">
-          <Wifi size={22} strokeWidth={2.2} />
-          Fix Wi-Fi
-        </Button>
-      ),
-    },
-  },
-  decorator: (story) => <div className="w-[634px] bg-gradient-frame p-6">{story()}</div>,
+  args: reminder,
+  examples: { Snooze: reminderSnooze, Offline: offline },
+  // Where Home places it: 634px wide over Home's wash.
+  decorator: (story) => <div className="w-[682px] bg-gradient-frame-soft p-6">{story()}</div>,
 };

@@ -41,11 +41,30 @@ export const documents: FilesDocument[] = [
 
 const open = fn();
 const tab = fn();
+const retry = fn();
+const pickMatch = fn();
 
 export const meta: ComponentMeta<FilesAppProps> = {
   args: { tab: "photos", onTabChange: tab, onOpenPhoto: open, onClose: fn(), photoGroups, documents },
   examples: {
     Documents: { tab: "documents", onOpenDocument: fn(), onPrintDocument: fn() },
+    "Header Mode Large": { headerMode: "large" },
+    "Header Mode None": { headerMode: "none" },
+    // spec/app/files.md, "Find help distinguishes one match, multiple matches and no match".
+    "Found one photo": { highlightId: "garden" },
+    "Found one document": { tab: "documents", highlightId: "medicare", onOpenDocument: fn(), onPrintDocument: fn() },
+    "Which one": {
+      tab: "documents",
+      matches: [
+        { id: "visit", label: "Visit form.pdf · From Main St Clinic" },
+        { id: "visit-2", label: "Visit form.pdf · From Riverside Clinic" },
+      ],
+      onPickMatch: pickMatch,
+    },
+    "Nothing matched": { noMatch: "passport" },
+    // spec/app/files.md, "Opening and retrying load the authoritative local library".
+    Loading: { status: "loading" },
+    "Load failed": { status: "failed", onRetry: retry },
   },
   decorator: (story) => onTablet(story),
   play: {
@@ -55,6 +74,16 @@ export const meta: ComponentMeta<FilesAppProps> = {
       await expect(open).toHaveBeenCalledWith("flowers");
       await userEvent.click(canvas.getByRole("radio", { name: "Documents" }));
       await expect(tab).toHaveBeenCalledWith("documents");
+    },
+    "Load failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.queryByRole("button", { name: "Photo 1" })).toBeNull();
+      await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+      await expect(retry).toHaveBeenCalled();
+    },
+    "Which one": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Visit form.pdf · From Riverside Clinic" }));
+      await expect(pickMatch).toHaveBeenCalledWith("visit-2");
     },
   },
 };

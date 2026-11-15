@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
-import { Sun } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { PageHeading, PageText } from "./PageHeading.tsx";
+import { PageText } from "./PageHeading.tsx";
+import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 import { SettingsSwitchRow } from "./SettingsSwitchRow.tsx";
 import { Slider } from "./Slider.tsx";
@@ -27,6 +27,22 @@ export type SettingsBrightnessProps = Omit<ComponentProps<"section">, "onChange"
   nightDimHint?: string;
 };
 
+export type SunIconProps = Omit<ComponentProps<"svg">, "children"> & {
+  /** Width and height in pixels. */
+  size?: number;
+};
+
+/** Brightness's sun, as Settings' list and page show it. Decorative. */
+export function SunIcon({ size = 28, ...props }: SunIconProps) {
+  // Prototype `AXP.sun`: Lucide's older sun, each ray one path segment.
+  return (
+    <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4" />
+    </svg>
+  );
+}
+
 /**
  * Settings' Brightness page: the screen's brightness between − and +, and dimming at night
  * (prototype `setView()`, "Brightness").
@@ -50,14 +66,14 @@ export function SettingsBrightness({
 }: SettingsBrightnessProps) {
   return (
     <section aria-label={title} className={cn("font-sans", className)} {...props}>
-      <PageHeading>{title}</PageHeading>
+      <SettingsPageHeading>{title}</SettingsPageHeading>
       <PageText tone="secondary" className="mt-1.5">{description}</PageText>
       <Panel className="mt-[22px]">
         {/* Prototype `.a-panel .a-h` with the value at its end. */}
         <div className="flex items-center gap-3 text-title-sm leading-8 font-bold text-chrome">
-          <Sun size={28} strokeWidth={2} aria-hidden />
+          <SunIcon />
           {brightnessLabel}
-          <span className="ml-auto text-body leading-[26px] font-bold text-muted-foreground">{brightness}%</span>
+          <span className="ml-auto text-body leading-[26px] font-bold text-muted-foreground">{`${brightness}%`}</span>
         </div>
         <Slider
           className="mt-[18px]"

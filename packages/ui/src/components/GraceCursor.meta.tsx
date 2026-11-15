@@ -1,21 +1,18 @@
 import type { ComponentMeta } from "vibestack/stories";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { onChase, payPage } from "./GuideRing.meta.tsx";
 import type { GraceCursorProps } from "./GraceCursor.tsx";
 
-// The prototype's Chase payment form: Grace's G on Continue (`curTo`, `curTag`).
-const button = { x: 208, y: 596, width: 128, height: 48 };
+// curTo() on the Chase payment form: Grace's G at the middle of Continue, 208,596 on the tablet and 130×48.
+const onPay = onChase({ title: "Pay your card · Chase", address: "chase.com/pay", page: payPage });
 
 export const meta: ComponentMeta<GraceCursorProps> = {
-  args: { x: button.x + button.width / 2, y: button.y + button.height / 2, tag: "Tapping Continue" },
+  // `.scur`: on the tablet, over the browser and under Grace's window.
+  args: { x: 273, y: 620, className: "z-2" },
   examples: {
+    // curTap(): the G pressed and a ring rippling out.
     Pressed: { pressed: true },
+    // pauseAct(): `.gcur.paused` and curTag("Paused").
     Paused: { tag: "Paused", paused: true },
   },
-  decorator: (story) => (
-    <TabletScreen>
-      <div className="absolute rounded-md bg-card shadow-panel" style={{ left: 185, top: 235, width: 518, height: 430 }} />
-      <div className="absolute flex items-center justify-center rounded-md bg-primary text-lg font-bold text-primary-foreground" style={{ left: button.x, top: button.y, width: button.width, height: button.height }}>Continue</div>
-      {story()}
-    </TabletScreen>
-  ),
+  decorator: (story) => onPay(() => null, story),
 };

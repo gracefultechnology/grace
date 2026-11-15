@@ -1,12 +1,16 @@
 import type { ComponentProps, ReactNode } from "react";
-import { ArrowDownToLine, Forward, Paperclip, Reply, Trash, Undo2 } from "lucide-react";
+import { Forward, Reply, Undo2 } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
+import { BillOffer, type BillDetails, type BillOfferLabels } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
+import { MailActionStatus, pendingMark, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
 import { MailAttachment } from "./MailAttachment.tsx";
-import { MailContactAvatar, type MailContact } from "./MailMessageRow.tsx";
+import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
+import { MailNotice } from "./MailNotice.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
+import { Skeleton } from "./Skeleton.tsx";
 
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
@@ -41,7 +45,7 @@ export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPho
           <button
             type="button"
             onClick={() => onSelect?.(i)}
-            className={cn(focusRing, "block h-[190px] w-full cursor-pointer overflow-hidden rounded-photo shadow-panel transition-transform duration-press ease-spring active:scale-[.99]")}
+            className={cn(focusRing, "block h-[190px] w-full cursor-pointer overflow-hidden rounded-photo shadow-photo-tile transition-transform duration-press ease-spring active:scale-[.99]")}
           >
             <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
           </button>
@@ -57,7 +61,12 @@ export type MailFile = {
   name: string;
   /** What it holds: "2 pages". */
   detail?: string;
+  /** What printing it actually did. */
+  printStatus?: MailPrintStatus;
 };
+
+/** Where reading an email, photo or file stands: `failed` says so with Try again in place of the content. */
+export type MailReadStatus = "loading" | "failed" | "ready";
 
 /** The words of an open email, for another language. */
 export type MailMessageViewLabels = {
@@ -74,6 +83,11 @@ export type MailMessageViewLabels = {
   /** Over the photos: "3 photos". */
   photos: (count: number) => string;
   saveAll: string;
+  /** The email could not be opened. */
+  failed: string;
+  retry: string;
+  /** For assistive technology while the email loads. */
+  loading: string;
 };
 
 const viewLabels: MailMessageViewLabels = {
@@ -87,6 +101,9 @@ const viewLabels: MailMessageViewLabels = {
   scam: "Grace thinks this email is a scam. Don’t tap its links.",
   photos: (n) => `${n} photo${n === 1 ? "" : "s"}`,
   saveAll: "Save all to Files",
+  failed: "This message couldn’t be opened. Try again.",
+  retry: "Try again",
+  loading: "Opening the email",
 };
 
 export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "actions" | "children"> & {
@@ -123,6 +140,28 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   onOpenFile?: (index: number) => void;
   /** Called with the index of the file to print. */
   onPrintFile?: (index: number) => void;
+  /** `loading` shows placeholder words and holds Reply and Forward until every attachment is known; `failed` says so with Try again. */
+  status?: MailReadStatus;
+  /** Opens it again after it failed. */
+  onRetry?: () => void;
+  /** What a failure says, in place of "This message couldn’t be opened. Try again.". */
+  errorLabel?: ReactNode;
+  /** What saving every photo to Files actually did. */
+  saveAllStatus?: MailSaveStatus;
+  /** Tries saving the photos again. */
+  onRetrySaveAll?: () => void;
+  /** Called with the index of the file whose print to try again. */
+  onRetryPrintFile?: (index: number) => void;
+  /** A bill Grace found in it: "Is this your bill?", then Open bill. */
+  bill?: BillDetails;
+  /** The person says the bill is theirs; never a payment. */
+  onConfirmBill?: () => void;
+  /** Not now. */
+  onDismissBill?: () => void;
+  /** Opens the confirmed bill on its site; opening never pays. */
+  onOpenBill?: () => void;
+  /** The bill offer's words, for another language. */
+  billLabels?: Partial<BillOfferLabels>;
   /** The view's words, for another language. */
   labels?: Partial<MailMessageViewLabels>;
 };
@@ -152,13 +191,26 @@ export function MailMessageView({
   onSaveAll,
   onOpenFile,
   onPrintFile,
+  status = "ready",
+  onRetry,
+  errorLabel,
+  saveAllStatus,
+  onRetrySaveAll,
+  onRetryPrintFile,
+  bill,
+  onConfirmBill,
+  onDismissBill,
+  onOpenBill,
+  billLabels,
   labels,
   backLabel = "Inbox",
   ...props
 }: MailMessageViewProps) {
   const l = { ...viewLabels, ...labels };
-  const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false) => (
-    <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "pr-[26px] pl-[22px]" : "pr-5 pl-4 text-grace-ink"} onClick={onClick}>
+  // spec/app/email.md, "Each search or content read needs current access and the user's choice": Reply and Forward wait for the whole read.
+  const held = status !== "ready";
+  const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (
+    <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? undefined : "text-grace-ink"} disabled={disabled} onClick={onClick}>
       {icon}
       {label}
     </Button>
@@ -171,19 +223,19 @@ export function MailMessageView({
         inTrash ? (
           <>
             {action(l.restore, <Undo2 {...pill} />, onRestore)}
-            {action(l.deleteForever, <Trash {...pill} />, onDeleteForever)}
+            {action(l.deleteForever, <mailIcons.trash {...pill} />, onDeleteForever)}
           </>
         ) : (
           <>
-            {action(l.reply, <Reply {...pill} />, onReply, true)}
-            {action(l.forward, <Forward {...pill} />, onForward)}
-            {action(l.delete, <Trash {...pill} />, onDelete)}
+            {action(l.reply, <Reply {...pill} />, onReply, true, held)}
+            {action(l.forward, <Forward {...pill} />, onForward, false, held)}
+            {action(l.delete, <mailIcons.trash {...pill} />, onDelete)}
           </>
         )
       }
       {...props}
     >
-      <article className="font-sans">
+      <article className="font-sans" aria-busy={status === "loading" || undefined}>
         {scam && (
           <Alert variant="caution" className="mb-5">
             {l.scam}
@@ -199,24 +251,50 @@ export function MailMessageView({
           </div>
         </div>
         <PageHeading className="mt-5 mb-2.5">{subject}</PageHeading>
-        <PageText className="max-w-[880px]">{body}</PageText>
-        {photos?.length ? (
+        {status === "loading" ? (
+          // Three lines of the body's 30px rhythm.
+          <div role="status" aria-label={l.loading} className="flex max-w-[880px] flex-col gap-2 py-1">
+            {["w-full", "w-11/12", "w-2/3"].map((width) => (
+              <Skeleton key={width} className={cn("h-[22px] rounded-full", width)} />
+            ))}
+          </div>
+        ) : status === "failed" ? (
+          <MailNotice actionLabel={l.retry} onAction={onRetry} className="max-w-[880px]">
+            {errorLabel ?? l.failed}
+          </MailNotice>
+        ) : (
+          <PageText className="max-w-[880px]">{body}</PageText>
+        )}
+        {/* spec/app/email.md, "A bill handoff retains verified source identity and never starts a payment". */}
+        {bill && !held && <BillOffer {...bill} onConfirm={onConfirmBill} onDismiss={onDismissBill} onOpen={onOpenBill} labels={billLabels} className="mt-[22px]" />}
+        {!held && photos?.length ? (
           <>
             {/* Prototype `.a-attbar`. */}
-            <div className="mt-[22px] mb-3 flex items-center gap-3.5 text-chrome">
-              <Paperclip size={24} strokeWidth={2.2} aria-hidden />
-              <span className="flex-1 text-body-lg leading-[30px] font-bold">{l.photos(photos.length)}</span>
-              <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={onSaveAll}>
-                <ArrowDownToLine {...pill} />
+            <div className="mt-[22px] mb-3 flex items-center gap-3.5 text-foreground">
+              <mailIcons.clip size={24} strokeWidth={2.2} aria-hidden />
+              <span className="flex-1 text-body-lg leading-[30px] font-bold text-chrome">{l.photos(photos.length)}</span>
+              {saveAllStatus && <MailActionStatus action="save" status={saveAllStatus} onRetry={onRetrySaveAll} />}
+              <Button variant="capsule" size="pill" aria-busy={saveAllStatus === "saving" || undefined} disabled={saveAllStatus === "saving"} onClick={onSaveAll}>
+                {pendingMark(saveAllStatus === "saving", <mailIcons.down {...pill} />)}
                 {l.saveAll}
               </Button>
             </div>
             <MailPhotoGrid photos={photos} onSelect={onOpenPhoto} />
           </>
         ) : null}
-        {files?.map((file, i) => (
-          <MailAttachment key={file.name} name={file.name} detail={file.detail} className="mt-[22px]" onOpen={() => onOpenFile?.(i)} onPrint={onPrintFile && (() => onPrintFile(i))} />
-        ))}
+        {!held &&
+          files?.map((file, i) => (
+            <MailAttachment
+              key={file.name}
+              name={file.name}
+              detail={file.detail}
+              printStatus={file.printStatus}
+              className="mt-[22px]"
+              onOpen={() => onOpenFile?.(i)}
+              onPrint={onPrintFile && (() => onPrintFile(i))}
+              onRetry={onRetryPrintFile && (() => onRetryPrintFile(i))}
+            />
+          ))}
       </article>
     </AppWindow>
   );

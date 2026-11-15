@@ -7,5 +7,5 @@ export const meta: ComponentMeta<PageHeadingProps> = {
     "Coming up": { level: "title", children: "Coming up" },
     "Other networks nearby": { level: "section", children: "Other networks nearby" },
   },
-  decorator: (story) => <div className="w-[815px] bg-background p-6">{story()}</div>,
+  decorator: (story) => <div className="w-[852px] bg-background p-6">{story()}</div>,
 };

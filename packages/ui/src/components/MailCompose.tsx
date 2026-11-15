@@ -1,14 +1,19 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { ArrowUp, Camera, FileText, Image, Paperclip, Plus, Trash, X } from "lucide-react";
+import { ArrowUp, Image, Plus, X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
 import { Menu, MenuOption } from "./Menu.tsx";
-import { MailContactAvatar, type MailContact } from "./MailMessageRow.tsx";
+import { pendingMark } from "./MailActionStatus.tsx";
+import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
 import type { MailPhoto } from "./MailMessageView.tsx";
+import { MailNotice } from "./MailNotice.tsx";
 
 /** A line of recipients. */
 export type MailRecipientField = "to" | "cc" | "bcc";
+
+/** Where sending stands: `failed` the provider refused it; `unknown` no answer yet, so Send waits; `saveFailed` sent, but its record was not saved. */
+export type MailSendStatus = "idle" | "sending" | "failed" | "unknown" | "saveFailed";
 
 /** Where an attachment comes from. */
 export type MailAttachSource = "camera" | "photos" | "file";
@@ -71,6 +76,10 @@ export type MailComposeLabels = {
   file: string;
   discard: string;
   removeAttachment: string;
+  sendFailed: string;
+  sendUnknown: string;
+  saveFailed: string;
+  retry: string;
 };
 
 const composeLabels: MailComposeLabels = {
@@ -90,6 +99,10 @@ const composeLabels: MailComposeLabels = {
   file: "Choose a file",
   discard: "Discard",
   removeAttachment: "Remove",
+  sendFailed: "The email wasn’t sent. Check it and press Send again.",
+  sendUnknown: "I’m not sure this email was sent. I’m checking before it can be sent again.",
+  saveFailed: "Sent. Saving the record didn’t work.",
+  retry: "Try again",
 };
 
 export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "children" | "title"> & {
@@ -126,6 +139,14 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
   onAttachOpenChange?: (open: boolean) => void;
   /** Throws the email away. */
   onDiscard?: () => void;
+  /** Where sending stands; the draft stays editable after a failure. */
+  sendStatus?: MailSendStatus;
+  /** Saves the sent email's record again, without sending it again. */
+  onRetrySave?: () => void;
+  /** The draft could not be saved: what it says over the reopened draft, with Try again. */
+  draftError?: ReactNode;
+  /** Saves the draft again. */
+  onRetryDraft?: () => void;
   /** The form's words, for another language. */
   labels?: Partial<MailComposeLabels>;
 };
@@ -156,11 +177,19 @@ export function MailCompose({
   attachOpen,
   onAttachOpenChange,
   onDiscard,
+  sendStatus = "idle",
+  onRetrySave,
+  draftError,
+  onRetryDraft,
   labels,
   backLabel = "Inbox",
   ...props
 }: MailComposeProps) {
   const l = { ...composeLabels, ...labels };
+  // spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry".
+  const notices: Partial<Record<MailSendStatus, string>> = { failed: l.sendFailed, unknown: l.sendUnknown, saveFailed: l.saveFailed };
+  const notice = notices[sendStatus];
+  const sending = sendStatus === "sending";
   const subjectId = useId();
   const recipients = (field: MailRecipientField, people: MailContact[]) => (
     <Line label={l[field]}>
@@ -180,8 +209,8 @@ export function MailCompose({
       backLabel={backLabel}
       actions={
         onDiscard && (
-          <Button variant="plain" size="compact" className="pr-5 pl-4 text-grace-ink" onClick={onDiscard}>
-            <Trash size={22} strokeWidth={2.2} aria-hidden />
+          <Button variant="plain" size="compact" className="text-grace-ink" onClick={onDiscard}>
+            <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
             {l.discard}
           </Button>
         )
@@ -189,6 +218,12 @@ export function MailCompose({
       {...props}
     >
       <form className="font-sans" onSubmit={(event) => { event.preventDefault(); onSend?.(); }}>
+        {/* spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable". */}
+        {draftError != null && (
+          <MailNotice actionLabel={l.retry} onAction={onRetryDraft} className="mb-3">
+            {draftError}
+          </MailNotice>
+        )}
         {recipients("to", to)}
         {ccOpen || cc.length || bcc.length ? (
           <>
@@ -209,33 +244,38 @@ export function MailCompose({
             value={subject}
             placeholder={l.subjectPlaceholder}
             onChange={(event) => onSubjectChange?.(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-field-placeholder"
           />
         </Line>
-        {/* Prototype: 150px, plus the 4px its inline textarea leaves beneath it. */}
+        {/* Prototype: 150px, plus the 4px its inline textarea leaves beneath it; placeholders in Chrome's default gray (#757575). A notice takes its spare lines, so Send stays on screen. */}
         <textarea
           aria-label={l.bodyPlaceholder}
           value={body}
           placeholder={l.bodyPlaceholder}
           onChange={(event) => onBodyChange?.(event.target.value)}
-          className="mt-[18px] box-border block min-h-[154px] w-full resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-muted-foreground"
+          className={cn("mt-[18px] box-border block w-full", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-field-placeholder")}
         />
         {attachments.length > 0 && (
           // Prototype `.a-thumbs`.
           <ul className="m-0 mt-2.5 flex list-none gap-3 p-0">
             {attachments.map((photo, i) => (
-              <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-picture">
+              <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
                 <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
-                <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment?.(i)}>
+                <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment?.(i)}>
                   <X size={20} strokeWidth={2.4} aria-hidden />
                 </Button>
               </li>
             ))}
           </ul>
         )}
+        {notice && (
+          <MailNotice actionLabel={sendStatus === "saveFailed" ? l.retry : undefined} onAction={onRetrySave} className="mt-[18px]">
+            {notice}
+          </MailNotice>
+        )}
         <div className="mt-[18px] flex gap-3">
-          <Button type="submit" variant="prominent" size="pill" className="pr-[26px] pl-[22px]">
-            <ArrowUp size={22} strokeWidth={2.4} aria-hidden />
+          <Button type="submit" variant="prominent" size="pill" aria-busy={sending || undefined} disabled={sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
+            {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
             {l.send}
           </Button>
           {/* Prototype `.apop` at left:150px, top:76px of `.a-btns`, 320px of options inside 8px of padding. */}
@@ -243,19 +283,19 @@ export function MailCompose({
             open={attachOpen}
             onOpenChange={onAttachOpenChange}
             trigger={
-              // Open, Attach is selected: the raised white platter with an indigo label.
-              <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] data-[state=open]:bg-card data-[state=open]:text-primary data-[state=open]:shadow-raised">
-                <Paperclip size={22} strokeWidth={2.2} aria-hidden />
+              // Open, Attach's label turns indigo; the glass capsule stays (prototype `.a-btn:not(.prom)` wins over its inline white).
+              <Button variant="capsule" size="pill" className="data-[state=open]:text-primary">
+                <mailIcons.clip size={22} strokeWidth={2.2} aria-hidden />
                 {l.attach}
               </Button>
             }
             alignOffset={11}
             sideOffset={12}
-            className="min-w-[336px] bg-glass/95"
+            className="min-w-[336px] bg-glass/95 shadow-popover backdrop-blur-none backdrop-saturate-100"
           >
-            <MenuOption icon={<Camera size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("camera")}>{l.camera}</MenuOption>
+            <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("camera")}>{l.camera}</MenuOption>
             <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("photos")}>{l.photos}</MenuOption>
-            <MenuOption icon={<FileText size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("file")}>{l.file}</MenuOption>
+            <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} className="h-[60px] bg-panel" onSelect={() => onAttach?.("file")}>{l.file}</MenuOption>
           </Menu>
         </div>
       </form>

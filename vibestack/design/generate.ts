@@ -23,6 +23,8 @@ export const themeCss = (tokens: Tokens) =>
   `@import "tailwindcss";\n@import "./tokens.css";\n@custom-variant dark (&:is(.dark *));\n` +
   block("@theme inline", [
     ...names(tokens).map((name) => `--color-${name}: var(--${name});`),
+    // Inline, so Tailwind splits a multi-layer value into one drop-shadow() per layer.
+    ...vars("drop-shadow-", tokens.dropShadow),
     "--radius-sm: calc(var(--radius) - 4px);", "--radius-md: calc(var(--radius) - 2px);",
     "--radius-lg: var(--radius);", "--radius-xl: calc(var(--radius) + 4px);",
   ]) +

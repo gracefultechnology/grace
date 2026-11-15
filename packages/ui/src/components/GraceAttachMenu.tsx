@@ -28,19 +28,19 @@ export type GraceAttachMenuProps = Omit<MenuProps, "trigger" | "children"> & {
 };
 
 /**
- * The Attach pill of Grace's answer row and its menu, opening upward from the right (prototype `#addB`, `.addpop`).
+ * The Attach pill of Grace's answer row and its menu, opening upward (prototype `#addB`, `.addpop`).
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */
-export function GraceAttachMenu({ options, onChoose, label = "Attach", side = "top", align = "end", sideOffset = 16, className, ...props }: GraceAttachMenuProps) {
+export function GraceAttachMenu({ options, onChoose, label = "Attach", side = "top", align = "start", sideOffset = 16, className, ...props }: GraceAttachMenuProps) {
   return (
-    // .addpop: 16px above the pill, its right edge on the pill's; the panel is .spdpop's 286px and its rows are 280px,
-    // so they reach 2px into its right padding.
+    // .addpop: 16px above the pill and, as .spdpop's left:0 outranks .addpop's right:0, its left edge on the pill's; the
+    // panel is .spdpop's 286px and its rows are 280px, so they reach 2px into its right padding.
     <Menu
       side={side}
       align={align}
       sideOffset={sideOffset}
-      className={cn("min-w-[286px]", className)}
+      className={cn("w-[286px]", className)}
       trigger={
         <GracePill>
           {paperclip}

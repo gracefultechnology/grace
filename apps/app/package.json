@@ -15,7 +15,6 @@
   "dependencies": {
     "@capacitor/android": "8.5.2",
     "@capacitor/core": "8.5.2",
-    "@fontsource-variable/figtree": "catalog:",
     "@repo/design-system": "workspace:*",
     "@repo/ui": "workspace:*",
     "effect": "4.1.1",

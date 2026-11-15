@@ -17,6 +17,8 @@ export const meta: ComponentMeta<HomeMailRowProps> = {
       subject: "Reminder: your appointment tomorrow at 10 am",
       unread: true,
     },
+    // Prototype `.home.cmp` (line 394): in the 334px column the subject runs onto more lines.
+    Wrap: { wrap: true, className: "w-[290px]" },
   },
-  decorator: (story) => <div className="w-[470px] bg-gradient-frame-soft p-6">{story()}</div>,
+  decorator: (story) => <div className="w-[470px] bg-gradient-frame-soft px-[22px] py-6">{story()}</div>,
 };

@@ -50,11 +50,11 @@ test("apply accepts a valid change and rejects an unknown path, an invalid color
   expect(() => parseTokens({ ...tokens, text: { ...tokens.text, glass: "1rem" } })).toThrow("text.glass: also a color")
 })
 
-test("a palette color, radius, size, blur and gradient each become a utility; a palette color without a dark value keeps its light one", () => {
-  const next = parseTokens({ ...tokens, color: { light: { ...tokens.color.light, brand: "oklch(0.5 0.1 200)" }, dark: tokens.color.dark }, rounded: { pill: "999px" }, text: { hero: "3rem" }, blur: { frost: "20px" }, keyframes: { blink: "50%{opacity:0}" }, animate: { blink: "blink 1s step-end infinite" }, gradient: { sky: "linear-gradient(var(--brand), var(--primary))" } })
+test("a palette color, radius, size, blur, drop shadow and gradient each become a utility; a palette color without a dark value keeps its light one", () => {
+  const next = parseTokens({ ...tokens, color: { light: { ...tokens.color.light, brand: "oklch(0.5 0.1 200)" }, dark: tokens.color.dark }, rounded: { pill: "999px" }, text: { hero: "3rem" }, blur: { frost: "20px" }, dropShadow: { lift: "0 8px 18px rgb(0 0 0 / 0.14)" }, keyframes: { blink: "50%{opacity:0}" }, animate: { blink: "blink 1s step-end infinite" }, gradient: { sky: "linear-gradient(var(--brand), var(--primary))" } })
   const [css, theme] = [tokensCss(next), themeCss(next)]
   expect(css.match(/--brand: [^;]+;/g)).toEqual(["--brand: oklch(0.5 0.1 200);"])
-  for (const line of ["--color-brand: var(--brand);", "--radius-pill: 999px;", "--text-hero: 3rem;", "--blur-frost: 20px;", "--animate-blink: blink 1s step-end infinite;", "@keyframes blink { 50%{opacity:0} }", "@utility bg-gradient-sky {"]) expect(theme).toContain(line)
+  for (const line of ["--color-brand: var(--brand);", "--radius-pill: 999px;", "--text-hero: 3rem;", "--blur-frost: 20px;", "--drop-shadow-lift: 0 8px 18px rgb(0 0 0 / 0.14);", "--animate-blink: blink 1s step-end infinite;", "@keyframes blink { 50%{opacity:0} }", "@utility bg-gradient-sky {"]) expect(theme).toContain(line)
   expect(css).toContain("--gradient-sky: linear-gradient(var(--brand), var(--primary));")
 })
 
@@ -82,6 +82,8 @@ test("the ESLint config flags values that bypass the tokens and accepts token cl
     [3, "better-tailwindcss/no-restricted-classes"],
     [4, "design-system/no-literal-colors"],
     [5, "design-system/no-literal-colors"],
+    [7, "better-tailwindcss/no-restricted-classes"],
+    [8, "better-tailwindcss/no-restricted-classes"],
   ])
   expect(await lint("good.tsx")).toEqual([])
 }, 60_000)

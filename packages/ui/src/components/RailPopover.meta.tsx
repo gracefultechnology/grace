@@ -1,29 +1,28 @@
-import { Check, House, Play, Settings, Volume2, VolumeX, Wifi } from "lucide-react";
+import { Check, Wifi } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { AskGraceButton } from "./AskGraceButton.tsx";
+import { PlayIcon, SpeakerIcon, SpeakerOffIcon } from "../icons.tsx";
 import { Button } from "./Button.tsx";
 import { ListRow } from "./ListRow.tsx";
-import { Rail, RailButton, WifiSlash } from "./Rail.tsx";
+import { Rail, WifiSlash } from "./Rail.tsx";
+import { homeRail } from "./Rail.meta.tsx";
 import type { RailPopoverProps } from "./RailPopover.tsx";
 import { Slider } from "./Slider.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 
-const tile = { size: 28, strokeWidth: 1.9 };
-const small = { size: 22, strokeWidth: 2.2, "aria-hidden": true };
 // Prototype `drawPop()`: Volume at 60%, and Wi-Fi on "Home Network"; each opens 30px above its rail button.
 const volume: RailPopoverProps = {
-  icon: <Volume2 size={30} strokeWidth={2} />,
+  icon: <SpeakerIcon strokeWidth={2} className="size-7.5" />,
   title: "Volume",
   value: "60%",
   top: 335,
   onClose: fn(),
-  children: <Slider value={60} label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" className="mt-5 gap-4" />,
+  children: <Slider value={60} label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" className="mt-5" />,
   note: "Grace’s voice, videos and sounds all use this volume.",
   actions: (
     <>
-      <Button variant="capsule" size="pill"><Play {...small} />Test sound</Button>
-      <Button variant="capsule" size="pill"><VolumeX {...small} />Mute</Button>
+      <Button variant="capsule" size="pill"><PlayIcon className="size-5.5" />Test sound</Button>
+      <Button variant="capsule" size="pill"><SpeakerOffIcon className="size-5.5" />Mute</Button>
     </>
   ),
 };
@@ -42,43 +41,43 @@ export const meta: ComponentMeta<RailPopoverProps> = {
   states: {
     Muted: {
       ...volume,
-      icon: <VolumeX size={30} strokeWidth={2} />,
+      icon: <SpeakerOffIcon strokeWidth={2} className="size-7.5" />,
       value: "Muted",
       note: "Grace will show her words on screen while you’re muted.",
-      actions: <Button variant="prominent" size="pill"><Volume2 {...small} />Unmute</Button>,
+      actions: <Button variant="prominent" size="pill"><SpeakerIcon className="size-5.5" />Unmute</Button>,
     },
     "Wi-Fi": wifi,
     "Wi-Fi offline": {
       ...wifi,
+      className: "offline",
       icon: <WifiSlash size={30} />,
       value: "Not connected",
       children: undefined,
       note: "Email and the internet need it. Grace can help you reconnect.",
-      actions: <Button variant="prominent" size="pill"><Wifi {...small} />Fix Wi-Fi</Button>,
+      actions: <Button variant="prominent" size="pill"><Wifi aria-hidden size={22} strokeWidth={2.2} />Fix Wi-Fi</Button>,
     },
   },
-  // The rail it opens from, as on Home.
+  // The rail it opens from (prototype `railSel()`): only the button whose popover is open is raised.
   decorator: (story) => (
-    <TabletScreen>
+    <TabletScreen className="group/tablet">
       <Rail
-        battery={75}
-        time="8:56"
-        period="PM"
-        date="Fri, Nov 13"
-        status={<RailButton icon={<Wifi {...tile} />} label="Wi-Fi" />}
-        footer={<RailButton icon={<Settings {...tile} />} label="Settings" />}
-        ask={<AskGraceButton />}
-      >
-        <RailButton icon={<House {...tile} />} label="Home" />
-        <RailButton icon={<Volume2 {...tile} />} label="Volume" />
-      </Rail>
+        {...homeRail(null, {
+          raise: {
+            wifi: "group-has-[[role=dialog][aria-label=Wi-Fi]]/tablet:bg-card group-has-[[role=dialog][aria-label=Wi-Fi]]/tablet:text-primary group-has-[[role=dialog][aria-label=Wi-Fi]]/tablet:shadow-raised",
+            volume: "group-has-[[role=dialog][aria-label=Volume]]/tablet:bg-card group-has-[[role=dialog][aria-label=Volume]]/tablet:text-primary group-has-[[role=dialog][aria-label=Volume]]/tablet:shadow-raised",
+          },
+          offline: { wifi: "group-has-[.offline]/tablet:hidden", slash: "hidden group-has-[.offline]/tablet:block" },
+        })}
+      />
       {story()}
     </TabletScreen>
   ),
   play: {
     Default: async ({ args, canvasElement }: { args: RailPopoverProps; canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Close" }));
+      const close = within(canvasElement).getByRole("button", { name: "Close" });
+      await userEvent.click(close);
       await expect(args.onClose).toHaveBeenCalled();
+      close.blur();
     },
   },
 };

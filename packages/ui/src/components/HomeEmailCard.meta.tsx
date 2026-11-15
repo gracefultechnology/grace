@@ -18,16 +18,20 @@ export const email: HomeEmailCardProps = {
   ],
 };
 
+// Prototype `homeCards()` while X.online is false.
+export const emailOffline: HomeEmailCardProps = { ...email, status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." };
+
 export const meta: ComponentMeta<HomeEmailCardProps> = {
-  args: email,
-  states: {
-    Offline: { ...email, status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." },
-    Empty: { ...email, status: "No new email", messages: [] },
+  // 470×290 as on Home.
+  args: { ...email, className: "h-[290px] w-[470px]" },
+  examples: {
+    // Prototype `.home.cmp`: a 334px column, as tall as the grid above Grace's compact window (402px).
+    Compact: { compact: true, className: "h-[402px] w-[334px]" },
   },
-  // The card's glass needs Home's wash behind it; 470×290 as on Home.
-  decorator: (story) => (
-    <div className="bg-gradient-frame-soft p-12">
-      <div className="h-[290px] w-[470px] *:size-full">{story()}</div>
-    </div>
-  ),
+  states: {
+    Offline: { ...emailOffline, className: "h-[290px] w-[470px]" },
+    Empty: { ...email, className: "h-[290px] w-[470px]", status: "No new email", messages: [] },
+  },
+  // The card's glass needs Home's wash behind it.
+  decorator: (story) => <div className="bg-gradient-frame-soft p-12">{story()}</div>,
 };

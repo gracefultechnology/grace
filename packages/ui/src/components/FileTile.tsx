@@ -20,7 +20,7 @@ export function FileTile({ src, label, type = "button", className, ...props }: F
       aria-label={label}
       className={cn(
         focusRing,
-        "relative block h-[150px] cursor-pointer overflow-hidden rounded-tab p-0 shadow-picture transition-transform duration-press ease-spring active:scale-[.98] motion-reduce:active:scale-100",
+        "relative block h-[150px] cursor-pointer overflow-hidden rounded-tab p-0 shadow-picture/10 transition-transform duration-press ease-spring active:scale-[.98] motion-reduce:active:scale-100",
         className,
       )}
       {...props}

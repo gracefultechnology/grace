@@ -1,14 +1,19 @@
 import { type ComponentProps, type RefObject, useId, useLayoutEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { Spinner } from "./Spinner.tsx";
 
 export type BrowserTabProps = Omit<ComponentProps<"div">, "title"> & {
   /** The page's title, or "New tab". */
   title: string;
-  /** The site's icon, an image URL; without it, `initial` shows on a grey tile. */
+  /** The site's icon, an image URL; without it, `initial` shows on a tile. */
   favicon?: string;
-  /** The letter on the grey tile when there is no `favicon`: the site's first letter, or "·" for a new tab. */
+  /** The site's first letter, on the site's dark tile, when there is no `favicon`; without it, a new tab's grey tile with "·". */
   initial?: string;
+  /** The tab's page is loading: a spinner stands in place of its favicon, and the tab can still be chosen or closed. */
+  pageLoading?: boolean;
+  /** What a screen reader hears for the spinner. */
+  loadingLabel?: string;
   /** The tab shown in the window: a folder tab joined to the toolbar. */
   selected?: boolean;
   /** Called when the tab is tapped. */
@@ -25,7 +30,7 @@ export type BrowserTabProps = Omit<ComponentProps<"div">, "title"> & {
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#selected
  */
-export function BrowserTab({ title, favicon, initial = "·", selected = false, onSelect, onClose, closeLabel = `Close ${title}`, className, ...props }: BrowserTabProps) {
+export function BrowserTab({ title, favicon, initial, pageLoading = false, loadingLabel = "Loading", selected = false, onSelect, onClose, closeLabel = `Close ${title}`, className, ...props }: BrowserTabProps) {
   const ref = useRef<HTMLDivElement>(null);
   const width = useWidth(ref);
   return (
@@ -53,14 +58,7 @@ export function BrowserTab({ title, favicon, initial = "·", selected = false, o
         onClick={onSelect}
         className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2.5 self-stretch rounded-lg text-left")}
       >
-        {/* Prototype `.bz-fv`: a 20px tile. */}
-        {favicon ? (
-          <img src={favicon} alt="" className="size-5 shrink-0 rounded-tag object-cover" />
-        ) : (
-          <span aria-hidden className="flex size-5 shrink-0 items-center justify-center rounded-tag bg-favicon text-xs font-bold text-primary-foreground">
-            {initial}
-          </span>
-        )}
+        <TabFavicon favicon={favicon} initial={initial} pageLoading={pageLoading} loadingLabel={loadingLabel} />
         <span className="min-w-0 flex-1 truncate text-body font-medium">{title}</span>
       </button>
       {/* Prototype `.bz-ic`. */}
@@ -68,11 +66,25 @@ export function BrowserTab({ title, favicon, initial = "·", selected = false, o
         type="button"
         aria-label={closeLabel}
         onClick={onClose}
-        className={cn(focusRing, "flex size-12 shrink-0 items-center justify-center rounded-xl text-chrome-muted active:bg-chrome/8")}
+        className={cn(focusRing, "flex size-12 shrink-0 items-center justify-center rounded-xl text-chrome-muted")}
       >
         <X size={22} strokeWidth={2} aria-hidden />
       </button>
     </div>
+  );
+}
+
+export type TabFaviconProps = Pick<BrowserTabProps, "favicon" | "initial" | "pageLoading" | "loadingLabel">;
+
+/** A tab's 20px mark: its favicon, its site's letter, a new tab's "·", or a spinner while it loads. */
+export function TabFavicon({ favicon, initial, pageLoading = false, loadingLabel = "Loading" }: TabFaviconProps) {
+  if (pageLoading) return <Spinner label={loadingLabel} className="size-5" />;
+  // Prototype `.bz-fv`: a 20px tile, the site's letter on its colour, or "·" on grey for a new tab (renderSite, `#tabFav`).
+  if (favicon) return <img src={favicon} alt="" className="size-5 shrink-0 rounded-tag object-cover" />;
+  return (
+    <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-tag text-xs font-bold text-primary-foreground", initial ? "bg-site-brand" : "bg-favicon")}>
+      {initial ?? "·"}
+    </span>
   );
 }
 

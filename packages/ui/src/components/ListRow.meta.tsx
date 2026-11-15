@@ -1,3 +1,4 @@
+import { Paperclip } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { Avatar } from "./Avatar.tsx";
@@ -7,8 +8,8 @@ import type { ListRowProps } from "./ListRow.tsx";
 const open = fn();
 
 export const meta: ComponentMeta<ListRowProps> = {
-  // The first row of the Email inbox.
-  args: { title: "Susan", subtitle: "Photos from Lily’s recital", time: "2:15 PM", unread: true, leading: <Avatar name="Susan" src={susan} aria-hidden /> },
+  // The first row of the Email inbox: the email has photos attached.
+  args: { title: "Susan", subtitle: <>Photos from Lily’s recital · <Paperclip size={18} strokeWidth={2.2} aria-hidden className="inline align-[-3px]" /></>, time: "2:15 PM", unread: true, leading: <Avatar name="Susan" src={susan} aria-hidden /> },
   examples: {
     Read: { title: "Riverside Book Club", subtitle: "Our book for December", time: "Yesterday", unread: false, leading: <Avatar name="Riverside Book Club" tone={3} aria-hidden /> },
     // A Calendar row: the time and a colored bar lead, a chevron opens it.
@@ -30,7 +31,8 @@ export const meta: ComponentMeta<ListRowProps> = {
       ),
     },
   },
-  decorator: (story) => <div className="w-[840px] bg-background p-6">{story()}</div>,
+  // A row of an 804px page column.
+  decorator: (story) => <div className="w-[852px] bg-background p-6">{story()}</div>,
   play: {
     Appointment: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: /Lunch with Susan/ }));
