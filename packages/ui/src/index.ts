@@ -81,6 +81,7 @@ export * from "./components/Menu.tsx";
 export * from "./components/NewTabPage.tsx";
 export * from "./components/PageHeading.tsx";
 export * from "./components/Panel.tsx";
+export * from "./components/PaymentAmountChoice.tsx";
 export * from "./components/PaymentCheckCard.tsx";
 export * from "./components/PaymentReviewCard.tsx";
 export * from "./components/PaymentStatusBadge.tsx";
