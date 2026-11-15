@@ -29,8 +29,9 @@ export function BrowserWindow({ tabStrip, toolbar, placement = "screen", classNa
     >
       {tabStrip}
       {toolbar}
-      {/* Prototype `.site`: the website, under the toolbar, on its neutral grey. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-site">{children}</div>
+      {/* Prototype `.site`: the website, under the toolbar. Clear, because the app's native page is drawn below it
+          (apps/app/src/PageLayer.tsx, PageArea); a page Grace draws itself, such as NewTabPage, brings its own grey. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
   );
 }
