@@ -46,13 +46,14 @@ export function CalendarMonth({ weekdays, days, onSelect, className, ...props }:
         <button
           key={d.key}
           type="button"
+          data-prototype-ink={d.outside ? "" : undefined}
           aria-pressed={!!d.selected}
           onClick={() => onSelect?.(d.key)}
           className={cn(
             focusRing,
             "relative box-border flex h-[78px] items-start cursor-pointer rounded-tab bg-panel px-3 py-2 text-left text-body-lg leading-[26px] font-bold text-chrome",
-            // Prototype `.a-month .d.o` (#B4B0C3) is below AA; the chevron ink at 80% stays pale and readable.
-            d.outside && "bg-transparent text-chevron/80",
+            // Prototype `.a-month .d.o`, in its own pale ink by the user's choice (.storybook/preview.ts, `data-prototype-ink`).
+            d.outside && "bg-transparent text-outside-day",
             d.selected && "bg-card text-primary shadow-raised",
             d.today && "text-alert",
           )}

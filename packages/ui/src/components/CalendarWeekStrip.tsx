@@ -43,8 +43,13 @@ export function CalendarWeekStrip({ days, onSelect, busyLabel = "has plans", cla
           onClick={() => onSelect?.(d.key)}
           className={cn(focusRing, "relative flex h-24 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-day bg-panel", d.selected && "bg-card text-primary shadow-raised")}
         >
-          {/* Prototype `.a-day.today` is #D64545, below AA at 17px; the destructive red is the AA one. */}
-          <span className={cn("text-label leading-5 font-bold tracking-[.06em] uppercase", d.today ? "text-destructive" : "text-muted-foreground")}>{d.weekday}</span>
+          {/* Prototype `.a-day.today b`, in its own red by the user's choice (.storybook/preview.ts, `data-prototype-ink`). */}
+          <span
+            data-prototype-ink={d.today ? "" : undefined}
+            className={cn("text-label leading-5 font-bold tracking-[.06em] uppercase", d.today ? "text-alert" : "text-muted-foreground")}
+          >
+            {d.weekday}
+          </span>
           <span className="text-title leading-[34px] font-bold text-chrome">{d.day}</span>
           <span className="sr-only">{[d.month, d.busy && busyLabel].filter(Boolean).join(", ")}</span>
           {d.busy && <i aria-hidden className="absolute bottom-3 size-2 rounded-full bg-lavender" />}
