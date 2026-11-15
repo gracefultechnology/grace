@@ -56,8 +56,8 @@ describe earlier snapshots; the selected results below supersede them.
 | Retained template scaffold, `app.ts` | 6/6 | `/tmp/grace-repeat-proof-ebarVo/app.ts.json` |
 
 The scaffold is the template's greeting example, not a Grace feature or a proof
-of application integration. `spec/index.md` and `spec/app/product.md` contain
-definitions only and add no proof obligations.
+of application integration. `spec/index.md` contains
+definitions only and adds no proof obligations.
 
 The Email result includes canonical message ownership, atomic attachment
 manifests, draft preservation, stale-picker rejection and uncertain-send
