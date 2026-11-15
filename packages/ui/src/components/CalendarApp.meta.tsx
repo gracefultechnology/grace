@@ -1,0 +1,207 @@
+import type { ReactNode } from "react";
+import { House, Settings, Volume2, Wifi } from "lucide-react";
+import { expect, fn, userEvent, within } from "storybook/test";
+import type { ComponentMeta } from "vibestack/stories";
+import { AskGraceButton } from "./AskGraceButton.tsx";
+import type { CalendarAppProps, CalendarEventItem } from "./CalendarApp.tsx";
+import type { CalendarEventDetailProps } from "./CalendarEventDetail.tsx";
+import type { CalendarEventFormProps } from "./CalendarEventForm.tsx";
+import type { CalendarMonthDay } from "./CalendarMonth.tsx";
+import type { CalendarWeekDay } from "./CalendarWeekStrip.tsx";
+import { Rail, RailButton } from "./Rail.tsx";
+import { TabletScreen } from "./TabletScreen.tsx";
+
+// The prototype's calendar at 8:56 PM on Friday, November 13, 2026 (X.cal, lines 1799–1802).
+
+const icon = { size: 28, strokeWidth: 1.9 };
+
+/** The tablet with its rail, as the prototype's Calendar screenshots show it. */
+export const onTablet = (story: () => ReactNode) => (
+  <TabletScreen>
+    <Rail
+      battery={75}
+      time="8:56"
+      period="PM"
+      date="Fri, Nov 13"
+      aria-label="Tablet"
+      status={<RailButton icon={<Wifi {...icon} />} label="Wi-Fi" />}
+      footer={<RailButton icon={<Settings {...icon} />} label="Settings" />}
+      ask={<AskGraceButton />}
+    >
+      <RailButton icon={<House {...icon} />} label="Home" />
+      <RailButton icon={<Volume2 {...icon} />} label="Volume" />
+    </Rail>
+    {story()}
+  </TabletScreen>
+);
+
+/** A part on the white of the Calendar window, its page's width. */
+export const onWindow = (story: () => ReactNode) => <div className="w-[1082px] bg-background p-6">{story()}</div>;
+
+export const doctor: CalendarEventItem = {
+  id: "1",
+  title: "Doctor’s appointment",
+  dayLabel: "Sat",
+  startLabel: "10 am",
+  who: "Dr. Patel",
+  where: "Main St clinic · 214 Main Street",
+  important: true,
+};
+export const upcoming: CalendarEventItem[] = [
+  doctor,
+  {
+    id: "2",
+    title: "Lunch with Susan",
+    dayLabel: "Mon",
+    startLabel: "12 pm",
+    where: "She’ll pick you up",
+  },
+  {
+    id: "3",
+    title: "Hair appointment",
+    dayLabel: "Wed",
+    startLabel: "3 pm",
+    where: "Linda’s salon",
+  },
+];
+export const bridgeDraft: CalendarEventItem = {
+  id: "9",
+  title: "Bridge club",
+  dayLabel: "Today",
+  startLabel: "2 pm",
+  draft: true,
+};
+
+export const week: CalendarWeekDay[] = [
+  ["Mon", "9"],
+  ["Tue", "10"],
+  ["Wed", "11"],
+  ["Thu", "12"],
+  ["Today", "13"],
+  ["Sat", "14"],
+  ["Sun", "15"],
+].map(([weekday, day]) => ({
+  key: `2026-11-${day.padStart(2, "0")}`,
+  weekday,
+  day,
+  month: "November",
+  today: day === "13",
+  selected: day === "13",
+  busy: day === "14",
+}));
+
+const monthEvents: Record<string, [string, boolean?]> = {
+  "14": ["Doctor", true],
+  "16": ["Lunch with Susan"],
+  "18": ["Hair"],
+};
+export const monthDays: CalendarMonthDay[] = Array.from({ length: 35 }, (_, i) => {
+  const outside = i < 6;
+  const day = String(outside ? 26 + i : i - 5);
+  const [event, important] = outside ? [] : (monthEvents[day] ?? []);
+  return {
+    key: outside ? `2026-10-${day}` : `2026-11-${day.padStart(2, "0")}`,
+    day,
+    month: outside ? "October" : "November",
+    outside,
+    today: !outside && day === "13",
+    selected: !outside && day === "13",
+    event,
+    important,
+  };
+});
+export const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export const detail: CalendarEventDetailProps & { title: string } = {
+  title: "Doctor’s appointment",
+  when: "Saturday, November 14 · 10 am to 11 am",
+  where: "Main St clinic · 214 Main Street",
+  who: "Dr. Patel",
+  reminder: "Reminder day before",
+  repeat: "Doesn’t repeat",
+  note: "From the clinic’s email · Visit form attached",
+};
+
+const times = Array.from({ length: 25 }, (_, i) => {
+  const m = 420 + i * 30;
+  const h = Math.floor(m / 60);
+  return {
+    value: String(m),
+    label: `${((h + 11) % 12) + 1}${m % 60 ? ":30" : ""} ${h < 12 ? "am" : "pm"}`,
+  };
+});
+const days = ["Today · Nov 13", "Tomorrow · Nov 14", "Sunday · Nov 15", "Monday · Nov 16", "Tuesday · Nov 17", "Wednesday · Nov 18", "Thursday · Nov 19"].map((label, i) => ({
+  value: String(13 + i),
+  label,
+}));
+
+export const form: CalendarEventFormProps & { heading: string } = {
+  heading: "New appointment",
+  title: "",
+  where: "",
+  day: {
+    value: "Friday, November 13",
+    choices: days,
+    selected: "13",
+    open: false,
+  },
+  time: {
+    value: "10 am to 11 am",
+    choices: times,
+    selected: "600",
+    open: false,
+  },
+  repeat: { options: ["Never", "Every week", "Every month"], value: "Never" },
+  remind: {
+    options: ["No", "Day before", "1 hour before"],
+    value: "1 hour before",
+  },
+};
+
+const openEvent = fn();
+const onMode = fn();
+
+export const meta: ComponentMeta<CalendarAppProps> = {
+  args: {
+    view: "week",
+    nav: { period: "November 9 – 15", onModeChange: onMode },
+    week,
+    month: { weekdays, days: monthDays },
+    dayHeading: "Today",
+    dayEvents: [],
+    upcoming,
+    onOpenEvent: openEvent,
+    event: detail,
+    form,
+    onClose: fn(),
+  },
+  examples: {
+    Week: {},
+    Month: { view: "month", nav: { period: "November 2026" } },
+    Detail: { view: "detail" },
+    Form: { view: "form" },
+    "Form, picking a time": {
+      view: "form",
+      form: {
+        ...form,
+        title: "Bridge club",
+        time: { ...form.time, open: true },
+      },
+      canSave: true,
+    },
+    "With a draft": {
+      dayEvents: [bridgeDraft],
+      week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
+    },
+  },
+  decorator: onTablet,
+  play: {
+    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: /Doctor’s appointment/ }));
+      await expect(openEvent).toHaveBeenCalledWith("1");
+      await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
+      await expect(onMode).toHaveBeenCalledWith("month");
+    },
+  },
+};

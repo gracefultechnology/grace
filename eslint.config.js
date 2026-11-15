@@ -28,7 +28,7 @@ const imports = {
 }
 const noReact = { patterns: [...imports.patterns, { regex: "^react(?:-dom)?(?:/|$)", message: `Tool and domain code does not import React: ${monorepo}.` }] }
 // What no tsconfig.json includes, so the type-aware rules cannot see it.
-const untyped = ["*.{js,ts}", "**/.storybook/**", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
+const untyped = ["*.{js,ts}", "apps/*/scripts/**", "**/.storybook/**", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
 // Every React interface: Studio's page is built on the same theme (vibestack/studio/vite.config.ts).
 const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", "vibestack/studio/src/page/**/*.{ts,tsx}"]
 const design = "packages/design-system"
@@ -37,8 +37,8 @@ const design = "packages/design-system"
 const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-unsafe-assignment", "no-unsafe-call", "no-unsafe-member-access", "no-unsafe-return"].map((rule) => [`@typescript-eslint/${rule}`, "off"]))
 
 export default defineConfig(
-  // Generated or disposable, and .claude/worktrees holds other checkouts of this repository.
-  globalIgnores(["**/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
+  // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
+  globalIgnores(["vendor/", "**/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
@@ -47,6 +47,8 @@ export default defineConfig(
     plugins: { boundaries },
     settings: {
       "boundaries/elements": [
+        // The pinned upstream Eliza checkout comes first: its own packages/* are not this workspace's.
+        { type: "upstream", pattern: "vendor/eliza/**", partialMatch: false },
         { type: "package", pattern: ["packages/*", "apps/*"], capture: ["name"] },
         { type: "studio", pattern: "vibestack/studio" },
         { type: "tool", pattern: "vibestack" },
@@ -54,11 +56,13 @@ export default defineConfig(
     },
     rules: {
       "no-restricted-imports": ["error", imports],
-      // A relative path stays inside its package; the tool and Studio, which ships inside it, import each other.
+      // A relative path stays inside its package or reaches the pinned upstream (apps/app/scripts, its
+      // Android host and AOSP stagers); the tool and Studio, which ships inside it, import each other.
       "boundaries/dependencies": ["error", {
         default: "disallow",
         policies: [
           { from: { element: { type: "package" } }, allow: { to: { element: { type: "package", captured: { name: "{{ from.element.captured.name }}" } } } } },
+          { from: { element: { type: "package" } }, allow: { to: { element: { type: "upstream" } } } },
           { from: { element: { types: ["tool", "studio"] } }, allow: { to: { element: { types: ["tool", "studio"] } } } },
         ],
       }],

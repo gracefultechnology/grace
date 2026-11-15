@@ -120,6 +120,7 @@ export function plan(c: Found, cap: number): Plan {
     for (let i = 0; varied.some((options) => i < options.length); i++) for (const options of varied) if (options[i]) add(options[i][0], "prop", options[i][1]);
   }
 
+  if (c.unlinked) diagnostics.push(`${c.name}: ${c.unlinked}`);
   for (const key of meta?.extra ?? []) diagnostics.push(`${c.name}: \`${key}\` is no field of ComponentMeta (vibestack/stories/meta.ts) and is not read; remove it from ${basename(meta!.file)}`);
   for (const key of meta?.play ?? []) if (!all.some((s) => s.name === pascal(key))) diagnostics.push(`${c.name}: \`play\` names "${key}", which is no story of it`);
   const manual = c.manual;

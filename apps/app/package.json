@@ -8,17 +8,23 @@
     "build": "vite build",
     "typecheck": "vibelang --noEmit -p .",
     "test": "vitest run",
-    "test:browser": "vitest run --project browser"
+    "test:browser": "vitest run --project browser",
+    "android": "node scripts/android.ts",
+    "aosp": "node scripts/aosp.ts"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2",
+    "@fontsource-variable/figtree": "catalog:",
     "@repo/design-system": "workspace:*",
     "@repo/ui": "workspace:*",
     "effect": "4.1.1",
+    "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
   "devDependencies": {
-    "@effect/vitest": "4.1.1",
+    "@capacitor/cli": "8.5.2",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",

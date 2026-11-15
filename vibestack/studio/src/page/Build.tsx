@@ -54,8 +54,8 @@ export function PublishDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const unsound = dirty.filter((s) => !s.deleted && !headingsAreSound(s.outline)).map((s) => s.file);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[86vh] max-w-230 gap-0 p-0">
-        <DialogTitle className="border-b border-border px-6 py-4">Publish {dirty.length === 1 ? dirty[0].file : `${dirty.length} specs`}</DialogTitle>
+      <DialogContent closeLabel="Close" className="max-h-[86vh] max-w-230 gap-0 p-0">
+        <DialogTitle className="border-b border-border py-4 pr-18 pl-6">Publish {dirty.length === 1 ? dirty[0].file : `${dirty.length} specs`}</DialogTitle>
         <div className="flex flex-col gap-4 overflow-auto px-6 py-4">
           {unsound.length > 0 && <div className="rounded-lg border border-destructive px-4 py-3">{unsound.join(", ")}</div>}
           {dirty.map((spec) => (

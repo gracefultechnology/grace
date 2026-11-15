@@ -1,0 +1,159 @@
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"
+// The website's native page, drawn below Grace's transparent interface (definitions.ts, SurfaceLayer
+// "below-host"), as an Effect service over the plugin. With no plugin there is no page under the
+// interface: every command succeeds at once, so routing is acknowledged immediately.
+import type { Rect } from "../gen/app__surface.effect.vibe"
+import type { Load } from "../gen/app__browser.effect.vibe"
+import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../gen/app__websiteRequests.effect.vibe"
+import { type SurfacePlugin, identity } from "./surfacePlugin.ts"
+
+/** The plugin refused a command, or the page it named is gone. */
+export error PageFailed { cause: unknown }
+
+/**
+ * What a native page reports: where it is, whether it is loading and how its page ended, that its renderer is gone, or that it
+ * started its next page; what its website asks (`key` is the plugin's dialog or request id, or the other app's
+ * link, and `said` what the page wrote), a download it saved or could not, and a site permission request it withdrew.
+ */
+export data PageEvent {
+  Changed { id: string; url: string; loading: boolean; result: Load }
+  Crashed { id: string }
+  Started { id: string }
+  Asked { id: string; key: string; ask: Ask; topFrame: boolean; said: string }
+  Downloaded { id: string; key: string; saved: boolean }
+  Withdrawn { id: string; key: string }
+}
+
+/** The rounded corners of the page's outer clip, which the interface paints around. */
+export type Corners = { topLeft: number; topRight: number; bottomRight: number; bottomLeft: number }
+
+/** One native page per id, below the interface. */
+export service NativePage {
+  /** Native surfaces left by an earlier renderer are destroyed before the first is created. */
+  claim(): void!PageFailed
+  create(id: string, url: string): void!PageFailed
+  place(id: string, page: Rect, corners: Corners): void!PageFailed
+  /** The rects whose touches stay with Grace; the page takes none until the first call after `create`. */
+  route(id: string, rects: Rect[]): void!PageFailed
+  /** Shows one page and hides the others, or shows none. */
+  present(id: string | null): void!PageFailed
+  pause(id: string): void!PageFailed
+  resume(id: string): void!PageFailed
+  navigate(id: string, url: string): void!PageFailed
+  back(id: string): void!PageFailed
+  forward(id: string): void!PageFailed
+  reload(id: string): void!PageFailed
+  destroy(id: string): void!PageFailed
+  /** Tells the page `answer` to what it asked as `key`, or makes the call the answer stands for: saving, or opening another app. */
+  reply(id: string, key: string, ask: Ask, answer: Answer, text: string): void!PageFailed
+  /** Allows the site permission request `key`: Android asks for what Grace lacks; how the call ended. */
+  grant(id: string, key: string): AndroidOutcome!PageFailed
+  /** Signs every website out: deletes the one browsing profile, which closes every page; whether no cookie is left. */
+  purge(): boolean!PageFailed
+  /** What this renderer's pages report. */
+  readonly events: Stream.Stream<PageEvent>
+}
+
+const messages: Record<string, MessageKind> = { alert: "AlertMessage", confirm: "ConfirmMessage", prompt: "PromptMessage", beforeunload: "LeavePageMessage" }
+const handoffs: Record<string, AppHandoff> = { "send-to": "SendToApp", dial: "DialApp", view: "ViewInApp", refuse: "RefusedLink" }
+const providers: Record<string, string> = { google: "Google", facebook: "Facebook" }
+// spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too": the call's `outcome`.
+const outcomes: Record<string, AndroidOutcome> = { granted: "AndroidGranted", denied: "AndroidDenied", "android-refused": "AndroidRefused", ended: "AndroidEnded" }
+
+type Surface = { owner: string; session: string; epoch: number; id: string }
+
+// spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at":
+// each answer as the plugin's call (definitions.ts); an answer that tells the page nothing calls nothing.
+function answerPage(p: SurfacePlugin, surface: Surface, key: string, ask: Ask, answer: Answer, text: string): Promise<unknown> {
+  switch (ask.tag) {
+    case "WebsiteMessage": return p.answerDialog({ ...surface, dialogId: key, accept: answer === "Ok", text })
+    case "FileChoice": {
+      const open = answer === "OpenFilePicker"
+      // spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told": a picker that
+      // could not open (FILE_CHOOSER_BUSY keeps the request) leaves the page with no file.
+      return p.answerFileChooser({ ...surface, requestId: key, open }).catch((cause: unknown) =>
+        open ? p.answerFileChooser({ ...surface, requestId: key, open: false }).catch(() => undefined).then(() => Promise.reject(cause)) : Promise.reject(cause))
+    }
+    // An embedded frame's request has no id: the surface already denied it. Allowed reaches a request that waited
+    // for another's Android prompt, which Android already answered.
+    case "SitePermission": return key === "" ? Promise.resolve() : p.answerSitePermission({ ...surface, requestId: key, grant: answer === "Allowed" })
+    case "DownloadOffer": return answer === "SaveDownload" ? p.saveDownload({ ...surface, requestId: key }) : Promise.resolve()
+    case "OtherApp": return answer === "OpenOtherApp" ? p.openExternalLink({ ...surface, url: key }) : Promise.resolve()
+    case "BlockedSignIn": return answer === "OpenSystemBrowser" ? p.openIdentityProvider({ ...surface, requestId: key }) : Promise.resolve()
+  }
+}
+
+// spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation": one browsing profile for every tab.
+const profileKey = "grace"
+
+/** `NativePage` over `plugin`, or over nothing where the platform has none. */
+export function nativePage(plugin: SurfacePlugin | undefined) {
+  const call = (run: (p: SurfacePlugin) => Promise<unknown>) =>
+    plugin === undefined ? Effect.void : Effect.asVoid(tryPromise({ try: () => run(plugin), catch: (cause) => new PageFailed({ cause }) }))
+  const own = (id: string) => ({ ...identity, id })
+  // Every listener hears every surface: only this renderer's are its own (definitions.ts, NavigationChangedEvent).
+  const mine = (e: { owner?: string | null; session?: string | null; epoch?: number | null }) =>
+    e.owner === identity.owner && e.session === identity.session && e.epoch === identity.epoch
+  const events = plugin === undefined ? Stream.never : Stream.callback<PageEvent>((queue) => acquireRelease(
+    Effect.orDie(tryPromise(() => Promise.all([
+      plugin.addListener("navigationChanged", (e) => {
+        // spec/app/browser.md, "Load results must match the tab and request that produced them": a refused certificate is a security block, not a failure.
+        if (mine(e) && e.exists !== false) Queue.offerUnsafe(queue, PageEvent.Changed({
+          id: e.id, url: e.currentUrl ?? "", loading: e.progress !== undefined && e.progress < 100,
+          result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
+        }))
+      }),
+      plugin.addListener("surfaceCrashed", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Crashed({ id: e.id })) }),
+      // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it": whatever started it, after it ended what the page held.
+      plugin.addListener("pageStarted", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Started({ id: e.id })) }),
+      // spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at": what each request asks, as the surface measured it.
+      plugin.addListener("dialogRequested", (e) => {
+        if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({ id: e.id, key: e.dialogId, ask: { tag: "WebsiteMessage", dialog: messages[e.kind] }, topFrame: true, said: e.message }))
+      }),
+      plugin.addListener("downloadRequested", (e) => {
+        if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({ id: e.id, key: e.requestId, ask: { tag: "DownloadOffer", fileName: e.fileName }, topFrame: true, said: "" }))
+      }),
+      plugin.addListener("downloadFinished", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Downloaded({ id: e.id, key: e.requestId, saved: e.status === "saved" })) }),
+      plugin.addListener("fileChooserRequested", (e) => {
+        if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({ id: e.id, key: e.requestId, ask: { tag: "FileChoice" }, topFrame: true, said: "" }))
+      }),
+      plugin.addListener("sitePermissionRequested", (e) => {
+        if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({
+          id: e.id, key: e.requestId ?? "", topFrame: e.topFrame, said: "",
+          ask: { tag: "SitePermission", origin: e.origin ?? "", kinds: { camera: e.kinds.includes("camera"), microphone: e.kinds.includes("microphone"), location: e.kinds.includes("location") } }
+        }))
+      }),
+      plugin.addListener("sitePermissionWithdrawn", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Withdrawn({ id: e.id, key: e.requestId })) }),
+      plugin.addListener("externalLinkRequested", (e) => {
+        if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({ id: e.id, key: e.url, ask: { tag: "OtherApp", handoff: handoffs[e.handoff] }, topFrame: true, said: e.url }))
+      }),
+      plugin.addListener("identityProviderRequested", (e) => {
+        if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({ id: e.id, key: e.requestId, ask: { tag: "BlockedSignIn", provider: providers[e.provider] }, topFrame: true, said: "" }))
+      })
+    ]))),
+    (handles) => promise(() => Promise.all(handles.map((h) => h.remove())))
+  ))
+  return Layer.succeed(NativePage, {
+    claim: () => call((p) => p.reconcileOwner({ ...identity, desiredIds: [] })),
+    // spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at": the page's requests wait for Grace's answer.
+    create: (id, url) => call((p) => p.createSurface({ ...own(id), url, process: "isolated", storage: "isolated", profileKey, layer: "below-host", answersRequests: true })),
+    place: (id, page, corners) => call((p) => p.setBounds({ ...own(id), ...page, outerClip: { ...page, cornerRadii: corners } })),
+    route: (id, rects) => call((p) => p.setOcclusionRects({ ...own(id), rects: rects.map((r) => ({ ...r, cornerRadius: 0 })) })),
+    present: (id) => call((p) => p.presentSurface({ ...identity, id })),
+    pause: (id) => call((p) => p.pauseSurface(own(id))),
+    resume: (id) => call((p) => p.resumeSurface(own(id))),
+    navigate: (id, url) => call((p) => p.navigate({ ...own(id), url })),
+    back: (id) => call((p) => p.goBack(own(id))),
+    forward: (id) => call((p) => p.goForward(own(id))),
+    reload: (id) => call((p) => p.reloadSurface(own(id))),
+    destroy: (id) => call((p) => p.destroySurface(own(id))),
+    reply: (id, key, ask, answer, text) => call((p) => answerPage(p, own(id), key, ask, answer, text)),
+    // spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"
+    grant: (id, key) => plugin === undefined ? Effect.succeed("AndroidEnded" as AndroidOutcome)
+      : Effect.map(tryPromise({ try: () => plugin.answerSitePermission({ ...own(id), requestId: key, grant: true }), catch: (cause) => new PageFailed({ cause }) }), (r) => outcomes[r.outcome]),
+    // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation": it resolves once the cookies are removed.
+    purge: () => plugin === undefined ? Effect.succeed(true)
+      : Effect.map(tryPromise({ try: () => plugin.purgeProfiles({ ...identity, profileKey }), catch: (cause) => new PageFailed({ cause }) }), (r) => r.clean === true),
+    events
+  })
+}

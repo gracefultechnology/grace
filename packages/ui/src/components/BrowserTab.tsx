@@ -1,0 +1,113 @@
+import { type ComponentProps, type RefObject, useId, useLayoutEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { cn, focusRing } from "../lib/cn.ts";
+
+export type BrowserTabProps = Omit<ComponentProps<"div">, "title"> & {
+  /** The page's title, or "New tab". */
+  title: string;
+  /** The site's icon, an image URL; without it, `initial` shows on a grey tile. */
+  favicon?: string;
+  /** The letter on the grey tile when there is no `favicon`: the site's first letter, or "·" for a new tab. */
+  initial?: string;
+  /** The tab shown in the window: a folder tab joined to the toolbar. */
+  selected?: boolean;
+  /** Called when the tab is tapped. */
+  onSelect?: () => void;
+  /** Called by the tab's ✕. */
+  onClose?: () => void;
+  /** The accessible name of the tab's ✕; by default "Close" and the title. */
+  closeLabel?: string;
+};
+
+/**
+ * One tab of the browser: favicon, title and ✕. The selected tab is a white folder tab whose concave feet
+ * flow into the toolbar, with a soft shadow round both.
+ * @model spec/app/browser.md
+ * @design packages/design-system/design.md#selected
+ */
+export function BrowserTab({ title, favicon, initial = "·", selected = false, onSelect, onClose, closeLabel = `Close ${title}`, className, ...props }: BrowserTabProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const width = useWidth(ref);
+  return (
+    // Prototype `.bz-tw`: 240×56, 18px top corners, its content on the top 48px.
+    <div
+      ref={ref}
+      className={cn(
+        "relative flex h-14 w-60 min-w-0 shrink items-center gap-2.5 rounded-t-tab pr-1 pb-2 pl-[18px] text-chrome",
+        selected && "z-[3] bg-glass/78",
+        className,
+      )}
+      {...props}
+    >
+      {selected && (
+        <>
+          <TabShadow width={width} />
+          {/* Prototype `.bz-tw::before/::after`: the concave feet where the tab meets the toolbar. */}
+          <span aria-hidden className="absolute bottom-0 -left-3 size-3 bg-[radial-gradient(circle_at_0_0,transparent_11.5px,var(--glass)_12px)] opacity-78" />
+          <span aria-hidden className="absolute -right-3 bottom-0 size-3 bg-[radial-gradient(circle_at_100%_0,transparent_11.5px,var(--glass)_12px)] opacity-78" />
+        </>
+      )}
+      <button
+        type="button"
+        aria-current={selected ? "page" : undefined}
+        onClick={onSelect}
+        className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2.5 self-stretch rounded-lg text-left")}
+      >
+        {/* Prototype `.bz-fv`: a 20px tile. */}
+        {favicon ? (
+          <img src={favicon} alt="" className="size-5 shrink-0 rounded-tag object-cover" />
+        ) : (
+          <span aria-hidden className="flex size-5 shrink-0 items-center justify-center rounded-tag bg-favicon text-xs font-bold text-primary-foreground">
+            {initial}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-body font-medium">{title}</span>
+      </button>
+      {/* Prototype `.bz-ic`. */}
+      <button
+        type="button"
+        aria-label={closeLabel}
+        onClick={onClose}
+        className={cn(focusRing, "flex size-12 shrink-0 items-center justify-center rounded-xl text-chrome-muted active:bg-chrome/8")}
+      >
+        <X size={22} strokeWidth={2} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+/** The tab's width, followed as the strip shares its room among the tabs. */
+function useWidth(ref: RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(240);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setWidth(el.offsetWidth));
+    observer.observe(el);
+    setWidth(el.offsetWidth);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+/**
+ * Prototype `.bz-tsh` / `#tabShadow`: a shadow cast only outside the outline of the tab and the toolbar
+ * under it, so it falls on the strip and never on the tab or the toolbar.
+ */
+function TabShadow({ width }: { width: number }) {
+  const id = `tab-shadow${useId().replace(/[^\w-]/g, "")}`;
+  const far = 4000;
+  const d = `M ${-far} 56 H -12 A 12 12 0 0 0 0 44 V 18 A 18 18 0 0 1 18 0 H ${width - 18} A 18 18 0 0 1 ${width} 18 V 44 A 12 12 0 0 0 ${width + 12} 56 H ${far} V 136 H ${-far} Z`;
+  return (
+    <svg aria-hidden className="pointer-events-none absolute top-0 left-0 -z-10 overflow-visible" width={width} height={56}>
+      <filter id={id} x={-far} y={-40} width={far * 2} height={220} filterUnits="userSpaceOnUse">
+        <feGaussianBlur in="SourceAlpha" stdDeviation="6" />
+        <feOffset dy="-1" result="b" />
+        <feFlood style={{ floodColor: "var(--primary)" }} floodOpacity=".15" />
+        <feComposite in2="b" operator="in" />
+        <feComposite in2="SourceAlpha" operator="out" />
+      </filter>
+      <path d={d} filter={`url(#${id})`} />
+    </svg>
+  );
+}

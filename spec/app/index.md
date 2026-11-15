@@ -1,71 +1,36 @@
-# Template validation scaffold
+# Grace MVP product contract
 
-The unmodified starter application in `apps/app` greets a person by name and
-counts the greetings. It remains solely to exercise the existing source,
-proof and conformance pipeline during the models-only rebuild. This is not a
-Grace product feature. No Grace model imports it. Replace this scaffold and
-its source, tests and driver together in the subsequent application phase.
+The current request includes email, calendar, Files, browser and bill payment launched from calendar. Older single-site or pitch-only exclusions do not limit this rebuild. The replacement `prototype/Grace Prototype.html` provides the design and application flows for Home, the rail, Email, Calendar, Files, settings, browser and compact/expanded Grace. Its actual application flows supersede the earlier bill-pay-only prototype; mock provider and storage success are replaced with explicit integration outcomes.
 
-[Grace's product requirements and models](./product.md) are separate below this package's spec area.
+The visual direction is the prototype's Figtree typography, soft gradient frame, glass surfaces, lilac conversation and familiar browser. Keep the calendar, email and internet previews, persistent labeled Ask Grace entry, compact bottom assistance, expanded chat, website keyboard state and caption strip. No provider page is restyled. Layout dimensions are responsive to measured usable space and native keyboard insets; prototype canvas dimensions are references, not fixed runtime assumptions. Exact tokens, visual comparison, accessible labels and hardware readability are implementation acceptance criteria.
 
-## Story: Say hello
+- [Device readiness, Home and native settings](./shell.md)
+- [Wi-Fi selection, private sign-in and connection recovery](./network.md)
+- [Browser tabs, navigation and current-page state](./browser.md)
+- [Browser controls and current host observations](./browserControls.md)
+- [The website drawn under Grace and touch routing](./surface.md)
+- [Website messages, downloads, file choices, site permissions and sign-ins](./websiteRequests.md)
+- [Android Back and launcher Home keys](./deviceKeys.md)
+- [Conversation, voice, typed input and reading continuity](./conversation.md)
+- [Hey Grace, sleep wake and unanswered listening](./wake.md)
+- [One assistance task, compact and expanded presentation](./assistant.md)
+- [Shared conversation controls and service-result routing](./interaction.md)
+- [Approved personal memory and deletion](./memory.md)
+- [Voice output, pace and readable text preferences](./preferences.md)
+- [Email connection, reading, attachments and reviewed sending](./email.md)
+- [Message folders, read status, Trash and restoration](./emailItem.md)
+- [Calendar occurrences, recurrence and reminders](./calendar.md)
+- [Week and month views, current occurrences and recurring deletion](./calendarView.md)
+- [Saved photos, documents, Email sharing and printing](./files.md)
+- [Generic evidence-grounded website operations](./execution.md)
+- [Bill discovery, choices and verified preparation](./billpay.md)
+- [Verified preparation to the current payment review](./preparationReview.md)
+- [Payment authorization, durable attempts and provider outcomes](./payment.md)
+- [One canonical bill across Email, Calendar and browser entry points](./handoffs.md)
+- [Composed navigation, interruption and execution](./workspace.md)
+- [Actuator checks for emitted browser and payment commands](./actuation.md)
+- [Current saved-value authority for queued website fills](./memoryActuation.md)
 
-> As a visitor, I want to type my name and be greeted, so that I know the
-> page heard me.
+Personal memory, task state and provider records have distinct lifecycles. Deleting a calendar item or remembered fact never cancels a payment or removes unresolved evidence. New sessions and different surfaces cannot create a new identity for the same provider bill. Scheduled and accepted are not settlement. Unsupported sites, missing evidence, unavailable sign-in challenges and privacy failures stop with an explanation and a usable manual path.
 
-### A greeter holds the last name it greeted and how many greetings it gave
-
-It starts with no name and no greetings.
-
-```quint
-type Greeter = { name: str, count: int }
-
-pure val initial: Greeter = { name: "", count: 0 }
-```
-
-### Only a name that is not empty can be greeted
-
-Greeting a name remembers it and counts one more greeting.
-
-```quint
-pure def canGreet(g: Greeter, name: str): bool = name != ""
-
-pure def greet(g: Greeter, name: str): Greeter = { name: name, count: g.count + 1 }
-```
-
-### Once someone has been greeted, the greeter holds a name
-
-```quint
-pure def alwaysGreetedHasName(g: Greeter): bool = g.count > 0 implies g.name != ""
-```
-
-### The number of greetings is never negative
-
-Discovered by proof: the initial count is zero and each greeting adds one,
-so a saved negative count cannot represent a history of this greeter.
-
-```quint
-pure def alwaysCountIsNonnegative(g: Greeter): bool = g.count >= 0
-```
-
-### Every step adds exactly one greeting
-
-```quint
-pure def stepCountsOne(before: Greeter, after: Greeter): bool = after.count == before.count + 1
-```
-
-### A greeting is for the name it was given
-
-Whoever the greeter greeted before, a greeting holds the name given to it.
-
-```quint
-pure def lawGreetsTheNameGiven(g: Greeter, name: str): bool = greet(g, name).name == name
-```
-
-### The greeter can give a second greeting
-
-Two greetings in all, to the same name or to different ones.
-
-```quint
-pure def sometimesGreetedTwice(g: Greeter): bool = g.count >= 2
-```
+The application in `apps/app` is a Capacitor Android APK, in a launcher (Home) and a standalone flavor, built on the shared Android host, browser surface and AOSP staging of the pinned `vendor/eliza`. The formal checks establish these models and their generated contracts; storage durability, provider integrations, speech capture, visual fidelity and senior usability still need the acceptance exercises on the device.

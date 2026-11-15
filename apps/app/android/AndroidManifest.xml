@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+ <uses-permission android:name="android.permission.INTERNET" />
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ <!-- "Hey Grace" and voice replies (spec/index.md); asked for at first use. -->
+ <uses-permission android:name="android.permission.RECORD_AUDIO" />
+ <uses-feature android:name="android.hardware.microphone" android:required="false" />
+ <!-- A website's camera, after the person's Allow and Android's own prompt (spec/app/websiteRequests.md). -->
+ <uses-permission android:name="android.permission.CAMERA" />
+ <uses-feature android:name="android.hardware.camera" android:required="false" />
+ <!-- A website's location (weather, maps), after the person's Allow and Android's own prompt
+      (spec/app/websiteRequests.md). Both flavors; the launcher's Wi-Fi scan needs it too. -->
+ <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+ <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+ <uses-feature android:name="android.hardware.location" android:required="false" />
+ <!-- Upstream WiFiPlugin's library manifest asks for it; nothing in Grace requests a network. -->
+ <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" tools:node="remove" />
+ <!-- The apps ElizaSurfaceManager's openExternalLink can resolve on API 30+ (BrowserSurfacePlugin.kt):
+      mail and text compose, the dial pad, maps, the store, and apps with an https VIEW filter. An
+      intent: link to any other app (a custom data scheme, or a package without such a filter) is
+      invisible to resolveActivity there, and refused as EXTERNAL_APP_UNAVAILABLE. -->
+ <queries>
+  <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="mailto" /></intent>
+  <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="sms" /></intent>
+  <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="smsto" /></intent>
+  <intent><action android:name="android.intent.action.DIAL" /><data android:scheme="tel" /></intent>
+  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="geo" /></intent>
+  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="market" /></intent>
+  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
+ </queries>
+ <application android:label="@string/app_name" android:icon="@drawable/app_icon" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:usesCleartextTraffic="false" android:networkSecurityConfig="@xml/network_security" android:theme="@style/AppTheme">
+  <!-- A website opening the camera made Android's camera compat treatment (DisplayRotationCompatPolicy)
+       rotate the display to portrait and letterbox the landscape-only window, with "Rotate for a better
+       view", until restart. The website's WebView reads the camera itself; Grace opts out. -->
+  <property android:name="android.window.PROPERTY_CAMERA_COMPAT_ALLOW_FORCE_ROTATION" android:value="false" />
+  <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:screenOrientation="sensorLandscape" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density|navigation">
+   <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+  </activity>
+ </application>
+</manifest>

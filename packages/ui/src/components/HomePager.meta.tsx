@@ -1,0 +1,22 @@
+import { expect, fn, userEvent, within } from "storybook/test";
+import type { ComponentMeta } from "vibestack/stories";
+import type { HomePagerProps } from "./HomePager.tsx";
+
+const onPageChange = fn();
+
+export const meta: ComponentMeta<HomePagerProps> = {
+  // Prototype `#hPager`, `#hArrowR` on Home's first page.
+  args: { page: 0, count: 2, onPageChange },
+  examples: { "Second page": { page: 1, count: 2 } },
+  bounds: { page: [0, 1], count: [2, 3] },
+  // Drawn over Home's area, 1268×788 inside the screen.
+  decorator: (story) => <div className="relative h-[788px] w-[1268px] bg-gradient-frame-soft">{story()}</div>,
+  play: {
+    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const more = within(canvasElement).getByRole("button", { name: "More apps" });
+      await userEvent.click(more);
+      await expect(onPageChange).toHaveBeenCalledWith(1);
+      more.blur();
+    },
+  },
+};

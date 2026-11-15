@@ -188,6 +188,57 @@ pure def sometimesEmptyAddressIsExplained(b: Browser): bool = b.emptyAddressNoti
 pure def sometimesARealNavigationLoads(b: Browser): bool = activeTab(b).load == Loading
 ```
 
+### A page that moves by itself keeps the address the person is typing
+
+When the selected tab's page goes to another address by itself, such as a
+website's redirect or a link it follows on its own, the tab records it as a
+navigation: its history, load and revision change as they do for Go. The
+person's address edit is left as it was: an address being typed stays open
+with its draft and any empty-address notice, so the person's typing is never
+thrown away, and the address bar keeps editing until the person submits it
+or dismisses it.
+
+```quint
+pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url)
+pure def pageMoved(b: Browser, url: str): Browser = {
+  ...navigate(b, url),
+  editingAddress: b.editingAddress, addressDraft: b.addressDraft, emptyAddressNotice: b.emptyAddressNotice
+}
+pure def lawAPageMovingByItselfKeepsTheAddressEdit(b: Browser, url: str): bool =
+  canPageMoved(b, url) implies
+    (pageMoved(b, url).tabs == navigate(b, url).tabs and pageMoved(b, url).revision == navigate(b, url).revision and
+     pageMoved(b, url).editingAddress == b.editingAddress and pageMoved(b, url).addressDraft == b.addressDraft)
+```
+
+### A tab whose page moves by itself while I am not looking at it records where it went
+
+A page keeps running in a tab that is not selected, and while the browser
+is hidden, so a website's redirect or a link it follows on its own can move
+it there too. That tab records the new address in its history, as a page
+moving by itself does, so every tab says where its page really is. A
+selected tab's page records it exactly as above. Any other tab's page is
+already there: it keeps its load and load version, and the browser's
+revision, the selected tab and the person's address edit stay as they were.
+Such a tab records a move only once its own load has ended: while it is
+loading, the move is refused and the load under way reports its result for
+the entry it started, so no load's result is ever credited to an entry the
+page moved to by itself.
+
+```quint
+pure def canTabMoved(b: Browser, id: int, url: str): bool =
+  hasTab(b, id) and canPageMoved(b, url) and (id == b.selected or tabById(b, id).load != Loading)
+pure def tabMoved(b: Browser, id: int, url: str): Browser =
+  if (id == b.selected) pageMoved(b, url) else {
+    ...b, tabs: b.tabs.listMap(t => if (t.id == id) { ...navigated(t, url, t.loadVersion), load: t.load } else t)
+  }
+pure def lawABackgroundTabMovingKeepsTheSelectedPage(b: Browser, id: int, url: str): bool =
+  canTabMoved(b, id, url) and id != b.selected implies
+    (activeTab(tabMoved(b, id, url)) == activeTab(b) and tabMoved(b, id, url).revision == b.revision and
+     tabMoved(b, id, url).selected == b.selected)
+pure def lawNoLoadFinishesOnABackgroundTabsMove(b: Browser, id: int, url: str, loadVersion: int, result: Load): bool =
+  canTabMoved(b, id, url) and id != b.selected implies not(canFinishLoad(tabMoved(b, id, url), id, loadVersion, result))
+```
+
 ### Back and Forward stay within the selected tab's history
 
 Navigating after Back drops only that tab's forward entries. A reload is an

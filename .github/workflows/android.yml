@@ -1,0 +1,65 @@
+name: android
+
+# Grace's debug APKs (apps/app/README.md, "Android") and the AOSP overlay of the launcher debug
+# APK, when something they are built from changes. Release APKs need the signing secrets
+# host.json names, which CI does not hold; an unsigned release APK installs nowhere.
+on:
+  pull_request:
+    branches: [develop, main]
+    paths: &inputs
+      - apps/app/**
+      - spec/**
+      - vibestack/**
+      - package.json
+      - turbo.json
+      - packages/ui/**
+      - packages/design-system/**
+      - vendor/eliza
+      - .gitmodules
+      - pnpm-lock.yaml
+      - .github/workflows/android.yml
+      - .github/actions/setup/**
+  push:
+    branches: [develop, main]
+    paths: *inputs
+
+concurrency:
+  group: android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      # apps/app/scripts import upstream Eliza's Android tools from the vendor/eliza submodule.
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup
+        with:
+          verification: "false"
+      # Caches ~/.gradle (Gradle 8.13 and the dependencies), keyed by the generated host's inputs.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            apps/app/android/host.json
+            vendor/eliza/packages/app/scripts/mobile/android/consumer-host/*
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      # gen/ and @repo/ui's generated/ are git-ignored; the build imports both.
+      - run: pnpm exec turbo run gen --filter=@repo/ui
+      - run: pnpm --filter @repo/app android
+      - run: pnpm --filter @repo/app aosp --apk artifacts/launcher-debug.apk --development
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: |
+            apps/app/artifacts/*.apk
+            apps/app/artifacts/apk-manifest.json

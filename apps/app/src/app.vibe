@@ -1,0 +1,61 @@
+// spec/app/workspace.md, "Story: Leave and return without hidden work"; spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
+// The application: the workspace as its one state, the page layer and what the page's website asks
+// beside it on the host's side, the native page under both, and what the device reports.
+import type { Connectivity } from "../gen/app__shell.effect.vibe"
+import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
+import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { Machine as Workspaces, machine as workspaces } from "../gen/app__workspace.effect.vibe"
+import { nativePage } from "./nativePage.vibe"
+import { type SurfacePlugin, type WiFiPlugin, browserOnline, onNetworkChange } from "./surfacePlugin.ts"
+import { pageHost } from "./page.vibe"
+
+// spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
+const started = Layer.effectDiscard(effect {
+  try Effect.orDie((try Workspaces).send({ type: "changeLifecycle", lifecycle: "StartupSucceeded" }, "Host"))
+})
+
+/** The OS keyboard over the interface: its height in CSS pixels, 0 while it is closed, starting with the current one. */
+export service Keyboard { readonly height: Stream.Stream<number> }
+
+/** The connection as the launcher's Wi-Fi plugin reads it, or as the WebView knows it where there is none, or the plugin fails. */
+function readConnectivity(wifi: WiFiPlugin | undefined): Promise<Connectivity> {
+  const browser: Connectivity = browserOnline() ? "Online" : "Offline"
+  return wifi === undefined ? Promise.resolve(browser)
+    : wifi.getConnectivity().then((c) => c.captivePortal ? "CaptivePortal" : c.online ? "Online" : "Offline", () => browser)
+}
+
+/**
+ * Reports the connection to the workspace when it changes. The WebView announces going online or offline,
+ * and the interface coming back; a captive portal or a validation the WebView does not announce is read every half minute.
+ */
+const connectivity = (wifi: WiFiPlugin | undefined) => Layer.effectDiscard(effect {
+  const workspace = try Workspaces
+  const changes = Stream.merge(
+    Stream.tick("30 seconds"),
+    Stream.callback<void>((queue) => acquireRelease(sync(() => onNetworkChange(() => { Queue.offerUnsafe(queue, undefined) })), (stop) => sync(stop)))
+  )
+  // spec/app/workspace.md, "Story: Leave and return without hidden work": the host reports availability; what else it holds is unchanged.
+  try fork.scoped Stream.runForEach(Stream.mapEffect(changes, () => promise(() => readConnectivity(wifi))), effect (connection) => {
+    const { device } = try workspace.get()
+    const availability = { connection, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed }
+    if (connection !== device.connectivity) workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined
+  })
+})
+
+/** The keyboard as the native page plugin reports it; where there is none the browser resizes the interface itself. */
+const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, effect {
+  const height = try SubscriptionRef.make(0)
+  if (plugin !== undefined) try fork.scoped Stream.runForEach(
+    Stream.callback<number>((queue) => acquireRelease(
+      Effect.orDie(tryPromise(() => plugin.addListener("keyboardChanged", (e) => { Queue.offerUnsafe(queue, e.visible ? e.height : 0) }))),
+      (handle) => promise(() => handle.remove())
+    )),
+    (h) => SubscriptionRef.set(height, h)
+  )
+  return { height: SubscriptionRef.changes(height) }
+})
+
+/** Everything the interface runs on, over `plugin`, the native page's, and `wifi`, where the platform has them. */
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin) {
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin)))
+}

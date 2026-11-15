@@ -1,0 +1,368 @@
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"
+// The page layer's host side: one fiber keeps the native pages in step with the workspace's tabs and
+// with what the interface measured, through the surface machine's events only, and keeps what the
+// pages' websites ask in step with the pages, through the website requests machine's events only.
+import { type Rect, Machine as PageLayers, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
+import { type Tab, tabUrl } from "../gen/app__browser.effect.vibe"
+import { type Event, Machine as Workspaces, Rejected, type Workspace, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
+import { type AndroidOutcome, type Event as WebsiteEvent, Machine as WebsiteRequests, type WebsiteActor, type WebsiteReply, opensElsewhere } from "../gen/app__websiteRequests.effect.vibe"
+import { type Corners, NativePage, type PageEvent } from "./nativePage.vibe"
+
+/** What the interface measured: the page's rect and outer corners, and the rect of every Grace control over it. */
+export type Measured = { page: Rect; corners: Corners; controls: Rect[] }
+
+/** Where the interface reports what it measured. */
+export service PageHost {
+  measure(measured: Measured): void!!
+  /** The interface was hidden or shown again. */
+  showHost(visible: boolean): void!!
+  /** What the person did with what a website asked: an answer, or a notice closed. One the rules refuse is dropped. */
+  website(event: WebsiteEvent): void!!
+  /** The person's Close browser: every page closes and every site decision is forgotten. Refused when the workspace refuses it. */
+  closeBrowser(): void!Rejected
+  /** What the page wrote with each request still waiting, by its number: a message's words, or the link another app would open. */
+  readonly said: ReadonlyMap<number, string>
+}
+
+/** The native page of a browser tab. */
+const pageOf = (tab: number) => `tab-${tab}`
+
+/**
+ * A native page, the tab it last followed, the address it last reported, the tab's load version its page belongs to
+ * (none before its first start) and those of the loads Grace asked for that it has not started yet, oldest first.
+ */
+type Page = { tab: Tab; url: string; load: number | undefined; asked: number[] }
+
+/**
+ * What the fiber applies: each state the workspace became, a native page's report, the person's answer, their Close browser,
+ * how Android answered the request with that number, or whether the purge left the profile clean; undefined for "something changed".
+ */
+type Signal = { workspace: Workspace } | { page: PageEvent } | { person: WebsiteEvent } | { closeBrowser: true } | { android: number; verdict: AndroidOutcome } | { purged: boolean } | undefined
+
+/** `PageHost`, and the fiber that applies what it hears and what the workspace becomes. */
+export const pageHost = Layer.effect(PageHost, effect {
+  const workspace = try Workspaces
+  const layer = try PageLayers
+  const native = try NativePage
+  const requests = try WebsiteRequests
+  // Android's answers and the purge are awaited beside the fiber, for as long as the host lives.
+  const scope = try Scope.Scope
+  // The native request each request number stands for: its page and the plugin's key (definitions.ts).
+  const asked = new Map<number, { page: string; key: string }>()
+  const said = new Map<number, string>()
+  // The request number of each download being saved, by its page and key.
+  const saving = new Map<string, number>()
+  // The fiber applies all that waits at once.
+  const signals = try Queue.unbounded<Signal>()
+  const pages = new Map<number, Page>()
+  // The workspace the pages last followed: each state in turn, so two history steps are two native commands.
+  let followed = try workspace.get()
+  let measured: Measured = { page: noRect, corners: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 }, controls: [] }
+  // The page shown, null for none, undefined when unknown (a page was just created).
+  let presented: string | null | undefined = null
+  // The pages this host paused.
+  const paused = new Set<string>()
+  // Whether the interface itself is visible: the app is in the foreground and the screen on.
+  let hostVisible = true
+
+  // The host's reports are refused when they are stale: the workspace has moved on.
+  effect function report(event: Event) {
+    workspace.send(event, "Host") catch effect (error) => match (error) {
+      when Rejected: undefined;
+    }
+  }
+  // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it": every reply is told to the page.
+  effect function website(event: WebsiteEvent, by: WebsiteActor) {
+    const result = requests.send(event, by) catch () => undefined
+    if (result !== undefined) for (const reply of result.out) try answer(reply)
+    return result
+  }
+  effect function answer(reply: WebsiteReply): void!! {
+    const request = asked.get(reply.request)
+    // The request whose Android call resolved was told by the surface itself (apply).
+    if (request === undefined) return
+    // spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too": AskAndroid is
+    // the call, and its request keeps its page's request until it is told what Android answered.
+    if (reply.answer === "AskAndroid") {
+      try fork.in(scope) effect {
+        // A call the plugin refuses ends only its request, as when the request ended while Android was asked;
+        // SITE_PERMISSION_CLOSED, a request its page's start already ended (definitions.ts), is routine.
+        const verdict = native.grant(request.page, request.key) catch effect (failed) => {
+          if ((failed.cause as { code?: unknown } | undefined)?.code !== "SITE_PERMISSION_CLOSED") try logWarning("grant", failed)
+          return "AndroidEnded" as AndroidOutcome
+        }
+        try Queue.offer(signals, { android: reply.request, verdict })
+      }
+      return
+    }
+    asked.delete(reply.request)
+    said.delete(reply.request)
+    // A reply that only closes Grace's prompt may find the page's request already gone.
+    const done = Effect.as(native.reply(request.page, request.key, reply.ask, reply.answer, reply.text), true) catch effect (cause) => {
+      if (reply.answer === "SaveDownload" || opensElsewhere(reply.answer) || reply.answer === "Allowed") try logWarning("reply", cause)
+      return false
+    }
+    // spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"
+    if (reply.answer === "SaveDownload") {
+      if (done) saving.set(`${request.page} ${request.key}`, reply.request)
+      else try website({ type: "finishDownload", id: reply.request, saved: false }, "WebsiteHost")
+    }
+    // spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"
+    if (opensElsewhere(reply.answer)) try website({ type: "finishOpening", id: reply.request, opened: done }, "WebsiteHost")
+  }
+
+  /** The website requests follow the page shown and whether it runs. */
+  effect function syncRequests() {
+    const w = try workspace.get()
+    const shown = pageShows(w.device, w.assistant)
+    if (shown !== (try requests.get()).shown) try website(shown ? { type: "showBrowser" } : { type: "hideBrowser" }, "WebsiteHost")
+    if (w.browser.selected !== (try requests.get()).selected) try website({ type: "selectTab", tab: w.browser.selected }, "WebsiteHost")
+    const paused = !pageRuns(try layer.get())
+    if (paused !== (try requests.get()).paused) try website(paused ? { type: "pauseBrowser" } : { type: "resumeBrowser" }, "WebsiteHost")
+    // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation": leaving Settings cancels its confirmation.
+    if (w.device.surface !== "DeviceSettings" && (try requests.get()).clearing === "ConfirmingClear") try website({ type: "settingsClosed" }, "WebsiteHost")
+  }
+
+  effect function place(id: string) {
+    native.place(id, measured.page, measured.corners) catch effect (cause) => try logWarning("place", cause)
+  }
+
+  // spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved": a closed page reports none of its saves.
+  effect function unsaved(page: string | undefined) {
+    for (const [key, id] of [...saving]) if (page === undefined || key.startsWith(`${page} `)) {
+      saving.delete(key)
+      try website({ type: "finishDownload", id, saved: false }, "WebsiteHost")
+    }
+  }
+
+  // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it": whatever closed the page.
+  effect function close(tab: number) {
+    pages.delete(tab)
+    paused.delete(pageOf(tab))
+    if (presented === pageOf(tab)) presented = undefined
+    native.destroy(pageOf(tab)) catch () => undefined
+    try unsaved(pageOf(tab))
+    if ((try requests.get()).tabs.includes(tab)) try website({ type: "closeTab", tab }, "WebsiteHost")
+  }
+
+  // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation":
+  // the purge closes every page, which the tabs open again once it ended (syncTabs); one that fails is not clean.
+  effect function clearBrowsingData() {
+    const former = [...pages.keys()].map(pageOf)
+    pages.clear()
+    paused.clear()
+    presented = undefined
+    try unsaved(undefined)
+    try fork.in(scope) effect {
+      const clean = native.purge() catch effect (cause) => { try logWarning("purge", cause); return false }
+      // A purge that failed may have left them: they are destroyed, so the tabs' new ones start a page.
+      if (!clean) for (const id of former) native.destroy(id) catch () => undefined
+      try Queue.offer(signals, { purged: clean })
+    }
+  }
+
+  // spec/app/surface.md, "A new page waits for its first routing before it takes any touch": the shown page starts the layer's
+  // routing again; one out of sight takes the rects already routed, and the next request routes every page.
+  effect function open(tab: Tab, shown: boolean) {
+    const id = pageOf(tab.id)
+    const made = Effect.as(native.create(id, tabUrl(tab)), true) catch effect (cause) => { try logWarning("create", cause); return false }
+    if (!made) return
+    pages.set(tab.id, { tab, url: "", load: undefined, asked: [tab.loadVersion] })
+    presented = undefined
+    try place(id)
+    const l = try layer.get()
+    if (!canRecreate(l)) return
+    if (shown) try Effect.orDie(layer.send({ type: "recreate" }))
+    else native.route(id, l.routed) catch effect (cause) => { try logWarning("route", cause); try close(tab.id) }
+  }
+
+  /** The native command that brings a page to where its tab now is. */
+  effect function follow(page: Page, tab: Tab) {
+    const id = pageOf(tab.id)
+    const sameHistory = JSON.stringify(tab.history) === JSON.stringify(page.tab.history)
+    // The page went there itself, and the tab recorded it (unexpectedPage, unwatchedPage).
+    if (!sameHistory && tabUrl(tab) === page.url) return
+    const command = sameHistory && tab.cursor === page.tab.cursor - 1 ? native.back(id)
+      : sameHistory && tab.cursor === page.tab.cursor + 1 ? native.forward(id)
+      : sameHistory && tab.cursor === page.tab.cursor ? native.reload(id)
+      : native.navigate(id, tabUrl(tab))
+    page.asked.push(tab.loadVersion)
+    command catch effect () => try close(tab.id)
+  }
+
+  /** One native page per tab with an address in `w`; a blank tab shows the interface's new-tab page instead. */
+  effect function syncTabs(w: Workspace) {
+    followed = w
+    const tabs = w.browser.tabs
+    for (const tab of [...pages.keys()]) if (!tabs.some((t) => t.id === tab)) try close(tab)
+    // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation": no page while the purge runs.
+    const purging = (try requests.get()).clearing === "Purging"
+    for (const tab of tabs) {
+      const page = pages.get(tab.id)
+      if (page === undefined) { if (tabUrl(tab) !== "" && !purging) try open(tab, tab.id === w.browser.selected && pageShows(w.device, w.assistant)) }
+      else if (tabUrl(tab) === "") try close(tab.id)
+      else if (tab.loadVersion !== page.tab.loadVersion) { try follow(page, tab); page.tab = tab }
+      else page.tab = tab
+    }
+  }
+
+  // spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"
+  // spec/app/surface.md, "The page is paused while Grace's window is in the background": only the presented page runs, and only while pageRuns.
+  effect function present(selected: number | undefined, runs: boolean) {
+    const id = selected !== undefined && pages.has(selected) ? pageOf(selected) : null
+    for (const tab of pages.keys()) {
+      const page = pageOf(tab), run = runs && page === id
+      // Presenting never resumes a page, so it is resumed before it is shown (definitions.ts, pauseSurface).
+      if (run === paused.has(page)) (run ? native.resume(page) : native.pause(page)) catch () => undefined
+      if (run) paused.delete(page)
+      else paused.add(page)
+    }
+    if (id === presented) return
+    native.present(id) catch effect (cause) => try logWarning("present", cause)
+    presented = id
+  }
+
+  // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
+  effect function reconcile() {
+    while (true) {
+      try syncTabs(followed)
+      const w = try workspace.get()
+      let l = try layer.get()
+      // spec/app/surface.md, "The page fills the rect the interface measured for it"
+      if (canPlace(l, measured.page)) {
+        l = try Effect.orDie(layer.send({ type: "place", page: measured.page }))
+        for (const tab of pages.keys()) try place(pageOf(tab))
+      }
+      const visible = pageShows(w.device, w.assistant)
+      if (canShow(l, w.device, w.assistant)) l = try Effect.orDie(layer.send({ type: "show", s: w.device, a: w.assistant }))
+      if (canSetHostVisible(l, hostVisible)) l = try Effect.orDie(layer.send({ type: "setHostVisible", visible: hostVisible }))
+      try present(visible ? w.browser.selected : undefined, pageRuns(l))
+      try syncRequests()
+      // Draw what is routed, and while a request is out what it also holds; drop at once what is gone.
+      const drawable = measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
+      if (canDraw(l, drawable)) l = try Effect.orDie(layer.send({ type: "draw", rects: drawable }))
+      const wanted = measured.controls
+      const settled = l.routingReady && within(l.routed, wanted) && within(wanted, l.routed)
+      if (l.pending || settled || !canRequestRouting(l, wanted)) return
+      const asked = try Effect.orDie(layer.send({ type: "requestRouting", rects: wanted }))
+      // A page that could not be routed is closed, and opened again (open) before it takes a touch.
+      for (const tab of [...pages.keys()]) native.route(pageOf(tab), wanted) catch effect (cause) => {
+        try logWarning("route", cause)
+        try close(tab)
+      }
+      try Effect.orDie(layer.send({ type: "acknowledgeRouting", version: asked.version }))
+    }
+  }
+
+  /** What a native page's website asked: held, or answered at once, as the rules decide; a report they refuse is dismissed. */
+  effect function raise(tab: number, event: Extract<PageEvent, { _tag: "Asked" }>) {
+    try syncRequests()
+    const id = (try requests.get()).nextId
+    asked.set(id, { page: event.id, key: event.key })
+    said.set(id, event.said)
+    const report = { tab, ask: event.ask, fromTap: true, topFrame: event.topFrame }
+    if ((try website({ type: "raise", report }, "WebsiteHost")) !== undefined) return
+    asked.delete(id)
+    said.delete(id)
+    native.reply(event.id, event.key, event.ask, "Refused", "") catch () => undefined
+  }
+
+  /** The request number the page's `key` stands for. */
+  const numberOf = (page: string, key: string) => [...asked].find(([, r]) => r.page === page && r.key === key)?.[0]
+
+  /** What a native page reported: its renderer is gone, it started a page, it loaded, it went somewhere by itself, or what its website asked. */
+  effect function hear(event: PageEvent) {
+    const tab = [...pages.keys()].find((t) => pageOf(t) === event.id)
+    const page = tab === undefined ? undefined : pages.get(tab)
+    if (tab === undefined || page === undefined) return
+    if (event._tag === "Crashed") return try close(tab)
+    // spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at": the surface's own page start, however it began.
+    if (event._tag === "Started") {
+      // spec/app/browser.md, "Load results must match the tab and request that produced them": the oldest load asked for starts.
+      page.load = page.asked.shift() ?? page.load
+      return try website({ type: "pageStarted", tab }, "WebsiteHost")
+    }
+    if (event._tag === "Asked") return try raise(tab, event)
+    if (event._tag === "Downloaded") {
+      const id = saving.get(`${event.id} ${event.key}`)
+      saving.delete(`${event.id} ${event.key}`)
+      if (id !== undefined) try website({ type: "finishDownload", id, saved: event.saved }, "WebsiteHost")
+      return
+    }
+    if (event._tag === "Withdrawn") {
+      const id = numberOf(event.id, event.key)
+      if (id !== undefined) try website({ type: "withdrawPermission", id }, "WebsiteHost")
+      return
+    }
+    const moved = event.url !== "" && event.url !== page.url
+    if (moved) page.url = event.url
+    const before = try workspace.get()
+    const shown = before.browser.tabs.find((t) => t.id === tab)
+    if (moved && shown !== undefined && shown.load !== "Loading" && event.url !== tabUrl(shown)) {
+      // spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went": the move
+      // belongs to the load the page last started, so it is late once the tab has asked for another (none started yet: always late).
+      const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: event.url }
+      try report(canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
+    }
+    const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
+    if (now === undefined) return
+    // spec/app/browser.md, "Load results must match the tab and request that produced them": a page that arrives where its tab
+    // now is loads that tab's page, though a move within the document starts none and one the page made itself was asked for by none.
+    if (moved && event.url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1) === now.loadVersion)) {
+      page.load = now.loadVersion
+      page.asked = []
+    }
+    if (!event.loading && now.load === "Loading" && page.load === now.loadVersion)
+      try report({ type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result } })
+  }
+
+  /** What the person did, how Android answered, or how the purge ended. */
+  effect function apply(signal: Exclude<Signal, undefined | { workspace: Workspace } | { page: PageEvent }>) {
+    if ("person" in signal) {
+      const result = try website(signal.person, "WebsitePerson")
+      if (result !== undefined && signal.person.type === "answerClearBrowsingData" && signal.person.confirmed) try clearBrowsingData()
+    } else if ("closeBrowser" in signal) try website({ type: "closeBrowser" }, "WebsiteHost")
+    else if ("purged" in signal) try website({ type: "purgeFinished", clean: signal.purged }, "WebsiteHost")
+    // The surface already told the page what Android answered; a call whose request already ended is refused.
+    else {
+      asked.delete(signal.android)
+      said.delete(signal.android)
+      try website({ type: "androidAnswered", id: signal.android, verdict: signal.verdict }, "WebsiteHost")
+    }
+  }
+
+  native.claim() catch effect (cause) => try logWarning("claim", cause)
+  try fork.scoped Stream.runForEach(workspace.changes, (w) => Queue.offer(signals, { workspace: w }))
+  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, { page: event }))
+  try fork.scoped effect {
+    while (true) {
+      for (const signal of try Queue.takeAll(signals)) {
+        if (signal === undefined) continue
+        if ("workspace" in signal) try syncTabs(signal.workspace)
+        else if ("page" in signal) try hear(signal.page)
+        else try apply(signal)
+      }
+      try reconcile()
+    }
+  }
+  return {
+    effect measure(next: Measured) {
+      measured = next
+      try Queue.offer(signals, undefined)
+    },
+    effect showHost(visible: boolean) {
+      hostVisible = visible
+      try Queue.offer(signals, undefined)
+    },
+    effect website(event: WebsiteEvent) {
+      try Queue.offer(signals, { person: event })
+    },
+    // spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser":
+    // only the person's Close browser forgets decisions, never closing the last tab.
+    effect closeBrowser() {
+      try workspace.send({ type: "closeBrowser" }, "Person")
+      try Queue.offer(signals, { closeBrowser: true })
+    },
+    said
+  }
+})
