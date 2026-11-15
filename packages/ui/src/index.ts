@@ -30,6 +30,7 @@ export * from "./components/CameraApp.tsx";
 export * from "./components/CaptionStrip.tsx";
 export * from "./components/Card.tsx";
 export * from "./components/Checkbox.tsx";
+export * from "./components/DeviceAppHandoff.tsx";
 export * from "./components/Dialog.tsx";
 export * from "./components/EmptyState.tsx";
 export * from "./components/ExternalAppDialog.tsx";
