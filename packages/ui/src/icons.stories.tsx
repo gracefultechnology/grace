@@ -1,10 +1,11 @@
 import type { ComponentType, SVGProps } from "react";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Calendar, CalendarCheck, Camera, Check, ChevronDown, ChevronLeft, ChevronRight,
-  CircleAlert, CircleCheck, CircleHelp, CircleX, Clock, Download, ExternalLink, Eye, FileText, FileUp, FolderOpen, Forward,
-  Globe, Image, Inbox, Info, Keyboard, LogIn, LogOut, Mail, MapPin, Maximize2, MessageSquare, MessageSquarePlus,
-  MessageSquareText, Mic, Minimize2, Minus, Phone, Plus, ReceiptText, RefreshCw, Reply, RotateCcw, RotateCw, Search, Shield,
-  ShieldAlert, ShieldCheck, ShoppingBag, TriangleAlert, Undo2, Wifi, X,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Calendar, CalendarCheck, Camera, Check, ChevronDown, ChevronLeft,
+  ChevronRight, CircleAlert, CircleCheck, CircleHelp, CircleSlash, CircleUserRound, CircleX, Clock, Download,
+  ExternalLink, Eye, FilePen, FileText, FileUp, FolderOpen, Forward, Globe, Image, Inbox, Info, Keyboard, ListChecks,
+  Lock, LogIn, LogOut, Mail, MapPin, Maximize2, MessageSquare, MessageSquarePlus, MessageSquareText, Mic, Minimize2,
+  Minus, Pause, Phone, Plus, ReceiptText, RefreshCw, Reply, RotateCcw, RotateCw, Search, Shield, ShieldAlert,
+  ShieldCheck, ShoppingBag, SwitchCamera, TriangleAlert, Undo2, Wifi, X, Zap, ZapOff,
 } from "lucide-react";
 import * as own from "./icons.tsx";
 
@@ -13,11 +14,12 @@ export default { title: "Foundations/Icons", parameters: { layout: "fullscreen" 
 
 // The Lucide icons the components import (src/components, `from "lucide-react"`).
 const lucide = {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Calendar, CalendarCheck, Camera, Check, ChevronDown, ChevronLeft, ChevronRight,
-  CircleAlert, CircleCheck, CircleHelp, CircleX, Clock, Download, ExternalLink, Eye, FileText, FileUp, FolderOpen, Forward,
-  Globe, Image, Inbox, Info, Keyboard, LogIn, LogOut, Mail, MapPin, Maximize2, MessageSquare, MessageSquarePlus,
-  MessageSquareText, Mic, Minimize2, Minus, Phone, Plus, ReceiptText, RefreshCw, Reply, RotateCcw, RotateCw, Search, Shield,
-  ShieldAlert, ShieldCheck, ShoppingBag, TriangleAlert, Undo2, Wifi, X,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Calendar, CalendarCheck, Camera, Check, ChevronDown, ChevronLeft,
+  ChevronRight, CircleAlert, CircleCheck, CircleHelp, CircleSlash, CircleUserRound, CircleX, Clock, Download,
+  ExternalLink, Eye, FilePen, FileText, FileUp, FolderOpen, Forward, Globe, Image, Inbox, Info, Keyboard, ListChecks,
+  Lock, LogIn, LogOut, Mail, MapPin, Maximize2, MessageSquare, MessageSquarePlus, MessageSquareText, Mic, Minimize2,
+  Minus, Pause, Phone, Plus, ReceiptText, RefreshCw, Reply, RotateCcw, RotateCw, Search, Shield, ShieldAlert,
+  ShieldCheck, ShoppingBag, SwitchCamera, TriangleAlert, Undo2, Wifi, X, Zap, ZapOff,
 };
 
 type Icon = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;

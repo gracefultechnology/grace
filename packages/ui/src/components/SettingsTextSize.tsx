@@ -60,8 +60,8 @@ export function SettingsTextSize({
           {eventTitle}
         </div>
         <div className="flex">
-          {/* Prototype `.chat-white .gb`: Grace's lilac bubble. */}
-          <div className="ml-2 rounded-day bg-bubble px-[22px] py-3 text-lead leading-8 font-medium text-grace-ink">{graceMessage}</div>
+          {/* Prototype `.chat-white .gb`: Grace's lilac bubble, at most 940px, long words wrapping inside it (`.ub,.gb`). */}
+          <div className="ml-2 max-w-[940px] rounded-day bg-bubble px-[22px] py-3 text-lead leading-8 font-medium wrap-anywhere text-grace-ink">{graceMessage}</div>
         </div>
       </Panel>
       <div className="relative mt-[22px]">

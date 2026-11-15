@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
+import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsSwitchRow } from "./SettingsSwitchRow.tsx";
 
@@ -24,8 +25,6 @@ export type BillDiscoverySettingProps = Omit<ComponentProps<"div">, "onChange"> 
   onRetry?: () => void;
 };
 
-const note = "px-6 text-body leading-[26px] font-medium text-muted-foreground";
-
 /**
  * Settings → Gmail → Look for new bills (senior-care apps/app/src/BillDiscoverySetting.tsx): Margaret's separate,
  * revocable yes to Grace reading Gmail for bills that arrive, with what it allows and what Grace still never does.
@@ -34,9 +33,10 @@ const note = "px-6 text-body leading-[26px] font-medium text-muted-foreground";
 export function BillDiscoverySetting({ title, about, limits, askedAgain, checked, onCheckedChange, busy = false, notice, onRetry, className, ...props }: BillDiscoverySettingProps) {
   return (
     <div className={cn("flex flex-col gap-3", className)} {...props}>
-      {askedAgain && <p className={note}>{askedAgain}</p>}
+      {/* Prototype `.a-s`, inset by `.a-row`'s 22px so it lines up with the row's words. */}
+      {askedAgain && <PageText tone="secondary" className="px-[22px]">{askedAgain}</PageText>}
       <SettingsSwitchRow title={title} subtitle={about} checked={checked} onCheckedChange={onCheckedChange} disabled={busy} />
-      <p className={note}>{limits}</p>
+      <PageText tone="secondary" className="px-[22px]">{limits}</PageText>
       {notice && (
         <RetryNotice role="status" onRetry={onRetry}>
           {notice}

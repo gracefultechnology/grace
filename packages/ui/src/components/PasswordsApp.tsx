@@ -98,24 +98,30 @@ export function PasswordsApp({ passwords, anySaved = passwords.length > 0, query
     return (
       <AppWindow title={open.label} icon={icon} backLabel={l.back} onBack={onBack} {...props}>
         <div className="mx-auto flex w-[760px] max-w-full flex-col gap-5 pb-10 font-sans">
-          {open.site && <ListRow title={l.website} subtitle={open.site} />}
-          <ListRow title={l.username} subtitle={open.username || l.noUsername} />
-          <ListRow
-            title={l.password}
-            subtitle={revealed ? <span className="select-text">{revealed}</span> : <span aria-label={l.hidden}>••••••••••••</span>}
-            trailing={
-              <span className="flex gap-2">
-                <Button variant="capsule" size="pill" onClick={onShow}>{l.show}</Button>
-                <Button variant="capsule" size="pill" onClick={onCopy}>{l.copy}</Button>
-              </span>
-            }
-          />
-          <div role="status" aria-live="polite" className="text-body leading-[26px] font-medium text-muted-foreground">{notice}</div>
+          {/* Prototype `.a-row+.a-row`: 12px between rows. */}
+          <div className="flex flex-col gap-3">
+            {open.site && <ListRow title={l.website} subtitle={open.site} />}
+            <ListRow title={l.username} subtitle={open.username || l.noUsername} />
+            <ListRow
+              title={l.password}
+              // senior-care Passwords.css `.passwords-secret p`: the secret spaced at .1em.
+              subtitle={revealed ? <span className="tracking-[.1em] select-text">{revealed}</span> : <span aria-label={l.hidden} className="tracking-[.1em]">••••••••••••</span>}
+              trailing={
+                // Prototype `.a-btns`: 12px apart.
+                <span className="flex gap-3">
+                  <Button variant="capsule" size="pill" onClick={onShow}>{l.show}</Button>
+                  <Button variant="capsule" size="pill" onClick={onCopy}>{l.copy}</Button>
+                </span>
+              }
+            />
+          </div>
           <div className="flex flex-wrap gap-3">
             {open.site && <Button variant="prominent" size="pill" onClick={onOpenWebsite}>{l.open}</Button>}
             <Button variant="capsule" size="pill" onClick={onEdit}>{l.edit}</Button>
             <Button variant="warn" size="pill" onClick={onDelete}>{l.remove}</Button>
           </div>
+          {/* senior-care PasswordsApp.tsx: what happened is said last, under the actions. */}
+          <div role="status" aria-live="polite" className="text-body leading-[26px] font-medium text-muted-foreground">{notice}</div>
         </div>
       </AppWindow>
     );

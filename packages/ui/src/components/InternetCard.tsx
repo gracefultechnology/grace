@@ -40,8 +40,8 @@ export function InternetCard({ title = "Internet", preview, openLabel = "Open", 
           {preview ? <img src={preview} alt="" className={cn(frame, "object-cover object-left-top")} /> : <span className={frame} />}
         </span>
       </span>
-      {/* Prototype `.lbtn`, greyed while offline (`homeCards`, netBtn). The card is the button, so this is its look only. */}
-      <Button asChild variant="prominent" size="compact" className={cn("mt-auto mb-0.5 ml-1 self-start px-[26px] leading-none shadow-none", offline && "bg-primary/10 text-grace-ink/38")}>
+      {/* Prototype `.lbtn`, greyed while offline (`homeCards`, netBtn). The card is the button, so this is its look only: `.lbtn` has no press of its own. */}
+      <Button asChild variant="prominent" size="compact" className={cn("mt-auto mb-0.5 ml-1 self-start px-[26px] leading-none shadow-none active:scale-100", offline && "bg-primary/10 text-grace-ink/38 active:bg-primary/10")}>
         <span>{openLabel}</span>
       </Button>
     </LauncherCard>

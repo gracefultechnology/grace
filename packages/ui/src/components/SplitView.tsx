@@ -79,7 +79,7 @@ export function SideNavItem({ icon, count, selected = false, type = "button", cl
       aria-current={selected ? "page" : undefined}
       className={cn(
         focusRing,
-        "flex h-[72px] w-full shrink-0 items-center gap-3.5 rounded-row px-5 text-left font-sans text-[21px] leading-[26px] font-bold text-chrome transition-[background-color,box-shadow] duration-press [&_svg]:size-[26px] [&_svg]:shrink-0 [&_svg]:text-primary",
+        "flex h-[72px] w-full shrink-0 items-center gap-3.5 rounded-row px-5 text-left font-sans text-[21px] leading-[26px] font-bold text-chrome [&_svg]:size-[26px] [&_svg]:shrink-0 [&_svg]:text-primary",
         selected && "bg-card text-primary shadow-raised",
         className,
       )}

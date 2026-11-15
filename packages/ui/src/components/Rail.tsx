@@ -110,7 +110,7 @@ export function WifiSlash({ size = 28, ...props }: WifiSlashProps) {
       <defs>
         <mask id={mask} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
           <rect width="24" height="24" fill="var(--glass)" />
-          <path d="M3 3l18 18" stroke="var(--grace-ink)" strokeWidth="4.2" />
+          <path d="M3 3l18 18" stroke="var(--dim)" strokeWidth="4.2" />
         </mask>
       </defs>
       <g mask={`url(#${mask})`} stroke="currentColor" strokeWidth="1.9">

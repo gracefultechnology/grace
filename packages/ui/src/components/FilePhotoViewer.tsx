@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Forward } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
+import { headerPill } from "./MailActionStatus.tsx";
 import { mailIcons } from "./MailMessageRow.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 
@@ -81,12 +82,13 @@ export function FilePhotoViewer({
     <AppWindow
       actions={
         // Prototype `filesView()` (JS 1983): Share with `fwd`, Delete with the line-less `trash`.
+        // Prototype `#awin .aphdr .hgrp .pill:not(.prom)`: pressed, each stays clear and sinks to 97% (`#ahdr .pill:not(.prom):active`).
         <>
-          <Button variant="plain" size="compact" className="text-grace-ink" onClick={onShare}>
+          <Button variant="plain" size="compact" className={headerPill} onClick={onShare}>
             <Forward {...pill} />
             {shareLabel}
           </Button>
-          <Button variant="plain" size="compact" className="text-grace-ink" onClick={onDelete}>
+          <Button variant="plain" size="compact" className={headerPill} onClick={onDelete}>
             <mailIcons.trash {...pill} />
             {deleteLabel}
           </Button>

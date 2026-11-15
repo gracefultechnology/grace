@@ -44,8 +44,8 @@ export function WifiSignInSheet({ network, subtitle = "This network’s sign-in 
         {/* Prototype `.pshdr`. */}
         <div className="relative flex items-center justify-between border-b border-primary/8 p-4">
           <div className="flex h-16 items-center rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160">
-            {/* Prototype `.pshdr .hgrp .pill`: the clear glass pill without its tint. */}
-            <Button variant="glass" size="compact" className="bg-transparent px-[22px]" onClick={onCancel}>
+            {/* Prototype `.pshdr .hgrp .pill`: the clear glass pill without its tint, pressed too (it outranks `.pill:not(.prom):active`). */}
+            <Button variant="glass" size="compact" className="bg-transparent px-[22px] active:bg-transparent" onClick={onCancel}>
               {cancelLabel}
             </Button>
           </div>

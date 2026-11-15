@@ -25,6 +25,8 @@ export const meta: ComponentMeta<FilesCardProps> = {
     // Prototype `.home.cmp`: a 334px column, as tall as the grid above Grace's compact window (402px).
     Compact: { compact: true, className: "h-[402px] w-[334px]" },
     "Photos only": { ...files, document: undefined },
+    // Prototype `hmFilesInner('B')`, "Photo pile".
+    "Layout Pile": { ...files, layout: "pile" },
     // Prototype `hmFilesInner('C')`, "Photo grid", with the recital's program as the fourth.
     "Layout Grid": { ...files, layout: "grid", photos: [...files.photos, { src: programPhoto, alt: "The recital’s program" }] },
   },

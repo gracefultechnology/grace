@@ -76,7 +76,7 @@ export function Keyboard({ layout = "letters", rows, shift = false, labels, name
                   action && action !== "space" && "max-w-[140px] bg-key-fn text-[19px] leading-[normal] font-semibold",
                   action === "space" && "max-w-none flex-[5]",
                   action === "go" && "max-w-[150px]",
-                  action === "go" && ready && "bg-primary text-primary-foreground active:bg-primary",
+                  action === "go" && ready && "bg-primary text-primary-foreground",
                   action === "shift" && shift && "bg-card",
                 )}
               >

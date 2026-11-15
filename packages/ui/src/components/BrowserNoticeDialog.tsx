@@ -32,11 +32,11 @@ export type BrowserDialogProps = {
 export function BrowserDialog({ title, icon, tone = "plain", onEscape, open = true, children, actions, className }: BrowserDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onEscape?.()}>
-      {/* Prototype `.a-dlg` with the icon tile and 28/34 title of `trustDlg()`: 560px plus its 32px padding; a tap on the scrim answers nothing. */}
+      {/* Prototype `.a-dlg` with the icon tile and 28/34 title of `trustDlg()`: 560px plus its 32px padding; a tap on the scrim answers nothing. A caution tile takes `.a-caution`'s fill, ring and red. */}
       <DialogContent className={cn("gap-0", className)} onPointerDownOutside={(event) => event.preventDefault()}>
         <div className="flex items-center gap-3.5">
           {icon ? (
-            <span aria-hidden className={cn("flex size-14 flex-none items-center justify-center rounded-xl", tone === "caution" ? "bg-caution text-destructive" : "bg-panel text-primary")}>
+            <span aria-hidden className={cn("flex size-14 flex-none items-center justify-center rounded-xl", tone === "caution" ? "bg-caution text-destructive inset-ring-[1.5px] inset-ring-destructive/22" : "bg-panel text-primary")}>
               {icon}
             </span>
           ) : null}
@@ -51,9 +51,9 @@ export function BrowserDialog({ title, icon, tone = "plain", onEscape, open = tr
 
 export type BrowserDialogTextProps = ComponentProps<"p">;
 
-/** The description under a dialog's plain title (prototype `calDlg()`: `.a-b` at 22/30 in the secondary ink). */
+/** The description under a dialog's plain title (prototype `calDlg()`: `.a-b` at 22/30 in the secondary ink, 8px under the title). */
 export function BrowserDialogText({ className, ...props }: BrowserDialogTextProps) {
-  return <p className={cn("m-0 mt-3.5 text-body-lg leading-[30px] text-muted-foreground", className)} {...props} />;
+  return <p className={cn("m-0 mt-2 text-body-lg leading-[30px] text-muted-foreground", className)} {...props} />;
 }
 
 export type BrowserNoticeDialogProps = {

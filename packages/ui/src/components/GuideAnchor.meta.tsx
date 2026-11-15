@@ -18,6 +18,8 @@ export const meta: ComponentMeta<GuideAnchorProps> = {
     children: <Button variant="plain" size="compact" className="px-[22px] text-grace-ink">Largest</Button>,
   },
   examples: {
+    // `X.guide.kind` 'point' (axGuide()): what Grace is talking about, her ring alone, beating three times.
+    Point: { kind: "point", title: undefined },
     // After `formsave`, `X.guide={target:'ev'+ev.id,kind:'confirm'}`: the appointment Margaret just added, in a green ring.
     "Added by Margaret": { kind: "confirm", title: undefined, radius: 22, className: "flex", children: <CalendarEventRow {...lunch} /> },
   },

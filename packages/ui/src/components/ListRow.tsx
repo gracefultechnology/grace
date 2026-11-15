@@ -56,7 +56,8 @@ export function ListRow({ title, subtitle, leading, trailing, time, unread = fal
       )}
       {time && <span className="ml-auto self-start pt-1.5 text-lg leading-6 font-medium whitespace-nowrap text-muted-foreground">{time}</span>}
       {trailing ? <span className="relative ml-auto flex flex-none items-center">{trailing}</span> : null}
-      {chevron && <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-auto flex-none text-chevron" />}
+      {/* Prototype `.a-row .chev`: at the row's end, or 14px past what trails (wifiPage(): `.chev` margin-left 14px). */}
+      {chevron && <ChevronRight aria-hidden size={26} strokeWidth={2.4} className={cn("flex-none text-chevron", trailing ? "ml-3.5" : "ml-auto")} />}
     </div>
   );
 }

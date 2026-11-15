@@ -76,7 +76,7 @@ export function AppWindow({
   const page = (
     <>
       {large && (
-        <PageHeading ref={headingRef} level="large" className="mb-4 transition-opacity duration-base" style={{ opacity: scroll.opacity }}>
+        <PageHeading ref={headingRef} level="large" className="mb-4 transition-opacity duration-base ease-css-default" style={{ opacity: scroll.opacity }}>
           {title}
         </PageHeading>
       )}

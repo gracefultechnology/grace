@@ -75,7 +75,8 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
         white
           ? "bg-background shadow-window"
           : cn("shadow-banner backdrop-blur-2xl backdrop-saturate-150", expanded ? "bg-frost/94" : "bg-frost/86"),
-        placement === "screen" ? cn("absolute bottom-1.5 left-[144px] z-[3] right-1.5", expanded && "top-1.5") : cn("relative w-full", expanded && "h-full"),
+        // .gwin.exp{top:auto} and sizeCompact(): a height at both sizes, never a top, so expanding animates too.
+        placement === "screen" ? cn("absolute bottom-1.5 left-[144px] z-[3] right-1.5", expanded && "h-[calc(100%-12px)]") : cn("relative w-full", expanded && "h-full"),
         className,
       )}
       style={expanded ? style : { height: height ?? fit, ...style }}

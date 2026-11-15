@@ -25,9 +25,10 @@ export function ProgressStrip({ title, step, total, countLabel = (s, n) => `${s}
   const current = Math.min(count, Math.max(1, Math.round(step)));
   return (
     <div className={cn("flex w-full flex-col gap-2 font-sans", className)} {...props}>
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="text-body leading-[26px] font-bold text-foreground">{title}</span>
-        <span className="text-body leading-[26px] text-muted-foreground">{countLabel(current, count)}</span>
+      {/* senior-care progress-strip.css: `__row` 12px apart, `__title` and `__count` at 17/22, the count on one line. */}
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-label leading-[22px] font-bold text-foreground">{title}</span>
+        <span className="text-label leading-[22px] whitespace-nowrap text-muted-foreground">{countLabel(current, count)}</span>
       </div>
       <Progress value={current} max={count} aria-label={progressLabel} aria-valuetext={`${title}, ${countLabel(current, count)}`} className="h-1.5" />
     </div>

@@ -68,8 +68,8 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
   };
   return (
     <div className={cn("flex items-end gap-2 font-sans", className)} {...props}>
-      {/* GraceDock's `.cap`, holding the masked field and Show. */}
-      <div className="flex h-16 min-w-0 flex-1 items-center gap-2 rounded-full bg-glass/62 pr-1 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost">
+      {/* GraceDock's `.cap` (prototype `.gwin .cap` on the frosted window), holding the masked field and Show. */}
+      <div className="flex h-16 min-w-0 flex-1 items-center gap-2 rounded-full bg-glass/62 pr-1 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost group-data-[surface=frost]/grace:backdrop-saturate-150">
         <input
           ref={inputRef}
           type={shown ? "text" : "password"}

@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { MailActionStatus, pendingMark, type MailActionStatusLabels, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
+import { MailActionStatus, appButton, pendingMark, type MailActionStatusLabels, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
 import { mailIcons } from "./MailMessageRow.tsx";
 
 export type MailAttachmentProps = ComponentProps<"div"> & {
@@ -53,12 +53,12 @@ export function MailAttachment({ name, detail, kind = "PDF", onOpen, onPrint, op
         )}
       </div>
       <span className="ml-auto flex gap-3">
-        {/* Prototype `.a-att .a-btn:not(.prom)`: glass capsules on the panel, over the markup's inline white. */}
-        <Button variant="capsule" size="pill" onClick={onOpen}>
+        {/* Prototype `.a-att .a-btn:not(.prom)`: glass capsules on the panel, over the markup's inline white; `.a-btn` is `20px/1` with no transition, and `#awin .a-btn[aria-disabled]` fades whole to .4. */}
+        <Button variant="capsule" size="pill" className={appButton} onClick={onOpen}>
           {openLabel}
         </Button>
         {onPrint && (
-          <Button variant="capsule" size="pill" aria-busy={printStatus === "pending" || undefined} disabled={printStatus === "pending" || printStatus === "unknown"} onClick={onPrint}>
+          <Button variant="capsule" size="pill" className={appButton} aria-busy={printStatus === "pending" || undefined} disabled={printStatus === "pending" || printStatus === "unknown"} onClick={onPrint}>
             {pendingMark(printStatus === "pending", <mailIcons.printer size={22} strokeWidth={2.2} aria-hidden />)}
             {printLabel}
           </Button>

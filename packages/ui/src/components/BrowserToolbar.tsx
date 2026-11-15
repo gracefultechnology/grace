@@ -36,8 +36,7 @@ export type BrowserToolbarProps = ComponentProps<"div"> & {
   stopLabel?: string;
 };
 
-// Prototype `.pill.main` in `.bz-bar`: the capsule's glass, padded 0 26px 0 22px (Go too); pressed, 97% (line 672); disabled, the label at 32% (line 674).
-const pill = "pr-[26px] pl-[22px] active:scale-97 disabled:text-grace-ink/32";
+// Prototype `.pill.main` in `.bz-bar` is Button's `capsule` at `pill` size: padded 0 26px 0 22px (Go too), pressed to 97%, disabled with the label at 32%.
 const arrow = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
 /**
@@ -70,11 +69,11 @@ export function BrowserToolbar({
   return (
     // Prototype `.bz-bar`: 80px of white glass joined to the selected tab.
     <div className={cn("relative z-[1] flex h-20 items-center gap-2 border-b border-glass/70 bg-glass/78 px-4", className)} {...props}>
-      <Button variant="capsule" size="pill" className={pill} disabled={!canGoBack} onClick={onBack}>
+      <Button variant="capsule" size="pill" disabled={!canGoBack} onClick={onBack}>
         <ArrowLeft {...arrow} />
         {backLabel}
       </Button>
-      <Button variant="capsule" size="pill" className={pill} disabled={!canGoForward} onClick={onForward}>
+      <Button variant="capsule" size="pill" disabled={!canGoForward} onClick={onForward}>
         <ArrowRight {...arrow} />
         {forwardLabel}
       </Button>
@@ -85,7 +84,7 @@ export function BrowserToolbar({
         </Button>
       )}
       {children}
-      <Button variant="capsule" size="pill" className={pill} disabled={!canGo} onClick={onGo}>
+      <Button variant="capsule" size="pill" disabled={!canGo} onClick={onGo}>
         {goLabel}
         <ArrowRight {...arrow} strokeWidth={2.4} />
       </Button>

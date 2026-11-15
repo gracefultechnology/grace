@@ -10,6 +10,11 @@ export const meta: ComponentMeta<CaptionStripProps> = {
   args: { placement: "inline", who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show, onShowGuide: undefined },
   examples: {
     Margaret: { who: "you", activity: "listening", text: "Can you help me pay my Chase bill?" },
+    // Prototype renderStrip() while Grace thinks: Margaret's words stay on the line, then her dots alone.
+    "Margaret, Grace thinking": { who: "you", activity: undefined, text: "Can you help me pay my Chase bill?" },
+    Thinking: { activity: "thinking", text: "" },
+    // Prototype renderStrip() while she works: the spinner (`SPIN`) before her words.
+    Working: { activity: "working", text: "Opening Chase for you." },
     Answers: { activity: undefined, answers: ["Yes, carry on", "No, thanks"] },
     // spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target": Margaret closed the tip.
     "Show guidance": { onShowGuide: showGuide },

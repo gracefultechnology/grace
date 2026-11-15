@@ -7,7 +7,7 @@ import { AskGraceButton } from "./AskGraceButton.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import type { SettingsAppProps, SettingsPage } from "./SettingsApp.tsx";
 import { SettingsAbout } from "./SettingsAbout.tsx";
-import { voiceCredits } from "./SettingsAbout.meta.tsx";
+import { voiceCredits, voiceCreditsIntro } from "./SettingsAbout.meta.tsx";
 import { SettingsBrightness } from "./SettingsBrightness.tsx";
 import { SettingsPrivacy } from "./SettingsPrivacy.tsx";
 import { savedDetails } from "./SettingsPrivacy.meta.tsx";
@@ -94,7 +94,7 @@ export const meta: ComponentMeta<SettingsAppProps> = {
     "About with voice software": {
       page: "about",
       pages: appPages,
-      children: <SettingsAbout device="Grace tablet · Prototype" status="Everything is up to date." credits={voiceCredits} />,
+      children: <SettingsAbout device="Grace tablet · Prototype" status="Everything is up to date." credits={voiceCredits} creditsIntro={voiceCreditsIntro} />,
     },
   },
   decorator: (story) => onTablet(story, "Settings"),

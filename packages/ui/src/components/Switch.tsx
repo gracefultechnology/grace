@@ -5,7 +5,8 @@ import { cn, focusRing } from "../lib/cn.ts";
 
 type Size = "sm" | "md";
 
-// prototype .trk (sm: in Grace's Voice and Mic pills) and .a-sw (md: settings rows): indigo when on, grey when off.
+// prototype .trk (sm: in Grace's Voice and Mic pills) and .a-sw (md: settings rows): indigo when on, grey when off; the
+// pointer of the row or pill it sits in (`#awin .a-row[data-ax]`, `.pill`).
 const track = cva("group inline-flex shrink-0 items-center rounded-full bg-primary", {
   variants: {
     size: {
@@ -35,7 +36,7 @@ export type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, "chi
  */
 export function Switch({ size = "md", className, ...props }: SwitchProps) {
   return (
-    <SwitchPrimitive.Root className={cn(focusRing, track({ size }), "disabled:cursor-not-allowed disabled:opacity-40", className)} {...props}>
+    <SwitchPrimitive.Root className={cn(focusRing, track({ size }), "cursor-pointer disabled:cursor-not-allowed disabled:opacity-40", className)} {...props}>
       <SwitchPrimitive.Thumb className={knob({ size })} />
     </SwitchPrimitive.Root>
   );

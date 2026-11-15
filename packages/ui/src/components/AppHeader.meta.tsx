@@ -1,16 +1,17 @@
 import { Calendar, Plus } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { cn } from "../lib/cn.ts";
 import type { AppHeaderProps } from "./AppHeader.tsx";
-import { Button } from "./Button.tsx";
+import { Button, press } from "./Button.tsx";
 
 const close = fn();
 const back = fn();
 
-// Calendar's header actions: Today, and Add as the one next step (prototype `#awin .aphdr`).
+// Calendar's header actions: Today, and Add as the one next step (prototype `#awin .aphdr`); Today presses as CalendarApp's does.
 const calendarActions = (
   <>
-    <Button variant="plain" size="compact" className="text-grace-ink">Today</Button>
+    <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")}>Today</Button>
     <Button variant="prominent" size="compact">
       <Plus size={22} strokeWidth={2.2} aria-hidden />
       Add
@@ -23,6 +24,8 @@ export const meta: ComponentMeta<AppHeaderProps> = {
   examples: {
     "With Back": { title: "Doctor’s appointment", backLabel: "Calendar", onBack: back, actions: undefined },
     "Large title": { mode: "large" },
+    // Prototype `data-hdr="none"`: no title, only the capsules.
+    "No title": { mode: "none" },
     // Prototype `lgtScroll()` past the large title, X.hdrMode = "large": the frosted bar with the title centred.
     "Large title, collapsed": { mode: "large", collapsed: true },
     // The same over a split window's page column (prototype `#awin.splitw .aphdr.bar`), Settings › Wi-Fi.
