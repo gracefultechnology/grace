@@ -118,6 +118,7 @@ export * from "./components/ThinkingDots.tsx";
 export * from "./components/Toast.tsx";
 export * from "./components/UnreadDot.tsx";
 export * from "./components/UserBubble.tsx";
+export * from "./components/ValueCards.tsx";
 export * from "./components/VoiceBars.tsx";
 export * from "./components/WebsiteDownloadDialog.tsx";
 export * from "./components/WebsiteFileRequestDialog.tsx";
