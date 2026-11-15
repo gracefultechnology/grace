@@ -66,6 +66,8 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
    * Set-up's Talk in place of the Mic switch (senior-care Dock.tsx, `setup`): filled on Margaret's turn, a keyline while
    * she is `listening`.
    */
+  setup?: boolean;
+  /** Called by Talk during set-up. */
   onTalk?: () => void;
   talkLabel?: string;
 };
@@ -95,6 +97,7 @@ export function GraceDock({
   micOnLabel = "Mic on",
   micOffLabel = "Mic off",
   fieldLabel = "Message to Grace",
+  setup = false,
   onTalk,
   talkLabel = "Talk",
   className,
@@ -152,7 +155,7 @@ export function GraceDock({
       )}
       <GraceCapsule className="self-end">
         {attach}
-        {onTalk ? (
+        {setup ? (
           <Button
             variant={listening ? "capsule" : "prominent"}
             size="pill"

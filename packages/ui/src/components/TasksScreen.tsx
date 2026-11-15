@@ -35,7 +35,7 @@ export function TasksScreen({ title = "Tasks", groups, emptyTitle = "Nothing wai
         <div className="mx-auto flex w-[760px] max-w-full flex-col gap-10 pb-10">
           {groups.map((group) => (
             <section key={group.id} aria-label={group.title} className="flex flex-col gap-4">
-              <PageHeading level="section">{group.title}</PageHeading>
+              <PageHeading level="title">{group.title}</PageHeading>
               {group.cards}
             </section>
           ))}
