@@ -78,12 +78,13 @@ export function SetupStep({
   const labels = { ...setupStepLabels, ...words };
   const labelId = useId();
   const band = progress !== undefined || language != null;
-  // The ring 4px out from a pill inside its capsule (radius 28 + 4), the label 22px under it.
+  // The ring 4px out from a pill inside its capsule (radius 28 + 4), the label 22px under it; at the right edge its tail
+  // is on the right, 36px in from the pill's end as the prototype's `.glab.below` is from a field's start.
   const pointer = (target: SetupStepProps["guide"]) =>
     guide === target ? (
       <>
         <GuideRing gap={4} radius={32} tight motion="tap" />
-        <GuideLabel id={labelId} placement="below" title={labels.tapHere} className="absolute top-[calc(100%+22px)] right-0 z-6" />
+        <GuideLabel id={labelId} placement="below-end" title={labels.tapHere} className="absolute top-[calc(100%+22px)] right-9 z-6" />
       </>
     ) : null;
   const described = (target: SetupStepProps["guide"]) => (guide === target ? labelId : undefined);

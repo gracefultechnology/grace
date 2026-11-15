@@ -52,7 +52,7 @@ export function PracticePage({ guided = false, done = false, onContinue, labels:
   const labels = { ...practicePageLabels, ...words };
   const labelId = useId();
   return (
-    <section aria-label={labels.name} className={cn("flex size-full flex-col overflow-hidden bg-site text-foreground", className)} {...props}>
+    <section aria-label={labels.name} className={cn("flex size-full flex-col overflow-hidden bg-site font-site text-foreground", className)} {...props}>
       <div className="flex h-16 flex-none items-center justify-between px-8 text-body font-bold text-primary-foreground bg-site-brand">
         <span>{labels.name}</span>
         <span className="text-sm font-normal opacity-80">{labels.note}</span>

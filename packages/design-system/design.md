@@ -183,6 +183,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `radius` | 0.75rem |
 | `font.sans` | "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif |
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
+| `font.site` | Arial, Helvetica, sans-serif |
 | `shadow.sm` | 0 1px 2px oklch(0 0 0 / 0.08) |
 | `shadow.md` | 0 4px 12px oklch(0 0 0 / 0.12) |
 | `shadow.lg` | 0 12px 32px oklch(0 0 0 / 0.18) |

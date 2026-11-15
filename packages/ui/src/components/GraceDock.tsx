@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, type ComponentProps, type FocusEvent, type ReactNode } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Keyboard } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { GraceCapsule, GracePill } from "./GraceHeader.tsx";
@@ -70,10 +70,16 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   /** Called by Talk during set-up. */
   onTalk?: () => void;
   talkLabel?: string;
+  /** Set-up's composer is open (the keyboard is up), so Type gives way. */
+  composerOpen?: boolean;
+  /** Called by Type during set-up, to open the composer and the keyboard. */
+  onType?: () => void;
+  typeLabel?: string;
 };
 
 /**
- * Grace's answer row: the field, Send when there is a draft, and Attach with the Mic switch (prototype `.dock`).
+ * Grace's answer row: the field, Send when there is a draft, and Attach with the Mic switch (prototype `.dock`), or during
+ * set-up Talk and Type.
  * The field grows upward a line at a time.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
@@ -100,6 +106,9 @@ export function GraceDock({
   setup = false,
   onTalk,
   talkLabel = "Talk",
+  composerOpen = false,
+  onType,
+  typeLabel = "Type",
   className,
   ...props
 }: GraceDockProps) {
@@ -182,6 +191,13 @@ export function GraceDock({
             {micIcon(false)}
             {micOffLabel}
             <SwitchTrack checked={false} className="opacity-40" />
+          </GracePill>
+        )}
+        {/* senior-care dock-phase dockView(): set-up offers Type beside Talk until the composer opens; the tour's "Typing" step rings it. */}
+        {setup && !composerOpen && (
+          <GracePill data-open-keyboard onClick={onType}>
+            <Keyboard size={22} strokeWidth={2} aria-hidden />
+            {typeLabel}
           </GracePill>
         )}
         {micUnavailable !== undefined && (

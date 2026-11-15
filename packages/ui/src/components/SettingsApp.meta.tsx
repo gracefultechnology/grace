@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { House, Settings, Volume2, Wifi } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { AccountOverview } from "./AccountOverview.tsx";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import type { SettingsAppProps, SettingsPage } from "./SettingsApp.tsx";
@@ -51,13 +52,12 @@ export const textSizePreview = { greeting: "Good morning, Margaret", eventWhen: 
 
 const pick = fn();
 const retrySave = fn();
-// The app's side list: the prototype's pages, with saved details before About.
-const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "privacy", "about"];
+// The app's side list: the prototype's pages, with the account after Wi-Fi and saved details before About.
+const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "account", "privacy", "about"];
 
 export const meta: ComponentMeta<SettingsAppProps> = {
   args: { page: "text-size", onPageChange: pick, onClose: fn(), children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} /> },
   examples: {
-    Brightness: { page: "brightness", children: <SettingsBrightness brightness={100} nightDim nightDimHint="From 9 pm to 7 am, easier on the eyes" /> },
     Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake /> },
     "Wi-Fi": { page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
     "Wi-Fi join": {
@@ -75,8 +75,7 @@ export const meta: ComponentMeta<SettingsAppProps> = {
     // Prototype `X.hdrMode`: the large title names the page and the page leaves out its own (`axRender()`).
     "Header Mode Large": { headerMode: "large" },
     "Header Mode Large, Wi-Fi join": { headerMode: "large", page: "wifi", pageTitle: "Join Home Network", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
-    "Header Mode None": { headerMode: "none", page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
-    "Header Mode None, Wi-Fi join": { headerMode: "none", page: "wifi", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
+    "Header Mode None": { headerMode: "none", page: "wifi", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
     // spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence".
     "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
     // spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it".
@@ -84,6 +83,11 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       page: "brightness",
       saveError: "The screen brightness couldn’t be changed.",
       children: <SettingsBrightness brightness={100} nightDim nightDimHint="From 9 pm to 7 am, easier on the eyes" />,
+    },
+    Account: {
+      page: "account",
+      pages: appPages,
+      children: <AccountOverview access="active" account="margaret.s@example.com" subscription={{ plan: "Grace Plus", status: "Active", periodEnd: "Dec 1, 2026" }} onOpen={fn()} onSignOut={fn()} />,
     },
     "Saved details": { page: "privacy", pages: appPages, children: <SettingsPrivacy details={savedDetails} /> },
     // Prototype "About this tablet" with the credits the app always ships; the bare page is SettingsAbout's Default.

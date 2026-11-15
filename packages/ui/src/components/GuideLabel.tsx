@@ -40,8 +40,11 @@ export type GuideLabelProps = Omit<ComponentProps<"div">, "title"> & {
   tone?: "turn" | "working" | "ok";
   /** The sign before the words; by default Grace's G for `turn`, a check for `ok` and a spinner for `working`. */
   mark?: keyof typeof marks;
-  /** `beside` the target, its tail at the bottom-left pointing back at it; `below` it, the tail at the top-left pointing up. */
-  placement?: "beside" | "below";
+  /**
+   * `beside` the target, its tail at the bottom-left pointing back at it; `below` it, the tail at the top-left pointing up;
+   * `below-end` under a target at the right edge, the tail at the top-right.
+   */
+  placement?: "beside" | "below" | "below-end";
   /** Makes the words a button, as the label of a field to type in is: tapping it opens the keyboard. */
   onSelect?: () => void;
   /** Dismisses the label and its ring; without it there is no close button. */
@@ -60,7 +63,8 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
   const Words = onSelect ? "button" : "div";
   const [size, setSize] = useState<[number, number]>();
   const working = tone === "working";
-  const below = placement === "below";
+  const below = placement !== "beside";
+  const end = placement === "below-end";
   useLayoutEffect(() => {
     const el = ref.current;
     if (working || !el || typeof ResizeObserver === "undefined") return;
@@ -76,7 +80,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         "pointer-events-none relative w-max max-w-[420px] rounded-window p-[3px] font-sans animate-label-in motion-reduce:animate-none",
         // `.glab.tap`: the whole label of a field to type in is the thing to tap; `.ov` lets every other tap through to the page.
         onSelect && "pointer-events-auto cursor-pointer",
-        below ? "rounded-tl-none" : "rounded-bl-none",
+        below ? (end ? "rounded-tr-none" : "rounded-tl-none") : "rounded-bl-none",
         // `.glab.wl`: filled violet, white words, in sooner; `#ov .glab`: the outline below, after the ring, its shadow following the tail.
         working
           ? "bg-guide text-glass shadow-tag [animation-duration:.25s]"
@@ -88,13 +92,15 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
       {...props}
     >
       {working ? (
-        // showWork(): beside, the tail stroked 6px in the fill; below, turned a quarter to point up out of the top-left corner.
-        <svg aria-hidden width="34" height={below ? 34 : 26} viewBox={below ? "0 0 34 34" : "0 0 34 26"} className={cn("absolute overflow-visible fill-guide", below ? "top-0 left-0" : "bottom-[3px] -left-[5px] stroke-guide")}>
+        // showWork(): beside, the tail stroked 6px in the fill; below, turned a quarter to point up out of the top-left corner,
+        // mirrored to the top-right at the end.
+        <svg aria-hidden width="34" height={below ? 34 : 26} viewBox={below ? "0 0 34 34" : "0 0 34 26"} className={cn("absolute overflow-visible fill-guide", below ? (end ? "top-0 right-0 -scale-x-100" : "top-0 left-0") : "bottom-[3px] -left-[5px] stroke-guide")}>
           <path d={bubbleTail} strokeWidth={6} strokeLinejoin="round" transform={below ? "matrix(0 1 -1 0 26 -8)" : undefined} />
         </svg>
       ) : (
         size && (
-          <svg aria-hidden width={size[0] + 10} height={size[1]} viewBox={`0 0 ${size[0] + 10} ${size[1]}`} className={cn("pointer-events-none absolute top-0 -left-2.5 overflow-visible", below ? "-scale-100" : "-scale-x-100")}>
+          // `.lbo`: the outline's tail is drawn at the bottom-right and flipped to the corner the placement names.
+          <svg aria-hidden width={size[0] + 10} height={size[1]} viewBox={`0 0 ${size[0] + 10} ${size[1]}`} className={cn("pointer-events-none absolute top-0 overflow-visible", end ? "left-0 -scale-y-100" : cn("-left-2.5", below ? "-scale-100" : "-scale-x-100"))}>
             <path d={bubbleOutline(...size, Math.min(size[1] / 2, 26), 1.5)} className={cn("fill-glass stroke-3", edges[tone])} strokeLinejoin="round" />
           </svg>
         )

@@ -8,6 +8,7 @@ const send = fn();
 const mic = fn();
 const fixMic = fn();
 const typed = fn();
+const typeTap = fn();
 
 export const dockArgs: GraceDockProps = { value: "", mic: true, attach: <GraceAttachMenu options={attachOptions} /> };
 
@@ -16,9 +17,11 @@ export const meta: ComponentMeta<GraceDockProps> = {
   args: { ...dockArgs, placeholder: "Talk or tap to type a message", onSend: send, onMicChange: mic },
   examples: {
     Draft: { value: "Can you help me pay my Chase bill?" },
-    // The original app's set-up dock: Talk in place of the Mic switch.
-    "Set-up": { placeholder: "Talk or tap to type", setup: true },
+    // The original app's set-up dock: Talk in place of the Mic switch, and Type to open the keyboard.
+    "Set-up": { placeholder: "Talk or tap to type", setup: true, onType: typeTap },
     "Set-up listening": { placeholder: "", listening: true, setup: true },
+    // The composer is open with her answer: Type gives way to the keyboard.
+    "Set-up typing": { value: "margaret.ellis@gmail.com", setup: true, composerOpen: true },
     Listening: { listening: true, value: "Can you help me", placeholder: "" },
     "Grace's turn": { quiet: true, placeholder: "" },
     "Mic off": { mic: false, placeholder: "Tap to type a message, or turn on the mic" },
@@ -43,6 +46,14 @@ export const meta: ComponentMeta<GraceDockProps> = {
       await expect(send).toHaveBeenCalled();
       await userEvent.click(canvas.getByRole("switch"));
       await expect(mic).toHaveBeenCalledWith(false);
+    },
+    // Type opens the composer; there is no Mic switch during set-up.
+    "Set-up": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      typeTap.mockClear();
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Type" }));
+      await expect(typeTap).toHaveBeenCalled();
+      await expect(canvas.queryByRole("switch")).toBeNull();
     },
     // The mic pill asks for the permission; the field still takes her words.
     "Mic unavailable": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
