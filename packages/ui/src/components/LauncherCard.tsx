@@ -69,7 +69,7 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
         focusRing,
         // Prototype `.lc`: clear glass with no live blur (line 440) and a 2% spring on a tap. Its own shadow (line 327) when flat;
         // Home's 3D pages (`hmApply`, depth) set the float shadow instead.
-        "relative block cursor-pointer rounded-card bg-glass/40 p-0 text-left font-sans text-foreground transition-transform duration-press ease-spring active:scale-[1.02] motion-reduce:active:scale-100",
+        "relative block cursor-pointer rounded-card bg-glass/40 p-0 text-left font-sans text-foreground transition-transform duration-press ease-spring",
         compact ? "shadow-launcher" : "shadow-float",
         className,
       )}
