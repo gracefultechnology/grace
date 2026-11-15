@@ -1158,7 +1158,10 @@ pure def sometimesPaymentResultFinishesTask(w: Workspace): bool =
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
-Walks include an ordinary task and payments at two different origins. Navigation
+Walks include an ordinary task and payments at two different origins. Preparing
+an ordinary step has the weight of the other website callbacks: ordinary
+completion needs one exact eleven-event path, which a rarer preparation
+almost never completes within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Separate guarded traces cover permission,
 startup-failure and restart variants.
@@ -1292,7 +1295,7 @@ pure val weight_publishGuidance = 12
 pure val weight_begin = 24
 pure val weight_receiveLoad = 24
 pure val weight_observe = 24
-pure val weight_prepare = 2
+pure val weight_prepare = 24
 pure val weight_dispatch = 24
 pure val weight_verify = 24
 pure val weight_bindPayment = 24
