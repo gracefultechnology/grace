@@ -86,6 +86,7 @@ export * from "./components/PaymentStatusBadge.tsx";
 export * from "./components/PdfViewer.tsx";
 export * from "./components/PhotoViewer.tsx";
 export * from "./components/Progress.tsx";
+export * from "./components/ProgressStrip.tsx";
 export * from "./components/Rail.tsx";
 export * from "./components/RailPopover.tsx";
 export * from "./components/RefusedSignInDialog.tsx";
