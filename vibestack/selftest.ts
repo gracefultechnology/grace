@@ -279,8 +279,11 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.notEqual(canonical({ tag: "B", values: [1, 2] }, model.shape!), canonical({ tag: "B", values: [2, 1] }, model.shape!));
   });
 
-  test("a fresh spec with enum and bool parameters and an unguarded transition passes everything but review", async () => {
-    const root = fixtures(["door"]);
+  test("a fresh spec with enum and bool parameters, an integer of 16 digits and an unguarded transition passes everything but review", async () => {
+    // Quint's Rust evaluator writes an integer of 16 digits or more into a trace in a form of its own.
+    const root = fixtures(["door"], (f) => {
+      f["spec/door.md"] += "\n### Opening the door costs a fixed amount\n\n```quint\npure def openingCost(target: Mode): int = if (target == Open) 1000000000000000 else 0\n```\n";
+    });
     const { failed, text } = await run(root);
     assert.deepEqual(failed, ["review"], text);
     const log = fs.readFileSync(path.join(root, "gen/proof/door.log"), "utf8");
@@ -1561,7 +1564,8 @@ pure def lawOwn(own: int): bool = shadowOwn(own) == own`));
     const unmarked = remembered();
     fs.writeFileSync(path.join(root, "vibestack/proof/lib.dfy"), read("vibestack/proof/lib.dfy", root).replace(`  ${marker}\n`, `  ${marker} Again.\n`));
     await runCli(script, root, "check", "--json");
-    assert.notEqual(unmarked, entries);
+    // The marker moved into a lemma the proof does not call, so the slice is the first check's and its proof is reused.
+    assert.equal(unmarked, entries);
     assert.equal(remembered(), unmarked);
     fs.writeFileSync(path.join(root, "tsconfig.json"), '{"compilerOptions":{"noEmit":true},"include":["gen/*.ts"]}');
     if (process.platform !== "win32") {

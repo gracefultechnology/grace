@@ -175,8 +175,16 @@ export function typeWalks(typedefs: Json[], module: string, prefix = "") {
   const decode = (t0: Json, v: any): any => {
     const t = resolve(t0);
     if (t.kind === "int") {
-      // A trace writes every integer as {"#bigint": "<digits>"}. One beyond 2^53 would be silently rounded by Number.
-      const n = typeof v?.["#bigint"] === "string" ? BigInt(v["#bigint"]) : typeof v === "number" ? v : fail(`a trace holds ${JSON.stringify(v)} where an integer belongs`);
+      // A trace writes an integer as {"#bigint": "<digits>"}, except that one of 16 digits or more computed by Quint's
+      // Rust evaluator is written as the BigNumber it was read into, its sign `s`, exponent `e` and base-10^14 limbs `c`
+      // each an integer of the trace. One beyond 2^53 would be silently rounded by Number.
+      const whole = (x: any) => (typeof x?.["#bigint"] === "string" ? BigInt(x["#bigint"]) : typeof x === "number" ? BigInt(x) : undefined);
+      const limbs = Array.isArray(v?.c) && v.c.map(whole);
+      const digits = limbs && !limbs.includes(undefined) ? limbs.map((x: bigint, i: number) => (i ? String(x).padStart(14, "0") : String(x))).join("") : "";
+      const [sign, exponent] = [whole(v?.s), whole(v?.e)];
+      const n = whole(v) ?? (digits && (sign === 1n || sign === -1n) && exponent !== undefined && exponent + 1n >= BigInt(digits.length)
+        ? sign * BigInt(digits) * 10n ** (exponent + 1n - BigInt(digits.length))
+        : fail(`a trace holds ${JSON.stringify(v)} where an integer belongs`));
       return Number.isSafeInteger(Number(n)) ? Number(n)
         : fail(`a simulated trace reached the integer ${n}, which is beyond 2^53 and so cannot be represented exactly in TypeScript; bound it with a guard`);
     }
