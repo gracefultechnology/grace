@@ -146,7 +146,7 @@ export function MailApp({ folder, counts, messages, query = "", onQueryChange, o
             <ul className="m-0 flex list-none flex-col gap-3 p-0">
               {messages.map(({ id, ...message }) => (
                 <li key={id}>
-                  <MailMessageRow {...message} onOpen={onOpen && (() => onOpen(id))} />
+                  <MailMessageRow {...message} onOpen={() => onOpen?.(id)} />
                 </li>
               ))}
             </ul>

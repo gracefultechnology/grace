@@ -41,6 +41,10 @@ export type FilePhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "action
   Pick<PhotoStageProps, "src" | "alt" | "onPrevious" | "onNext" | "previousLabel" | "nextLabel"> & {
   /** Where the photo is among the saved ones: "Photo 2 of 6". */
   title: string;
+  /** The first photo: the previous arrow is hidden (prototype `fvprev` with `visibility:hidden` at 0). */
+  first?: boolean;
+  /** The last photo: the next arrow is hidden (prototype `fvnext` with `visibility:hidden` at n-1). */
+  last?: boolean;
   /** Shares the photo. */
   onShare?: () => void;
   /** Deletes the photo from Files. */
@@ -69,6 +73,8 @@ export function FilePhotoViewer({
   onNext,
   previousLabel,
   nextLabel,
+  first = false,
+  last = false,
   onShare,
   onDelete,
   shareLabel = "Share",
@@ -97,7 +103,7 @@ export function FilePhotoViewer({
       {...props}
     >
       <div className="flex h-full flex-col items-center justify-center gap-4">
-        <PhotoStage src={src} alt={alt} onPrevious={onPrevious} onNext={onNext} previousLabel={previousLabel} nextLabel={nextLabel} />
+        <PhotoStage src={src} alt={alt} onPrevious={first ? undefined : onPrevious} onNext={last ? undefined : onNext} previousLabel={previousLabel} nextLabel={nextLabel} />
         {deleteError != null && (
           // spec/app/files.md, "Delete is the explicit local action and does not delete its source email": failure keeps the photo.
           <RetryNotice className="w-[780px]" onRetry={onRetryDelete} retryLabel={retryLabel}>

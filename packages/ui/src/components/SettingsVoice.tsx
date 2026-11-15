@@ -32,7 +32,9 @@ export type SettingsVoiceProps = Omit<ComponentProps<"section">, "onChange"> & {
   wakeHint?: string;
   /** Why the tablet cannot listen for "Hey Grace" now, such as no microphone permission: its switch is off and waits. */
   wakeUnavailable?: string;
-  /** Called by the button that fixes `wakeUnavailable`, such as "Allow microphone"; without it there is none. */
+  /** Shows a button under `wakeUnavailable` that fixes it, such as "Allow microphone". */
+  canFixWake?: boolean;
+  /** Called by that button. */
   onFixWake?: () => void;
   /** The words of that button. */
   fixWakeLabel?: string;
@@ -61,6 +63,7 @@ export function SettingsVoice({
   wakeLabel = "Listen for “Hey Grace”",
   wakeHint = "Works any time, even when the screen is asleep. Turn off to use Ask Grace only.",
   wakeUnavailable,
+  canFixWake = false,
   onFixWake,
   fixWakeLabel = "Allow microphone",
   className,
@@ -91,7 +94,7 @@ export function SettingsVoice({
         onCheckedChange={onWakeChange}
         disabled={!!wakeUnavailable}
       />
-      {wakeUnavailable && onFixWake && (
+      {wakeUnavailable && canFixWake && (
         <Button variant="capsule" size="pill" className="mt-3.5" onClick={onFixWake}>
           {fixWakeLabel}
         </Button>

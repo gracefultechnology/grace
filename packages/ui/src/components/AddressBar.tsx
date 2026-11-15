@@ -41,10 +41,10 @@ export function AddressBar({
 }: AddressBarProps) {
   const noticeId = useId();
   return (
-    // Prototype `.addr` in `.bz-bar` (line 435): the capsule's glass. Its `!important` outranks `.addr.typing` (line 273), so the glass stays while Grace types.
+    // Prototype `.addr` in `.bz-bar` (line 435): the capsule's glass. Its `!important` outranks `.addr.typing` (line 273), so the glass stays, ringless, while Grace or the person types; the caret marks the field.
     <label
       className={cn(
-        "relative flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 px-6 text-chrome shadow-capsule backdrop-blur-capsule backdrop-saturate-160 transition-shadow duration-base focus-within:shadow-field-focus",
+        "relative flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 px-6 text-chrome shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
         className,
       )}
     >

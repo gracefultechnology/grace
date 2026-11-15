@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": ["./src/fonts.ts"],
   "exports": {
     ".": "./src/index.ts",
     "./fonts": "./src/fonts.ts"

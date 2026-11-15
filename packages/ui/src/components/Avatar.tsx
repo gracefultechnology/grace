@@ -25,13 +25,15 @@ export type AvatarProps = Omit<ComponentProps<"span">, "children"> & {
  * @design packages/design-system/design.md#windows
  */
 export function Avatar({ name, src, tone, size = 64, className, style, children, ...props }: AvatarProps) {
-  // Prototype `av()` sets the initial at 0.4 × the size; never under 19px bold, the smallest large text that AA allows at 3:1.
+  // Prototype `av()` sets the initial at 0.4 × the size, but `.a-person .a-av` (88px) sets it at 36px; never under 19px bold, the
+  // smallest large text that AA allows at 3:1.
+  const initial = size === 88 ? 36 : Math.max(19, Math.round(size * 0.4));
   return (
     <span
       role="img"
       aria-label={name}
       className={cn("flex flex-none items-center justify-center overflow-hidden rounded-full leading-none font-bold text-primary-foreground", !src && tones({ tone }), className)}
-      style={{ width: size, height: size, fontSize: Math.max(19, Math.round(size * 0.4)), ...style }}
+      style={{ width: size, height: size, fontSize: initial, ...style }}
       {...props}
     >
       {src ? <img src={src} alt="" className="size-full object-cover" /> : (children ?? name.charAt(0).toUpperCase())}

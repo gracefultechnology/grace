@@ -6,8 +6,10 @@ import { UnreadDot } from "./UnreadDot.tsx";
 export type ListRowProps = Omit<ComponentProps<"div">, "title" | "onClick" | "children"> & {
   /** The row's name, in bold. */
   title: ReactNode;
-  /** One line under the title. */
+  /** A line under the title; it wraps unless `truncate`. */
   subtitle?: ReactNode;
+  /** Keeps the subtitle to one line, cut with an ellipsis, as an email's subject (prototype `mrow()`). */
+  truncate?: boolean;
   /** What stands before the text: an avatar, an icon or a time. */
   leading?: ReactNode;
   /** What stands at the end: a switch, a button or a signal icon. */
@@ -26,14 +28,14 @@ export type ListRowProps = Omit<ComponentProps<"div">, "title" | "onClick" | "ch
  * One row of a list on a white window (prototype `.a-row`): leading, title and subtitle, trailing.
  * @design packages/design-system/design.md#windows
  */
-export function ListRow({ title, subtitle, leading, trailing, time, unread = false, chevron = false, onClick, className, ...props }: ListRowProps) {
+export function ListRow({ title, subtitle, truncate = false, leading, trailing, time, unread = false, chevron = false, onClick, className, ...props }: ListRowProps) {
   const text = (
     <>
       <span className="flex items-center gap-2.5 text-lead leading-[30px] font-bold text-chrome">
         {title}
         {unread && <UnreadDot />}
       </span>
-      {subtitle ? <span className="mt-0.5 block truncate text-body leading-[26px] font-medium text-muted-foreground">{subtitle}</span> : null}
+      {subtitle ? <span className={cn("mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground", truncate && "truncate")}>{subtitle}</span> : null}
     </>
   );
   return (

@@ -21,8 +21,8 @@ export const meta: ComponentMeta<FilePhotoViewerProps> = {
     onDelete: fn(),
   },
   examples: {
-    First: { title: "Photo 1 of 6", src: photos.stage, alt: "Photo 1 of 6", onPrevious: undefined },
-    Last: { title: "Photo 6 of 6", src: photos.cat, alt: "Photo 6 of 6", onNext: undefined },
+    First: { title: "Photo 1 of 6", src: photos.stage, alt: "Photo 1 of 6", first: true },
+    Last: { title: "Photo 6 of 6", src: photos.cat, alt: "Photo 6 of 6", last: true },
     "Delete failed": { deleteError: "This photo wasn’t deleted.", onRetryDelete: retry },
   },
   decorator: (story) => onTablet(story),

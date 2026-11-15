@@ -28,7 +28,9 @@ export type WifiJoinFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   /** Called by Join, once what the network asks for is typed. */
   onJoin?: () => void;
   onCancel?: () => void;
-  /** Called by "Ask Grace to help", shown after a second failed try. */
+  /** Shows "Ask Grace to help", after a second failed try (prototype `W.err>=2`). */
+  askGrace?: boolean;
+  /** Called by "Ask Grace to help". */
   onAskGrace?: () => void;
   /** The page's title. */
   title?: string;
@@ -64,6 +66,7 @@ export function WifiJoinForm({
   error,
   onJoin,
   onCancel,
+  askGrace = false,
   onAskGrace,
   title = `Join ${network}`,
   description = account
@@ -134,7 +137,7 @@ export function WifiJoinForm({
         <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={onCancel}>
           {cancelLabel}
         </Button>
-        {onAskGrace && (
+        {askGrace && (
           <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={onAskGrace}>
             {askGraceLabel}
           </Button>

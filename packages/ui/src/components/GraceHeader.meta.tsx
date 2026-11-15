@@ -9,14 +9,14 @@ const showGuide = fn();
 
 // Prototype `#gwin .hdr` while Grace greets Margaret in the compact window (ref grace-compact).
 export const meta: ComponentMeta<GraceHeaderProps> = {
-  args: { pause: "live", voice: <GraceVoiceMenu />, onExpandedChange: resize, onPause: pause, onShowGuide: undefined },
+  args: { pause: "live", voice: <GraceVoiceMenu />, onExpandedChange: resize, onPause: pause, onShowGuide: showGuide },
   examples: {
     Expanded: { expanded: true, voice: <GraceVoiceMenu side="bottom" /> },
     // Prototype nudgeCollapse(): Grace asks Margaret to collapse the window so she can watch the page.
     "Expanded nudge": { expanded: true, nudge: true, voice: <GraceVoiceMenu side="bottom" /> },
     Paused: { pause: "paused" },
     // spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target": Margaret closed the tip.
-    "Show guidance": { onShowGuide: showGuide },
+    "Show guidance": { showGuide: true },
     "Nothing to pause": { pause: "idle" },
   },
   decorator: (story) => <div className="w-[1130px] bg-background p-4">{story()}</div>,

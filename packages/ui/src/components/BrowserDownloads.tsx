@@ -101,17 +101,17 @@ export function BrowserDownloads({ downloads, onOpen, onDismiss, open, onOpenCha
                         </div>
                       )}
                     </div>
-                    {d.status === "saved" && onOpen && (
-                      <Button variant="capsule" size="compact" className="h-12 shrink-0 pr-4 pl-3.5 text-label" onClick={() => onOpen(d.id)}>
+                    {d.status === "saved" && (
+                      <Button variant="capsule" size="compact" className="h-12 shrink-0 pr-4 pl-3.5 text-label" onClick={() => onOpen?.(d.id)}>
                         <FolderOpen size={20} strokeWidth={2.2} aria-hidden />
                         {labels.open}
                       </Button>
                     )}
-                    {d.status !== "saving" && onDismiss && (
+                    {d.status !== "saving" && (
                       <button
                         type="button"
                         aria-label={labels.dismiss(d.name)}
-                        onClick={() => onDismiss(d.id)}
+                        onClick={() => onDismiss?.(d.id)}
                         className={cn(focusRing, "flex size-12 shrink-0 items-center justify-center rounded-full text-chrome-muted active:bg-chrome/8")}
                       >
                         <X size={22} strokeWidth={2} aria-hidden />

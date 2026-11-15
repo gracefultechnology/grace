@@ -15,6 +15,7 @@ export const meta: ComponentMeta<SettingsVoiceProps> = {
     // spec/app/wake.md: the native host reports that wake detection is unavailable.
     "Hey Grace unavailable": {
       wakeUnavailable: "Grace can’t listen until the tablet lets her use the microphone.",
+      canFixWake: true,
       onFixWake: allow,
     },
     "Hey Grace unavailable, no fix": { wakeUnavailable: "Listening for “Hey Grace” isn’t available on this tablet." },

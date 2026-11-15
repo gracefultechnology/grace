@@ -13,7 +13,7 @@ export type GuideAnchorProps = Omit<ComponentProps<"span">, "title"> & {
   kind?: "point" | "instruction" | "confirm";
   /** What to do, on Grace's label to the right of the target: "Tap Largest". */
   title?: string;
-  /** Dismisses the label and its ring; without it the label has no close button. */
+  /** Called by the label's close button: it dismisses the label and its ring. */
   onClose?: () => void;
   /** The close button's accessible name. */
   closeLabel?: string;
@@ -35,10 +35,11 @@ export function GuideAnchor({ children, radius = 12, kind = "point", title, onCl
       {children}
       <GuideRing gap={gap} radius={Math.min(radius + gap, 999)} tone={kind === "confirm" ? "ok" : "guide"} motion={instruction ? "tap" : "pulse"} />
       {instruction && title && (
-        // `.glab.anch`: 22px right of the target, its bottom 22px below the target's middle (at most 40px down); it takes taps,
-        // unlike `#ov .glab` over a website.
+        // `.glab.anch`: 22px right of the target, its bottom 22px below the target's middle (at most 40px down), always with its
+        // `.glx`; it takes taps, unlike `#ov .glab` over a website.
         <GuideLabel
           title={title}
+          closable
           onClose={onClose}
           closeLabel={closeLabel}
           className="pointer-events-auto absolute top-[calc(min(50%,40px)+22px)] left-[calc(100%+22px)] z-6 -translate-y-full"

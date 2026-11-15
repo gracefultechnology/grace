@@ -19,7 +19,9 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
   pageLabel?: string;
   /** Prints the file, the one next step. */
   onPrint?: () => void;
-  /** Saves it to Files; without it there is no Save (a file opened from Files). */
+  /** It has Save to Files; a file opened from Files has none. */
+  savable?: boolean;
+  /** Saves it to Files. */
   onSave?: () => void;
   /** The Print button's words. */
   printLabel?: string;
@@ -55,6 +57,7 @@ export function PdfViewer({
   children,
   pageLabel,
   onPrint,
+  savable = false,
   onSave,
   printLabel = "Print",
   saveLabel = "Save to Files",
@@ -81,7 +84,7 @@ export function PdfViewer({
             {printLabel}
           </Button>
           {/* Prototype `filesView()` pdf (JS 1985): a file already in Files has no Save. */}
-          {onSave && (
+          {savable && (
             <Button variant="plain" size="compact" className="text-grace-ink" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
               {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
               {saveLabel}

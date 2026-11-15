@@ -123,6 +123,9 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `site-muted` | oklch(0.458 0.027 248.4) | — |
 | `site-line` | oklch(0.926 0.007 247.9) | — |
 | `site-border` | oklch(0.852 0.012 252.1) | — |
+| `site-placeholder` | oklch(0.659 0.017 248.1) | — |
+| `site-error` | oklch(0.501 0.178 28.7) | — |
+| `site-ok` | oklch(0.514 0.117 153.6) | — |
 | `field-placeholder` | oklch(0.562 0 0) | — |
 | `dim` | oklch(0 0 0) | — |
 | `thumb-ring` | oklch(0.203 0.039 282.3) | — |
@@ -187,7 +190,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | Token | Value |
 | --- | --- |
 | `radius` | 0.75rem |
-| `font.sans` | "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif |
+| `font.sans` | "Figtree", Arial, sans-serif |
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
 | `font.site` | Arial, Helvetica, sans-serif |
 | `shadow.sm` | 0 1px 2px oklch(0 0 0 / 0.08) |

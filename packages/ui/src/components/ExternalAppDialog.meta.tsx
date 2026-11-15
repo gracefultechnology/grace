@@ -2,6 +2,7 @@ import { expect, fn, screen, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { onBrowser } from "./BrowserWindow.meta.tsx";
 import type { ExternalAppDialogProps } from "./ExternalAppDialog.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const go = fn();
 const stay = fn();
@@ -22,10 +23,12 @@ export const meta: ComponentMeta<ExternalAppDialogProps> = {
       await userEvent.click(question.getByRole("button", { name: "Continue" }));
       await userEvent.click(question.getByRole("button", { name: "Cancel" }));
       await expect([go.mock.calls.length, stay.mock.calls.length]).toEqual([1, 1]);
+      unfocus();
     },
     // Never a Continue that would fail.
     "Cannot open": async () => {
       await expect(within(screen.getByRole("dialog")).getAllByRole("button").map((b) => b.textContent)).toEqual(["Close"]);
+      unfocus();
     },
   },
 };

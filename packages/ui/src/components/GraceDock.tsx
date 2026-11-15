@@ -1,12 +1,14 @@
 import { useId, useLayoutEffect, useRef, type ComponentProps, type FocusEvent, type ReactNode } from "react";
 import { ArrowUp, Keyboard } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { Button } from "./Button.tsx";
+import { Button, press } from "./Button.tsx";
 import { GraceCapsule, GracePill } from "./GraceHeader.tsx";
 import { SwitchTrack } from "./Switch.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 
 const LINE = 32;
+// #sendB, ".pill.main.prom": flat indigo that grows on .pill's spring and takes the pressed indigo (.pill.prom:active).
+const dockProminent = cn(press, "pr-[26px] pl-[22px] shadow-none active:bg-primary-pressed");
 
 // Prototype ICON.micOn and ICON.micOff, 22px.
 const micIcon = (on: boolean) => (
@@ -160,7 +162,7 @@ export function GraceDock({
         />
       </label>
       {!quiet && draft && !listening && (
-        <Button variant="prominent" size="pill" className="pr-[26px] pl-[22px] shadow-none" onClick={onSend}>
+        <Button variant="prominent" size="pill" className={dockProminent} onClick={onSend}>
           <ArrowUp size={24} strokeWidth={2.4} aria-hidden />
           {sendLabel}
         </Button>
@@ -172,7 +174,7 @@ export function GraceDock({
             variant={listening ? "capsule" : "prominent"}
             size="pill"
             aria-pressed={listening}
-            className={cn("pr-[26px] pl-[22px] shadow-none", listening && "inset-ring-2 inset-ring-primary")}
+            className={listening ? "pr-[26px] pl-[22px] shadow-none inset-ring-2 inset-ring-primary" : dockProminent}
             onClick={onTalk}
           >
             {micIcon(true)}
@@ -199,7 +201,7 @@ export function GraceDock({
         {/* senior-care dock-phase dockView(): set-up offers Type beside Talk until the composer opens; the tour's "Typing" step rings it. */}
         {setup && !composerOpen ? (
           offline && !listening ? (
-            <Button variant="prominent" size="pill" data-open-keyboard className="pr-[26px] pl-[22px] shadow-none" onClick={onType}>
+            <Button variant="prominent" size="pill" data-open-keyboard className={dockProminent} onClick={onType}>
               <Keyboard size={22} strokeWidth={2} aria-hidden />
               {typeLabel}
             </Button>

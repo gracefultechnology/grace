@@ -76,6 +76,7 @@ export function MailMessageRow({ from, subject, time, attachment = false, attach
   return (
     <ListRow
       title={from.name}
+      truncate
       subtitle={
         <>
           {subject}

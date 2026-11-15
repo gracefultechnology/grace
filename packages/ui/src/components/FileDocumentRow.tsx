@@ -13,7 +13,9 @@ export type FileDocumentRowProps = Omit<ComponentProps<"div">, "children"> & {
   kind?: string;
   /** Called by Open. */
   onOpen?: () => void;
-  /** Called by Print; without it there is no Print. */
+  /** Offers Print beside Open, as every document in the prototype's Files does. */
+  printable?: boolean;
+  /** Called by Print. */
   onPrint?: () => void;
   openLabel?: string;
   printLabel?: string;
@@ -30,7 +32,7 @@ export type FileDocumentRowProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
  */
-export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, onPrint, openLabel = "Open", printLabel = "Print", printStatus, onRetryPrint, statusLabels, className, ...props }: FileDocumentRowProps) {
+export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, printable = true, onPrint, openLabel = "Open", printLabel = "Print", printStatus, onRetryPrint, statusLabels, className, ...props }: FileDocumentRowProps) {
   // spec/app/files.md, "Printing reports actual printer acceptance and preserves an uncertain request".
   const printing = printStatus === "pending";
   return (
@@ -48,12 +50,13 @@ export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, onPrint, o
           <div className="mt-0.5 truncate text-body leading-[26px] font-medium text-muted-foreground">{detail}</div>
         ) : null}
       </div>
+      {/* Prototype `.a-att .a-btns`, `.a-btn`: `20px/1`. */}
       <div className="ml-auto flex flex-none gap-3">
-        <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" aria-label={`${openLabel} ${name}`} onClick={onOpen}>
+        <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none" aria-label={`${openLabel} ${name}`} onClick={onOpen}>
           {openLabel}
         </Button>
-        {onPrint && (
-          <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" aria-label={`${printLabel} ${name}`} aria-busy={printing || undefined} disabled={printing || printStatus === "unknown"} onClick={onPrint}>
+        {printable && (
+          <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none" aria-label={`${printLabel} ${name}`} aria-busy={printing || undefined} disabled={printing || printStatus === "unknown"} onClick={onPrint}>
             {pendingMark(
               printing,
               // Prototype `axi('printer',22,2.2)`: square corners, unlike Lucide's Printer.

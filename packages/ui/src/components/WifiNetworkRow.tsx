@@ -15,7 +15,7 @@ export type WifiNetworkRowProps = Omit<ListRowProps, "title" | "subtitle" | "lea
   connected?: boolean;
   /** The tablet is joining this network now. */
   connecting?: boolean;
-  /** The last try to join this network failed: the row says so and offers Try again. */
+  /** The last try to join this network failed: the row says so and offers Try again in place of the chevron. */
   failed?: boolean;
   /** Called by Try again on a failed network. */
   onRetry?: () => void;
@@ -80,7 +80,7 @@ export function WifiNetworkRow({
               <rect x="5" y="11" width="14" height="10" rx="2" />
             </svg>
           )}
-          {failed && onRetry ? (
+          {failed ? (
             <Button variant="capsule" size="pill" className="ml-5 h-13" onClick={onRetry}>
               {retryLabel}
             </Button>

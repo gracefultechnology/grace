@@ -39,9 +39,13 @@ export type NewTabPageProps = ComponentProps<"div"> & {
   shortcuts?: NewTabShortcut[];
   /** Called with a shortcut's address when it is tapped. */
   onOpenShortcut?: (url: string) => void;
-  /** Called with a shortcut's address by its ✕; with it, each shortcut has one. */
+  /** Each shortcut has a ✕ that removes it. */
+  removable?: boolean;
+  /** Called with a shortcut's address by its ✕. */
   onRemoveShortcut?: (url: string) => void;
-  /** Called by Clear; with it, the list has Clear. */
+  /** The list has Clear, which asks before it forgets every website. */
+  clearable?: boolean;
+  /** Called by Clear. */
   onClear?: () => void;
   /** Clear is asking "Forget every website on this list?". */
   confirmingClear?: boolean;
@@ -75,7 +79,9 @@ export function NewTabPage({
   text = "Type a website in the address bar above, or ask Grace.",
   shortcuts = [],
   onOpenShortcut,
+  removable = false,
   onRemoveShortcut,
+  clearable = false,
   onClear,
   confirmingClear = false,
   onConfirmClear,
@@ -98,7 +104,7 @@ export function NewTabPage({
         <section aria-label={labels.recent} ref={listRef} className="mx-auto mt-12 max-w-[860px]">
           {/* As wide as the shortcuts it holds, so Clear sits over the last column. */}
           <div className="mx-auto w-fit">
-            {onClear && (
+            {clearable && (
               <div className="mb-2 flex items-center justify-between px-4">
                 <h3 className="text-body-lg leading-7 font-bold text-muted-foreground">{labels.recent}</h3>
                 <button type="button" onClick={onClear} className={cn(focusRing, "-mr-4 h-12 rounded-full px-4 text-body font-bold text-primary active:bg-primary/8")}>
@@ -123,12 +129,12 @@ export function NewTabPage({
                     )}
                     <span className="w-full truncate text-label font-medium">{s.title}</span>
                   </button>
-                  {onRemoveShortcut && (
+                  {removable && (
                     // A small ✕ on the shortcut's disc, at its top right.
                     <button
                       type="button"
                       aria-label={labels.remove(s.title)}
-                      onClick={() => onRemoveShortcut(s.url)}
+                      onClick={() => onRemoveShortcut?.(s.url)}
                       className={cn(focusRing, "absolute top-1 right-[22px] flex size-9 items-center justify-center rounded-full bg-card text-chrome-muted shadow-badge active:bg-panel")}
                     >
                       <X size={18} strokeWidth={2.4} aria-hidden />

@@ -36,8 +36,10 @@ export type CaptionStripProps = Omit<ComponentProps<"div">, "children"> & {
   /** The word for Margaret. */
   youLabel?: string;
   showChatLabel?: string;
-  /** Show me again, beside Show chat: brings back the tip Margaret closed. Without it there is no such button; the host offers it
-   * only while that tip's target is still current. */
+  /** Offers Show me again beside Show chat, to bring back the tip Margaret closed; the host offers it only while that tip's
+   * target is still current. */
+  showGuide?: boolean;
+  /** Called by Show me again. */
   onShowGuide?: () => void;
   /** The words on Show me again. */
   showGuideLabel?: string;
@@ -63,6 +65,7 @@ export function CaptionStrip({
   workingLabel = "Grace is working on it",
   youLabel = "You",
   showChatLabel = "Show chat",
+  showGuide = false,
   onShowGuide,
   showGuideLabel,
   placement = "screen",
@@ -146,7 +149,7 @@ export function CaptionStrip({
         </>
       )}
       {/* spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target". */}
-      {onShowGuide && <GuideShowButton surface="strip" label={showGuideLabel} onSelect={onShowGuide} />}
+      {showGuide && <GuideShowButton surface="strip" label={showGuideLabel} onSelect={onShowGuide} />}
       {/* .capstrip .pill: the toolbar's tinted glass, so it shows on the pale strip. */}
       <Button variant="glass" size="pill" className="bg-primary/8 shadow-strip-pill" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
         {chatIcon}

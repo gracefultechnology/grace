@@ -10,7 +10,7 @@ const open = fn();
 
 export const meta: ComponentMeta<ListRowProps> = {
   // The first row of the Email inbox: the email has photos attached.
-  args: { title: "Susan", subtitle: <>Photos from Lily’s recital · <Paperclip size={18} strokeWidth={2.2} aria-hidden className="inline align-[-3px]" /></>, time: "2:15 PM", unread: true, leading: <Avatar name="Susan" src={susan} aria-hidden /> },
+  args: { title: "Susan", subtitle: <>Photos from Lily’s recital · <Paperclip size={18} strokeWidth={2.2} aria-hidden className="inline align-[-3px]" /></>, time: "2:15 PM", unread: true, truncate: true, leading: <Avatar name="Susan" src={susan} aria-hidden /> },
   examples: {
     Read: { title: "Riverside Book Club", subtitle: "Our book for December", time: "Yesterday", unread: false, leading: <Avatar name="Riverside Book Club" tone={3} aria-hidden /> },
     // A Calendar row: the time and a colored bar lead, a chevron opens it.
@@ -19,6 +19,7 @@ export const meta: ComponentMeta<ListRowProps> = {
       subtitle: "She’ll pick you up",
       time: undefined,
       unread: false,
+      truncate: false,
       chevron: true,
       onClick: open,
       leading: (
@@ -37,6 +38,7 @@ export const meta: ComponentMeta<ListRowProps> = {
       subtitle: undefined,
       time: undefined,
       unread: false,
+      truncate: false,
       chevron: true,
       onClick: open,
       className: "min-h-[76px]",
