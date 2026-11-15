@@ -11,6 +11,8 @@ export const meta: ComponentMeta<GraceHeaderProps> = {
   args: { pause: "live", voice: <GraceVoiceMenu />, onExpandedChange: resize, onPause: pause },
   examples: {
     Expanded: { expanded: true, voice: <GraceVoiceMenu side="bottom" /> },
+    // Prototype nudgeCollapse(): Grace asks Margaret to collapse the window so she can watch the page.
+    "Expanded nudge": { expanded: true, nudge: true, voice: <GraceVoiceMenu side="bottom" /> },
     Paused: { pause: "paused" },
     "Nothing to pause": { pause: "idle" },
   },

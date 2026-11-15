@@ -12,13 +12,14 @@ const cross = (
 );
 
 export const meta: ComponentMeta<AvatarProps> = {
-  args: { name: "Riverside Book Club", tone: 3 },
+  // The initial, not a mark: no children.
+  args: { name: "Riverside Book Club", tone: 3, children: undefined },
   examples: {
     Photo: { name: "Susan", src: susan },
     Clinic: { name: "Main St Clinic", tone: 1, children: cross },
     "Account Security": { name: "Account Security", tone: 4 },
     Large: { name: "Susan", src: susan, size: 88 },
-    Chip: { name: "Dana", tone: 2, size: 46 },
+    Chip: { name: "David", tone: 2, size: 46 },
   },
   bounds: { size: [46, 88] },
 };

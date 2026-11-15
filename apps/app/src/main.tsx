@@ -1,4 +1,4 @@
-import "@fontsource-variable/figtree";
+import "@repo/ui/fonts";
 import { ManagedRuntime } from "effect";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

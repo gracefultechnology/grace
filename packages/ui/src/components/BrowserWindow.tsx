@@ -18,10 +18,10 @@ export type BrowserWindowProps = ComponentProps<"section"> & {
  */
 export function BrowserWindow({ tabStrip, toolbar, placement = "screen", className, children, ...props }: BrowserWindowProps) {
   return (
-    // Prototype `.bwin`: 144px from the left and 6px from the other edges, 1130 wide on a landscape tablet; light glass with a bright rim.
+    // Prototype `.bwin`: 144px from the left and 6px from the other edges, 1130 wide on a landscape tablet; light glass with a bright rim and a brighter top line.
     <section
       className={cn(
-        "isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-float ring-1 ring-glass/55 inset-ring-1 inset-ring-glass/65 transition-[bottom] duration-window motion-reduce:transition-none",
+        "isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
         placement === "screen" ? "absolute top-1.5 bottom-1.5 left-[144px] z-[1] right-1.5" : "relative size-full",
         className,
       )}
@@ -29,8 +29,8 @@ export function BrowserWindow({ tabStrip, toolbar, placement = "screen", classNa
     >
       {tabStrip}
       {toolbar}
-      {/* Prototype `.site`: the website, under the toolbar. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
+      {/* Prototype `.site`: the website, under the toolbar, on its neutral grey. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-site">{children}</div>
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Check, Keyboard, X } from "lucide-react";
 import { bubbleOutline, bubbleTail } from "../lib/outline.ts";
-import { cn } from "../lib/cn.ts";
+import { cn, focusRing } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { Spinner } from "./Spinner.tsx";
 
@@ -42,6 +42,8 @@ export type GuideLabelProps = Omit<ComponentProps<"div">, "title"> & {
   mark?: keyof typeof marks;
   /** `beside` the target, its tail at the bottom-left pointing back at it; `below` it, the tail at the top-left pointing up. */
   placement?: "beside" | "below";
+  /** Makes the words a button, as the label of a field to type in is: tapping it opens the keyboard. */
+  onSelect?: () => void;
   /** Dismisses the label and its ring; without it there is no close button. */
   onClose?: () => void;
   /** The close button's accessible name. */
@@ -53,8 +55,9 @@ export type GuideLabelProps = Omit<ComponentProps<"div">, "title"> & {
  * @model spec/app/execution.md
  * @design packages/design-system/design.md#guidance
  */
-export function GuideLabel({ title, detail, tone = "turn", mark, placement = "beside", onClose, closeLabel = "Close this tip", className, ...props }: GuideLabelProps) {
+export function GuideLabel({ title, detail, tone = "turn", mark, placement = "beside", onSelect, onClose, closeLabel = "Close this tip", className, ...props }: GuideLabelProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const Words = onSelect ? "button" : "div";
   const [size, setSize] = useState<[number, number]>();
   const working = tone === "working";
   const below = placement === "below";
@@ -70,10 +73,12 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
       ref={ref}
       className={cn(
         // Prototype `.glab`: 3px round the content, its square corner where the tail comes out.
-        "relative w-max max-w-[420px] rounded-window p-[3px] font-sans shadow-tag animate-label-in motion-reduce:animate-none",
+        "relative w-max max-w-[420px] rounded-window p-[3px] font-sans animate-label-in motion-reduce:animate-none",
         below ? "rounded-tl-none" : "rounded-bl-none",
-        // `.glab.wl`: filled violet, white words, in sooner; `#ov .glab`: the outline below, after the ring.
-        working ? "bg-guide text-glass [animation-duration:.25s]" : "text-grace-ink [animation-delay:.25s]",
+        // `.glab.wl`: filled violet, white words, in sooner; `#ov .glab`: the outline below, after the ring, its shadow following the tail.
+        working
+          ? "bg-guide text-glass shadow-tag [animation-duration:.25s]"
+          : "text-grace-ink drop-shadow-label [animation-delay:.25s]",
         className,
       )}
       {...props}
@@ -92,11 +97,17 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
       )}
       {/* `.glab .in`: `#ov` centres icon, words and close on one line, 14px above and below; `#wlab` keeps 13/15 and the top. */}
       <div className={cn("relative flex gap-3 pr-[19px] pl-[15px]", working ? "items-start pt-[13px] pb-[15px]" : "items-center py-3.5")}>
-        <span aria-hidden className="relative flex">{marks[mark ?? defaultMark[tone]]}</span>
-        <div className="relative">
-          <div className="text-lead leading-8 font-semibold">{title}</div>
-          {detail && <div className="mt-0.5 text-lead leading-8 font-medium text-subtle">{detail}</div>}
-        </div>
+        {/* `.glab.tap`: the label of a field to type in is itself the thing to tap. */}
+        <Words
+          {...(onSelect && { type: "button", onClick: onSelect })}
+          className={cn("relative flex gap-3 text-left", working ? "items-start" : "items-center", onSelect && cn(focusRing, "cursor-pointer rounded-sm"))}
+        >
+          <span aria-hidden className="relative flex">{marks[mark ?? defaultMark[tone]]}</span>
+          <span className="relative">
+            <span className="block text-lead leading-8 font-semibold">{title}</span>
+            {detail && <span className="mt-0.5 block text-lead leading-8 font-medium text-subtle">{detail}</span>}
+          </span>
+        </Words>
         {onClose && !working && (
           // `.glab .glx`: a ghost close, 44px, pulled into the label's padding.
           <Button variant="plain" aria-label={closeLabel} onClick={onClose} className="relative -my-2.5 -mr-4 ml-1 size-11 p-0 text-guide-close active:bg-primary/8">

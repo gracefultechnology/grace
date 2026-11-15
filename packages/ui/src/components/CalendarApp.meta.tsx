@@ -1,36 +1,21 @@
 import type { ReactNode } from "react";
-import { House, Settings, Volume2, Wifi } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { AskGraceButton } from "./AskGraceButton.tsx";
 import type { CalendarAppProps, CalendarEventItem } from "./CalendarApp.tsx";
 import type { CalendarEventDetailProps } from "./CalendarEventDetail.tsx";
 import type { CalendarEventFormProps } from "./CalendarEventForm.tsx";
 import type { CalendarMonthDay } from "./CalendarMonth.tsx";
 import type { CalendarWeekDay } from "./CalendarWeekStrip.tsx";
-import { Rail, RailButton } from "./Rail.tsx";
+import { Rail } from "./Rail.tsx";
+import { homeRail } from "./Rail.meta.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 
 // The prototype's calendar at 8:56 PM on Friday, November 13, 2026 (X.cal, lines 1799–1802).
 
-const icon = { size: 28, strokeWidth: 1.9 };
-
 /** The tablet with its rail, as the prototype's Calendar screenshots show it. */
 export const onTablet = (story: () => ReactNode) => (
   <TabletScreen>
-    <Rail
-      battery={75}
-      time="8:56"
-      period="PM"
-      date="Fri, Nov 13"
-      aria-label="Tablet"
-      status={<RailButton icon={<Wifi {...icon} />} label="Wi-Fi" />}
-      footer={<RailButton icon={<Settings {...icon} />} label="Settings" />}
-      ask={<AskGraceButton />}
-    >
-      <RailButton icon={<House {...icon} />} label="Home" />
-      <RailButton icon={<Volume2 {...icon} />} label="Volume" />
-    </Rail>
+    <Rail {...homeRail(null)} />
     {story()}
   </TabletScreen>
 );
@@ -130,10 +115,30 @@ const times = Array.from({ length: 25 }, (_, i) => {
     label: `${((h + 11) % 12) + 1}${m % 60 ? ":30" : ""} ${h < 12 ? "am" : "pm"}`,
   };
 });
-const days = ["Today · Nov 13", "Tomorrow · Nov 14", "Sunday · Nov 15", "Monday · Nov 16", "Tuesday · Nov 17", "Wednesday · Nov 18", "Thursday · Nov 19"].map((label, i) => ({
-  value: String(13 + i),
-  label,
-}));
+// Prototype `calForm` `pick:'day'`: the next 21 days.
+const days = [
+  "Today · Nov 13",
+  "Tomorrow · Nov 14",
+  "Sunday · Nov 15",
+  "Monday · Nov 16",
+  "Tuesday · Nov 17",
+  "Wednesday · Nov 18",
+  "Thursday · Nov 19",
+  "Friday, November 20",
+  "Saturday, November 21",
+  "Sunday, November 22",
+  "Monday, November 23",
+  "Tuesday, November 24",
+  "Wednesday, November 25",
+  "Thursday, November 26",
+  "Friday, November 27",
+  "Saturday, November 28",
+  "Sunday, November 29",
+  "Monday, November 30",
+  "Tuesday, December 1",
+  "Wednesday, December 2",
+  "Thursday, December 3",
+].map((label, i) => ({ value: String(13 + i), label }));
 
 export const form: CalendarEventFormProps & { heading: string } = {
   heading: "New appointment",
@@ -160,6 +165,9 @@ export const form: CalendarEventFormProps & { heading: string } = {
 
 const openEvent = fn();
 const onMode = fn();
+const save = fn();
+// Prototype `formsave` (line 2171) with a title typed: Save is ready.
+const lunch = { ...form, title: "Lunch", time: { ...form.time, value: "12 pm to 1 pm", selected: "720" }, remind: { ...form.remind, value: "No" } };
 
 export const meta: ComponentMeta<CalendarAppProps> = {
   args: {
@@ -189,6 +197,8 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       },
       canSave: true,
     },
+    "Form, saving": { view: "form", form: lunch, canSave: true, saveStatus: "saving" },
+    "Form, save failed": { view: "form", form: lunch, canSave: true, saveStatus: "failed", onSave: save },
     "With a draft": {
       dayEvents: [bridgeDraft],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
@@ -202,6 +212,22 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       await expect(openEvent).toHaveBeenCalledWith("1");
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
+    },
+    // spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes": the fields wait for the storage.
+    "Form, saving": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByLabelText("What")).toBeDisabled();
+      await expect(canvas.getByRole("button", { name: "Change Day" })).toBeDisabled();
+      await expect(canvas.getByRole("radio", { name: "Every week" })).toBeDisabled();
+      await expect(canvas.getByRole("button", { name: /Save/ })).toBeDisabled();
+    },
+    // spec/app/calendar.md, "Saving requires the current complete draft and explicit confirmation": the draft stays, to save again.
+    "Form, save failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByRole("alert")).toHaveTextContent("This wasn’t saved");
+      await expect(canvas.getByLabelText("What")).toHaveValue("Lunch");
+      await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+      await expect(save).toHaveBeenCalled();
     },
   },
 };

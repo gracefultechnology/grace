@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { Mail, Pencil } from "lucide-react";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
 import { MailFolderNav, type MailFolder } from "./MailFolderNav.tsx";
-import { MailMessageRow, type MailContact } from "./MailMessageRow.tsx";
+import { MailMessageRow, mailIcons, type MailContact } from "./MailMessageRow.tsx";
+import { MailNotice } from "./MailNotice.tsx";
 import { PageText } from "./PageHeading.tsx";
+import { Skeleton } from "./Skeleton.tsx";
 import { SearchField } from "./TextField.tsx";
 
 /** One email as a folder lists it. */
@@ -36,6 +37,14 @@ export type MailAppLabels = {
   nothingFound: string;
   /** Over the emails in Trash. */
   trashNote: string;
+  /** A list or search that could not be loaded. */
+  failed: string;
+  retry: string;
+  /** Offline, over the emails kept from before. */
+  offline: string;
+  fixWifi: string;
+  /** For assistive technology while the list loads. */
+  loading: string;
 };
 
 const mailAppLabels: MailAppLabels = {
@@ -46,7 +55,15 @@ const mailAppLabels: MailAppLabels = {
   empty: "Nothing here.",
   nothingFound: "Nothing found. Try another word.",
   trashNote: "Emails in Trash are deleted for good after 30 days.",
+  failed: "Your email couldn’t be loaded. Try again.",
+  retry: "Try again",
+  offline: "Email needs the internet to check for new mail.",
+  fixWifi: "Fix Wi-Fi",
+  loading: "Loading your email",
 };
+
+/** Where the open folder's list stands: `failed` and `offline` keep the emails already shown. */
+export type MailListStatus = "loading" | "failed" | "offline" | "ready";
 
 export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "actions" | "children" | "backLabel" | "onBack"> & {
   /** The folder open. */
@@ -65,6 +82,12 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
   onOpen?: (id: string) => void;
   /** Starts a new email. */
   onWrite?: () => void;
+  /** `loading` shows placeholder rows; `failed` says so above the emails already shown, with Try again; `offline` keeps them under a note with Fix Wi-Fi. */
+  status?: MailListStatus;
+  /** Loads the list or search again after it failed. */
+  onRetry?: () => void;
+  /** Opens Wi-Fi to get back online. */
+  onFixWifi?: () => void;
   /** A note of what just happened, a `Toast` (with Undo after a delete), centered at the bottom of the screen. */
   toast?: ReactNode;
   /** The list's words, for another language. */
@@ -77,18 +100,19 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  */
-export function MailApp({ folder, counts, messages, query = "", onQueryChange, onSelectFolder, onOpen, onWrite, toast, labels, ...props }: MailAppProps) {
+export function MailApp({ folder, counts, messages, query = "", onQueryChange, onSelectFolder, onOpen, onWrite, status = "ready", onRetry, onFixWifi, toast, labels, ...props }: MailAppProps) {
   const l = { ...mailAppLabels, ...labels };
-  const note = query ? l.found(messages.length) : folder === "trash" && messages.length ? l.trashNote : null;
+  const loading = status === "loading";
+  const note = loading ? null : query ? l.found(messages.length) : folder === "trash" && messages.length ? l.trashNote : null;
   return (
     <>
       <AppWindow
         title={l.title}
-        icon={<Mail size={26} strokeWidth={2} aria-hidden />}
+        icon={<mailIcons.mail size={26} strokeWidth={2} aria-hidden />}
         nav={<MailFolderNav folder={folder} counts={counts} onSelect={onSelectFolder} />}
         actions={
-          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px]" onClick={onWrite}>
-            <Pencil size={22} strokeWidth={2.2} aria-hidden />
+          <Button variant="prominent" size="compact" onClick={onWrite}>
+            <mailIcons.pencil size={22} strokeWidth={2.2} aria-hidden />
             {l.write}
           </Button>
         }
@@ -96,9 +120,29 @@ export function MailApp({ folder, counts, messages, query = "", onQueryChange, o
       >
         {/* Prototype `.a-search`; the list 18px under it. */}
         <SearchField label={l.search} value={query} onChange={(event) => onQueryChange?.(event.target.value)} />
-        <div className="mt-[18px]">
+        <div className="mt-[18px]" aria-busy={loading || undefined}>
+          {/* spec/app/emailItem.md, "Folder and search results remain scoped to the current mailbox and query": a failure keeps the list and offers a retry. */}
+          {status === "failed" && (
+            <MailNotice actionLabel={l.retry} onAction={onRetry} className="mb-[18px]">
+              {l.failed}
+            </MailNotice>
+          )}
+          {/* spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": offline, the kept emails stay. */}
+          {status === "offline" && (
+            <MailNotice tone="offline" actionLabel={l.fixWifi} onAction={onFixWifi} className="mb-[18px]">
+              {l.offline}
+            </MailNotice>
+          )}
           {note && <PageText tone="secondary" className={query ? "mb-[18px]" : "mb-3.5"}>{note}</PageText>}
-          {messages.length ? (
+          {loading ? (
+            <ul aria-label={l.loading} className="m-0 flex list-none flex-col gap-3 p-0">
+              {[0, 1, 2, 3].map((row) => (
+                <li key={row}>
+                  <Skeleton />
+                </li>
+              ))}
+            </ul>
+          ) : messages.length ? (
             <ul className="m-0 flex list-none flex-col gap-3 p-0">
               {messages.map(({ id, ...message }) => (
                 <li key={id}>

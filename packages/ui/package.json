@@ -5,7 +5,8 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./fonts": "./src/fonts.ts"
   },
   "scripts": {
     "gen": "node ../../vibestack/stories/cli.ts gen --check",
@@ -37,7 +38,7 @@
     "tailwind-merge": "catalog:"
   },
   "devDependencies": {
-    "@fontsource-variable/figtree": "catalog:",
+    "@fontsource/figtree": "catalog:",
     "@storybook/addon-a11y": "catalog:",
     "@storybook/addon-vitest": "catalog:",
     "@storybook/react-vite": "catalog:",

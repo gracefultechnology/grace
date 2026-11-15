@@ -1,5 +1,5 @@
-import type { ComponentProps } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { ArrowLeft, ArrowRight, RotateCw, X } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 
@@ -10,6 +10,14 @@ export type BrowserToolbarProps = ComponentProps<"div"> & {
   canGoForward?: boolean;
   /** There is an address to go to. */
   canGo?: boolean;
+  /** The tab's page is loading: Reload becomes Stop. Back, Forward and the address still work. */
+  pageLoading?: boolean;
+  /** Called by Reload, which loads the page again; with `onStop`, it shows the Reload/Stop button. */
+  onReload?: () => void;
+  /** Called by Stop while the page loads. */
+  onStop?: () => void;
+  /** Controls after Go, such as `BrowserDownloads`. */
+  trailing?: ReactNode;
   /** Called by Back. */
   onBack?: () => void;
   /** Called by Forward. */
@@ -22,14 +30,19 @@ export type BrowserToolbarProps = ComponentProps<"div"> & {
   forwardLabel?: string;
   /** The label of Go. */
   goLabel?: string;
+  /** The accessible name of Reload. */
+  reloadLabel?: string;
+  /** The accessible name of Stop. */
+  stopLabel?: string;
 };
 
-// Prototype `.pill.main` in `.bz-bar`: the capsule's glass, padded 0 26px 0 22px (Go too); disabled, the label at 32% (line 674).
-const pill = "pr-[26px] pl-[22px] disabled:text-grace-ink/32";
+// Prototype `.pill.main` in `.bz-bar`: the capsule's glass, padded 0 26px 0 22px (Go too); pressed, 97% (line 672); disabled, the label at 32% (line 674).
+const pill = "pr-[26px] pl-[22px] active:scale-97 disabled:text-grace-ink/32";
 const arrow = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
 /**
- * The browser's toolbar under the tabs: Back, Forward, the address (its children, an `AddressBar`) and Go.
+ * The browser's toolbar under the tabs: Back, Forward, Reload (Stop while the page loads), the address (its
+ * children, an `AddressBar`), Go and any `trailing` controls.
  * A control with nowhere to go keeps its glass and dims its label.
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#buttons
@@ -38,12 +51,18 @@ export function BrowserToolbar({
   canGoBack = false,
   canGoForward = false,
   canGo = false,
+  pageLoading = false,
+  onReload,
+  onStop,
+  trailing,
   onBack,
   onForward,
   onGo,
   backLabel = "Back",
   forwardLabel = "Forward",
   goLabel = "Go",
+  reloadLabel = "Reload",
+  stopLabel = "Stop",
   className,
   children,
   ...props
@@ -59,11 +78,18 @@ export function BrowserToolbar({
         <ArrowRight {...arrow} />
         {forwardLabel}
       </Button>
+      {(onReload || onStop || pageLoading) && (
+        // spec/app/browser.md, "Back and Forward stay within the selected tab's history": a reload is an actual load, and Stop ends it.
+        <Button variant="capsule" size="pill-icon" aria-label={pageLoading ? stopLabel : reloadLabel} onClick={pageLoading ? onStop : onReload}>
+          {pageLoading ? <X {...arrow} /> : <RotateCw {...arrow} />}
+        </Button>
+      )}
       {children}
       <Button variant="capsule" size="pill" className={pill} disabled={!canGo} onClick={onGo}>
         {goLabel}
         <ArrowRight {...arrow} strokeWidth={2.4} />
       </Button>
+      {trailing}
     </div>
   );
 }

@@ -31,13 +31,13 @@ export function Menu({ trigger, children, open, defaultOpen, onOpenChange, ...pr
 
 export type MenuPopoverProps = ComponentProps<typeof DropdownMenu.Content>;
 
-/** The menu's frosted glass panel, 8px under its button (prototype .spdpop). */
+/** The menu's frosted glass panel, 8px from a 64px button (prototype .spdpop: 270px inside 8px of padding). */
 export function MenuPopover({ className, sideOffset = 8, align = "start", ...props }: MenuPopoverProps) {
   return (
     <DropdownMenu.Content
       sideOffset={sideOffset}
       align={align}
-      className={cn("z-50 flex min-w-[270px] flex-col gap-2 rounded-menu bg-glass/86 p-2 shadow-menu backdrop-blur-frost backdrop-saturate-160 outline-none", className)}
+      className={cn("z-50 flex min-w-[286px] flex-col gap-2 rounded-menu bg-glass/86 p-2 shadow-menu backdrop-blur-frost backdrop-saturate-160 outline-none", className)}
       {...props}
     />
   );
@@ -47,7 +47,7 @@ export type MenuLabelProps = ComponentProps<typeof DropdownMenu.Label>;
 
 /** A small uppercase heading over a group of options, such as "Speed" (prototype .spdl). */
 export function MenuLabel({ className, ...props }: MenuLabelProps) {
-  return <DropdownMenu.Label className={cn("mt-1.5 ml-4 text-label font-bold tracking-[.04em] text-label-ink uppercase", className)} {...props} />;
+  return <DropdownMenu.Label className={cn("mt-1.5 ml-4 text-label leading-5 font-bold tracking-[.04em] text-label-ink uppercase", className)} {...props} />;
 }
 
 export type MenuOptionProps = ComponentProps<typeof DropdownMenu.Item> & {
@@ -72,7 +72,7 @@ export function MenuOption({ icon, selected, className, children, ...props }: Me
       {...choice}
       {...props}
     >
-      {selected && <Check size={22} strokeWidth={2.2} aria-hidden />}
+      {selected && <Check size={20} strokeWidth={2.4} aria-hidden />}
       {icon}
       {children}
     </DropdownMenu.Item>

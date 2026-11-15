@@ -5,13 +5,16 @@ import type { ToastProps } from "./Toast.tsx";
 const undo = fn();
 
 export const meta: ComponentMeta<ToastProps> = {
-  args: { children: "Sent to Dana" },
+  // Prototype `axToast()`: what Calendar says after saving, and Email after a delete it can take back.
+  args: { children: "Saved to your calendar", onUndo: undefined },
   examples: { Undo: { children: "Moved to Trash", onUndo: undo } },
   decorator: (story) => <div className="p-6">{story()}</div>,
   play: {
     Undo: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Undo" }));
+      const button = within(canvasElement).getByRole("button", { name: "Undo" });
+      await userEvent.click(button);
       await expect(undo).toHaveBeenCalled();
+      button.blur();
     },
   },
 };

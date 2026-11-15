@@ -95,7 +95,8 @@ it, `node ../../spec.ts` in an example. In `@repo/ui`: `pnpm gen` (the stories),
   text size's name, since `text-<name>` would set only the color. Use the utilities named
   after them (`bg-primary`, `text-muted-foreground`, `rounded-md`); the lint
   rules of `vibestack/design/eslint.ts` refuse a palette class, an arbitrary
-  color and a literal color in a style. Merge classes with `cn()`; use CVA
+  color, an arbitrary shadow or filter, and a literal color in a style. A shadow
+  that follows a shape's outline is a `dropShadow` token (`drop-shadow-<name>`). Merge classes with `cn()`; use CVA
   only where a component has real variants.
 - **A design change is a token change.** Describe it in `design.md`, write
   it as `[{ "path": "color.light.primary", "value": "oklch(…)", "reason": "…" }]`,

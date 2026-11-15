@@ -4,10 +4,12 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Spinner } from "./Spinner.tsx";
 
-// prototype .pill / .a-btn: a tap grows the button by 5% on a spring (.pill:active); reduced motion keeps it still.
+// prototype .pill: a tap grows the button by 5% on a spring (.pill:active); reduced motion keeps it still.
 const press = "transition-[transform,background-color,box-shadow] duration-press ease-spring active:scale-105 motion-reduce:active:scale-100";
-// prototype "#ahdr [aria-disabled]": the label fades to 38% ink and the button keeps its glass.
-const fades = "disabled:text-grace-ink/38 disabled:opacity-100 aria-disabled:text-grace-ink/38 aria-disabled:opacity-100";
+// prototype .a-btn:not(.prom):active: a capsule sinks to 97% instead.
+const sink = "transition-[transform,background-color,box-shadow] duration-press ease-spring active:scale-97 motion-reduce:active:scale-100";
+// prototype ".bz-bar [aria-disabled], #ahdr [aria-disabled]": the label fades to 32% ink and the button keeps its glass.
+const fades = "disabled:text-grace-ink/32 disabled:opacity-100 aria-disabled:text-grace-ink/32 aria-disabled:opacity-100";
 
 const buttonVariants = cva(
   [focusRing, "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50"],
@@ -22,21 +24,21 @@ const buttonVariants = cva(
         // .pill: clear glass, a bright rim and no lift; pressed, brighter glass (.pill:not(.prom):active).
         glass: cn(press, fades, "rounded-full bg-glass/10 text-grace-ink shadow-glass backdrop-blur-glass backdrop-brightness-106 backdrop-saturate-115 active:bg-glass/42 active:shadow-glass-pressed"),
         // .a-btn: the glass capsule of app windows and popovers, where clear glass would vanish on white.
-        capsule: cn(press, fades, "rounded-full bg-glass/62 text-grace-ink shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
+        capsule: cn(sink, fades, "rounded-full bg-glass/62 text-grace-ink shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
         // .a-btn.warn: a capsule whose words warn, such as Delete.
-        warn: cn(press, "rounded-full bg-glass/62 text-destructive shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
+        warn: cn(sink, "rounded-full bg-glass/62 text-destructive shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
         // .pill.prom / .a-btn.prom: the one next step, flat indigo.
         prominent: cn(press, "rounded-full bg-primary text-primary-foreground shadow-prominent active:bg-primary-pressed disabled:opacity-40 aria-disabled:opacity-40"),
-        // .winx: no fill, for ✕; a tap shows a faint disc.
-        plain: cn(press, fades, "rounded-full bg-transparent text-chrome active:bg-chrome/8"),
+        // .winx: no fill, for ✕; a tap shows a faint disc and nothing moves.
+        plain: cn(fades, "rounded-full bg-transparent text-chrome active:bg-chrome/8"),
       },
       size: {
         sm: "h-8 px-3",
         md: "h-9 px-4",
         lg: "h-10 px-6",
         icon: "size-9",
-        // .pill: 64px, the height of every button on the tablet.
-        pill: "h-16 gap-2.5 pr-6 pl-5 text-body font-bold",
+        // .pill.main and .a-btn: 64px, the height of every button on the tablet.
+        pill: "h-16 gap-2.5 pr-[26px] pl-[22px] text-body font-bold",
         // .pill.icon: round.
         "pill-icon": "size-16 p-0 text-body font-bold",
         // .hgrp .pill: 56px, inside a header capsule.
@@ -45,6 +47,12 @@ const buttonVariants = cva(
         "compact-icon": "size-14 p-0 text-body font-bold",
       },
     },
+    compoundVariants: [
+      // A plain .pill, Grace's glass on her own surface, sits 2px tighter than .pill.main.
+      { variant: "glass", size: "pill", class: "pr-6 pl-5" },
+      // "#ahdr .hgrp .pill.prom": 56px tall but keeps .pill.main's padding.
+      { variant: "prominent", size: "compact", class: "pr-[26px] pl-[22px]" },
+    ],
     defaultVariants: { variant: "primary", size: "md" },
   },
 );

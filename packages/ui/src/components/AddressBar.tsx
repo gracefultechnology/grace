@@ -1,4 +1,5 @@
-import type { ComponentProps } from "react";
+import { type ComponentProps, useId } from "react";
+import { Info } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 
 export type AddressBarProps = Omit<
@@ -11,14 +12,17 @@ export type AddressBarProps = Omit<
   onValueChange?: (text: string) => void;
   /** Called by Enter: go to the address. */
   onSubmit?: () => void;
-  /** Grace is typing here: the field turns white and holds her lilac ring. */
+  /** Grace is typing here: her caret follows the text and the placeholder gives way. Her ring is the guide overlay's. */
   guided?: boolean;
+  /** Why Go did nothing, under the field, such as after Go with an empty address; it stays while the person types. */
+  notice?: string;
   /** The accessible name of the field. */
   label?: string;
 };
 
 /**
- * The browser's address capsule, with a lock before the address. Empty, it shows its placeholder.
+ * The browser's address capsule, with a lock before the address. Empty, it shows its placeholder; a `notice`
+ * under it explains a Go that could not go.
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#guidance
  */
@@ -27,20 +31,20 @@ export function AddressBar({
   onValueChange,
   onSubmit,
   guided = false,
+  notice,
   label = "Address",
   placeholder = "Search or type a website",
   disabled,
   className,
+  "aria-describedby": describedBy,
   ...props
 }: AddressBarProps) {
+  const noticeId = useId();
   return (
-    // Prototype `.addr` in `.bz-bar` (line 435): the capsule's glass; `.addr.typing` (line 273) while Grace types.
+    // Prototype `.addr` in `.bz-bar` (line 435): the capsule's glass. Its `!important` outranks `.addr.typing` (line 273), so the glass stays while Grace types.
     <label
       className={cn(
-        "flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full px-6 text-chrome transition-[background-color,box-shadow] duration-base",
-        guided
-          ? "bg-background shadow-guide"
-          : "bg-glass/62 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 focus-within:shadow-field-focus",
+        "relative flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 px-6 text-chrome shadow-capsule backdrop-blur-capsule backdrop-saturate-160 transition-shadow duration-base focus-within:shadow-field-focus",
         className,
       )}
     >
@@ -67,8 +71,9 @@ export function AddressBar({
           autoComplete="off"
           spellCheck={false}
           aria-label={label}
+          aria-describedby={[describedBy, notice && noticeId].filter(Boolean).join(" ") || undefined}
           value={value}
-          placeholder={placeholder}
+          placeholder={guided ? undefined : placeholder}
           readOnly={!onValueChange}
           onChange={(event) => onValueChange?.(event.target.value)}
           disabled={disabled}
@@ -82,13 +87,20 @@ export function AddressBar({
         {guided && (
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 left-0 flex items-center overflow-hidden whitespace-pre text-transparent"
+            className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden whitespace-pre text-transparent"
           >
             {value}
-            <span className="ml-0.5 h-[22px] w-0.5 shrink-0 animate-blink bg-primary motion-reduce:animate-none" />
+            <span className="ml-0.5 inline-block h-[22px] w-0.5 animate-blink bg-primary motion-reduce:animate-none" />
           </span>
         )}
       </span>
+      {notice && (
+        // spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation": a tag under the field, in the guide label's shape.
+        <span id={noticeId} role="status" className="absolute top-full left-3 z-10 mt-3 flex cursor-default items-center gap-2.5 rounded-row bg-card py-3 pr-5 pl-4 text-body leading-[26px] font-semibold whitespace-nowrap text-label-ink shadow-tag">
+          <Info size={22} strokeWidth={2.2} aria-hidden className="shrink-0 text-primary" />
+          {notice}
+        </span>
+      )}
     </label>
   );
 }

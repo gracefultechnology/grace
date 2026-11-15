@@ -1,8 +1,11 @@
-import { Calendar, Check, Plus } from "lucide-react";
+import type { ReactNode } from "react";
+import { Check, Plus, TriangleAlert } from "lucide-react";
+import { Alert } from "./Alert.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
 import { CalendarEventDetail, type CalendarEventDetailProps } from "./CalendarEventDetail.tsx";
 import { CalendarEventForm, type CalendarEventFormProps } from "./CalendarEventForm.tsx";
+import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { CalendarEventRow, type CalendarEventRowProps } from "./CalendarEventRow.tsx";
 import { CalendarMonth, type CalendarMonthProps } from "./CalendarMonth.tsx";
 import { CalendarNav, type CalendarMode, type CalendarNavProps } from "./CalendarNav.tsx";
@@ -50,6 +53,10 @@ export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions"
   canSave?: boolean;
   /** Saves the form. */
   onSave?: () => void;
+  /** The storage's answer to Save: still saving (the fields wait), or failed (the draft stays to try again). */
+  saveStatus?: "saving" | "failed";
+  /** What a failed save says above the form. */
+  saveError?: ReactNode;
   /** Leaves the event or the form for the calendar. */
   onBack?: () => void;
   /** The words of the header's buttons. */
@@ -84,6 +91,8 @@ export function CalendarApp({
   form,
   canSave = false,
   onSave,
+  saveStatus,
+  saveError = "This wasn’t saved. Press Save to try again.",
   onBack,
   labels = defaultLabels,
   ...props
@@ -107,20 +116,28 @@ export function CalendarApp({
   }
   if (view === "form" && form) {
     const { heading, ...fields } = form;
+    const saving = saveStatus === "saving";
     return (
       <AppWindow
         title={heading}
         backLabel={title}
         onBack={onBack}
         actions={
-          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px]" disabled={!canSave} onClick={onSave}>
-            <Check {...pill} />
+          // Prototype `#ahdr .pill.prom` (line 673) keeps its indigo and white words while `aria-disabled`; its spinner is white on a filled surface (line 434), the check's size.
+          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] disabled:text-primary-foreground disabled:opacity-100 [&>svg]:size-[22px] [&>svg]:text-primary-foreground" disabled={!canSave} loading={saving} onClick={onSave}>
+            {!saving && <Check {...pill} />}
             {labels.save}
           </Button>
         }
         {...props}
       >
-        <CalendarEventForm {...fields} />
+        {/* Prototype `.a-caution`, as the Wi-Fi password's refusal shows it (line 2006). */}
+        {saveStatus === "failed" && (
+          <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-[18px]">
+            {saveError}
+          </Alert>
+        )}
+        <CalendarEventForm disabled={saving} {...fields} />
       </AppWindow>
     );
   }
@@ -128,7 +145,7 @@ export function CalendarApp({
   return (
     <AppWindow
       title={title}
-      icon={<Calendar size={26} strokeWidth={2} aria-hidden />}
+      icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />}
       actions={
         <>
           <Button variant="plain" size="compact" className="text-grace-ink" onClick={onToday}>

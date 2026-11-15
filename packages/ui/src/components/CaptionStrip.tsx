@@ -1,11 +1,17 @@
 import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
-import { MessageSquare } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { Button } from "./Button.tsx";
 import { Spinner } from "./Spinner.tsx";
 import { ThinkingDots } from "./ThinkingDots.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
+
+// Prototype stripBtn()'s speech bubble, 22px, stroke 2.
+const chatIcon = (
+  <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+);
 
 export type CaptionStripProps = Omit<ComponentProps<"div">, "children"> & {
   /** Who is talking: Grace, shown by her mark, or Margaret. */
@@ -22,6 +28,10 @@ export type CaptionStripProps = Omit<ComponentProps<"div">, "children"> & {
   onShowChat?: () => void;
   /** The name of Grace's mark. */
   graceLabel?: string;
+  /** The letter on Grace's mark. */
+  graceInitial?: string;
+  /** What the spinner means, for assistive technology. */
+  workingLabel?: string;
   /** The word for Margaret. */
   youLabel?: string;
   showChatLabel?: string;
@@ -43,6 +53,8 @@ export function CaptionStrip({
   onAnswer,
   onShowChat,
   graceLabel = "Grace",
+  graceInitial = "G",
+  workingLabel = "Grace is working on it",
   youLabel = "You",
   showChatLabel = "Show chat",
   placement = "screen",
@@ -77,7 +89,7 @@ export function CaptionStrip({
     <div
       onClick={onShowChat}
       className={cn(
-        "group/strip isolate flex h-20 cursor-pointer items-center gap-3.5 rounded-segment bg-gradient-frame pr-2 pl-6 font-sans shadow-raised inset-ring inset-ring-glass/75",
+        "group/strip isolate flex h-20 cursor-pointer items-center gap-3.5 rounded-segment bg-gradient-frame pr-2 pl-6 font-sans shadow-strip",
         placement === "screen" ? "absolute bottom-[312px] left-[144px] z-[4] right-1.5" : "relative w-full",
         className,
       )}
@@ -88,7 +100,7 @@ export function CaptionStrip({
       {grace ? (
         // .gmk: her small mark.
         <span role="img" aria-label={graceLabel} className="flex size-8 flex-none items-center justify-center rounded-full bg-gradient-ring">
-          <span className="flex size-[27px] items-center justify-center rounded-full bg-glass text-[15px] font-bold text-primary">G</span>
+          <span className="flex size-[27px] items-center justify-center rounded-full bg-glass text-caption font-bold text-primary">{graceInitial}</span>
         </span>
       ) : (
         <span className="flex-none text-body font-bold text-label-ink">{youLabel}</span>
@@ -113,7 +125,7 @@ export function CaptionStrip({
           {activity === "thinking" && <ThinkingDots />}
           {activity === "working" && (
             <span className="flex h-8 w-[25px] flex-none items-center justify-center">
-              <Spinner label="Grace is working on it" />
+              <Spinner label={workingLabel} />
             </span>
           )}
           <span aria-live="polite" className="sr-only">
@@ -125,8 +137,8 @@ export function CaptionStrip({
         </>
       )}
       {/* .capstrip .pill: the toolbar's tinted glass, so it shows on the pale strip. */}
-      <Button variant="glass" size="pill" className="bg-primary/8 shadow-none inset-ring inset-ring-primary/12" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
-        <MessageSquare size={22} strokeWidth={2} aria-hidden />
+      <Button variant="glass" size="pill" className="bg-primary/8 shadow-none inset-ring inset-ring-primary/12 inset-shadow-2xs inset-shadow-glass/80" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
+        {chatIcon}
         {showChatLabel}
       </Button>
     </div>

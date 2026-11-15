@@ -15,6 +15,12 @@ export type LauncherCardProps = Omit<ComponentProps<"button">, "title"> & {
    * to 1 (off the right): its far side blurs progressively, its sheen stops and its art fades.
    */
   turn?: number;
+  /** Laid out flat above Grace's compact window rather than on Home's 3D pages: the glass's own edge light and shadow. */
+  compact?: boolean;
+  /** Classes for the title and status, such as a width that keeps them clear of a preview. */
+  headClassName?: string;
+  /** Classes for the title alone, such as the smaller title of a narrow card above Grace's compact window. */
+  titleClassName?: string;
   /** What the card shows under its title: rows, photos, a preview. */
   children?: ReactNode;
 };
@@ -27,12 +33,11 @@ const heads = {
 
 /**
  * A Home launcher card: clear glass that opens its app, with the app's name, a status line and a preview of what is
- * in it. A slow sheen crosses it and a bright rim turns round its edge. Its name is its title and status; the preview
- * describes it.
+ * in it. A slow sheen crosses it. Its name is its title and status; the preview describes it.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
  */
-export function LauncherCard({ title, status, size = "large", art, turn = 0, type = "button", className, children, ...props }: LauncherCardProps) {
+export function LauncherCard({ title, status, size = "large", art, turn = 0, compact = false, headClassName, titleClassName, type = "button", className, style, children, ...props }: LauncherCardProps) {
   const away = Math.min(1, Math.abs(turn));
   const head = heads[size];
   const previewId = useId();
@@ -45,8 +50,8 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, typ
           {art}
         </span>
       ) : null}
-      <span className={cn("absolute", head.head)}>
-        <span className={cn("block font-bold", head.title)}>{title}</span>
+      <span className={cn("absolute", head.head, headClassName)}>
+        <span className={cn("block font-bold", head.title, titleClassName)}>{title}</span>
         {status && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{status}</span>}
       </span>
       {children ? (
@@ -62,28 +67,38 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, typ
       aria-describedby={children ? previewId : undefined}
       className={cn(
         focusRing,
-        // Prototype `.lc` as Home's 3D pages draw it: clear glass, the float shadow, a 2% spring on a tap.
-        "relative block cursor-pointer rounded-card bg-glass/40 p-0 text-left font-sans text-foreground shadow-float backdrop-blur-nav backdrop-saturate-150 transition-transform duration-press ease-spring active:scale-[1.02] motion-reduce:active:scale-100",
+        // Prototype `.lc`: clear glass with no live blur (line 440) and a 2% spring on a tap. Its own shadow (line 327) when flat;
+        // Home's 3D pages (`hmApply`, depth) set the float shadow instead.
+        "relative block cursor-pointer rounded-card bg-glass/40 p-0 text-left font-sans text-foreground transition-transform duration-press ease-spring active:scale-[1.02] motion-reduce:active:scale-100",
+        compact ? "shadow-launcher" : "shadow-float",
         className,
       )}
+      // Prototype `hmApply`: a card turning away loses its far shadow as it goes.
+      style={away ? { boxShadow: `0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) ${(6 * (1 - away)).toFixed(1)}%, transparent)`, ...style } : style}
       {...props}
     >
-      {/* Prototype `.lc .sheen`: a soft band of light crossing every 9s, stopped while the card is turned. */}
+      {/* Prototype `.lc .sheen` (lines 441–443): a band of light painted across the card every 9s, stopped while it is turned. */}
       {!away && (
-        <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-card">
-          <i className="absolute -top-1/2 -bottom-1/2 left-[-40%] w-[120px] rotate-[18deg] animate-sheen bg-linear-to-r from-transparent via-glass/35 to-transparent motion-reduce:animate-none" />
-        </span>
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-sheen-pan rounded-card bg-gradient-sheen bg-size-[400%_100%] bg-position-[100%_0] bg-no-repeat motion-reduce:animate-none"
+        />
       )}
-      {/* Prototype `.lc .spec`: a 1.5px rim lit by a slowly turning highlight. */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-0 overflow-hidden rounded-card p-[1.5px] [mask:linear-gradient(var(--glass)_0_0)_content-box_exclude,linear-gradient(var(--glass)_0_0)]"
-      >
-        <i className="absolute top-1/2 left-1/2 -mt-[700px] -ml-[700px] size-[1400px] animate-spin-slow bg-[conic-gradient(from_0deg,var(--glass),color-mix(in_oklab,var(--glass)_15%,transparent)_18%,color-mix(in_oklab,var(--glass)_15%,transparent)_32%,color-mix(in_oklab,var(--glass)_95%,transparent)_50%,color-mix(in_oklab,var(--glass)_15%,transparent)_68%,color-mix(in_oklab,var(--glass)_15%,transparent)_82%,var(--glass))] motion-reduce:animate-none" />
-      </span>
       {away > 0.02 ? <Blurred turn={turn}>{content}</Blurred> : content()}
     </button>
   );
+}
+
+export type LauncherRowsProps = ComponentProps<"span">;
+
+/**
+ * A card's rows, whole ones only: a row that would end within 12px of the card's bottom wraps out of sight instead of
+ * being cut (prototype `fitCards()`, `.lpanel.fitoff`). Place it last in the card, where it takes the height left.
+ */
+export function LauncherRows({ className, ...props }: LauncherRowsProps) {
+  // Rows stack in one column; one that does not fit starts a second column, 96px clear of the first and clipped. The
+  // margin lets the shadows of the rows that fit show.
+  return <span className={cn("flex min-h-0 flex-1 flex-col flex-wrap content-start gap-x-24 overflow-clip [overflow-clip-margin:16px] *:w-full *:shrink-0", className)} {...props} />;
 }
 
 // Prototype `hmLayers`: four stacked copies of the content, each more blurred, cross-faded along the card from the edge

@@ -6,6 +6,8 @@ import type { GraceDockProps } from "./GraceDock.tsx";
 
 const send = fn();
 const mic = fn();
+const fixMic = fn();
+const typed = fn();
 
 export const dockArgs: GraceDockProps = { value: "", mic: true, attach: <GraceAttachMenu options={attachOptions} /> };
 
@@ -17,6 +19,10 @@ export const meta: ComponentMeta<GraceDockProps> = {
     Listening: { listening: true, value: "Can you help me", placeholder: "" },
     "Grace's turn": { quiet: true, placeholder: "" },
     "Mic off": { mic: false, placeholder: "Tap to type a message, or turn on the mic" },
+    // Android has not given Grace the microphone; she offers to open Settings, and Margaret can still type.
+    "Mic unavailable": { micUnavailable: "Grace can’t hear you. Allow the microphone in Settings.", fixMicLabel: "Allow mic", onFixMic: fixMic, onValueChange: typed },
+    // No speech service: typing alone is the way to talk to her.
+    Offline: { micUnavailable: "Grace can’t hear you right now. Tap to type a message." },
     "Long draft": { value: "Can you help me pay my Chase bill? I think it is due on Friday, and I would like to pay the full balance from my checking account if there is enough in it." },
   },
   decorator: (story) => (
@@ -34,6 +40,21 @@ export const meta: ComponentMeta<GraceDockProps> = {
       await expect(send).toHaveBeenCalled();
       await userEvent.click(canvas.getByRole("switch"));
       await expect(mic).toHaveBeenCalledWith(false);
+    },
+    // The mic pill asks for the permission; the field still takes her words.
+    "Mic unavailable": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      fixMic.mockClear();
+      typed.mockClear();
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Allow mic" }));
+      await expect(fixMic).toHaveBeenCalled();
+      await userEvent.type(canvas.getByRole("textbox", { name: "Message to Grace" }), "H");
+      await expect(typed).toHaveBeenCalledWith("H");
+    },
+    // The switch stays off and is unavailable.
+    Offline: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const toggle = within(canvasElement).getByRole("switch");
+      await expect([toggle.getAttribute("aria-checked"), toggle.getAttribute("aria-disabled")]).toEqual(["false", "true"]);
     },
   },
 };

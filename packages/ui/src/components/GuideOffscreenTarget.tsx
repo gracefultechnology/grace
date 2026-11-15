@@ -36,7 +36,8 @@ export function GuideOffscreenTarget({ label, direction = "down", onSelect, onCl
         "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         // A white 64 pill in the guide label's 3px violet edge, in the Label style (20/700) of every control.
         "absolute flex h-16 w-max items-center gap-2.5 rounded-full bg-glass pr-[26px] pl-[18px] text-body leading-6 font-bold whitespace-nowrap text-grace-ink shadow-tag ring-3 ring-guide ring-inset",
-        "animate-label-in transition-transform duration-press ease-spring active:scale-[.97] motion-reduce:animate-none",
+        // `.gjump:active` shrinks at once, with no transition.
+        "animate-label-in active:scale-97 motion-reduce:animate-none",
         edges[direction],
         className,
       )}

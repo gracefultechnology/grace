@@ -11,7 +11,7 @@ const library = { green: "#1F5C3F", page: "#F3F5F2", ink: "#1B2B22", text: "#445
 /* eslint-enable design-system/no-literal-colors */
 const serif = "Georgia, 'Times New Roman', serif";
 const sans = "Arial, sans-serif";
-const field = { width: "100%", boxSizing: "border-box", height: 46, padding: "0 12px", border: `1px solid ${library.field}`, borderRadius: 4, font: `18px ${sans}` } as const;
+const field = { width: "100%", boxSizing: "border-box", height: 46, padding: "0 12px", border: `1px solid ${library.field}`, borderRadius: 4, background: library.white, font: `18px ${sans}` } as const;
 const label = { display: "block", margin: "12px 0 6px", font: `700 15px ${sans}` } as const;
 
 // Prototype `portalSheet()`: the Riverside Public Library's sign-in page.

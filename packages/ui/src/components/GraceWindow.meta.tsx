@@ -13,36 +13,39 @@ import { UserBubble } from "./UserBubble.tsx";
 const header = (expanded: boolean, pause: "idle" | "live" = "live") => (
   <GraceHeader expanded={expanded} pause={pause} voice={<GraceVoiceMenu side={expanded ? "bottom" : "top"} />} />
 );
-// While Grace speaks it is her turn: the field holds its place, dimmed, with no helper words.
-const dock = (expanded: boolean, quiet = false) => <GraceDock {...dockArgs} quiet={quiet} maxLines={expanded ? 6 : 4} />;
+// While Grace speaks it is her turn: the field holds its place, dimmed, with no helper words; they step back for answers
+// to tap too, and show only on Margaret's turn with nothing else to do (prototype dock()).
+const dock = (expanded: boolean, turn: "grace" | "answers" | "margaret") => (
+  <GraceDock {...dockArgs} quiet={turn === "grace"} placeholder={turn === "margaret" ? "Talk or tap to type a message" : ""} maxLines={expanded ? 6 : 4} />
+);
 
 // Prototype `#gwin` in `.chat-white` as Ask Grace opens her full screen, greeting Margaret (ref grace-open).
 export const meta: ComponentMeta<GraceWindowProps> = {
-  args: { size: "expanded", header: header(true), dock: dock(true, true), children: <GraceMessages>{greeting}</GraceMessages> },
+  args: { size: "expanded", header: header(true), dock: dock(true, "grace"), children: <GraceMessages>{greeting}</GraceMessages> },
   examples: {
     // Ref grace-compact: three rows over Home.
-    Compact: { size: "compact", header: header(false), dock: dock(false, true) },
-    Conversation: { header: header(true, "idle"), dock: dock(true), children: <GraceMessages>{conversation}</GraceMessages> },
-    "Compact question": { size: "compact", height: 330, header: header(false, "idle"), dock: dock(false), children: <GraceMessages>{conversation}</GraceMessages> },
-    "Compact thinking": { size: "compact", header: header(false, "idle"), dock: dock(false, true), children: <GraceMessages>{thinking}</GraceMessages> },
+    Compact: { size: "compact", header: header(false), dock: dock(false, "grace") },
+    Conversation: { header: header(true, "idle"), dock: dock(true, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
+    "Compact question": { size: "compact", height: 330, header: header(false, "idle"), dock: dock(false, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
+    "Compact thinking": { size: "compact", header: header(false, "idle"), dock: dock(false, "grace"), children: <GraceMessages>{thinking}</GraceMessages> },
     // A reply of four lines: the window grows a line and shows the reply's end (prototype sizeCompact(), focusMsg()).
     "Compact long reply": {
       size: "compact",
       height: 292,
       header: header(false, "idle"),
-      dock: dock(false),
+      dock: dock(false, "margaret"),
       children: (
         <GraceMessages>
           <GraceBubble>Hi Margaret. What can I help with?</GraceBubble>
           <UserBubble>Can you help me pay my Chase bill?</UserBubble>
           <GraceBubble>
-            I can help with that. Your Chase card has a balance of four hundred and twelve dollars, and the minimum payment is thirty five dollars. It is due this
-            Friday. I can open the Chase website for you and we can pay it together, one step at a time, whenever you are ready to start. Shall we do it now?
+            Chase's sign-in page is open. I'll take you through it step by step. Tap the password box, then type your password. Your bill is $84.20, due
+            tomorrow, Thursday. Shall I fill in $84.20 and today's date for you?
           </GraceBubble>
         </GraceMessages>
       ),
     },
-    Frost: { surface: "frost", size: "compact", header: header(false), dock: dock(false, true) },
+    Frost: { surface: "frost", size: "compact", header: header(false), dock: dock(false, "grace") },
   },
   decorator: (story) => <TabletScreen>{story()}</TabletScreen>,
 };

@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { Printer } from "lucide-react";
+import { FileIcon } from "../icons.tsx";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 
@@ -28,12 +28,7 @@ export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, onPrint, o
     <div className={cn("flex items-center gap-4 rounded-row bg-panel px-4 py-3.5 font-sans", className)} {...props}>
       {/* Prototype `.a-att .ft`. */}
       <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-[13px] leading-none font-extrabold text-destructive shadow-tile">
-        {/* Prototype `axi('file')`: a page with two lines. */}
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-          <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-          <path d="M10 13h4M10 17h4" />
-        </svg>
+        <FileIcon className="size-[26px]" strokeWidth={2} />
         {kind}
       </span>
       <div className="min-w-0">
@@ -46,7 +41,12 @@ export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, onPrint, o
         </Button>
         {onPrint && (
           <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" aria-label={`${printLabel} ${name}`} onClick={onPrint}>
-            <Printer size={22} strokeWidth={2.2} aria-hidden />
+            {/* Prototype `axi('printer',22,2.2)`: square corners, unlike Lucide's Printer. */}
+            <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9V2h12v7" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
             {printLabel}
           </Button>
         )}

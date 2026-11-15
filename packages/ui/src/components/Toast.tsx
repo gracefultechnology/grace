@@ -21,7 +21,7 @@ export function Toast({ open = true, onUndo, undoLabel = "Undo", className, chil
     <div
       role="status"
       className={cn(
-        "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 text-body text-primary-foreground transition-opacity duration-slow",
+        "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 text-body leading-[normal] text-primary-foreground transition-opacity duration-slow",
         open ? "opacity-100" : "pointer-events-none opacity-0",
         className,
       )}

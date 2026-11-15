@@ -3,8 +3,10 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { InputProps } from "./Input.tsx";
 
 export const meta: ComponentMeta<InputProps> = {
-  args: { "aria-label": "Email" },
+  // prototype Calendar › New appointment, the "What" field.
+  args: { "aria-label": "What", placeholder: "For example: Bridge club" },
+  decorator: (story) => <div className="w-[1130px] bg-background p-6">{story()}</div>,
   play: {
-    Error: ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("textbox", { name: "Email" }).getAttribute("aria-invalid")).toBe("true"),
+    Error: ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("textbox", { name: "What" }).getAttribute("aria-invalid")).toBe("true"),
   },
 };

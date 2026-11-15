@@ -7,7 +7,7 @@ import { UnreadDot } from "./UnreadDot.tsx";
 export type HomeMailRowProps = Omit<ComponentProps<"div">, "children"> & {
   /** Who sent it. */
   name: string;
-  /** The subject, cut to one line. */
+  /** The subject, cut to one line unless `wrap`. */
   subject: string;
   /** Their photo. */
   src?: string;
@@ -19,6 +19,8 @@ export type HomeMailRowProps = Omit<ComponentProps<"div">, "children"> & {
   unread?: boolean;
   /** What the dot means, for assistive technology. */
   unreadLabel?: string;
+  /** The subject runs onto more lines instead of being cut, as on Home above Grace's compact window. */
+  wrap?: boolean;
 };
 
 /**
@@ -26,7 +28,7 @@ export type HomeMailRowProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/email.md
  * @design packages/design-system/design.md#glass
  */
-export function HomeMailRow({ name, subject, src, tone, icon, unread = false, unreadLabel, className, ...props }: HomeMailRowProps) {
+export function HomeMailRow({ name, subject, src, tone, icon, unread = false, unreadLabel, wrap = false, className, ...props }: HomeMailRowProps) {
   // Prototype `homeCards()`: `.lpanel` with `.a-av.hav` (a white ring) and a 10px unread dot.
   return (
     <Panel variant="white" className={cn("flex items-center gap-4 px-[18px] py-3.5", className)} {...props}>
@@ -38,7 +40,8 @@ export function HomeMailRow({ name, subject, src, tone, icon, unread = false, un
           {name}
           {unread && <> <UnreadDot label={unreadLabel} className="ml-1.5 size-2.5 align-middle" /></>}
         </b>
-        <span className="block truncate text-body leading-[26px] text-muted-foreground">{subject}</span>
+        {/* Prototype `.home.cmp .lc[data-app="Email"] .lpanel span` (line 394). */}
+        <span className={cn("block text-body leading-[26px] text-muted-foreground", !wrap && "truncate")}>{subject}</span>
       </div>
     </Panel>
   );

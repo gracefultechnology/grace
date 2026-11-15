@@ -5,7 +5,8 @@ import { Alert } from "./Alert.tsx";
 import { Button } from "./Button.tsx";
 import { Input } from "./Input.tsx";
 import { Label } from "./Label.tsx";
-import { PageHeading, PageText } from "./PageHeading.tsx";
+import { PageText } from "./PageHeading.tsx";
+import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 import { TextField } from "./TextField.tsx";
 
 export type WifiJoinFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
@@ -88,7 +89,7 @@ export function WifiJoinForm({
   };
   return (
     <form aria-label={title} onSubmit={submit} className={cn("font-sans", className)} {...props}>
-      <PageHeading>{title}</PageHeading>
+      <SettingsPageHeading>{title}</SettingsPageHeading>
       <PageText tone="secondary" className="mt-1.5">{description}</PageText>
       {error ? (
         // Prototype `axi('alert',26,2.2)`, and max-width 760px plus its padding (content-box).

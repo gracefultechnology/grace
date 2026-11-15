@@ -33,11 +33,10 @@ export function GraceOrb({ glow = "rest", size = 96, active = false, className, 
       {/* Prototype `.orb-w .gp1`: the soft glow, pulsing in `welcome`, held at 1.28 in `rest`. */}
       <i
         className={cn(
-          "pointer-events-none absolute inset-0 rounded-full opacity-0 transition-opacity duration-slow motion-reduce:animate-none",
+          "pointer-events-none absolute inset-0 rounded-full bg-radial from-lavender/85 from-35% via-lavender/45 via-55% to-lavender/0 to-72% opacity-0 transition-opacity duration-slow motion-reduce:animate-none",
           glow === "welcome" && "animate-glow opacity-100",
           glow === "rest" && "scale-[1.28] opacity-70",
         )}
-        style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--lavender) 85%, transparent) 35%, color-mix(in srgb, var(--lavender) 45%, transparent) 55%, transparent 72%)" }}
       />
       {/* Prototype `.orb-w .gp2`: the ring that spreads out with each pulse. */}
       <i className={cn("pointer-events-none absolute inset-[10.4%] rounded-full opacity-0 ring-3 ring-lavender/55 motion-reduce:animate-none", glow === "welcome" && "animate-glow-ring")} />

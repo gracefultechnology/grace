@@ -10,6 +10,12 @@ import { InternetCard, type InternetCardProps } from "./InternetCard.tsx";
 /** Home's two pages: the main cards, and the page that brings the Files card into view. */
 export type HomePage = "main" | "files";
 
+/**
+ * How Home fills its space: `full` on the whole screen; `compact` above Grace's compact window, the four cards in
+ * equal columns at whatever height is left; `greeting` when the keyboard is up as well, the greeting alone.
+ */
+export type HomeLayout = "full" | "compact" | "greeting";
+
 export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
   /** The greeting for the time of day: "Good evening". */
   greeting: string;
@@ -27,6 +33,8 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
   internet: InternetCardProps;
   /** The Files card: the newest photos and document. */
   files: FilesCardProps;
+  /** How Home fills its space; give a `compact` or `greeting` Home a `bottom` that clears Grace's window. */
+  layout?: HomeLayout;
   /** The page in view. */
   page?: HomePage;
   /** Asks for the other page: an arrow or a dot was tapped. */
@@ -36,8 +44,9 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
 };
 
 const pages: HomePage[] = ["main", "files"];
-// Prototype `hmGeom()` for mode G: where each page starts along the row of cards.
+// Prototype `hmGeom()`: where each page starts along the row of cards, in mode G and when compact.
 const shifts: Record<HomePage, number> = { main: 0, files: 468 };
+const compactShifts: Record<HomePage, number> = { main: 0, files: 354 };
 // Prototype `hmGeom()` mode G: the cards in a 1042×560 grid; Email and Internet share one column.
 const slots = {
   calendar: { x: 0, top: 0, w: 480, h: 560 },
@@ -45,6 +54,8 @@ const slots = {
   internet: { x: 500, top: 310, w: 470, h: 250 },
   files: { x: 990, top: 0, w: 520, h: 560 },
 };
+// Prototype `.home.cmp .lc[data-app=…]` (lines 395–397, 635): four 334px columns, 20px apart, as tall as the grid.
+const columns: Record<keyof typeof slots, number> = { calendar: 0, email: 354, internet: 708, files: 1062 };
 const VIEW = 1042;
 const RADIUS = 400;
 // Home as drawn on the 1280×800 screen, 6px in; what is right of the rail (138px) scales to fit a smaller Home.
@@ -85,47 +96,53 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
 
 /**
  * Home: the greeting, the launcher cards on two pages that turn away round the edges like the side of a drum, the
- * pager, and a banner when there is news. It lies under the rail, which is glass, so a card rolling off the left shows
- * through it. Place it on the `TabletScreen` beside the `Rail`.
+ * pager, and a banner when there is news. Above Grace's compact window the cards stand in four narrow columns that
+ * slide flat; with the keyboard up as well, only the greeting stays. It lies under the rail, which is glass, so a card
+ * rolling off the left shows through it. Place it on the `TabletScreen` beside the `Rail`.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
  */
-export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
-  const shift = shifts[page];
-  // Smaller than the screen (portrait, or above Grace's compact window): the cards shrink, centred across, never cut.
-  const [fit, setFit] = useState({ scale: 1, x: 0 });
+export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
+  const full = layout === "full";
+  const compact = !full;
+  // Smaller than the screen (portrait): the cards shrink, centred across, never cut. Compact, Home keeps its scale
+  // across and takes the height it is given (prototype `.home.cmp .hgrid`: `height: calc(100% - 120px)`).
+  const [box, setBox] = useState({ width: STAGE.width, height: STAGE.height });
   const measure = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      const scale = Math.min(1, (width - STAGE.rail) / (STAGE.width - STAGE.rail), height / STAGE.height);
-      setFit({ scale, x: Math.max(0, (width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2) });
-    });
+    const observer = new ResizeObserver(([entry]) => setBox({ width: entry.contentRect.width, height: entry.contentRect.height }));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const across = (box.width - STAGE.rail) / (STAGE.width - STAGE.rail);
+  const scale = Math.min(1, across, full ? box.height / STAGE.height : 1);
+  const x = Math.max(0, (box.width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2);
   const place = (slot: keyof typeof slots, card: (turn: number) => ReactNode) => {
-    const { style, turn } = drum(slots[slot], shift);
+    // Compact, the cards slide flat (prototype `hmIs3D()` is false and `hmApply` translates them).
+    const { style, turn } = full ? drum(slots[slot], shifts[page]) : { turn: 0, style: { left: columns[slot], top: 0, width: 334, height: "100%", transform: `translateX(${-compactShifts[page]}px)` } };
     return (
-      <div className="absolute transition-[transform,transform-origin] duration-slow ease-out will-change-transform motion-reduce:transition-none" style={style}>
+      <div className="absolute transition-[transform,transform-origin,left,top,width,height] duration-slow ease-out will-change-transform motion-reduce:transition-none" style={style}>
         {card(turn)}
       </div>
     );
   };
-  // Prototype `.home` (left 6px under the rail), `.hgr`, `.hgrid` (lines 307–309, 644–650).
+  // Prototype `.home` (left 6px under the rail), `.hgr`, `.hgrid` (lines 307–309, 644–650); `.home.cmp` (lines 389–401)
+  // and `.home.tight .hgrid` (line 615).
   return (
     <div ref={measure} className={cn("absolute inset-1.5 z-[1] overflow-hidden font-sans", className)} {...props}>
-      <div className="absolute top-0 left-0" style={{ width: STAGE.width, height: STAGE.height, transformOrigin: `${STAGE.rail}px 0`, scale: String(fit.scale), translate: `${fit.x}px 0` }}>
-        <HomeGreeting greeting={greeting} name={name} line={line} className="absolute top-[34px] left-[182px]" />
+      <div className="absolute top-0 left-0" style={{ width: STAGE.width, height: full ? STAGE.height : box.height / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
+        <HomeGreeting greeting={greeting} name={name} line={line} compact={compact} className={cn("absolute left-[182px] transition-[top] duration-window", full ? "top-[34px]" : "top-[22px]")} />
         {/* Prototype `drawBanner()`: left 620px and right 26px of the screen, 22px down. */}
         {banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
-        <div className="absolute top-40 left-[182px] h-[560px] w-[1042px]">
-          {place("calendar", (turn) => <HomeCalendarCard {...calendar} turn={turn} className={cn("size-full", calendar.className)} />)}
-          {place("email", (turn) => <HomeEmailCard {...email} turn={turn} className={cn("size-full", email.className)} />)}
-          {place("internet", (turn) => <InternetCard {...internet} turn={turn} className={cn("size-full", internet.className)} />)}
-          {place("files", (turn) => <FilesCard {...files} turn={turn} className={cn("size-full", files.className)} />)}
-        </div>
-        <HomePager page={pages.indexOf(page)} count={pages.length} onPageChange={(i) => onPageChange?.(pages[i] ?? "main")} {...pager} />
+        {layout !== "greeting" && (
+          <div className={cn("absolute left-[182px] w-[1042px]", full ? "top-40 h-[560px]" : "top-24 bottom-6")}>
+            {place("calendar", (turn) => <HomeCalendarCard {...calendar} compact={compact} turn={turn} className={cn("size-full", calendar.className)} />)}
+            {place("email", (turn) => <HomeEmailCard {...email} compact={compact} turn={turn} className={cn("size-full", email.className)} />)}
+            {place("internet", (turn) => <InternetCard {...internet} compact={compact} turn={turn} className={cn("size-full", internet.className)} />)}
+            {place("files", (turn) => <FilesCard {...files} compact={compact} turn={turn} className={cn("size-full", files.className)} />)}
+          </div>
+        )}
+        <HomePager page={pages.indexOf(page)} count={pages.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(pages[i] ?? "main")} {...pager} />
       </div>
     </div>
   );

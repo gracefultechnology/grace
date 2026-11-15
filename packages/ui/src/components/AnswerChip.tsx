@@ -32,10 +32,12 @@ export function AnswerChip({ className, children, ...props }: AnswerChipProps) {
       ref={ref}
     >
       {size && (
-        <svg aria-hidden width={size[0] + 10} height={size[1] + 2} viewBox={`0 0 ${size[0] + 10} ${size[1] + 2}`} className="pointer-events-none absolute top-0 left-0 z-0 overflow-visible">
+        // .uchip .dash: sized by CSS to the chip, drawn to its whole-pixel size and centred in it, the stroke unscaled.
+        <svg aria-hidden viewBox={`0 0 ${size[0] + 10} ${size[1] + 2}`} className="pointer-events-none absolute top-0 left-0 z-0 h-[calc(100%+2px)] w-[calc(100%+10px)] overflow-visible">
           {/* .uchip .dash path; on the frosted window a half-white fill; tapped (.uchip:active) it fills in solid. */}
           <path
             d={bubbleOutline(...size, size[1] / 2, 1)}
+            vectorEffect="non-scaling-stroke"
             className="fill-none stroke-user-ink/70 stroke-2 [stroke-dasharray:12_7] [stroke-linecap:round] [stroke-linejoin:round] group-active/chip:fill-user-ink group-active/chip:stroke-user-ink group-active/chip:[stroke-dasharray:none] group-data-[surface=frost]/grace:fill-glass/50"
           />
         </svg>

@@ -116,6 +116,11 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `pale` | oklch(0.763 0.034 297) | — |
 | `site` | oklch(0.972 0.003 247.9) | — |
 | `favicon` | oklch(0.64 0.022 291.9) | — |
+| `site-brand` | oklch(0.347 0.073 256.7) | — |
+| `field-placeholder` | oklch(0.562 0 0) | — |
+| `dim` | oklch(0 0 0) | — |
+| `thumb-ring` | oklch(0.203 0.039 282.3) | — |
+| `calendar-shadow` | oklch(0.538 0.139 29.1) | — |
 | `guide-close` | oklch(0.409 0.043 291.4) | — |
 | `placeholder` | oklch(0.431 0.12 285) | — |
 | `address-placeholder` | oklch(0.498 0.009 253.9) | — |
@@ -176,7 +181,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | Token | Value |
 | --- | --- |
 | `radius` | 0.75rem |
-| `font.sans` | "Figtree Variable", "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif |
+| `font.sans` | "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif |
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
 | `shadow.sm` | 0 1px 2px oklch(0 0 0 / 0.08) |
 | `shadow.md` | 0 4px 12px oklch(0 0 0 / 0.12) |
@@ -211,10 +216,29 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.thumb` | inset 0 0 0 1px rgb(59 47 99 / 0.08), 0 2px 8px rgb(59 47 99 / 0.25) |
 | `shadow.tag` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 24px rgb(59 47 99 / 0.16) |
 | `shadow.cursor` | 0 0 0 6px rgb(122 99 238 / 0.35), 0 0 22px 8px rgb(122 99 238 / 0.35) |
+| `shadow.tile-pressed` | inset 0 0 0 1px rgb(255 255 255 / 0.95), 0 4px 12px rgb(59 47 99 / 0.12) |
+| `shadow.bubble` | 0 1px 2px rgb(59 47 99 / 0.06), 0 4px 14px rgb(59 47 99 / 0.08) |
+| `shadow.strip` | inset 0 0 0 1px rgb(255 255 255 / 0.75), 0 6px 20px rgb(59 47 99 / 0.14) |
+| `shadow.cursor-tag` | 0 8px 24px rgb(59 47 99 / 0.22) |
+| `shadow.cursor-tag-paused` | inset 0 0 0 2px var(--primary), 0 8px 24px rgb(59 47 99 / 0.18) |
+| `shadow.guide-tight` | 0 0 0 4px var(--guide) |
+| `shadow.guide-tight-ok` | 0 0 0 4px var(--ok) |
+| `shadow.guide-nudge` | 0 0 0 4px var(--guide), 0 0 0 10px rgb(122 99 238 / 0.24) |
+| `shadow.attachment` | 0 2px 8px rgb(60 70 110 / 0.12) |
+| `shadow.photo-tile` | 0 2px 10px rgb(60 70 110 / 0.1) |
+| `shadow.pane` | inset 0 0 0 1px rgb(255 255 255 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.55), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
+| `shadow.sidebar` | inset 0 0 0 1px #fff, inset 0 1.5px 2px #fff, 0 0 0 1px rgb(59 47 99 / 0.07), 0 2px 6px rgb(59 47 99 / 0.06), 0 12px 36px rgb(59 47 99 / 0.16) |
+| `shadow.print` | 0 0 0 6px #fff, 0 10px 20px rgb(60 70 110 / 0.18) |
+| `shadow.print-top` | 0 0 0 6px #fff, 0 14px 24px rgb(60 70 110 / 0.2) |
+| `shadow.launcher` | inset 0 1px 0 rgb(255 255 255 / 0.95), 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 22px rgb(59 47 99 / 0.1) |
+| `shadow.hairline` | 0 1px 0 rgb(59 47 99 / 0.1) |
+| `dropShadow.label` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 18px rgb(59 47 99 / 0.14) |
+| `dropShadow.calendar` | 0 14px 18px color-mix(in srgb, var(--calendar-shadow) 28%, transparent), 0 3px 4px rgb(59 47 99 / 0.12) |
 | `breakpoint.sm` | 40rem |
 | `breakpoint.md` | 48rem |
 | `breakpoint.lg` | 64rem |
 | `breakpoint.xl` | 80rem |
+| `rounded.line` | 4px |
 | `rounded.tag` | 6px |
 | `rounded.tile` | 14px |
 | `rounded.tab` | 18px |
@@ -233,6 +257,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `gradient.ring` | linear-gradient(135deg, var(--ring-from) 0%, var(--ring-via) 55%, var(--ring-to) 100%) |
 | `gradient.calendar` | linear-gradient(135deg, var(--calendar-from) 0%, var(--rose) 100%) |
 | `gradient.sleep` | radial-gradient(60% 70% at 20% 10%, var(--sleep-glow) 0%, transparent 70%), linear-gradient(var(--sleep), var(--sleep)) |
+| `gradient.sheen` | linear-gradient(108deg, rgb(255 255 255 / 0) 47%, rgb(255 255 255 / 0.35) 50%, rgb(255 255 255 / 0) 53%) |
 | `gradient.orb` | radial-gradient(circle at 40% 38%, var(--orb-light), var(--orb-deep)) |
 | `text.caption` | 0.9375rem |
 | `text.label` | 1.0625rem |
@@ -290,8 +315,10 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `duration.fast` | 100ms |
 | `duration.base` | 150ms |
 | `duration.press` | 140ms |
+| `duration.quick` | 200ms |
 | `duration.slow` | 300ms |
 | `duration.window` | 280ms |
 | `ease.standard` | cubic-bezier(0.4, 0, 0.2, 1) |
 | `ease.spring` | cubic-bezier(0.3, 0.7, 0.4, 1.4) |
+| `ease.settle` | cubic-bezier(0.3, 0.7, 0.3, 1) |
 <!-- tokens:end -->

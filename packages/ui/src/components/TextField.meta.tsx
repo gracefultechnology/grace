@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { expect, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { Button } from "./Button.tsx";
@@ -12,11 +12,12 @@ export const meta: ComponentMeta<TextFieldProps> = {
       label: "Day",
       readOnly: true,
       defaultValue: "Friday, November 13",
-      icon: <CalendarDays size={24} strokeWidth={2} aria-hidden className="shrink-0" />,
+      icon: <Calendar size={24} strokeWidth={2} aria-hidden className="shrink-0" />,
       action: <Button variant="capsule" size="compact" className="h-12 px-[18px] text-lg">Change</Button>,
     },
   },
-  decorator: (story) => <div className="w-[540px] bg-background p-6">{story()}</div>,
+  // A field of the form's two 527px columns.
+  decorator: (story) => <div className="w-[575px] bg-background p-6">{story()}</div>,
   play: {
     // The label names the field: a tap on it puts the words there.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {

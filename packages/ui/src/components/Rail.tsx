@@ -31,7 +31,7 @@ export function Rail({ battery, batteryLabel, time, period, date, status, footer
   return (
     <nav
       className={cn(
-        "absolute top-1.5 bottom-1.5 left-1.5 z-[4] flex w-[132px] flex-col items-center rounded-window bg-glass/62 pt-3.5 text-foreground shadow-capsule backdrop-blur-[16px] backdrop-saturate-[1.6]",
+        "absolute top-1.5 bottom-1.5 left-1.5 z-[4] flex w-[132px] flex-col items-center rounded-window bg-glass/62 pt-3.5 text-foreground shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
         className,
       )}
       {...props}
@@ -85,7 +85,7 @@ export function RailButton({ icon, label, selected = false, type = "button", cla
       className={cn(
         focusRing,
         "flex h-[76px] w-[116px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl text-body leading-6 font-bold text-chrome transition-[background-color,box-shadow] duration-press [&_svg]:shrink-0",
-        selected ? "bg-card text-primary shadow-raised" : "active:bg-glass/72 active:shadow-raised",
+        selected ? "bg-card text-primary shadow-raised" : "active:bg-glass/72 active:shadow-tile-pressed",
         className,
       )}
       {...props}

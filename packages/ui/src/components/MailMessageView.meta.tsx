@@ -1,10 +1,26 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { flowersPhoto, mailScreen, people, programPhoto, stagePhoto, unfocus } from "./MailApp.meta.tsx";
+import { waterBill } from "./BillOffer.meta.tsx";
 import { MailLink, type MailMessageViewProps } from "./MailMessageView.tsx";
 
 const photo = fn();
 const reply = fn();
+const retry = fn();
+const confirmBill = fn();
+
+// A sample bill email, its bill found by Grace.
+const bill: Partial<MailMessageViewProps> = {
+  from: { name: "City Water", tone: 1 },
+  time: "9:40 AM",
+  subject: "Your November water bill",
+  body: "Your bill for November is ready. Please pay by November 28.",
+  photos: undefined,
+  bill: waterBill,
+  onConfirmBill: confirmBill,
+  onDismissBill: fn(),
+  onOpenBill: fn(),
+};
 
 // The prototype's X.mail.items, opened.
 const scam: Partial<MailMessageViewProps> = {
@@ -56,6 +72,13 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     Scam: scam,
     Attachment: clinic,
     "In Trash": { ...clinic, backLabel: "Trash", inTrash: true, onRestore: fn(), onDeleteForever: fn() },
+    // Reply and Forward wait until every attachment is known.
+    Loading: { status: "loading" },
+    "Couldn’t open": { status: "failed", onRetry: retry },
+    "Photos saved": { saveAllStatus: "saved" },
+    "Print unknown": { ...clinic, files: [{ name: "Visit form.pdf", detail: "2 pages", printStatus: "unknown" }] },
+    Bill: bill,
+    "Bill confirmed": { ...bill, bill: { ...waterBill, confirmed: true, status: <span className="text-body leading-[26px] font-semibold text-muted-foreground">Not paid yet</span> } },
   },
   decorator: mailScreen,
   play: {
@@ -65,6 +88,20 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
       await expect(photo).toHaveBeenCalledWith(1);
       await userEvent.click(canvas.getByRole("button", { name: "Reply" }));
       await expect(reply).toHaveBeenCalled();
+      unfocus();
+    },
+    Loading: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(["Reply", "Forward"].map((name) => canvas.getByRole<HTMLButtonElement>("button", { name }).disabled)).toEqual([true, true]);
+    },
+    "Couldn’t open": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
+      await expect(retry).toHaveBeenCalled();
+      unfocus();
+    },
+    Bill: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Yes" }));
+      await expect(confirmBill).toHaveBeenCalled();
       unfocus();
     },
     Scam: ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("alert").textContent).toContain("scam"),

@@ -72,10 +72,10 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
       data-surface={surface}
       className={cn(
         // .gwin: 16px in, the corner concentric with its 64px capsules (32 + 16).
-        "group/grace isolate flex flex-col gap-6 overflow-hidden rounded-device p-4 font-sans text-grace-ink transition-[height,bottom] duration-window ease-standard motion-reduce:transition-none",
+        "group/grace isolate flex flex-col gap-6 overflow-hidden rounded-device p-4 font-sans text-grace-ink transition-[height,bottom] duration-slow ease-settle motion-reduce:transition-none",
         white
           ? "bg-background shadow-window"
-          : cn("shadow-float inset-ring inset-ring-glass/70 backdrop-blur-2xl backdrop-saturate-150", expanded ? "bg-frost/94" : "bg-frost/86"),
+          : cn("shadow-banner backdrop-blur-2xl backdrop-saturate-150", expanded ? "bg-frost/94" : "bg-frost/86"),
         placement === "screen" ? cn("absolute bottom-1.5 left-[144px] z-[3] right-1.5", expanded && "top-1.5") : cn("relative w-full", expanded && "h-full"),
         className,
       )}

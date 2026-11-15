@@ -1,6 +1,9 @@
-import { Trash } from "lucide-react";
+import type { ReactNode } from "react";
+import { TriangleAlert } from "lucide-react";
 import { cn } from "../lib/cn.ts";
+import { Alert } from "./Alert.tsx";
 import { Button } from "./Button.tsx";
+import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { Dialog, DialogContent, DialogTitle, type DialogProps } from "./Dialog.tsx";
 
 /** What a deletion removes: the chosen occurrence, or every occurrence of its repeating event. */
@@ -17,6 +20,8 @@ export type CalendarDeleteDialogProps = Omit<DialogProps, "children"> & {
   onDelete?: (scope: CalendarDeleteScope) => void;
   /** Called by Keep it. */
   onKeep?: () => void;
+  /** The deletion failed: what it says above the choices, which stay to choose again. */
+  error?: ReactNode;
   /** The deletion is being saved: the choices wait. */
   pending?: boolean;
   /** The words on the choices. */
@@ -36,10 +41,10 @@ const defaultLabels = {
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
  */
-export function CalendarDeleteDialog({ title, description, repeating = false, onDelete, onKeep, pending = false, labels = defaultLabels, className, ...props }: CalendarDeleteDialogProps) {
+export function CalendarDeleteDialog({ title, description, repeating = false, onDelete, onKeep, error, pending = false, labels = defaultLabels, className, ...props }: CalendarDeleteDialogProps) {
   const choice = (scope: CalendarDeleteScope, label: string) => (
     <Button key={scope} variant="warn" size="pill" className="w-full" loading={pending} onClick={() => onDelete?.(scope)}>
-      {!pending && <Trash size={22} strokeWidth={2.2} aria-hidden />}
+      {!pending && <CalendarGlyph name="trash" size={22} />}
       {label}
     </Button>
   );
@@ -55,6 +60,12 @@ export function CalendarDeleteDialog({ title, description, repeating = false, on
       >
         <DialogTitle>{title}</DialogTitle>
         <p className="m-0 mt-2 text-body-lg leading-[30px] text-muted-foreground">{description}</p>
+        {error != null && (
+          // Prototype `.a-caution` of a refusal (line 2006): a 26px mark.
+          <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-5">
+            {error}
+          </Alert>
+        )}
         {/* Prototype `.a-dlg .a-btns`: a column of full-width buttons. */}
         <div className="mt-6 flex flex-col gap-3">
           {repeating ? [choice("occurrence", labels.occurrence), choice("series", labels.series)] : choice("occurrence", labels.one)}
