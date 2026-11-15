@@ -1,11 +1,13 @@
-import { Inbox, type LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
+import { Inbox } from "lucide-react";
+import type { IconProps } from "../icons.tsx";
 import { mailIcons } from "./MailMessageRow.tsx";
 import { SideNav, SideNavItem, type SideNavProps } from "./SplitView.tsx";
 
 /** A folder of the mailbox (spec/app/emailItem.md, `Folder`). */
 export type MailFolder = "inbox" | "sent" | "drafts" | "trash";
 
-const folders: [MailFolder, LucideIcon][] = [
+const folders: [MailFolder, ComponentType<IconProps>][] = [
   ["inbox", Inbox],
   ["sent", mailIcons.sent],
   ["drafts", mailIcons.draft],

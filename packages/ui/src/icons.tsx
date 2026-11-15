@@ -1,18 +1,48 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "./lib/cn.ts";
 
-export type IconProps = ComponentProps<"svg">;
+export type IconProps = ComponentProps<"svg"> & {
+  /** Width and height in pixels, as Lucide's icons take it; otherwise size with a class. */
+  size?: number;
+};
 
 // Prototype `AXP` and `axi()` (prototype/Grace Prototype.html): 24-unit outlines in the current color, 24px and stroke
 // 2.2 unless told otherwise. Decorative; name the action on what they sit in. Size with a class: `size-7`.
 const outline = (paths: ReactNode) =>
-  function Icon({ className, ...props }: IconProps) {
+  function Icon({ size, className, ...props }: IconProps) {
     return (
-      <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={cn("size-6 shrink-0", className)} {...props}>
+      <svg aria-hidden viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={cn(size == null && "size-6", "shrink-0", className)} {...props}>
         {paths}
       </svg>
     );
   };
+
+/** The outlines shared with `CalendarGlyph`, which draws several in one svg. */
+export const iconPaths = {
+  trash: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </>
+  ),
+  pencil: <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
+  mail: (
+    <>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </>
+  ),
+};
+
+/** `AXP.trash`: delete, without Lucide's two inner lines. */
+export const TrashIcon = outline(iconPaths.trash);
+
+/** `AXP.pencil`: change. */
+export const PencilIcon = outline(iconPaths.pencil);
+
+/** `AXP.mail`: an envelope. */
+export const MailIcon = outline(iconPaths.mail);
 
 /** `AXP.bell`: a reminder. */
 export const BellIcon = outline(

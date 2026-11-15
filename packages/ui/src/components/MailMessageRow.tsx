@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { createLucideIcon, type LucideIconNode } from "lucide-react";
+import { MailIcon, PencilIcon, TrashIcon } from "../icons.tsx";
 import { Avatar, type AvatarProps } from "./Avatar.tsx";
 import { ListRow, type ListRowProps } from "./ListRow.tsx";
 
@@ -10,18 +11,15 @@ const icon = (name: string, ...paths: string[]) => createLucideIcon(name, paths.
  * its two lines, the older paperclip, pens, send, download, printer, file, envelope and camera.
  */
 export const mailIcons = {
-  trash: icon("mail-trash", "M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"),
+  trash: TrashIcon,
   draft: icon("mail-draft", "M12 20h9", "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"),
   clip: icon("mail-clip", "m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6a4 4 0 0 1 5.7 5.7l-8.6 8.6a2 2 0 0 1-2.8-2.8l8-8"),
   sent: icon("mail-sent", "m22 2-7 20-4-9-9-4Z", "M22 2 11 13"),
-  pencil: icon("mail-pencil", "M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"),
+  pencil: PencilIcon,
   down: icon("mail-down", "M12 15V3", "m7 10 5 5 5-5", "M5 21h14"),
   printer: icon("mail-printer", "M6 9V2h12v7", "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2", "M6 14h12v8H6z"),
   file: icon("mail-file", "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", "M14 2v4a2 2 0 0 0 2 2h4", "M10 13h4M10 17h4"),
-  mail: createLucideIcon("mail-mail", [
-    ["rect", { x: "2", y: "4", width: "20", height: "16", rx: "2", key: "body" }],
-    ["path", { d: "m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7", key: "flap" }],
-  ]),
+  mail: MailIcon,
   camera: createLucideIcon("mail-camera", [
     ["path", { d: "M4 8h3l2-3h6l2 3h3v11H4z", key: "body" }],
     ["circle", { cx: "12", cy: "13", r: "3.5", key: "lens" }],
