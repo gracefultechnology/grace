@@ -111,6 +111,7 @@ export * from "./components/Slider.tsx";
 export * from "./components/Spinner.tsx";
 export * from "./components/SplitView.tsx";
 export * from "./components/StartupScreen.tsx";
+export * from "./components/SuggestionOffer.tsx";
 export * from "./components/Switch.tsx";
 export * from "./components/TabletScreen.tsx";
 export * from "./components/TaskCard.tsx";

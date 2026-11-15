@@ -8,6 +8,8 @@ export interface ValueCardOption {
   value: string;
   /** A line under it that tells the offers apart: "Strong signal". */
   detail?: string;
+  /** What a saved value is kept for, shown as a tag beside it: "Home address". */
+  tag?: string;
 }
 
 export type ValueCardsProps = Omit<ComponentProps<"div">, "onSelect"> & {
@@ -38,7 +40,10 @@ export function ValueCards({ options, onPick, label, className, ...props }: Valu
             "flex min-h-16 min-w-[280px] cursor-pointer flex-col items-start rounded-row px-6 py-3 text-left text-user-ink inset-ring-[1.5px] inset-ring-user-ink/70 transition-transform duration-press ease-spring active:scale-97 active:bg-user-ink active:text-primary-foreground motion-reduce:active:scale-100",
           )}
         >
-          <span className="text-body-lg leading-[30px] font-bold">{option.value}</span>
+          <span className="flex items-center gap-3">
+            <span className="text-body-lg leading-[30px] font-bold">{option.value}</span>
+            {option.tag && <span className="rounded-tag px-2 text-caption leading-6 font-bold inset-ring inset-ring-current/40">{option.tag}</span>}
+          </span>
           {option.detail && <span className="text-body leading-[26px] font-medium opacity-80">{option.detail}</span>}
         </button>
       ))}
