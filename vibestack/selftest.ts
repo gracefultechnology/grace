@@ -824,8 +824,8 @@ pure def lawOwn(own: int): bool = shadowOwn(own) == own`));
     assert.deepEqual([domain.echo(7), domain.echoLocal(8), domain.sum([2, 3]), domain.shadowOwn(9), domain.paramShadow(1), domain.nestedShadow(1)], [7, 8, 5, 9, 7, 8]);
   });
 
-  test("a locally chosen enum, or a local record holding one, keeps its Quint type in the generated proof", async () => {
-    const root = oneRule("choice", "Choose", "type Choice = Left | Right\ntype Pick = { side: Choice, n: int }\npure def use(c: Choice): int = if (c == Left) 1 else 2\npure def picked(p: Pick): int = use(p.side) + p.n\npure def chosen(b: bool): int =\n  val c = if (b) Left else Right\n  val p = { side: Left, n: 0 }\n  use(c) + picked(p) - 1\npure def lawChosen(b: bool): bool = chosen(b) == (if (b) 1 else 2)");
+  test("a locally chosen enum, or a local record or list holding one, keeps its Quint type in the generated proof", async () => {
+    const root = oneRule("choice", "Choose", "type Choice = Left | Right\ntype Pick = { side: Choice, n: int }\npure def use(c: Choice): int = if (c == Left) 1 else 2\npure def picked(p: Pick): int = use(p.side) + p.n\npure def count(cs: List[Choice]): int = cs.length()\npure def chosen(b: bool): int =\n  val c = if (b) Left else Right\n  val p = { side: Left, n: 0 }\n  val cs = if (b) [Left] else [Right, Left]\n  use(c) + picked(p) - 1 + count(cs) - cs.length()\npure def lawChosen(b: bool): bool = chosen(b) == (if (b) 1 else 2)");
     const { failed, text } = await run(root);
     assert.deepEqual(failed, ["review"], text);
     const record = oneRule("recordLocal", "A local record keeps its value", "pure def value(n: int): int =\n  val box = { value: n }\n  box.value");
