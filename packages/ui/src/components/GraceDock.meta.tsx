@@ -16,6 +16,9 @@ export const meta: ComponentMeta<GraceDockProps> = {
   args: { ...dockArgs, placeholder: "Talk or tap to type a message", onSend: send, onMicChange: mic },
   examples: {
     Draft: { value: "Can you help me pay my Chase bill?" },
+    // The original app's set-up dock: Talk in place of the Mic switch.
+    "Set-up": { placeholder: "Talk or tap to type", onTalk: fn() },
+    "Set-up listening": { placeholder: "", listening: true, onTalk: fn() },
     Listening: { listening: true, value: "Can you help me", placeholder: "" },
     "Grace's turn": { quiet: true, placeholder: "" },
     "Mic off": { mic: false, placeholder: "Tap to type a message, or turn on the mic" },
