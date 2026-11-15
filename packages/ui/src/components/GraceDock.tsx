@@ -62,6 +62,14 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   micOffLabel?: string;
   /** The field's accessible name. */
   fieldLabel?: string;
+  /**
+   * Set-up's Talk in place of the Mic switch (senior-care Dock.tsx, `setup`): filled on Margaret's turn, a keyline while
+   * she is `listening`.
+   */
+  setup?: boolean;
+  /** Called by Talk during set-up. */
+  onTalk?: () => void;
+  talkLabel?: string;
 };
 
 /**
@@ -89,6 +97,9 @@ export function GraceDock({
   micOnLabel = "Mic on",
   micOffLabel = "Mic off",
   fieldLabel = "Message to Grace",
+  setup = false,
+  onTalk,
+  talkLabel = "Talk",
   className,
   ...props
 }: GraceDockProps) {
@@ -113,7 +124,7 @@ export function GraceDock({
       {/* .cap: tapping anywhere on the capsule types into it. */}
       <label
         className={cn(
-          "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 transition-opacity data-multi:items-end data-multi:rounded-window",
+          "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 data-multi:items-end data-multi:rounded-window",
           "group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost group-data-[surface=frost]/grace:backdrop-saturate-150",
           quiet && "opacity-70",
         )}
@@ -144,7 +155,18 @@ export function GraceDock({
       )}
       <GraceCapsule className="self-end">
         {attach}
-        {micUnavailable === undefined ? (
+        {setup ? (
+          <Button
+            variant={listening ? "capsule" : "prominent"}
+            size="pill"
+            aria-pressed={listening}
+            className={cn("pr-[26px] pl-[22px] shadow-none", listening && "inset-ring-2 inset-ring-primary")}
+            onClick={onTalk}
+          >
+            {micIcon(true)}
+            {talkLabel}
+          </Button>
+        ) : micUnavailable === undefined ? (
           <GracePill role="switch" aria-checked={mic} onClick={() => onMicChange?.(!mic)} className="pr-3">
             {micIcon(mic)}
             {mic ? micOnLabel : micOffLabel}

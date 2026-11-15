@@ -1,4 +1,5 @@
 import type { ComponentMeta } from "vibestack/stories";
+import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceDock } from "./GraceDock.tsx";
 import { dockArgs } from "./GraceDock.meta.tsx";
 import { GraceHeader } from "./GraceHeader.tsx";
@@ -27,6 +28,24 @@ export const meta: ComponentMeta<GraceWindowProps> = {
     Compact: { size: "compact", header: header(false), dock: dock(false, "grace") },
     Conversation: { header: header(true, "idle"), dock: dock(true, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
     "Compact question": { size: "compact", height: 330, header: header(false, "idle"), dock: dock(false, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
+    // While she talks the answers fade out and keep their place (prototype `.sugg.fade`).
+    "Compact question, listening": {
+      size: "compact",
+      height: 330,
+      header: header(false, "idle"),
+      dock: dock(false, "margaret"),
+      children: (
+        <GraceMessages>
+          <GraceBubble>Hi Margaret. What can I help with?</GraceBubble>
+          <UserBubble>Can you help me pay my Chase bill?</UserBubble>
+          <GraceBubble>I'll open Chase's website. Would you like to watch me do it?</GraceBubble>
+          <AnswerChips faded>
+            <AnswerChip>Yes, show me</AnswerChip>
+            <AnswerChip>No, go ahead</AnswerChip>
+          </AnswerChips>
+        </GraceMessages>
+      ),
+    },
     "Compact thinking": { size: "compact", header: header(false, "idle"), dock: dock(false, "grace"), children: <GraceMessages>{thinking}</GraceMessages> },
     // A reply of four lines: the window grows a line and shows the reply's end (prototype sizeCompact(), focusMsg()).
     "Compact long reply": {

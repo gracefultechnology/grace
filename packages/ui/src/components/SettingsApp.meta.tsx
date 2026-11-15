@@ -66,10 +66,17 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       onBack: fn(),
       children: <WifiJoinForm network="Sunrise Community Center" account userPlaceholder="For example: margaret" error="That account name or password didn’t work. Check both and try again." onAskGrace={fn()} />,
     },
+    // Prototype axGuide() with kind `instruction` on a size (JS 2072-2079): Margaret makes the words bigger herself.
+    "Grace Points At Largest": {
+      children: (
+        <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} guide={{ targetId: "Largest", kind: "instruction", title: "Tap Largest", onClose: fn() }} />
+      ),
+    },
     // Prototype `X.hdrMode`: the large title names the page and the page leaves out its own (`axRender()`).
     "Header Mode Large": { headerMode: "large" },
     "Header Mode Large, Wi-Fi join": { headerMode: "large", page: "wifi", pageTitle: "Join Home Network", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
     "Header Mode None": { headerMode: "none", page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
+    "Header Mode None, Wi-Fi join": { headerMode: "none", page: "wifi", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
     // spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence".
     "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
     // spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it".

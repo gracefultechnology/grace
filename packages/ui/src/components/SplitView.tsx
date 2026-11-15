@@ -6,27 +6,34 @@ export type SplitViewProps = ComponentProps<"div"> & {
   nav: ReactNode;
   /** The window's header, an `AppHeader`: it floats over the top of the page column, not over the side list. */
   header?: ReactNode;
-  /** The page column starts below the header's row (Back, an icon title) rather than beside the ✕. */
-  belowHeader?: boolean;
+  /**
+   * Where the page column starts: `header` below the header's row (an icon title, or Back), `beside` level with the ✕
+   * (a large title), `clear` just under the window's top (no title), `clearBack` below a Back with no title.
+   */
+  pageTop?: "header" | "beside" | "clear" | "clearBack";
   /** Called as the page column scrolls, for a large title that collapses into the header. */
   onPageScroll?: UIEventHandler<HTMLDivElement>;
   /** The page column, the element that scrolls. */
   pageRef?: Ref<HTMLDivElement>;
 };
 
+// Prototype `#awin.splitw .a-split>div:last-child`: `.icmode` and `.lgmode.hasback` 84px, `.lgmode` 12px, none 18px, none `.hasback` 88px.
+const pageTops = { header: "pt-[84px]", beside: "pt-3", clear: "pt-[18px]", clearBack: "pt-[88px]" } as const;
+
 /**
  * An app window split into a side list and the page it opens, as Email and Settings are.
  * @design packages/design-system/design.md#windows
  */
-export function SplitView({ nav, header, belowHeader = true, onPageScroll, pageRef, className, children, ...props }: SplitViewProps) {
+export function SplitView({ nav, header, pageTop = "header", onPageScroll, pageRef, className, children, ...props }: SplitViewProps) {
   return (
-    // Prototype `#awin.splitw .pg.hassplit` and `.a-split`: 16px around, a 270px list, 24px apart.
+    // Prototype `#awin.splitw .pg.hassplit` and `.a-split`: 16px around, a 270px list, 24px apart; the page column
+    // reaches the window's edge (`margin:0 -24px 0 0; padding-right:24px`).
     <div className={cn("relative grid h-full grid-cols-[270px_minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
       {nav}
       <div
         ref={pageRef}
         onScroll={onPageScroll}
-        className={cn("min-h-0 overflow-y-auto pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", belowHeader ? "pt-[84px]" : "pt-3")}
+        className={cn("-mr-6 min-h-0 overflow-y-auto pr-6 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", pageTops[pageTop])}
       >
         {children}
       </div>

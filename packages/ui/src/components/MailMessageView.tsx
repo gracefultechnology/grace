@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Forward, Reply, Undo2 } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
+import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { BillOffer, type BillDetails, type BillOfferLabels } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
@@ -164,6 +165,8 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   billLabels?: Partial<BillOfferLabels>;
   /** The view's words, for another language. */
   labels?: Partial<MailMessageViewLabels>;
+  /** Grace pointing inside the email; the target `scam` is her warning above a scam. */
+  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel"> & { targetId: "scam" };
 };
 
 /**
@@ -204,8 +207,10 @@ export function MailMessageView({
   billLabels,
   labels,
   backLabel = "Inbox",
+  guide,
   ...props
 }: MailMessageViewProps) {
+  const { targetId, ...pointing } = guide ?? {};
   const l = { ...viewLabels, ...labels };
   // spec/app/email.md, "Each search or content read needs current access and the user's choice": Reply and Forward wait for the whole read.
   const held = status !== "ready";
@@ -236,11 +241,15 @@ export function MailMessageView({
       {...props}
     >
       <article className="font-sans" aria-busy={status === "loading" || undefined}>
-        {scam && (
-          <Alert variant="caution" className="mb-5">
-            {l.scam}
-          </Alert>
-        )}
+        {scam &&
+          (targetId === "scam" ? (
+            // Prototype axGuide(): the ring follows the warning's 22px corners.
+            <GuideAnchor radius={22} className="mb-5 flex" {...pointing}>
+              <Alert variant="caution" className="flex-1">{l.scam}</Alert>
+            </GuideAnchor>
+          ) : (
+            <Alert variant="caution" className="mb-5">{l.scam}</Alert>
+          ))}
         <div className="flex items-center gap-[18px]">
           <MailContactAvatar contact={from} aria-hidden />
           <div className="min-w-0">

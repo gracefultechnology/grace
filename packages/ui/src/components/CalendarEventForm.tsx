@@ -1,10 +1,11 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { cn, focusRing } from "../lib/cn.ts";
+import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { fieldCapsule } from "./Input.tsx";
 import { Label } from "./Label.tsx";
+import { menuOption, menuPanel } from "./Menu.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
 import { TextField } from "./TextField.tsx";
 
@@ -71,7 +72,7 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
               (event.currentTarget as HTMLElement).focus();
             }}
             // `.apop` `min-width:320px;max-height:360px;padding:8px`, content-box: 336px wide, at most 376px tall.
-            className="z-50 flex max-h-[376px] min-w-[336px] flex-col gap-2 overflow-auto rounded-menu bg-glass/95 p-2 font-sans shadow-popover outline-none [scrollbar-width:none]"
+            className={cn(menuPanel({ surface: "page" }), "max-h-[376px] overflow-auto font-sans [scrollbar-width:none]")}
           >
             {choices.map((choice) => (
               <button
@@ -79,11 +80,7 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
                 type="button"
                 aria-pressed={choice.value === selected}
                 onClick={() => onPick?.(choice.value)}
-                className={cn(
-                  focusRing,
-                  "flex h-15 flex-none cursor-pointer items-center rounded-full bg-panel px-[22px] text-body font-bold text-grace-ink",
-                  choice.value === selected && "bg-card text-primary shadow-raised",
-                )}
+                className={menuOption({ surface: "page", selected: choice.value === selected })}
               >
                 {choice.label}
               </button>

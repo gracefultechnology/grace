@@ -70,6 +70,7 @@ const retry = fn();
 export const meta: ComponentMeta<MailAppProps> = {
   args: { folder: "inbox", counts: { inbox: 2 }, messages: inbox, onOpen: open, onSelectFolder: folder, onWrite: write, onClose: fn() },
   examples: {
+    "Large title": { headerMode: "large" },
     Sent: { folder: "sent", messages: sent },
     Search: { query: "book", messages: inbox.filter((m) => m.id === "book") },
     "Nothing found": { query: "Thanksgiving", messages: [] },
@@ -82,7 +83,7 @@ export const meta: ComponentMeta<MailAppProps> = {
     "Moved to Trash": {
       messages: inbox.slice(0, 3),
       toast: (
-        <Toast onUndo={fn()}>
+        <Toast placement="screen" onUndo={fn()}>
           Moved to Trash
         </Toast>
       ),

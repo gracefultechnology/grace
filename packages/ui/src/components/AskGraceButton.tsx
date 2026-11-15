@@ -26,7 +26,7 @@ export function AskGraceButton({ label = "Ask Grace", selected = false, glow = "
       aria-pressed={selected}
       className={cn(
         focusRing,
-        "flex w-[116px] cursor-pointer flex-col items-center gap-2 rounded-row pt-3 pb-2.5 text-body leading-6 font-bold text-chrome transition-[background-color,box-shadow] duration-press",
+        "flex w-[116px] cursor-pointer flex-col items-center gap-2 rounded-row pt-3 pb-2.5 text-body leading-6 font-bold text-chrome transition-[background-color,box-shadow] duration-press ease-css-default",
         selected && "bg-card text-primary shadow-raised",
         className,
       )}

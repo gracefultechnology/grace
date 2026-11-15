@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { Button } from "./Button.tsx";
+import { GuideShowButton } from "./GuideShowButton.tsx";
 import { Spinner } from "./Spinner.tsx";
 import { ThinkingDots } from "./ThinkingDots.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
@@ -35,6 +36,11 @@ export type CaptionStripProps = Omit<ComponentProps<"div">, "children"> & {
   /** The word for Margaret. */
   youLabel?: string;
   showChatLabel?: string;
+  /** Show me again, beside Show chat: brings back the tip Margaret closed. Without it there is no such button; the host offers it
+   * only while that tip's target is still current. */
+  onShowGuide?: () => void;
+  /** The words on Show me again. */
+  showGuideLabel?: string;
   /** `screen` places the strip on a `TabletScreen` over the keyboard; `inline` fills its container. */
   placement?: "screen" | "inline";
 };
@@ -57,6 +63,8 @@ export function CaptionStrip({
   workingLabel = "Grace is working on it",
   youLabel = "You",
   showChatLabel = "Show chat",
+  onShowGuide,
+  showGuideLabel,
   placement = "screen",
   className,
   ...props
@@ -96,7 +104,7 @@ export function CaptionStrip({
       {...props}
     >
       {/* .capstrip: Grace's washes under white at 62%, brighter while pressed. */}
-      <span aria-hidden className="absolute inset-0 -z-10 rounded-segment bg-glass/62 transition-colors duration-press group-active/strip:bg-glass/82" />
+      <span aria-hidden className="absolute inset-0 -z-10 rounded-segment bg-glass/62 transition-colors duration-press ease-css-default group-active/strip:bg-glass/82" />
       {grace ? (
         // .gmk: her small mark.
         <span role="img" aria-label={graceLabel} className="flex size-8 flex-none items-center justify-center rounded-full bg-gradient-ring">
@@ -136,6 +144,8 @@ export function CaptionStrip({
           </span>
         </>
       )}
+      {/* spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target". */}
+      {onShowGuide && <GuideShowButton surface="strip" label={showGuideLabel} onSelect={onShowGuide} />}
       {/* .capstrip .pill: the toolbar's tinted glass, so it shows on the pale strip. */}
       <Button variant="glass" size="pill" className="bg-primary/8 shadow-none inset-ring inset-ring-primary/12 inset-shadow-2xs inset-shadow-glass/80" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
         {chatIcon}

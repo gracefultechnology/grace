@@ -49,19 +49,19 @@ export function CalendarNav({
   const arrow = { size: 28, strokeWidth: 2.4, "aria-hidden": true } as const;
   return (
     <div className={cn("flex items-center gap-3.5 font-sans", className)} {...props}>
-      <Button variant="capsule" size="pill-icon" className="text-chrome" aria-label={previousLabel} onClick={onPrevious}>
+      <Button variant="capsule" size="pill-icon" className="text-chrome transition-none active:scale-96" aria-label={previousLabel} onClick={onPrevious}>
         <ChevronLeft {...arrow} />
       </Button>
       <h2 className="m-0 text-title leading-[34px] font-bold text-chrome">{period}</h2>
-      <Button variant="capsule" size="pill-icon" className="text-chrome" aria-label={nextLabel} onClick={onNext}>
+      <Button variant="capsule" size="pill-icon" className="text-chrome transition-none active:scale-96" aria-label={nextLabel} onClick={onNext}>
         <ChevronRight {...arrow} />
       </Button>
       <span className="flex-1" />
-      {/* Prototype `.a-seg` `width:320px;padding:6px`, content-box: 332px across. */}
+      {/* Prototype `.a-seg` `width:320px;padding:6px`, content-box: 332px across; inline `height:52px` segments. */}
       <SegmentedControl
-        size="sm"
+        size="md"
         aria-label={modeGroupLabel}
-        className="w-[332px] [&>button]:text-body"
+        className="w-[332px] p-1.5 [&>button]:h-13"
         value={mode}
         onValueChange={(value) => value && onModeChange?.(value as CalendarMode)}
         options={(["week", "month"] as const).map((value) => ({

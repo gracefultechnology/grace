@@ -28,6 +28,7 @@ export function HomeCalendarCard({ title = "Calendar", weekday, day, events, com
   // card's bottom; `.home.cmp .lc[data-app="Calendar"]` (lines 399–400): an 84px page and a 26/32px title.
   return (
     <LauncherCard
+      compact={compact}
       title={title}
       size={size}
       titleClassName={compact ? "text-title-sm leading-8" : undefined}

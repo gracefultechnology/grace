@@ -3,7 +3,7 @@ import { cn } from "../lib/cn.ts";
 import { BrowserDialogText } from "./BrowserNoticeDialog.tsx";
 import { Button } from "./Button.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
-import { Dialog, DialogContent, DialogTitle } from "./Dialog.tsx";
+import { Dialog, DialogActions, DialogContent, DialogTitle } from "./Dialog.tsx";
 import { EmptyState } from "./EmptyState.tsx";
 import { ListRow } from "./ListRow.tsx";
 import { PageHeading } from "./PageHeading.tsx";
@@ -231,15 +231,14 @@ function Confirm({ open, title, text, confirm, onConfirm, dismiss, onDismiss }: 
       >
         <DialogTitle>{title}</DialogTitle>
         <BrowserDialogText className="mt-2">{text}</BrowserDialogText>
-        {/* Prototype `.a-dlg .a-btns`: a column of full-width buttons, 24px under the words. */}
-        <div className="mt-6 flex flex-col gap-3">
-          <Button variant="warn" size="pill" className="w-full" onClick={onConfirm}>
+        <DialogActions>
+          <Button variant="warn" size="pill" onClick={onConfirm}>
             {confirm}
           </Button>
-          <Button variant="capsule" size="pill" className="w-full" onClick={onDismiss}>
+          <Button variant="capsule" size="pill" onClick={onDismiss}>
             {dismiss}
           </Button>
-        </div>
+        </DialogActions>
       </DialogContent>
     </Dialog>
   );

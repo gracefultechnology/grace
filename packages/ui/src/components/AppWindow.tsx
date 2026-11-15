@@ -2,7 +2,7 @@ import { useRef, useState, type ComponentProps, type ReactNode, type UIEvent } f
 import { cn } from "../lib/cn.ts";
 import { AppHeader, type AppHeaderProps } from "./AppHeader.tsx";
 import { PageHeading } from "./PageHeading.tsx";
-import { SplitView } from "./SplitView.tsx";
+import { SplitView, type SplitViewProps } from "./SplitView.tsx";
 
 export type AppWindowProps = Omit<ComponentProps<"section">, "title"> &
   Pick<AppHeaderProps, "title" | "icon" | "backLabel" | "onBack" | "backAriaLabel" | "actions" | "onClose" | "closeLabel"> & {
@@ -13,6 +13,16 @@ export type AppWindowProps = Omit<ComponentProps<"section">, "title"> &
     /** `screen` places the window on a `TabletScreen`, right of the rail; `inline` fills its container. */
     placement?: "screen" | "inline";
   };
+
+type PageTop = { split: SplitViewProps["pageTop"]; page: string };
+
+// Prototype `#awin.icmode`, `#awin.lgmode` and, with neither (no title), the bare `#awin` rules: where the page starts
+// below the header, in a split window's page column and in a whole-window page.
+const pageTops: Record<NonNullable<AppHeaderProps["mode"]>, Record<"plain" | "back", PageTop>> = {
+  icon: { plain: { split: "header", page: "pt-[104px]" }, back: { split: "header", page: "pt-[104px]" } },
+  large: { plain: { split: "beside", page: "pt-7" }, back: { split: "header", page: "pt-[100px]" } },
+  none: { plain: { split: "clear", page: "pt-[112px]" }, back: { split: "clearBack", page: "pt-[112px]" } },
+};
 
 /**
  * An app's floating window (Calendar, Email, Files, Settings): white, 6px from the rail and the screen's
@@ -73,8 +83,7 @@ export function AppWindow({
       {children}
     </>
   );
-  // The page clears the header's row unless the large title sits beside ✕ (prototype `#awin.lgmode`).
-  const belowHeader = !large || !!backLabel;
+  const top = pageTops[headerMode][backLabel ? "back" : "plain"];
   return (
     // Prototype `.bwin.appw#awin`: 144px from the left (the rail and its gap) and 6px from the other edges, 1130 wide on a landscape tablet.
     <section
@@ -87,14 +96,14 @@ export function AppWindow({
       {...props}
     >
       {nav ? (
-        <SplitView nav={nav} header={header} belowHeader={belowHeader} onPageScroll={large ? onScroll : undefined}>
+        <SplitView nav={nav} header={header} pageTop={top.split} onPageScroll={large ? onScroll : undefined}>
           {page}
         </SplitView>
       ) : (
         <>
           <div
             onScroll={large ? onScroll : undefined}
-            className={cn("absolute inset-0 overflow-y-auto px-6 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", belowHeader ? "pt-[104px]" : "pt-7")}
+            className={cn("absolute inset-0 overflow-y-auto px-6 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", top.page)}
           >
             {page}
           </div>

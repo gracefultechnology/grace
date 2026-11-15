@@ -25,8 +25,9 @@ const offline: HomeScreenProps = {
   banner: <Banner {...offlineBanner} />,
 };
 
-// Prototype `layout()` with Grace compact (`.home.cmp`): Home ends 6px above her 260px window.
-const compact: HomeScreenProps = { ...home, layout: "compact", className: "bottom-[272px]" };
+// Prototype `layout()` with Grace compact (`.home.cmp`): Home ends 6px above her 260px window. `grace-compact` marks it
+// for the decorator's rail.
+const compact: HomeScreenProps = { ...home, layout: "compact", className: "grace-compact bottom-[272px]" };
 
 export const meta: ComponentMeta<HomeScreenProps> = {
   args: home,
@@ -35,7 +36,7 @@ export const meta: ComponentMeta<HomeScreenProps> = {
     // Prototype `hmGo(1)` while compact: the columns slide 354px.
     "Compact Page Files": { ...compact, page: "files" },
     // Prototype `.home.tight`: Grace compact and the keyboard up, 306px more.
-    "Layout Greeting": { ...home, layout: "greeting", className: "bottom-[578px]" },
+    "Layout Greeting": { ...home, layout: "greeting", className: "grace-compact bottom-[578px]" },
     // Prototype `drawBanner()`, X.banner = "rem".
     Reminder: {
       ...home,
@@ -44,10 +45,15 @@ export const meta: ComponentMeta<HomeScreenProps> = {
   },
   states: { Offline: offline },
   // Home sits on the tablet's screen under the rail (prototype `#screen`). The decorator gets no args, so the rail
-  // shows Wi-Fi off when the story's Home is marked `offline` (prototype `railWifi()`).
+  // shows Wi-Fi off when the story's Home is marked `offline` (prototype `railWifi()`), and Ask Grace raised beside
+  // Home when it is marked `grace-compact` (prototype `railSel()`).
   decorator: (story) => (
     <TabletScreen className="group/tablet">
-      <Rail {...homeRail("Home", { offline: { wifi: "group-has-[.offline]/tablet:hidden", slash: "hidden group-has-[.offline]/tablet:block" } })} />
+      <Rail
+        {...homeRail("Home", { offline: { wifi: "group-has-[.offline]/tablet:hidden", slash: "hidden group-has-[.offline]/tablet:block" },
+          grace: { rest: "group-has-[.grace-compact]/tablet:hidden", compact: "hidden group-has-[.grace-compact]/tablet:flex" },
+        })}
+      />
       {story()}
     </TabletScreen>
   ),

@@ -19,7 +19,7 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
   pageLabel?: string;
   /** Prints the file, the one next step. */
   onPrint?: () => void;
-  /** Saves it to Files. */
+  /** Saves it to Files; without it there is no Save (a file opened from Files). */
   onSave?: () => void;
   /** The Print button's words. */
   printLabel?: string;
@@ -46,9 +46,9 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
 };
 
 /**
- * A file from an email open to read: its page on a tinted desk, with Print as the one next step
- * (prototype `mailView()`, pdf, `.a-pdf`).
- * @model spec/app/email.md
+ * A PDF open to read, from an email or from Files: its page on a tinted desk, with Print as the one next step
+ * (prototype `mailView()` and `filesView()`, pdf, `.a-pdf`).
+ * @model spec/app/email.md, spec/app/files.md
  * @design packages/design-system/design.md#windows
  */
 export function PdfViewer({
@@ -80,16 +80,19 @@ export function PdfViewer({
             {pendingMark(printStatus === "pending", <mailIcons.printer {...pill} />)}
             {printLabel}
           </Button>
-          <Button variant="plain" size="compact" className="text-grace-ink" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
-            {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
-            {saveLabel}
-          </Button>
+          {/* Prototype `filesView()` pdf (JS 1985): a file already in Files has no Save. */}
+          {onSave && (
+            <Button variant="plain" size="compact" className="text-grace-ink" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
+              {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
+              {saveLabel}
+            </Button>
+          )}
         </>
       }
       {...props}
     >
-      {/* The desk reaches the window's edges, under the header. */}
-      <div className="-mx-6 -mt-6 -mb-6 box-border min-h-[calc(100%+48px)] bg-panel p-7">
+      {/* The desk reaches the window's sides, under the header; prototype `#awin .pg>*:last-child{margin-bottom:0}` keeps the page's bottom padding white. */}
+      <div className="-mx-6 -mt-6 box-border min-h-full bg-panel p-7">
         {status === "failed" ? (
           // spec/app/files.md, "Opening a file verifies that exact content before presenting a preview".
           <MailNotice actionLabel={retryLabel} onAction={onRetry} className="mx-auto w-[620px]">

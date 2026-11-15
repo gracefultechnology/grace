@@ -51,7 +51,7 @@ export function CalendarEventRow({
       type="button"
       className={cn(
         focusRing,
-        "box-border flex min-h-24 w-full cursor-pointer items-center gap-5 rounded-row bg-panel px-[22px] py-4 text-left font-sans transition-transform duration-press ease-spring active:scale-[.99] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
+        "box-border flex min-h-24 w-full cursor-pointer items-center gap-5 rounded-row bg-panel px-[22px] py-4 text-left font-sans active:scale-[.99] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
         draft && "bg-background outline-[2.5px] -outline-offset-[2.5px] outline-guide outline-dashed",
         className,
       )}
@@ -66,7 +66,7 @@ export function CalendarEventRow({
       <span className={cn("w-[3px] flex-none self-stretch rounded-xs", important ? "bg-alert" : "bg-lavender")}>{important && <span className="sr-only">{importantLabel}</span>}</span>
       <span className="min-w-0">
         <span className="block text-lead leading-[30px] font-bold text-chrome">{title}</span>
-        {details && <span className="mt-0.5 block truncate text-body leading-[26px] font-medium text-muted-foreground">{details}</span>}
+        {details && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{details}</span>}
       </span>
       <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-auto flex-none text-chevron" />
     </button>

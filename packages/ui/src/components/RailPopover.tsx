@@ -41,7 +41,7 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
       {...props}
     >
       {/* `.rpop::before`: the arrow toward the rail. */}
-      <span aria-hidden className="absolute top-(--arrow) -left-2.5 size-5 rotate-45 bg-glass/86" />
+      <span aria-hidden className="absolute top-(--arrow) -left-2.5 size-5 rotate-45 bg-glass/86 shadow-arrow" />
       <div className="relative flex items-center gap-3 text-title-sm leading-8 font-bold text-chrome">
         <span aria-hidden className="flex">{icon}</span>
         {title}
@@ -49,7 +49,7 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
         <span className="flex-1" />
         {onClose && (
           // `.rpx`: a 52px capsule, pulled into the header's padding.
-          <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome">
+          <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome backdrop-blur-none backdrop-saturate-100 transition-none active:scale-96">
             <X size={22} strokeWidth={2} aria-hidden />
           </Button>
         )}

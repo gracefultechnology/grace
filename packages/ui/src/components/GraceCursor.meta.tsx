@@ -13,6 +13,8 @@ export const meta: ComponentMeta<GraceCursorProps> = {
     Pressed: { pressed: true },
     // pauseAct(): `.gcur.paused` and curTag("Paused").
     Paused: { tag: "Paused", paused: true },
+    // curTo() near the right edge (x > width - 260): the tag hangs to the G's left.
+    "Paused flipped": { tag: "Paused", paused: true, flip: true, x: 1180 },
   },
   decorator: (story) => onPay(() => null, story),
 };

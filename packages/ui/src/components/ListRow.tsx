@@ -40,7 +40,7 @@ export function ListRow({ title, subtitle, leading, trailing, time, unread = fal
     <div
       className={cn(
         "relative box-border flex min-h-24 items-center gap-5 rounded-row bg-panel px-[22px] py-4 text-foreground",
-        onClick && "transition-transform duration-press ease-spring has-[>button:active]:scale-[.99]",
+        onClick && "has-[>button:active]:scale-[.99]",
         className,
       )}
       {...props}
@@ -48,7 +48,7 @@ export function ListRow({ title, subtitle, leading, trailing, time, unread = fal
       {leading}
       {onClick ? (
         // The button stretches over the whole row (prototype `.a-row[data-ax]`); `trailing` sits above it.
-        <button type="button" onClick={onClick} className="min-w-0 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-row focus-visible:after:ring-2 focus-visible:after:ring-ring">
+        <button type="button" onClick={onClick} className="min-w-0 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-row focus-visible:after:outline-3 focus-visible:after:outline-offset-3 focus-visible:after:outline-solid focus-visible:after:outline-ring">
           {text}
         </button>
       ) : (

@@ -4,7 +4,7 @@ import { cn } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
 import { Button } from "./Button.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
-import { Dialog, DialogContent, DialogTitle, type DialogProps } from "./Dialog.tsx";
+import { Dialog, DialogActions, DialogContent, DialogTitle, type DialogProps } from "./Dialog.tsx";
 
 /** What a deletion removes: the chosen occurrence, or every occurrence of its repeating event. */
 export type CalendarDeleteScope = "occurrence" | "series";
@@ -43,7 +43,7 @@ const defaultLabels = {
  */
 export function CalendarDeleteDialog({ title, description, repeating = false, onDelete, onKeep, error, pending = false, labels = defaultLabels, className, ...props }: CalendarDeleteDialogProps) {
   const choice = (scope: CalendarDeleteScope, label: string) => (
-    <Button key={scope} variant="warn" size="pill" className="w-full" loading={pending} onClick={() => onDelete?.(scope)}>
+    <Button key={scope} variant="warn" size="pill" loading={pending} onClick={() => onDelete?.(scope)}>
       {!pending && <CalendarGlyph name="trash" size={22} />}
       {label}
     </Button>
@@ -66,13 +66,12 @@ export function CalendarDeleteDialog({ title, description, repeating = false, on
             {error}
           </Alert>
         )}
-        {/* Prototype `.a-dlg .a-btns`: a column of full-width buttons. */}
-        <div className="mt-6 flex flex-col gap-3">
+        <DialogActions>
           {repeating ? [choice("occurrence", labels.occurrence), choice("series", labels.series)] : choice("occurrence", labels.one)}
-          <Button variant="capsule" size="pill" className="w-full" disabled={pending} onClick={onKeep}>
+          <Button variant="capsule" size="pill" disabled={pending} onClick={onKeep}>
             {labels.keep}
           </Button>
-        </div>
+        </DialogActions>
       </DialogContent>
     </Dialog>
   );

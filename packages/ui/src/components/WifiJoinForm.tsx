@@ -118,6 +118,7 @@ export function WifiJoinForm({
             onChange={(event) => onPasswordChange?.(event.target.value)}
             placeholder={passwordPlaceholder}
             autoComplete="off"
+            invalid={!!error}
             className="h-16 flex-1"
           />
           <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={() => onShowPasswordChange?.(!showPassword)}>

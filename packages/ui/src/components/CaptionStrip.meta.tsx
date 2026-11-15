@@ -3,13 +3,16 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { CaptionStripProps } from "./CaptionStrip.tsx";
 
 const show = fn();
+const showGuide = fn();
 
 // Prototype `.capstrip` over the keyboard while Margaret fills in Chase's sign-in (lines from the prototype's prompt).
 export const meta: ComponentMeta<CaptionStripProps> = {
-  args: { placement: "inline", who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show },
+  args: { placement: "inline", who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show, onShowGuide: undefined },
   examples: {
     Margaret: { who: "you", activity: "listening", text: "Can you help me pay my Chase bill?" },
     Answers: { activity: undefined, answers: ["Yes, carry on", "No, thanks"] },
+    // spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target": Margaret closed the tip.
+    "Show guidance": { onShowGuide: showGuide },
     "Long line": { text: "Chase's sign-in page is open. I'll take you through it step by step. Tap the password box, then type your password." },
   },
   decorator: (story) => (
@@ -23,6 +26,14 @@ export const meta: ComponentMeta<CaptionStripProps> = {
       show.mockClear();
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Show chat" }));
       await expect(show).toHaveBeenCalledTimes(1);
+    },
+    // Show me again brings back the tip and leaves the chat hidden.
+    "Show guidance": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      show.mockClear();
+      showGuide.mockClear();
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Show me again" }));
+      await expect(showGuide).toHaveBeenCalledTimes(1);
+      await expect(show).not.toHaveBeenCalled();
     },
   },
 };

@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
+import { BillOffer, type BillOfferProps } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { Panel } from "./Panel.tsx";
@@ -23,6 +24,8 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
   onDelete?: () => void;
   editLabel?: string;
   deleteLabel?: string;
+  /** The bill a bill occurrence was saved from: already confirmed, so Open bill beside its payment status. */
+  bill?: Omit<BillOfferProps, "confirmed" | "onConfirm" | "onDismiss">;
 };
 
 
@@ -31,7 +34,7 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
  */
-export function CalendarEventDetail({ when, where, who, reminder, repeat, note, onEdit, onDelete, editLabel = "Edit", deleteLabel = "Delete", className, ...props }: CalendarEventDetailProps) {
+export function CalendarEventDetail({ when, where, who, reminder, repeat, note, onEdit, onDelete, editLabel = "Edit", deleteLabel = "Delete", bill, className, ...props }: CalendarEventDetailProps) {
   const lines = [
     ["clock", when],
     ["pin", where],
@@ -57,6 +60,8 @@ export function CalendarEventDetail({ when, where, who, reminder, repeat, note, 
           )}
         </ul>
       </Panel>
+      {/* spec/app/handoffs.md, "Story: Open the same bill from any surface": a saved bill occurrence opens its bill. */}
+      {bill && <BillOffer confirmed {...bill} className="mt-3.5 max-w-[880px]" />}
       {/* Prototype `.a-btns` with `margin-top:22px`. */}
       <div className="mt-[22px] flex flex-wrap gap-3">
         <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={onEdit}>

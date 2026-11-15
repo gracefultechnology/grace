@@ -8,7 +8,7 @@ const bright = fn();
 
 export const meta: ComponentMeta<SettingsBrightnessProps> = {
   args: { brightness: 100, nightDim: true, nightDimHint: "From 9 pm to 7 am, easier on the eyes", onNightDimChange: dim, onBrightnessChange: bright },
-  bounds: { brightness: [0, 100] },
+  bounds: { brightness: [20, 100] },
   examples: { Evening: { brightness: 40, nightDim: false } },
   decorator: settingsPage,
   play: {

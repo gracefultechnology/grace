@@ -9,6 +9,7 @@ export type DialogContentProps = ComponentProps<typeof DialogPrimitive.Content> 
   closeLabel?: string;
 };
 export type DialogTitleProps = ComponentProps<typeof DialogPrimitive.Title>;
+export type DialogActionsProps = ComponentProps<"div">;
 
 /** A modal task: holds a `DialogTrigger` and a `DialogContent`. */
 export function Dialog(props: DialogProps) {
@@ -46,4 +47,9 @@ export function DialogContent({ closeLabel, className, children, ...props }: Dia
 /** The dialog's heading and accessible name (prototype `.a-h`). */
 export function DialogTitle({ className, ...props }: DialogTitleProps) {
   return <DialogPrimitive.Title className={cn("text-title-lg leading-[38px] font-bold text-chrome", className)} {...props} />;
+}
+
+/** The dialog's buttons, a column of full-width capsules 24px under its words (prototype `.a-dlg .a-btns`, `.a-dlg .a-btn`). */
+export function DialogActions({ className, ...props }: DialogActionsProps) {
+  return <div className={cn("mt-6 flex flex-col gap-3 [&>*]:w-full [&>*]:justify-center", className)} {...props} />;
 }

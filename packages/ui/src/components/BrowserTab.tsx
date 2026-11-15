@@ -59,7 +59,7 @@ export function BrowserTab({ title, favicon, initial, pageLoading = false, loadi
         className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2.5 self-stretch rounded-lg text-left")}
       >
         <TabFavicon favicon={favicon} initial={initial} pageLoading={pageLoading} loadingLabel={loadingLabel} />
-        <span className="min-w-0 flex-1 truncate text-body font-medium">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-body leading-[normal] font-medium">{title}</span>
       </button>
       {/* Prototype `.bz-ic`. */}
       <button

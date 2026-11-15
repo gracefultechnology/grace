@@ -26,7 +26,7 @@ export function SleepScreen({ time, date, next, nextIcon = <Calendar size={28} s
   // Prototype `.zzsleep` and `drawSleep()`.
   return (
     <div
-      className={cn("absolute -inset-1 z-40 flex flex-col items-center justify-center bg-gradient-sleep font-sans text-sleep-ink", className)}
+      className={cn("absolute -inset-1 z-40 flex cursor-pointer flex-col items-center justify-center bg-gradient-sleep font-sans text-sleep-ink", className)}
       {...props}
     >
       <div className="text-[9.375rem] leading-none font-light tracking-[-.02em]">{time}</div>

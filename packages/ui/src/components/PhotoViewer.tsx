@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Forward } from "lucide-react";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
-import { FilePhotoViewer } from "./FilePhotoViewer.tsx";
+import { PhotoStage } from "./FilePhotoViewer.tsx";
 import { MailActionStatus, pendingMark, type MailActionStatusLabels, type MailSaveStatus } from "./MailActionStatus.tsx";
 import { mailIcons } from "./MailMessageRow.tsx";
 import type { MailReadStatus } from "./MailMessageView.tsx";
@@ -93,7 +93,7 @@ export function PhotoViewer({ src, alt, onPrevious, onNext, onSave, onForward, s
       {status === "ready" ? (
         // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction": Saved only once acknowledged.
         <div className="relative h-full">
-          <FilePhotoViewer src={src} alt={alt} onPrevious={onPrevious} onNext={onNext} previousLabel={l.previous} nextLabel={l.next} />
+          <PhotoStage src={src} alt={alt} onPrevious={onPrevious} onNext={onNext} previousLabel={l.previous} nextLabel={l.next} className="h-full justify-center" />
           {saveStatus && (
             <MailActionStatus action="save" status={saveStatus} onRetry={onRetrySave} labels={statusLabels} className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full bg-glass/85 py-2 pr-2 pl-5 whitespace-nowrap shadow-capsule backdrop-blur-capsule [&:not(:has(button))]:pr-5" />
           )}

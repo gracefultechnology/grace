@@ -3,6 +3,7 @@ import type { ComponentMeta } from "vibestack/stories";
 import { flowersPhoto, mailScreen, people, programPhoto, stagePhoto, unfocus } from "./MailApp.meta.tsx";
 import { waterBill } from "./BillOffer.meta.tsx";
 import { MailLink, type MailMessageViewProps } from "./MailMessageView.tsx";
+import { PaymentStatusBadge } from "./PaymentStatusBadge.tsx";
 
 const photo = fn();
 const reply = fn();
@@ -69,7 +70,10 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     onSaveAll: fn(),
   },
   examples: {
+    "Large title": { headerMode: "large" },
     Scam: scam,
+    // Prototype axGuide() with kind `point` (JS 2072-2079): Grace points at her own warning while she explains it.
+    "Grace Points At The Warning": { ...scam, guide: { targetId: "scam", kind: "point" } },
     Attachment: clinic,
     "In Trash": { ...clinic, backLabel: "Trash", inTrash: true, onRestore: fn(), onDeleteForever: fn() },
     // Reply and Forward wait until every attachment is known.
@@ -78,7 +82,7 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     "Photos saved": { saveAllStatus: "saved" },
     "Print unknown": { ...clinic, files: [{ name: "Visit form.pdf", detail: "2 pages", printStatus: "unknown" }] },
     Bill: bill,
-    "Bill confirmed": { ...bill, bill: { ...waterBill, confirmed: true, status: <span className="text-body leading-[26px] font-semibold text-muted-foreground">Not paid yet</span> } },
+    "Bill confirmed": { ...bill, bill: { ...waterBill, confirmed: true, status: <PaymentStatusBadge status="unknown" /> } },
   },
   decorator: mailScreen,
   play: {

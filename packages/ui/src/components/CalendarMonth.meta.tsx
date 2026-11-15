@@ -6,6 +6,9 @@ import type { CalendarMonthProps } from "./CalendarMonth.tsx";
 export const meta: ComponentMeta<CalendarMonthProps> = {
   args: { weekdays, days: monthDays, onSelect: fn() },
   decorator: onWindow,
+  examples: {
+    "Another Day Chosen": { days: monthDays.map((d) => ({ ...d, selected: !d.outside && d.day === "16" })) },
+  },
   play: {
     Default: async ({ args, canvasElement }: { args: CalendarMonthProps; canvasElement: HTMLElement }) => {
       await userEvent.click(
