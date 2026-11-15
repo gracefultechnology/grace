@@ -107,17 +107,6 @@
     "vite": "8.3.5",
     "vitest": "5.1.0"
   },
-  "peerDependencies": {
-    "@vitest/browser-playwright": "5.1.0",
-    "vibelang-vite": "0.0.13",
-    "vite": "8.3.5",
-    "vitest": "5.1.0"
-  },
-  "peerDependenciesMeta": {
-    "@vitest/browser-playwright": {
-      "optional": true
-    }
-  },
   "packageManager": "pnpm@10.24.0",
   "exports": {
     "./testing": "./vibestack/testing/index.ts",
