@@ -104,6 +104,7 @@ export * from "./components/SettingsSwitchRow.tsx";
 export * from "./components/SettingsTextSize.tsx";
 export * from "./components/SettingsVoice.tsx";
 export * from "./components/ShortcutEditor.tsx";
+export * from "./components/ShortcutTile.tsx";
 export * from "./components/SignInCodeField.tsx";
 export * from "./components/SitePermissionDialog.tsx";
 export * from "./components/Skeleton.tsx";
