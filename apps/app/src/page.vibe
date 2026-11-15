@@ -29,9 +29,10 @@ const pageOf = (tab: number) => `tab-${tab}`
 
 /**
  * A native page, the tab it last followed, the address it last reported, the tab's load version its page belongs to
- * (none before its first start) and those of the loads Grace asked for that it has not started yet, oldest first.
+ * (none before its first start) and the loads Grace asked for that it has not started yet, oldest first: each tab's
+ * load version and the address its page starts at.
  */
-type Page = { tab: Tab; url: string; load: number | undefined; asked: number[] }
+type Page = { tab: Tab; url: string; load: number | undefined; asked: { version: number; url: string }[] }
 
 /**
  * What the fiber applies: each state the workspace became, a native page's report, the person's answer, their Close browser,
@@ -167,7 +168,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     const id = pageOf(tab.id)
     const made = Effect.as(native.create(id, tabUrl(tab)), true) catch effect (cause) => { try logWarning("create", cause); return false }
     if (!made) return
-    pages.set(tab.id, { tab, url: "", load: undefined, asked: [tab.loadVersion] })
+    pages.set(tab.id, { tab, url: "", load: undefined, asked: [{ version: tab.loadVersion, url: tabUrl(tab) }] })
     presented = undefined
     try place(id)
     const l = try layer.get()
@@ -180,13 +181,15 @@ export const pageHost = Layer.effect(PageHost, effect {
   effect function follow(page: Page, tab: Tab) {
     const id = pageOf(tab.id)
     const sameHistory = JSON.stringify(tab.history) === JSON.stringify(page.tab.history)
-    // The page went there itself, and the tab recorded it (unexpectedPage, unwatchedPage).
-    if (!sameHistory && tabUrl(tab) === page.url) return
+    // The page is already that load's: it went there itself, and the tab recorded it (hear, unexpectedPage).
+    if (page.load === tab.loadVersion) return
+    const reload = sameHistory && tab.cursor === page.tab.cursor
     const command = sameHistory && tab.cursor === page.tab.cursor - 1 ? native.back(id)
       : sameHistory && tab.cursor === page.tab.cursor + 1 ? native.forward(id)
-      : sameHistory && tab.cursor === page.tab.cursor ? native.reload(id)
+      : reload ? native.reload(id)
       : native.navigate(id, tabUrl(tab))
-    page.asked.push(tab.loadVersion)
+    // A reload starts the page where it is.
+    page.asked.push({ version: tab.loadVersion, url: reload ? page.url : tabUrl(tab) })
     command catch effect () => try close(tab.id)
   }
 
@@ -278,8 +281,11 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (event._tag === "Crashed") return try close(tab)
     // spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at": the surface's own page start, however it began.
     if (event._tag === "Started") {
-      // spec/app/browser.md, "Load results must match the tab and request that produced them": the oldest load asked for starts.
-      page.load = page.asked.shift() ?? page.load
+      // spec/app/browser.md, "Load results must match the tab and request that produced them": a page starts the newest load asked
+      // for at its address, and ends those before it, which never start (a navigate superseded, a load the website's Stay kept
+      // from leaving); a start at no address asked for (a redirect) is the oldest load's.
+      const at = page.asked.findLastIndex((a) => a.url === event.url)
+      page.load = page.asked.splice(0, at + 1 || 1).at(-1)?.version ?? page.load
       return try website({ type: "pageStarted", tab }, "WebsiteHost")
     }
     if (event._tag === "Asked") return try raise(tab, event)
@@ -308,7 +314,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (now === undefined) return
     // spec/app/browser.md, "Load results must match the tab and request that produced them": a page that arrives where its tab
     // now is loads that tab's page, though a move within the document starts none and one the page made itself was asked for by none.
-    if (moved && event.url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1) === now.loadVersion)) {
+    if (moved && event.url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1)?.version === now.loadVersion)) {
       page.load = now.loadVersion
       page.asked = []
     }

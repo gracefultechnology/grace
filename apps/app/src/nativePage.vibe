@@ -12,13 +12,13 @@ export error PageFailed { cause: unknown }
 
 /**
  * What a native page reports: where it is, whether it is loading and how its page ended, that its renderer is gone, or that it
- * started its next page; what its website asks (`key` is the plugin's dialog or request id, or the other app's
+ * started its next page, at the address it reports; what its website asks (`key` is the plugin's dialog or request id, or the other app's
  * link, and `said` what the page wrote), a download it saved or could not, and a site permission request it withdrew.
  */
 export data PageEvent {
   Changed { id: string; url: string; loading: boolean; result: Load }
   Crashed { id: string }
-  Started { id: string }
+  Started { id: string; url: string }
   Asked { id: string; key: string; ask: Ask; topFrame: boolean; said: string }
   Downloaded { id: string; key: string; saved: boolean }
   Withdrawn { id: string; key: string }
@@ -105,7 +105,7 @@ export function nativePage(plugin: SurfacePlugin | undefined) {
       }),
       plugin.addListener("surfaceCrashed", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Crashed({ id: e.id })) }),
       // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it": whatever started it, after it ended what the page held.
-      plugin.addListener("pageStarted", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Started({ id: e.id })) }),
+      plugin.addListener("pageStarted", (e) => { if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Started({ id: e.id, url: e.url })) }),
       // spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at": what each request asks, as the surface measured it.
       plugin.addListener("dialogRequested", (e) => {
         if (mine(e)) Queue.offerUnsafe(queue, PageEvent.Asked({ id: e.id, key: e.dialogId, ask: { tag: "WebsiteMessage", dialog: messages[e.kind] }, topFrame: true, said: e.message }))

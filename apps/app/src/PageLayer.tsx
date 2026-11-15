@@ -24,8 +24,9 @@ const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width ===
 
 /**
  * Measures after each layout change, a frame at a time, and reports only what changed. Each control is shown while the
- * page layer draws the rect it was last drawn at: a control that moved keeps that rect routed beside its new one until
- * the new one is drawn, so it never blinks out or loses focus as it moves.
+ * page layer draws the rect it was last drawn at: a control that moved keeps that rect routed beside its new one, and is
+ * painted there until the new one is drawn, so it never blinks out or loses focus as it moves, and takes touches only
+ * where they are routed to Grace (spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace").
  */
 function measurer(report: (measured: Measured) => void) {
   let page: HTMLElement | null = null;
@@ -34,14 +35,21 @@ function measurer(report: (measured: Measured) => void) {
   let drawn: Rect[] = [];
   const isDrawn = (rect?: Rect) => rect !== undefined && drawn.some((r) => sameRect(r, rect));
   const follow = () => {
-    for (const control of controls.values()) {
-      if (isDrawn(control.rect)) control.at = control.rect;
+    for (const [element, control] of controls) {
+      const { rect, at } = control;
+      if (isDrawn(rect)) control.at = rect;
       control.show(isDrawn(control.at));
+      // Its layout box at `rect`, mapped onto `at` while only that is drawn.
+      const held = rect && at && isDrawn(at) && !isDrawn(rect);
+      element.style.transformOrigin = held ? "0 0" : "";
+      element.style.transform = held ? `translate(${at.x - rect.x}px, ${at.y - rect.y}px) scale(${at.width / (rect.width || 1)}, ${at.height / (rect.height || 1)})` : "";
     }
   };
   let queued = false;
   const settle = () => {
     queued = false;
+    // Where each control is laid out, not where it is painted.
+    for (const element of controls.keys()) element.style.transform = "";
     for (const [element, control] of controls) control.rect = rectOf(element, true);
     follow();
     const style = page && getComputedStyle(page);

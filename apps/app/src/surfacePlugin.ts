@@ -1,7 +1,8 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
 // The Capacitor bindings of the plugins MainActivity registers. Their types are the plugins' own
-// (definitions.ts); none of their runtime code is bundled.
+// (definitions.ts); none of their runtime code is bundled. Beside them, what the WebView itself knows of the network.
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Effect } from "effect";
 import type { ElizaSurfaceManagerPlugin } from "../../../vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts";
 import type { WiFiPlugin } from "../../../vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts";
 
@@ -18,17 +19,6 @@ export const wifiPlugin = Capacitor.isPluginAvailable("ElizaWiFi") ? registerPlu
  * time origin is later, claims a newer one. */
 export const identity = { owner: "grace-browser", session: crypto.randomUUID(), epoch: Math.floor(performance.timeOrigin * 1000) };
 
-/** Calls `changed` whenever the WebView goes online or offline, or the interface is shown again; returns how to stop. */
-export function onNetworkChange(changed: () => void): () => void {
-  window.addEventListener("online", changed);
-  window.addEventListener("offline", changed);
-  document.addEventListener("visibilitychange", changed);
-  return () => {
-    window.removeEventListener("online", changed);
-    window.removeEventListener("offline", changed);
-    document.removeEventListener("visibilitychange", changed);
-  };
-}
-
-/** Whether the WebView has a network at all. */
-export const browserOnline = () => navigator.onLine;
+/** The WebView's own view of the network (app.vibe, connectivity): whether it has one, whether the interface is hidden, and
+ * the targets of their change events. */
+export const webView = { online: Effect.sync(() => navigator.onLine), hidden: () => document.hidden, window, document };
