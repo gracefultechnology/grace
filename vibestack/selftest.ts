@@ -17,6 +17,7 @@ import { migrateLocks, pendingSpecs, readLedger, showPending, writeLedger } from
 import { nodeRunsVibelang, packageScripts, testInputs, testReceipt } from "./util.ts";
 import { canonical, check as conformanceCheck, ConformanceError, departure, replay as replayTrace } from "./conformance.ts";
 import { conformance as checkTraces, conformanceFound } from "./conform.ts";
+import { profile } from "./testing/profile.ts";
 import { acceptContracts, acceptReviews, check, checkVerifiedSource, danglingCitations, expandListHelpers, generated, init, parseSpec, pending, pendingContracts, readSpecs, replay, show, typecheckAll, type Result, type Spec } from "./spec.ts";
 
 const project = path.join(import.meta.dirname, "..");
@@ -1310,8 +1311,9 @@ pure def lawOwn(own: int): bool = shadowOwn(own) == own`));
     assert.match(read("apps/app/gen/app.effect.vibe", root), /key = "@scratch\/app\/spec\/app\/index\.md#Machine"/);
     assert.match(read("gen/app.effect.vibe", root), new RegExp(`key = "${path.basename(root)}/spec/app/index\\.md#Machine"`));
     assert.ok(["area.ts", "own.ts", "app.ts"].every((f) => fs.existsSync(path.join(root, "gen", f))) && !fs.existsSync(path.join(root, "apps/own/gen")));
+    const normal = profile("normal");
     for (const [stage, said] of [["types", /^apps\/app: application typechecks/], ["tests", /^apps\/app: pass/], ["traces", /^apps\/app: script driver:app: simulated states and refused events agree with spec\/app\/index\.md/],
-      ["traces", /^apps\/app: test\/drivers\/app\.ts: 1 walks of seed 1 agree with spec\/app\/index\.md/],
+      ["traces", new RegExp(`^apps/app: test/drivers/app\\.ts: ${normal.runs} walks of seed ${normal.seed} agree with spec/app/index\\.md`)],
       ["proof", /^apps-app-src-one\.ts: all 1 obligations proved/], ["review", /^apps\/app\/src\/: recorded as reconciled: apps\/app\/src\/one\.ts/]] as const)
       assert.ok(first.said(stage, said), `${stage}\n${first.text}`);
     assert.deepEqual(Object.keys(JSON.parse(read("spec/lock.json", root)).contracts), ["apps/app/src/one.ts"]);
@@ -1492,11 +1494,11 @@ pure def lawOwn(own: int): bool = shadowOwn(own) == own`));
   test("nothing stale survives in gen/", async () => {
     const root = copyOfProject();
     fs.mkdirSync(path.join(root, "gen"), { recursive: true });
-    for (const stale of ["renamed.ts", "renamed.effect.vibe"]) fs.writeFileSync(path.join(root, "gen", stale), "export const stale = true;\n");
+    for (const stale of ["renamed.ts", "renamed.effect.vibe", "index.effect.vibe.pure.d.ts"]) fs.writeFileSync(path.join(root, "gen", stale), "export const stale = true;\n");
     await check(root);
-    // index.effect.vibe.pure.d.ts is the VibeLang compiler's: the declarations of the adapter's `module pure` body.
+    // tsconfig.json keeps the compiler's declaration sidecars under .vibe/declarations/.
     assert.deepEqual(fs.readdirSync(path.join(root, "gen")).filter((f) => /\.(ts|vibe)$/.test(f)).sort(),
-      ["_conformance.ts", "index.conformance.ts", "index.effect.vibe", "index.effect.vibe.pure.d.ts", "index.ts"]);
+      ["_conformance.ts", "index.conformance.ts", "index.effect.vibe", "index.ts"]);
   });
 
   test("a truncated cache entry is recomputed and generated modules run in a CommonJS project", async () => {
