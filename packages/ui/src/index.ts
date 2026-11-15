@@ -108,6 +108,7 @@ export * from "./components/SplitView.tsx";
 export * from "./components/StartupScreen.tsx";
 export * from "./components/Switch.tsx";
 export * from "./components/TabletScreen.tsx";
+export * from "./components/TaskCard.tsx";
 export * from "./components/TextField.tsx";
 export * from "./components/TextScale.tsx";
 export * from "./components/ThinkingDots.tsx";
