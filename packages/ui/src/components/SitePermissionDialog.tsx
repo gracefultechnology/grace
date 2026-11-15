@@ -39,9 +39,9 @@ export type SitePermissionDialogProps = {
 
 const nouns: Record<SiteDevice, string> = { camera: "camera", microphone: "microphone", location: "location" };
 const icons: Record<SiteDevice, ReactNode> = {
-  camera: <Camera size={28} strokeWidth={2.2} />,
-  microphone: <Mic size={28} strokeWidth={2.2} />,
-  location: <MapPin size={28} strokeWidth={2.2} />,
+  camera: <Camera size={28} strokeWidth={2} />,
+  microphone: <Mic size={28} strokeWidth={2} />,
+  location: <MapPin size={28} strokeWidth={2} />,
 };
 
 const defaultLabels: SitePermissionLabels = {

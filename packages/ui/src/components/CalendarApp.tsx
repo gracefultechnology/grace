@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { Check, Plus, TriangleAlert } from "lucide-react";
+import { cn } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
-import { Button } from "./Button.tsx";
+import { Button, press } from "./Button.tsx";
 import { CalendarEventDetail, type CalendarEventDetailProps } from "./CalendarEventDetail.tsx";
 import { CalendarEventForm, type CalendarEventFormProps } from "./CalendarEventForm.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
@@ -131,7 +132,7 @@ export function CalendarApp({
         onBack={onBack}
         actions={
           // Prototype `#ahdr .pill.prom` (line 673) keeps its indigo and white words while `aria-disabled`; its spinner is white on a filled surface (line 434), the check's size.
-          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] disabled:text-primary-foreground disabled:opacity-100 [&>svg]:size-[22px] [&>svg]:text-primary-foreground" disabled={!canSave} loading={saving} onClick={onSave}>
+          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary disabled:text-primary-foreground disabled:opacity-100 [&>svg]:size-[22px] [&>svg]:text-primary-foreground" disabled={!canSave} loading={saving} onClick={onSave}>
             {!saving && <Check {...pill} />}
             {labels.save}
           </Button>
@@ -155,10 +156,12 @@ export function CalendarApp({
       icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />}
       actions={
         <>
-          <Button variant="plain" size="compact" className="text-grace-ink" onClick={onToday}>
+          {/* Prototype `#awin .aphdr .hgrp .pill:not(.prom)` (line 677): pressed, it stays clear and sinks to 97% (line 667) on `.pill`'s spring. */}
+          <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")} onClick={onToday}>
             {labels.today}
           </Button>
-          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px]" onClick={onAdd}>
+          {/* Prototype `#ahdr .pill.prom` (line 673): its indigo is `!important`, so a press only grows it. */}
+          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary" onClick={onAdd}>
             <Plus {...pill} />
             {labels.add}
           </Button>

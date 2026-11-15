@@ -57,12 +57,12 @@ const defaultLabels: ExternalAppLabels = {
 };
 
 const icons: Record<ExternalAppKind, ReactNode> = {
-  call: <Phone size={28} strokeWidth={2.2} />,
-  email: <Mail size={28} strokeWidth={2.2} />,
-  message: <MessageSquare size={28} strokeWidth={2.2} />,
-  map: <MapPin size={28} strokeWidth={2.2} />,
-  store: <ShoppingBag size={28} strokeWidth={2.2} />,
-  other: <ExternalLink size={28} strokeWidth={2.2} />,
+  call: <Phone size={28} strokeWidth={2} />,
+  email: <Mail size={28} strokeWidth={2} />,
+  message: <MessageSquare size={28} strokeWidth={2} />,
+  map: <MapPin size={28} strokeWidth={2} />,
+  store: <ShoppingBag size={28} strokeWidth={2} />,
+  other: <ExternalLink size={28} strokeWidth={2} />,
 };
 
 // The question names the target; these kinds show it below instead.

@@ -235,6 +235,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.hairline` | 0 1px 0 rgb(59 47 99 / 0.1) |
 | `shadow.arrow` | -1px 1px 0 rgb(255 255 255 / 0.85) |
 | `shadow.field-error` | 0 0 0 2.5px var(--destructive), 0 4px 14px rgb(59 47 99 / 0.12) |
+| `shadow.strip-pill` | inset 0 0 0 1px rgb(59 47 99 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.8) |
 | `dropShadow.label` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 18px rgb(59 47 99 / 0.14) |
 | `dropShadow.calendar` | 0 14px 18px color-mix(in srgb, var(--calendar-shadow) 28%, transparent), 0 3px 4px rgb(59 47 99 / 0.12) |
 | `breakpoint.sm` | 40rem |

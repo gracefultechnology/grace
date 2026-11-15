@@ -44,7 +44,7 @@ export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip =
         // `.gcur .ctag`: indigo, 22px corners and a 6px one toward the G; `.gcur.paused .ctag`: white with an indigo edge.
         <span
           className={cn(
-            "absolute top-[22px] flex h-11 items-center gap-2 rounded-row px-[18px] text-body font-bold whitespace-nowrap transition-colors duration-quick",
+            "absolute top-[22px] flex h-11 items-center gap-2 rounded-row px-[18px] text-body leading-[normal] font-bold whitespace-nowrap transition-[background-color] duration-quick ease-css-default",
             flip ? "right-[30px] rounded-br-tag" : "left-[30px] rounded-bl-tag",
             paused ? "bg-glass text-primary shadow-cursor-tag-paused" : "bg-primary text-primary-foreground shadow-cursor-tag",
           )}

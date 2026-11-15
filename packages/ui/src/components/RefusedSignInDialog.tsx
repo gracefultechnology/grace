@@ -48,7 +48,7 @@ export function RefusedSignInDialog({ provider, site, onContinue, onCancel, open
     <BrowserDialog
       open={open}
       title={labels.title(provider)}
-      icon={<LogIn size={28} strokeWidth={2.2} />}
+      icon={<LogIn size={28} strokeWidth={2} />}
       onEscape={onCancel}
       className={className}
       actions={

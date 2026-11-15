@@ -82,7 +82,7 @@ export function TabFavicon({ favicon, initial, pageLoading = false, loadingLabel
   // Prototype `.bz-fv`: a 20px tile, the site's letter on its colour, or "·" on grey for a new tab (renderSite, `#tabFav`).
   if (favicon) return <img src={favicon} alt="" className="size-5 shrink-0 rounded-tag object-cover" />;
   return (
-    <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-tag text-xs font-bold text-primary-foreground", initial ? "bg-site-brand" : "bg-favicon")}>
+    <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-tag text-xs leading-[normal] font-bold text-primary-foreground", initial ? "bg-site-brand" : "bg-favicon")}>
       {initial ?? "·"}
     </span>
   );

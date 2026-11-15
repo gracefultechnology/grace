@@ -41,7 +41,7 @@ export function CalendarWeekStrip({ days, onSelect, busyLabel = "has plans", cla
           type="button"
           aria-pressed={!!d.selected}
           onClick={() => onSelect?.(d.key)}
-          className={cn(focusRing, "relative flex h-24 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-day bg-panel", d.selected && "bg-card shadow-raised")}
+          className={cn(focusRing, "relative flex h-24 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-day bg-panel", d.selected && "bg-card text-primary shadow-raised")}
         >
           {/* Prototype `.a-day.today` is #D64545, below AA at 17px; the destructive red is the AA one. */}
           <span className={cn("text-label leading-5 font-bold tracking-[.06em] uppercase", d.today ? "text-destructive" : "text-muted-foreground")}>{d.weekday}</span>
