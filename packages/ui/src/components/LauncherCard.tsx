@@ -114,6 +114,7 @@ function Blurred({ turn, children }: { turn: number; children: (main: boolean) =
     ramp("black 0", `black ${at(0)}`, `transparent ${at(0.34)}`),
     ramp(`transparent ${at(0)}`, `black ${at(0.34)}`, `transparent ${at(0.67)}`),
     ramp(`transparent ${at(0.34)}`, `black ${at(0.67)}`, `transparent ${at(1)}`),
+    // eslint-disable-next-line design-system/no-literal-colors -- a mask reads only the alpha of its stops; no one sees this black.
     ramp(`transparent ${at(0.67)}`, `color-mix(in srgb, black ${Math.round((1 - 0.3 * away) * 100)}%, transparent) ${at(1)}`),
   ];
   return [0, 1.2, 3, 6.5].map((blur, k) => {
