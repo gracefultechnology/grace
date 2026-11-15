@@ -6,8 +6,8 @@ export const meta: ComponentMeta<GraceOrbProps> = {
   examples: {
     // Prototype `.orb-w.halo`: the start-up pulse and its spreading ring.
     Welcome: { glow: "welcome" },
-    // Grace is open: no glow, and her washes turn while she talks.
-    Active: { glow: "off", active: true },
+    // Grace is open: no glow; her washes still drift.
+    Open: { glow: "off" },
   },
   decorator: (story) => <div className="inline-flex bg-gradient-frame-soft p-8">{story()}</div>,
 };

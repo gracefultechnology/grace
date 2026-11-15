@@ -120,7 +120,7 @@ function Screen() {
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
         status={<RailButton icon={online ? <Wifi {...tile} /> : <WifiSlash />} label="Wi-Fi" aria-label={online ? "Wi-Fi" : "Wi-Fi, not connected"} {...toggle("WifiPopover")} />}
         footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={surface === "DeviceSettings"} {...visit("DeviceSettings")} />}
-        ask={<AskGraceButton selected={assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} active={assistant.conversation.turn !== "Ready"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
+        ask={<AskGraceButton selected={assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
         <RailButton icon={<House {...tile} />} label="Home" selected={surface === "Home"} {...visit("Home")} />
         <RailButton icon={volume.muted ? <VolumeX {...tile} /> : <Volume2 {...tile} />} label="Volume" {...toggle("VolumePopover")} />
       </Rail>

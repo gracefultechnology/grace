@@ -8,8 +8,6 @@ export const meta: ComponentMeta<AskGraceButtonProps> = {
     // Prototype `#askRing.halo`: the start-up pulse that invites the first tap.
     Welcome: { glow: "welcome" },
     "Grace open": { selected: true, glow: "off" },
-    // Grace is talking: her orb's washes turn.
-    "Grace talking": { selected: true, glow: "off", active: true },
   },
   decorator: (story) => <div className="inline-flex rounded-window bg-gradient-frame-soft p-2">{story()}</div>,
   play: {
