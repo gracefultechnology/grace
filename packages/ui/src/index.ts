@@ -64,6 +64,7 @@ export * from "./components/Input.tsx";
 export * from "./components/InternetCard.tsx";
 export * from "./components/Keyboard.tsx";
 export * from "./components/Label.tsx";
+export * from "./components/LanguageChoice.tsx";
 export * from "./components/LauncherCard.tsx";
 export * from "./components/ListRow.tsx";
 export * from "./components/MailActionStatus.tsx";
