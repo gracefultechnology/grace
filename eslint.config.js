@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import js from "@eslint/js"
 import react from "@eslint-react/eslint-plugin"
 import tailwind from "eslint-plugin-better-tailwindcss"
@@ -11,11 +11,11 @@ import { designSystem } from "./vibestack/design/eslint.ts"
 import { parseTokens } from "./vibestack/design/tokens.ts"
 
 const stack = 'AGENTS.md, "The stack"'
-const monorepo = 'SPEC.md, "One spec tree"'
+const monorepo = 'CONTRIBUTING.md, "The monorepo"'
 const banned = ["redux", "react-redux", "zustand", "mobx", "jotai", "recoil", "valtio", "xstate", "vue", "svelte", "jest"]
 const scopes = ["reduxjs", "angular", "xstate", "vue", "sveltejs", "jest"]
 // Each workspace package's `exports` beyond its root: "@repo/design-system/theme.css".
-const exported = readdirSync("packages").flatMap((dir) => {
+const exported = readdirSync("packages").filter((dir) => existsSync(`packages/${dir}/package.json`)).flatMap((dir) => {
   const { name, exports = {} } = JSON.parse(readFileSync(`packages/${dir}/package.json`, "utf8"))
   return Object.keys(exports).filter((key) => key !== ".").map((key) => RegExp.escape(`${name}/${key.slice(2)}`))
 })
@@ -28,7 +28,7 @@ const imports = {
 }
 const noReact = { patterns: [...imports.patterns, { regex: "^react(?:-dom)?(?:/|$)", message: `Tool and domain code does not import React: ${monorepo}.` }] }
 // What no tsconfig.json includes, so the type-aware rules cannot see it.
-const untyped = ["*.{js,ts}", "apps/*/scripts/**", "**/.storybook/**", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
+const untyped = ["*.{js,ts}", "apps/app/scripts/**", "**/.storybook/**", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
 // Every React interface: Studio's page is built on the same theme (vibestack/studio/vite.config.ts).
 const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", "vibestack/studio/src/page/**/*.{ts,tsx}"]
 const design = "packages/design-system"
@@ -38,7 +38,7 @@ const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-u
 
 export default defineConfig(
   // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
-  globalIgnores(["vendor/", "**/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
+  globalIgnores(["vendor/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
@@ -56,13 +56,13 @@ export default defineConfig(
     },
     rules: {
       "no-restricted-imports": ["error", imports],
-      // A relative path stays inside its package or reaches the pinned upstream (apps/app/scripts, its
-      // Android host and AOSP stagers); the tool and Studio, which ships inside it, import each other.
+      // A relative path stays inside its package, and only apps/app reaches the pinned upstream (its Android
+      // scripts and the native plugins' types); the tool and Studio, which ships inside it, import each other.
       "boundaries/dependencies": ["error", {
         default: "disallow",
         policies: [
           { from: { element: { type: "package" } }, allow: { to: { element: { type: "package", captured: { name: "{{ from.element.captured.name }}" } } } } },
-          { from: { element: { type: "package" } }, allow: { to: { element: { type: "upstream" } } } },
+          { from: { element: { type: "package", captured: { name: "app" } } }, allow: { to: { element: { type: "upstream" } } } },
           { from: { element: { types: ["tool", "studio"] } }, allow: { to: { element: { types: ["tool", "studio"] } } } },
         ],
       }],
@@ -76,9 +76,13 @@ export default defineConfig(
       "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: { arguments: false } }],
       // Regular expressions here match the tools' column-aligned output, where literal spaces read as the output does.
       "no-regex-spaces": "off",
+      // AGENTS.md, "Writing code": one path, so nothing is left for later or kept beside its replacement.
+      "no-warning-comments": ["error", { terms: ["todo", "fixme", "legacy", "deprecated"], location: "anywhere" }],
     },
   },
   { files: untyped, extends: [tseslint.configs.disableTypeChecked] },
+  // A ratchet at today's longest (Studio's server); a test's describe block holds its cases.
+  { ignores: ["**/test/**", "vibestack/selftest.ts"], rules: { "max-lines-per-function": ["error", { max: 250, skipBlankLines: true, skipComments: true }] } },
   {
     files: ["vibestack/**"],
     ignores: ["**/*.tsx"],
@@ -118,6 +122,13 @@ export default defineConfig(
     extends: [designSystem({ tailwind, tokens: parseTokens(JSON.parse(readFileSync(`${design}/tokens.json`, "utf8"))), entryPoint: `${import.meta.dirname}/${design}/generated/theme.css` })],
     settings: { "better-tailwindcss": { cwd: design } },
   },
-  // Spec.tsx marks a changed story with shadow-[inset_3px_0_0_var(--primary)], which no shadow token spells.
-  { files: ["vibestack/studio/src/page/**"], rules: { "better-tailwindcss/no-restricted-classes": "off" } },
+  // @repo/ui holds the form controls and dialogs every interface uses.
+  {
+    files: tsx,
+    ignores: ["packages/ui/**"],
+    rules: {
+      "no-restricted-globals": ["error", ...["alert", "confirm", "prompt"].map((name) => ({ name, message: "Use Dialog or Alert from @repo/ui." }))],
+      "no-restricted-syntax": ["error", { selector: "JSXOpeningElement[name.name=/^(input|textarea)$/]", message: "Use Input, Textarea or Checkbox from @repo/ui." }],
+    },
+  },
 )
