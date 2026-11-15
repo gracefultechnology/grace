@@ -14,6 +14,17 @@ const Name = ({ name, value }: { name: string; value: string }) => (
 );
 const tile = "h-24 rounded-row bg-card";
 const keys = <T extends object>(scale: T) => Object.entries(scale) as [string, string][];
+// A multi-layer shadow's layers, split at its top-level commas: drop-shadow() takes one layer each.
+const layers = (value: string) => {
+  const out = [""];
+  let depth = 0;
+  for (const ch of value) {
+    depth += ch === "(" ? 1 : ch === ")" ? -1 : 0;
+    if (ch === "," && depth === 0) out.push("");
+    else out[out.length - 1] += ch;
+  }
+  return out.map((layer) => layer.trim());
+};
 
 export const Colors = () => (
   <Section>
@@ -62,7 +73,7 @@ export const Shadows = () => (
     ))}
     {keys(tokens.dropShadow).map(([name, value]) => (
       <div key={`drop-${name}`}>
-        <div className={tile} style={{ filter: `drop-shadow(var(--drop-shadow-${name}, ${value}))` }} />
+        <div className={tile} style={{ filter: layers(value).map((layer) => `drop-shadow(${layer})`).join(" ") }} />
         <Name name={`drop-${name}`} value={value} />
       </div>
     ))}
