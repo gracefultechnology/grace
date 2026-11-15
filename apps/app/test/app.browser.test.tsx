@@ -277,17 +277,30 @@ it("Use the website under Grace's controls", async () => {
   await native.start();
   await native.report("tab-1", "https://example.com/#moved", 100);
   await expect.poll(() => tab(1).load).toBe("Loaded");
+  // Back and then Forward before the page starts: Android records the step back only once the page starts it, so Forward waits.
+  native.held.starts = true;
+  expect(await pressBack()).toBe(true);
+  await expect.poll(() => native.calls("goBack")).toHaveLength(1);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Forward" })));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  expect(native.calls("goForward")).toEqual([]);
+  await native.start();
+  await expect.poll(() => native.calls("goForward")).toMatchObject([{ id: "tab-1" }]);
+  native.held.starts = false;
+  await native.start();
+  await native.report("tab-1", "https://example.com/#moved", 100);
+  await expect.poll(() => tab(1).load).toBe("Loaded");
   // Two quick presses of the Back key go back two pages, as two steps back.
   const twice = [new Event("hardware-back", { cancelable: true }), new Event("hardware-back", { cancelable: true })];
   await act(() => { twice.forEach((back) => window.dispatchEvent(back)); return Promise.resolve(); });
   expect(twice.map((back) => back.defaultPrevented)).toEqual([true, true]);
-  await expect.poll(() => native.calls("goBack")).toMatchObject([{ id: "tab-1" }, { id: "tab-1" }]);
+  await expect.poll(() => native.calls("goBack")).toMatchObject([{ id: "tab-1" }, { id: "tab-1" }, { id: "tab-1" }]);
   expect(native.calls("navigate")).toHaveLength(2);
   expect(native.calls("reloadSurface")).toHaveLength(2);
   // spec/app/deviceKeys.md, "Back closes the nearest open thing first and leaves only from a resting Home": Back steps back to the
   // tab's new-tab page, then goes Home, and on a resting Home it is left to Android.
   expect(await pressBack()).toBe(true);
-  await expect.poll(() => native.calls("goBack")).toHaveLength(3);
+  await expect.poll(() => native.calls("goBack")).toHaveLength(4);
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("destroySurface")).toMatchObject([{ id: "tab-1" }]);
   expect(await pressBack()).toBe(true);

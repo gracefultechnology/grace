@@ -39,17 +39,17 @@ function measurer(report: (measured: Measured) => void) {
       const { rect, at } = control;
       if (isDrawn(rect)) control.at = rect;
       control.show(isDrawn(control.at));
-      // Its layout box at `rect`, mapped onto `at` while only that is drawn.
+      // Its layout box at `rect`, moved to `at` and cropped to it while only that is drawn.
       const held = rect && at && isDrawn(at) && !isDrawn(rect);
-      element.style.transformOrigin = held ? "0 0" : "";
-      element.style.transform = held ? `translate(${at.x - rect.x}px, ${at.y - rect.y}px) scale(${at.width / (rect.width || 1)}, ${at.height / (rect.height || 1)})` : "";
+      element.style.transform = held ? `translate(${at.x - rect.x}px, ${at.y - rect.y}px)` : "";
+      element.style.clipPath = held ? `inset(0 ${Math.max(0, rect.width - at.width)}px ${Math.max(0, rect.height - at.height)}px 0)` : "";
     }
   };
   let queued = false;
   const settle = () => {
     queued = false;
     // Where each control is laid out, not where it is painted.
-    for (const element of controls.keys()) element.style.transform = "";
+    for (const element of controls.keys()) element.style.transform = element.style.clipPath = "";
     for (const [element, control] of controls) control.rect = rectOf(element, true);
     follow();
     const style = page && getComputedStyle(page);
