@@ -6,6 +6,7 @@ export * from "./components/AppWindow.tsx";
 export * from "./components/AskGraceButton.tsx";
 export * from "./components/Avatar.tsx";
 export * from "./components/Banner.tsx";
+export * from "./components/BillDiscoverySetting.tsx";
 export * from "./components/BillOffer.tsx";
 export * from "./components/BillSummaryCard.tsx";
 export * from "./components/BrowserDownloads.tsx";
