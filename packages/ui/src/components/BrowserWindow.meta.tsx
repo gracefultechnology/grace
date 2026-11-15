@@ -12,6 +12,7 @@ import { BrowserWindow, type BrowserWindowProps } from "./BrowserWindow.tsx";
 import { NewTabPage } from "./NewTabPage.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const icon = { size: 28, strokeWidth: 1.9 };
 const closeBrowser = fn();
@@ -59,7 +60,7 @@ export const onBrowser = (story: () => ReactNode, site = "chase.com/pay") =>
         aria-label="Browser"
         tabStrip={<BrowserTabStrip tabs={payTab} selectedId={1} />}
         toolbar={
-          <BrowserToolbar canGoBack canGo onReload={() => {}}>
+          <BrowserToolbar canGoBack canGo reloadable onReload={() => {}}>
             <AddressBar value={site} />
           </BrowserToolbar>
         }
@@ -106,7 +107,7 @@ const SiteField = ({ value = "", placeholder, focused = false, masked = false }:
   >
     {(masked ? "•".repeat(value.length) : value) || (focused ? "" : (
       // Prototype `sfield()`'s placeholder grey, in its own ink by the user's choice (.storybook/preview.ts, `data-prototype-ink`).
-      <span data-prototype-ink="" className="text-site-muted/65">
+      <span data-prototype-ink="" className="text-site-placeholder">
         {placeholder}
       </span>
     ))}
@@ -116,7 +117,7 @@ const SiteField = ({ value = "", placeholder, focused = false, masked = false }:
 );
 
 // Prototype `.serr`.
-const SiteError = ({ children }: { children?: string }) => (children ? <div className="mt-2.5 text-base/[normal] text-destructive">{children}</div> : null);
+const SiteError = ({ children }: { children?: string }) => (children ? <div className="mt-2.5 text-base/[normal] text-site-error">{children}</div> : null);
 
 /** Prototype `renderSite()`: the mock bank website on one of its pages, in `#pg` under the toolbar, as a `BrowserWindow` example. */
 const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindowProps> => {
@@ -225,7 +226,8 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
         )}
         {page === "done" && (
           <div className={cn(card, "top-[84px]")}>
-            <div className="text-lead font-bold text-ok">Payment scheduled</div>
+            {/* Prototype `renderSite()` 'done': the site's own green. */}
+            <div className="text-lead font-bold text-site-ok">Payment scheduled</div>
             <p className="my-[18px] text-lg/[26px]">
               Thanks. Your payment of {amount} to card ••7731 is scheduled for {site.date}.
             </p>
@@ -274,7 +276,7 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
         />
       ),
       toolbar: (
-        <BrowserToolbar canGoBack canGo pageLoading onStop={() => {}}>
+        <BrowserToolbar canGoBack canGo reloadable pageLoading onStop={() => {}}>
           <AddressBar value="chase.com/pay/review" />
         </BrowserToolbar>
       ),
@@ -284,7 +286,7 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
     "Page failed": {
       tabStrip: <BrowserTabStrip tabs={[{ id: 1, title: "chase.com", initial: "C" }]} selectedId={1} />,
       toolbar: (
-        <BrowserToolbar canGo onReload={() => {}}>
+        <BrowserToolbar canGo reloadable onReload={() => {}}>
           <AddressBar value="chase.com" />
         </BrowserToolbar>
       ),
@@ -299,6 +301,7 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
       await userEvent.click(canvas.getByRole("button", { name: "Open a new tab" }));
       await userEvent.click(canvas.getByRole("button", { name: "Close browser" }));
       await expect([newTab, closeBrowser].map((f) => f.mock.calls.length)).toEqual([1, 1]);
+      unfocus();
     },
   },
 };

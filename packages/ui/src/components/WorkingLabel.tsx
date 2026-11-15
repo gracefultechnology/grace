@@ -1,7 +1,7 @@
 import { cn } from "../lib/cn.ts";
 import { GuideLabel, type GuideLabelProps } from "./GuideLabel.tsx";
 
-export type WorkingLabelProps = Omit<GuideLabelProps, "title" | "detail" | "tone" | "mark" | "onSelect" | "onClose" | "closeLabel"> & {
+export type WorkingLabelProps = Omit<GuideLabelProps, "title" | "detail" | "tone" | "mark" | "selectable" | "onSelect" | "closable" | "onClose" | "closeLabel"> & {
   /** Who is doing it, never what she types (the field shows that): "Grace is typing". */
   text: string;
   /** Grace's work is held: a pause sign and `pausedText` in place of the spinner and `text`. */

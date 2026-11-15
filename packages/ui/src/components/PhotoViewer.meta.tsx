@@ -10,8 +10,8 @@ export const meta: ComponentMeta<PhotoViewerProps> = {
   // The second of Susan's three photos.
   args: { title: "Photo 2 of 3", src: flowersPhoto, alt: "Daisies", backLabel: "Susan’s email", onBack: fn(), onPrevious: fn(), onNext: next, onSave: fn(), onForward: fn(), onClose: fn() },
   examples: {
-    First: { title: "Photo 1 of 3", src: stagePhoto, alt: "Lily on the stage", onPrevious: undefined },
-    Last: { title: "Photo 3 of 3", src: programPhoto, alt: "The recital program", onNext: undefined },
+    First: { title: "Photo 1 of 3", src: stagePhoto, alt: "Lily on the stage", first: true },
+    Last: { title: "Photo 3 of 3", src: programPhoto, alt: "The recital program", last: true },
     Loading: { status: "loading" },
     "Couldn’t show": { status: "failed", onRetry: retry },
     Saved: { saveStatus: "saved" },

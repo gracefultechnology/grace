@@ -41,9 +41,13 @@ export type PhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
   src: string;
   /** What it shows, for a screen reader. */
   alt: string;
-  /** Shows the photo before; without it the arrow is hidden. */
+  /** The first photo: the previous arrow is hidden (prototype `vprev` with `visibility:hidden` at 0). */
+  first?: boolean;
+  /** The last photo: the next arrow is hidden (prototype `vnext` with `visibility:hidden` at n-1). */
+  last?: boolean;
+  /** Shows the photo before. */
   onPrevious?: () => void;
-  /** Shows the photo after; without it the arrow is hidden. */
+  /** Shows the photo after. */
   onNext?: () => void;
   /** Saves it to Files, the one next step. */
   onSave?: () => void;
@@ -71,7 +75,7 @@ export type PhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  */
-export function PhotoViewer({ src, alt, onPrevious, onNext, onSave, onForward, status = "ready", onRetry, errorLabel, saveStatus, onRetrySave, statusLabels, labels, ...props }: PhotoViewerProps) {
+export function PhotoViewer({ src, alt, first = false, last = false, onPrevious, onNext, onSave, onForward, status = "ready", onRetry, errorLabel, saveStatus, onRetrySave, statusLabels, labels, ...props }: PhotoViewerProps) {
   const l = { ...viewerLabels, ...labels };
   const held = status !== "ready";
   return (
@@ -93,7 +97,7 @@ export function PhotoViewer({ src, alt, onPrevious, onNext, onSave, onForward, s
       {status === "ready" ? (
         // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction": Saved only once acknowledged.
         <div className="relative h-full">
-          <PhotoStage src={src} alt={alt} onPrevious={onPrevious} onNext={onNext} previousLabel={l.previous} nextLabel={l.next} className="h-full justify-center" />
+          <PhotoStage src={src} alt={alt} onPrevious={first ? undefined : onPrevious} onNext={last ? undefined : onNext} previousLabel={l.previous} nextLabel={l.next} className="h-full justify-center" />
           {saveStatus && (
             <MailActionStatus action="save" status={saveStatus} onRetry={onRetrySave} labels={statusLabels} className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full bg-glass/85 py-2 pr-2 pl-5 whitespace-nowrap shadow-capsule backdrop-blur-capsule [&:not(:has(button))]:pr-5" />
           )}

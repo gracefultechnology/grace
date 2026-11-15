@@ -19,6 +19,7 @@ export const meta: ComponentMeta<WifiJoinFormProps> = {
       network: "Sunrise Community Center",
       account: true,
       error: "That account name or password didn’t work. Check both and try again.",
+      askGrace: true,
       onAskGrace: fn(),
     },
   },

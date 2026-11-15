@@ -2,6 +2,7 @@ import { expect, fn, screen, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { onBrowser } from "./BrowserWindow.meta.tsx";
 import type { WebsiteFileRequestDialogProps } from "./WebsiteFileRequestDialog.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const choose = fn();
 const cancel = fn();
@@ -17,6 +18,7 @@ export const meta: ComponentMeta<WebsiteFileRequestDialogProps> = {
       await userEvent.click(request.getByRole("button", { name: "Choose a file" }));
       await userEvent.click(request.getByRole("button", { name: "Cancel" }));
       await expect([choose.mock.calls.length, cancel.mock.calls.length]).toEqual([1, 1]);
+      unfocus();
     },
   },
 };

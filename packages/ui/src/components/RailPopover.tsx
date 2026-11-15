@@ -47,12 +47,10 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
         {title}
         {value && <span className="ml-3 text-body-lg leading-7 font-semibold text-muted-foreground">{value}</span>}
         <span className="flex-1" />
-        {onClose && (
-          // `.rpx`: a 52px capsule, pulled into the header's padding; `.rpx:active` only shrinks it, its glass unchanged.
-          <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome backdrop-blur-none backdrop-saturate-100 transition-none active:scale-96 active:bg-glass/62">
-            <X size={22} strokeWidth={2} aria-hidden />
-          </Button>
-        )}
+        {/* `.rpx` (drawPop() draws it on every popover): a 52px capsule, pulled into the header's padding; `.rpx:active` only shrinks it, its glass unchanged. */}
+        <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome backdrop-blur-none backdrop-saturate-100 transition-none active:scale-96 active:bg-glass/62">
+          <X size={22} strokeWidth={2} aria-hidden />
+        </Button>
       </div>
       {children}
       {note ? <div className={cn("text-body leading-[26px] font-medium text-muted-foreground", children ? "mt-4" : "mt-3")}>{note}</div> : null}

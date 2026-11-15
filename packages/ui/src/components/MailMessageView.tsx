@@ -301,8 +301,8 @@ export function MailMessageView({
               printStatus={file.printStatus}
               className="mt-[22px]"
               onOpen={() => onOpenFile?.(i)}
-              onPrint={onPrintFile && (() => onPrintFile(i))}
-              onRetry={onRetryPrintFile && (() => onRetryPrintFile(i))}
+              onPrint={() => onPrintFile?.(i)}
+              onRetry={() => onRetryPrintFile?.(i)}
             />
           ))}
       </article>

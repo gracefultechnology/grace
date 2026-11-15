@@ -4,6 +4,7 @@ import type { ComponentMeta } from "vibestack/stories";
 import { AddressBar } from "./AddressBar.tsx";
 import type { BrowserDownload, BrowserDownloadsProps } from "./BrowserDownloads.tsx";
 import { BrowserToolbar } from "./BrowserToolbar.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const openFile = fn();
 const dismiss = fn();
@@ -40,6 +41,7 @@ export const meta: ComponentMeta<BrowserDownloadsProps> = {
       await userEvent.click(list.getByRole("button", { name: "Open in Files" }));
       await userEvent.click(list.getByRole("button", { name: "Remove Book club list.pdf from the list" }));
       await expect([openFile.mock.calls, dismiss.mock.calls, list.getAllByRole("button", { name: /^Remove/ }).length]).toEqual([[[3]], [[2]], 3]);
+      unfocus();
     },
   },
 };

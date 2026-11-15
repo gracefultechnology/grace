@@ -1,6 +1,7 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { BrowserPageStateProps } from "./BrowserPageState.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const retry = fn();
 const back = fn();
@@ -21,6 +22,7 @@ export const meta: ComponentMeta<BrowserPageStateProps> = {
       retry.mockClear();
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
       await expect(retry).toHaveBeenCalledTimes(1);
+      unfocus();
     },
     // Back is the only way out of a blocked page.
     Blocked: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
@@ -28,6 +30,7 @@ export const meta: ComponentMeta<BrowserPageStateProps> = {
       await expect(page.getAllByRole("button").map((b) => b.textContent)).toEqual(["Back"]);
       await userEvent.click(page.getByRole("button", { name: "Back" }));
       await expect(back).toHaveBeenCalled();
+      unfocus();
     },
   },
 };

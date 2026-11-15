@@ -19,6 +19,8 @@ export const meta: ComponentMeta<AvatarProps> = {
     Clinic: { name: "Main St Clinic", tone: 1, children: cross },
     "Account Security": { name: "Account Security", tone: 4 },
     Large: { name: "Susan", src: susan, size: 88 },
+    // A person to write to (prototype `.a-person .a-av`): the initial at 36px.
+    Person: { name: "David", tone: 2, size: 88 },
     Chip: { name: "David", tone: 2, size: 46 },
   },
   bounds: { size: [46, 88] },

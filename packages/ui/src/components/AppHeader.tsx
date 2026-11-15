@@ -125,12 +125,10 @@ export function AppHeader({
       )}
       <div className={capsule}>
         {actions}
-        {onClose && (
-          // `#awin .aphdr .hgrp .winx`: transparent even while pressed.
-          <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="active:bg-transparent">
-            <X size={24} strokeWidth={1.75} aria-hidden />
-          </Button>
-        )}
+        {/* `#awin .aphdr .hgrp .winx`, in every header hdr() draws: transparent even while pressed. */}
+        <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="active:bg-transparent">
+          <X size={24} strokeWidth={1.75} aria-hidden />
+        </Button>
       </div>
     </header>
   );

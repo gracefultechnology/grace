@@ -21,7 +21,7 @@ export type MailAttachSource = "camera" | "photos" | "file";
 export type MailRecipientChipProps = ComponentProps<"span"> & {
   /** Who it is to. */
   contact: MailContact;
-  /** Takes them off; without it there is no ✕. */
+  /** Takes them off. */
   onRemove?: () => void;
   /** The ✕'s accessible name. */
   removeLabel?: string;
@@ -31,15 +31,13 @@ export type MailRecipientChipProps = ComponentProps<"span"> & {
 export function MailRecipientChip({ contact, onRemove, removeLabel = `Remove ${contact.name}`, className, ...props }: MailRecipientChipProps) {
   return (
     <span className={cn("inline-flex h-[60px] items-center gap-3 rounded-full bg-panel pr-5 pl-2 text-body-lg leading-none font-bold text-chrome", className)} {...props}>
-      {/* Prototype `av(…, 46)`: the initial at 18px. */}
-      <MailContactAvatar contact={contact} size={46} style={{ fontSize: 18 }} aria-hidden />
+      {/* Prototype `av(…, 46)`: the initial at 18px, white on the contact's tone. */}
+      <MailContactAvatar contact={contact} size={46} style={{ fontSize: 18 }} aria-hidden data-prototype-ink />
       {contact.name}
-      {onRemove && (
-        // Prototype `.rcx`.
-        <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-2 ml-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
-          <X size={18} strokeWidth={2.4} aria-hidden />
-        </button>
-      )}
+      {/* Prototype `.rcx`. */}
+      <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-2 ml-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
+        <X size={18} strokeWidth={2.4} aria-hidden />
+      </button>
     </span>
   );
 }
@@ -196,7 +194,7 @@ export function MailCompose({
     <Line label={l[field]}>
       <span className="flex flex-1 flex-wrap items-center gap-2.5 py-1.5">
         {people.map((person, i) => (
-          <MailRecipientChip key={person.name} contact={person} onRemove={onRemoveRecipient && (() => onRemoveRecipient(field, i))} />
+          <MailRecipientChip key={person.name} contact={person} onRemove={() => onRemoveRecipient?.(field, i)} />
         ))}
         <Button variant="capsule" size="compact-icon" className={addButton} aria-label={l.addTo(l[field])} onClick={() => onAddRecipient?.(field)}>
           <Plus size={20} strokeWidth={2.4} aria-hidden />
@@ -209,12 +207,11 @@ export function MailCompose({
       title={title}
       backLabel={backLabel}
       actions={
-        onDiscard && (
-          <Button variant="plain" size="compact" className={headerPill} onClick={onDiscard}>
-            <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
-            {l.discard}
-          </Button>
-        )
+        // Prototype `hdr('New email', {actions: [{t: 'Discard', …}]})`.
+        <Button variant="plain" size="compact" className={headerPill} onClick={onDiscard}>
+          <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
+          {l.discard}
+        </Button>
       }
       {...props}
     >
@@ -248,7 +245,7 @@ export function MailCompose({
             className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-field-placeholder"
           />
         </Line>
-        {/* Prototype: 150px, plus the 4px its inline textarea leaves beneath it; placeholders in Chrome's default gray (#757575). A notice takes its spare lines, so Send stays on screen. */}
+        {/* Prototype: 150px, plus the 4px its inline textarea leaves beneath it; placeholders in Chrome's default gray (`field-placeholder`). A notice takes its spare lines, so Send stays on screen. */}
         <textarea
           aria-label={l.bodyPlaceholder}
           value={body}

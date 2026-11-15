@@ -106,14 +106,14 @@ export function BrowserTabStrip({
               <p className="mt-1.5 ml-4 text-label leading-5 font-bold tracking-[.04em] text-label-ink uppercase">{labels.moreTabs}</p>
               <ul className="flex flex-col gap-2">
                 {overflow.map((tab) => (
-                  // Prototype `.spdo`: a 64px round row of the menu's glass, here with the tab's favicon, title and ✕.
+                  // Prototype `.spdo`: a 64px round row of the menu's glass with its 20/700 words, here the tab's favicon, title and ✕.
                   <li key={tab.id} className="flex h-16 items-center rounded-full bg-glass/70 pr-2">
                     <Popover.Close
                       onClick={() => onSelectTab?.(tab.id)}
                       className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-3 self-stretch rounded-full pl-[22px] text-left text-chrome")}
                     >
                       <TabFavicon favicon={tab.favicon} initial={tab.initial} pageLoading={tab.pageLoading} />
-                      <span className="min-w-0 flex-1 truncate text-body font-medium">{tab.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-body font-bold text-popover-foreground">{tab.title}</span>
                     </Popover.Close>
                     <button
                       type="button"
@@ -151,6 +151,11 @@ export function BrowserPopoverContent({ sideOffset = 8, className, ...props }: B
   return (
     <Popover.Content
       sideOffset={sideOffset}
+      // Prototype `.spdpop` opens with no row ringed: focus goes to the panel, and Tab moves into it.
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        (event.currentTarget as HTMLElement).focus();
+      }}
       collisionPadding={6}
       className={cn("z-50 box-border flex max-h-[min(560px,var(--radix-popover-content-available-height))] flex-col gap-2 overflow-y-auto rounded-menu bg-glass/86 p-2 font-sans text-chrome shadow-menu backdrop-blur-frost backdrop-saturate-160 outline-none", className)}
       {...props}

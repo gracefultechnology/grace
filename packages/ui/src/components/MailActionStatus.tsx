@@ -41,7 +41,7 @@ export type MailActionStatusProps = Omit<ComponentProps<"div">, "children"> & {
   action: "save" | "print";
   /** What actually happened to it. */
   status: MailSaveStatus | MailPrintStatus;
-  /** Tries again after a failure; without it there is no Try again. */
+  /** Tries again after a failure, by the Try again its words offer. */
   onRetry?: () => void;
   /** Its words, for another language. */
   labels?: Partial<MailActionStatusLabels>;
@@ -66,7 +66,7 @@ export function MailActionStatus({ action, status, onRetry, labels, className, .
     >
       {failed ? <TriangleAlert size={22} strokeWidth={2.2} aria-hidden /> : done ? <Check size={22} strokeWidth={2.6} aria-hidden /> : <Spinner size="md" aria-hidden />}
       {text}
-      {failed && onRetry && (
+      {failed && (
         <Button variant="capsule" size="compact" className={cn(appButton, "ml-1.5 h-12 px-5 text-grace-ink")} onClick={onRetry}>
           {l.retry}
         </Button>

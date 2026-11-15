@@ -45,7 +45,8 @@ export function ShortcutTile({ label, icon = <Globe size={30} strokeWidth={2} ar
       }}
       className={cn(
         focusRing,
-        "relative flex h-[140px] w-[200px] cursor-pointer flex-col items-start justify-between rounded-card bg-glass/40 p-5 text-left font-sans text-foreground shadow-launcher transition-transform duration-press ease-spring active:scale-[1.02] motion-reduce:active:scale-100",
+        // As LauncherCard (prototype `.lc`): no press, since `hmApply`'s inline transform hides `.lc:active`'s scale.
+        "relative flex h-[140px] w-[200px] cursor-pointer flex-col items-start justify-between rounded-card bg-glass/40 p-5 text-left font-sans text-foreground shadow-launcher",
         className,
       )}
       {...props}

@@ -1,6 +1,7 @@
 import { expect, fn, screen, userEvent, waitFor, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { BrowserTabItem, BrowserTabStripProps } from "./BrowserTabStrip.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const select = fn();
 const close = fn();
@@ -45,6 +46,7 @@ export const meta: ComponentMeta<BrowserTabStripProps> = {
       await userEvent.click(canvas.getByRole("button", { name: "Sign in · Chase" }));
       await userEvent.click(canvas.getByRole("button", { name: "Close New tab" }));
       await expect([select.mock.calls[0], close.mock.calls[0]]).toEqual([[1], [5]]);
+      unfocus();
     },
     // "2 more" lists the tabs that do not fit, in opening order; choosing one selects it and closes the list.
     "More tabs": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
@@ -55,6 +57,7 @@ export const meta: ComponentMeta<BrowserTabStripProps> = {
       await userEvent.click(list.getByRole("button", { name: "Credit card · Chase" }));
       await expect([shut.mock.calls[0], pick.mock.calls[0]]).toEqual([[4], [2]]);
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "More tabs" })).toBeNull());
+      unfocus();
     },
   },
 };

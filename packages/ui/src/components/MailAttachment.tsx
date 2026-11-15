@@ -13,7 +13,9 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
   kind?: string;
   /** Opens the file in the reader. */
   onOpen?: () => void;
-  /** Prints it; without it there is no Print. */
+  /** Whether it can be printed, offering Print (prototype `.a-att`, always for a PDF). */
+  printable?: boolean;
+  /** Prints it. */
   onPrint?: () => void;
   /** The Open button's words. */
   openLabel?: string;
@@ -34,7 +36,7 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  */
-export function MailAttachment({ name, detail, kind = "PDF", onOpen, onPrint, openLabel = "Open", printLabel = "Print", saveStatus, printStatus, onRetry, statusLabels, className, ...props }: MailAttachmentProps) {
+export function MailAttachment({ name, detail, kind = "PDF", onOpen, printable = true, onPrint, openLabel = "Open", printLabel = "Print", saveStatus, printStatus, onRetry, statusLabels, className, ...props }: MailAttachmentProps) {
   // spec/app/files.md, "Printing reports actual printer acceptance and preserves an uncertain request": the latest action reports.
   const report = printStatus ? ({ action: "print", status: printStatus } as const) : saveStatus ? ({ action: "save", status: saveStatus } as const) : null;
   return (
@@ -57,7 +59,7 @@ export function MailAttachment({ name, detail, kind = "PDF", onOpen, onPrint, op
         <Button variant="capsule" size="pill" className={appButton} onClick={onOpen}>
           {openLabel}
         </Button>
-        {onPrint && (
+        {printable && (
           <Button variant="capsule" size="pill" className={appButton} aria-busy={printStatus === "pending" || undefined} disabled={printStatus === "pending" || printStatus === "unknown"} onClick={onPrint}>
             {pendingMark(printStatus === "pending", <mailIcons.printer size={22} strokeWidth={2.2} aria-hidden />)}
             {printLabel}

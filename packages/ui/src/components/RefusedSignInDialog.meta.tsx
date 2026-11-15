@@ -2,6 +2,7 @@ import { expect, fn, screen, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { onBrowser } from "./BrowserWindow.meta.tsx";
 import type { RefusedSignInDialogProps } from "./RefusedSignInDialog.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const go = fn();
 const stay = fn();
@@ -18,6 +19,7 @@ export const meta: ComponentMeta<RefusedSignInDialogProps> = {
       await userEvent.click(question.getByRole("button", { name: "Continue in the phone’s browser" }));
       await userEvent.keyboard("{Escape}");
       await expect([go.mock.calls.length, stay.mock.calls.length]).toEqual([1, 1]);
+      unfocus();
     },
   },
 };

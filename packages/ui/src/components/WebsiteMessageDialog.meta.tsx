@@ -2,6 +2,7 @@ import { expect, fn, screen, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { onBrowser } from "./BrowserWindow.meta.tsx";
 import type { WebsiteMessageDialogProps } from "./WebsiteMessageDialog.tsx";
+import { unfocus } from "./MailApp.meta.tsx";
 
 const answer = fn();
 const typed = fn();
@@ -25,6 +26,7 @@ export const meta: ComponentMeta<WebsiteMessageDialogProps> = {
       await expect(dialog().getAllByRole("button").map((b) => b.textContent)).toEqual(["OK"]);
       await userEvent.keyboard("{Escape}");
       await expect(answer.mock.calls).toEqual([[true, undefined]]);
+      unfocus();
     },
     "Text box": async () => {
       typed.mockClear();
@@ -33,6 +35,7 @@ export const meta: ComponentMeta<WebsiteMessageDialogProps> = {
       await userEvent.type(field, "Visa");
       await userEvent.click(dialog().getByRole("button", { name: "OK" }));
       await expect(typed.mock.calls).toEqual([[true, "Visa"]]);
+      unfocus();
     },
     // Escape keeps the page, as Stay does.
     "Leave page": async () => {
@@ -40,6 +43,7 @@ export const meta: ComponentMeta<WebsiteMessageDialogProps> = {
       await expect(screen.getByRole("dialog", { name: "Leave this page?" })).toBeTruthy();
       await userEvent.keyboard("{Escape}");
       await expect(left.mock.calls).toEqual([[false, undefined]]);
+      unfocus();
     },
   },
 };

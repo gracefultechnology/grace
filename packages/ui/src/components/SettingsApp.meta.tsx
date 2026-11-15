@@ -64,7 +64,7 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       page: "wifi",
       backLabel: "Wi-Fi",
       onBack: fn(),
-      children: <WifiJoinForm network="Sunrise Community Center" account userPlaceholder="For example: margaret" error="That account name or password didn’t work. Check both and try again." onAskGrace={fn()} />,
+      children: <WifiJoinForm network="Sunrise Community Center" account userPlaceholder="For example: margaret" error="That account name or password didn’t work. Check both and try again." askGrace onAskGrace={fn()} />,
     },
     // Prototype axGuide() with kind `instruction` on a size (JS 2072-2079): Margaret makes the words bigger herself.
     "Grace Points At Largest": {

@@ -54,8 +54,8 @@ export function MailRecipientPicker({
                   "flex w-full cursor-pointer flex-col items-center gap-3 rounded-day bg-panel px-2.5 py-[22px] text-center text-body-lg leading-[26px] font-bold text-chrome active:scale-[.99]",
                 )}
               >
-                {/* Prototype `.a-person .a-av`: 88px, its initial at 36px. */}
-                <MailContactAvatar contact={person} size={88} style={{ fontSize: 36 }} aria-hidden />
+                {/* Prototype `.a-person .a-av`: 88px. */}
+                <MailContactAvatar contact={person} size={88} aria-hidden />
                 {person.name}
               </button>
             </li>

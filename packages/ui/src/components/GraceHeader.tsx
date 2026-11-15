@@ -52,8 +52,10 @@ export type GraceHeaderProps = ComponentProps<"div"> & {
   resumeLabel?: string;
   /** Her voice and speed menu, a `GraceVoiceMenu`. */
   voice?: ReactNode;
-  /** Show me again, after Voice: brings back the tip Margaret closed. Without it there is no such pill; the host offers it only
-   * while that tip's target is still current. */
+  /** Offers Show me again after Voice, to bring back the tip Margaret closed; the host offers it only while that tip's
+   * target is still current. */
+  showGuide?: boolean;
+  /** Called by Show me again. */
   onShowGuide?: () => void;
   /** The words on Show me again. */
   showGuideLabel?: string;
@@ -84,6 +86,7 @@ export function GraceHeader({
   pauseLabel = "Pause",
   resumeLabel = "Resume",
   voice,
+  showGuide = false,
   onShowGuide,
   showGuideLabel,
   expanded = false,
@@ -118,7 +121,7 @@ export function GraceHeader({
         </Button>
         {voice}
         {/* spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target". */}
-        {onShowGuide && <GuideShowButton surface="header" label={showGuideLabel} onSelect={onShowGuide} />}
+        {showGuide && <GuideShowButton surface="header" label={showGuideLabel} onSelect={onShowGuide} />}
       </GraceCapsule>
       <span className="flex-1" />
       <GraceCapsule>

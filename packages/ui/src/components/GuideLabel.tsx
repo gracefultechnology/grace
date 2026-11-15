@@ -45,9 +45,13 @@ export type GuideLabelProps = Omit<ComponentProps<"div">, "title"> & {
    * `below-end` under a target at the right edge, the tail at the top-right.
    */
   placement?: "beside" | "below" | "below-end";
-  /** Makes the words a button, as the label of a field to type in is: tapping it opens the keyboard. */
+  /** The words are a button, as the label of a field to type in is (prototype `.glab.tap`): tapping it opens the keyboard. */
+  selectable?: boolean;
+  /** Called by a tap on the words of a `selectable` label. */
   onSelect?: () => void;
-  /** Dismisses the label and its ring; without it there is no close button. */
+  /** Offers the ghost close (prototype `.glab .glx`), which dismisses the label and its ring; never on a `working` label. */
+  closable?: boolean;
+  /** Called by the close button. */
   onClose?: () => void;
   /** The close button's accessible name. */
   closeLabel?: string;
@@ -58,9 +62,9 @@ export type GuideLabelProps = Omit<ComponentProps<"div">, "title"> & {
  * @model spec/app/execution.md
  * @design packages/design-system/design.md#guidance
  */
-export function GuideLabel({ title, detail, tone = "turn", mark, placement = "beside", onSelect, onClose, closeLabel = "Close this tip", className, ...props }: GuideLabelProps) {
+export function GuideLabel({ title, detail, tone = "turn", mark, placement = "beside", selectable = false, onSelect, closable = false, onClose, closeLabel = "Close this tip", className, ...props }: GuideLabelProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const Words = onSelect ? "button" : "div";
+  const Words = selectable ? "button" : "div";
   const [size, setSize] = useState<[number, number]>();
   const working = tone === "working";
   const below = placement !== "beside";
@@ -79,7 +83,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         // Prototype `.glab`: 3px round the content, its square corner where the tail comes out.
         "pointer-events-none relative w-max max-w-[420px] rounded-window p-[3px] font-sans animate-label-in motion-reduce:animate-none",
         // `.glab.tap`: the whole label of a field to type in is the thing to tap; `.ov` lets every other tap through to the page.
-        onSelect && "pointer-events-auto cursor-pointer",
+        selectable && "pointer-events-auto cursor-pointer",
         below ? (end ? "rounded-tr-none" : "rounded-tl-none") : "rounded-bl-none",
         // `.glab.wl`: filled violet, white words, in sooner; `#ov .glab`: the outline below, after the ring, its shadow following the tail.
         working
@@ -88,7 +92,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         className,
       )}
       // The words are the keyboard path; a tap anywhere else on the label reaches them by bubbling here.
-      onClick={onSelect}
+      onClick={selectable ? onSelect : undefined}
       {...props}
     >
       {working ? (
@@ -109,8 +113,8 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
       <div className={cn("relative flex gap-3 pr-[19px] pl-[15px]", working ? "items-start pt-[13px] pb-[15px]" : "items-center py-3.5")}>
         {/* `.glab.tap`: the label of a field to type in is itself the thing to tap. */}
         <Words
-          {...(onSelect && { type: "button" })}
-          className={cn("relative flex gap-3 text-left", working ? "items-start" : "items-center", onSelect && cn(focusRing, "flex-1 self-stretch cursor-pointer rounded-sm"))}
+          {...(selectable && { type: "button" })}
+          className={cn("relative flex gap-3 text-left", working ? "items-start" : "items-center", selectable && cn(focusRing, "flex-1 self-stretch cursor-pointer rounded-sm"))}
         >
           <span aria-hidden className="relative flex">{marks[mark ?? defaultMark[tone]]}</span>
           <span className="relative">
@@ -118,9 +122,9 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
             {detail && <span className="mt-0.5 block text-lead leading-8 font-medium text-subtle">{detail}</span>}
           </span>
         </Words>
-        {onClose && !working && (
+        {closable && !working && (
           // `.glab .glx`: a ghost close, 44px, pulled into the label's padding.
-          <Button variant="plain" aria-label={closeLabel} onClick={(event) => { event.stopPropagation(); onClose(); }} className="pointer-events-auto relative -my-2.5 -mr-4 ml-1 size-11 cursor-pointer p-0 text-guide-close transition-none active:bg-primary/8">
+          <Button variant="plain" aria-label={closeLabel} onClick={(event) => { event.stopPropagation(); onClose?.(); }} className="pointer-events-auto relative -my-2.5 -mr-4 ml-1 size-11 cursor-pointer p-0 text-guide-close transition-none active:bg-primary/8">
             <X size={20} strokeWidth={2.2} aria-hidden />
           </Button>
         )}

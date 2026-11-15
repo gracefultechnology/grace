@@ -10,9 +10,11 @@ export type BrowserToolbarProps = ComponentProps<"div"> & {
   canGoForward?: boolean;
   /** There is an address to go to. */
   canGo?: boolean;
+  /** The toolbar has Reload (Stop while the page loads); the prototype's new tab has none. */
+  reloadable?: boolean;
   /** The tab's page is loading: Reload becomes Stop. Back, Forward and the address still work. */
   pageLoading?: boolean;
-  /** Called by Reload, which loads the page again; with `onStop`, it shows the Reload/Stop button. */
+  /** Called by Reload, which loads the page again. */
   onReload?: () => void;
   /** Called by Stop while the page loads. */
   onStop?: () => void;
@@ -40,7 +42,7 @@ export type BrowserToolbarProps = ComponentProps<"div"> & {
 const arrow = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
 /**
- * The browser's toolbar under the tabs: Back, Forward, Reload (Stop while the page loads), the address (its
+ * The browser's toolbar under the tabs: Back, Forward, Reload when `reloadable` (Stop while the page loads), the address (its
  * children, an `AddressBar`), Go and any `trailing` controls.
  * A control with nowhere to go keeps its glass and dims its label.
  * @model spec/app/browser.md
@@ -50,6 +52,7 @@ export function BrowserToolbar({
   canGoBack = false,
   canGoForward = false,
   canGo = false,
+  reloadable = false,
   pageLoading = false,
   onReload,
   onStop,
@@ -77,7 +80,7 @@ export function BrowserToolbar({
         <ArrowRight {...arrow} />
         {forwardLabel}
       </Button>
-      {(onReload || onStop || pageLoading) && (
+      {reloadable && (
         // spec/app/browser.md, "Back and Forward stay within the selected tab's history": a reload is an actual load, and Stop ends it.
         <Button variant="capsule" size="pill-icon" aria-label={pageLoading ? stopLabel : reloadLabel} onClick={pageLoading ? onStop : onReload}>
           {pageLoading ? <X {...arrow} /> : <RotateCw {...arrow} />}

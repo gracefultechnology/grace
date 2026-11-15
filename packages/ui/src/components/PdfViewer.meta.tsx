@@ -29,6 +29,7 @@ export const meta: ComponentMeta<PdfViewerProps> = {
     pageLabel: "Page 1 of 2",
     onBack: fn(),
     onPrint: print,
+    savable: true,
     onSave: fn(),
     onClose: fn(),
     children: page("Main St Clinic", "Patient visit form"),
@@ -40,7 +41,7 @@ export const meta: ComponentMeta<PdfViewerProps> = {
     "Print unknown": { printStatus: "unknown" },
     "Print failed": { printStatus: "failed", onRetryAction: fn() },
     // Prototype `filesView()` pdf (JS 1985): `{ name: "Medicare summary.pdf", pages: 4 }`, back to Files, Print only.
-    "From Files": { title: "Medicare summary.pdf", backLabel: "Files", pageLabel: "Page 1 of 4", onSave: undefined, children: page("Medicare summary") },
+    "From Files": { title: "Medicare summary.pdf", backLabel: "Files", pageLabel: "Page 1 of 4", savable: false, children: page("Medicare summary") },
   },
   decorator: mailScreen,
   play: {
