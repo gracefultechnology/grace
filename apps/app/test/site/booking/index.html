@@ -7,9 +7,18 @@
 <form action="../book" method="post">
   <fieldset>
     <legend>Times Dr. Patel can see you</legend>
-    <label><input type="radio" name="time" value="2026-12-08T09:30" required> Tuesday 8 December, 9:30 in the morning</label>
-    <label><input type="radio" name="time" value="2026-12-09T14:00"> Wednesday 9 December, 2:00 in the afternoon</label>
-    <label><input type="radio" name="time" value="2026-12-11T11:15"> Friday 11 December, 11:15 in the morning</label>
   </fieldset>
   <button>Book this time</button>
 </form>
+<script>
+  const two = (n) => String(n).padStart(2, "0");
+  for (const [days, hour, minute] of [[7, 9, 30], [8, 14, 0], [10, 11, 15]]) {
+    const at = new Date();
+    at.setDate(at.getDate() + days);
+    at.setHours(hour, minute, 0, 0);
+    const value = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}T${two(hour)}:${two(minute)}`;
+    const label = document.createElement("label");
+    label.append(Object.assign(document.createElement("input"), { type: "radio", name: "time", value, required: true }), ` ${at.toLocaleString("en-US", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}`);
+    document.querySelector("fieldset").append(label);
+  }
+</script>
