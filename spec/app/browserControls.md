@@ -18,7 +18,8 @@ scroll, zoom, tab selection and layout changes invalidate observations;
 editing recent shortcuts changes no displayed website. Host geometry reports
 must name the current browser revision; page reports also name the selected
 tab, so an old or background scroll callback cannot alter a newer page.
-Repeated reports of unchanged geometry are refused.
+Repeated reports of unchanged geometry are refused. Every control keeps the
+browser's rules true, including that only a loaded secure page shows the padlock.
 
 ```quint
 import browser as B from "./browser"
@@ -62,7 +63,7 @@ pure def control(b: B::Browser, browserInput: BrowserInput, by: BrowserControlAc
   | Navigate(data) => B::navigate(b, data.url)
   | EditAddress(data) => if (b.editingAddress) B::editAddress(b, data.text) else B::pageChanged(B::editAddress(b, data.text))
   | ExplainEmptyAddress => B::explainEmptyAddress(b)
-  | DismissAddress => if (b.editingAddress) B::pageChanged(B::dismissAddress(b)) else B::dismissAddress(b)
+  | DismissAddress => B::pageChanged(B::dismissAddress(b))
   | Back => B::goBack(b)
   | Forward => B::goForward(b)
   | Reload => B::reload(b)
@@ -77,16 +78,18 @@ pure def control(b: B::Browser, browserInput: BrowserInput, by: BrowserControlAc
 pure def validBrowser(b: B::Browser): bool =
   B::alwaysTabsAreWellFormed(b) and B::alwaysTabIdentifiersAreUnique(b) and
   B::alwaysSelectedTabExists(b) and B::alwaysBrowserCountersAreValid(b) and
-  B::alwaysRecentDestinationsAreDistinct(b)
+  B::alwaysRecentDestinationsAreDistinct(b) and B::alwaysOnlyALoadedPageIsSecure(b)
 pure def lawControlsPreserveBrowser(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool =
   validBrowser(b) and canControl(b, browserInput, by) implies validBrowser(control(b, browserInput, by))
+pure def editsRecent(browserInput: BrowserInput): bool = match browserInput {
+  | RemoveRecent(data) => true
+  | RequestClearHistory => true
+  | AnswerClearHistory(data) => true
+  | _ => false
+}
 pure def lawRecentEditsKeepPage(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool =
-  match browserInput {
-    | RemoveRecent(data) => control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs
-    | RequestClearHistory => control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs
-    | AnswerClearHistory(data) => control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs
-    | _ => true
-  }
+  editsRecent(browserInput) implies
+    (control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs)
 pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
 pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAddress, DismissAddress,
   RequestClearHistory, SelectTab({ id: 1 }), SelectTab({ id: 2 }), CloseTab({ id: 1 }),
