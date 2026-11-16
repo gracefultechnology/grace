@@ -1,15 +1,14 @@
-// spec/app/billpay.md, "Story: Understand the bill before deciding how to pay"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
-import { reply, unending } from "./cloud.vibe"
+import { Recorded, reply, unending } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
 
 schema Credential { credentialId: string; secret: string; code: string }
 schema Acknowledged { status: "acknowledged" }
-schema Turn { said: string; outcome: "streaming" | "completed" | "aborted" }
-schema Recorded { turns: Turn[] }
+schema Payment { amount: string; to: string }
 schema Delta { content: string }
 schema Choice { delta: Delta }
 schema Chunk { choices: Choice[] }
@@ -30,7 +29,7 @@ effect function signIn() {
   const steward = { clientId: "steward-test", challengeId: "c".repeat(43), idToken: "t".repeat(20), codeVerifier }
   const signedIn = try Schema.decodeUnknownEffect(Credential)(try (try post("/api/v1/app-auth/mobile/google", { ...client, state, codeVerifier, steward, serverAuthCode: "server-auth-code" })).json)
   try Schema.decodeUnknownEffect(Acknowledged)(try (try post("/api/v1/app-auth/mobile/ack", { ...client, state, codeVerifier, ...signedIn })).json)
-  return signedIn.secret
+  return signedIn
 }
 
 effect function recorded(key: string) {
@@ -45,18 +44,33 @@ effect function parts(key: string, said: string) {
   return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)
 }
 
-it.live("Understand the bill before deciding how to pay: every page of the bill answers", () => effect {
+effect function paid(visit: string) {
+  return try Schema.decodeUnknownEffect(Schema.Array(Payment))(try (try HttpClient.get(`${site}/${visit}/paid`)).json)
+}
+
+effect function pay(visit: string, amount: string) {
+  return (try HttpClient.execute(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(`${site}/${visit}/pay`), { amount, to: "Riverside Power" }))).status
+}
+
+it.live("Use the website under Grace's controls: every page of the bill answers, and each visit sees only its own payments", () => effect {
   provide FetchHttpClient.layer {
+    const [first, second] = [(try signIn()).credentialId, (try signIn()).credentialId]
     const pages = ["bill/", "bill/amount.html", "bill/review.html", "bill/confirmation.html", "statement.pdf"]
     const statuses: number[] = []
-    for (const p of pages) statuses.push(try status(`${site}/${p}`))
-    try Effect.try(() => assert.deepStrictEqual(statuses, pages.map(() => 200)))
+    for (const p of pages) statuses.push(try status(`${site}/${first}/${p}`))
+    const paying = [try pay(first, "84.12"), try pay(first, ""), try pay(second, "25.00")]
+    const payments = { first: try paid(first), second: try paid(second) }
+    try Effect.try(() => assert.deepStrictEqual({ statuses, paying, payments }, {
+      statuses: pages.map(() => 200),
+      paying: [200, 400, 200],
+      payments: { first: [{ amount: "84.12", to: "Riverside Power" }], second: [{ amount: "25.00", to: "Riverside Power" }] }
+    }))
   }
 })
 
 it.live("Talk or type without losing the conversation: a turn streams to its end, and a stopped turn is aborted", () => effect {
   provide FetchHttpClient.layer {
-    const key = try signIn()
+    const key = (try signIn()).secret
     const said = "Hello Grace."
     const whole = (try Stream.runCollect(try parts(key, said))).join("")
     try scoped(effect { try Stream.runHead(try parts(key, unending)) })

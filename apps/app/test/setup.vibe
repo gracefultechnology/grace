@@ -1,6 +1,6 @@
 import { ExperimentalNodeHttpServer } from "vibelang-runtime/experimental/platform-node"
 import type { TestProject } from "vitest/node"
-import { cloud } from "./cloud.vibe"
+import { answered, cloud } from "./cloud.vibe"
 
 declare module "vitest" {
   export interface ProvidedContext {
@@ -9,33 +9,42 @@ declare module "vitest" {
   }
 }
 
-schema Payment { amount: string; to: string }
+const Amount = Schema.String.check(Schema.isPattern(/^\d+\.\d{2}$/))
+
+schema Payment { amount: Amount; to: string }
+schema Visit { visit: string }
 
 effect function routes() {
-  const paid = try Ref.make<Payment[]>([])
+  const paid = try Ref.make(new Map<string, Payment[]>())
 
   effect function pay() {
+    const { visit } = try HttpRouter.schemaPathParams(Visit)
     const payment = try HttpServerRequest.schemaBodyUrlParams(Payment)
-    try Ref.update(paid, (all) => [...all, payment])
-    return HttpServerResponse.redirect("/bill/confirmation.html", { status: 303 })
+    try Ref.update(paid, (all) => new Map(all).set(visit, [...all.get(visit) ?? [], payment]))
+    return HttpServerResponse.redirect("bill/confirmation.html", { status: 303 })
+  }
+
+  effect function payments() {
+    const { visit } = try HttpRouter.schemaPathParams(Visit)
+    return try HttpServerResponse.json((try Ref.get(paid)).get(visit) ?? [])
   }
 
   return [
-    HttpRouter.route("POST", "/bill/", HttpServerResponse.redirect("/bill/amount.html", { status: 303 })),
-    HttpRouter.route("POST", "/pay", orDie(pay())),
-    HttpRouter.route("GET", "/paid", orDie(effect { return try HttpServerResponse.json(try Ref.get(paid)) })),
-    HttpRouter.route("GET", "/slow", effect {
+    HttpRouter.route("POST", "/:visit/bill/", HttpServerResponse.redirect("amount.html", { status: 303 })),
+    HttpRouter.route("POST", "/:visit/pay", answered(pay())),
+    HttpRouter.route("GET", "/:visit/paid", answered(payments())),
+    HttpRouter.route("GET", "/:visit/slow", effect {
       try sleep("3 seconds")
       return HttpServerResponse.text("<!doctype html><title>A page that took its time</title><h1>A page that took its time</h1>", { contentType: "text/html" })
     }),
-    HttpRouter.route("GET", "/never", Effect.never)
+    HttpRouter.route("GET", "/:visit/never", Effect.never)
   ] as const
 }
 
-const site = Layer.mergeAll(HttpStaticServer.layer({ root: `${import.meta.dirname}/site` }), HttpRouter.addAll(routes()))
+const site = Layer.mergeAll(HttpStaticServer.layer({ root: `${import.meta.dirname}/site`, prefix: "/:visit" }), HttpRouter.addAll(routes()))
 
 effect function serve(app: Layer.Layer<never, PlatformError.PlatformError, HttpRouter.HttpRouter | FileSystem.FileSystem | Path.Path | HttpPlatform.HttpPlatform>) {
-  const listening = Layer.fresh(ExperimentalNodeHttpServer.layer({ port: 0, host: "127.0.0.1" }))
+  const listening = Layer.fresh(ExperimentalNodeHttpServer.layer({ port: 0, host: "127.0.0.1", gracefulShutdownTimeout: 0 }))
   const context = try Layer.build(Layer.provideMerge(HttpRouter.serve(app, { disableLogger: true, disableListenLog: true }), listening))
   return HttpServer.formatAddress(Context.get(context, HttpServer.HttpServer).address)
 }
