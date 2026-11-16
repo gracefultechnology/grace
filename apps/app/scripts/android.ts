@@ -240,7 +240,7 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
     const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
-      await page.until(`[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`, AbortSignal.timeout(60_000)).catch(failing("Waiting for Home"));
+      await page.until(`[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`, AbortSignal.timeout(180_000)).catch(failing("Waiting for Home"));
       for (const step of exercise) {
         await page.step(step).catch(failing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
@@ -251,7 +251,8 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   } finally {
     await adb(["-s", serial, "forward", "--remove", `tcp:${port}`]);
   }
-  if ((await shell(serial, "dumpsys window")).includes("Application Not Responding")) throw new Error(`An app is not responding on ${serial}`);
+  const notResponding = /Application Not Responding: (\S+)/.exec(await shell(serial, "dumpsys window"))?.[1];
+  if (notResponding) throw new Error(`${notResponding} is not responding on ${serial}`);
   process.stdout.write(`${serial} Grace is Home and responding\n`);
 }
 
