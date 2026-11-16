@@ -165,7 +165,7 @@ pure def alwaysChoiceMatchesBill(b: BillPreparation): bool =
 
 ### Grace fills the payment form only after the person says yes to filling it
 
-Grace may type only values the person already chose, the amount and the payment date, and only after a yes to a specific offer: "Shall I fill in $84.20 and today's date for you?" with the answers "Yes, fill it in" and "No, I'll do it" (prototype/Grace Prototype.html:1503, 1513). The fill itself runs only from that answer (prototype/Grace Prototype.html:1635). Every new choice asks again. After "No, I'll do it", Grace points and waits while the person types, and the form is checked as it is read back. The person may change the answer while the form is being prepared. The owner that dispatches website operations allows Grace's fill of a payment form only while `graceMayFill` holds.
+Grace may type only values the person already chose, the amount and the payment date, and only after a yes to a specific offer: "Shall I fill in $84.20 and today's date for you?" with the answers "Yes, fill it in" and "No, I'll do it" (prototype/Grace Prototype.html:1503, 1513). The fill itself runs only from that answer (prototype/Grace Prototype.html:1635). Every new choice asks again. After "No, I'll do it", Grace points and waits while the person types, and the form is checked as it is read back. The person may change the answer while the form is being prepared. This model records the answer and defines `graceMayFill`; it dispatches no website operation itself. The owner that dispatches website operations must allow Grace's fill of a payment form only while `graceMayFill` holds.
 
 ```quint
 pure def canDecideFill(b: BillPreparation, fillBy: FillBy, by: P::PaymentActor): bool =
@@ -207,7 +207,7 @@ pure def sometimesReviewHandedOff(b: BillPreparation): bool = b.phase == HandedO
 
 ### A choice the person makes on the page itself becomes the choice to check
 
-The person may pick an amount or type a date on the website instead of saying it (prototype/Grace Prototype.html:1038, 1683). The trusted host reports what the form now holds for this bill and the current preparation version. A valid proposal that differs from the current choice, in the bill's currency and with one of its funding methods, becomes the choice. The preparation goes back to preparing the form under a new version, whether or not the earlier form had been verified, so the review never goes ahead with the old choice. The values are already on the page, so the person filled them herself and Grace does not offer to fill them again.
+The person may pick an amount or type a date on the website instead of saying it (prototype/Grace Prototype.html:1038, 1683). The trusted host reports what the form now holds for this bill and the current preparation version. A valid proposal that differs from the current choice, in the bill's currency and with one of its funding methods, becomes the choice. The preparation goes back to preparing the form under a new version, whether or not the earlier form had been verified, so the review never goes ahead with the old choice: only a form that matches the new choice can be verified for review. The values are already on the page, so the person filled them herself and Grace does not offer to fill them again.
 
 ```quint
 pure def canAdoptFormChoice(b: BillPreparation, formReport: P::ReviewReport, by: P::PaymentActor): bool =
@@ -221,6 +221,7 @@ pure def lawPageChoiceIsCheckedAgain(b: BillPreparation, formReport: P::ReviewRe
   canAdoptFormChoice(b, formReport, by) implies
     adoptFormChoice(b, formReport, by).phase == PreparePayment and
     adoptFormChoice(b, formReport, by).choice == formReport.proposal and
+    adoptFormChoice(b, formReport, by).choice != b.choice and
     adoptFormChoice(b, formReport, by).version > b.version
 ```
 
