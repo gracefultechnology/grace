@@ -42,7 +42,7 @@ version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each relea
 pnpm --filter @repo/app android --emulator <avd> --exercise home
 ```
 
-builds, then attaches to the named AVD or boots it without a window and with host graphics (`-gpu host`) (its log in
+builds, then attaches to the named AVD or boots it without a window and with host graphics (`-gpu host`; its log in
 `artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs the launcher debug APK, makes Grace
 Home (`cmd package set-home-activity`), starts Home and fails unless Grace is what Home opens, her WebView
 shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
