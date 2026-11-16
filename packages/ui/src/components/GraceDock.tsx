@@ -1,8 +1,8 @@
 import { useId, useLayoutEffect, useRef, type ComponentProps, type FocusEvent, type ReactNode } from "react";
 import { ArrowUp, Keyboard } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { Button, press } from "./Button.tsx";
-import { GraceCapsule, GracePill } from "./GraceHeader.tsx";
+import { Button, GracePill, press } from "./Button.tsx";
+import { GraceCapsule } from "./GraceHeader.tsx";
 import { SwitchTrack } from "./Switch.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 

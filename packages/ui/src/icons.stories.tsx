@@ -1,5 +1,5 @@
 import type { ComponentType, SVGProps } from "react";
-import * as Lucide from "lucide-react";
+import * as lucideIcons from "lucide-react";
 import * as own from "./icons.tsx";
 
 // The prototype draws its icons as axi() does: 24px, stroke 2.2, in the current color.
@@ -16,7 +16,7 @@ const lucide = Object.fromEntries(
    Phone Plus ReceiptText RefreshCw Reply RotateCcw RotateCw Search Shield ShieldAlert ShieldCheck ShoppingBag
    SwitchCamera TriangleAlert Undo2 Wifi X Zap ZapOff`
     .split(/\s+/)
-    .map((name) => [name, (Lucide as unknown as Record<string, Icon>)[name]]),
+    .map((name) => [name, (lucideIcons as unknown as Record<string, Icon>)[name]]),
 );
 
 const Sheet = ({ icons }: { icons: Record<string, Icon> }) => (

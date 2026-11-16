@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { PlayIcon } from "../icons.tsx";
 import { cn } from "../lib/cn.ts";
-import { Button, press, type ButtonProps } from "./Button.tsx";
+import { Button, GracePill, pillPress } from "./Button.tsx";
 import { GuideShowButton } from "./GuideShowButton.tsx";
 
 // Prototype ICON.pause and ICON.play: solid, 20px.
@@ -29,16 +29,6 @@ export function GraceCapsule({ className, ...props }: GraceCapsuleProps) {
       {...props}
     />
   );
-}
-
-export type GracePillProps = Omit<ButtonProps, "variant" | "size">;
-
-// .gwin .hgrp .pill:not(.prom): a tap grows the pill (.pill:active) and its background stays clear.
-const pillPress = cn(press, "active:bg-transparent");
-
-/** A pill inside a `GraceCapsule`: no fill of its own, 56px tall (prototype `.gwin .hgrp .pill`). */
-export function GracePill({ className, ...props }: GracePillProps) {
-  return <Button variant="plain" size="compact" className={cn("text-grace-ink", pillPress, className)} {...props} />;
 }
 
 export type GraceHeaderProps = ComponentProps<"div"> & {

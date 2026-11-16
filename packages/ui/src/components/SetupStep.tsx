@@ -1,7 +1,8 @@
 import { useId, type ReactNode } from "react";
 import { ListChecks, X } from "lucide-react";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
-import { GraceCapsule, GracePill } from "./GraceHeader.tsx";
+import { GracePill } from "./Button.tsx";
+import { GraceCapsule } from "./GraceHeader.tsx";
 import { GraceMessages } from "./GraceMessages.tsx";
 import { GraceWindow, type GraceWindowProps } from "./GraceWindow.tsx";
 import { GuideLabel } from "./GuideLabel.tsx";
