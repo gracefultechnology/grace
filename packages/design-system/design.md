@@ -60,14 +60,15 @@ works, `guide` for "your turn", `ok` when done. A target off screen becomes a gl
 ## Screens
 
 Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
-the line of the function that draws it. The prototype draws from today's date; the stories hold it at 8:56 PM on
-Friday, November 13, 2026. Open the story and that line side by side. `Empty`, `Header Mode …` and `Placement …`
-stories are the bare component and its props (`hdr()` 1885 follows `X.hdrMode`); "app only" marks a state the
-prototype does not draw, built in its look.
+the line of the function that draws it. The prototype draws from today's date; the stories hold it at 8:56 or 8:57 PM
+on Friday, November 13, 2026. Open the story and that line side by side. Unless its row maps it, an `Empty`,
+`Header Mode …` or `Placement …` story is the bare component and its props (`hdr()` 1885 follows `X.hdrMode`);
+"app only" marks a state the prototype does not draw, built in its look.
 
 | Component | Prototype state | Stories |
 | --- | --- | --- |
 | `TabletScreen` | `.device` and `#screen` (801) | Default: the bare `#screen`; In The Bezel, Device: `.device`'s 18px bezel; Background Frame: `.screen .sbg` |
+| `AppWindow` | `#awin` (1821), `axRender()` 2056, `hdr()` 1885 | Default: Email's inbox, `mailView()` 1940 at 1966–1971; Calendar: the week's Coming up list, `calView()` 1896 at 1916; With Back: an appointment, `C.detail` (1898–1899); Settings: `setView()` 2037 on `X.set.page` Text size (1809); Large Title: Text size with `X.hdrMode` `large` (2060, 2391); Large Title No List: Calendar's week with `X.hdrMode` `large`; Large Title With Back: an appointment with `X.hdrMode` `large`; No Title: `X.hdrMode` `none`, the App header's No title (879, 2394) |
 | `HomeScreen` | `render()` 1266, `homeCards()` 1874, `hmGeom()` 2297 mode G | Default: Home's first page; Layout Compact: `layout()` 1256 with Grace compact (`.home.cmp`); Page Files, Compact Page Files: `hmGo(1)` 2352; Layout Greeting: `.home.tight`, keyboard up; Reminder: `drawBanner()` 1865, `X.banner = "rem"` (2275); Offline: `X.online = false` |
 | `SleepScreen` | `drawSleep()` 2254 | Default: `X.wake`; Wake Word Off: `X.wake = false`; Nothing Next: no event ahead |
 | `StartupScreen` | app only: `.screen`, `.orb-w`, `.zzsleep` type, `.a-btn.prom` | Default, State Failed |
@@ -79,7 +80,7 @@ prototype does not draw, built in its look.
 | `CalendarApp` | `axRender()` 2056, `calView()` 1896 | Default, Week: `X.cal` (1799–1802); Month; Detail; Form, Form Picking A Time: `calForm()` 1918, Save ready once titled (`formsave` 2171); Form Saving: app only, `calForm()` with the Save pill's spinner; Form Save Failed: app only, `.a-caution` as `wifiPage()` 2002 shows a refusal; With A Draft: Grace's unconfirmed row, dashed `.a-new` (471), in `calView()` 1915–1916, as her draft puts it there (2134–2135); Added By Margaret: Margaret's own new appointment, which `formsave` (2172) rings with `axGuide()` 2072–2079 kind `confirm`, where saving an edit (2171) draws no ring |
 | `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Large Title: `X.hdrMode` `large` (2060); Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
 | `FilesApp` | `axRender()` 2056, `filesView()` 1982 | Default: `X.files` photos; Documents: `X.files.tab`; Found One Photo, Found One Document: `axGuide()` 2072–2079 kind `point` on the one match (2146); Which One, Print Unknown, Nothing Matched, Loading, Load Failed: app only |
-| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join: `X.wifi.join` (2004) on a network that needs an account, refused (`W.err`, 2006); Header Mode Large Wi Fi Join: `X.wifi.join` (2004); Grace Points At Largest: `axGuide()` 2072–2079 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
+| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join: `X.wifi.join` (2004) on a network that needs an account, refused (`W.err`, 2006); Header Mode Large Wi Fi Join: `X.wifi.join` (2004); Header Mode None: `X.wifi.join` (2004) with `X.hdrMode` `none` (2394); Grace Points At Largest: `axGuide()` 2072–2079 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
 | `MailMessageView` | `mailView()` 1940 with `M.read` (1958) | Default: Susan's email from `X.mail.items` (1804) with its photos, `.a-attbar` (1963); Large Title: `X.hdrMode` `large` (2060); Scam: `m.scam`, `.a-caution` (1960); Grace Points At The Warning: `out.guide` (2148) kind `point` on that `caution`; Attachment: `m.files`, `.a-att` (1964); In Trash: Restore and Delete forever (1959); Loading, Couldn T Open, Photos Saved, Print Unknown, Bill, Bill Confirmed: app only |
 | `MailCompose` | `mailView()` 1940 with `M.compose` (1945) | Default: `hdr('New email')` with Discard (1949), a photo in `.a-thumbs` (1955); Large Title: `X.hdrMode` `large` (2060); Blank: nothing filled in; Attach Open: `c.menu`, `.apop` (1957); With Copies: the Cc and Bcc rows (1952); Reply: `c.replyTo` (1949); Sending, Send Failed, Not Sure It Sent, Record Not Saved, Draft Not Saved: app only |
 | `MailRecipientPicker` | `mailView()` 1940 with `c.picker` (1946–1948) | Default: "Who is it to?" over `PEOPLE`; Searching: `c.pickq` (1948); A Copy: `c.pickFor` `cc` (1947) |

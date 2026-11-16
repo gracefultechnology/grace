@@ -27,6 +27,7 @@ const pageTops: Record<NonNullable<AppHeaderProps["mode"]>, Record<"plain" | "ba
  * edges, with its header floating over the page that scrolls beneath it.
  * @model spec/app/workspace.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function AppWindow({
   title,
