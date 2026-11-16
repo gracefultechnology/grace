@@ -51,7 +51,7 @@ pure val initial: Registry = {
   owner: "", bindings: List(), pending: noOpening, waiting: false, requestVersion: 0, selected: "", resolutionError: false
 }
 pure def emailSource(mail: E::Mailbox): BillSource = {
-  key: if (E::billReady(mail)) { owner: mail.owner, origin: mail.billOrigin, account: mail.billAccount, bill: mail.billRef } else P::emptyKey,
+  key: if (E::billReady(mail)) { owner: mail.owner, origin: mail.bill.origin, account: mail.bill.account, bill: mail.bill.ref } else P::emptyKey,
   kind: EmailSource, reference: if (E::billReady(mail)) mail.messageRef else ""
 }
 pure def calendarSource(entry: C::Calendar): BillSource = {
@@ -114,9 +114,9 @@ pure val mailValues = Set(E::initial, photoMailbox,
   { ...E::initial, owner: "owner", provider: "mail-provider", account: "mail-account", connection: E::Connected, canRead: true,
     messages: List(I::loadMessage(I::initial,
       { identity: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
-        folder: I::InboxFolder, unread: false }, I::MessageProvider)),
-    view: E::Message, messageRef: "message", messageRefs: Set("message"), billRef: "bill", billOrigin: "https://utility.example",
-    billAccount: "account", billSourceRef: "message", billConfirmed: true })
+        folder: I::InboxFolder, unread: false, answered: false }, I::MessageProvider)),
+    view: E::Message, messageRef: "message", messageRefs: Set("message"),
+    bill: { ref: "bill", origin: "https://utility.example", account: "account", confirmed: true } })
 pure val entryValues = Set(C::initial,
   { ...C::initial, phase: C::Saved, hasSaved: true,
     identity: { owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", sourceRef: "message",
@@ -342,19 +342,6 @@ type PhotoShareRequest = {
   mailGeneration: int, mailRevision: int
 }
 type PhotoHandoff = ShareDeclined | SharedPhoto({ files: F::Files, mail: E::Mailbox })
-pure def validMailbox(mail: E::Mailbox): bool =
-  E::alwaysConnectedIdentity(mail) and E::alwaysAccountIdentityIsBound(mail) and
-  E::alwaysGenerationAndRevision(mail) and E::alwaysReadAccess(mail) and
-  E::alwaysReadSelectionIsBound(mail) and E::alwaysSelectedContent(mail) and
-  E::alwaysMessageRegistry(mail) and E::alwaysListedMessagesAreCurrent(mail) and
-  E::alwaysSelectionUsesCanonicalMessage(mail) and E::alwaysFolderIsVisible(mail) and
-  E::alwaysSearchMatchesQuery(mail) and E::alwaysBillProvenance(mail) and
-  E::alwaysResultPersistenceHasTerminal(mail) and E::alwaysSendHasRecipient(mail) and
-  E::alwaysSendEvidence(mail) and E::alwaysApprovalIsCurrent(mail) and
-  E::alwaysDraftHasAccount(mail) and E::alwaysDraftStoreHasRevision(mail) and
-  E::alwaysRetirementHasMailbox(mail) and E::alwaysDraftVersions(mail) and
-  E::alwaysEditableDraftIsNotRetired(mail) and E::alwaysDraftAssetsAreValid(mail) and
-  E::alwaysMessageAssetsAreBound(mail)
 pure def photoDraft(mail: E::Mailbox): E::Mailbox =
   E::editDraft(E::startDraft(mail, false, E::MailUser), { ...E::emptyContent, subject: "A photo" }, E::MailUser)
 pure def maySharePhoto(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
@@ -384,7 +371,7 @@ pure def lawShareUsesTheSelectedPhoto(files: F::Files, mail: E::Mailbox, photoRe
     | ShareDeclined => false
     | SharedPhoto(result) => result.files.selected == "" and not(result.files.contentReady) and
         result.mail.draftAttachments == List(F::fileAt(files, files.selected)) and
-        result.mail.draftTo == "" and result.mail.draftSubject == "A photo" and
+        result.mail.draft.to == "" and result.mail.draft.subject == "A photo" and
         result.mail.composeVisible and result.mail.sendStatus == E::Composing
   })
 pure def lawStaleShareCannotSwitchDestination(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
@@ -407,9 +394,9 @@ pure def lawShareKeepsSavedFiles(files: F::Files, mail: E::Mailbox, photoRequest
   }
 pure def lawSharePreservesOwnedState(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
   val handoff = trySharePhoto(files, mail, photoRequest, by)
-  F::validFiles(files) and validMailbox(mail) implies (match handoff {
+  F::validFiles(files) and E::validMailbox(mail) implies (match handoff {
     | ShareDeclined => true
-    | SharedPhoto(result) => F::validFiles(result.files) and validMailbox(result.mail)
+    | SharedPhoto(result) => F::validFiles(result.files) and E::validMailbox(result.mail)
   })
 pure val filesValues = Set(F::initial,
   { ...F::initial, owner: "owner", opened: true, loaded: true, entries: List(F::samplePhoto),
@@ -459,8 +446,8 @@ retires a draft.
 ```quint
 type AppClose = CloseDeclined | ClosedApp({ workspace: WS::Workspace, calendar: V::CalendarView, mail: E::Mailbox, files: F::Files })
 pure def emptyComposer(mailbox: E::Mailbox): bool =
-  mailbox.draftId == "" and mailbox.draftTo == "" and mailbox.draftCc.size() == 0 and mailbox.draftBcc.size() == 0 and
-  mailbox.draftSubject == "" and mailbox.draftBody == "" and mailbox.draftAttachments == List()
+  mailbox.draftId == "" and mailbox.draft.to == "" and mailbox.draft.cc.size() == 0 and mailbox.draft.bcc.size() == 0 and
+  mailbox.draft.subject == "" and mailbox.draft.body == "" and mailbox.draftAttachments == List()
 pure def mayCloseMailbox(mailbox: E::Mailbox, draftId: str): bool =
   not(E::canEditDraft(mailbox, E::MailUser)) or
   (if (emptyComposer(mailbox)) E::canDiscardDraft(mailbox, true, E::MailUser) else E::canPreserveDraft(mailbox, draftId, E::MailUser))
@@ -507,10 +494,10 @@ pure def lawCloseKeepsTheComposerContent(workspace: WS::Workspace, calendarView:
   val closed = closeApp(workspace, calendarView, mailbox, files, app, draftId, by)
   match closed {
     | CloseDeclined => true
-    | ClosedApp(result) => result.mail.draftTo == mailbox.draftTo and result.mail.draftSubject == mailbox.draftSubject and
-        result.mail.draftBody == mailbox.draftBody and result.mail.draftAttachments == mailbox.draftAttachments and
-        result.mail.draftCc.subseteq(mailbox.draftCc) and mailbox.draftCc.subseteq(result.mail.draftCc) and
-        result.mail.draftBcc.subseteq(mailbox.draftBcc) and mailbox.draftBcc.subseteq(result.mail.draftBcc) and
+    | ClosedApp(result) => result.mail.draft.to == mailbox.draft.to and result.mail.draft.subject == mailbox.draft.subject and
+        result.mail.draft.body == mailbox.draft.body and result.mail.draftAttachments == mailbox.draftAttachments and
+        result.mail.draft.cc.subseteq(mailbox.draft.cc) and mailbox.draft.cc.subseteq(result.mail.draft.cc) and
+        result.mail.draft.bcc.subseteq(mailbox.draft.bcc) and mailbox.draft.bcc.subseteq(result.mail.draft.bcc) and
         ((app == S::Email and E::canEditDraft(mailbox, E::MailUser) and not(emptyComposer(mailbox))) implies
           result.mail.draftStorage == E::DraftSaving)
   }
