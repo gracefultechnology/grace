@@ -115,7 +115,7 @@ function emulatorSerial(avd: string): string {
   if (running) return running;
   const port = Array.from({ length: 64 }, (_, i) => 5554 + 2 * i).find((p) => !serials.includes(`emulator-${p}`));
   const log = openSync(path.join(artifacts, `emulator-${avd}.log`), "w");
-  spawn(sdk("emulator/emulator"), ["-avd", avd, "-port", String(port), "-gpu", "host", "-no-boot-anim", "-no-snapshot-save"], { detached: true, stdio: ["ignore", log, log] }).unref();
+  spawn(sdk("emulator/emulator"), ["-avd", avd, "-port", String(port), "-gpu", "host", "-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot-save"], { detached: true, stdio: ["ignore", log, log] }).unref();
   return `emulator-${port}`;
 }
 
@@ -139,7 +139,8 @@ async function devTools(url: string) {
   const until = async (expression: string, what: string, signal: AbortSignal) => {
     while (!signal.aborted) {
       const { result } = await send<{ result: { value?: unknown } }>("Runtime.evaluate",
-        { expression: `new Promise((done) => requestAnimationFrame(() => done(Boolean(${expression}))))`, awaitPromise: true, returnByValue: true });
+        { expression: `new Promise((done) => requestAnimationFrame(() => done(Boolean(${expression}))))`, awaitPromise: true, returnByValue: true })
+        .catch((error: Error) => { if (error.message.includes("context was destroyed")) return { result: {} }; throw error; });
       if (result.value === true) return;
     }
     throw new Error(`Timed out waiting for ${what}`);

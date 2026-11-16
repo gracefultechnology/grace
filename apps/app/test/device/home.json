@@ -1,0 +1,19 @@
+[
+  { "tap": "Email" },
+  { "expect": "Nothing in Email yet." },
+  { "tap": "Close Email" },
+  { "tap": "Calendar" },
+  { "expect": "Nothing in Calendar yet." },
+  { "tap": "Close Calendar" },
+  { "tap": "Files" },
+  { "expect": "Nothing in Files yet." },
+  { "tap": "Close Files" },
+  { "tap": "Settings" },
+  { "expect": "About this tablet" },
+  { "tap": "Close Settings" },
+  { "tap": "Internet" },
+  { "expect": "You’re ready to browse the internet." },
+  { "type": "example.com", "into": "Address" },
+  { "tap": "Close browser" },
+  { "expect": "Good" }
+]
