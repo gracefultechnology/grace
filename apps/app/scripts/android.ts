@@ -115,6 +115,7 @@ const sdk = (tool: string) => path.join(resolveAndroidSdkRoot(), tool);
 const run = promisify(execFile);
 const stopping = new AbortController();
 process.once("exit", () => stopping.abort());
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
 const adb = async (args: string[], seconds = 60) => {
   const signal = AbortSignal.any([stopping.signal, AbortSignal.timeout(seconds * 1000)]);
   const { stdout } = await run(sdk("platform-tools/adb"), args, { encoding: "utf8", signal, killSignal: "SIGKILL" })
@@ -246,8 +247,9 @@ async function devTools(url: string, signal: AbortSignal) {
 const failing = (what: string) => (error: unknown) => { throw new Error(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); };
 
 async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>) {
-  const booted = 'until [ "$(getprop sys.boot_completed)" = 1 ] && [ "$(settings get global device_provisioned)" = 1 ]; do sleep 1; done';
-  await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot and finish its own set-up"));
+  const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
+  await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
+  await shell(serial, "settings put global device_provisioned 1 && settings put secure user_setup_complete 1");
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
