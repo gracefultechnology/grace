@@ -1,64 +1,83 @@
 // spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A tapped answer preserves whether the microphone was active"
-import { Schema, SchemaGetter } from "effect"
+import { Option, Schema, SchemaGetter } from "effect"
+import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
+import type { Pace, TextSize } from "../gen/app__preferences.effect.vibe"
+import type { BrowserInput } from "../gen/app__browserControls.effect.vibe"
+import type { Recurrence } from "../gen/app__calendar.effect.vibe"
+import type { DeleteScope } from "../gen/app__calendarView.effect.vibe"
+import type { Folder } from "../gen/app__emailItem.effect.vibe"
+import type { FileTab } from "../gen/app__files.effect.vibe"
 
 const Words = Schema.Trimmed.check(Schema.isMinLength(1))
 const Percent = (minimum: number) => Schema.Int.check(Schema.isBetween({ minimum, maximum: 100 }))
 const Day = Schema.String.check(Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/))
 const Clock = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
+const of = <T extends string>() => <const L extends readonly [T, ...T[]]>(literals: L) => Schema.Literals(literals)
 const action = <const Kind extends string, const Fields extends Schema.Struct.Fields>(kind: Kind, fields: Fields) =>
   Schema.Struct({ kind: Schema.Literal(kind), ...fields })
 
 export const Action = Schema.Union([
-  action("open", { surface: Schema.Literals(["Home", "Calendar", "Email", "Browser", "Files", "DeviceSettings"]) }),
-  action("showSetting", { page: Schema.Literals(["TextSizeSettings", "BrightnessSettings", "VoiceSettings", "NetworkSettings", "AboutSettings"]) }),
-  action("setTextSize", { size: Schema.Literals(["Smaller", "StandardText", "Larger", "Largest"]) }),
-  action("setPace", { pace: Schema.Literals(["Slower", "Normal", "Faster"]) }),
+  action("open", { surface: of<Surface>()(["Home", "Calendar", "Email", "Browser", "Files", "DeviceSettings"]) }),
+  action("showSetting", { page: of<SettingsPage>()(["TextSizeSettings", "BrightnessSettings", "VoiceSettings", "NetworkSettings", "AboutSettings"]) }),
+  action("setTextSize", { size: of<TextSize>()(["Smaller", "StandardText", "Larger", "Largest"]) }),
+  action("setPace", { pace: of<Pace>()(["Slower", "Normal", "Faster"]) }),
   action("setVolume", { volume: Percent(0) }),
   action("setMuted", { muted: Schema.Boolean }),
   action("setBrightness", { brightness: Percent(20) }),
   action("setVoiceOutput", { on: Schema.Boolean }),
   action("undoSetting", {}),
-  action("visit", { url: Words }),
-  action("browse", { control: Schema.Literals(["Back", "Forward", "Reload"]) }),
+  action("navigate", { url: Words }),
+  action("browse", { control: of<BrowserInput["tag"]>()(["Back", "Forward", "Reload", "NewTab"]) }),
   action("guide", { target: Words, emphasis: Schema.Literals(["point", "instruction", "confirm"]), title: Words, detail: Schema.optionalKey(Words) }),
-  action("proposeAppointment", { entry: Schema.optionalKey(Words), title: Words, day: Day, time: Clock, place: Schema.String, repeat: Schema.Literals(["Once", "Weekly", "Monthly"]) }),
+  action("proposeAppointment", { entry: Schema.optionalKey(Words), title: Words, day: Day, time: Clock, place: Schema.optionalKey(Words), repeat: of<Recurrence>()(["Once", "Weekly", "Monthly"]) }),
   action("confirmAppointment", {}),
-  action("deleteAppointment", { entry: Words, scope: Schema.Literals(["ThisOccurrence", "EntireSeries"]) }),
+  action("cancelAppointment", {}),
+  action("deleteAppointment", { entry: Words, scope: of<DeleteScope>()(["ThisOccurrence", "EntireSeries"]) }),
+  action("dismissReminder", { entry: Words }),
   action("searchMail", { query: Words }),
   action("openMessage", { message: Words }),
-  action("chooseFolder", { folder: Schema.Literals(["InboxFolder", "SentFolder", "DraftsFolder", "TrashFolder"]) }),
+  action("chooseFolder", { folder: of<Folder>()(["InboxFolder", "SentFolder", "DraftsFolder", "TrashFolder"]) }),
   action("draftReply", { body: Words }),
-  action("draftMessage", { to: Words, subject: Schema.String, body: Words }),
+  action("draftMessage", { to: Words, subject: Schema.optionalKey(Words), body: Words }),
   action("trashMessage", {}),
-  action("findFile", { tab: Schema.Literals(["Photos", "Documents"]), query: Words }),
+  action("findFile", { tab: of<FileTab>()(["Photos", "Documents"]), query: Words }),
   action("beginTask", { task: Schema.Literals(["PayBill", "BookAppointment"]) }),
   action("fill", {}),
 ])
-export type Action = typeof Action.Type
 
-const Said = { text: Words, actions: Schema.Array(Action) }
+const [fewest, most] = [2, 3]
+const Said = { text: Words, working: Schema.optionalKey(Words), actions: Schema.Array(Action) }
 const Statement = Schema.Struct({ ...Said, isQuestion: Schema.Literal(false), answers: Schema.Tuple([]) })
 const Question = Schema.Struct({
   ...Said,
   isQuestion: Schema.Literal(true),
-  answers: Schema.Union([Schema.Tuple([]), Schema.Array(Words).check(Schema.isBetweenLength(2, 3))]),
+  answers: Schema.Union([Schema.Tuple([]), Schema.Array(Words).check(Schema.isBetweenLength(fewest, most), Schema.isUnique())]),
 })
 
-const Spoken = Schema.Struct({
-  text: Schema.String,
-  isQuestion: Schema.optionalKey(Schema.Boolean),
-  answers: Schema.optionalKey(Schema.Array(Schema.String)),
-  actions: Schema.optionalKey(Schema.Array(Action)),
-})
+const Fields = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+const decodeAction = Schema.decodeUnknownOption(Action)
+const trimmed = (value: unknown) => typeof value === "string" ? value.trim() : value
+const given = (value: unknown) => value !== null && value !== ""
+const present = (value: unknown) => typeof value === "object" && value !== null
+  ? Object.fromEntries(Object.entries(value).map(([key, field]) => [key, trimmed(field)]).filter(([, field]) => given(field)))
+  : value
+const list = (value: unknown): readonly unknown[] => Array.isArray(value) ? value : []
 
-export const Reply = Spoken.pipe(Schema.decodeTo(Schema.Union([Statement, Question]), {
-  decode: SchemaGetter.transform((said: typeof Spoken.Type) => {
-    const answers = (said.answers ?? []).map((answer) => answer.trim()).filter((answer) => answer !== "")
-    const reply = { text: said.text.trim(), actions: said.actions ?? [] }
-    return said.isQuestion
-      ? { ...reply, isQuestion: true as const, answers: answers.length >= 2 && answers.length <= 3 ? answers : [] }
-      : { ...reply, isQuestion: false as const, answers: [] as const }
-  }),
-  encode: SchemaGetter.transform((reply) => reply),
+const read = (raw: string) => {
+  const said = Option.getOrElse(Option.filter(Schema.decodeUnknownOption(Fields)(raw), (fields) => typeof fields.text === "string"), (): Readonly<Record<string, unknown>> => ({ text: raw }))
+  const answers = [...new Set(list(said.answers).map(trimmed).filter((answer): answer is string => typeof answer === "string" && answer !== ""))]
+  const working = trimmed(said.working)
+  const reply = {
+    text: String(said.text).trim(),
+    ...(typeof working === "string" && working !== "" ? { working } : {}),
+    actions: list(said.actions).flatMap((each) => Option.toArray(decodeAction(present(each)))),
+  }
+  return said.isQuestion === true
+    ? { ...reply, isQuestion: true as const, answers: answers.length >= fewest && answers.length <= most ? answers : [] }
+    : { ...reply, isQuestion: false as const, answers: [] as const }
+}
+
+export const Reply = Schema.String.pipe(Schema.decodeTo(Schema.Union([Statement, Question]), {
+  decode: SchemaGetter.transform(read),
+  encode: SchemaGetter.transform((reply) => JSON.stringify(reply)),
 }))
-export type Reply = typeof Reply.Type
