@@ -98,6 +98,18 @@ pure def observe(x: Execution, observationReport: ObservationReport, by: Executi
 }
 ```
 
+### Observed, queued and in-flight work always has a verified, redaction-ready page context
+
+Only `observe` enters these phases, and its guard requires a stable context
+reference, a verified origin and reliable redaction. Preparing and dispatching
+keep that context.
+
+```quint
+pure def alwaysObservedContextExists(x: Execution): bool =
+  (x.phase == Observed or x.phase == Queued or x.phase == InFlight) implies
+    x.contextRef != "" and x.originVerified and x.redactionReady
+```
+
 ### Only classified ordinary operations use the generic dispatch path
 
 Read and navigation may proceed as routine steps of the requested task. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./payment.md) owns final-payment authorization. No site name appears in the policy.
@@ -107,8 +119,6 @@ pure def ordinary(kind: OperationKind): bool = kind == ReadPage or kind == Navig
 pure def currentApproach(x: Execution): Approach = { contextRef: x.contextRef, target: x.target, valueRef: x.valueRef, kind: x.kind }
 pure def mayTryApproach(x: Execution, target: str, valueRef: str, kind: OperationKind): bool =
   x.failures < 2 or x.failedApproach != { contextRef: x.contextRef, target: target, valueRef: valueRef, kind: kind }
-pure def retryPrompt(x: Execution, target: str, valueRef: str, kind: OperationKind): str =
-  if (mayTryApproach(x, target, valueRef, kind)) "" else "This approach failed twice. Continue manually or choose a different approach."
 pure def canPrepare(x: Execution, target: str, valueRef: str, kind: OperationKind, expectedObservation: int, by: ExecutionActor): bool =
   x.phase == Observed and expectedObservation == x.observation and target != "" and ordinary(kind) and
   x.contextRef != "" and x.originVerified and x.redactionReady and not(x.privateInput) and mayTryApproach(x, target, valueRef, kind) and
