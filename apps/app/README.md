@@ -42,7 +42,7 @@ version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each relea
 pnpm --filter @repo/app android --emulator <avd> --exercise home
 ```
 
-builds, then attaches to the named AVD or boots it with host graphics (its log in
+builds, then attaches to the named AVD or boots it without a window and with host graphics (`-gpu host`) (its log in
 `artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs the launcher debug APK, makes Grace
 Home (`cmd package set-home-activity`), starts Home and fails unless Grace is what Home opens, her WebView
 shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
@@ -55,9 +55,9 @@ array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "int
 or `{ "expect": "<text on screen>" }`, each given 30 seconds. Each feature adds its own file;
 `home.json` walks Home.
 
-The AVD to use: API 36 `google_apis` arm64-v8a, 2560x1600 at 320 dpi (the tablet's panel), 4 GB, with
-`hw.gpu.enabled=yes`. API 35 images ask for GLES 3.1 and fall back to software rendering, where the
-emulator is slow enough to show "not responding" dialogs.
+The AVD to use: API 36 `google_apis` arm64-v8a, 2560x1600 at 320 dpi (the tablet's panel), 4 GB.
+Started by hand without `-gpu host`, an AVD with `hw.gpu.enabled=no` renders in software, slow enough to
+show "not responding" dialogs.
 
 `scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and

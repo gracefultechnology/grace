@@ -106,10 +106,11 @@ function writeApkManifest() {
 const sdk = (tool: string) => path.join(resolveAndroidSdkRoot(), tool);
 const adb = (...args: string[]) => execFileSync(sdk("platform-tools/adb"), args, { encoding: "utf8" });
 const shell = (serial: string, command: string) => adb("-s", serial, "shell", command);
+const emulators = () => adb("devices").split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
 
 function emulatorSerial(avd: string): string {
   if (!execFileSync(sdk("emulator/emulator"), ["-list-avds"], { encoding: "utf8" }).split("\n").includes(avd)) throw new Error(`No AVD named ${avd}`);
-  const serials = adb("devices").split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
+  const serials = emulators();
   const running = serials.find((serial) =>
     spawnSync(sdk("platform-tools/adb"), ["-s", serial, "emu", "avd", "name"], { encoding: "utf8", timeout: 10_000 }).stdout?.split(/\r?\n/)[0] === avd);
   if (running) return running;
@@ -208,10 +209,12 @@ if (import.meta.main) {
   const { verify, release, install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
+  if (install && !emulators().includes(install)) throw new Error(`No emulator ${install} is attached`);
+  const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step))(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
   if (verify) writeApkManifest();
   else {
     buildAndroid({ release });
     const serial = install ?? (emulator && emulatorSerial(emulator));
-    if (serial) await deliver(serial, exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step))(readJson(path.join(app, "test/device", `${exercise}.json`))) : []);
+    if (serial) await deliver(serial, steps);
   }
 }
