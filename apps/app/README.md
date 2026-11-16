@@ -21,6 +21,7 @@ and traces (SPEC.md, "One spec tree").
 
 ## Android
 
+Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts.
 `pnpm android` (Node 26, JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and
 `JAVA_HOME`, or their usual install paths) writes `artifacts/{launcher,standalone}-debug.apk`.
 `--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
@@ -29,10 +30,34 @@ the working directory), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
 otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build produced
-with its SHA-256 and the signer the newest installed build-tools' `apksigner` verified; a debug
-build removes release APKs left by an earlier `--release` run. `--install` installs the launcher
-debug APK on the device adb picks and starts it. Both flavors' `versionCode` is `package.json`'s
+with its size, its SHA-256 and the signer the newest installed build-tools' `apksigner` verified; a debug
+build removes release APKs left by an earlier `--release` run. The build fails if an APK carries an
+on-device model or local inference: a `.gguf` or `.onnx` file, llama, ggml, `elizainference` or
+`omnivoice` libraries, or a `tts/` or `asr/` directory. Both flavors' `versionCode` is `package.json`'s
 version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
+
+### On the emulator
+
+```sh
+pnpm --filter @repo/app android --emulator <avd> --exercise home
+```
+
+builds, then attaches to the named AVD or boots it with host graphics (its log in
+`artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs the launcher debug APK, makes Grace
+Home (`cmd package set-home-activity`), starts Home and fails unless Grace is what Home opens, her WebView
+shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
+Responding". It prints the emulator's WebView package and version. `--install emulator-<port>` does the same
+on an emulator that is already running; it refuses any serial that is not an emulator's, so a tablet
+on USB is never touched.
+
+`--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket: an
+array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible name>" }`
+or `{ "expect": "<text on screen>" }`, each given 30 seconds. Each feature adds its own file;
+`home.json` walks Home.
+
+The AVD to use: API 36 `google_apis` arm64-v8a, 2560x1600 at 320 dpi (the tablet's panel), 4 GB, with
+`hw.gpu.enabled=yes`. API 35 images ask for GLES 3.1 and fall back to software rendering, where the
+emulator is slow enough to show "not responding" dialogs.
 
 `scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
