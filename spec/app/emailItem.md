@@ -8,6 +8,13 @@ reading and the current composer. Runtime message changes pass through that
 mailbox owner; no separate mutable child copy can outlive its selected message.
 Rendered text, avatars and sample contacts are not message identity.
 
+A row the person has answered reads "You replied: …" in place of its subject
+(`prototype/Grace Prototype.html:1935`). `answered` is the provider's own
+answered flag, carried by each listing and refresh. The prototype marks the row
+the instant Send is tapped (`prototype/Grace Prototype.html:2204`); here it
+appears when the provider reports it, deliberately, so a send that failed or is
+still unknown never shows as a reply.
+
 The mailbox owner checks current account access and exact message identity
 before passing `MessageUser` or `MessageProvider`; its receipt route addresses
 the canonical registry entry even when another message is now selected. Provider changes below require real receipts;
@@ -29,16 +36,16 @@ type ChangeStatus = ChangeIdle | ChangePending | ChangeUnknown | ChangeFailed
 type MessageIdentity = { owner: str, provider: str, account: str, ref: str }
 type MessageRecord = {
   identity: MessageIdentity, loaded: bool, folder: Folder, previousFolder: Folder,
-  unread: bool, revision: int, pending: MessageChange, status: ChangeStatus,
+  unread: bool, answered: bool, revision: int, pending: MessageChange, status: ChangeStatus,
   undoRevision: int
 }
-type MessageSeed = { identity: MessageIdentity, folder: Folder, unread: bool }
+type MessageSeed = { identity: MessageIdentity, folder: Folder, unread: bool, answered: bool }
 type MetadataReceipt = { seed: MessageSeed, revision: int, evidence: str }
 type ChangeReceipt = { identity: MessageIdentity, revision: int, result: ChangeStatus, evidence: str }
 pure val noIdentity: MessageIdentity = { owner: "", provider: "", account: "", ref: "" }
 pure val initial: MessageRecord = {
   identity: noIdentity, loaded: false, folder: InboxFolder, previousFolder: InboxFolder,
-  unread: false, revision: 0, pending: NoMessageChange, status: ChangeIdle,
+  unread: false, answered: false, revision: 0, pending: NoMessageChange, status: ChangeIdle,
   undoRevision: -1
 }
 pure def validIdentity(identity: MessageIdentity): bool =
@@ -46,13 +53,13 @@ pure def validIdentity(identity: MessageIdentity): bool =
 pure def canLoadMessage(m: MessageRecord, seed: MessageSeed, by: MessageActor): bool =
   by == MessageProvider and not(m.loaded) and validIdentity(seed.identity) and seed.folder != PurgedFolder
 pure def loadMessage(m: MessageRecord, seed: MessageSeed, by: MessageActor): MessageRecord =
-  { ...m, loaded: true, identity: seed.identity, folder: seed.folder, unread: seed.unread }
+  { ...m, loaded: true, identity: seed.identity, folder: seed.folder, unread: seed.unread, answered: seed.answered }
 pure def canRefreshMetadata(m: MessageRecord, metadata: MetadataReceipt, by: MessageActor): bool =
   by == MessageProvider and m.loaded and m.folder != PurgedFolder and
   (m.status == ChangeIdle or m.status == ChangeFailed) and metadata.seed.identity == m.identity and
   metadata.revision == m.revision and metadata.evidence != ""
 pure def refreshMetadata(m: MessageRecord, metadata: MetadataReceipt, by: MessageActor): MessageRecord =
-  { ...m, folder: metadata.seed.folder, unread: metadata.seed.unread,
+  { ...m, folder: metadata.seed.folder, unread: metadata.seed.unread, answered: metadata.seed.answered,
     previousFolder: if (metadata.seed.folder == TrashFolder and m.folder != TrashFolder) m.folder else m.previousFolder,
     revision: m.revision + 1, status: ChangeIdle, pending: NoMessageChange, undoRevision: -1 }
 pure def visibleIn(m: MessageRecord, identity: MessageIdentity, folder: Folder): bool =
@@ -180,16 +187,16 @@ pure def validMessageRecord(m: MessageRecord): bool =
 ```quint
 pure val messageIdentity: MessageIdentity = { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }
 pure val identityValues = Set(noIdentity, messageIdentity, { ...messageIdentity, owner: "ownerB" })
-pure val seedValues = Set({ identity: messageIdentity, folder: InboxFolder, unread: true },
-  { identity: messageIdentity, folder: SentFolder, unread: false },
-  { identity: messageIdentity, folder: DraftsFolder, unread: false },
-  { identity: messageIdentity, folder: TrashFolder, unread: false })
+pure val seedValues = Set({ identity: messageIdentity, folder: InboxFolder, unread: true, answered: false },
+  { identity: messageIdentity, folder: SentFolder, unread: false, answered: false },
+  { identity: messageIdentity, folder: DraftsFolder, unread: false, answered: false },
+  { identity: messageIdentity, folder: TrashFolder, unread: false, answered: false })
 pure val metadataValues = Set(
-  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false }, revision: 0, evidence: "providerMetadata" },
-  { seed: { identity: messageIdentity, folder: TrashFolder, unread: false }, revision: 1, evidence: "providerMetadata" },
-  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false }, revision: 2, evidence: "providerMetadata" },
-  { seed: { identity: noIdentity, folder: InboxFolder, unread: false }, revision: 0, evidence: "" })
-pure val entriesValues = Set(List(), List(initial), List(loadMessage(initial, { identity: messageIdentity, folder: InboxFolder, unread: true }, MessageProvider)))
+  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false, answered: false }, revision: 0, evidence: "providerMetadata" },
+  { seed: { identity: messageIdentity, folder: TrashFolder, unread: false, answered: false }, revision: 1, evidence: "providerMetadata" },
+  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false, answered: false }, revision: 2, evidence: "providerMetadata" },
+  { seed: { identity: noIdentity, folder: InboxFolder, unread: false, answered: false }, revision: 0, evidence: "" })
+pure val entriesValues = Set(List(), List(initial), List(loadMessage(initial, { identity: messageIdentity, folder: InboxFolder, unread: true, answered: false }, MessageProvider)))
 pure val receiptValues = Set(
   { identity: messageIdentity, revision: 1, result: ChangeIdle, evidence: "providerReceipt" },
   { identity: messageIdentity, revision: 2, result: ChangeIdle, evidence: "providerReceipt" },
