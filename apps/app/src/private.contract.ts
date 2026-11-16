@@ -36,6 +36,16 @@ const plainKinds = {
   statement: (values: number[]) => `${date(values, 0)} ${amount(values, 2)} ${amount(values, 4)}`,
   phones: (values: number[]) => `${phone(values, 0)} ${phone(values, 3)}`,
   years: (values: number[], separator: string) => Array.from({ length: 4 }, (_, k) => String(1990 + pick(values, 0, 9) * 4 + k)).join(separator),
+  answers: (values: number[], separator: string) => Array.from({ length: 20 }, (_, k) => String(1 + pick(values, k, 5))).join(separator),
+  fraction: (values: number[]) => `0.${Array.from({ length: 16 }, (_, k) => digit(values[k] ?? k)).join("")}`,
+};
+
+const placements = {
+  before: (cue: string) => ({ lead: `${cue} is `, trail: "" }),
+  after: (cue: string) => ({ lead: "ok ", trail: ` is your ${cue}` }),
+  colon: (cue: string) => ({ lead: `ok use this ${cue} to finish signing in: `, trail: "" }),
+  below: (cue: string) => ({ lead: `ok your ${cue} is below.\n\n`, trail: "\n" }),
+  verb: () => ({ lead: "ok enter ", trail: " to continue" }),
 };
 
 const outgoing = Arbitrary.schema(
@@ -46,20 +56,21 @@ const outgoing = Arbitrary.schema(
     body: Schema.Array(Schema.Int),
     separator: Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    "]),
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
-    told: Schema.Literals(["before", "after"]),
+    placement: Schema.Literals(["before", "after", "colon", "below", "verb"]),
     code: Schema.Array(Schema.Int),
-    kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years"]),
+    kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction"]),
     gap: Schema.Literals([" ", "\t", "\n", "  "]),
     numbers: Schema.Array(Schema.Int),
   }),
 ).pipe(
-  Arbitrary.map(({ before, passwords, after, body, separator, cue, told, code, kind, gap, numbers }): Outgoing => {
+  Arbitrary.map(({ before, passwords, after, body, separator, cue, placement, code, kind, gap, numbers }): Outgoing => {
     const card = cardNumber(Array.from({ length: 15 }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), separator);
     const secret = Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)).join("");
     const plain = plainKinds[kind]([...numbers], gap);
-    const head = [plain, "ok", before, ...passwords, ""].join(" ");
-    const middle = told === "before" ? `${card} ${cue} is ` : `${card} ok `;
-    const tail = told === "before" ? ` ${after}` : ` is your ${cue} ${after}`;
+    const head = [`${plain}.`, "ok", before, ...passwords, "ok", ""].join(" ");
+    const { lead, trail } = placements[placement](cue);
+    const middle = `${card} ${lead}`;
+    const tail = `${trail} ${after}`;
     return {
       text: `${head}${middle}${secret}${tail}`,
       passwords: [...passwords],
