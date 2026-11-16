@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import type { WifiNetworkRowProps } from "./WifiNetworkRow.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
@@ -17,9 +18,6 @@ export const meta: ComponentMeta<WifiNetworkRowProps> = {
   },
   decorator: settingsPage,
   play: {
-    Failed: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-    },
+    Failed: tapCalls("Try again", retry),
   },
 };

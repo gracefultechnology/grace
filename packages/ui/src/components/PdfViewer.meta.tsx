@@ -1,6 +1,7 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { mailScreen, unfocus } from "./MailApp.meta.tsx";
+import { tapCalls } from "./Button.meta.tsx";
+import { mailScreen, retriesUnshown } from "./MailApp.meta.tsx";
 import type { PdfViewerProps } from "./PdfViewer.tsx";
 
 const print = fn();
@@ -45,17 +46,7 @@ export const meta: ComponentMeta<PdfViewerProps> = {
   },
   decorator: mailScreen,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Print" }));
-      await expect(print).toHaveBeenCalled();
-      unfocus();
-    },
-    "Can’t show": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
-      await expect(canvas.getByRole<HTMLButtonElement>("button", { name: "Print" }).disabled).toBe(true);
-      await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-      unfocus();
-    },
+    Default: tapCalls("Print", print, { rest: true }),
+    "Can’t show": retriesUnshown("Print", retry),
   },
 };

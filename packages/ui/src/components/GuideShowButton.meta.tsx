@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import type { GuideShowButtonProps } from "./GuideShowButton.tsx";
 
 const show = fn();
@@ -16,9 +17,6 @@ export const meta: ComponentMeta<GuideShowButtonProps> = {
     </div>
   ),
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Show me again" }));
-      await expect(show).toHaveBeenCalled();
-    },
+    Default: tapCalls("Show me again", show),
   },
 };

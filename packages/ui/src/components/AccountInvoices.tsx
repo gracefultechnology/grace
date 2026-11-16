@@ -8,7 +8,7 @@ import { EmptyState } from "./EmptyState.tsx";
 import { ListRow } from "./ListRow.tsx";
 import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
-import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
+import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 
 /** What the billing company says of an invoice. Only `paid` is confirmed paid. */
 export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible";
@@ -170,8 +170,7 @@ export function AccountInvoices({ view, invoices, invoice, busy = false, problem
     </>
   );
   return (
-    <section aria-label={title} aria-busy={busy || undefined} data-sensitive="true" className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
-      <SettingsPageHeading>{title}</SettingsPageHeading>
+    <SettingsAccountPage title={title} busy={busy} className={className} {...props}>
       {status}
       {view === "list" ? (
         <>
@@ -240,6 +239,6 @@ export function AccountInvoices({ view, invoices, invoice, busy = false, problem
           </div>
         </>
       )}
-    </section>
+    </SettingsAccountPage>
   );
 }

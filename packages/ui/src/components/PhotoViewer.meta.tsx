@@ -1,6 +1,7 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { flowersPhoto, mailScreen, programPhoto, stagePhoto, unfocus } from "./MailApp.meta.tsx";
+import { tapCalls } from "./Button.meta.tsx";
+import { flowersPhoto, mailScreen, programPhoto, stagePhoto, retriesUnshown } from "./MailApp.meta.tsx";
 import type { PhotoViewerProps } from "./PhotoViewer.tsx";
 
 const next = fn();
@@ -19,17 +20,7 @@ export const meta: ComponentMeta<PhotoViewerProps> = {
   },
   decorator: mailScreen,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Next photo" }));
-      await expect(next).toHaveBeenCalled();
-      unfocus();
-    },
-    "Couldn’t show": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
-      await expect(canvas.getByRole<HTMLButtonElement>("button", { name: "Save to Files" }).disabled).toBe(true);
-      await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-      unfocus();
-    },
+    Default: tapCalls("Next photo", next, { rest: true }),
+    "Couldn’t show": retriesUnshown("Save to Files", retry),
   },
 };

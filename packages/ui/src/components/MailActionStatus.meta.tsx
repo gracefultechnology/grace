@@ -1,6 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { unfocus } from "./MailApp.meta.tsx";
+import { tapCalls } from "./Button.meta.tsx";
 import type { MailActionStatusProps } from "./MailActionStatus.tsx";
 
 const retry = fn();
@@ -17,11 +17,7 @@ export const meta: ComponentMeta<MailActionStatusProps> = {
   },
   decorator: (story) => <div className="w-[640px] bg-background p-6">{story()}</div>,
   play: {
-    "Save failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-      unfocus();
-    },
+    "Save failed": tapCalls("Try again", retry, { rest: true }),
     // Uncertain is not a failure: nothing to retry until the printer answers.
     "Print unknown": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).queryByRole("button")).toBeNull(),
   },

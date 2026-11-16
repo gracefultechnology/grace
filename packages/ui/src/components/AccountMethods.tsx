@@ -1,11 +1,10 @@
 import type { ComponentProps, ReactNode } from "react";
-import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { Dialog, DialogActions, DialogContent, DialogTitle } from "./Dialog.tsx";
 import { ListRow } from "./ListRow.tsx";
 import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
-import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
+import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 import { SignInCodeField } from "./SignInCodeField.tsx";
 import { TextField } from "./TextField.tsx";
 
@@ -182,8 +181,7 @@ export function AccountMethods({
   const back = phase === "security" || phase === "phone" || phase === "enroll" || phase === "code";
   const list = phase === "methods" || phase === "remove";
   return (
-    <section aria-label={l.title} aria-busy={busy || undefined} data-sensitive="true" className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
-      <SettingsPageHeading>{l.title}</SettingsPageHeading>
+    <SettingsAccountPage title={l.title} busy={busy} className={className} {...props}>
       <PageText>{l.intro}</PageText>
       {busy ? <PageText role="status" tone="secondary">{l.checking}</PageText> : null}
       {phase === "verify" ? identity : null}
@@ -293,6 +291,6 @@ export function AccountMethods({
           </DialogActions>
         </DialogContent>
       </Dialog>
-    </section>
+    </SettingsAccountPage>
   );
 }

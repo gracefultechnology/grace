@@ -14,6 +14,26 @@ const link = () => {
 const disabledLink = link();
 const loadingLink = link();
 
+/** Taps the button named `name` in the story, and gives it back. */
+export const tap = async (canvasElement: HTMLElement, name: string) => {
+  const button = within(canvasElement).getByRole("button", { name });
+  await userEvent.click(button);
+  return button;
+};
+
+/**
+ * A play: a tap on the button named `name` calls `spy`, with `args` when given; `rest` then drops the focus the tap
+ * leaves, so the story rests as the references show it.
+ */
+export const tapCalls =
+  (name: string, spy: ReturnType<typeof fn>, { args, rest = false }: { args?: unknown[]; rest?: boolean } = {}) =>
+  async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    spy.mockClear();
+    await tap(canvasElement, name);
+    await (args ? expect(spy).toHaveBeenCalledWith(...args) : expect(spy).toHaveBeenCalled());
+    if (rest) (document.activeElement as HTMLElement | null)?.blur();
+  };
+
 const refusesChild = async (anchor: HTMLElement, onClick: ReturnType<typeof fn>) => {
   await userEvent.click(anchor, { pointerEventsCheck: 0 });
   anchor.focus();

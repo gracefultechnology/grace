@@ -35,6 +35,17 @@ export const mailScreen = (story: () => ReactNode) => (
 // Drops the focus a play's last tap leaves, so the story shows the screen at rest as the references do.
 export const unfocus = () => (document.activeElement as HTMLElement | null)?.blur();
 
+/** A viewer's play when it cannot show its file: `waiting` stays disabled, and Try again calls `retry`. */
+export const retriesUnshown =
+  (waiting: string, retry: ReturnType<typeof fn>) =>
+  async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole<HTMLButtonElement>("button", { name: waiting }).disabled).toBe(true);
+    await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+    await expect(retry).toHaveBeenCalled();
+    unfocus();
+  };
+
 // The clinic's white cross (prototype `av('clinic')`).
 const cross = (
   <svg aria-hidden width="30" height="30" viewBox="0 0 24 24">

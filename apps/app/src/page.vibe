@@ -67,6 +67,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   // The native request each request number stands for: its page and the plugin's key (definitions.ts).
   const asked = new Map<number, { page: string; key: string }>()
   const said = new Map<number, string>()
+  const forget = (id: number) => { asked.delete(id); said.delete(id) }
   // The request number of each download being saved, by its page and key.
   const saving = new Map<string, number>()
   // The fiber applies all that waits at once.
@@ -112,8 +113,7 @@ export const pageHost = Layer.effect(PageHost, effect {
       }
       return
     }
-    asked.delete(reply.request)
-    said.delete(reply.request)
+    forget(reply.request)
     // A reply that only closes Grace's prompt may find the page's request already gone.
     const done = Effect.as(native.reply(request.page, request.key, reply.ask, reply.answer, reply.text), true) catch effect (cause) => {
       if (reply.answer === "SaveDownload" || opensElsewhere(reply.answer) || reply.answer === "Allowed") try logWarning("reply", cause)
@@ -269,8 +269,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     said.set(id, event.said)
     const report = { tab, ask: event.ask, fromTap: true, topFrame: event.topFrame }
     if ((try website({ type: "raise", report }, "WebsiteHost")) !== undefined) return
-    asked.delete(id)
-    said.delete(id)
+    forget(id)
     native.reply(event.id, event.key, event.ask, "Refused", "") catch () => undefined
   }
 

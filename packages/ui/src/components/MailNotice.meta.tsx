@@ -1,6 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { unfocus } from "./MailApp.meta.tsx";
+import { tapCalls } from "./Button.meta.tsx";
 import type { MailNoticeProps } from "./MailNotice.tsx";
 
 const retry = fn();
@@ -15,10 +15,6 @@ export const meta: ComponentMeta<MailNoticeProps> = {
   // As wide as an email's page, on the white window.
   decorator: (story) => <div className="w-[1000px] bg-background p-6">{story()}</div>,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-      unfocus();
-    },
+    Default: tapCalls("Try again", retry, { rest: true }),
   },
 };
