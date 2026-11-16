@@ -112,6 +112,7 @@ lemma movePhoto_ensures(f: Files, direction: int, by_: FileActor)
   ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysCatalogLoadHasNoStaleView(movePhoto(f, direction, by_).state))
   ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysCatalogValid(movePhoto(f, direction, by_).state))
   ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysSelectionExists(movePhoto(f, direction, by_).state))
+  ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysPageInBounds(movePhoto(f, direction, by_).state))
   ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysPendingFileExists(movePhoto(f, direction, by_).state))
   ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysMatchesExist(movePhoto(f, direction, by_).state))
   ensures (inv(f) ==> canMovePhoto(f, direction, by_) ==> alwaysPendingImportValid(movePhoto(f, direction, by_).state))
@@ -135,6 +136,7 @@ lemma writeResult_ensures(f: Files, fileReceipt: FileReceipt, by_: FileActor)
   ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysCatalogLoadHasNoStaleView(writeResult(f, fileReceipt, by_)))
   ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysCatalogValid(writeResult(f, fileReceipt, by_)))
   ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysSelectionExists(writeResult(f, fileReceipt, by_)))
+  ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysPageInBounds(writeResult(f, fileReceipt, by_)))
   ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysPendingFileExists(writeResult(f, fileReceipt, by_)))
   ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysMatchesExist(writeResult(f, fileReceipt, by_)))
   ensures (inv(f) ==> canWriteResult(f, fileReceipt, by_) ==> alwaysPendingImportValid(writeResult(f, fileReceipt, by_)))
@@ -167,6 +169,7 @@ lemma printDocument_ensures(f: Files, id: string, by_: FileActor)
   ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysCatalogLoadHasNoStaleView(printDocument(f, id, by_).state))
   ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysCatalogValid(printDocument(f, id, by_).state))
   ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysSelectionExists(printDocument(f, id, by_).state))
+  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysPageInBounds(printDocument(f, id, by_).state))
   ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysPendingFileExists(printDocument(f, id, by_).state))
   ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysMatchesExist(printDocument(f, id, by_).state))
   ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysPendingImportValid(printDocument(f, id, by_).state))
@@ -177,5 +180,29 @@ lemma printDocument_ensures(f: Files, id: string, by_: FileActor)
   if inv(f) && canPrintDocument(f, id, by_) {
     ExistingFileLookup(f, id);
     CatalogDistinct(f.entries);
+  }
+}
+
+// spec/app/files.md, "Opening a file verifies that exact content before presenting a preview"
+lemma openFile_ensures(f: Files, id: string, by_: FileActor)
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysLibraryIdentity(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysCatalogLoadHasNoStaleView(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysCatalogValid(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysSelectionExists(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysPageInBounds(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysPendingFileExists(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysMatchesExist(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysPendingImportValid(openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> stepFailedWriteKeepsLibrary(f, "openFile", openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> stepOnlyAcknowledgedWritesChangeLibrary(f, "openFile", openFile(f, id, by_).state))
+  ensures (inv(f) ==> canOpenFile(f, id, by_) ==> stepOwnerDoesNotChange(f, openFile(f, id, by_).state))
+{
+  if inv(f) && canOpenFile(f, id, by_) {
+    ExistingFileLookup(f, id);
+    CatalogDistinct(f.entries);
+    var after := openFile(f, id, by_).state;
+    assert after.entries == f.entries;
+    assert fileAt(after, id) == fileAt(f, id);
+    assert validFile(fileAt(f, id));
   }
 }
