@@ -23,3 +23,5 @@ storybook-static/
 build/
 # Storybook writes it when a run fails.
 debug-storybook.log
+# A failed exploration's trace, replayed by the next check (SPEC.md, "Exploring the page").
+**/test/__traces__/bombadil/
