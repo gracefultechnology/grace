@@ -583,29 +583,32 @@ pure def currentDraft(m: Mailbox): DraftSnapshot = {
 
 Reply opens the composer already addressed, with the "Re:" subject and no
 recipient picker (`prototype/Grace Prototype.html:2197`). The connector reads the
-reply address of the message on screen and verifies it against the current
-read's generation; the host then dispatches `replyToMessage`. The prototype
+reply address of the message on screen; its header names the message it was
+read from and the read generation it belongs to, and is accepted only when that
+is the open message at the current read generation. The host then dispatches
+`replyToMessage`. The prototype
 addresses every reply to the sender (`m.from`,
 `prototype/Grace Prototype.html:2142,2197`); this spec deliberately follows the
 message's own reply-to header instead, which may name a different address, as
 mail clients do, and the connector supplies whichever address that header
 names. The recipient therefore never arrives as an edit the person
-did not make, and a stale header from an earlier read cannot address the reply.
+did not make, and a header from an earlier read or from another message cannot
+address the reply.
 The automatic subject is remembered, so it alone does not make the composer
 worth keeping (`prototype/Grace Prototype.html:2199`).
 
 ```quint
-type ReplyHeader = { generation: int, address: str, subject: str, verified: bool }
+type ReplyHeader = { ref: str, generation: int, address: str, subject: str, verified: bool }
 pure def canReplyToMessage(m: Mailbox, header: ReplyHeader, by: MailActor): bool =
   (by == MailConnector or by == MailHost) and m.view == Message and replyable(m) and
-  header.generation == m.generation and header.verified and header.address != ""
+  header.ref == m.messageRef and header.generation == m.generation and header.verified and header.address != ""
 pure def replyToMessage(m: Mailbox, header: ReplyHeader, by: MailActor): Mailbox =
   { ...openComposer(m.messageRef, m), draft: { ...emptyContent, to: header.address, subject: header.subject },
     autoSubject: header.subject }
 pure def lawReplyIsAddressedFromVerifiedHeader(m: Mailbox, header: ReplyHeader, by: MailActor): bool =
   canReplyToMessage(m, header, by) implies
     (replyToMessage(m, header, by).draft.to == header.address and replyToMessage(m, header, by).replyTo == m.messageRef and
-      header.verified and header.generation == m.generation)
+      header.verified and header.ref == m.messageRef and header.generation == m.generation)
 pure def sometimesReplyAddressed(m: Mailbox): bool = m.composeVisible and m.replyTo != "" and m.draft.to != ""
 ```
 
@@ -1103,9 +1106,10 @@ pure val snapshotValues = Set(
   { id: "draftA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },
   { id: "messageA", version: 3, content: mailContent, attachments: List(), replyTo: "" })
 pure val directionValues = Set(-1, 0, 1)
-pure val headerValues = sampleGenerations.map(g => { generation: g, address: "sender@example.test", subject: "Re: Subject", verified: true })
-  .union(Set({ generation: 3, address: "", subject: "Re: Subject", verified: true },
-    { generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: false }))
+pure val headerValues = sampleGenerations.map(g => { ref: "messageA", generation: g, address: "sender@example.test", subject: "Re: Subject", verified: true })
+  .union(Set({ ref: "messageA", generation: 3, address: "", subject: "Re: Subject", verified: true },
+    { ref: "messageA", generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: false },
+    { ref: "missing", generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: true }))
 pure val bodyValues = Set("Thank you, I will be there.")
 pure val linkValues = Set("https://acc0unt-help.example/confirm")
 pure val refsValues = Set(Set("attachmentA"), Set("attachmentPdf"), Set("attachmentA", "attachmentPdf"), Set("missing"), Set())

@@ -341,7 +341,8 @@ pure def showGuidance(a: Assistant, revision: int, by: C::ConversationActor): As
   ...a, guidance: { ...a.guidance, shown: true, revision: a.guidance.revision + 1 }
 }
 pure def lawDismissOnlyChangesGuidance(a: Assistant, revision: int, by: C::ConversationActor): bool =
-  { ...dismissGuidance(a, revision, by), guidance: a.guidance } == a
+  { ...dismissGuidance(a, revision, by), guidance: a.guidance } == a and
+    dismissGuidance(a, revision, by).guidance == { ...a.guidance, shown: false, revision: a.guidance.revision + 1 }
 pure def lawShowKeepsTheTarget(a: Assistant, revision: int, by: C::ConversationActor): bool =
   canShowGuidance(a, revision, by) implies
     (showGuidance(a, revision, by).guidance.target == a.guidance.target and guidanceIsCurrent(showGuidance(a, revision, by)))

@@ -128,8 +128,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (opensElsewhere(reply.answer)) try website({ type: "finishOpening", id: reply.request, opened: done }, "WebsiteHost")
   }
 
-  // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it": the website requests
-  // follow the page shown, its tab and whether it runs, as one view, whenever it changes.
+  // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"
   effect function syncRequests() {
     const w = try workspace.get()
     const view = { shown: pageShows(w.device, w.assistant), selected: w.browser.selected, paused: !pageRuns(try layer.get()) }
