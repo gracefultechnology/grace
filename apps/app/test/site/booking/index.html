@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Clinic: book an appointment</title>
+<h1>Book an eye check</h1>
+<form action="../book" method="post">
+  <fieldset>
+    <legend>Times Dr. Patel can see you</legend>
+  </fieldset>
+  <button>Book this time</button>
+</form>
+<script>
+  const two = (n) => String(n).padStart(2, "0");
+  for (const [days, hour, minute] of [[7, 9, 30], [8, 14, 0], [10, 11, 15]]) {
+    const at = new Date();
+    at.setDate(at.getDate() + days);
+    at.setHours(hour, minute, 0, 0);
+    const value = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}T${two(hour)}:${two(minute)}`;
+    const label = document.createElement("label");
+    label.append(Object.assign(document.createElement("input"), { type: "radio", name: "time", value, required: true }), ` ${at.toLocaleString("en-US", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}`);
+    document.querySelector("fieldset").append(label);
+  }
+</script>

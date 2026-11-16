@@ -1,0 +1,66 @@
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+import { assert, it } from "@effect/vitest"
+import { inject } from "vitest"
+import { client, parts, reply, signIn, turns, unending } from "./cloud.vibe"
+
+const cloud = inject("cloud")
+const site = inject("site")
+
+schema Payment { amount: string; to: string }
+schema Booking { time: string }
+
+effect function status(url: string) {
+  return (try HttpClient.get(url)).status
+}
+
+effect function kept<A>(url: string, entry: Schema.Codec<A>) {
+  return try Schema.decodeUnknownEffect(Schema.Array(entry))(try (try HttpClient.get(url)).json)
+}
+
+effect function submit(url: string, form: Record<string, string>) {
+  return (try HttpClient.execute(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(url), form))).status
+}
+
+it.live("Use the website under Grace's controls: every page answers, and each visit sees only its own payments and bookings", () => effect {
+  provide client {
+    const [first, second] = [`${site}/${(try signIn(cloud)).credentialId}`, `${site}/${(try signIn(cloud)).credentialId}`]
+    const pages = ["", "bill/", "bill/amount.html", "bill/review.html", "bill/confirmation.html", "booking/", "booking/booked.html", "confirm.html", "instruction.html", "statement.pdf"]
+    const statuses: number[] = []
+    for (const p of pages) statuses.push(try status(`${first}/${p}`))
+    const outside = try status(`${site}/`)
+    const submitted = [
+      try submit(`${first}/bill`, { account: "1", password: "test" }),
+      try submit(`${first}/pay`, { amount: "84.12", to: "Riverside Power" }),
+      try submit(`${first}/pay`, { amount: "", to: "Riverside Power" }),
+      try submit(`${second}/pay`, { amount: "25.00", to: "Riverside Power" }),
+      try submit(`${first}/book`, { time: "2026-12-08T09:30" })
+    ]
+    const records = {
+      first: { paid: try kept(`${first}/paid`, Payment), booked: try kept(`${first}/booked`, Booking) },
+      second: { paid: try kept(`${second}/paid`, Payment), booked: try kept(`${second}/booked`, Booking) }
+    }
+    try Effect.try(() => assert.deepStrictEqual({ statuses, outside, submitted, records }, {
+      statuses: pages.map(() => 200),
+      outside: 404,
+      submitted: [200, 200, 400, 200, 200],
+      records: {
+        first: { paid: [{ amount: "84.12", to: "Riverside Power" }], booked: [{ time: "2026-12-08T09:30" }] },
+        second: { paid: [{ amount: "25.00", to: "Riverside Power" }], booked: [] }
+      }
+    }))
+  }
+})
+
+it.live("Talk or type without losing the conversation: a turn streams to its end, and a stopped turn is aborted", () => effect {
+  provide client {
+    const key = (try signIn(cloud)).secret
+    const said = "Hello Grace."
+    const whole = (try Stream.runCollect(try parts(cloud, key, said))).join("")
+    try scoped(effect { try Stream.runHead(try parts(cloud, key, unending)) })
+    const recorded = try turns(cloud, key)
+    try Effect.try(() => assert.deepStrictEqual({ whole, recorded }, {
+      whole: reply(said),
+      recorded: [{ said, outcome: "completed" }, { said: unending, outcome: "aborted" }]
+    }))
+  }
+})

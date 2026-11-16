@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Power: review your payment</title>
+<h1>Review your payment</h1>
+<form action="../pay" method="post">
+  <input type="hidden" name="to" value="Riverside Power">
+  <p>From your checking account ending in 0042, paid today.</p>
+  <label>Amount <input name="amount" readonly></label>
+  <a href="amount.html">Change the amount</a>
+  <button>Pay now</button>
+</form>
+<script>
+  const chosen = new URLSearchParams(location.search);
+  document.querySelector("input[name=amount]").value = chosen.get("amount") === "other" ? chosen.get("other") : chosen.get("amount");
+</script>

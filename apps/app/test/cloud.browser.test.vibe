@@ -1,0 +1,22 @@
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+import { assert, it } from "@effect/vitest"
+import { inject } from "vitest"
+import { client, parts, reply, signIn, turns } from "./cloud.vibe"
+
+const cloud = inject("cloud")
+const site = inject("site")
+
+it.live("Talk or type without losing the conversation, from the app's own page: the fake and the site answer across origins", () => effect {
+  provide client {
+    const { credentialId, secret } = try signIn(cloud)
+    const said = "Hello Grace."
+    const whole = (try Stream.runCollect(try parts(cloud, secret, said))).join("")
+    const recorded = try turns(cloud, secret)
+    const paid = try (try HttpClient.get(`${site}/${credentialId}/paid`)).json
+    try Effect.try(() => assert.deepStrictEqual({ whole, recorded, paid }, {
+      whole: reply(said),
+      recorded: [{ said, outcome: "completed" }],
+      paid: []
+    }))
+  }
+})
