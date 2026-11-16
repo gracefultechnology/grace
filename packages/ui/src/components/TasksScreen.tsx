@@ -24,6 +24,7 @@ export type TasksScreenProps = Omit<AppWindowProps, "icon" | "children" | "title
  * Every task Grace started, grouped by what it needs, in an app window like the prototype's apps, with an empty state
  * when there is none.
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function TasksScreen({ title = "Tasks", groups, emptyTitle = "Nothing waiting on you.", emptyText, ...props }: TasksScreenProps) {
   return (

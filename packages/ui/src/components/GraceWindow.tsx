@@ -36,6 +36,7 @@ function fitted(section: HTMLElement): number {
  * (prototype `#gwin`, `.chat-white`).
  * @model spec/app/assistant.md
  * @design packages/design-system/design.md#grace
+ * @design packages/design-system/design.md#screens
  */
 export function GraceWindow({ size = "expanded", surface = "white", height, onHeightChange, header, dock, placement = "screen", className, style, children, ...props }: GraceWindowProps) {
   const expanded = size === "expanded";

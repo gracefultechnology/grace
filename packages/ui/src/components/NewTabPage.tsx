@@ -61,6 +61,7 @@ const column = 160;
  * What an empty tab shows: a heading, how to begin, and recent websites to open again, remove one by one or
  * clear after one question.
  * @model spec/app/browser.md
+ * @design packages/design-system/design.md#screens
  */
 export function NewTabPage({
   heading = "You’re ready to browse the internet.",

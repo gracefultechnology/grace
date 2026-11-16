@@ -91,6 +91,7 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
  * its default, is the design.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
+ * @design packages/design-system/design.md#screens
  */
 export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
   const full = layout === "full";

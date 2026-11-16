@@ -21,6 +21,7 @@ export type SleepScreenProps = ComponentProps<"div"> & {
  * It covers the whole screen; a touch anywhere wakes it.
  * @model spec/app/wake.md
  * @design packages/design-system/design.md#grace
+ * @design packages/design-system/design.md#screens
  */
 export function SleepScreen({ time, date, next, nextIcon = <Calendar size={28} strokeWidth={2} />, hint, className, ...props }: SleepScreenProps) {
   return (

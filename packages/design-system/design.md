@@ -57,6 +57,32 @@ not yet said: white, outlined in her ink, with her tail. While she speaks, `lave
 Grace points with a `guide` ring in the margin around the target and a label beside it: indigo while she
 works, `guide` for "your turn", `ok` when done. A target off screen becomes a glass pill at the edge.
 
+## Screens
+
+Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
+the line of the function that draws it, at 8:56 PM on Friday, November 13, 2026. Open the story and that line side
+by side. `Empty`, `Header Mode …` and `Placement …` stories are the bare component and its props (`hdr()` 1885
+follows `X.hdrMode`); "app only" marks a state the prototype does not draw, built in its look.
+
+| Component | Prototype state | Stories |
+| --- | --- | --- |
+| `TabletScreen` | `.device` and `#screen` (801) | Default, In The Bezel, Device: `.device`'s 18px bezel; Background Frame: `.screen .sbg` |
+| `HomeScreen` | `render()` 1266, `homeCards()` 1874, `hmGeom()` 2297 mode G | Default: Home's first page; Layout Compact: `layout()` 1256 with Grace compact (`.home.cmp`); Page Files, Compact Page Files: `hmGo(1)` 2352; Layout Greeting: `.home.tight`, keyboard up; Reminder: `drawBanner()` 1865, `X.banner = "rem"`; Offline: `X.online = false` |
+| `SleepScreen` | `drawSleep()` 2254 | Default: `X.wake`; Wake Word Off: `X.wake = false`; Nothing Next: no event ahead |
+| `StartupScreen` | app only: `.screen`, `.orb-w`, `.zz` type, `.a-btn.prom` | Default, State Failed |
+| `GraceWindow` | `renderGrace()` 1173 in `.chat-white`, `dock()` 1646 | Default: Ask Grace full screen; Compact, Size Compact: `sizeCompact()` 1287; Conversation; Compact Question; Compact Question Listening: `.sugg.fade`; Compact Thinking; Compact Long Reply: `sizeCompact()`, `focusMsg()` 1290; Frost, Surface Frost: `#gwin` frosted |
+| `SetupStep` | app only, in Grace's window (`renderGrace()` 1173) | every step |
+| `BrowserWindow` | `#bwin` (819), `renderSite()` 1005 on `PAGES` (973) | Default, Empty Go: `PAGES.newtab`; Website Sign In, Website Sign In Error: `signin` with `S.site.err`; Website Account, Website Pay, Website Review, Website Payment Scheduled: `account`, `pay`, `review`, `done`; Grace Typing: `.addr.typing`; Loading With More Tabs, Page Failed: app only |
+| `NewTabPage` | `renderSite()` 1011, `.newtab` | Default; Recent Websites, Remove And Clear, Confirming Clear, Removable, Clearable: app only |
+| `PracticePage` | app only, `.scard` of `renderSite()` | Default, Guided, Done |
+| `CalendarApp` | `axRender()` 2056, `calView()` 1896 | Default, Week: `X.cal` (1798); Month; Detail; Form, Form Picking A Time, Form Saving, With A Draft: `calForm()` 1918; Form Save Failed: `.a-caution` as `wifiPage()` 2002; Added By Margaret: `formsave` with `axGuide()` 2072 |
+| `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Large Title; Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
+| `FilesApp` | `axRender()` 2056, `filesView()` 1982 | Default: `X.files` photos; Documents: `X.files.tab`; Found One Photo, Found One Document, Which One: `axGuide()` 2072 kind `point`; Print Unknown, Nothing Matched, Loading, Load Failed: app only |
+| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join, Header Mode Large Wi Fi Join: `X.wifi.join`; Grace Points At Largest: `axGuide()` 2072 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
+| `PasswordsApp` | app only, in an app window (`axRender()` 2056) | every story |
+| `CameraApp` | app only, in an app window (`axRender()` 2056) | every story |
+| `TasksScreen` | app only, in an app window (`axRender()` 2056) | every story |
+
 ## Changing it
 
 `tokens.json` is the source; the CSS in `generated/` and the table below are built from it. Nothing reads

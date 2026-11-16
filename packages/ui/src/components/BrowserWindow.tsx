@@ -15,6 +15,7 @@ export type BrowserWindowProps = ComponentProps<"section"> & {
  * children (the selected tab's page, or a `NewTabPage`).
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function BrowserWindow({ tabStrip, toolbar, placement = "screen", className, children, ...props }: BrowserWindowProps) {
   return (

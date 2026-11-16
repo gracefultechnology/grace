@@ -55,6 +55,7 @@ export type SetupStepProps = Omit<GraceWindowProps, "header" | "children" | "doc
  * answers to tap or say, over the answer row. Each step is the words and answers it is given.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
+ * @design packages/design-system/design.md#screens
  */
 export function SetupStep({
   progress,

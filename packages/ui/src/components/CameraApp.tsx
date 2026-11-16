@@ -67,6 +67,7 @@ export type CameraAppProps = Omit<AppWindowProps, "title" | "icon" | "children">
  * Taking a photo: the live preview filling an app window like the prototype's, with zoom, the shutter between the last
  * photo and Switch camera, and the refused and failed states.
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function CameraApp({ state, preview, thumbnail, problem, zooms = [], zoom = 1, onZoom, flash, onFlash, onTake, onFlip, onOpenPhotos, onRetry, labels, ...props }: CameraAppProps) {
   const l = { ...cameraAppLabels, ...labels };

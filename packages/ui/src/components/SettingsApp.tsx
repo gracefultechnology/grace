@@ -65,6 +65,7 @@ export type SettingsAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
  * title is the open page's name and the page leaves out its own (prototype `axRender()`).
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function SettingsApp({
   page,

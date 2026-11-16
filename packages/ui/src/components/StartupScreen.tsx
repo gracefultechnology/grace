@@ -22,6 +22,7 @@ export type StartupScreenProps = Omit<ComponentProps<"div">, "title" | "children
  * try again. It covers the screen until Home is ready.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#grace
+ * @design packages/design-system/design.md#screens
  */
 export function StartupScreen({ state, title, message, onRetry, retryLabel = "Try again", className, ...props }: StartupScreenProps) {
   const failed = state === "failed";

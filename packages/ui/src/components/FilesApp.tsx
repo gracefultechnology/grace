@@ -93,6 +93,7 @@ export type FilesAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "chi
  * (prototype `filesView()`); a find's answer over them, and Try again when the library could not be read.
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function FilesApp({
   tab,

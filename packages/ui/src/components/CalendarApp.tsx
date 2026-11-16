@@ -74,6 +74,7 @@ const defaultLabels = { today: "Today", add: "Add", save: "Save" };
  * (prototype `calView`).
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function CalendarApp({
   view,

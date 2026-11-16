@@ -83,6 +83,7 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
  * (prototype `mailView()`, list).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailApp({ folder, counts, messages, query = "", onQueryChange, onSelectFolder, onOpen, onWrite, status = "ready", onRetry, onFixWifi, toast, labels, ...props }: MailAppProps) {
   const l = { ...mailAppLabels, ...labels };

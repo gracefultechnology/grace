@@ -13,6 +13,7 @@ export type TabletScreenProps = ComponentProps<"div"> & {
  * as the rail, windows and Grace are.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
+ * @design packages/design-system/design.md#screens
  */
 export function TabletScreen({ background = "soft", device = false, className, children, ...props }: TabletScreenProps) {
   const screen = (
