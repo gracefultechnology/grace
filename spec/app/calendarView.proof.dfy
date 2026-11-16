@@ -102,7 +102,7 @@ lemma CalendarChanged(c: app__calendar_Calendar, command: OccurrenceAction, by_:
   assert app__calendar_inv(c);
   match command {
     case BeginEditing => app__calendar_beginEdit_ensures(c, app__calendar_CalendarActor.CalendarUser);
-    case ChangeDetails(details) => app__calendar_edit_ensures(c, details, app__calendar_CalendarActor.CalendarUser);
+    case ChangeDetails(details) => app__calendar_edit_ensures(c, app__calendar_formDetails(c.draft, details), app__calendar_CalendarActor.CalendarUser);
     case CancelEditing => app__calendar_cancelEdit_ensures(c, app__calendar_CalendarActor.CalendarUser);
     case ApproveEntry(revision) => app__calendar_approveSave_ensures(c, revision, app__calendar_CalendarActor.CalendarUser);
     case EntryStored(revision, succeeded) =>

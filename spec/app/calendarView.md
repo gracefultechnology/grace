@@ -221,11 +221,18 @@ approved revision, and clock events target the canonical occurrence ID rather
 than a captured state. Reminder changes need no artificial content revision.
 The Add form makes a New appointment only (`Grace Prototype.html:1918`); the
 person cannot make up a bill's identity. A bill occurrence enters only by a
-verified import.
+verified import. A new entry, from Add or from Grace's confirmed proposal, is
+never marked important, since nothing but its source can mark it, and has a
+positive length, the prototype's one hour by default (`Grace Prototype.html:2171`),
+which edits then keep. A form change applies through Calendar's `formDetails`.
 
 Dismiss on the Home banner or the reminder toast reaches the row whether or not
-Calendar is open or that event is selected; every other change by the person
-needs the event's own open form or detail.
+Calendar is open or that event is selected, and even while a Save of that event
+awaits its storage result: dismissing changes only the reminder, and that save
+then schedules the reminder afresh from what it commits. Like every change to a
+row, Dismiss waits while a deletion question or deletion is in progress. Every
+other change by the person needs the event's own open form or detail, with no
+approved Save awaiting its result.
 
 ```quint
 type EntrySeed = { identity: C::EntryIdentity, details: C::EntryDetails }
@@ -247,7 +254,7 @@ pure def mayChangeEntry(c: C::Calendar, command: OccurrenceAction, by: ViewActor
 }
 pure def changeEntry(c: C::Calendar, command: OccurrenceAction): C::Calendar = match command {
   | BeginEditing => C::beginEdit(c, C::CalendarUser)
-  | ChangeDetails(request) => C::edit(c, request.details, C::CalendarUser)
+  | ChangeDetails(request) => C::edit(c, C::formDetails(c.draft, request.details), C::CalendarUser)
   | CancelEditing => C::cancelEdit(c, C::CalendarUser)
   | ApproveEntry(request) => C::approveSave(c, request.revision, C::CalendarUser)
   | EntryStored(report) => if (report.succeeded) C::save(c, report.revision, true, C::CalendarStore)
@@ -267,6 +274,7 @@ pure def ownedEntryResult(v: CalendarView, c: C::Calendar, command: OccurrenceAc
 pure def freshEntryAllowed(v: CalendarView, entry: EntrySeed): bool =
   v.deletion == NoDeletion and not(hasEditing(v)) and
   C::canCreate(C::initial, entry.identity, C::CalendarUser) and
+  not(entry.details.important) and entry.details.endAt > entry.details.startAt and
   entry.identity.owner == v.owner and entry.identity.calendarId == v.calendarId and
   not(v.cancelledIds.contains(entry.identity.occurrenceId)) and
   v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
@@ -543,8 +551,11 @@ expanded or the tablet sleeps. On any other screen it arrives as the toast
 Calendar on that exact occurrence's detail (`Grace Prototype.html:2228`). It is
 refused while a form is being edited or a deletion is being stored, so it never
 discards an edit. It leaves the reminder shown; Dismiss on the banner, toast or
-detail dismisses it. The detail is the ordinary one, so Back returns to the
-calendar.
+detail dismisses it. This deliberately departs from the prototype, whose See
+details also clears the banner (`X.banner=null`, `Grace Prototype.html:2228`):
+the story asks that opening the event not dismiss its reminder, so the banner is
+back on Home until the person dismisses it. The detail is the ordinary one, so
+Back returns to the calendar.
 
 ```quint
 pure def shownReminders(v: CalendarView): List[C::Calendar] = v.entries.select(c => c.reminder == C::ReminderShown)

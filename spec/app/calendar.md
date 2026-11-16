@@ -83,7 +83,9 @@ A bill's immutable source reference points to the email/provider evidence, not
 a sample biller. Editing a title or reminder cannot change its payment identity.
 Incomplete drafts remain editable and cannot be saved. The form edits title, day,
 start time, location, repeat and reminder; detail also displays the imported
-participant and notes. Imported fields survive edits. The prototype's hour-long
+participant and notes. `edit` replaces the draft with what it is given; Calendar
+view gives it the form applied by `formDetails` (next rule), so imported fields
+survive edits. The prototype's hour-long
 new appointment is a default; existing duration and real calendar dates are not
 restricted to its sample 21-day picker or half-hour daytime options. Repeat UI
 choices are Never, Every week and Every month. Reminder UI choices are No, Day
@@ -91,7 +93,8 @@ before and 1 hour before, interpreted in the occurrence timezone. An entry
 marked important by its source, such as the clinic appointment that came from
 the clinic's email, draws the red bar, red month label and red Home day label
 (`Grace Prototype.html:1800,1876,1895,1908`). The form has no control for it,
-so a new entry is not important and an edit keeps the imported mark.
+so Calendar view refuses a new entry marked important and `formDetails` keeps
+the draft's mark on every edit.
 
 ```quint
 pure def canCreate(c: Calendar, identity: EntryIdentity, by: CalendarActor): bool =
@@ -113,21 +116,34 @@ pure def cancelEdit(c: Calendar, by: CalendarActor): Calendar =
 
 ### Changing the start keeps the event's length
 
-The form has a start time and no end time; it shows "start to end" from the
-draft (`Grace Prototype.html:1926`). Choosing another day or time moves the
-whole event, so its end follows its start by the committed duration. The
-prototype instead sets the end to one hour after the start on every save
-(`Grace Prototype.html:2171`), which silently shortens the 90-minute "Lunch with
-Susan"; the model keeps the duration. Only a new appointment uses the one-hour
-default length.
+The form has a start time and no end time. Choosing another day or time moves
+the whole event: `formDetails` takes the form's start and keeps the draft's
+length, so the end follows the start by that duration. The form shows "start to
+end" from the draft. This deliberately departs from the prototype, whose form
+always shows the start to one hour later (`Grace Prototype.html:1926`) and sets
+the end to one hour after the start on every save (`Grace Prototype.html:2171`),
+which silently shortens the 90-minute "Lunch with Susan"
+(`Grace Prototype.html:1801`); the model keeps the duration. Only a new
+appointment's seed carries the one-hour default length. `formDetails` takes the
+title, location, repeat (with its series ID) and reminder from the form; the
+fields it has no control for, the participant, notes, important mark, timezone
+and all-day flag, stay as they are in the draft.
 
 ```quint
 pure def withStart(details: EntryDetails, startAt: int): EntryDetails =
   { ...details, startAt: startAt, endAt: startAt + (details.endAt - details.startAt) }
+pure def formDetails(draft: EntryDetails, form: EntryDetails): EntryDetails =
+  { ...withStart(draft, form.startAt), title: form.title, location: form.location, seriesId: form.seriesId,
+    recurrence: form.recurrence, reminderEnabled: form.reminderEnabled, leadTime: form.leadTime }
 pure def lawChangingStartKeepsDuration(details: EntryDetails, startAt: int): bool =
   val shifted = withStart(details, startAt)
   shifted.startAt == startAt and shifted.endAt - shifted.startAt == details.endAt - details.startAt and
     (validDetails(details) implies validDetails(shifted))
+pure def lawFormKeepsLengthAndImportedFields(draft: EntryDetails, form: EntryDetails): bool =
+  val applied = formDetails(draft, form)
+  applied.startAt == form.startAt and applied.endAt - applied.startAt == draft.endAt - draft.startAt and
+    applied.participant == draft.participant and applied.notes == draft.notes and
+    applied.important == draft.important and applied.timezone == draft.timezone and applied.allDay == draft.allDay
 ```
 
 ### Saving requires the current complete draft and explicit confirmation
@@ -343,6 +359,8 @@ pure val repeatingDetails: EntryDetails = {
 }
 pure val identityValues = Set(noIdentity, appointmentIdentity, billIdentity)
 pure val detailsValues = Set(noDetails, timedDetails, repeatingDetails, { ...timedDetails, recurrence: Weekly, seriesId: "weeklySeries" })
+pure val draftValues = detailsValues
+pure val formValues = detailsValues
 pure val nextIdValues = Set("", "periodA", "periodB")
 pure val nextBillRefValues = Set("", "billA", "billB")
 pure val nextSourceRefValues = Set("", "messageA", "messageB")
