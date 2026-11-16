@@ -100,12 +100,6 @@ page and her question naming the steps done and not done ("You closed me
 while I was … Shall I carry on?") stay in view. Any other reopening is
 expanded. Reopening never resumes.
 
-Grace's own page effects need the compact window: expanded Grace covers the
-page, so the workspace never observes, fills or submits on it while Grace is
-expanded. When work is needed while expanded, Grace first asks "Would you like
-to watch me do it?" and collapses before acting (prototype 1518, 1596–1599,
-1371, 1740).
-
 ```quint
 pure def canOpen(a: Assistant, by: C::ConversationActor): bool = by == C::ConversationUser and not(isVisible(a))
 pure def open(a: Assistant, by: C::ConversationActor): Assistant =
@@ -113,7 +107,9 @@ pure def open(a: Assistant, by: C::ConversationActor): Assistant =
 pure def canResize(a: Assistant, expanded: bool, by: C::ConversationActor): bool =
   by == C::ConversationUser and isVisible(a)
 pure def resize(a: Assistant, expanded: bool, by: C::ConversationActor): Assistant =
-  { ...a, presentation: if (expanded) Expanded else Compact }
+  val sized = { ...a, presentation: if (expanded) Expanded else Compact }
+  if (expanded and (a.activity == DoingWork or a.activity == WebsiteWait))
+    { ...sized, activity: Rechecking, operation: "", workVersion: a.workVersion + 1 } else sized
 pure def canShowChat(a: Assistant, by: C::ConversationActor): bool =
   by == C::ConversationUser and isVisible(a) and a.keyboard == WebsiteKeyboard
 pure def showChat(a: Assistant, by: C::ConversationActor): Assistant =
@@ -203,7 +199,7 @@ authorize a browser action themselves.
 
 ```quint
 pure def canStartStep(a: Assistant, task: str, version: int, operation: str, by: C::ConversationActor): bool =
-  by == C::ConversationRuntime and isVisible(a) and a.activity == ReadyForStep and
+  by == C::ConversationRuntime and a.presentation == Compact and a.activity == ReadyForStep and
   task == a.taskId and version == a.workVersion and operation != "" and a.replacementId == ""
 pure def startStep(a: Assistant, task: str, version: int, operation: str, by: C::ConversationActor): Assistant =
   { ...a, activity: DoingWork, operation: operation }
@@ -221,6 +217,32 @@ pure def canContinueTask(a: Assistant, by: C::ConversationActor): bool =
   by == C::ConversationUser and isVisible(a) and a.activity == UserWait
 pure def continueTask(a: Assistant, by: C::ConversationActor): Assistant =
   { ...a, activity: Rechecking, workVersion: a.workVersion + 1 }
+```
+
+### Grace works on the page only while it is in view
+
+Expanded Grace covers the page, which is then paused and not drawn, so her own
+steps run only in the compact window: a step starts only there, and expanding
+Grace while she works fences that step and its operation, so it is rechecked
+like any other window change and goes on only once she is compact again. When a step is needed while she is expanded, Grace first asks
+"Would you like to watch me do it?" with the chips "Yes, show me" and "No, go
+ahead" (prototype 1518, 1596–1599), and her first step makes her window
+smaller, on the person's screen, as the prototype's does (1371). The person's
+own Collapse also answers the question (1740). This spec departs from the
+prototype on "No, go ahead": there Grace works behind her expanded window; here
+she makes it smaller either way, because she never acts on a page that is not
+running.
+
+```quint
+pure def canCollapseForWork(a: Assistant, task: str, version: int, by: C::ConversationActor): bool =
+  by == C::ConversationRuntime and a.presentation == Expanded and a.activity == ReadyForStep and
+  task == a.taskId and version == a.workVersion and a.replacementId == ""
+pure def collapseForWork(a: Assistant, task: str, version: int, by: C::ConversationActor): Assistant =
+  { ...a, presentation: Compact }
+pure def alwaysGraceWorksOnlyOnTheVisiblePage(a: Assistant): bool =
+  (a.activity == DoingWork or a.activity == WebsiteWait) implies a.presentation == Compact
+pure def sometimesCollapsedForWork(a: Assistant): bool =
+  a.presentation == Compact and a.activity == ReadyForStep and a.taskId != ""
 ```
 
 ### Completion is a verified domain endpoint, never Close, silence or a click
@@ -261,10 +283,11 @@ A delayed target report cannot undo a newer publication, dismissal or invalidati
 Guidance has a kind (prototype 1138–1154): Look rings a fact to look at,
 with no label; Tap labels the control the person should use next; Done is the
 green check. Green means done: Done is published only for a task that finished
-with a verified completed outcome (prototype 1485, 1519; RESP 05). The
-workspace may also allow it for a verified positive payment result. Grace's
-own working marker comes from her activity, never from guidance. The host's
-report carries its kind; `publishGuidance` publishes the label of a Tap.
+with a verified completed outcome (prototype 1485, 1519; RESP 05), so a
+scheduled payment turns green only once its task has finished with that
+verified result. Grace's own working marker comes from her activity, never
+from guidance. The host names the kind beside its report (`publishGuidanceAs`);
+`publishGuidance` publishes the label of a Tap.
 
 ```quint
 pure def guidanceInstruction(a: Assistant): str =

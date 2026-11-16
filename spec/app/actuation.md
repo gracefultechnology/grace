@@ -69,19 +69,24 @@ pure def lawPaymentConsumptionUsesDurableAttempt(w: WS::Workspace, pendingEffect
 ### Finite examples include current commands and requests fenced by Stop
 
 Examples derive effects through each owning Workspace transition. They include
-both browser routes and Stop after emission. The same checks apply to arbitrary
-verified sites, values and versions.
+both browser routes and Stop after emission. Grace is made compact before the
+task begins, since her steps run only while the page is in view
+([assistant](./assistant.md)). The same checks apply to arbitrary verified
+sites, values and versions.
 
 ```quint
 import shell as S from "./shell"
 import browser as B from "./browser"
 import conversation as C from "./conversation"
 import wake as W from "./wake"
+import preferences as R from "./preferences"
+import interaction as I from "./interaction"
 
 pure def observedSample(starting: WS::Workspace): WS::Workspace = {
   val ready = WS::changeLifecycle(starting, WS::StartupSucceeded, WS::Host)
   val online = WS::setAvailability(ready, { connection: S::Online, reasoning: true, microphone: true, observation: true }, WS::Host)
-  val opened = WS::openGrace(WS::visit(online, S::Browser, WS::Person), WS::Person)
+  val opened = WS::interact(WS::openGrace(WS::visit(online, S::Browser, WS::Person), WS::Person),
+    I::Resize({ expanded: false }), WS::Person)
   val task = WS::begin(opened, { owner: "owner", task: "task", goal: "Read the account", origin: P::exampleKey.origin }, WS::Person)
   val page = WS::receiveLoad(task, { id: 1, version: 1, result: B::Loaded }, WS::Host)
   WS::observe(page, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation,
