@@ -35,7 +35,7 @@ type Files = {
   owner: str, opened: bool, loaded: bool, entries: List[SavedFile], tab: FileTab,
   selected: str, contentReady: bool, generation: int, pending: FileOperation,
   pendingId: str, pendingFiles: List[SavedFile], pendingPrint: SavedFile, feedback: FileFeedback,
-  query: str, matches: List[str]
+  query: str, matches: List[str], page: int
 }
 type FileEffect = LoadLibrary({ owner: str, generation: int }) |
   SearchFiles({ owner: str, generation: int, query: str }) |
@@ -56,7 +56,7 @@ pure val noPhotoCursor: PhotoCursor = { at: 0, found: -1 }
 pure val emptyFile: SavedFile = { id: "", kind: Photo, name: "", origin: "", account: "", container: "", sourceRef: "", contentRef: "", group: "", savedAt: 0, pages: 0 }
 pure val initial: Files = { owner: "", opened: false, loaded: false, entries: List(), tab: Photos,
   selected: "", contentReady: false, generation: 0, pending: NoFileOperation, pendingId: "",
-  pendingFiles: List(), pendingPrint: emptyFile, feedback: NoFileFeedback, query: "", matches: List() }
+  pendingFiles: List(), pendingPrint: emptyFile, feedback: NoFileFeedback, query: "", matches: List(), page: 0 }
 pure def validFile(file: SavedFile): bool =
   file.id != "" and file.name != "" and file.origin != "" and file.account != "" and file.container != "" and
   file.sourceRef != "" and file.contentRef != "" and file.savedAt >= 0 and
@@ -99,7 +99,7 @@ pure def canOpenFiles(f: Files, owner: str, by: FileActor): bool =
   by == FileUser and owner != "" and (f.owner == "" or owner == f.owner) and
   (f.pending == NoFileOperation or (f.loaded and (f.pending == SavingFiles or f.pending == DeletingPhoto or f.pending == Printing)))
 pure def openFiles(f: Files, owner: str, by: FileActor): FilesResult = {
-  state: { ...f, owner: owner, opened: true, selected: "", contentReady: false,
+  state: { ...f, owner: owner, opened: true, selected: "", contentReady: false, page: 0,
     pending: if (f.loaded) f.pending else ReadingCatalog, generation: if (f.loaded) f.generation else f.generation + 1,
     feedback: if (f.pending == NoFileOperation) NoFileFeedback else f.feedback, query: "", matches: List() },
   out: if (f.loaded) List() else List(LoadLibrary({ owner: owner, generation: f.generation + 1 }))
@@ -108,16 +108,18 @@ pure def canLoadForSave(f: Files, owner: str, by: FileActor): bool =
   by == FileHost and owner != "" and (f.owner == "" or owner == f.owner) and not(f.loaded) and f.pending == NoFileOperation
 pure def loadForSave(f: Files, owner: str, by: FileActor): FilesResult = {
   state: { ...f, owner: owner, pending: ReadingCatalog, generation: f.generation + 1, feedback: NoFileFeedback,
-    selected: "", contentReady: false, query: "", matches: List() },
+    selected: "", contentReady: false, page: 0, query: "", matches: List() },
   out: List(LoadLibrary({ owner: owner, generation: f.generation + 1 }))
 }
 pure def canLoadCatalog(f: Files, catalogReport: CatalogReport, by: FileActor): bool =
   by == FileStore and f.pending == ReadingCatalog and catalogReport.owner == f.owner and
   catalogReport.generation == f.generation and
   (catalogReport.succeeded implies catalogReport.evidence != "" and validCatalog(catalogReport.entries))
-pure def loadCatalog(f: Files, catalogReport: CatalogReport, by: FileActor): Files =
-  { ...f, loaded: catalogReport.succeeded, entries: if (catalogReport.succeeded) catalogReport.entries else List(),
-    pending: NoFileOperation, feedback: if (catalogReport.succeeded) NoFileFeedback else CatalogFailed }
+pure def loadCatalog(f: Files, catalogReport: CatalogReport, by: FileActor): FilesResult =
+  val locating = catalogReport.succeeded and f.opened and f.query != ""
+  { state: { ...f, loaded: catalogReport.succeeded, entries: if (catalogReport.succeeded) catalogReport.entries else List(),
+      pending: if (locating) Locating else NoFileOperation, feedback: if (catalogReport.succeeded) NoFileFeedback else CatalogFailed },
+    out: if (locating) List(SearchFiles({ owner: f.owner, generation: f.generation, query: f.query })) else List() }
 pure def canChooseTab(f: Files, tab: FileTab, by: FileActor): bool =
   by == FileUser and f.opened and f.loaded and f.selected == "" and
   (f.pending == NoFileOperation or f.pending == Locating)
@@ -133,8 +135,12 @@ pure def sometimesCatalogFailure(f: Files): bool = f.feedback == CatalogFailed
 The grid and document rows select stable IDs, never array positions retained
 across a save or delete. Opening preserves the source file. Photo preview has
 Previous and Next at actual bounds; document preview identifies its filename and
-page count. The prototype draws only page one and supplies no page-navigation
-controls. Corrupt, missing or unsupported content gives a visible failure and
+shows "Page n of N" for the page on screen, as the prototype does
+(`prototype/Grace Prototype.html`, lines 1944 and 1986). The prototype draws
+only page one of documents such as its four-page "Medicare summary.pdf" (line
+1980); here every page is reachable. A document opens at page 1, and the person
+moves to the previous or next page within 1 to its page count. A photo has no
+page. Corrupt, missing or unsupported content gives a visible failure and
 Back/Retry. The content renderer must sandbox active content and must not execute
 instructions embedded in a file or upload it merely because it was opened.
 
@@ -142,7 +148,7 @@ instructions embedded in a file or upload it merely because it was opened.
 pure def canOpenFile(f: Files, id: str, by: FileActor): bool =
   by == FileUser and f.opened and f.loaded and f.pending == NoFileOperation and hasFile(f, id)
 pure def openFile(f: Files, id: str, by: FileActor): FilesResult = {
-  state: { ...f, selected: id, tab: tabFor(fileAt(f, id)), contentReady: false,
+  state: { ...f, selected: id, tab: tabFor(fileAt(f, id)), contentReady: false, page: if (fileAt(f, id).kind == Pdf) 1 else 0,
     pending: ReadingFile, pendingId: id, generation: f.generation + 1, feedback: NoFileFeedback },
   out: List(ReadFile({ owner: f.owner, generation: f.generation + 1, file: fileAt(f, id) }))
 }
@@ -164,7 +170,15 @@ pure def movePhoto(f: Files, direction: int, by: FileActor): FilesResult =
 pure def canBackToFiles(f: Files, by: FileActor): bool =
   by == FileUser and f.opened and f.selected != "" and (f.pending == NoFileOperation or f.pending == ReadingFile)
 pure def backToFiles(f: Files, by: FileActor): Files =
-  { ...f, selected: "", contentReady: false, pending: NoFileOperation, pendingId: "", generation: f.generation + 1, feedback: NoFileFeedback }
+  { ...f, selected: "", contentReady: false, page: 0, pending: NoFileOperation, pendingId: "", generation: f.generation + 1, feedback: NoFileFeedback }
+pure def canMovePage(f: Files, direction: int, by: FileActor): bool =
+  by == FileUser and f.opened and f.contentReady and f.pending == NoFileOperation and f.selected != "" and
+  fileAt(f, f.selected).kind == Pdf and (direction == -1 or direction == 1) and
+  f.page + direction >= 1 and f.page + direction <= fileAt(f, f.selected).pages
+pure def movePage(f: Files, direction: int, by: FileActor): Files = { ...f, page: f.page + direction }
+pure def alwaysPageInBounds(f: Files): bool =
+  if (f.selected != "" and fileAt(f, f.selected).kind == Pdf) f.page >= 1 and f.page <= fileAt(f, f.selected).pages
+  else f.page == 0
 pure def alwaysPendingFileExists(f: Files): bool =
   ((f.pending == ReadingFile or f.pending == DeletingPhoto) implies
     f.loaded and hasFile(f, f.pendingId)) and
@@ -176,6 +190,7 @@ pure def alwaysPendingFileExists(f: Files): bool =
 pure def sometimesPhotoOpened(f: Files): bool = f.contentReady and fileAt(f, f.selected).kind == Photo
 pure def sometimesDocumentOpened(f: Files): bool = f.contentReady and fileAt(f, f.selected).kind == Pdf
 pure def sometimesContentFailure(f: Files): bool = f.feedback == ContentFailed
+pure def sometimesLaterPage(f: Files): bool = f.contentReady and f.page > 1
 ```
 
 ### Find help distinguishes one match, multiple matches and no match
@@ -190,20 +205,31 @@ old request; Close cancels it. A result must match the owner, generation and
 exact requested query, so stale retrieval cannot reopen Files or replace the
 current answer.
 
+Grace's find opens Files from any screen (prototype lines 2109 and 2143–2146),
+so it does not need Files to have been opened first. When the library has not
+been loaded yet, before its first opening or after a restart, the find opens
+Files, keeps the query and reads the catalog for the owner who asked. A
+successful load for that same request generation then starts the search with
+the kept query; a failed load shows the catalog failure with Retry and searches
+nothing.
+
 ```quint
-pure def canFindFiles(f: Files, query: str, by: FileActor): bool =
-  by == FileUser and f.loaded and (f.pending == NoFileOperation or f.pending == Locating) and query != ""
-pure def findFiles(f: Files, query: str, by: FileActor): FilesResult = {
-  state: { ...f, opened: true, selected: "", contentReady: false, pending: Locating,
+pure def canFindFiles(f: Files, owner: str, query: str, by: FileActor): bool =
+  by == FileUser and owner != "" and (f.owner == "" or owner == f.owner) and query != "" and
+  (if (f.loaded) f.pending == NoFileOperation or f.pending == Locating else f.pending == NoFileOperation)
+pure def findFiles(f: Files, owner: str, query: str, by: FileActor): FilesResult = {
+  state: { ...f, owner: owner, opened: true, selected: "", contentReady: false, page: 0,
+    pending: if (f.loaded) Locating else ReadingCatalog,
     query: query, matches: List(), generation: f.generation + 1, feedback: NoFileFeedback },
-  out: List(SearchFiles({ owner: f.owner, generation: f.generation + 1, query: query }))
+  out: List(if (f.loaded) SearchFiles({ owner: owner, generation: f.generation + 1, query: query })
+    else LoadLibrary({ owner: owner, generation: f.generation + 1 }))
 }
 pure def canLocate(f: Files, locateReport: LocateReport, by: FileActor): bool =
   by == FileHost and f.loaded and f.opened and f.pending == Locating and locateReport.owner == f.owner and
   locateReport.generation == f.generation and locateReport.query == f.query and
   locateReport.ids.every(id => hasFile(f, id) and locateReport.ids.select(other => other == id).length() == 1)
 pure def locate(f: Files, locateReport: LocateReport, by: FileActor): Files =
-  { ...f, pending: NoFileOperation, selected: "", contentReady: false, matches: locateReport.ids,
+  { ...f, pending: NoFileOperation, selected: "", contentReady: false, page: 0, matches: locateReport.ids,
     tab: if (locateReport.ids.length() == 1) tabFor(fileAt(f, locateReport.ids.nthOr(0, ""))) else f.tab,
     feedback: if (locateReport.ids.length() == 0) NothingFound else if (locateReport.ids.length() > 1) SeveralMatches else NoFileFeedback }
 pure def highlightedFile(f: Files): str = if (f.matches.length() == 1) f.matches.nthOr(0, "") else ""
@@ -212,6 +238,17 @@ pure def alwaysMatchesExist(f: Files): bool = f.matches.every(id => hasFile(f, i
   (f.pending == Locating implies f.opened and f.loaded)
 pure def sometimesSeveralMatches(f: Files): bool = f.feedback == SeveralMatches
 pure def sometimesNothingFound(f: Files): bool = f.feedback == NothingFound
+```
+
+### Asking Grace to find a file works before Files was ever opened
+
+The first request a fresh library makes carries generation 1, so a single
+highlighted match at generation 1 was found by a find that began with the
+library unloaded.
+
+```quint
+pure def sometimesFindWaitsForLibrary(f: Files): bool = f.pending == ReadingCatalog and f.query != ""
+pure def sometimesFoundBeforeLibraryOpened(f: Files): bool = highlightedFile(f) != "" and f.generation == 1
 ```
 
 ## Story: Save, share, print and remove the chosen file
@@ -256,6 +293,7 @@ pure def writeResult(f: Files, fileReceipt: FileReceipt, by: FileActor): Files =
   val deleting = f.pending == DeletingPhoto and fileReceipt.succeeded
   { ...f, entries: if (not(fileReceipt.succeeded)) f.entries else if (deleting) f.entries.select(e => e.id != f.pendingId) else mergeFiles(f.entries, f.pendingFiles),
     selected: if (deleting) "" else f.selected, contentReady: if (deleting) false else f.contentReady,
+    page: if (deleting) 0 else f.page,
     pending: NoFileOperation, pendingId: "", pendingFiles: List(), query: "", matches: List(),
     feedback: if (not(fileReceipt.succeeded)) WriteFailed else if (deleting) PhotoDeleted else FilesSaved }
 pure def alwaysPendingImportValid(f: Files): bool =
@@ -266,6 +304,41 @@ pure def stepFailedWriteKeepsLibrary(before: Files, via: str, after: Files): boo
 pure def sometimesSavedFiles(f: Files): bool = f.feedback == FilesSaved
 pure def sometimesDeletedPhoto(f: Files): bool = f.feedback == PhotoDeleted
 pure def sometimesWriteFailure(f: Files): bool = f.feedback == WriteFailed
+```
+
+### A photo taken or a file chosen on the device has its own local source identity
+
+Email's Attach menu offers Take a photo, Choose from Photos and Choose a file
+(`prototype/Grace Prototype.html`, line 1957). Choose from Photos attaches a
+saved Files entry with the identity it already has. A new camera photo or a
+file from the system picker has no mailbox source, so its source is the device:
+origin `device`, the owner's account, the capture or picker session as its
+container, and the capture or picked item's ID as both its source reference and
+its stable local ID. Its content reference names the captured bytes. Such a
+capture goes into the draft only, as in the prototype (line 2202): it is not
+added to Files. Saving it later is the ordinary Save of a sent or received
+attachment.
+
+```quint
+type DeviceCapture = {
+  owner: str, session: str, captureId: str, contentRef: str, name: str, kind: FileKind, takenAt: int, pages: int
+}
+pure val deviceOrigin: str = "device"
+pure def captureFile(capture: DeviceCapture): SavedFile = {
+  id: capture.captureId, kind: capture.kind, name: capture.name, origin: deviceOrigin, account: capture.owner,
+  container: capture.session, sourceRef: capture.captureId, contentRef: capture.contentRef, group: "",
+  savedAt: capture.takenAt, pages: capture.pages
+}
+pure def lawCaptureHasDeviceIdentity(capture: DeviceCapture): bool =
+  val file = captureFile(capture)
+  (capture.owner != "" and capture.session != "" and capture.captureId != "" and capture.contentRef != "" and
+    capture.name != "" and capture.takenAt >= 0 and (if (capture.kind == Pdf) capture.pages > 0 else capture.pages == 0)) implies
+    (validFile(file) and file.origin == deviceOrigin and file.account == capture.owner and
+      file.container == capture.session and file.sourceRef == capture.captureId)
+pure val captureValues = Set(
+  { owner: "owner", session: "camera-session", captureId: "capture", contentRef: "blob-capture", name: "Photo.jpg", kind: Photo, takenAt: 1, pages: 0 },
+  { owner: "owner", session: "picker-session", captureId: "picked", contentRef: "blob-picked", name: "Program.pdf", kind: Pdf, takenAt: 1, pages: 3 },
+  { owner: "owner", session: "picker-session", captureId: "", contentRef: "blob-picked", name: "Program.pdf", kind: Pdf, takenAt: 1, pages: 0 })
 ```
 
 ### Delete is the explicit local action and does not delete its source email
@@ -295,7 +368,7 @@ pure def canSharePhoto(f: Files, id: str, generation: int, by: FileActor): bool 
   by == FileUser and f.opened and f.contentReady and f.pending == NoFileOperation and
   id == f.selected and generation == f.generation and fileAt(f, f.selected).kind == Photo
 pure def sharePhoto(f: Files, id: str, generation: int, by: FileActor): FilesResult = {
-  state: { ...f, selected: "", contentReady: false },
+  state: { ...f, selected: "", contentReady: false, page: 0 },
   out: List(SharePhoto({ owner: f.owner, file: fileAt(f, f.selected) }))
 }
 ```
@@ -356,13 +429,25 @@ restart. Printing again after restart requires another explicit user action.
 pure def canCloseFiles(f: Files, by: FileActor): bool = by == FileUser and f.opened
 pure def closeFiles(f: Files, by: FileActor): Files =
   val reading = f.pending == ReadingCatalog or f.pending == ReadingFile or f.pending == Locating
-  { ...f, opened: false, selected: "", contentReady: false,
+  { ...f, opened: false, selected: "", contentReady: false, page: 0,
     pending: if (reading) NoFileOperation else f.pending, pendingId: if (reading) "" else f.pendingId,
     generation: if (reading) f.generation + 1 else f.generation }
 pure def canRestartFiles(f: Files, by: FileActor): bool = by == FileHost and f.owner != ""
 pure def restartFiles(f: Files, by: FileActor): Files =
   { ...initial, owner: f.owner, tab: f.tab, generation: f.generation + 1 }
 pure def stepOwnerDoesNotChange(before: Files, after: Files): bool = before.owner != "" implies after.owner == before.owner
+```
+
+### A surface that hands a library on keeps every library rule
+
+Email and the handoffs between apps change a library only through these
+operations, and check the library they return against all of its rules at once.
+
+```quint
+pure def validFiles(f: Files): bool =
+  alwaysLibraryIdentity(f) and alwaysCatalogValid(f) and alwaysCatalogLoadHasNoStaleView(f) and
+  alwaysSelectionExists(f) and alwaysPageInBounds(f) and alwaysPendingFileExists(f) and
+  alwaysMatchesExist(f) and alwaysPendingImportValid(f)
 ```
 
 ### Local save, preview, recovery and handoff paths have representative inputs
