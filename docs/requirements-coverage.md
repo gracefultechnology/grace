@@ -81,7 +81,7 @@ ordinary reload/navigation and manual pauses retain their checkpoint continuity;
 restart retains canonical payment evidence and uncertainty, not the executable
 assistance session.
 
-The latest PRD still defers a companion app, caregiver delegation, password/payment vault, automatic OTP retrieval, multiuser cloud sync, app-store/arbitrary-app control, parallel assistance tasks and broad workflow building. Its wake-word exclusion holds for the MVP because no model runs on the device; continuous cloud recording is not implied. OTA and subscription payment models are infrastructure for later implementation, not part of personal bill payment. A full onboarding suite and multilingual/specialist certification are not inferred from the older vision. Basic readable text, pace/volume controls, approved preferences, manual credentials and email connection remain required.
+The latest PRD still defers a companion app, caregiver delegation, password/payment vault, automatic OTP retrieval, multiuser cloud sync, app-store/arbitrary-app control, parallel assistance tasks and broad workflow building. Its wake-word exclusion holds for the MVP because no model runs on the device; continuous cloud recording is not implied. OTA and subscription payment models are infrastructure for later implementation, not part of personal bill payment. Set-up is in scope under the owner's directions (DIR 05); multilingual/specialist certification is not inferred from the older vision. Basic readable text, pace/volume controls, approved preferences, manual credentials and email connection remain required.
 
 ## State ownership and minimality
 
