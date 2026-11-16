@@ -362,7 +362,8 @@ pure val reportValues = Set(exampleReport,
 The ring and label never show while Grace is expanded, since she then covers
 the page, or while the person types to her; they step aside while Grace thinks
 or speaks, and while she works on the page only her own working marker shows
-(prototype 1129–1132). The workspace shows guidance only where this allows it.
+(prototype 1129–1132). `guidanceMayShow` is that condition, for the view that
+draws the ring and label to require.
 
 ```quint
 pure def guidanceMayShow(a: Assistant): bool =

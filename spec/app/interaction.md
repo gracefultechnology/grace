@@ -99,8 +99,8 @@ keyboard ownership alter the observed browser geometry. Draft editing and
 reading alone do not submit a new request. Type must preserve an already
 submitted response while muting it; stopping voice is distinct from stopping
 the entire website task. Whether a reply is spoken follows the person's voice
-output setting, never the host's word: the workspace sets it on Respond and
-Repeat through `withAudible`.
+output setting, never the host's word: `withAudible` puts that setting into a
+Respond or Repeat before it is applied.
 
 ```quint
 pure def needsCurrentGuidance(input: Interaction): bool = match input {
