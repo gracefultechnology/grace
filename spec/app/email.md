@@ -982,7 +982,7 @@ pure val listingValues = Set(
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::DraftsFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::TrashFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false, answered: false }, revision: 0, evidence: "providerMetadata" },
-folder: I::InboxFolder, unread: false, answered: true }, revision: 0, evidence: "providerMetadata" },
+  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false, answered: true }, revision: 0, evidence: "providerMetadata" },
   { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "draftA" }, folder: I::DraftsFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" })
 pure val targetValues = Set({ ref: "messageA", revision: 0 }, { ref: "messageA", revision: 1 },
   { ref: "messageA", revision: 2 }, { ref: "messageA", revision: 3 }, { ref: "missing", revision: 0 })
