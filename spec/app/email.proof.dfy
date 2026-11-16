@@ -449,7 +449,7 @@ lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_C
 
 lemma EmailRegistryView(m: Mailbox, ref: string, record: app__emailItem_MessageRecord)
   ensures alwaysMessageRegistry(m) == (forall entry :: entry in m.messages ==>
-    entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && validMessageRecord(entry) &&
+    entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && app__emailItem_validMessageRecord(entry) &&
     |ProofLib.Filter((other: app__emailItem_MessageRecord) => (other.identity.ref == entry.identity.ref), m.messages)| == 1)
   ensures messageRecord(m, ref) == (if |ProofLib.Filter((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages)| == 1 then
     ProofLib.Filter((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages)[0] else app__emailItem_initial)
@@ -477,7 +477,7 @@ lemma EmailRegistryDistinct(m: Mailbox)
 lemma EmailRegistryFromDistinct(m: Mailbox)
   requires ProofLib.DistinctBy(m.messages, (record: app__emailItem_MessageRecord) => record.identity.ref)
   requires forall entry :: entry in m.messages ==>
-    (entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && validMessageRecord(entry))
+    (entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && app__emailItem_validMessageRecord(entry))
   ensures alwaysMessageRegistry(m)
 {
   EmailRegistryView(m, "", app__emailItem_initial);
@@ -509,7 +509,7 @@ lemma EmailLookupFacts(m: Mailbox, ref: string)
   ensures hasMessage(m, ref) == messageRecord(m, ref).loaded
   ensures hasMessage(m, ref) ==> messageRecord(m, ref) in m.messages && messageRecord(m, ref).identity == messageIdentity(m, ref)
   ensures !hasMessage(m, ref) ==> messageRecord(m, ref) == app__emailItem_initial
-  ensures validMessageRecord(messageRecord(m, ref))
+  ensures app__emailItem_validMessageRecord(messageRecord(m, ref))
 {
   EmailRegistryView(m, ref, app__emailItem_initial);
   if hasMessage(m, ref) {
@@ -522,7 +522,7 @@ lemma EmailLookupFacts(m: Mailbox, ref: string)
 
 lemma EmailPutRecord(m: Mailbox, record: app__emailItem_MessageRecord)
   requires alwaysMessageRegistry(m)
-  requires record.loaded && validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
+  requires record.loaded && app__emailItem_validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
   ensures alwaysMessageRegistry(m.(messages := putMessage(m.messages, record)))
   ensures messageRecord(m.(messages := putMessage(m.messages, record)), record.identity.ref) == record
   ensures forall ref :: ref != record.identity.ref ==>
@@ -560,7 +560,7 @@ lemma EmailPutRecord(m: Mailbox, record: app__emailItem_MessageRecord)
 
 lemma EmailPutKeepsHistory(m: Mailbox, record: app__emailItem_MessageRecord)
   requires alwaysMessageRegistry(m)
-  requires record.loaded && validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
+  requires record.loaded && app__emailItem_validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
   requires hasMessage(m, record.identity.ref) ==>
     (record.revision >= messageRecord(m, record.identity.ref).revision &&
       (messageRecord(m, record.identity.ref).folder.PurgedFolder? ==> record.folder.PurgedFolder?))
@@ -740,7 +740,7 @@ lemma EmailFrame_completeMessageChange(m: Mailbox, messageReceipt: app__emailIte
 
 lemma EmailPutInto(m: Mailbox, record: app__emailItem_MessageRecord, after: Mailbox)
   requires alwaysMessageRegistry(m)
-  requires record.loaded && validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
+  requires record.loaded && app__emailItem_validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
   requires after.messages == putMessage(m.messages, record)
   requires after.owner == m.owner && after.provider == m.provider && after.account == m.account
   requires hasMessage(m, record.identity.ref) ==> (record.revision >= messageRecord(m, record.identity.ref).revision &&
