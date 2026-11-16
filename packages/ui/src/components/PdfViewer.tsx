@@ -52,6 +52,7 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
  * (prototype `mailView()` and `filesView()`, pdf, `.a-pdf`).
  * @model spec/app/email.md, spec/app/files.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function PdfViewer({
   children,

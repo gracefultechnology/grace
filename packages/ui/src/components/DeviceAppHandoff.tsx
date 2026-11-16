@@ -23,6 +23,7 @@ export type DeviceAppHandoffProps = Omit<AppWindowProps, "children"> & {
  * An app Grace hands to the tablet's own, such as Phone or Messages: what it is for, the button that opens it, and what
  * happened. Grace never calls or sends a message herself.
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function DeviceAppHandoff({ text, openLabel, onOpen, busy = false, notice, error, errorHelp, ...props }: DeviceAppHandoffProps) {
   return (

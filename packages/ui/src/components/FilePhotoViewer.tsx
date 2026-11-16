@@ -65,6 +65,7 @@ export type FilePhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "action
  * (prototype `filesView()`, `.a-view`).
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function FilePhotoViewer({
   src,

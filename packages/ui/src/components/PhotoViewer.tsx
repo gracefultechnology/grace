@@ -71,6 +71,7 @@ export type PhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  * (prototype `mailView()`, viewer, `.a-view`); the photo and arrows are the Files viewer's.
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function PhotoViewer({ src, alt, first = false, last = false, onPrevious, onNext, onSave, onForward, status = "ready", onRetry, errorLabel, saveStatus, onRetrySave, statusLabels, labels, ...props }: PhotoViewerProps) {
   const l = { ...viewerLabels, ...labels };

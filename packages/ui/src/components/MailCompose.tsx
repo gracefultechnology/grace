@@ -146,6 +146,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  * next step and Attach beside it (prototype `mailView()`, compose).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailCompose({
   title = "New email",

@@ -91,6 +91,7 @@ export type MailConnectProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
  * the account connected, or what went wrong with the one action that fixes it. Disconnect asks once.
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailConnect({
   state,

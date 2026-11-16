@@ -160,6 +160,7 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
  * next step and Grace's warning above a scam (prototype `mailView()`, read).
  * @model spec/app/emailItem.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailMessageView({
   from,

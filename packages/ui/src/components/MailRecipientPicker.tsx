@@ -25,6 +25,7 @@ export type MailRecipientPickerProps = Omit<AppWindowProps, "icon" | "nav" | "ac
  * Choosing who an email is to: a search and Margaret's people as large tiles (prototype `mailView()`, picker).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailRecipientPicker({
   title = "New email",
