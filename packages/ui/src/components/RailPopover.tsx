@@ -26,7 +26,7 @@ export type RailPopoverProps = Omit<ComponentProps<"div">, "title"> & {
 
 /**
  * A popover opening to the right of a rail button, for Volume or Wi-Fi: a header with the state and ✕, then the
- * controls (children), a note and buttons. Wi-Fi shows spec/app/network.md.
+ * controls (children), a note and buttons. Wi-Fi shows the network state.
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md#glass
  */

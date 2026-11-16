@@ -9,7 +9,7 @@ import { Slider } from "./Slider.tsx";
 export type SettingsBrightnessProps = Omit<ComponentProps<"section">, "onChange"> & {
   /** Screen brightness, `min` to 100. */
   brightness: number;
-  /** The dimmest the screen goes (spec/app/preferences.md: never below 20). */
+  /** The dimmest the screen goes, never below 20. */
   min?: number;
   /** Called with the new brightness: dragged, tapped or stepped by − and +. */
   onBrightnessChange?: (brightness: number) => void;

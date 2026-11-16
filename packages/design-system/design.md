@@ -61,8 +61,9 @@ works, `guide` for "your turn", `ok` when done. A target off screen becomes a gl
 
 Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
 the line of the function that draws it. The prototype draws from today's date; the stories hold it at 8:56 PM on
-Friday, November 13, 2026. Open the story and that line side by side. `Empty`, `Header Mode …` and `Placement …` stories are the bare component and its props (`hdr()` 1885
-follows `X.hdrMode`); "app only" marks a state the prototype does not draw, built in its look.
+Friday, November 13, 2026. Open the story and that line side by side. `Empty`, `Header Mode …` and `Placement …`
+stories are the bare component and its props (`hdr()` 1885 follows `X.hdrMode`); "app only" marks a state the
+prototype does not draw, built in its look.
 
 | Component | Prototype state | Stories |
 | --- | --- | --- |
@@ -89,7 +90,8 @@ The parts below the screens copy these rules and lines of the prototype.
 | --- | --- |
 | `AddressBar` | `.addr` (89) in `.bz-bar` (435), whose `!important` glass outranks `.addr.typing` (273) |
 | `BrowserTab` | `.bz-tw` (82–85) |
-| `CalendarApp` header | `#ahdr .pill.prom` (673), pressed `.pill:not(.prom)` (669–672), disabled (608); `axGuide()` on an `ev` row (2136) |
+| `Button` | `.a-btn` capsule (474); disabled fades its label at full opacity, as `#ahdr [aria-disabled]` does (674) |
+| `CalendarApp` header | `#ahdr .pill.prom` (673), pressed `.pill:not(.prom)` (669–672), disabled keeps its indigo and white words (673–674); saving spinner white on the filled pill (434); `axGuide()` on an `ev` row (2136) |
 | `CalendarDeleteDialog`, `CalendarApp` save error | `.a-caution` (493–494), as `wifiPage()` shows a refusal (2006) |
 | `CalendarEventForm` | `.spdo.sel` (621) over `.apop .spdo` (558, 615) |
 | `CalendarIcon` | `AXP` (1770), drawn by `axi()` (1786) |
@@ -101,12 +103,12 @@ The parts below the screens copy these rules and lines of the prototype.
 | `FilesCard` | `hmFilesInner()` (2283); compact `.home.cmp .lc[data-app="Files"]` (636–637) |
 | `HomeGreeting` | `.hgr`, `.hgr h2`, `.hgr .sub` (320–323); compact (390–392) |
 | `HomeMailRow` | compact `.home.cmp .lc[data-app="Email"] .lpanel span` (394) |
-| `HomeCalendarCard` | compact `.home.cmp .lc[data-app="Calendar"]` (395, 400–401) |
+| `HomeCalendarCard` | `.lc[data-app="Calendar"]` markup (817); compact `.home.cmp .lc[data-app="Calendar"]` (395, 400–401) |
 | `HomePager` | `hmChrome()` (2347); `.harrow`, `#hArrowL` (627–629, 653–655); `.hpager` (630–634, 648) |
-| `HomeScreen` layout | `.home` (230, 318, 647), `.hgrid` (324, 651), compact (393–397), `.home.tight .hgrid` (429), transitions (389, 405–406), swipe (2361) |
-| `InternetCard` | `#netThumb`, compact (399) |
+| `HomeScreen` layout | markup of `.home`, `.hgr` and the `.hgrid` cards (815–817); `.home` (230, 318, 647), `.hgrid` (324, 651), compact (393–397), `.home.tight .hgrid` (429), transitions (389, 405–406), swipe (2361) |
+| `InternetCard` | `#netThumb` in the cards' markup (817), compact (399) |
 | `Keyboard` | `L` (1672): the three layers |
-| `LauncherCard` | `.lc` (325), its title and status (336–337), no live blur (440), `.lc .sheen` (330–331, 441–442) |
+| `LauncherCard` | `.lc` markup (817), `.lc` (325), its title and status (336–337), no live blur (440), `.lc .sheen` (330–331, 441–442) |
 | `MailAttachment` | `.a-att`, `.a-att .ft` (544–545) |
 | `Rail` | `.rail` (52, 305, 652) |
 | `RailPopover` | `.rpop` (506–515), drawn by `drawPop()` (1851) |
