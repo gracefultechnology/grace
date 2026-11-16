@@ -57,6 +57,7 @@ type Account = {
   key: string
   credentialId: string
   code: string
+  expiresAt: string
   acknowledged: boolean
   grantId: string | null
   mail: Mail[]
@@ -64,7 +65,7 @@ type Account = {
   turns: (Turn & { id: number })[]
   changes: { receipt: Receipt; proposal: Proposal }[]
   consents: string[]
-  speech: { sessionId: string; token: string }[]
+  speech: { sessionId: string; token: string; expiresAt: string; opened: boolean }[]
 }
 
 const Uuid = Schema.String.check(Schema.isUUID())
@@ -74,6 +75,8 @@ const ClientId = between(1, 200)
 const Environment = between(1, 50)
 const State = between(1, 256)
 const Verifier = between(43, 128)
+const Proof = between(1, 256)
+const Secret = between(1, 512)
 const DeviceName = between(1, 80)
 const IdToken = between(20, 8192)
 const ChallengeId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/))
@@ -83,7 +86,7 @@ const Instant = Schema.String.check(Schema.makeFilter((s: string) => !Number.isN
 
 schema Steward { clientId: ClientId; challengeId: ChallengeId; idToken: IdToken; codeVerifier: Verifier }
 schema SignIn { clientId: ClientId; environment: Environment; redirectUri: Url; state: State; codeVerifier: Verifier; deviceName?: DeviceName; steward: Steward; serverAuthCode?: ServerAuthCode }
-schema Acknowledgement { clientId: ClientId; environment: Environment; redirectUri: Url; code: string; state: State; codeVerifier: Verifier; credentialId: Uuid; secret: string }
+schema Acknowledgement { clientId: ClientId; environment: Environment; redirectUri: Url; code: Proof; state: State; codeVerifier: Proof; credentialId: Uuid; secret: Secret }
 schema ChatMessage { role: string; content: string }
 schema ChatRequest { messages: ChatMessage[]; stream?: boolean }
 schema Proposal { kind: "trash" | "untrash" | "mark-read"; messageId: string; expectedHistoryId: string }
@@ -96,7 +99,12 @@ schema FeedQuery { timeMin: Instant; timeMax: Instant }
 schema MessageQuery { messageId: string }
 schema SessionQuery { sessionId: string }
 schema SpeechSession { consentNonce: Uuid }
-export schema Recorded { turns: Turn[] }
+schema Recorded { turns: Turn[] }
+schema Credential { credentialId: string; secret: string; code: string }
+schema Acknowledged { status: "acknowledged" }
+schema Delta { content: string }
+schema Choice { delta: Delta }
+schema Chunk { choices: Choice[] }
 
 const Frame = Schema.Union([
   Schema.Struct({ t: Schema.Literal("hello"), token: Schema.String, errorReasons: Schema.optionalKey(Schema.Literal(true)), timings: Schema.optionalKey(Schema.Literal(true)), extend: Schema.optionalKey(Schema.Literal(true)) }),
@@ -113,6 +121,7 @@ error Stale
 error StaleRevision
 error ConsentRequired
 error ProofInvalid
+error SessionClosed
 
 const refusals: Record<string, { status: number; body: object }> = {
   Unauthorized: { status: 401, body: { error: "unauthorized" } },
@@ -120,7 +129,8 @@ const refusals: Record<string, { status: number; body: object }> = {
   Stale: { status: 412, body: { error: "The event changed", code: "precondition_failed" } },
   StaleRevision: { status: 409, body: { error: "Review changed", code: "stale_revision" } },
   ConsentRequired: { status: 403, body: { error: "speech_consent_required" } },
-  ProofInvalid: { status: 401, body: { success: false, error: "credential_proof_invalid", errorDescription: "Mobile credential proof is invalid", retryable: false } }
+  ProofInvalid: { status: 401, body: { success: false, error: "credential_proof_invalid", errorDescription: "Mobile credential proof is invalid", retryable: false } },
+  SessionClosed: { status: 410, body: { error: "session_closed" } }
 }
 
 const invalid = { status: 400, body: { error: "invalid_request" } }
@@ -130,14 +140,15 @@ export const unending = "Keep talking until I stop you."
 export const reply = (said: string) => `I heard you say: ${said} What would you like to do next?`
 const heard = "I would like to pay my power bill."
 
-const expiresAt = "2026-12-31T00:00:00.000Z"
+const lifetimes = { credential: 30 * 24 * 60 * 60, code: 5 * 60, consent: 5 * 60, speech: 60 }
+const firstParty = /^(https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?|(capacitor|capacitor-electron|app|tauri|file|electrobun):\/\/.*)$/i
 const owner = "owner@grace.test"
 const scopes = ["gmail.readonly", "gmail.send", "gmail.modify", "calendar.events"]
 const capabilities = ["google.basic_identity", "google.gmail.triage", "google.gmail.send", "google.gmail.manage", "google.calendar.read", "google.calendar.write"]
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`
 const streaming = (account: Account) => account.turns.some((t) => t.outcome === "streaming")
 
-function seed(n: number, grantId: string | null, site: string): Account {
+function seed(n: number, grantId: string | null, expiresAt: string, site: string): Account {
   const mail = (externalId: string, from: string, fromEmail: string, subject: string, bodyText: string, likelyReplyNeeded: boolean): Mail => ({
     externalId, threadId: externalId, subject, from, fromEmail, replyTo: null, to: [owner], cc: [], snippet: bodyText.slice(0, 80),
     receivedAt: "2026-11-15T09:00:00.000Z", isUnread: true, isImportant: false, likelyReplyNeeded, triageScore: likelyReplyNeeded ? 70 : 40,
@@ -145,7 +156,7 @@ function seed(n: number, grantId: string | null, site: string): Account {
     metadata: { historyId: "100" }, bodyText
   })
   return {
-    key: `fake-key-${uuid(n)}`, credentialId: uuid(n), code: `code-${n}`, acknowledged: false, grantId,
+    key: `fake-key-${uuid(n)}`, credentialId: uuid(n), code: `code-${n}`, expiresAt, acknowledged: false, grantId,
     turns: [], changes: [], consents: [], speech: [],
     mail: [
       mail("bill", "Riverside Power", "billing@riverside-power.test", "Your Riverside Power bill is ready", `Your bill of $84.12 is due on 2 December. Pay it at ${site}/${uuid(n)}/bill/`, false),
@@ -175,8 +186,8 @@ function audio(id: string) {
   return Uint8Array.of(1, id.length, ...Array.from(id, (c) => c.charCodeAt(0)), ...new Uint8Array(320))
 }
 
-effect function now() {
-  return new Date(try Clock.currentTimeMillis).toISOString()
+effect function now(afterSeconds = 0) {
+  return new Date((try Clock.currentTimeMillis) + afterSeconds * 1000).toISOString()
 }
 
 effect function store(site: string) {
@@ -211,11 +222,11 @@ effect function store(site: string) {
   effect function signIn() {
     const body = try HttpServerRequest.schemaBodyJson(SignIn, exact)
     const n = try next()
-    const account = seed(n, body.serverAuthCode === undefined ? null : uuid(try next()), site)
+    const account = seed(n, body.serverAuthCode === undefined ? null : uuid(try next()), try now(lifetimes.credential), site)
     try SubscriptionRef.update(accounts, (all) => new Map(all).set(account.key, account))
     return try HttpServerResponse.json({
-      success: true, status: "signed_in", credentialId: account.credentialId, secret: account.key, tokenType: "Bearer", expiresAt,
-      expiresIn: 2592000, scopes: ["eliza"], acknowledgementRequired: true, acknowledgeBy: expiresAt, code: account.code, accountCreated: true,
+      success: true, status: "signed_in", credentialId: account.credentialId, secret: account.key, tokenType: "Bearer", expiresAt: account.expiresAt,
+      expiresIn: lifetimes.credential, scopes: ["eliza"], acknowledgementRequired: true, acknowledgeBy: try now(lifetimes.code), code: account.code, accountCreated: true,
       ...account.grantId ? { google: { connected: true, connectionId: account.grantId, email: owner, scopes, refreshTokenIssued: true } } : {}
     })
   }
@@ -225,7 +236,7 @@ effect function store(site: string) {
     const found = (try SubscriptionRef.get(accounts)).get(body.secret)
     if (!found || found.credentialId !== body.credentialId || found.code !== body.code) throw new ProofInvalid()
     try change(found.key, (a) => ({ ...a, acknowledged: true }))
-    return try HttpServerResponse.json({ success: true, status: "acknowledged", credentialId: found.credentialId, expiresAt })
+    return try HttpServerResponse.json({ success: true, status: "acknowledged", credentialId: found.credentialId, expiresAt: found.expiresAt })
   }
 
   effect function googleStatus() {
@@ -381,7 +392,7 @@ effect function store(site: string) {
     const { key } = try signedIn()
     const consentNonce = uuid(try next())
     try change(key, (a) => ({ ...a, consents: [...a.consents, consentNonce] }))
-    return try HttpServerResponse.json({ consentNonce, expiresAt })
+    return try HttpServerResponse.json({ consentNonce, expiresAt: try now(lifetimes.consent) })
   }
 
   effect function speechSession() {
@@ -390,9 +401,9 @@ effect function store(site: string) {
     if (!consents.includes(consentNonce)) throw new ConsentRequired()
     const request = try HttpServerRequest.HttpServerRequest
     const n = try next()
-    const opened = { sessionId: uuid(n), token: `speech-token-${n}` }
-    try change(key, (a) => ({ ...a, consents: a.consents.filter((c) => c !== consentNonce), speech: [...a.speech, opened] }))
-    return try HttpServerResponse.json({ version: 1, ...opened, expiresAt, wsUrl: `ws://${request.headers["host"]}/api/v1/voice/speech/ws?sessionId=${opened.sessionId}` })
+    const minted = { sessionId: uuid(n), token: `speech-token-${n}`, expiresAt: try now(lifetimes.speech) }
+    try change(key, (a) => ({ ...a, consents: a.consents.filter((c) => c !== consentNonce), speech: [...a.speech, { ...minted, opened: false }] }))
+    return try HttpServerResponse.json({ version: 1, ...minted, wsUrl: `ws://${request.headers["host"]}/api/v1/voice/speech/ws?sessionId=${minted.sessionId}` })
   }
 
   effect function speechRevoke() {
@@ -404,20 +415,27 @@ effect function store(site: string) {
 
   effect function speechRelay() {
     const { sessionId } = try HttpServerRequest.schemaSearchParams(SessionQuery)
-    const session = Array.from((try SubscriptionRef.get(accounts)).values()).flatMap((a) => a.speech).find((s) => s.sessionId === sessionId)
-    if (!session) throw new Missing()
+    const owner = Array.from((try SubscriptionRef.get(accounts)).values()).find((a) => a.speech.some((s) => s.sessionId === sessionId))
+    const session = owner?.speech.find((s) => s.sessionId === sessionId)
+    if (!owner || !session) throw new Missing()
+    if (session.opened || Date.parse(session.expiresAt) <= (try Clock.currentTimeMillis)) throw new SessionClosed()
+    try change(owner.key, (a) => ({ ...a, speech: a.speech.map((s) => s.sessionId === sessionId ? { ...s, opened: true } : s) }))
     const socket = try (try HttpServerRequest.HttpServerRequest).upgrade
     scoped(effect {
       const { write } = try socket.writer
       const { pull } = try socket.reader
       const send = (event: object) => write(JSON.stringify(event))
+      const refuse = effect (code: "unavailable" | "unauthorized") => {
+        try send({ t: "error", code })
+        try write(new Socket.CloseEvent(1008, "Speech refused"))
+      }
       let ready = false
       let speaking = false
       const prepared = new Set<string>()
       while (true) {
         for (const data of try pull) {
-          if (!ready && typeof data !== "string") return try send({ t: "error", code: "unauthorized" })
           if (typeof data !== "string") {
+            if (!ready) return try refuse("unavailable")
             const silent = data.every((b) => b === 0)
             if (!silent && !speaking) try send({ t: "stt", event: { type: "start-of-turn", transcript: "" } })
             if (silent && speaking) try send({ t: "stt", event: { type: "end-of-turn", transcript: heard } })
@@ -425,16 +443,15 @@ effect function store(site: string) {
             continue
           }
           const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(Frame), exact)(data)
-          if (Option.isNone(decoded)) return try send({ t: "error", code: "protocol" })
-          const frame = decoded.value
           if (!ready) {
-            if (frame.t !== "hello" || frame.token !== session.token) return try send({ t: "error", code: "unauthorized" })
+            if (Option.isNone(decoded) || decoded.value.t !== "hello" || decoded.value.token !== session.token) return try refuse("unauthorized")
             ready = true
-            try send({ t: "ready", version: 1, sampleRate: 16000, channels: 1, expiresAt })
+            try send({ t: "ready", version: 1, sampleRate: 16000, channels: 1, expiresAt: session.expiresAt })
             continue
           }
+          if (Option.isNone(decoded) || decoded.value.t === "hello") return try refuse("unavailable")
+          const frame = decoded.value
           if (frame.t === "stop") return
-          if (frame.t === "hello") return try send({ t: "error", code: "protocol" })
           if ((frame.t === "prepare" || frame.t === "tts") && !prepared.has(frame.id)) {
             prepared.add(frame.id)
             try send({ t: "tts_prepared", id: frame.id })
@@ -478,5 +495,39 @@ effect function store(site: string) {
 }
 
 export function cloud(site: string) {
-  return HttpRouter.addAll(store(site))
+  const cors = HttpMiddleware.cors({
+    allowedOrigins: (origin) => firstParty.test(origin), credentials: true, maxAge: 86400,
+    allowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "Idempotency-Key", "X-Request-ID", "Traceparent", "Tracestate"]
+  })
+  return Layer.mergeAll(HttpRouter.addAll(store(site)), HttpRouter.middleware(cors, { global: true }))
+}
+
+export const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+
+effect function post(cloud: string, path: string, body: object, key?: string) {
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${cloud}${path}`), body)
+  return try HttpClient.execute(key === undefined ? request : HttpClientRequest.bearerToken(request, key))
+}
+
+export effect function signIn(cloud: string) {
+  const client = { clientId: "grace-test", environment: "test", redirectUri: "grace://auth" }
+  const state = "state"
+  const codeVerifier = "v".repeat(43)
+  const steward = { clientId: "steward-test", challengeId: "c".repeat(43), idToken: "t".repeat(20), codeVerifier }
+  const signedIn = try Schema.decodeUnknownEffect(Credential)(try (try post(cloud, "/api/v1/app-auth/mobile/google", { ...client, state, codeVerifier, steward, serverAuthCode: "server-auth-code" })).json)
+  try Schema.decodeUnknownEffect(Acknowledged)(try (try post(cloud, "/api/v1/app-auth/mobile/ack", { ...client, state, codeVerifier, ...signedIn })).json)
+  return signedIn
+}
+
+export effect function turns(cloud: string, key: string) {
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
+  return (try Schema.decodeUnknownEffect(Recorded)(try response.json)).turns
+}
+
+export effect function parts(cloud: string, key: string, said: string) {
+  const response = try post(cloud, "/api/v1/chat/completions", { messages: [{ role: "user", content: said }], stream: true }, key)
+  const lines = Stream.splitLines(Stream.decodeText(response.stream))
+  const data = Stream.filter(Stream.map(lines, (line) => line.replace(/^data: /, "")), (line) => line !== "" && line !== "[DONE]")
+  return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)
 }

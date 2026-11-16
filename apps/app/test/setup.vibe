@@ -10,29 +10,39 @@ declare module "vitest" {
 }
 
 const Amount = Schema.String.check(Schema.isPattern(/^\d+\.\d{2}$/))
+const Time = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/))
 
 schema Payment { amount: Amount; to: string }
+schema Booking { time: Time }
 schema Visit { visit: string }
 
 effect function routes() {
-  const paid = try Ref.make(new Map<string, Payment[]>())
+  const kept = try Ref.make(new Map<string, unknown[]>())
 
-  effect function pay() {
+  effect function keep<A>(record: string, form: Schema.Codec<A, Readonly<Record<string, string>>>, landing: string) {
     const { visit } = try HttpRouter.schemaPathParams(Visit)
-    const payment = try HttpServerRequest.schemaBodyUrlParams(Payment)
-    try Ref.update(paid, (all) => new Map(all).set(visit, [...all.get(visit) ?? [], payment]))
-    return HttpServerResponse.redirect("bill/confirmation.html", { status: 303 })
+    const entry = try HttpServerRequest.schemaBodyUrlParams(form)
+    try Ref.update(kept, (all) => new Map(all).set(`${visit}/${record}`, [...all.get(`${visit}/${record}`) ?? [], entry]))
+    return HttpServerResponse.redirect(`/${visit}/${landing}`, { status: 303 })
   }
 
-  effect function payments() {
+  effect function listed(record: string) {
     const { visit } = try HttpRouter.schemaPathParams(Visit)
-    return try HttpServerResponse.json((try Ref.get(paid)).get(visit) ?? [])
+    return try HttpServerResponse.json((try Ref.get(kept)).get(`${visit}/${record}`) ?? [])
+  }
+
+  effect function signIn() {
+    const { visit } = try HttpRouter.schemaPathParams(Visit)
+    return HttpServerResponse.redirect(`/${visit}/bill/amount.html`, { status: 303 })
   }
 
   return [
-    HttpRouter.route("POST", "/:visit/bill/", HttpServerResponse.redirect("amount.html", { status: 303 })),
-    HttpRouter.route("POST", "/:visit/pay", answered(pay())),
-    HttpRouter.route("GET", "/:visit/paid", answered(payments())),
+    HttpRouter.route("GET", "/", HttpServerResponse.empty({ status: 404 })),
+    HttpRouter.route("POST", "/:visit/bill", answered(signIn())),
+    HttpRouter.route("POST", "/:visit/pay", answered(keep("paid", Payment, "bill/confirmation.html"))),
+    HttpRouter.route("GET", "/:visit/paid", answered(listed("paid"))),
+    HttpRouter.route("POST", "/:visit/book", answered(keep("booked", Booking, "booking/booked.html"))),
+    HttpRouter.route("GET", "/:visit/booked", answered(listed("booked"))),
     HttpRouter.route("GET", "/:visit/slow", effect {
       try sleep("3 seconds")
       return HttpServerResponse.text("<!doctype html><title>A page that took its time</title><h1>A page that took its time</h1>", { contentType: "text/html" })
@@ -41,7 +51,7 @@ effect function routes() {
   ] as const
 }
 
-const site = Layer.mergeAll(HttpStaticServer.layer({ root: `${import.meta.dirname}/site`, prefix: "/:visit" }), HttpRouter.addAll(routes()))
+const site = Layer.mergeAll(HttpStaticServer.layer({ root: `${import.meta.dirname}/site`, prefix: "/:visit" }), HttpRouter.addAll(routes()), HttpRouter.cors())
 
 effect function serve(app: Layer.Layer<never, PlatformError.PlatformError, HttpRouter.HttpRouter | FileSystem.FileSystem | Path.Path | HttpPlatform.HttpPlatform>) {
   const listening = Layer.fresh(ExperimentalNodeHttpServer.layer({ port: 0, host: "127.0.0.1", gracefulShutdownTimeout: 0 }))
