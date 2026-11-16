@@ -1,0 +1,41 @@
+import { NodeHttpServer } from "@effect/platform-node"
+import type { TestProject } from "vitest/node"
+import { cloud } from "./cloud.vibe"
+
+declare module "vitest" {
+  export interface ProvidedContext {
+    site: string
+    cloud: string
+  }
+}
+
+const page = (title: string) => HttpServerResponse.text(`<!doctype html><title>${title}</title><h1>${title}</h1>`, { contentType: "text/html" })
+
+const site = Layer.mergeAll(
+  HttpStaticServer.layer({ root: `${import.meta.dirname}/site` }),
+  HttpRouter.addAll([
+    HttpRouter.route("GET", "/slow", effect {
+      try sleep("3 seconds")
+      return page("A page that took its time")
+    }),
+    HttpRouter.route("GET", "/never", Effect.never)
+  ])
+)
+
+effect function serve(app: Layer.Layer<never, PlatformError.PlatformError, HttpRouter.HttpRouter | FileSystem.FileSystem | Path.Path | HttpPlatform.HttpPlatform>) {
+  const context = try Layer.build(Layer.provideMerge(HttpRouter.serve(app, { disableLogger: true, disableListenLog: true }), Layer.fresh(NodeHttpServer.layerTest)))
+  const { address } = Context.get(context, HttpServer.HttpServer)
+  if (address._tag === "UnixPathAddress") return try die(new Error("the test server listens on a socket file"))
+  return `http://localhost:${address.port}`
+}
+
+export default async function setup(project: TestProject) {
+  const scope = await runPromise(Scope.make())
+  const started = await runPromise(provideService(effect {
+    const served = try serve(site)
+    return { site: served, cloud: try serve(cloud(served)) }
+  }, Scope.Scope, scope))
+  project.provide("site", started.site)
+  project.provide("cloud", started.cloud)
+  return () => runPromise(Scope.close(scope, Exit.void))
+}

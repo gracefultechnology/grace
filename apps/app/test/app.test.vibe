@@ -1,0 +1,62 @@
+// spec/app/billpay.md, "Story: Understand the bill before deciding how to pay"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+import { assert, it } from "@effect/vitest"
+import { inject } from "vitest"
+import { type Account, reply, unending } from "./cloud.vibe"
+
+const cloud = inject("cloud")
+const site = inject("site")
+
+error Streaming
+
+effect function status(url: string) {
+  return (try HttpClient.get(url)).status
+}
+
+effect function signIn() {
+  const body = { state: "state", codeVerifier: "v".repeat(43), steward: { idToken: "t".repeat(20) }, serverAuthCode: "server-auth-code" }
+  const response = try HttpClient.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${cloud}/api/v1/app-auth/mobile/google`), body))
+  return ((try response.json) as { secret: string }).secret
+}
+
+effect function inspect(key: string) {
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
+  return (try response.json) as unknown as Account
+}
+
+effect function parts(key: string, said: string) {
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.bearerToken(HttpClientRequest.post(`${cloud}/api/v1/chat/completions`), key), {
+    messages: [{ role: "user", content: said }], stream: true
+  })
+  const lines = Stream.splitLines(Stream.decodeText((try HttpClient.execute(request)).stream))
+  const data = Stream.filter(Stream.map(lines, (line) => line.replace(/^data: /, "")), (line) => line !== "" && line !== "[DONE]")
+  return Stream.mapEffect(data, effect (line) => (try Effect.try(() => JSON.parse(line) as { choices: { delta: { content: string } }[] })).choices[0].delta.content)
+}
+
+effect function settled(key: string) {
+  const account = try inspect(key)
+  if (account.turns.some((t) => t.outcome === "streaming")) throw new Streaming()
+  return account
+}
+
+it.live("Understand the bill before deciding how to pay: every page of the bill answers", () => effect {
+  provide FetchHttpClient.layer {
+    const pages = ["bill/", "bill/amount.html", "bill/review.html", "bill/confirmation.html", "statement.pdf"]
+    const statuses: number[] = []
+    for (const p of pages) statuses.push(try status(`${site}/${p}`))
+    try Effect.try(() => assert.deepStrictEqual(statuses, pages.map(() => 200)))
+  }
+})
+
+it.live("Talk or type without losing the conversation: a turn streams to its end, and a stopped turn is aborted", () => effect {
+  provide FetchHttpClient.layer {
+    const key = try signIn()
+    const said = "Hello Grace."
+    const whole = (try Stream.runCollect(try parts(key, said))).join("")
+    try scoped(effect { try Stream.runHead(try parts(key, unending)) })
+    const { turns } = try retry(settled(key), { schedule: Schedule.spaced("50 millis"), times: 200 })
+    try Effect.try(() => assert.deepStrictEqual({ whole, turns }, {
+      whole: reply(said),
+      turns: [{ said, outcome: "completed" }, { said: unending, outcome: "aborted" }]
+    }))
+  }
+})
