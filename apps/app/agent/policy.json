@@ -10,6 +10,7 @@
     "refuse": {
       "@elizaos/plugin-agent-orchestrator": "Not part of Grace: it adds abilities the spec does not guard.",
       "@elizaos/plugin-anthropic": "The model is reached only through her Eliza Cloud account.",
+      "@elizaos/plugin-benchmarks": "Not part of Grace: it adds abilities the spec does not guard.",
       "@elizaos/plugin-blocker": "Not part of Grace: it adds abilities the spec does not guard.",
       "@elizaos/plugin-browser": "Drives pages directly, past the workspace's interaction and payment rules.",
       "@elizaos/plugin-calendar": "Acts on the calendar provider directly, past spec/app/calendarView.md.",
@@ -66,7 +67,7 @@
           "open",
           "showSetting"
         ],
-        "becomes": "spec/app/shell.md openSurface and chooseSettingsPage"
+        "becomes": "spec/app/workspace.md visit and chooseSettingsPage"
       },
       "GRACE_SETTINGS": {
         "returns": [
@@ -82,10 +83,10 @@
       },
       "GRACE_BROWSER": {
         "returns": [
-          "visit",
+          "navigate",
           "browse"
         ],
-        "becomes": "spec/app/workspace.md visit and spec/app/browserControls.md control"
+        "becomes": "spec/app/workspace.md changePage, with the browserControls.md input Navigate, Back, Forward, Reload or NewTab"
       },
       "GRACE_GUIDE": {
         "returns": [
@@ -97,9 +98,11 @@
         "returns": [
           "proposeAppointment",
           "confirmAppointment",
-          "deleteAppointment"
+          "cancelAppointment",
+          "deleteAppointment",
+          "dismissReminder"
         ],
-        "becomes": "spec/app/calendarView.md createOccurrence or changeOccurrence, confirmAppointment after her yes, and requestDeletion"
+        "becomes": "spec/app/calendarView.md createOccurrence or changeOccurrence, confirmAppointment after her yes, changeOccurrence CancelEditing after her no, requestDeletion, and changeOccurrence DismissReminder"
       },
       "GRACE_EMAIL": {
         "returns": [
@@ -128,9 +131,10 @@
     },
     "upstream": {
       "allow": {
-        "REPLY": "Her words back to the person: text, whether it is a question and its two or three answers. It changes nothing.",
+        "REPLY": "Her words back to the person: text, an optional working sentence, whether it is a question and its two or three answers. It changes nothing.",
         "IGNORE": "Ends a turn that needs no answer. It changes nothing.",
-        "NONE": "Ends a turn that needs no action. It changes nothing."
+        "NONE": "Ends a turn that needs no action. It changes nothing.",
+        "STOP": "Ends the turn at once. It changes nothing."
       },
       "refuse": {
         "ASSERT_MEETING_MOCK_LEDGER": "Registered only by @elizaos/plugin-meetings, which this file refuses.",
@@ -155,20 +159,52 @@
         "CONNECT_ACCOUNT": "Accounts are connected by the person through Grace's Google sign-in, never by the agent.",
         "CONTACT": "Contacts are not part of Grace.",
         "CREDENTIALS": "Registered only by @elizaos/plugin-calendar and @elizaos/plugin-inbox and @elizaos/plugin-personal-assistant, which this file refuses.",
+        "CROSS_CHAIN_TRANSFER": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",
         "DATABASE": "An agent administration tool, not for the person.",
         "DECLARE_SUB_AGENT_CREDENTIAL_SCOPE": "Grace runs no sub-agents.",
-        "DEVICE_BROWSER_OPEN": "Opens pages outside Grace's browser; GRACE_BROWSER visits instead.",
+        "DEVICE_BROWSER_OPEN": "Opens pages outside Grace's browser; GRACE_BROWSER navigates there instead.",
+        "DEVICE_CALENDAR_CREATE": "Writes to the device calendar directly, past the consent, visibility and version rules of spec/app/calendarView.md; GRACE_CALENDAR proposes instead.",
+        "DEVICE_CALENDAR_CREATE_SELECTED": "Writes to the device calendar directly, past the consent, visibility and version rules of spec/app/calendarView.md; GRACE_CALENDAR proposes instead.",
+        "DEVICE_CALENDAR_READ_NEXT": "Reads the device calendar directly; Grace is shown the day's entries from the calendar machine.",
+        "DEVICE_CALENDAR_READ_SELECTED": "Reads the device calendar directly; Grace is shown the day's entries from the calendar machine.",
+        "DEVICE_CALENDAR_UPDATE": "Writes to the device calendar directly, past the consent, visibility and version rules of spec/app/calendarView.md; GRACE_CALENDAR proposes instead.",
+        "DEVICE_CANONICAL_NOTES_FILTER": "Notes are not part of Grace.",
+        "DEVICE_MAPS_READ_SELECTED": "Maps are not part of Grace.",
+        "DEVICE_NOTES_FILTER": "Notes are not part of Grace.",
+        "DEVICE_NOTES_FOLDER_CREATE": "Notes are not part of Grace.",
+        "DEVICE_NOTES_QUERY": "Notes are not part of Grace.",
+        "DEVICE_NOTES_RECORD": "Notes are not part of Grace.",
+        "DEVICE_NOTE_CREATE": "Notes are not part of Grace.",
+        "DEVICE_NOTE_MOVE": "Notes are not part of Grace.",
+        "DEVICE_NOTE_READ": "Notes are not part of Grace.",
+        "DEVICE_NOTE_RESTORE": "Notes are not part of Grace.",
+        "DEVICE_NOTE_UPDATE": "Notes are not part of Grace.",
+        "DEVICE_PHOTOS_ALBUM_CREATE": "Her photos are reached only through GRACE_FILES and the files rules.",
+        "DEVICE_PHOTOS_FILTER": "Her photos are reached only through GRACE_FILES and the files rules.",
+        "DEVICE_PHOTOS_OPEN": "Her photos are reached only through GRACE_FILES and the files rules.",
+        "DEVICE_PHOTOS_SHARE": "Grace never sends anything; the person taps Send.",
+        "DEVICE_REMINDER_CANCEL": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
+        "DEVICE_REMINDER_COMPLETE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
+        "DEVICE_REMINDER_CREATE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
+        "DEVICE_REMINDER_CREATE_AFTER": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
+        "DEVICE_REMINDER_READ": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
+        "DEVICE_REMINDER_SNOOZE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
+        "DEVICE_REMINDER_UPDATE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
         "DISABLE_AUTONOMOUS_MODE": "Grace acts only on the person's own turn, never on her own schedule.",
         "DOCUMENT": "The conversation is not kept after a restart, and saved details are kept only with the person's approval in Settings.",
         "EDIT": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "ENABLE_AUTONOMOUS_MODE": "Grace acts only on the person's own turn, never on her own schedule.",
         "ENTITY": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
         "ESCALATE": "Grace acts only on the person's own turn, never on her own schedule.",
+        "EVM_SWAP": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",
+        "EVM_TRANSFER": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",
         "EXPERIENCE": "The conversation is not kept after a restart, and saved details are kept only with the person's approval in Settings.",
         "FAMILY_WORKFLOWS": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
         "FILE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "FILES": "Her files are reached only through GRACE_FILES and the files rules.",
+        "FOLLOW_ROOM": "The conversation is one person and Grace, with no rooms.",
         "FORM": "Registered only by @elizaos/plugin-form, which this file refuses.",
+        "GENERATE_MEDIA": "Grace makes no pictures, sound or video; no model runs for it on the tablet or the agent's behalf.",
         "GET_MEETING_TRANSCRIPT": "Registered only by @elizaos/plugin-meetings, which this file refuses.",
         "GET_UPDATES": "Registered only by @elizaos/plugin-network, which this file refuses.",
         "GITHUB": "Registered only by @elizaos/plugin-github, which this file refuses.",
@@ -190,13 +226,18 @@
         "MCP": "Registered only by @elizaos/plugin-mcp, which this file refuses.",
         "MEMORY": "The conversation is not kept after a restart, and saved details are kept only with the person's approval in Settings.",
         "MESSAGE": "Grace never sends a message; she drafts in Email and the person taps Send.",
+        "MUTE_ROOM": "The conversation is one person and Grace, with no rooms.",
         "NOTES": "Registered only by @elizaos/plugin-notes, which this file refuses.",
         "NOTIFY": "Grace speaks only in her own window, in answer to the person.",
+        "OSWORLD": "Registered only by @elizaos/plugin-benchmarks, which this file refuses.",
         "OWNER_AGREEMENT_KNOWLEDGE": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
-        "OWNER_GOALS": "Registered only by @elizaos/plugin-goals, which this file refuses.",
+        "OWNER_ALARMS": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
+        "OWNER_GOALS": "Registered only by @elizaos/plugin-personal-assistant and @elizaos/plugin-goals, which this file refuses.",
         "OWNER_HEALTH": "Registered only by @elizaos/plugin-health, which this file refuses.",
+        "OWNER_REMINDERS": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
         "OWNER_ROUTINES": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
         "OWNER_SCREENTIME": "Registered only by @elizaos/plugin-health, which this file refuses.",
+        "OWNER_TODOS": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
         "PAGE_DELEGATE": "An agent administration tool, not for the person.",
         "PAIR_OWNER_ACCOUNT": "Accounts are connected by the person through Grace's Google sign-in, never by the agent.",
         "PARENTING_GUIDANCE": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
@@ -228,6 +269,8 @@
         "SET_STATE": "Registered only by @elizaos/plugin-network, which this file refuses.",
         "SHARE_TRANSCRIPT": "Registered only by @elizaos/plugin-local-inference, which this file refuses.",
         "SHELL": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
+        "SOLANA_SWAP": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",
+        "SOLANA_TRANSFER": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",
         "START_TRANSCRIPTION": "Registered only by @elizaos/plugin-local-inference, which this file refuses.",
         "STOP_TRANSCRIPTION": "Registered only by @elizaos/plugin-local-inference, which this file refuses.",
         "TASKS": "Registered only by @elizaos/plugin-agent-orchestrator, which this file refuses.",
@@ -237,9 +280,21 @@
         "TRIGGER": "Grace acts only on the person's own turn, never on her own schedule.",
         "TRUST": "The person is the only owner; roles do not change.",
         "TUNNEL_CREDENTIAL_TO_CHILD_SESSION": "Passwords, codes and keys never reach the agent.",
+        "UNFOLLOW_ROOM": "The conversation is one person and Grace, with no rooms.",
+        "UNMUTE_ROOM": "The conversation is one person and Grace, with no rooms.",
+        "VENDING_MACHINE": "Registered only by @elizaos/plugin-benchmarks, which this file refuses.",
         "VIEWS": "An agent administration tool, not for the person.",
+        "VIEW_CALENDAR_SELECT_VISIBLE_DAY": "Registered only by @elizaos/plugin-calendar, which this file refuses.",
+        "VIEW_CHARACTER_ADD_MESSAGE_EXAMPLE": "Grace's character is fixed by character.json.",
+        "VIEW_CHARACTER_ADD_STYLE_RULE": "Grace's character is fixed by character.json.",
+        "VIEW_CHARACTER_FILL_BIO": "Grace's character is fixed by character.json.",
+        "VIEW_TODOS_ADD": "Registered only by @elizaos/plugin-todos, which this file refuses.",
+        "VIEW_TODOS_RETRY": "Registered only by @elizaos/plugin-todos, which this file refuses.",
         "VISION": "Registered only by @elizaos/plugin-vision, which this file refuses.",
+        "VISUALWEBBENCH_TASK": "Registered only by @elizaos/plugin-benchmarks, which this file refuses.",
         "WALLET": "Registered only by @elizaos/plugin-wallet, which this file refuses.",
+        "WALLET_GOV": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",
+        "WEBSHOP": "Registered only by @elizaos/plugin-benchmarks, which this file refuses.",
         "WEB_FETCH": "Websites open in the person's browser through GRACE_BROWSER, where she can see them.",
         "WEB_SEARCH": "Websites open in the person's browser through GRACE_BROWSER, where she can see them.",
         "WINDOW": "Registered only by @elizaos/plugin-computeruse, which this file refuses.",
@@ -249,21 +304,40 @@
         "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses."
       },
       "refusedSubactionsOf": [
+        "BROWSER",
+        "CALENDAR",
         "CHARACTER",
+        "CLIPBOARD",
+        "COMPUTER_USE",
         "CONTACT",
         "DATABASE",
+        "GITHUB",
         "INBOX",
+        "LIQUIDITY",
         "LOGS",
+        "MAPS",
         "MEMORY",
         "MESSAGE",
+        "NOTES",
+        "OWNER_ALARMS",
+        "OWNER_GOALS",
+        "OWNER_HEALTH",
+        "OWNER_REMINDERS",
+        "OWNER_ROUTINES",
+        "OWNER_SCREENTIME",
+        "OWNER_TODOS",
         "PERSONALITY",
+        "PERSONAL_ASSISTANT",
         "PLUGIN",
         "POST",
         "ROOM",
         "RUNTIME",
         "TRIGGER",
         "TRUST",
-        "VIEWS"
+        "VIEWS",
+        "VISION",
+        "WALLET",
+        "WINDOW"
       ]
     }
   }
