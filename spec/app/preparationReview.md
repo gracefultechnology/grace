@@ -126,7 +126,7 @@ pure val preparationValues = {
     current: { known: true, amount: 11255 }, fee: { known: true, amount: 0 }, dueDay: 3,
     currency: "USD", scheduled: false, nothingDue: false, paymentAllowed: true, funding: List("bank-ref")
   } }, P::BrowserHost)
-  val chosen = BP::choose(facts, P::exampleProposal, P::Person)
+  val chosen = BP::choose(BP::confirmFacts(facts, P::Person), P::exampleProposal, P::Person)
   val verified = BP::verifyForm(chosen, { ...P::exampleReview, revision: 4 }, P::BrowserHost)
   val handed = BP::handOff(verified, P::Executor).state
   val paused = BP::pause(handed, P::Person)

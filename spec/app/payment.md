@@ -346,7 +346,7 @@ pure def stepRestartKeepsRecord(before: Payment, via: str, after: Payment): bool
 
 ### An owner that keeps payments keeps every payment rule
 
-The workspace keeps the current payment and earlier ones. It requires this one list of the payment rules of each, kept here beside the rules so that a new payment rule cannot be left out of it.
+The workspace keeps the current payment and earlier ones and requires every payment rule of each. `validPayment` is the conjunction of every `always` rule of this spec, kept here beside the rules so that the owner calls one definition instead of a copy of its own; the workspace's copy (spec/app/workspace.md) is to be replaced by a call to this one. Nothing checks the list mechanically: whoever adds an `always` rule here adds it to `validPayment` too.
 
 ```quint
 pure def validPayment(p: Payment): bool =
