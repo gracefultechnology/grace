@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import { AnswerChips, type AnswerChipProps } from "./AnswerChip.tsx";
 
 const chose = fn();
@@ -19,10 +20,6 @@ export const meta: ComponentMeta<AnswerChipProps> = {
   ),
   play: {
     // A tap is Margaret's answer.
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      chose.mockClear();
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Yes, show me" }));
-      await expect(chose).toHaveBeenCalled();
-    },
+    Default: tapCalls("Yes, show me", chose),
   },
 };

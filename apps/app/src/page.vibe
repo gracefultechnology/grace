@@ -40,6 +40,22 @@ type Page = { tab: Tab; url: string; load: number | undefined; asked: { version:
  */
 type Signal = { workspace: Workspace } | { page: PageEvent } | { person: WebsiteEvent } | { closeBrowser: true } | { android: number; verdict: AndroidOutcome } | { purged: boolean } | undefined
 
+// spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"
+// spec/app/surface.md, "The page is paused while Grace's window is in the background": only the presented page runs, and only while
+// pageRuns. Pauses or resumes each of `pages` as `paused` records, presents the page of `selected` or none, and returns which it is.
+effect function present(native: NativePage.Shape, pages: ReadonlyMap<number, Page>, paused: Set<string>, presented: string | null | undefined, selected: number | undefined, runs: boolean) {
+  const id = selected !== undefined && pages.has(selected) ? pageOf(selected) : null
+  for (const tab of pages.keys()) {
+    const page = pageOf(tab), run = runs && page === id
+    // Presenting never resumes a page, so it is resumed before it is shown (definitions.ts, pauseSurface).
+    if (run === paused.has(page)) (run ? native.resume(page) : native.pause(page)) catch () => undefined
+    if (run) paused.delete(page)
+    else paused.add(page)
+  }
+  if (id !== presented) native.present(id) catch effect (cause) => try logWarning("present", cause)
+  return id
+}
+
 /** `PageHost`, and the fiber that applies what it hears and what the workspace becomes. */
 export const pageHost = Layer.effect(PageHost, effect {
   const workspace = try Workspaces
@@ -51,6 +67,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   // The native request each request number stands for: its page and the plugin's key (definitions.ts).
   const asked = new Map<number, { page: string; key: string }>()
   const said = new Map<number, string>()
+  const forget = (id: number) => { asked.delete(id); said.delete(id) }
   // The request number of each download being saved, by its page and key.
   const saving = new Map<string, number>()
   // The fiber applies all that waits at once.
@@ -96,8 +113,7 @@ export const pageHost = Layer.effect(PageHost, effect {
       }
       return
     }
-    asked.delete(reply.request)
-    said.delete(reply.request)
+    forget(reply.request)
     // A reply that only closes Grace's prompt may find the page's request already gone.
     const done = Effect.as(native.reply(request.page, request.key, reply.ask, reply.answer, reply.text), true) catch effect (cause) => {
       if (reply.answer === "SaveDownload" || opensElsewhere(reply.answer) || reply.answer === "Allowed") try logWarning("reply", cause)
@@ -213,22 +229,6 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
 
-  // spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"
-  // spec/app/surface.md, "The page is paused while Grace's window is in the background": only the presented page runs, and only while pageRuns.
-  effect function present(selected: number | undefined, runs: boolean) {
-    const id = selected !== undefined && pages.has(selected) ? pageOf(selected) : null
-    for (const tab of pages.keys()) {
-      const page = pageOf(tab), run = runs && page === id
-      // Presenting never resumes a page, so it is resumed before it is shown (definitions.ts, pauseSurface).
-      if (run === paused.has(page)) (run ? native.resume(page) : native.pause(page)) catch () => undefined
-      if (run) paused.delete(page)
-      else paused.add(page)
-    }
-    if (id === presented) return
-    native.present(id) catch effect (cause) => try logWarning("present", cause)
-    presented = id
-  }
-
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
   effect function reconcile() {
     while (true) {
@@ -243,7 +243,7 @@ export const pageHost = Layer.effect(PageHost, effect {
       const visible = pageShows(w.device, w.assistant)
       if (canShow(l, w.device, w.assistant)) l = try Effect.orDie(layer.send({ type: "show", s: w.device, a: w.assistant }))
       if (canSetHostVisible(l, hostVisible)) l = try Effect.orDie(layer.send({ type: "setHostVisible", visible: hostVisible }))
-      try present(visible ? w.browser.selected : undefined, pageRuns(l))
+      presented = try present(native, pages, paused, presented, visible ? w.browser.selected : undefined, pageRuns(l))
       try syncRequests()
       // Draw what is routed, and while a request is out what it also holds; drop at once what is gone.
       const drawable = measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
@@ -269,8 +269,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     said.set(id, event.said)
     const report = { tab, ask: event.ask, fromTap: true, topFrame: event.topFrame }
     if ((try website({ type: "raise", report }, "WebsiteHost")) !== undefined) return
-    asked.delete(id)
-    said.delete(id)
+    forget(id)
     native.reply(event.id, event.key, event.ask, "Refused", "") catch () => undefined
   }
 

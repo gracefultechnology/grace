@@ -1,4 +1,5 @@
-import { createContext, use } from "react";
+import { type ComponentProps, createContext, use } from "react";
+import { cn } from "../lib/cn.ts";
 import { PageHeading, type PageHeadingProps } from "./PageHeading.tsx";
 
 /** True inside a `SettingsApp` whose large title already names the open page. */
@@ -13,4 +14,21 @@ export type SettingsPageHeadingProps = Omit<PageHeadingProps, "level">;
  */
 export function SettingsPageHeading(props: SettingsPageHeadingProps) {
   return use(SettingsLargeTitleContext) ? null : <PageHeading {...props} />;
+}
+
+export type SettingsAccountPageProps = Omit<ComponentProps<"section">, "title"> & {
+  /** The page's title: its heading and its name. */
+  title: string;
+  /** While the account is being checked. */
+  busy?: boolean;
+};
+
+/** A Settings page of the person's account: its title over what it holds, marked sensitive so no capture shows it. */
+export function SettingsAccountPage({ title, busy = false, className, children, ...props }: SettingsAccountPageProps) {
+  return (
+    <section aria-label={title} aria-busy={busy || undefined} data-sensitive="true" className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
+      <SettingsPageHeading>{title}</SettingsPageHeading>
+      {children}
+    </section>
+  );
 }

@@ -8,7 +8,7 @@ import { ListRow } from "./ListRow.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 import { Progress } from "./Progress.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
-import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
+import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 
 /** The help a plan includes this period, its amounts written as the app shows them. */
 export interface PlanAllowance {
@@ -170,8 +170,7 @@ export function UsageBalance({ stale = false, allowance, credit, autoTopUp, cate
   const l = { ...usageBalanceLabels, ...labels };
   const section = "mt-1 -mb-2.5";
   return (
-    <section aria-label={l.title} aria-busy={busy || undefined} data-sensitive="true" className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
-      <SettingsPageHeading>{l.title}</SettingsPageHeading>
+    <SettingsAccountPage title={l.title} busy={busy} className={className} {...props}>
       {stale ? <PageText role="status" className="font-semibold text-warn">{l.stale}</PageText> : null}
       <PageHeading level="section" className={section}>{l.helpTitle}</PageHeading>
       {allowance == null || stale ? (
@@ -238,6 +237,6 @@ export function UsageBalance({ stale = false, allowance, credit, autoTopUp, cate
         <Button variant="capsule" size="pill" loading={busy} onClick={onRefresh}>{busy ? l.refreshing : l.refresh}</Button>
         <Button variant="capsule" size="pill" onClick={onBack}>{l.back}</Button>
       </div>
-    </section>
+    </SettingsAccountPage>
   );
 }

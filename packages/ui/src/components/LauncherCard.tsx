@@ -75,6 +75,7 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
         className,
       )}
       // Prototype `hmApply`: a card turning away loses its far shadow as it goes.
+      // eslint-disable-next-line design-system/no-literal-colors -- the primary token faded toward transparent by the turn, which no token can hold.
       style={away ? { boxShadow: `0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) ${(6 * (1 - away)).toFixed(1)}%, transparent)`, ...style } : style}
       {...props}
     >
@@ -114,6 +115,7 @@ function Blurred({ turn, children }: { turn: number; children: (main: boolean) =
     ramp("black 0", `black ${at(0)}`, `transparent ${at(0.34)}`),
     ramp(`transparent ${at(0)}`, `black ${at(0.34)}`, `transparent ${at(0.67)}`),
     ramp(`transparent ${at(0.34)}`, `black ${at(0.67)}`, `transparent ${at(1)}`),
+    // eslint-disable-next-line design-system/no-literal-colors -- a mask reads only the alpha of its stops; no one sees this black.
     ramp(`transparent ${at(0.67)}`, `color-mix(in srgb, black ${Math.round((1 - 0.3 * away) * 100)}%, transparent) ${at(1)}`),
   ];
   return [0, 1.2, 3, 6.5].map((blur, k) => {

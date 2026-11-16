@@ -5,7 +5,7 @@ import type { ComponentMeta } from "vibestack/stories";
 import { AccountOverview } from "./AccountOverview.tsx";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
-import type { SettingsAppProps, SettingsPage } from "./SettingsApp.tsx";
+import { SettingsApp, type SettingsAppProps, type SettingsPage } from "./SettingsApp.tsx";
 import { SettingsAbout } from "./SettingsAbout.tsx";
 import { voiceCredits, voiceCreditsIntro } from "./SettingsAbout.meta.tsx";
 import { SettingsBrightness } from "./SettingsBrightness.tsx";
@@ -39,6 +39,20 @@ export const onTablet = (story: () => ReactNode, open?: "Settings") => (
     {story()}
   </TabletScreen>
 );
+
+/** A story over the Wi-Fi page it was opened from, with Settings raised on the rail. */
+export const overWifiPage = (story: () => ReactNode) =>
+  onTablet(
+    () => (
+      <>
+        <SettingsApp page="wifi" onClose={() => {}}>
+          <WifiNetworkList current={current} networks={nearby} />
+        </SettingsApp>
+        {story()}
+      </>
+    ),
+    "Settings",
+  );
 
 // Prototype `TS` and `[['Slower',.8],['Normal',1],['Faster',1.15]]`.
 export const textSizes = ["Smaller", "Normal", "Larger", "Largest"];

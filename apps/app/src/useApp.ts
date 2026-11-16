@@ -1,10 +1,13 @@
 // .claude/skills/shell/SKILL.md, "The React interface": the workspace and the page layer, as components read
 // them, and the one way a component changes the workspace.
 import { Effect, type ManagedRuntime, Stream } from "effect";
-import { createContext, use, useEffect, useState, useSyncExternalStore } from "react";
-import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
-import { type Event as WebsiteEvent, Machine as WebsiteRequests, enabled as websiteEnabled } from "../gen/app__websiteRequests.effect.vibe";
-import { type Event, type WorkspaceActor, Machine as Workspaces, enabled } from "../gen/app__workspace.effect.vibe";
+import { createContext, use, useEffect, useState } from "react";
+import type { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
+import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
+import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
+import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
+import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
 import { Keyboard } from "./app.vibe";
 import { PageHost } from "./page.vibe";
 
@@ -19,56 +22,16 @@ export function useRuntime(): Runtime {
   return runtime;
 }
 
-type Store = { get: () => unknown; subscribe: (notify: () => void) => () => void };
-const stores = new WeakMap<Runtime, Map<unknown, Store>>();
-
-/** The latest value of `changes`, shared by every component of `runtime`: one subscription while any listens. */
-type Machines = Workspaces | PageLayers | WebsiteRequests | Keyboard;
-
-function storeOf(runtime: Runtime, changes: Stream.Stream<unknown, never, Machines>): Store {
-  const known = stores.get(runtime) ?? new Map<unknown, Store>();
-  stores.set(runtime, known);
-  const existing = known.get(changes);
-  if (existing) return existing;
-  let latest: unknown;
-  let stop: (() => void) | undefined;
-  const listeners = new Set<() => void>();
-  const store: Store = {
-    get: () => latest,
-    subscribe: (notify) => {
-      listeners.add(notify);
-      if (!stop) {
-        const fiber = runtime.runFork(Stream.runForEach(changes, (next) => Effect.sync(() => { latest = next; listeners.forEach((listener) => listener()); })));
-        stop = () => fiber.interruptUnsafe();
-      }
-      return () => {
-        listeners.delete(notify);
-        if (listeners.size === 0) { stop?.(); stop = undefined; }
-      };
-    },
-  };
-  known.set(changes, store);
-  return store;
-}
-
-function useChanges<A>(runtime: Runtime, changes: Stream.Stream<A, never, Machines>): A | undefined {
-  const store = storeOf(runtime, changes);
-  return useSyncExternalStore(store.subscribe, store.get) as A | undefined;
-}
-
-const workspaceChanges = Stream.unwrap(Effect.map(Effect.service(Workspaces), (m) => m.changes));
-const layerChanges = Stream.unwrap(Effect.map(Effect.service(PageLayers), (m) => m.changes));
-const requestChanges = Stream.unwrap(Effect.map(Effect.service(WebsiteRequests), (m) => m.changes));
 const keyboardHeights = Stream.unwrap(Effect.map(Effect.service(Keyboard), (k) => k.height));
 
 /** The workspace, what the rules allow the person, and sending an event; by the person unless the host measured it. */
 export function useWorkspace() {
   const runtime = useRuntime();
-  const workspace = useChanges(runtime, workspaceChanges);
+  const { state: workspace, can, send } = useWorkspaceMachine(runtime);
   return {
     workspace,
-    can: (event: Event) => workspace !== undefined && enabled(workspace, event, "Person"),
-    send: (event: Event, by: WorkspaceActor = "Person") => runtime.runPromiseExit(Effect.flatMap(Effect.service(Workspaces), (m) => m.send(event, by))),
+    can: (event: Event) => can(event, "Person"),
+    send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
     current: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())),
     /** The person's Close browser, which the page host also tells what websites asked. */
@@ -82,10 +45,10 @@ export function useWorkspace() {
  */
 export function useWebsiteRequests() {
   const runtime = useRuntime();
-  const requests = useChanges(runtime, requestChanges);
+  const { state: requests, can } = useWebsiteRequestsMachine(runtime);
   return {
     requests,
-    can: (event: WebsiteEvent) => requests !== undefined && websiteEnabled(requests, event, "WebsitePerson"),
+    can: (event: WebsiteEvent) => can(event, "WebsitePerson"),
     send: (event: WebsiteEvent) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.website(event))),
     /** What websites ask as it is now, for an event handler: a render may not have caught up. */
     current: () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())),
@@ -95,7 +58,7 @@ export function useWebsiteRequests() {
 
 /** The page layer: the page's rect and the Grace controls drawn over it. */
 export function usePageLayer() {
-  return useChanges(useRuntime(), layerChanges);
+  return usePageLayers(useRuntime()).state;
 }
 
 /**
@@ -110,5 +73,11 @@ export function useDraft(value: string, typing: boolean): [string, (text: string
 
 /** The height of the OS keyboard over the interface, in CSS pixels; 0 while it is closed. */
 export function useKeyboardHeight(): number {
-  return useChanges(useRuntime(), keyboardHeights) ?? 0;
+  const runtime = useRuntime();
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const fiber = runtime.runFork(Stream.runForEach(keyboardHeights, (next) => Effect.sync(() => setHeight(next))));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  return height;
 }

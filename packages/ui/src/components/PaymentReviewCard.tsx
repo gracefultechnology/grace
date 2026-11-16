@@ -1,5 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { cn } from "../lib/cn.ts";
+import { FactRow, factList } from "../lib/facts.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 
@@ -64,12 +65,11 @@ export function PaymentReviewCard({
         {heading}
       </p>
       {/* spec/app/payment.md, "Current amount, date, funding method and fees are presented before voice approval" */}
-      <dl className="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-8 gap-y-3">
+      <dl className={factList}>
         {rows.map((row) => (
-          <div key={row.label} className="contents">
-            <dt className="text-body leading-[26px] font-medium whitespace-nowrap text-muted-foreground">{row.label}</dt>
-            <dd className={cn("m-0 text-right text-body-lg leading-7 font-bold", stale ? "text-muted-foreground" : "text-foreground")}>{row.value}</dd>
-          </div>
+          <FactRow key={row.label} label={row.label} className={cn("font-bold", stale ? "text-muted-foreground" : "text-foreground")}>
+            {row.value}
+          </FactRow>
         ))}
       </dl>
       {stale ? (

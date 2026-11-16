@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import { Button } from "./Button.tsx";
 import { upcoming } from "./CalendarApp.meta.tsx";
 import { CalendarEventRow } from "./CalendarEventRow.tsx";
@@ -33,9 +34,6 @@ export const meta: ComponentMeta<GuideAnchorProps> = {
     </div>
   ),
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Close this tip" }));
-      await expect(close).toHaveBeenCalled();
-    },
+    Default: tapCalls("Close this tip", close),
   },
 };

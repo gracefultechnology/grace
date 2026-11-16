@@ -1,7 +1,6 @@
 import { ChevronDown, MessageSquarePlus, RotateCcw } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { press } from "./Button.tsx";
-import { GracePill } from "./GraceHeader.tsx";
+import { GracePill, press } from "./Button.tsx";
 import { Menu, MenuLabel, MenuOption, type MenuProps } from "./Menu.tsx";
 import { SwitchTrack } from "./Switch.tsx";
 

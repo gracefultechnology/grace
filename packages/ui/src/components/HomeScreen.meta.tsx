@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import { Banner } from "./Banner.tsx";
 import { offline as offlineBanner, reminder } from "./Banner.meta.tsx";
 import { files } from "./FilesCard.meta.tsx";
@@ -58,17 +59,7 @@ export const meta: ComponentMeta<HomeScreenProps> = {
     </TabletScreen>
   ),
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const more = within(canvasElement).getByRole("button", { name: "More apps" });
-      await userEvent.click(more);
-      await expect(onPageChange).toHaveBeenCalledWith("files");
-      more.blur();
-    },
-    "Compact Page Files": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const back = within(canvasElement).getByRole("button", { name: "Back to the first page" });
-      await userEvent.click(back);
-      await expect(onPageChange).toHaveBeenCalledWith("main");
-      back.blur();
-    },
+    Default: tapCalls("More apps", onPageChange, { args: ["files"], rest: true }),
+    "Compact Page Files": tapCalls("Back to the first page", onPageChange, { args: ["main"], rest: true }),
   },
 };

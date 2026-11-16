@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
-import { GracePill } from "./GraceHeader.tsx";
+import { GracePill } from "./Button.tsx";
 import { Menu, MenuOption, type MenuProps } from "./Menu.tsx";
 
 // Prototype #addB's paperclip, 24px.

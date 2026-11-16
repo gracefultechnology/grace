@@ -136,6 +136,7 @@ export * from "./components/TaskCard.tsx";
 export * from "./components/TaskProblem.tsx";
 export * from "./components/TasksScreen.tsx";
 export * from "./components/TextField.tsx";
+export * from "./components/Textarea.tsx";
 export * from "./components/TextScale.tsx";
 export * from "./components/ThinkingDots.tsx";
 export * from "./components/Toast.tsx";

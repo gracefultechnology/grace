@@ -6,12 +6,13 @@
   "sideEffects": ["./src/fonts.ts"],
   "exports": {
     ".": "./src/index.ts",
-    "./fonts": "./src/fonts.ts"
+    "./fonts": "./src/fonts.ts",
+    "./styles.css": "./styles.css"
   },
   "scripts": {
     "gen": "node ../../vibestack/stories/cli.ts gen --check",
     "storybook": "storybook dev --no-open",
-    "build": "storybook build",
+    "storybook:build": "storybook build",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
     "typecheck": "tsc --noEmit -p ."
@@ -31,7 +32,6 @@
     "@radix-ui/react-slot": "catalog:",
     "@radix-ui/react-switch": "catalog:",
     "@radix-ui/react-toggle-group": "catalog:",
-    "@repo/design-system": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "lucide-react": "catalog:",
@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@fontsource/figtree": "catalog:",
+    "@repo/design-system": "workspace:*",
     "@storybook/addon-a11y": "catalog:",
     "@storybook/addon-vitest": "catalog:",
     "@storybook/react-vite": "catalog:",

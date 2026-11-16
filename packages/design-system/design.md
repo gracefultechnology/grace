@@ -11,7 +11,8 @@ Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 pro
   inks, kept exactly by choice: `pale` for Grace's unspoken words, `outside-day` for days outside the month and
   `alert` on the week strip's Today. Each is marked `data-prototype-ink`, the one place axe skips contrast.
 - **Meaning.** `primary` (indigo) is the one next step, the selected label and the focus ring. `guide` is
-  Grace pointing; `ok` done; `alert` today and what is due; `destructive` a warning about safety.
+  Grace pointing; `ok` done; `alert` today and what is due; `info` a neutral notice (the link blue);
+  `destructive` a warning about safety. `input`, a control's edge, stands 3:1 on what it sits on.
 - **Shape.** `radius` is 12px (`rounded-sm` 8 … `rounded-xl` 16); named radii by role: `rounded-row` 22,
   `rounded-window` 26, `rounded-card` 30, `rounded-menu` 38, `rounded-full` for every button.
 - **Type.** Figtree. Sizes are tokens in rem so the Text size setting scales every word: `text-body` 20,
@@ -90,10 +91,11 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `destructive` | oklch(0.501 0.178 28.7) | oklch(0.729 0.139 25.3) |
 | `destructive-foreground` | oklch(1 0 0) | oklch(0.197 0.016 296.4) |
 | `border` | oklch(0.908 0.019 299) | oklch(0.288 0.029 296) |
-| `input` | oklch(0.908 0.019 299) | oklch(0.288 0.029 296) |
+| `input` | oklch(0.64 0.022 296) | oklch(0.54 0.029 296) |
 | `ring` | oklch(0.346 0.088 291.7) | oklch(0.784 0.093 291.7) |
 | `ok` | oklch(0.514 0.117 153.6) | oklch(0.791 0.126 156.9) |
 | `warn` | oklch(0.521 0.138 41.8) | oklch(0.809 0.114 69.6) |
+| `info` | oklch(0.487 0.181 261.1) | oklch(0.78 0.1 261.1) |
 | `device` | oklch(0.201 0.014 298.2) | — |
 | `screen` | oklch(0.91 0.043 295.9) | — |
 | `glass` | oklch(1 0 0) | — |

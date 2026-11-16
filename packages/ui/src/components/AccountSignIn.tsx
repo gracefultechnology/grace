@@ -4,7 +4,7 @@ import { AccountHelp, type AccountHelpLabels } from "./AccountHelp.tsx";
 import { Button } from "./Button.tsx";
 import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
-import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
+import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 import { SignInCodeField } from "./SignInCodeField.tsx";
 import { TextField } from "./TextField.tsx";
 
@@ -282,11 +282,10 @@ export function AccountSignIn({
     );
 
   return (
-    <section aria-label={title} aria-busy={busy || undefined} data-sensitive="true" className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
-      <SettingsPageHeading>{title}</SettingsPageHeading>
+    <SettingsAccountPage title={title} busy={busy} className={className} {...props}>
       {body}
       {step === "choose" ? null : status}
       {step === "signing-out" ? null : trouble}
-    </section>
+    </SettingsAccountPage>
   );
 }

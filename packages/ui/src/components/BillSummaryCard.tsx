@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
+import { FactRow, factLabel, factList, factValue } from "../lib/facts.tsx";
 import { Alert } from "./Alert.tsx";
 import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
@@ -79,23 +80,20 @@ export function BillSummaryCard({
       </p>
       {conflict ? <Alert variant="caution">{conflict}</Alert> : null}
       {/* spec/app/billpay.md, "Current bill facts distinguish payment choices, no payment due and an existing payment" */}
-      <dl className="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-8 gap-y-3">
+      <dl className={factList}>
         {rows.map((row) => (
-          <div key={row.label} className="contents">
-            <dt className="text-body leading-[26px] font-medium whitespace-nowrap text-muted-foreground">{row.label}</dt>
-            <dd className={cn("m-0 text-right text-body-lg leading-7", row.value ? "font-bold text-foreground" : "font-medium text-muted-foreground")}>
-              {row.value ?? row.unknownLabel ?? unknownLabel}
-            </dd>
-          </div>
+          <FactRow key={row.label} label={row.label} className={row.value ? "font-bold text-foreground" : "font-medium text-muted-foreground"}>
+            {row.value ?? row.unknownLabel ?? unknownLabel}
+          </FactRow>
         ))}
         <div className="contents">
-          <dt className="text-body leading-[26px] font-medium whitespace-nowrap text-muted-foreground">{paymentLabel}</dt>
+          <dt className={cn(factLabel, "font-medium text-muted-foreground")}>{paymentLabel}</dt>
           {existing ? (
             <dd className="col-span-2 m-0 -mt-1 min-w-0">
               <PaymentStatusBadge {...existing} />
             </dd>
           ) : (
-            <dd className="m-0 text-right text-body-lg leading-7 font-medium text-muted-foreground">{noPaymentLabel}</dd>
+            <dd className={cn(factValue, "font-medium text-muted-foreground")}>{noPaymentLabel}</dd>
           )}
         </div>
       </dl>

@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import { onAccount } from "./GuideRing.meta.tsx";
 import type { GuideLabelProps } from "./GuideLabel.tsx";
 
@@ -26,13 +27,7 @@ export const meta: ComponentMeta<GuideLabelProps> = {
   },
   decorator: (story) => onAccount(story),
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Close this tip" }));
-      await expect(close).toHaveBeenCalled();
-    },
-    Field: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Tap here, then type" }));
-      await expect(select).toHaveBeenCalled();
-    },
+    Default: tapCalls("Close this tip", close),
+    Field: tapCalls("Tap here, then type", select),
   },
 };

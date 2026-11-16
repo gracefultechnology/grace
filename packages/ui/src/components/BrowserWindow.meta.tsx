@@ -1,20 +1,16 @@
 import type { ReactNode } from "react";
-import { House, Settings, Volume2, Wifi } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { cn } from "../lib/cn.ts";
 import { AddressBar } from "./AddressBar.tsx";
-import { AskGraceButton } from "./AskGraceButton.tsx";
 import { BrowserPageState } from "./BrowserPageState.tsx";
 import { BrowserTabStrip } from "./BrowserTabStrip.tsx";
 import { BrowserToolbar } from "./BrowserToolbar.tsx";
 import { BrowserWindow, type BrowserWindowProps } from "./BrowserWindow.tsx";
 import { NewTabPage } from "./NewTabPage.tsx";
-import { Rail, RailButton } from "./Rail.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
 import { unfocus } from "./MailApp.meta.tsx";
+import { onTablet } from "./SettingsApp.meta.tsx";
 
-const icon = { size: 28, strokeWidth: 1.9 };
 const closeBrowser = fn();
 const newTab = fn();
 
@@ -33,24 +29,7 @@ const newTabWindow: BrowserWindowProps = {
 const payTab = [{ id: 1, title: "Pay your card · Chase", initial: "C" }];
 
 /** Prototype `.screen` with the rail beside the browser, as at 8:57 PM on Friday, November 13. */
-const tablet = (children: ReactNode) => (
-  <TabletScreen>
-    <Rail
-      battery={75}
-      time="8:57"
-      period="PM"
-      date="Fri, Nov 13"
-      aria-label="Tablet"
-      status={<RailButton icon={<Wifi {...icon} />} label="Wi-Fi" />}
-      footer={<RailButton icon={<Settings {...icon} />} label="Settings" />}
-      ask={<AskGraceButton />}
-    >
-      <RailButton icon={<House {...icon} />} label="Home" />
-      <RailButton icon={<Volume2 {...icon} />} label="Volume" />
-    </Rail>
-    {children}
-  </TabletScreen>
-);
+const tablet = (children: ReactNode) => onTablet(() => children);
 
 /** A story over the browser on the payment page, paused behind it: for the website's requests and the browser's notices. */
 export const onBrowser = (story: () => ReactNode, site = "chase.com/pay") =>

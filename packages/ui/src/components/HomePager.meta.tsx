@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import type { HomePagerProps } from "./HomePager.tsx";
 
 const onPageChange = fn();
@@ -16,11 +17,6 @@ export const meta: ComponentMeta<HomePagerProps> = {
   // Drawn over Home's area, 1268×788 inside the screen.
   decorator: (story) => <div className="relative h-[788px] w-[1268px] bg-gradient-frame-soft">{story()}</div>,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const more = within(canvasElement).getByRole("button", { name: "More apps" });
-      await userEvent.click(more);
-      await expect(onPageChange).toHaveBeenCalledWith(1);
-      more.blur();
-    },
+    Default: tapCalls("More apps", onPageChange, { args: [1], rest: true }),
   },
 };

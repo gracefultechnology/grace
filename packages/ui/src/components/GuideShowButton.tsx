@@ -1,7 +1,6 @@
 import { Eye } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { Button, type ButtonProps } from "./Button.tsx";
-import { GracePill } from "./GraceHeader.tsx";
+import { Button, type ButtonProps, GracePill } from "./Button.tsx";
 
 export type GuideShowButtonProps = Omit<ButtonProps, "variant" | "size" | "children" | "onSelect" | "asChild" | "loading"> & {
   /** Brings back the ring and label Margaret dismissed, on the same target with the same words. */

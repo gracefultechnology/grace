@@ -84,3 +84,13 @@ export function Button({ variant, size, loading = false, asChild = false, type =
     </Comp>
   );
 }
+
+export type GracePillProps = Omit<ButtonProps, "variant" | "size">;
+
+// .gwin .hgrp .pill:not(.prom): a tap grows the pill (.pill:active) and its background stays clear.
+export const pillPress = cn(press, "active:bg-transparent");
+
+/** A pill inside a `GraceCapsule`: no fill of its own, 56px tall (prototype `.gwin .hgrp .pill`). */
+export function GracePill({ className, ...props }: GracePillProps) {
+  return <Button variant="plain" size="compact" className={cn("text-grace-ink", pillPress, className)} {...props} />;
+}

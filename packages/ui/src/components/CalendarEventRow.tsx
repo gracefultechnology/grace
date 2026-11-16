@@ -63,7 +63,7 @@ export function CalendarEventRow({
         <span className="block text-body-lg leading-7 font-bold text-chrome">{startLabel}</span>
       </span>
       {/* Prototype `.a-bar`, `.a-bar.red`. */}
-      <span className={cn("w-[3px] flex-none self-stretch rounded-xs", important ? "bg-alert" : "bg-lavender")}>{important && <span className="sr-only">{importantLabel}</span>}</span>
+      <span className={cn("w-[3px] flex-none self-stretch rounded-full", important ? "bg-alert" : "bg-lavender")}>{important && <span className="sr-only">{importantLabel}</span>}</span>
       <span className="min-w-0">
         <span className="block text-lead leading-[30px] font-bold text-chrome">{title}</span>
         {details && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{details}</span>}

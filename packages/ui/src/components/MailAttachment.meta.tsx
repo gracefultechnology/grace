@@ -1,6 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { unfocus } from "./MailApp.meta.tsx";
+import { tapCalls } from "./Button.meta.tsx";
 import type { MailAttachmentProps } from "./MailAttachment.tsx";
 
 const open = fn();
@@ -18,16 +18,8 @@ export const meta: ComponentMeta<MailAttachmentProps> = {
   },
   decorator: (story) => <div className="w-[810px] bg-background p-6">{story()}</div>,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Open" }));
-      await expect(open).toHaveBeenCalled();
-      unfocus();
-    },
-    "Print failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-      unfocus();
-    },
+    Default: tapCalls("Open", open, { rest: true }),
+    "Print failed": tapCalls("Try again", retry, { rest: true }),
     // While the printer's answer is unknown, Print waits.
     "Print unknown": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole<HTMLButtonElement>("button", { name: "Print" }).disabled).toBe(true),
   },

@@ -1,5 +1,6 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { tapCalls } from "./Button.meta.tsx";
 import type { RetryNoticeProps } from "./RetryNotice.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
@@ -12,9 +13,6 @@ export const meta: ComponentMeta<RetryNoticeProps> = {
   },
   decorator: settingsPage,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
-      await expect(retry).toHaveBeenCalled();
-    },
+    Default: tapCalls("Try again", retry),
   },
 };

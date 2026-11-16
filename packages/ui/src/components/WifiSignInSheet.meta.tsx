@@ -1,9 +1,7 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { SettingsApp } from "./SettingsApp.tsx";
-import { onTablet } from "./SettingsApp.meta.tsx";
-import { WifiNetworkList } from "./WifiNetworkList.tsx";
-import { current, nearby } from "./WifiNetworkList.meta.tsx";
+import { tapCalls } from "./Button.meta.tsx";
+import { overWifiPage } from "./SettingsApp.meta.tsx";
 import type { WifiSignInSheetProps } from "./WifiSignInSheet.tsx";
 
 /* eslint-disable design-system/no-literal-colors -- the library's own web page, as the network serves it (prototype `.psweb`), not the tablet's */
@@ -46,23 +44,8 @@ const cancel = fn();
 
 export const meta: ComponentMeta<WifiSignInSheetProps> = {
   args: { network: "Riverside Library Guest", onCancel: cancel, children: page },
-  // Over the Wi-Fi page it was opened from.
-  decorator: (story) =>
-    onTablet(
-      () => (
-        <>
-          <SettingsApp page="wifi" onClose={() => {}}>
-            <WifiNetworkList current={current} networks={nearby} />
-          </SettingsApp>
-          {story()}
-        </>
-      ),
-      "Settings",
-    ),
+  decorator: overWifiPage,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Cancel" }));
-      await expect(cancel).toHaveBeenCalled();
-    },
+    Default: tapCalls("Cancel", cancel),
   },
 };
