@@ -34,9 +34,9 @@ export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
 };
 
 /**
- * The one place a secret is typed during set-up, in place of the answer field (senior-care ui/onboarding/SecretField.tsx):
- * masked, with Show or Hide inside it and Send beside it. The value stays in the field, is never lifted or mirrored, and
- * is cleared after Send and when the field goes.
+ * The one place a secret is typed during set-up, in place of the answer field: masked, with Show or Hide inside it and
+ * Send beside it. The value stays in the field, is never lifted or mirrored, and is cleared after Send and when the field
+ * goes.
  * @design packages/design-system/design.md#grace
  */
 export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels: words, className, ...props }: SecretFieldProps) {

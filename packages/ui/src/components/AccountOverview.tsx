@@ -93,8 +93,8 @@ export type AccountOverviewProps = ComponentProps<"section"> & {
 };
 
 /**
- * Settings' account page (senior-care AccountSetup.tsx `AccountBilling`): the account and where it stands, its plan, the
- * account's own pages, Check again and Sign out, which asks first and says what it changes.
+ * Settings' account page: the account and where it stands, its plan, the account's own pages, Check again and Sign out,
+ * which asks first and says what it changes.
  * @design packages/design-system/design.md#windows
  */
 export function AccountOverview({

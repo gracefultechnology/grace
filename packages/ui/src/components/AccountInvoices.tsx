@@ -140,8 +140,8 @@ export type AccountInvoicesProps = ComponentProps<"section"> & {
 const actions = "flex flex-wrap gap-3";
 
 /**
- * Settings' read-only invoices (senior-care AccountInvoices.tsx): the list by date and status, then one invoice line by
- * line, with its PDF and the billing company's own page. Nothing here pays.
+ * Settings' read-only invoices: the list by date and status, then one invoice line by line, with its PDF and the
+ * billing company's own page. Nothing here pays.
  * @design packages/design-system/design.md#windows
  */
 export function AccountInvoices({ view, invoices, invoice, busy = false, problem, onOpenList, onOpenInvoice, onRefresh, onClose, onBack, onOpenPdf, onOpenMerchant, labels, className, ...props }: AccountInvoicesProps) {

@@ -21,7 +21,7 @@ export type AccountFactsProps = Omit<PanelProps, "variant" | "children" | "title
 
 /**
  * The lines of an account record, a label and its value on each row, on the tinted panel: an invoice, a plan change's
- * estimate, what a plan includes (senior-care AccountInvoices.tsx, PlanChange.tsx `Estimate`, UsageBalance.tsx).
+ * estimate, what a plan includes.
  * @design packages/design-system/design.md#windows
  */
 export function AccountFacts({ facts, title, total = false, note, className, ...props }: AccountFactsProps) {

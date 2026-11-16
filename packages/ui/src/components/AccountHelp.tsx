@@ -65,8 +65,8 @@ export type AccountHelpProps = Omit<AccountFoldProps, "title" | "children"> & {
 };
 
 /**
- * Help with the account that works with no sign-in and no paid call (senior-care AccountHelp.tsx), folded under its row
- * at the foot of the sign-in and plan pages.
+ * Help with the account that works with no sign-in and no paid call, folded under its row at the foot of the sign-in
+ * and plan pages.
  * @design packages/design-system/design.md#windows
  */
 export function AccountHelp({ signIn = false, labels, ...props }: AccountHelpProps) {

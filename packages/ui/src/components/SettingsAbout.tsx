@@ -24,7 +24,7 @@ export type SettingsAboutProps = ComponentProps<"section"> & {
   credits?: VoiceCredit[];
   /** The name of the section that lists `credits`. */
   creditsLabel?: string;
-  /** The line over the credits, such as that the software runs on the tablet (senior-care `VoiceNotices`). */
+  /** The line over the credits, such as that the software runs on the tablet. */
   creditsIntro?: string;
   /** The credits start open. */
   defaultCreditsOpen?: boolean;

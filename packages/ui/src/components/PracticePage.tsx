@@ -37,9 +37,8 @@ export type PracticePageProps = ComponentProps<"section"> & {
 };
 
 /**
- * Set-up step 16, Websites (senior-care ui/onboarding/PracticePage.tsx): a local practice website where Grace shows how
- * she points at what to tap. It is a website, not Grace, so it keeps the site's own navy; nothing on it is sent anywhere,
- * and Continue only changes the page.
+ * Set-up step 16, Websites: a local practice website where Grace shows how she points at what to tap. It is a website,
+ * not Grace, so it keeps the site's own navy; nothing on it is sent anywhere, and Continue only changes the page.
  * @design packages/design-system/design.md#guidance
  */
 export function PracticePage({ guided = false, done = false, onContinue, labels: words, className, ...props }: PracticePageProps) {

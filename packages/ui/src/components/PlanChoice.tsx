@@ -175,9 +175,9 @@ export function PlanWait({ children }: { children: ReactNode }) {
 }
 
 /**
- * Starting a Grace plan (senior-care PlanPayment.tsx): the recommended plan with its price and what it includes, paying
- * on Stripe's secure form on the tablet or by a code someone else scans, the other plans, and the wait while the payment
- * is confirmed. Once a family link exists, paying here waits for one successful check.
+ * Starting a Grace plan: the recommended plan with its price and what it includes, paying on Stripe's secure form on the
+ * tablet or by a code someone else scans, the other plans, and the wait while the payment is confirmed. Once a family
+ * link exists, paying here waits for one successful check.
  * @design packages/design-system/design.md#windows
  */
 export function PlanChoice({

@@ -62,10 +62,7 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   micOffLabel?: string;
   /** The field's accessible name. */
   fieldLabel?: string;
-  /**
-   * Set-up's Talk in place of the Mic switch (senior-care Dock.tsx, `setup`): filled on Margaret's turn, a keyline while
-   * she is `listening`.
-   */
+  /** Set-up's Talk in place of the Mic switch: filled on Margaret's turn, a keyline while she is `listening`. */
   setup?: boolean;
   /** Called by Talk during set-up. */
   onTalk?: () => void;
@@ -75,7 +72,7 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   /** Called by Type during set-up, to open the composer and the keyboard. */
   onType?: () => void;
   typeLabel?: string;
-  /** Set-up without internet: Talk gives way and Type is the main button (senior-care shared/verified/dock-phase.ts, `typeFirst`). */
+  /** Set-up without internet: Talk gives way and Type is the main button. */
   offline?: boolean;
 };
 

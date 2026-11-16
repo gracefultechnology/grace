@@ -11,9 +11,8 @@ export type TaskProblemProps = Omit<AlertProps, "variant" | "children"> & {
 };
 
 /**
- * Why a task Grace was doing has stopped, the question it leaves and the ways on (senior-care BillTaskPanel.tsx: a blocked
- * bill, such as the wrong account, sign-in unavailable or a payment the site does not allow, and CodeStepGmail), on the
- * caution notice.
+ * Why a task Grace was doing has stopped, the question it leaves and the ways on (a blocked bill, such as the wrong
+ * account, sign-in unavailable or a payment the site does not allow), on the caution notice.
  * @design packages/design-system/design.md#windows
  */
 export function TaskProblem({ text, question, actions, ...props }: TaskProblemProps) {

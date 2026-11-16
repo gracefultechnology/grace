@@ -153,8 +153,8 @@ function CategoryList({ title, items, included }: { title: string; items: readon
 }
 
 /**
- * Settings' read-only usage and balance (senior-care UsageBalance.tsx): the help left this month large over a bar, the
- * prepaid credit, the automatic top-up setting and what the help may be spent on. Viewing it changes and spends nothing.
+ * Settings' read-only usage and balance: the help left this month large over a bar, the prepaid credit, the automatic
+ * top-up setting and what the help may be spent on. Viewing it changes and spends nothing.
  * @design packages/design-system/design.md#windows
  */
 export function UsageBalance({ stale = false, allowance, credit, autoTopUp, categories, checkedAt, busy = false, problem, onRefresh, onBack, labels, className, ...props }: UsageBalanceProps) {

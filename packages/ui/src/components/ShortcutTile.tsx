@@ -18,8 +18,8 @@ export type ShortcutTileProps = Omit<ComponentProps<"button">, "children"> & {
 const HOLD_MS = 600;
 
 /**
- * A website Margaret saved to Home, opened by a tap and changed by holding it (senior-care ShortcutManager.tsx,
- * homeShortcutTiles), on the compact launcher card's glass.
+ * A website Margaret saved to Home, opened by a tap and changed by holding it, on the compact launcher card's
+ * glass.
  * @design packages/design-system/design.md#home
  */
 export function ShortcutTile({ label, icon = <Globe size={30} strokeWidth={2} aria-hidden />, tag, tagTone = "new", onHold, className, ...props }: ShortcutTileProps) {

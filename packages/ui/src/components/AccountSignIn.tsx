@@ -126,9 +126,8 @@ export type AccountSignInProps = Omit<ComponentProps<"section">, "onSubmit"> & {
 const column = "flex flex-col items-start gap-3";
 
 /**
- * Signing in to Grace on the tablet (senior-care AccountSetup.tsx `AccountSignIn`, NativeCloudSignIn.tsx and
- * GoogleSignIn.tsx): the choice of email, phone or Google, the address, then the code with its expiry and resend, and
- * every state between. Codes stay in this form, out of the chat.
+ * Signing in to Grace on the tablet: the choice of email, phone or Google, the address, then the code with its expiry
+ * and resend, and every state between. Codes stay in this form, out of the chat.
  * @design packages/design-system/design.md#windows
  */
 export function AccountSignIn({

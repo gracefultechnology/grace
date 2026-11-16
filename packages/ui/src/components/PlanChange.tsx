@@ -130,8 +130,8 @@ export type PlanChangeProps = ComponentProps<"section"> & {
 const actions = "flex flex-wrap gap-3";
 
 /**
- * Changing the plan (senior-care PlanChange.tsx and QuoteAllowance.tsx): the other plans, one change's terms from the
- * saved quote with what is due now and at renewal, then the wait while it is confirmed, and a payment it may need.
+ * Changing the plan: the other plans, one change's terms from the saved quote with what is due now and at renewal,
+ * then the wait while it is confirmed, and a payment it may need.
  * @design packages/design-system/design.md#windows
  */
 export function PlanChange({

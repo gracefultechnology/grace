@@ -84,8 +84,8 @@ export type PasswordsAppProps = Omit<AppWindowProps, "title" | "icon" | "childre
 };
 
 /**
- * Grace's password vault on the tablet (senior-care PasswordsApp.tsx): the list with search, and one password with its
- * site and username, the secret hidden until asked for, in an app window like the prototype's apps.
+ * Grace's password vault on the tablet: the list with search, and one password with its site and username, the secret
+ * hidden until asked for, in an app window like the prototype's apps.
  * @design packages/design-system/design.md#windows
  */
 export function PasswordsApp({ passwords, anySaved = passwords.length > 0, query = "", onQueryChange, onAdd, onLock, onOpenPassword, open, revealed, onBack, onShow, onCopy, onOpenWebsite, onEdit, onDelete, notice, labels, ...props }: PasswordsAppProps) {

@@ -16,8 +16,8 @@ export type ProgressStripProps = Omit<ComponentProps<"div">, "title"> & {
 };
 
 /**
- * How far set-up has come: the step's name and "3 of 17" over a thin bar (senior-care
- * apps/app/src/ui/onboarding/ProgressStrip.tsx). It sits in Grace's header, so it has no surface of its own.
+ * How far set-up has come: the step's name and "3 of 17" over a thin bar. It sits in Grace's header, so it
+ * has no surface of its own.
  * @design packages/design-system/design.md#grace
  */
 export function ProgressStrip({ title, step, total, countLabel = (s, n) => `${s} of ${n}`, progressLabel = "Set-up progress", className, ...props }: ProgressStripProps) {

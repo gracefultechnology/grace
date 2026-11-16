@@ -133,8 +133,8 @@ export type AccountMethodsProps = ComponentProps<"section"> & {
 const actions = "flex flex-wrap gap-3";
 
 /**
- * Settings' page for how Margaret signs in to her account (senior-care AccountMethods.tsx): the methods, a security check
- * before a change, linking a phone, setting up security codes and removing a method after one question.
+ * Settings' page for how Margaret signs in to her account: the methods, a security check before a change, linking a
+ * phone, setting up security codes and removing a method after one question.
  * @design packages/design-system/design.md#windows
  */
 export function AccountMethods({

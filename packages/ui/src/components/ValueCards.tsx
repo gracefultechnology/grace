@@ -18,8 +18,8 @@ export type ValueCardsProps = Omit<ComponentProps<"div">, "onSelect"> & {
 };
 
 /**
- * Values Grace offers in the chat for Margaret to tap as her answer (senior-care ui/onboarding/ValueCards.tsx), drawn
- * in her ink like the prototype's answer chips (`.uchip`), one per row, with a line under each.
+ * Values Grace offers in the chat for Margaret to tap as her answer, drawn in her ink like the prototype's answer
+ * chips (`.uchip`), one per row, with a line under each.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */

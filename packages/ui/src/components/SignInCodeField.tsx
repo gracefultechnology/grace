@@ -11,8 +11,8 @@ export type SignInCodeFieldProps = Omit<TextFieldProps, "value" | "onChange" | "
 };
 
 /**
- * The six-digit code an account sends by email or text (senior-care NativeCloudSignIn.tsx, SignInCodeField): a labelled
- * field that keeps only digits and offers the code the phone received. The code stays in this form, out of the chat.
+ * The six-digit code an account sends by email or text: a labelled field that keeps only digits and offers the code the
+ * phone received. The code stays in this form, out of the chat.
  * @design packages/design-system/design.md#buttons
  */
 export function SignInCodeField({ value, onValueChange, length = 6, className, ...props }: SignInCodeFieldProps) {

@@ -21,8 +21,8 @@ export type LanguageChoiceProps = Omit<ComponentProps<"section">, "onChange"> & 
 };
 
 /**
- * The language Grace speaks and shows, the same choice in set-up and Settings (senior-care apps/app/src/LanguageChoice.tsx),
- * as the prototype's segmented choice under a section heading.
+ * The language Grace speaks and shows, the same choice in set-up and Settings, as the prototype's segmented choice under a
+ * section heading.
  * @design packages/design-system/design.md#windows
  */
 export function LanguageChoice({ title = "Language", languages, value, onValueChange, className, ...props }: LanguageChoiceProps) {

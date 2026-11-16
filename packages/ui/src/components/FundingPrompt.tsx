@@ -27,8 +27,8 @@ export type FundingPromptProps = ComponentProps<"section"> & {
 };
 
 /**
- * Grace's calm word in place of a refused turn (senior-care FundingPrompt.tsx): the conversation needs a plan or her
- * account, nothing is charged, and two answers. Her line takes focus as it appears, so a screen reader lands on it.
+ * Grace's calm word in place of a refused turn: the conversation needs a plan or her account, nothing is charged,
+ * and two answers. Her line takes focus as it appears, so a screen reader lands on it.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */

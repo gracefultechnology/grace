@@ -60,8 +60,8 @@ export type ConfirmIdentityProps = Omit<ComponentProps<"section">, "onSubmit"> &
 };
 
 /**
- * Confirms the signed-in person before a payment or an account change, outside chat and speech (senior-care
- * ConfirmIdentity.tsx): send a code, enter it, and the account's extra check where it has one.
+ * Confirms the signed-in person before a payment or an account change, outside chat and speech: send a
+ * code, enter it, and the account's extra check where it has one.
  * @design packages/design-system/design.md#windows
  */
 export function ConfirmIdentity({ step, purpose = "paying", sentTo, checkBy = "sms", code = "", onCodeChange, busy = false, notice, problem, onSend, onConfirm, onResend, onBack, labels, className, ...props }: ConfirmIdentityProps) {

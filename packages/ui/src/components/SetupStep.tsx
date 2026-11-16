@@ -51,9 +51,8 @@ export type SetupStepProps = Omit<GraceWindowProps, "header" | "children" | "doc
 };
 
 /**
- * Set-up, held in Grace's conversation (senior-care onboarding/OnboardingFlow.tsx): her header with Tasks and Close, the
- * progress strip, her question and Margaret's answers to tap or say, over the answer row. Each step is the words and
- * answers it is given.
+ * Set-up, held in Grace's conversation: her header with Tasks and Close, the progress strip, her question and Margaret's
+ * answers to tap or say, over the answer row. Each step is the words and answers it is given.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */

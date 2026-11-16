@@ -8,8 +8,8 @@ export type GraceActionLineProps = Omit<ComponentProps<"div">, "children"> & {
   /** What happened, such as "You tapped Sign in." */
   children: ReactNode;
   /**
-   * `action`: a tap Margaret made herself (prototype `.act`). The rest are the original app's system lines (senior-care
-   * ConversationLog.tsx, SystemLine): `record` notes a step, `result` something done, `problem` something that stopped.
+   * `action`: a tap Margaret made herself (prototype `.act`). The rest are system lines: `record` notes a step,
+   * `result` something done, `problem` something that stopped.
    */
   tone?: Tone;
   /** A line that will be replaced, such as "Checking the website…": quieter. */
