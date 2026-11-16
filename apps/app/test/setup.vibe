@@ -9,14 +9,12 @@ declare module "vitest" {
   }
 }
 
-const page = (title: string) => HttpServerResponse.text(`<!doctype html><title>${title}</title><h1>${title}</h1>`, { contentType: "text/html" })
-
 const site = Layer.mergeAll(
   HttpStaticServer.layer({ root: `${import.meta.dirname}/site` }),
   HttpRouter.addAll([
     HttpRouter.route("GET", "/slow", effect {
       try sleep("3 seconds")
-      return page("A page that took its time")
+      return HttpServerResponse.text("<!doctype html><title>A page that took its time</title><h1>A page that took its time</h1>", { contentType: "text/html" })
     }),
     HttpRouter.route("GET", "/never", Effect.never)
   ])

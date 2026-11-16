@@ -89,20 +89,12 @@ effect function answered<R>(handler: HttpServerResponse.HttpServerResponse!{ rea
   return handler catch effect (error) => try orDie(HttpServerResponse.json({ error: error._tag }, { status: statusOf[error._tag] ?? 400 }))
 }
 
-function words(text: string) {
-  return text.split(/(?<= )/)
-}
-
 function chunk(content: string) {
   return `data: ${JSON.stringify({ object: "chat.completion.chunk", choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`
 }
 
 function audio(id: string) {
   return Uint8Array.of(1, id.length, ...Array.from(id, (c) => c.charCodeAt(0)), ...new Uint8Array(320))
-}
-
-function digest(n: number) {
-  return n.toString(16).padStart(64, "0")
 }
 
 effect function store(site: string) {
@@ -173,7 +165,7 @@ effect function store(site: string) {
     const { key, mail, changes } = try google()
     const { requestId, proposal } = try HttpServerRequest.schemaBodyJson(Prepare)
     if (!mail.some((m) => m.externalId === proposal.messageId)) throw new Missing()
-    const prepared = changes.find((c) => c.requestId === requestId) ?? { requestId, proposal, reviewDigest: digest(try next()), state: "prepared" as const }
+    const prepared = changes.find((c) => c.requestId === requestId) ?? { requestId, proposal, reviewDigest: (try next()).toString(16).padStart(64, "0"), state: "prepared" as const }
     try change(key, (a) => ({ ...a, changes: [...a.changes.filter((c) => c.requestId !== requestId), prepared] }))
     return try HttpServerResponse.json({ version: 1, receipt: prepared, review: proposal, providerExactlyOnce: false })
   }
@@ -252,7 +244,7 @@ effect function store(site: string) {
       try settle("completed")
       return try HttpServerResponse.json({ object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: reply(said) }, finish_reason: "stop" }] })
     }
-    const parts = said === unending ? Stream.forever(Stream.make("and ")) : Stream.fromIterable(words(reply(said)))
+    const parts = said === unending ? Stream.forever(Stream.make("and ")) : Stream.fromIterable(reply(said).split(/(?<= )/))
     const frames = Stream.concat(Stream.map(Stream.schedule(parts, Schedule.spaced("20 millis")), chunk), Stream.make("data: [DONE]\n\n"))
     return HttpServerResponse.stream(Stream.encodeText(Stream.onExit(frames, (exit) => settle(Exit.isSuccess(exit) ? "completed" : "aborted"))), {
       contentType: "text/event-stream", headers: { "cache-control": "no-store" }
