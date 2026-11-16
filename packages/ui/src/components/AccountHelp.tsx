@@ -16,7 +16,6 @@ export function AccountFold({ title, defaultOpen = false, className, children, .
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
   return (
-    // Prototype `#awin .a-row[data-ax]:active`: a tapped row sinks to 99%.
     <div className={cn("rounded-row bg-panel font-sans has-[>button:active]:scale-[.99]", className)} {...props}>
       <button
         type="button"
@@ -26,7 +25,6 @@ export function AccountFold({ title, defaultOpen = false, className, children, .
         className={cn(focusRing, "flex min-h-24 w-full cursor-pointer items-center gap-5 rounded-row px-[22px] py-4 text-left text-lead leading-[30px] font-bold text-chrome")}
       >
         <span className="flex-1">{title}</span>
-        {/* Prototype `.a-row .chev` at `axi('chevR',26,2.4)`, turned down for a row that opens in place. */}
         <ChevronDown aria-hidden size={26} strokeWidth={2.4} className={cn("flex-none text-chevron transition-transform duration-base motion-reduce:transition-none", open && "rotate-180")} />
       </button>
       {open ? (
@@ -67,8 +65,8 @@ export type AccountHelpProps = Omit<AccountFoldProps, "title" | "children"> & {
 };
 
 /**
- * Help with the account that works with no sign-in and no paid call (senior-care AccountHelp.tsx), folded under its row
- * at the foot of the sign-in and plan pages.
+ * Help with the account that works with no sign-in and no paid call, folded under its row at the foot of the sign-in
+ * and plan pages.
  * @design packages/design-system/design.md#windows
  */
 export function AccountHelp({ signIn = false, labels, ...props }: AccountHelpProps) {

@@ -6,18 +6,12 @@ import { PageText } from "./PageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 import { TextField } from "./TextField.tsx";
 
-/** The website's kind of message: `alert` (OK), `confirm` (Cancel / OK), `prompt` (typed text) or `beforeunload` (leave the page?). */
 export type WebsiteMessageKind = "alert" | "confirm" | "prompt" | "beforeunload";
 
-/** The words of the dialog around the website's own. */
 export type WebsiteMessageLabels = {
-  /** The title, given the site: "chase.com says". */
   says: (site: string) => string;
-  /** The title of a leave-page warning. */
   leaveTitle: string;
-  /** The line that keeps the website's words apart from Grace's. */
   fromWebsite: string;
-  /** The name of a prompt's text field. */
   answer: string;
   ok: string;
   cancel: string;
@@ -64,7 +58,6 @@ export function WebsiteMessageDialog({ kind, site, message, defaultText = "", on
   const [text, setText] = useState(defaultText);
   const quoteId = useId();
   const leaving = kind === "beforeunload";
-  // spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text".
   const answer = (accept: boolean) => onAnswer(accept, kind === "prompt" && accept ? text : undefined);
   return (
     <BrowserDialog
@@ -87,7 +80,6 @@ export function WebsiteMessageDialog({ kind, site, message, defaultText = "", on
         )
       }
     >
-      {/* The website's words, quoted on a panel: never in Grace's voice. */}
       <Panel id={quoteId} className="mt-3.5 px-5 py-4">
         <blockquote className="m-0 text-body-lg leading-[30px] break-words whitespace-pre-line text-foreground before:content-['“'] after:content-['”']">
           {message}

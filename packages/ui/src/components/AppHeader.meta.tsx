@@ -8,7 +8,6 @@ import { Button, press } from "./Button.tsx";
 const close = fn();
 const back = fn();
 
-// Calendar's header actions: Today, and Add as the one next step (prototype `#awin .aphdr`); Today presses as CalendarApp's does.
 const calendarActions = (
   <>
     <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")}>Today</Button>
@@ -24,14 +23,10 @@ export const meta: ComponentMeta<AppHeaderProps> = {
   examples: {
     "With Back": { title: "Doctor’s appointment", backLabel: "Calendar", onBack: back, actions: undefined },
     "Large title": { mode: "large" },
-    // Prototype `data-hdr="none"`: no title, only the capsules.
     "No title": { mode: "none" },
-    // Prototype `lgtScroll()` past the large title, X.hdrMode = "large": the frosted bar with the title centred.
     "Large title, collapsed": { mode: "large", collapsed: true },
-    // The same over a split window's page column (prototype `#awin.splitw .aphdr.bar`), Settings › Wi-Fi.
     "Split, collapsed": { mode: "large", collapsed: true, split: true, title: "Wi-Fi", actions: undefined, className: "ml-[310px]" },
   },
-  // The top of an app window (prototype `#awin`), 1130 wide on the tablet's wash.
   decorator: (story) => (
     <div className="bg-gradient-frame-soft p-1.5">
       <div className="h-[180px] w-[1130px] overflow-hidden rounded-window bg-background shadow-float">{story()}</div>

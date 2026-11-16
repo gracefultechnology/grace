@@ -3,14 +3,10 @@ import { Button } from "./Button.tsx";
 import { BrowserDialog } from "./BrowserNoticeDialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 
-/** What the website asks for, as its upload button says: photos, documents, or either. */
 export type WebsiteFileAccept = "photos" | "documents" | "any";
 
-/** The words of the request. */
 export type WebsiteFileRequestLabels = {
-  /** The title, given the site and what it accepts: "chase.com wants a photo or document". */
   title: (site: string, accept: WebsiteFileAccept) => string;
-  /** What happens next. */
   note: string;
   choose: string;
   cancel: string;
@@ -57,7 +53,6 @@ export function WebsiteFileRequestDialog({ site, accept = "any", onChoose, onCan
       className={className}
       actions={
         <>
-          {/* spec/app/websiteRequests.md, "The file picker opens only after my tap and my choice to choose a file". */}
           <Button variant="prominent" size="pill" onClick={onChoose}>
             <FolderOpen size={22} strokeWidth={2.2} aria-hidden />
             {labels.choose}

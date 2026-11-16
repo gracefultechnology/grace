@@ -55,7 +55,6 @@ export function WifiNetworkRow({
 }: WifiNetworkRowProps) {
   if (connected)
     return (
-      // The joined network: the shared selected platter (design.md#selected).
       <ListRow
         title={name}
         subtitle={connectedLabel}
@@ -68,13 +67,11 @@ export function WifiNetworkRow({
   return (
     <ListRow
       title={name}
-      // spec/app/network.md, "Only the current OS result can complete or challenge the join": a failure keeps an explicit retry.
       subtitle={connecting ? connectingLabel : failed ? <span className="text-destructive">{failedLabel}</span> : undefined}
       leading={<WifiSignal strength={signal} />}
       trailing={
         <>
           {locked && (
-            // Prototype LOCK: a narrower padlock than Lucide's.
             <svg role="img" aria-label={lockedLabel} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -85,7 +82,6 @@ export function WifiNetworkRow({
               {retryLabel}
             </Button>
           ) : (
-            // Prototype `.chev` margin 14px plus the row's 20px gap.
             <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-[34px] text-chevron" />
           )}
         </>

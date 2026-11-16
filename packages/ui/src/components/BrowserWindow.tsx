@@ -15,10 +15,10 @@ export type BrowserWindowProps = ComponentProps<"section"> & {
  * children (the selected tab's page, or a `NewTabPage`).
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function BrowserWindow({ tabStrip, toolbar, placement = "screen", className, children, ...props }: BrowserWindowProps) {
   return (
-    // Prototype `.bwin`: 144px from the left and 6px from the other edges, 1130 wide on a landscape tablet; light glass with a bright rim and a brighter top line.
     <section
       className={cn(
         "isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
@@ -29,8 +29,6 @@ export function BrowserWindow({ tabStrip, toolbar, placement = "screen", classNa
     >
       {tabStrip}
       {toolbar}
-      {/* Prototype `.site`: the website, under the toolbar. Clear, because the app's native page is drawn below it
-          (apps/app/src/PageLayer.tsx, PageArea); a page Grace draws itself, such as NewTabPage, brings its own grey. */}
       <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
   );

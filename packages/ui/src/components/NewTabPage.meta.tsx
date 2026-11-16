@@ -9,7 +9,6 @@ const clear = fn();
 const confirm = fn();
 const cancel = fn();
 
-// The prototype's one website, then the pages it opens, as a person's recent websites might read.
 const recent: NewTabShortcut[] = [
   { url: "chase.com", title: "Chase" },
   { url: "chase.com/card", title: "Credit card · Chase" },
@@ -21,11 +20,9 @@ const recent: NewTabShortcut[] = [
 export const meta: ComponentMeta<NewTabPageProps> = {
   examples: {
     "Recent websites": { shortcuts: recent.slice(0, 1), onOpenShortcut: open },
-    // Each shortcut can be removed, and Clear forgets them all after one question.
     "Remove and clear": { shortcuts: recent, removable: true, clearable: true, onOpenShortcut: open, onRemoveShortcut: remove, onClear: clear },
     "Confirming clear": { shortcuts: recent, removable: true, clearable: true, onRemoveShortcut: remove, onClear: clear, confirmingClear: true, onConfirmClear: confirm, onCancelClear: cancel },
   },
-  // Prototype `.site`: the page area under the toolbar, 1130×644.
   decorator: (story) => <div className="h-[644px] w-[1130px]">{story()}</div>,
   play: {
     "Recent websites": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
@@ -41,7 +38,6 @@ export const meta: ComponentMeta<NewTabPageProps> = {
       await expect([remove.mock.calls[0], clear.mock.calls.length, open.mock.calls.length]).toEqual([["chase.com"], 1, 0]);
       unfocus();
     },
-    // Escape is Cancel: the list stays as it was.
     "Confirming clear": async () => {
       confirm.mockClear();
       cancel.mockClear();

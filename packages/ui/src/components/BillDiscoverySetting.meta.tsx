@@ -2,7 +2,6 @@ import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { BillDiscoverySettingProps } from "./BillDiscoverySetting.tsx";
 
-// The words of the original app (senior-care apps/app/src/bill-discovery-copy.ts).
 const companies = {
   about: "When this is on, Grace checks your Gmail for new bills from your bill companies, even when you haven’t asked for help. When a new bill arrives, Grace asks you on the home screen whether to pay it.",
   limits: "Grace only reads these emails, through Eliza Cloud, as for a task. Grace never starts paying a bill by itself: you decide, and you press Pay yourself on the company’s website. You can turn this off at any time.",

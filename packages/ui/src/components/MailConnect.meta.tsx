@@ -8,7 +8,6 @@ const disconnect = fn();
 const confirm = fn();
 
 export const meta: ComponentMeta<MailConnectProps> = {
-  // Margaret's Gmail, before it is connected.
   args: {
     state: "disconnected",
     account: "margaret.hale@gmail.com",
@@ -36,7 +35,6 @@ export const meta: ComponentMeta<MailConnectProps> = {
       await expect(connect).toHaveBeenCalled();
       unfocus();
     },
-    // Disconnect asks first; Keep it leaves the email connected.
     Connected: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Disconnect" }));
       await expect(disconnect).toHaveBeenCalled();

@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { ConfirmIdentityProps } from "./ConfirmIdentity.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
-// The original app's words (senior-care ConfirmIdentity.tsx).
 export const meta: ComponentMeta<ConfirmIdentityProps> = {
   args: { step: "start", onSend: fn(), onConfirm: fn(), onResend: fn(), onBack: fn(), onCodeChange: fn() },
   decorator: settingsPage,

@@ -4,7 +4,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import { Button } from "./Button.tsx";
 import type { TextFieldProps } from "./TextField.tsx";
 
-// prototype Calendar › New appointment.
 export const meta: ComponentMeta<TextFieldProps> = {
   args: { label: "What", placeholder: "For example: Bridge club" },
   examples: {
@@ -16,10 +15,8 @@ export const meta: ComponentMeta<TextFieldProps> = {
       action: <Button variant="capsule" size="compact" className="h-12 px-[18px] text-lg">Change</Button>,
     },
   },
-  // A field of the form's two 527px columns.
   decorator: (story) => <div className="w-[575px] bg-background p-6">{story()}</div>,
   play: {
-    // The label names the field: a tap on it puts the words there.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByText("What"));

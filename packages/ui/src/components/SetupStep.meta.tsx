@@ -10,7 +10,6 @@ import type { SetupStepProps } from "./SetupStep.tsx";
 import { UserBubble } from "./UserBubble.tsx";
 import { ValueCards } from "./ValueCards.tsx";
 
-// The original app's set-up words (senior-care apps/app/src/onboarding/copy.ts, steps.ts), in the Wi-Fi variant's 17 steps.
 const at = (title: string, step: number) => ({ title, step, total: 17 });
 const answered = fn();
 const closed = fn();
@@ -36,7 +35,6 @@ const named = (
 const connected = <GraceActionLine tone="result">Connected to Smith Family Wi-Fi.</GraceActionLine>;
 
 export const meta: ComponentMeta<SetupStepProps> = {
-  // Step 1, Saying hello.
   args: {
     progress: at("Saying hello", 1),
     language: <LanguageChoice languages={languages} value="English" />,
@@ -117,7 +115,6 @@ export const meta: ComponentMeta<SetupStepProps> = {
       ),
       answers: ["Bigger", "That’s good", "Smaller"],
     },
-    // Step 11: Grace points at Close; the Done card is already in Tasks.
     "Stepping aside": {
       progress: at("Stepping aside", 11),
       language: undefined,

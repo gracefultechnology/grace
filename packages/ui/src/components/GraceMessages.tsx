@@ -3,10 +3,6 @@ import { ArrowDown } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 
-// Prototype focusMsg(): in the compact window the latest message sits centred between the two toolbars (each 64px over
-// the list, so 92 and 104 of padding). One taller than that gap shows its end; while she is still speaking it, its start,
-// or as far down as keeps her first line not yet said in view. Answers keep their question where it sat, framed as in the
-// window before it grew 70px for them (prototype sizeCompact()), and show below it. Expanded, the newest is at the bottom.
 function latestTop(list: HTMLElement) {
   const end = list.scrollHeight - list.clientHeight;
   let last = list.lastElementChild;
@@ -53,7 +49,6 @@ export function GraceMessages({
   ...props
 }: GraceMessagesProps) {
   const ref = useRef<HTMLDivElement>(null);
-  // spec/app/conversation.md, "New messages do not pull the reader away from earlier messages"
   useLayoutEffect(() => {
     if (following && ref.current) ref.current.scrollTop = latestTop(ref.current);
   });
@@ -69,20 +64,17 @@ export function GraceMessages({
         ref={ref}
         role="log"
         aria-label="Conversation"
-        // A keyboard can scroll back through the conversation.
         tabIndex={0}
         onScroll={scrolled}
         className={cn(
           focusRing,
           "focus-visible:ring-inset",
-          // .msgs: 88px under the header and 96 over the answer row expanded; 92 and 104 compact.
           "relative flex min-h-0 flex-1 flex-col justify-start gap-4 overflow-y-auto px-4 pt-[88px] pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           "group-data-[size=compact]/grace:pt-[92px] group-data-[size=compact]/grace:pb-[104px]",
           className,
         )}
         {...props}
       />
-      {/* spec/app/conversation.md, "New messages do not pull the reader away from earlier messages": a capsule 16px over the answer row. */}
       {hasNewer && !following && (
         <Button variant="capsule" size="pill" onClick={onJumpToLatest} className="absolute bottom-20 left-1/2 z-[2] -translate-x-1/2 animate-rise motion-reduce:animate-none">
           <ArrowDown size={22} strokeWidth={2.2} aria-hidden />

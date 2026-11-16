@@ -8,7 +8,6 @@ const select = fn();
 export const meta: ComponentMeta<MailFolderNavProps> = {
   args: { folder: "inbox", counts: { inbox: 2 }, onSelect: select },
   examples: { "With drafts": { folder: "drafts", counts: { inbox: 2, drafts: 1 } } },
-  // Prototype `#awin.splitw .a-split>.a-nav`: 270px wide, 16px short of the 772px the 788px window leaves under its 16px top.
   decorator: (story) => <div className="h-[804px] w-[302px] bg-background p-4">{story()}</div>,
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {

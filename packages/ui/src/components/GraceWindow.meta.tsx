@@ -14,21 +14,16 @@ import { UserBubble } from "./UserBubble.tsx";
 const header = (expanded: boolean, pause: "idle" | "live" = "live") => (
   <GraceHeader expanded={expanded} pause={pause} voice={<GraceVoiceMenu side={expanded ? "bottom" : "top"} />} />
 );
-// While Grace speaks it is her turn: the field holds its place, dimmed, with no helper words; they step back for answers
-// to tap too, and show only on Margaret's turn with nothing else to do (prototype dock()).
 const dock = (expanded: boolean, turn: "grace" | "answers" | "margaret") => (
   <GraceDock {...dockArgs} quiet={turn === "grace"} placeholder={turn === "margaret" ? "Talk or tap to type a message" : ""} maxLines={expanded ? 6 : 4} />
 );
 
-// Prototype `#gwin` in `.chat-white` as Ask Grace opens her full screen, greeting Margaret (ref grace-open).
 export const meta: ComponentMeta<GraceWindowProps> = {
   args: { size: "expanded", header: header(true), dock: dock(true, "grace"), children: <GraceMessages>{greeting}</GraceMessages> },
   examples: {
-    // Ref grace-compact: three rows over Home.
     Compact: { size: "compact", header: header(false), dock: dock(false, "grace") },
     Conversation: { header: header(true, "idle"), dock: dock(true, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
     "Compact question": { size: "compact", height: 330, header: header(false, "idle"), dock: dock(false, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
-    // While she talks the answers fade out and keep their place (prototype `.sugg.fade`).
     "Compact question, listening": {
       size: "compact",
       height: 330,
@@ -47,7 +42,6 @@ export const meta: ComponentMeta<GraceWindowProps> = {
       ),
     },
     "Compact thinking": { size: "compact", header: header(false, "idle"), dock: dock(false, "grace"), children: <GraceMessages>{thinking}</GraceMessages> },
-    // A reply of four lines: the window grows a line and shows the reply's end (prototype sizeCompact(), focusMsg()).
     "Compact long reply": {
       size: "compact",
       height: 292,

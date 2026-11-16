@@ -17,7 +17,6 @@ export type AskGraceButtonProps = ComponentProps<"button"> & {
  * @design packages/design-system/design.md#selected
  */
 export function AskGraceButton({ label = "Ask Grace", selected = false, glow = "rest", type = "button", className, ...props }: AskGraceButtonProps) {
-  // Prototype `.rail .ask`, `.rail .ask.on`.
   return (
     <button
       type={type}

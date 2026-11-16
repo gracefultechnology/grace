@@ -57,6 +57,70 @@ not yet said: white, outlined in her ink, with her tail. While she speaks, `lave
 Grace points with a `guide` ring in the margin around the target and a label beside it: indigo while she
 works, `guide` for "your turn", `ok` when done. A target off screen becomes a glass pill at the edge.
 
+## Screens
+
+Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
+the line of the function that draws it. The prototype draws from today's date; the stories hold it at 8:56 or 8:57 PM
+on Friday, November 13, 2026. Open the story and that line side by side. Unless its row maps it, an `Empty`,
+`Header Mode …` or `Placement …` story is the bare component and its props (`hdr()` 1885 follows `X.hdrMode`);
+"app only" marks a state the prototype does not draw, built in its look.
+
+| Component | Prototype state | Stories |
+| --- | --- | --- |
+| `TabletScreen` | `.device` and `#screen` (801) | Default: the bare `#screen`; In The Bezel, Device: `.device`'s 18px bezel; Background Frame: `.screen .sbg` |
+| `AppWindow` | `#awin` (1821), `axRender()` 2056, `hdr()` 1885 | Default: Email's inbox, `mailView()` 1940 at 1966–1971; Calendar: the week's Coming up list, `calView()` 1896 at 1916; With Back: an appointment, `C.detail` (1898–1899); Settings: `setView()` 2037 on `X.set.page` Text size (1809); Large Title: Text size with `X.hdrMode` `large` (2060, 2391); Large Title No List: Calendar's week with `X.hdrMode` `large`; Large Title With Back: an appointment with `X.hdrMode` `large`; No Title: `X.hdrMode` `none`, the App header's No title (879, 2394) |
+| `HomeScreen` | `render()` 1266, `homeCards()` 1874, `hmGeom()` 2297 mode G | Default: Home's first page; Layout Compact: `layout()` 1256 with Grace compact (`.home.cmp`); Page Files, Compact Page Files: `hmGo(1)` 2352; Layout Greeting: `.home.tight`, keyboard up; Reminder: `drawBanner()` 1865, `X.banner = "rem"` (2275); Offline: `X.online = false` |
+| `SleepScreen` | `drawSleep()` 2254 | Default: `X.wake`; Wake Word Off: `X.wake = false`; Nothing Next: no event ahead |
+| `StartupScreen` | app only: `.screen`, `.orb-w`, `.zzsleep` type, `.a-btn.prom` | Default, State Failed |
+| `GraceWindow` | `renderGrace()` 1173 in `.chat-white`, `dock()` 1646 | Default: Ask Grace full screen; Compact, Size Compact: `sizeCompact()` 1287; Conversation; Compact Question; Compact Question Listening: `.sugg.fade`; Compact Thinking; Compact Long Reply: `sizeCompact()`, `focusMsg()` 1290; Frost, Surface Frost: `.gwin`'s frosted glass without `.chat-white` (67–68) |
+| `SetupStep` | app only, in Grace's window (`renderGrace()` 1173) | every step |
+| `BrowserWindow` | `#bwin` (819), `renderSite()` 1005 on `PAGES` (973) | Default: `PAGES.newtab`; Empty Go: app only, `PAGES.newtab` with the address bar's notice; Website Sign In: `signin`; Website Sign In Error: `signin` with `S.site.err` (1041); Website Account, Website Pay, Website Review, Website Payment Scheduled: `account`, `pay`, `review`, `done`; Grace Typing: `.addr.typing`; Loading With More Tabs, Page Failed: app only |
+| `NewTabPage` | `renderSite()` 1011, `.newtab` | Default; Recent Websites, Remove And Clear, Confirming Clear, Removable, Clearable: app only |
+| `PracticePage` | app only, `.scard` of `renderSite()` | Default, Guided, Done |
+| `CalendarApp` | `axRender()` 2056, `calView()` 1896 | Default, Week: `X.cal` (1799–1802); Month; Detail; Form, Form Picking A Time: `calForm()` 1918, Save ready once titled (`formsave` 2171); Form Saving: app only, `calForm()` with the Save pill's spinner; Form Save Failed: app only, `.a-caution` as `wifiPage()` 2002 shows a refusal; With A Draft: Grace's unconfirmed row, dashed `.a-new` (471), in `calView()` 1915–1916, as her draft puts it there (2134–2135); Added By Margaret: Margaret's own new appointment, which `formsave` (2172) rings with `axGuide()` 2072–2079 kind `confirm`, where saving an edit (2171) draws no ring |
+| `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Large Title: `X.hdrMode` `large` (2060); Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
+| `FilesApp` | `axRender()` 2056, `filesView()` 1982 | Default: `X.files` photos; Documents: `X.files.tab`; Found One Photo, Found One Document: `axGuide()` 2072–2079 kind `point` on the one match (2146); Which One, Print Unknown, Nothing Matched, Loading, Load Failed: app only |
+| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join: `X.wifi.join` (2004) on a network that needs an account, refused (`W.err`, 2006); Header Mode Large Wi Fi Join: `X.wifi.join` (2004); Header Mode None: `X.wifi.join` (2004) with `X.hdrMode` `none` (2394); Grace Points At Largest: `axGuide()` 2072–2079 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
+| `MailMessageView` | `mailView()` 1940 with `M.read` (1958) | Default: Susan's email from `X.mail.items` (1804) with its photos, `.a-attbar` (1963); Large Title: `X.hdrMode` `large` (2060); Scam: `m.scam`, `.a-caution` (1960); Grace Points At The Warning: `out.guide` (2148) kind `point` on that `caution`; Attachment: `m.files`, `.a-att` (1964); In Trash: Restore and Delete forever (1959); Loading, Couldn T Open, Photos Saved, Print Unknown, Bill, Bill Confirmed: app only |
+| `MailCompose` | `mailView()` 1940 with `M.compose` (1945) | Default: `hdr('New email')` with Discard (1949), a photo in `.a-thumbs` (1955); Large Title: `X.hdrMode` `large` (2060); Blank: nothing filled in; Attach Open: `c.menu`, `.apop` (1957); With Copies: the Cc and Bcc rows (1952); Reply: `c.replyTo` (1949); Sending, Send Failed, Not Sure It Sent, Record Not Saved, Draft Not Saved: app only |
+| `MailRecipientPicker` | `mailView()` 1940 with `c.picker` (1946–1948) | Default: "Who is it to?" over `PEOPLE`; Searching: `c.pickq` (1948); A Copy: `c.pickFor` `cc` (1947) |
+| `PhotoViewer` | `mailView()` 1940 with `M.viewer` (1941–1942) | Default: the second of Susan's three photos; First, Last: the hidden arrow at either end (1942); Loading, Status Loading, Couldn T Show, Saved, Save Status Saving, Save Failed: app only |
+| `PdfViewer` | `mailView()` 1940 with `M.pdf` (1943–1944); `filesView()` 1982 with `F.pdf` (1985) | Default: the clinic's visit form from its email; From Files: a document in Files, Print only (1985); Savable: the email's form with `savable` off, Print only as 1985 draws it; Loading, Status Loading, Can T Show, Printed, Print Unknown, Print Failed: app only |
+| `FilePhotoViewer` | `filesView()` 1982 with `X.files.view` (1983–1984) | Default: `X.files.view = 1`, the second photo of six; First, Last: the hidden arrow at either end (1984); Delete Failed: app only |
+| `MailConnect` | app only, in an app window (`axRender()` 2056) | every story |
+| `DeviceAppHandoff` | app only, in an app window (`axRender()` 2056) | every story |
+| `PasswordsApp` | app only, in an app window (`axRender()` 2056) | every story |
+| `CameraApp` | app only, in an app window (`axRender()` 2056) | every story |
+| `TasksScreen` | app only, in an app window (`axRender()` 2056) | every story |
+
+The parts below the screens copy these rules and lines of the prototype.
+
+| Component | Prototype |
+| --- | --- |
+| `AddressBar` | `.addr` (89) in `.bz-bar` (435), whose `!important` glass outranks `.addr.typing` (273) |
+| `BrowserTab` | `.bz-tw` (82–85) |
+| `Button` | `.a-btn` capsule (474); disabled fades its label at full opacity, as `#ahdr [aria-disabled]` does (674) |
+| `CalendarApp` header | `#ahdr .pill.prom` (673), pressed `.pill:not(.prom)` (669–672), disabled keeps its indigo and white words (673–674); clear `#awin .aphdr .hgrp .pill:not(.prom)` (682); saving spinner white on the filled pill, as the filled working label's spinner (434); `axGuide()` on an `ev` row, kind `point` on Grace's draft (2136), `confirm` once she adds it (2137) and once Margaret saves a new one (`formsave` 2172) |
+| `CalendarDeleteDialog`, `CalendarApp` save error | `.a-caution` (493–494), as `wifiPage()` shows a refusal (2006) |
+| `CalendarEventForm` | `.spdo.sel` (621) over `.apop .spdo` (558, 615) |
+| `CalendarIcon` | `AXP` (1770), drawn by `axi()` (1786) |
+| `CalendarNav` | `.a-rb` (569, 659–661) |
+| `FilesApp` pointing | `axGuide()` kind `point` (2072–2079), target chosen at 2146 |
+| `MailMessageView` pointing | `axGuide()` kind `point` (2072–2079) |
+| `FilesCard` | `hmFilesInner()` (2283); compact `.home.cmp .lc[data-app="Files"]` (636–637) |
+| `HomeGreeting` | `.hgr`, `.hgr h2`, `.hgr .sub` (320–323); compact (390–392) |
+| `HomeMailRow` | compact `.home.cmp .lc[data-app="Email"] .lpanel span` (394) |
+| `HomeCalendarCard` | `.lc[data-app="Calendar"]` markup (817); compact `.home.cmp .lc[data-app="Calendar"]` (395, 400–401) |
+| `HomePager` | `hmChrome()` (2347); `.harrow`, `#hArrowL` (627–629, 653–655); `.hpager` (630–634, 648) |
+| `HomeScreen` layout | markup of `.home`, `.hgr` and the `.hgrid` cards (815–817); `.home` (230, 318), `.hgr` (320), `.hgrid` (324); beside the rail `.home`, `.hpager`, `.hfade`, `.hgr`, `.hgrid` (647–651); compact `.home.cmp` (389–401), its Files column (636); `.home.tight .hgrid` (429); transitions (389, 405–406); swipe (2361–2365) |
+| `InternetCard` | `#netThumb` in the cards' markup (817), compact (399) |
+| `Keyboard` | `L` (1672): the three layers |
+| `LauncherCard` | `.lc` markup (817), `.lc` (325–327), its title and status (336–337), no live blur (440), `.lc .sheen` (330–331, 441–443) |
+| `MailAttachment` | `.a-att`, `.a-att .ft` (544–545) |
+| `Rail` | `.rail` (52, 305, 652) |
+| `RailPopover` | `.rpop` (506–515), drawn by `drawPop()` (1851) |
+| `ScreenDim` | `.axdim` (599) |
+
 ## Changing it
 
 `tokens.json` is the source; the CSS in `generated/` and the table below are built from it. Nothing reads

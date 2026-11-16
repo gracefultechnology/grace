@@ -1,8 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import tokens from "@repo/design-system/tokens.json" with { type: "json" };
 
-// Every value below is read from the design tokens (packages/design-system/tokens.json) through their CSS variables. Tailwind
-// emits a theme variable only where a class uses it, so each falls back to the token's own value; colors use their base variables.
 export default { title: "Foundations/Tokens", parameters: { layout: "fullscreen" } };
 
 const Section = ({ children }: { children: ReactNode }) => <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6 bg-background p-8 font-sans text-foreground">{children}</div>;
@@ -14,7 +12,6 @@ const Name = ({ name, value }: { name: string; value: string }) => (
 );
 const tile = "h-24 rounded-row bg-card";
 const keys = <T extends object>(scale: T) => Object.entries(scale) as [string, string][];
-// A multi-layer shadow's layers, split at its top-level commas: drop-shadow() takes one layer each.
 const layers = (value: string) => {
   const out = [""];
   let depth = 0;
@@ -80,7 +77,6 @@ export const Shadows = () => (
   </Section>
 );
 
-// Glass over the frame, the only place blur shows.
 export const Blurs = () => (
   <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6 bg-gradient-frame p-8 font-sans text-foreground">
     {keys(tokens.blur).map(([name, value]) => (
@@ -104,7 +100,6 @@ export const Gradients = () => (
   </Section>
 );
 
-// Hover a row: its dot crosses with that duration or ease (eases run over the window duration).
 const Run = ({ name, value, style }: { name: string; value: string; style: CSSProperties }) => (
   <div className="group flex items-center gap-6">
     <span className="w-56 flex-none text-sm">

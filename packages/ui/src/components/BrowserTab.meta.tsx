@@ -2,7 +2,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { BrowserTabProps } from "./BrowserTab.tsx";
 
 export const meta: ComponentMeta<BrowserTabProps> = {
-  // Prototype `.bz-tw` on the payment page.
   args: { title: "Pay your card · Chase", initial: "C", selected: true },
   examples: { "New tab": { title: "New tab", initial: undefined } },
   decorator: (story) => (

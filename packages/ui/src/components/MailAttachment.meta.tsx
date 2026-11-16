@@ -7,7 +7,6 @@ const open = fn();
 const retry = fn();
 
 export const meta: ComponentMeta<MailAttachmentProps> = {
-  // The clinic's form, attached to its reminder.
   args: { name: "Visit form.pdf", detail: "2 pages", onOpen: open, onPrint: fn() },
   examples: {
     Printing: { printStatus: "pending" },
@@ -20,7 +19,6 @@ export const meta: ComponentMeta<MailAttachmentProps> = {
   play: {
     Default: tapCalls("Open", open, { rest: true }),
     "Print failed": tapCalls("Try again", retry, { rest: true }),
-    // While the printer's answer is unknown, Print waits.
     "Print unknown": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole<HTMLButtonElement>("button", { name: "Print" }).disabled).toBe(true),
   },
 };

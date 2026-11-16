@@ -18,7 +18,6 @@ export const meta: ComponentMeta<CalendarEventDetailProps> = {
       when: "Monday, November 16 · 12 pm to 1:30 pm",
       reminder: "Reminder 1 hour before",
     },
-    // spec/app/handoffs.md, "Story: Return to the bill and see its actual result".
     Bill: {
       ...doctor,
       who: undefined,

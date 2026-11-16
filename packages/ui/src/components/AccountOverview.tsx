@@ -9,22 +9,15 @@ import { PageHeading, PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 
-/** What the account check last said: in use, a payment needs attention, a payment is being checked, or no answer. */
 export type AccountAccess = "active" | "funding_required" | "payment_pending" | "unavailable";
 
-/** The plan the account pays for, written as the app shows it. */
 export interface AccountSubscription {
-  /** "Grace Plus". */
   plan: string;
-  /** "Active", "Past due". */
   status: string;
-  /** When the paid period ends: "Dec 1, 2026". */
   periodEnd: string;
-  /** Renewal is cancelled: the plan ends with the period. */
   cancelled?: boolean;
 }
 
-/** Where the account's own pages open from. */
 export type AccountPage = "methods" | "plan" | "usage" | "invoices";
 
 export type AccountOverviewLabels = {
@@ -63,7 +56,6 @@ export const accountOverviewLabels: AccountOverviewLabels = {
   signingOut: "Signing out…",
 };
 
-// The state's mark beside the account, which the page's title says in words: only `active` is settled.
 const marks: Record<AccountAccess, { icon: LucideIcon; tone: string }> = {
   active: { icon: CircleCheck, tone: "text-ok" },
   funding_required: { icon: TriangleAlert, tone: "text-destructive" },
@@ -101,8 +93,8 @@ export type AccountOverviewProps = ComponentProps<"section"> & {
 };
 
 /**
- * Settings' account page (senior-care AccountSetup.tsx `AccountBilling`): the account and where it stands, its plan, the
- * account's own pages, Check again and Sign out, which asks first and says what it changes.
+ * Settings' account page: the account and where it stands, its plan, the account's own pages, Check again and Sign out,
+ * which asks first and says what it changes.
  * @design packages/design-system/design.md#windows
  */
 export function AccountOverview({

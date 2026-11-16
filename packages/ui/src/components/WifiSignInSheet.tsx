@@ -26,7 +26,6 @@ export type WifiSignInSheetProps = Omit<DialogPrimitive.DialogContentProps, "tit
 export function WifiSignInSheet({ network, subtitle = "This network’s sign-in page", open = true, onCancel, cancelLabel = "Cancel", className, children, ...props }: WifiSignInSheetProps) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => !next && onCancel?.()}>
-      {/* Inside the screen, not portalled: the sheet dims the tablet's screen, not the page around it. */}
       <DialogPrimitive.Overlay className="absolute inset-0 z-20 bg-scrim/32" />
       <DialogPrimitive.Content
         aria-describedby={undefined}
@@ -34,17 +33,14 @@ export function WifiSignInSheet({ network, subtitle = "This network’s sign-in 
           "absolute top-1/2 left-1/2 z-20 flex h-[min(700px,calc(100%-3rem))] w-[min(900px,calc(100%-3rem))] -translate-1/2 flex-col overflow-hidden rounded-screen bg-card font-sans shadow-dialog outline-none",
           className,
         )}
-        // The sheet itself takes focus, as the prototype's does, so Cancel shows no ring until a person moves to it.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           (event.currentTarget as HTMLElement).focus();
         }}
         {...props}
       >
-        {/* Prototype `.pshdr`. */}
         <div className="relative flex items-center justify-between border-b border-primary/8 p-4">
           <div className="flex h-16 items-center rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160">
-            {/* Prototype `.pshdr .hgrp .pill`: the clear glass pill without its tint, pressed too (it outranks `.pill:not(.prom):active`). */}
             <Button variant="glass" size="compact" className="bg-transparent px-[22px] active:bg-transparent" onClick={onCancel}>
               {cancelLabel}
             </Button>

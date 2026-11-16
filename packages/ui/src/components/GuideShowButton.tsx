@@ -21,13 +21,11 @@ export function GuideShowButton({ onSelect, onClick, label = "Show me again", su
   const header = surface === "header";
   const content = (
     <>
-      {/* Its neighbours' icons: Show chat's on the strip (`stripBtn()`), Expand's in the header (`ICON.exp`). */}
       <Eye size={header ? 20 : 22} strokeWidth={header ? 2.2 : 2} aria-hidden />
       {label}
     </>
   );
   const select: ButtonProps["onClick"] = (event) => {
-    // On the strip, a tap anywhere else opens the chat; this one only shows the tip.
     event.stopPropagation();
     onClick?.(event);
     onSelect?.();
@@ -35,7 +33,6 @@ export function GuideShowButton({ onSelect, onClick, label = "Show me again", su
   return header ? (
     <GracePill onClick={select} className={className} {...props}>{content}</GracePill>
   ) : (
-    // `.capstrip .pill`: the toolbar's tinted glass, as Show chat beside it.
     <Button
       variant="glass"
       size="pill"

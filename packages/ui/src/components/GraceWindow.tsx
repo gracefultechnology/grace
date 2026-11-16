@@ -23,10 +23,6 @@ export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref
 const COMPACT = 260;
 const LINE = 32;
 
-/**
- * Prototype `sizeCompact()`: 260 for a message of one line, a line more for a longer one, and 70 more for a question
- * with its answers.
- */
 function fitted(section: HTMLElement): number {
   let current = section.querySelector("[role=log]")?.lastElementChild;
   const answers = current?.hasAttribute("data-answers") ?? false;
@@ -40,6 +36,7 @@ function fitted(section: HTMLElement): number {
  * (prototype `#gwin`, `.chat-white`).
  * @model spec/app/assistant.md
  * @design packages/design-system/design.md#grace
+ * @design packages/design-system/design.md#screens
  */
 export function GraceWindow({ size = "expanded", surface = "white", height, onHeightChange, header, dock, placement = "screen", className, style, children, ...props }: GraceWindowProps) {
   const expanded = size === "expanded";
@@ -54,14 +51,12 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
       onHeightChange?.(next);
     };
     measure();
-    // A message rewraps as the window's width changes.
     const observer = new ResizeObserver(measure);
     const log = section.querySelector("[role=log]");
     if (log) observer.observe(log);
     return () => observer.disconnect();
   });
   const white = surface === "white";
-  // .gwin::before / ::after: the conversation softens under the toolbars, as in iOS Messages.
   const fade = white ? "from-background/55 via-background/15 via-70%" : "from-frost/60 via-frost/25 via-60%";
   return (
     <section
@@ -70,12 +65,10 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
       data-size={size}
       data-surface={surface}
       className={cn(
-        // .gwin: 16px in, the corner concentric with its 64px capsules (32 + 16).
         "group/grace isolate flex flex-col gap-6 overflow-hidden rounded-device p-4 font-sans text-grace-ink transition-[height,bottom] duration-slow ease-settle motion-reduce:transition-none",
         white
           ? "bg-background shadow-window"
           : cn("shadow-banner backdrop-blur-2xl backdrop-saturate-150", expanded ? "bg-frost/94" : "bg-frost/86"),
-        // .gwin.exp{top:auto} and sizeCompact(): a height at both sizes, never a top, so expanding animates too.
         placement === "screen" ? cn("absolute bottom-1.5 left-[144px] z-[3] right-1.5", expanded && "h-[calc(100%-12px)]") : cn("relative w-full", expanded && "h-full"),
         className,
       )}

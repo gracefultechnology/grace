@@ -7,10 +7,8 @@ import { SwitchTrack } from "./Switch.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 
 const LINE = 32;
-// #sendB, ".pill.main.prom": flat indigo that grows on .pill's spring and takes the pressed indigo (.pill.prom:active).
 const dockProminent = cn(press, "pr-[26px] pl-[22px] shadow-none active:bg-primary-pressed");
 
-// Prototype ICON.micOn and ICON.micOff, 22px.
 const micIcon = (on: boolean) => (
   <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     {on ? (
@@ -64,10 +62,7 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   micOffLabel?: string;
   /** The field's accessible name. */
   fieldLabel?: string;
-  /**
-   * Set-up's Talk in place of the Mic switch (senior-care Dock.tsx, `setup`): filled on Margaret's turn, a keyline while
-   * she is `listening`.
-   */
+  /** Set-up's Talk in place of the Mic switch: filled on Margaret's turn, a keyline while she is `listening`. */
   setup?: boolean;
   /** Called by Talk during set-up. */
   onTalk?: () => void;
@@ -77,7 +72,7 @@ export type GraceDockProps = Omit<ComponentProps<"div">, "onChange"> & {
   /** Called by Type during set-up, to open the composer and the keyboard. */
   onType?: () => void;
   typeLabel?: string;
-  /** Set-up without internet: Talk gives way and Type is the main button (senior-care shared/verified/dock-phase.ts, `typeFirst`). */
+  /** Set-up without internet: Talk gives way and Type is the main button. */
   offline?: boolean;
 };
 
@@ -120,10 +115,7 @@ export function GraceDock({
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const reasonId = useId();
   const draft = value.trim().length > 0;
-  // spec/app/shell.md, "Permission availability is separate from active recording or observation": without a usable
-  // microphone the switch is off and cannot turn on; typing stays.
   const hears = mic && !micUnavailable;
-  // Prototype autosize(): from two lines the capsule becomes a rounded rectangle (`.cap.multi`).
   useLayoutEffect(() => {
     const el = fieldRef.current;
     if (!el) return;
@@ -135,7 +127,6 @@ export function GraceDock({
   }, [value, maxLines]);
   return (
     <div className={cn("flex items-end gap-2", className)} {...props}>
-      {/* .cap: tapping anywhere on the capsule types into it. */}
       <label
         className={cn(
           "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 data-multi:items-end data-multi:rounded-window",
@@ -198,7 +189,6 @@ export function GraceDock({
             <SwitchTrack checked={false} className="opacity-40" />
           </GracePill>
         )}
-        {/* senior-care dock-phase dockView(): set-up offers Type beside Talk until the composer opens; the tour's "Typing" step rings it. */}
         {setup && !composerOpen ? (
           offline && !listening ? (
             <Button variant="prominent" size="pill" data-open-keyboard className={dockProminent} onClick={onType}>

@@ -9,13 +9,10 @@ import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow
 import type { MailPhoto } from "./MailMessageView.tsx";
 import { MailNotice } from "./MailNotice.tsx";
 
-/** A line of recipients. */
 export type MailRecipientField = "to" | "cc" | "bcc";
 
-/** Where sending stands: `failed` the provider refused it; `unknown` no answer yet, so Send waits; `saveFailed` sent, but its record was not saved. */
 export type MailSendStatus = "idle" | "sending" | "failed" | "unknown" | "saveFailed";
 
-/** Where an attachment comes from. */
 export type MailAttachSource = "camera" | "photos" | "file";
 
 export type MailRecipientChipProps = ComponentProps<"span"> & {
@@ -31,10 +28,8 @@ export type MailRecipientChipProps = ComponentProps<"span"> & {
 export function MailRecipientChip({ contact, onRemove, removeLabel = `Remove ${contact.name}`, className, ...props }: MailRecipientChipProps) {
   return (
     <span className={cn("inline-flex h-[60px] items-center gap-3 rounded-full bg-panel pr-5 pl-2 text-body-lg leading-none font-bold text-chrome", className)} {...props}>
-      {/* Prototype `av(…, 46)`: the initial at 18px, white on the contact's tone. */}
       <MailContactAvatar contact={contact} size={46} style={{ fontSize: 18 }} aria-hidden data-prototype-ink />
       {contact.name}
-      {/* Prototype `.rcx`. */}
       <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-2 ml-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
         <X size={18} strokeWidth={2.4} aria-hidden />
       </button>
@@ -42,7 +37,6 @@ export function MailRecipientChip({ contact, onRemove, removeLabel = `Remove ${c
   );
 }
 
-/** One line of the form: its name on the left, its value beside it, a rule under it (prototype `.a-frow`). */
 function Line({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
   const Name = htmlFor ? "label" : "span";
   return (
@@ -53,17 +47,14 @@ function Line({ label, htmlFor, children }: { label: string; htmlFor?: string; c
   );
 }
 
-/** The round capsule that adds a recipient (prototype `.a-btn.rcadd`). */
 const addButton = cn(appButton, "size-[52px] p-0");
 
-/** The words of the email being written, for another language. */
 export type MailComposeLabels = {
   to: string;
   cc: string;
   bcc: string;
   ccBcc: string;
   add: string;
-  /** The accessible name of a line's +: "Add to To". */
   addTo: (line: string) => string;
   subject: string;
   subjectPlaceholder: string;
@@ -155,6 +146,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  * next step and Attach beside it (prototype `mailView()`, compose).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailCompose({
   title = "New email",
@@ -185,7 +177,6 @@ export function MailCompose({
   ...props
 }: MailComposeProps) {
   const l = { ...composeLabels, ...labels };
-  // spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry".
   const notices: Partial<Record<MailSendStatus, string>> = { failed: l.sendFailed, unknown: l.sendUnknown, saveFailed: l.saveFailed };
   const notice = notices[sendStatus];
   const sending = sendStatus === "sending";
@@ -207,7 +198,6 @@ export function MailCompose({
       title={title}
       backLabel={backLabel}
       actions={
-        // Prototype `hdr('New email', {actions: [{t: 'Discard', …}]})`.
         <Button variant="plain" size="compact" className={headerPill} onClick={onDiscard}>
           <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
           {l.discard}
@@ -216,7 +206,6 @@ export function MailCompose({
       {...props}
     >
       <form className="font-sans" onSubmit={(event) => { event.preventDefault(); onSend?.(); }}>
-        {/* spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable". */}
         {draftError != null && (
           <MailNotice actionLabel={l.retry} onAction={onRetryDraft} className="mb-3">
             {draftError}
@@ -245,7 +234,6 @@ export function MailCompose({
             className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-field-placeholder"
           />
         </Line>
-        {/* Prototype: 150px, plus the 4px its inline textarea leaves beneath it; placeholders in Chrome's default gray (`field-placeholder`). A notice takes its spare lines, so Send stays on screen. */}
         <textarea
           aria-label={l.bodyPlaceholder}
           value={body}
@@ -254,7 +242,6 @@ export function MailCompose({
           className={cn("mt-[18px] box-border block w-full", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-field-placeholder")}
         />
         {attachments.length > 0 && (
-          // Prototype `.a-thumbs`.
           <ul className="m-0 mt-2.5 flex list-none gap-3 p-0">
             {attachments.map((photo, i) => (
               <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
@@ -276,12 +263,10 @@ export function MailCompose({
             {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
             {l.send}
           </Button>
-          {/* Prototype `.apop` at left:150px, top:76px of `.a-btns`, 320px of options inside 8px of padding. */}
           <Menu
             open={attachOpen}
             onOpenChange={onAttachOpenChange}
             trigger={
-              // Open, Attach's label turns indigo; the glass capsule stays (prototype `.a-btn:not(.prom)` wins over its inline white).
               <Button variant="capsule" size="pill" className={cn(appButton, "data-[state=open]:text-primary")}>
                 <mailIcons.clip size={22} strokeWidth={2.2} aria-hidden />
                 {l.attach}

@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { SettingsAboutProps, VoiceCredit } from "./SettingsAbout.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
-// senior-care `VoiceNotices` `VOICE_CREDITS`: the speech software on the tablet.
 export const voiceCredits: VoiceCredit[] = [
   {
     name: "Phonon-2",
@@ -27,7 +26,6 @@ export const voiceCredits: VoiceCredit[] = [
   { name: "libelizainference (llama.cpp)", by: "elizaOS", part: "Engine", license: "MIT, shared under the GPL", links: ["https://github.com/elizaOS/llama.cpp", "https://github.com/elizaOS/eliza"] },
 ];
 
-/** senior-care `VoiceNotices`: the line over the credits. */
 export const voiceCreditsIntro = "Grace speaks and listens on this tablet with this open-source software. Nothing here uses the internet.";
 
 export const meta: ComponentMeta<SettingsAboutProps> = {

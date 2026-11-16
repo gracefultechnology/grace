@@ -8,7 +8,6 @@ const next = fn();
 const retry = fn();
 
 export const meta: ComponentMeta<PhotoViewerProps> = {
-  // The second of Susan's three photos.
   args: { title: "Photo 2 of 3", src: flowersPhoto, alt: "Daisies", backLabel: "Susan’s email", onBack: fn(), onPrevious: fn(), onNext: next, onSave: fn(), onForward: fn(), onClose: fn() },
   examples: {
     First: { title: "Photo 1 of 3", src: stagePhoto, alt: "Lily on the stage", first: true },

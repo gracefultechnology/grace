@@ -4,11 +4,8 @@ import { FactRow, factList } from "../lib/facts.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 
-/** One detail of the payment Margaret is asked to approve. */
 export type PaymentReviewRow = {
-  /** What it is: "Amount". */
   label: string;
-  /** What will be paid: "$84.20". */
   value: string;
 };
 
@@ -54,7 +51,6 @@ export function PaymentReviewCard({
       aria-busy={stale || undefined}
       className={cn(
         "flex flex-col gap-5 transition-[background-color,box-shadow] duration-base group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-float",
-        // While Grace reads it aloud it is lifted like a selected item (design.md#selected).
         reading && !stale && "bg-card shadow-raised inset-ring-2 inset-ring-lavender",
         className,
       )}
@@ -64,7 +60,6 @@ export function PaymentReviewCard({
         {reading && !stale && <VoiceBars />}
         {heading}
       </p>
-      {/* spec/app/payment.md, "Current amount, date, funding method and fees are presented before voice approval" */}
       <dl className={factList}>
         {rows.map((row) => (
           <FactRow key={row.label} label={row.label} className={cn("font-bold", stale ? "text-muted-foreground" : "text-foreground")}>

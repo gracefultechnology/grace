@@ -25,7 +25,6 @@ export type LauncherCardProps = Omit<ComponentProps<"button">, "title"> & {
   children?: ReactNode;
 };
 
-// Prototype `.lc .ttl`, `.lc .st`; Calendar and Files use a 30px title (markup line ~818, `hmFilesInner`).
 const heads = {
   large: { head: "top-[26px] left-7", title: "text-title-lg leading-9", body: "inset-x-6 top-[116px] bottom-6" },
   medium: { head: "top-[22px] left-[26px]", title: "text-title-sm leading-8", body: "inset-x-[22px] top-[100px] bottom-[22px]" },
@@ -41,10 +40,8 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
   const away = Math.min(1, Math.abs(turn));
   const head = heads[size];
   const previewId = useId();
-  // Only the first copy carries the preview's id; `Blurred` stacks more.
   const content = (main = true) => (
     <>
-      {/* Prototype: the corner art fades out three times as fast as the card turns (`hmApply`, stk opacity). */}
       {art ? (
         <span className="absolute -top-[34px] -right-5" style={away ? { opacity: Math.max(0, 1 - away * 3) } : undefined}>
           {art}
@@ -67,19 +64,14 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
       aria-describedby={children ? previewId : undefined}
       className={cn(
         focusRing,
-        // Prototype `.lc`: clear glass with no live blur (line 440); its `.lc:active` scale is hidden by `hmApply`'s inline transform and
-        // its transitions are only Home's layout (`.hgr,.hgrid,.lc`). Its own shadow (line 327) when flat; Home's 3D pages (`hmApply`,
-        // depth) set the float shadow instead.
         "relative block cursor-pointer rounded-card bg-glass/40 p-0 text-left font-sans text-foreground",
         compact ? "shadow-launcher" : "shadow-float",
         className,
       )}
-      // Prototype `hmApply`: a card turning away loses its far shadow as it goes.
       // eslint-disable-next-line design-system/no-literal-colors -- the primary token faded toward transparent by the turn, which no token can hold.
       style={away ? { boxShadow: `0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) ${(6 * (1 - away)).toFixed(1)}%, transparent)`, ...style } : style}
       {...props}
     >
-      {/* Prototype `.lc .sheen` (lines 441–443): a band of light painted across the card every 9s, stopped while it is turned. */}
       {!away && (
         <span
           aria-hidden
@@ -98,17 +90,12 @@ export type LauncherRowsProps = ComponentProps<"span">;
  * being cut (prototype `fitCards()`, `.lpanel.fitoff`). Place it last in the card, where it takes the height left.
  */
 export function LauncherRows({ className, ...props }: LauncherRowsProps) {
-  // Rows stack in one column; one that does not fit starts a second column, 96px clear of the first and clipped. The
-  // margin lets the shadows of the rows that fit show.
   return <span className={cn("flex min-h-0 flex-1 flex-col flex-wrap content-start gap-x-24 overflow-clip [overflow-clip-margin:16px] *:w-full *:shrink-0", className)} {...props} />;
 }
 
-// Prototype `hmLayers`: four stacked copies of the content, each more blurred, cross-faded along the card from the edge
-// nearest the view, so the side turning away goes soft. Each copy reaches 80px past the card so the blur is not cut.
 function Blurred({ turn, children }: { turn: number; children: (main: boolean) => ReactNode }) {
   const away = Math.min(1, Math.abs(turn));
   const near = 0.15 + 0.35 * (1 - away);
-  // A stop `t` of the way from the near point to the far edge, in the copy's own width (card + 2 × 80px).
   const at = (t: number) => `calc(80px + (100% - 160px) * ${(near + (1 - near) * t).toFixed(3)})`;
   const ramp = (...stops: string[]) => `linear-gradient(${turn > 0 ? "to right" : "to left"}, ${stops.join(", ")})`;
   const masks = [

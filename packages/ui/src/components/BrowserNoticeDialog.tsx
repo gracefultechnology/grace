@@ -32,7 +32,6 @@ export type BrowserDialogProps = {
 export function BrowserDialog({ title, icon, tone = "plain", onEscape, open = true, children, actions, className }: BrowserDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onEscape?.()}>
-      {/* Prototype `.a-dlg` with the icon tile and 28/34 title of `trustDlg()`: 560px plus its 32px padding; a tap on the scrim answers nothing. A caution tile takes `.a-caution`'s fill, ring and red. */}
       <DialogContent className={cn("gap-0", className)} onPointerDownOutside={(event) => event.preventDefault()}>
         <div className="flex items-center gap-3.5">
           {icon ? (

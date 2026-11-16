@@ -13,9 +13,9 @@ export type TabletScreenProps = ComponentProps<"div"> & {
  * as the rail, windows and Grace are.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
+ * @design packages/design-system/design.md#screens
  */
 export function TabletScreen({ background = "soft", device = false, className, children, ...props }: TabletScreenProps) {
-  // Prototype `.screen` and `.screen.chat-white .sbg`.
   const screen = (
     <div
       className={cn(
@@ -29,7 +29,6 @@ export function TabletScreen({ background = "soft", device = false, className, c
     </div>
   );
   if (!device) return screen;
-  // Prototype `.device`: the bezel, 18px around the screen.
   return (
     <div className={cn("box-content w-[1280px] shrink-0 rounded-device bg-device p-[18px] shadow-device", className)} {...props}>
       {screen}

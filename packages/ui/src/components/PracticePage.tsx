@@ -4,20 +4,14 @@ import { cn, focusRing } from "../lib/cn.ts";
 import { GuideLabel } from "./GuideLabel.tsx";
 import { GuideRing } from "./GuideRing.tsx";
 
-/** The words of the practice page, for another language. */
 export type PracticePageLabels = {
-  /** The page's name, on its bar and for assistive technology. */
   name: string;
-  /** Beside the name on the bar. */
   note: string;
   title: string;
   text: string;
   continue: string;
-  /** In Continue's place once it is tapped. */
   done: string;
-  /** Grace's label under Continue while she points at it. */
   tapHere: string;
-  /** The label's second line. */
   guideDetail: string;
 };
 
@@ -43,10 +37,10 @@ export type PracticePageProps = ComponentProps<"section"> & {
 };
 
 /**
- * Set-up step 16, Websites (senior-care ui/onboarding/PracticePage.tsx): a local practice website where Grace shows how
- * she points at what to tap. It is a website, not Grace, so it keeps the site's own navy; nothing on it is sent anywhere,
- * and Continue only changes the page.
+ * Set-up step 16, Websites: a local practice website where Grace shows how she points at what to tap. It is a website,
+ * not Grace, so it keeps the site's own navy; nothing on it is sent anywhere, and Continue only changes the page.
  * @design packages/design-system/design.md#guidance
+ * @design packages/design-system/design.md#screens
  */
 export function PracticePage({ guided = false, done = false, onContinue, labels: words, className, ...props }: PracticePageProps) {
   const labels = { ...practicePageLabels, ...words };
@@ -57,20 +51,16 @@ export function PracticePage({ guided = false, done = false, onContinue, labels:
         <span>{labels.name}</span>
         <span className="text-sm font-normal opacity-80">{labels.note}</span>
       </div>
-      {/* prototype `.scard`: white, 8px corners, its own shadow; senior-care practice-page.css `.practice-page__card` margins and padding. */}
       <div className="mx-12 mt-9 flex flex-col gap-[18px] rounded-sm bg-card p-9 shadow-site-card">
         <h2 className="m-0 text-title leading-[1.2] font-bold">{labels.title}</h2>
-        {/* prototype `.slbl`, `.srow span`: the site's muted ink. */}
         <p className="m-0 text-label leading-normal text-site-muted">{labels.text}</p>
         {done ? (
-          // senior-care practice-page.css `.practice-page__done`: green words on a pale green bar.
           <div role="status" className="mt-2 flex h-[60px] items-center justify-center gap-2.5 rounded-tag bg-ok/14 text-body font-bold text-ok">
             <Check size={22} strokeWidth={2.4} aria-hidden />
             {labels.done}
           </div>
         ) : (
           <div className="relative mt-2">
-            {/* senior-care practice-page.css `.practice-page__continue`: darkens to the site ink when hovered or pressed. */}
             <button
               type="button"
               aria-describedby={guided ? labelId : undefined}

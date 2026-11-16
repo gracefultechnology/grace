@@ -7,14 +7,11 @@ const submit = fn();
 const draft = fn();
 
 export const meta: ComponentMeta<AddressBarProps> = {
-  // Prototype `.addr`: empty on a new tab.
   args: { value: "" },
   examples: {
     Address: { value: "chase.com/pay" },
-    // Prototype `.addr.typing`: Grace types the address.
     Guided: { value: "chase.com", guided: true },
     Editable: { value: "", onValueChange: edit, onSubmit: submit },
-    // Go with an empty address: the notice stays while the person types.
     "Empty Go": { value: "", notice: "Type a website or what you’re looking for.", onValueChange: draft },
   },
   decorator: (story) => (

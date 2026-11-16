@@ -9,16 +9,12 @@ import { WifiSlash } from "./Rail.tsx";
 import { Spinner } from "./Spinner.tsx";
 import { WifiNetworkRow } from "./WifiNetworkRow.tsx";
 
-/** A network the tablet can see. */
 export interface WifiNetwork {
   name: string;
-  /** Bars of signal, 0 to 3. */
   signal: number;
-  /** It asks for a password or an account. */
   locked?: boolean;
 }
 
-/** `off` Wi-Fi is turned off; `scanning` the tablet is looking for networks; `none` it found none; `ready` it lists them. */
 export type WifiStatus = "off" | "scanning" | "none" | "ready";
 
 export type WifiNetworkListProps = Omit<ComponentProps<"section">, "onSelect"> & {

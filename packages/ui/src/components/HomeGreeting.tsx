@@ -18,7 +18,6 @@ export type HomeGreetingProps = Omit<ComponentProps<"div">, "children"> & {
  * @design packages/design-system/design.md#glass
  */
 export function HomeGreeting({ greeting, name, line, compact = false, className, ...props }: HomeGreetingProps) {
-  // Prototype `.hgr h2`, `.hgr h2 b`, `.hgr .sub`; `.home.cmp .hgr h2` and `.home.cmp .hgr .sub` (lines 391–392).
   return (
     <div className={cn("font-sans", className)} {...props}>
       <h2 className={cn("m-0 font-light tracking-[-.01em] text-foreground", compact ? "text-title-lg leading-[38px]" : "text-display-sm leading-[42px]")}>

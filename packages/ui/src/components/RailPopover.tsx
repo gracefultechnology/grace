@@ -26,12 +26,11 @@ export type RailPopoverProps = Omit<ComponentProps<"div">, "title"> & {
 
 /**
  * A popover opening to the right of a rail button, for Volume or Wi-Fi: a header with the state and ✕, then the
- * controls (children), a note and buttons. Wi-Fi shows spec/app/network.md.
+ * controls (children), a note and buttons. Wi-Fi shows the network state.
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md#glass
  */
 export function RailPopover({ icon, title, value, onClose, closeLabel = "Close", note, actions, top, arrowTop = 58, className, style, children, ...props }: RailPopoverProps) {
-  // Prototype `.rpop` (line 506) and `drawPop()`: Grace's menu glass, 156px from the screen's left edge.
   return (
     <div
       role="dialog"
@@ -40,14 +39,12 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
       style={{ top, "--arrow": `${arrowTop}px`, ...style } as CSSProperties}
       {...props}
     >
-      {/* `.rpop::before`: the arrow toward the rail. */}
       <span aria-hidden className="absolute top-(--arrow) -left-2.5 size-5 rotate-45 bg-glass/86 shadow-arrow" />
       <div className="relative flex items-center gap-3 text-title-sm leading-8 font-bold text-chrome">
         <span aria-hidden className="flex">{icon}</span>
         {title}
         {value && <span className="ml-3 text-body-lg leading-7 font-semibold text-muted-foreground">{value}</span>}
         <span className="flex-1" />
-        {/* `.rpx` (drawPop() draws it on every popover): a 52px capsule, pulled into the header's padding; `.rpx:active` only shrinks it, its glass unchanged. */}
         <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome backdrop-blur-none backdrop-saturate-100 transition-none active:scale-96 active:bg-glass/62">
           <X size={22} strokeWidth={2} aria-hidden />
         </Button>

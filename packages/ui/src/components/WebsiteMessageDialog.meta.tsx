@@ -11,7 +11,6 @@ const left = fn();
 const dialog = () => within(screen.getByRole("dialog"));
 
 export const meta: ComponentMeta<WebsiteMessageDialogProps> = {
-  // The prototype's bank, on its payment page, warns that the session is ending.
   args: { kind: "alert", site: "chase.com", message: "For your security, you will be signed out in 2 minutes.", onAnswer: answer },
   examples: {
     Question: { kind: "confirm", message: "Cancel this payment?" },
@@ -20,7 +19,6 @@ export const meta: ComponentMeta<WebsiteMessageDialogProps> = {
   },
   decorator: (story) => onBrowser(story),
   play: {
-    // An alert's only answer is OK; Escape is OK too.
     Default: async () => {
       answer.mockClear();
       await expect(dialog().getAllByRole("button").map((b) => b.textContent)).toEqual(["OK"]);
@@ -37,7 +35,6 @@ export const meta: ComponentMeta<WebsiteMessageDialogProps> = {
       await expect(typed.mock.calls).toEqual([[true, "Visa"]]);
       unfocus();
     },
-    // Escape keeps the page, as Stay does.
     "Leave page": async () => {
       left.mockClear();
       await expect(screen.getByRole("dialog", { name: "Leave this page?" })).toBeTruthy();

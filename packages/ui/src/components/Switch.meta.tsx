@@ -3,11 +3,9 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { SwitchProps } from "./Switch.tsx";
 
 export const meta: ComponentMeta<SwitchProps> = {
-  // prototype Settings › Brightness: "Dim the screen at night", on.
   args: { "aria-label": "Dim the screen at night", defaultChecked: true },
   examples: {
     Off: { defaultChecked: false },
-    // prototype .trk: the small track in Grace's Voice and Mic pills.
     Small: { size: "sm" },
     "Small off": { size: "sm", defaultChecked: false },
   },

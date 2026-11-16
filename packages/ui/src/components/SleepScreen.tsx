@@ -21,9 +21,9 @@ export type SleepScreenProps = ComponentProps<"div"> & {
  * It covers the whole screen; a touch anywhere wakes it.
  * @model spec/app/wake.md
  * @design packages/design-system/design.md#grace
+ * @design packages/design-system/design.md#screens
  */
 export function SleepScreen({ time, date, next, nextIcon = <Calendar size={28} strokeWidth={2} />, hint, className, ...props }: SleepScreenProps) {
-  // Prototype `.zzsleep` and `drawSleep()`.
   return (
     <div
       className={cn("absolute -inset-1 z-40 flex flex-col items-center justify-center bg-gradient-sleep font-sans text-sleep-ink", className)}

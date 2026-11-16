@@ -6,7 +6,6 @@ import { Button } from "./Button.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { Dialog, DialogActions, DialogContent, DialogTitle, type DialogProps } from "./Dialog.tsx";
 
-/** What a deletion removes: the chosen occurrence, or every occurrence of its repeating event. */
 export type CalendarDeleteScope = "occurrence" | "series";
 
 export type CalendarDeleteDialogProps = Omit<DialogProps, "children"> & {
@@ -43,7 +42,6 @@ const defaultLabels = {
  */
 export function CalendarDeleteDialog({ title, description, repeating = false, onDelete, onKeep, error, pending = false, labels = defaultLabels, className, ...props }: CalendarDeleteDialogProps) {
   const choice = (scope: CalendarDeleteScope, label: string) => (
-    // Prototype `.a-btn`: `20px/1`, no transition.
     <Button key={scope} variant="warn" size="pill" className="leading-none transition-none" loading={pending} onClick={() => onDelete?.(scope)}>
       {!pending && <CalendarGlyph name="trash" size={22} />}
       {label}
@@ -51,7 +49,6 @@ export function CalendarDeleteDialog({ title, description, repeating = false, on
   );
   return (
     <Dialog {...props}>
-      {/* Prototype `.a-dlg`: `width:560px;padding:32px` content-box, 624px across, (Keep it closes it). Focus starts on the panel, not on a deletion. */}
       <DialogContent
         className={cn("gap-0", className)}
         onOpenAutoFocus={(event) => {
@@ -62,7 +59,6 @@ export function CalendarDeleteDialog({ title, description, repeating = false, on
         <DialogTitle>{title}</DialogTitle>
         <p className="m-0 mt-2 text-body-lg leading-[30px] text-muted-foreground">{description}</p>
         {error != null && (
-          // Prototype `.a-caution` of a refusal (line 2006): a 26px mark.
           <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-5">
             {error}
           </Alert>

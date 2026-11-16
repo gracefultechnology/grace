@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { KeyboardProps } from "./Keyboard.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 
-// Prototype `openKb('grace')`: an empty message starts in capitals.
 export const meta: ComponentMeta<KeyboardProps> = {
   args: { shift: true, onKey: fn() },
   examples: {

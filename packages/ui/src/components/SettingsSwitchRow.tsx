@@ -22,19 +22,15 @@ export function SettingsSwitchRow({ title, subtitle, checked, onCheckedChange, d
   const id = useId();
   return (
     <ListRow
-      // The label stretches over the row, so the whole row is the switch's target; the switch sits above it.
       title={
         <label htmlFor={id} className="cursor-pointer after:absolute after:inset-0 after:rounded-row">
           {title}
         </label>
       }
-      // A setting's hint wraps rather than being cut short (ListRow truncates its subtitle).
       subtitle={subtitle ? <span className="whitespace-normal">{subtitle}</span> : undefined}
       trailing={<Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />}
-      // Prototype `#awin .a-row[data-ax]:active`: the row presses in wherever it is tapped.
       className={cn(!disabled && "active:scale-[.99]", className)}
       {...props}
-      // The label is the row's target: the row never becomes a button of its own.
       onClick={undefined}
     />
   );

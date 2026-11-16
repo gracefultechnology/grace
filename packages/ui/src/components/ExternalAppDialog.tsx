@@ -5,16 +5,11 @@ import { BrowserDialog } from "./BrowserNoticeDialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 
-/** What a tapped link would do in another app: `tel:`, `mailto:`, `sms:`, `geo:`, `market:`, or another app's `intent:`. */
 export type ExternalAppKind = "call" | "email" | "message" | "map" | "store" | "other";
 
-/** The words of the question. */
 export type ExternalAppLabels = {
-  /** The question, given the kind and target: "Call 555-0100?". */
   title: (kind: ExternalAppKind, target: string) => string;
-  /** The title when the link can never open on this tablet. */
   cannotTitle: string;
-  /** Why, for a link that can never open. */
   cannotMessage: string;
   continue: string;
   cancel: string;
@@ -65,7 +60,6 @@ const icons: Record<ExternalAppKind, ReactNode> = {
   other: <ExternalLink size={28} strokeWidth={2} />,
 };
 
-// The question names the target; these kinds show it below instead.
 const shown: ExternalAppKind[] = ["map", "store", "other"];
 
 /**
@@ -76,7 +70,6 @@ const shown: ExternalAppKind[] = ["map", "store", "other"];
  */
 export function ExternalAppDialog({ kind, target, canOpen, onContinue, onCancel, open = true, labels: words, className }: ExternalAppDialogProps) {
   const labels = { ...defaultLabels, ...words };
-  // spec/app/websiteRequests.md, "Another app opens only after my tap and my confirmation": a link that can never open gets no Continue.
   if (!canOpen)
     return (
       <BrowserDialog

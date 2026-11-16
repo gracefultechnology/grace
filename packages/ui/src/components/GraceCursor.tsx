@@ -28,15 +28,12 @@ export type GraceCursorProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip = false, dragging = false, top = false, className, style, ...props }: GraceCursorProps) {
   return (
-    // Prototype `.gcur`: it glides 1.4s from step to step, above the page and its guidance.
     <div
       role="status"
       className={cn(
         "pointer-events-none absolute z-6 size-0 transition-[left,top] duration-[1400ms] ease-standard motion-reduce:transition-none",
-        // Prototype `dragScroll()`: `transition:none` while its frames move her with the page, 1100ms ease-in-out-quad.
         dragging && "transition-none",
         className,
-        // `.scur.top{z-index:7}`, over compact Grace's window.
         top && "z-7",
       )}
       style={{ left: x, top: y, ...style }}
@@ -46,14 +43,11 @@ export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip =
       <GraceMark
         size="sm"
         className={cn(
-          // `.gcur .orb.press{transform:scale(.82)}` never shows: `orbin`'s fill-mode `both` holds `transform:none`
-          // over it, so `curTap()` and `dragScroll()` press without a shrink.
           "absolute -top-7 -left-7 shadow-cursor animate-orb-in motion-reduce:animate-none",
           paused && "opacity-80 saturate-30",
         )}
       />
       {tag && (
-        // `.gcur .ctag`: indigo, 22px corners and a 6px one toward the G; `.gcur.paused .ctag`: white with an indigo edge.
         <span
           className={cn(
             "absolute top-[22px] flex h-11 items-center gap-2 rounded-row px-[18px] text-body leading-[normal] font-bold whitespace-nowrap transition-[background-color] duration-quick ease-css-default",

@@ -95,7 +95,6 @@ export function WifiJoinForm({
       <SettingsPageHeading>{title}</SettingsPageHeading>
       <PageText tone="secondary" className="mt-1.5">{description}</PageText>
       {error ? (
-        // Prototype `axi('alert',26,2.2)`, and max-width 760px plus its padding (content-box).
         <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-[18px] max-w-[800px]">
           {error}
         </Alert>
@@ -110,7 +109,6 @@ export function WifiJoinForm({
           className="mt-5 max-w-[620px]"
         />
       )}
-      {/* Prototype `.a-fld` with Show beside the capsule. */}
       <div className={cn("flex max-w-[620px] flex-col gap-2", account ? "mt-3.5" : "mt-5")}>
         <Label htmlFor={passwordId} className="pl-[26px]">{passwordLabel}</Label>
         <div className="flex items-center gap-2.5">
@@ -122,8 +120,6 @@ export function WifiJoinForm({
             placeholder={passwordPlaceholder}
             autoComplete="off"
             invalid={!!error}
-            // Prototype wifiPage(): the browser rewrites its inline #B3261E to rgb(), so `#awin input.v[style*="B3261E"]` never
-            // matches and a refused password shows the plain glass capsule; the error line says why.
             className="h-16 flex-1 aria-invalid:shadow-capsule aria-invalid:focus:shadow-field-focus"
           />
           <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={() => onShowPasswordChange?.(!showPassword)}>

@@ -3,22 +3,15 @@ import { onChase, payPage } from "./GuideRing.meta.tsx";
 import type { GraceCursorProps } from "./GraceCursor.tsx";
 import { compactGrace } from "./Toast.meta.tsx";
 
-// curTo() on the Chase payment form: Grace's G at the middle of Continue, 208,596 on the tablet and 130×48.
 const onPay = onChase({ title: "Pay your card · Chase", address: "chase.com/pay", page: payPage });
 
 export const meta: ComponentMeta<GraceCursorProps> = {
-  // `.scur`: on the tablet, over the browser and under Grace's window.
   args: { x: 273, y: 620, className: "z-2" },
   examples: {
-    // curTap(): the G pressed and a ring rippling out.
     Pressed: { pressed: true },
-    // pauseAct(): `.gcur.paused` and curTag("Paused").
     Paused: { tag: "Paused", paused: true },
-    // curTo() near the right edge (x > width - 260): the tag hangs to the G's left.
     "Paused flipped": { tag: "Paused", paused: true, flip: true, x: 1180 },
-    // dragScroll() down the page: the G, holding `.press` with no ripple, starts near 62% across the site and 78% down its view.
     Dragging: { dragging: true, x: 792, y: 590 },
-    // `.scur.top`: tapping in compact Grace's own window, her G over it.
     "Above Grace": { top: true, x: 700, y: 640, className: "above-grace" },
   },
   decorator: (story) =>

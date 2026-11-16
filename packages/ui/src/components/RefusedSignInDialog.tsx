@@ -3,11 +3,8 @@ import { Button } from "./Button.tsx";
 import { BrowserDialog } from "./BrowserNoticeDialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 
-/** The words of the explanation. */
 export type RefusedSignInLabels = {
-  /** The title, given the provider: "Sign in with Google won’t work inside Grace". */
   title: (provider: string) => string;
-  /** Why, given the provider and the website. */
   why: (provider: string, site: string) => string;
   continue: string;
   cancel: string;
@@ -53,7 +50,6 @@ export function RefusedSignInDialog({ provider, site, onContinue, onCancel, open
       className={className}
       actions={
         <>
-          {/* spec/app/websiteRequests.md, "A refused sign-in is explained with the option to continue in the phone's browser". */}
           <Button variant="prominent" size="pill" onClick={onContinue}>
             <ExternalLink size={22} strokeWidth={2.2} aria-hidden />
             {labels.continue}

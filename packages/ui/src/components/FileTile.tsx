@@ -25,7 +25,6 @@ export function FileTile({ src, label, type = "button", className, ...props }: F
       )}
       {...props}
     >
-      {/* Prototype `#awin` photo tiles: the image covers the tile, centred. */}
       <img alt="" src={src} className="block size-full object-cover" />
     </button>
   );

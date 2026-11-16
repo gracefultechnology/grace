@@ -5,12 +5,9 @@ import { Button } from "./Button.tsx";
 import { WifiSlash } from "./Rail.tsx";
 import { Spinner } from "./Spinner.tsx";
 
-/** What stands in the website's place: it did not open, the tablet is offline, Grace stopped it, or it is being checked. */
 export type BrowserPageStateKind = "failed" | "offline" | "blocked" | "checking";
 
-/** The words of Grace's page. */
 export type BrowserPageStateLabels = {
-  /** The heading when the page did not open, given the site. */
   failed: (site: string) => string;
   offline: string;
   blocked: string;
@@ -60,7 +57,6 @@ export function BrowserPageState({ kind, site = "", message, onRetry, onBack, on
   const mark: Record<BrowserPageStateKind, ReactNode> = {
     failed: <Globe size={34} strokeWidth={2} />,
     offline: <WifiSlash size={34} />,
-    // spec/app/browser.md, "Load results must match the tab and request that produced them": a security block is its own result and grants no bypass.
     blocked: <ShieldAlert size={34} strokeWidth={2} />,
     checking: <Spinner size="lg" label={labels.checking} className="size-[34px]" />,
   };
@@ -71,13 +67,11 @@ export function BrowserPageState({ kind, site = "", message, onRetry, onBack, on
     checking: null,
   }[kind];
   return (
-    // Prototype `.site` and `.newtab`: centred, 128px down the page, as an empty tab's words are.
     <div
       role={kind === "blocked" ? "alert" : "status"}
       className={cn("flex size-full flex-col items-center overflow-y-auto bg-site px-6 pt-32 pb-6 text-center font-sans text-chrome", className)}
       {...props}
     >
-      {/* The icon tile of the app windows' dialogs (prototype `.a-dlg` icons), larger on the page. */}
       <span
         aria-hidden
         className={cn("flex size-[72px] items-center justify-center rounded-row", kind === "blocked" ? "bg-caution text-destructive inset-ring-[1.5px] inset-ring-destructive/22" : "bg-card text-primary shadow-panel")}

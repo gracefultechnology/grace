@@ -11,16 +11,13 @@ import { Skeleton } from "./Skeleton.tsx";
 
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
-/** The viewer's words, for another language. */
 export type PhotoViewerLabels = {
   save: string;
   forward: string;
   previous: string;
   next: string;
-  /** The photo could not be shown. */
   failed: string;
   retry: string;
-  /** For assistive technology while the photo loads. */
   loading: string;
 };
 
@@ -74,6 +71,7 @@ export type PhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  * (prototype `mailView()`, viewer, `.a-view`); the photo and arrows are the Files viewer's.
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function PhotoViewer({ src, alt, first = false, last = false, onPrevious, onNext, onSave, onForward, status = "ready", onRetry, errorLabel, saveStatus, onRetrySave, statusLabels, labels, ...props }: PhotoViewerProps) {
   const l = { ...viewerLabels, ...labels };
@@ -95,7 +93,6 @@ export function PhotoViewer({ src, alt, first = false, last = false, onPrevious,
       {...props}
     >
       {status === "ready" ? (
-        // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction": Saved only once acknowledged.
         <div className="relative h-full">
           <PhotoStage src={src} alt={alt} onPrevious={first ? undefined : onPrevious} onNext={last ? undefined : onNext} previousLabel={l.previous} nextLabel={l.next} className="h-full justify-center" />
           {saveStatus && (
@@ -103,7 +100,6 @@ export function PhotoViewer({ src, alt, first = false, last = false, onPrevious,
           )}
         </div>
       ) : (
-        // spec/app/email.md, "Each search or content read needs current access and the user's choice".
         <div className="flex h-full items-center justify-center">
           {status === "loading" ? (
             <Skeleton role="status" aria-hidden={false} aria-label={l.loading} className="h-[520px] w-[780px] rounded-day" />

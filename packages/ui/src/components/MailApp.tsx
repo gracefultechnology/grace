@@ -8,42 +8,27 @@ import { PageText } from "./PageHeading.tsx";
 import { Skeleton } from "./Skeleton.tsx";
 import { SearchField } from "./TextField.tsx";
 
-/** One email as a folder lists it. */
 export type MailSummary = {
-  /** The message reference the app opens it by. */
   id: string;
-  /** Who sent it, or for a draft who it is to. */
   from: MailContact;
-  /** The subject, or what stands in for it, such as "You replied: …". */
   subject: string;
-  /** When it arrived: "2:15 PM", "Yesterday". */
   time: string;
-  /** Not yet read. */
   unread?: boolean;
-  /** It carries photos or files. */
   attachment?: boolean;
 };
 
-/** The words of Email's list, for another language. */
 export type MailAppLabels = {
   title: string;
   write: string;
   search: string;
-  /** The line over search results: "1 email found". */
   found: (count: number) => string;
-  /** An empty folder. */
   empty: string;
-  /** A search with no results. */
   nothingFound: string;
-  /** Over the emails in Trash. */
   trashNote: string;
-  /** A list or search that could not be loaded. */
   failed: string;
   retry: string;
-  /** Offline, over the emails kept from before. */
   offline: string;
   fixWifi: string;
-  /** For assistive technology while the list loads. */
   loading: string;
 };
 
@@ -62,7 +47,6 @@ const mailAppLabels: MailAppLabels = {
   loading: "Loading your email",
 };
 
-/** Where the open folder's list stands: `failed` and `offline` keep the emails already shown. */
 export type MailListStatus = "loading" | "failed" | "offline" | "ready";
 
 export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "actions" | "children" | "backLabel" | "onBack"> & {
@@ -99,6 +83,7 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
  * (prototype `mailView()`, list).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function MailApp({ folder, counts, messages, query = "", onQueryChange, onSelectFolder, onOpen, onWrite, status = "ready", onRetry, onFixWifi, toast, labels, ...props }: MailAppProps) {
   const l = { ...mailAppLabels, ...labels };
@@ -118,16 +103,13 @@ export function MailApp({ folder, counts, messages, query = "", onQueryChange, o
         }
         {...props}
       >
-        {/* Prototype `.a-search`; the list 18px under it. */}
         <SearchField label={l.search} value={query} onChange={(event) => onQueryChange?.(event.target.value)} />
         <div className="mt-[18px]" aria-busy={loading || undefined}>
-          {/* spec/app/emailItem.md, "Folder and search results remain scoped to the current mailbox and query": a failure keeps the list and offers a retry. */}
           {status === "failed" && (
             <MailNotice actionLabel={l.retry} onAction={onRetry} className="mb-[18px]">
               {l.failed}
             </MailNotice>
           )}
-          {/* spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": offline, the kept emails stay. */}
           {status === "offline" && (
             <MailNotice tone="offline" actionLabel={l.fixWifi} onAction={onFixWifi} className="mb-[18px]">
               {l.offline}

@@ -41,14 +41,12 @@ export function AddressBar({
 }: AddressBarProps) {
   const noticeId = useId();
   return (
-    // Prototype `.addr` in `.bz-bar` (line 435): the capsule's glass. Its `!important` outranks `.addr.typing` (line 273), so the glass stays, ringless, while Grace or the person types; the caret marks the field.
     <label
       className={cn(
         "relative flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 px-6 text-chrome shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
         className,
       )}
     >
-      {/* Prototype `#addr` lock: narrower than Lucide's `Lock`. */}
       <svg
         aria-hidden
         width={22}
@@ -83,7 +81,6 @@ export function AddressBar({
           className="min-w-0 flex-1 bg-transparent caret-primary outline-none placeholder:text-address-placeholder"
           {...props}
         />
-        {/* Prototype `.addr .caret`: Grace's caret after the text she has typed. */}
         {guided && (
           <span
             aria-hidden
@@ -95,7 +92,6 @@ export function AddressBar({
         )}
       </span>
       {notice && (
-        // spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation": a tag under the field, in the guide label's shape.
         <span id={noticeId} role="status" className="absolute top-full left-3 z-10 mt-3 flex cursor-default items-center gap-2.5 rounded-row bg-card py-3 pr-5 pl-4 text-body leading-[26px] font-semibold whitespace-nowrap text-label-ink shadow-tag">
           <Info size={22} strokeWidth={2.2} aria-hidden className="shrink-0 text-primary" />
           {notice}

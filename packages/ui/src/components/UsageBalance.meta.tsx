@@ -16,7 +16,6 @@ const allowance: PlanAllowance = {
   takenBack: "$0.00",
 };
 
-// The original app's words and categories (senior-care UsageBalance.tsx).
 export const meta: ComponentMeta<UsageBalanceProps> = {
   args: {
     allowance,

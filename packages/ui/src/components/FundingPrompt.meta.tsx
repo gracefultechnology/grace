@@ -4,7 +4,6 @@ import type { FundingPromptProps } from "./FundingPrompt.tsx";
 
 const setUp = fn();
 
-// The original app's words (senior-care funding-gate.ts).
 export const meta: ComponentMeta<FundingPromptProps> = {
   args: { kind: "plan", onSetUp: setUp, onLater: fn() },
   decorator: (story) => <div className="group/grace w-[1130px] bg-background p-6" data-surface="white">{story()}</div>,

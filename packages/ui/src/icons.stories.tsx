@@ -2,12 +2,10 @@ import type { ComponentType, SVGProps } from "react";
 import * as lucideIcons from "lucide-react";
 import * as own from "./icons.tsx";
 
-// The prototype draws its icons as axi() does: 24px, stroke 2.2, in the current color.
 export default { title: "Foundations/Icons", parameters: { layout: "fullscreen" } };
 
 type Icon = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
-// The Lucide icons the components import (src/components, `from "lucide-react"`).
 const lucide = Object.fromEntries(
   `ArrowDown ArrowLeft ArrowRight ArrowUp Calendar CalendarCheck Camera Check ChevronDown ChevronLeft
    ChevronRight CircleAlert CircleCheck CircleHelp CircleSlash CircleUserRound CircleX Clock Download
@@ -30,8 +28,6 @@ const Sheet = ({ icons }: { icons: Record<string, Icon> }) => (
   </div>
 );
 
-/** The prototype's own drawings (src/icons.tsx). */
 export const Own = () => <Sheet icons={Object.fromEntries(Object.entries(own).filter(([, value]) => typeof value === "function")) as Record<string, Icon>} />;
 
-/** The Lucide set the components use. */
 export const Lucide = () => <Sheet icons={lucide} />;

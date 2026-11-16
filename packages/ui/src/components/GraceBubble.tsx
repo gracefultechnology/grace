@@ -43,7 +43,6 @@ export function GraceBubble({
   const words = !removed && (children != null || !!rest || !!stopped);
   return (
     <div className={cn("flex", className)} {...props}>
-      {/* .gb: on the frosted window her bubble is white and lifted. */}
       <div className="relative isolate ml-2 inline-flex max-w-[940px] items-start gap-3 rounded-window bg-bubble px-8 py-2.5 text-lead leading-8 font-medium [overflow-wrap:anywhere] text-grace-ink group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-bubble">
         <svg aria-hidden width="34" height="26" viewBox="0 0 34 26" className="absolute bottom-0 -left-2 -z-10 fill-bubble group-data-[surface=frost]/grace:fill-card">
           <path d={bubbleTail} />
@@ -57,10 +56,8 @@ export function GraceBubble({
         )}
         {removed && <RemovedNotice label={removedLabel} />}
         {words && (
-          // Her words stay selectable under the app's select-none (apps/app/src/App.tsx).
           <span className="min-w-0 select-text">
             {children}
-            {/* Prototype `.pale`, in its own ink by the user's choice (.storybook/preview.ts, `data-prototype-ink`). */}
             {rest && <span data-rest="" data-prototype-ink="" className="text-pale"> {rest}</span>}
             {stopped && (
               <>
@@ -76,7 +73,6 @@ export function GraceBubble({
 
 /** The fixed notice in place of a message that held something private: a shield and the notice, in muted ink. */
 export function RemovedNotice({ label }: { label: string }) {
-  // spec/app/conversation.md, "Detected private content is removed before the conversation continues"
   return (
     <span className="inline-flex min-w-0 items-start gap-2.5 text-label-ink">
       <ShieldCheck size={22} strokeWidth={2.2} aria-hidden className="mt-[5px] flex-none" />

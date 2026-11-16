@@ -7,7 +7,6 @@ import { settingsPage } from "./WifiNetworkList.meta.tsx";
 const retry = fn();
 
 export const meta: ComponentMeta<WifiNetworkRowProps> = {
-  // A locked network nearby (prototype `X.wifi.nets`).
   args: { name: "Sunrise Community Center", signal: 2, locked: true, onClick: () => {}, onRetry: retry },
   examples: {
     Open: { name: "Riverside Library Guest", locked: false },

@@ -4,29 +4,18 @@ import { cn, focusRing } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { Dialog, DialogContent, DialogTitle } from "./Dialog.tsx";
 
-/** A website opened recently, offered as a shortcut. */
 export type NewTabShortcut = {
-  /** The address the shortcut opens. */
   url: string;
-  /** The site's name. */
   title: string;
-  /** The site's icon, an image URL; without it, the name's first letter. */
   favicon?: string;
 };
 
-/** The words around the recent websites. */
 export type NewTabLabels = {
-  /** The heading over the recent websites. */
   recent: string;
-  /** The words on Clear. */
   clear: string;
-  /** The accessible name of a shortcut's ✕, given its title. */
   remove: (title: string) => string;
-  /** The question Clear asks. */
   confirmTitle: string;
-  /** The button that clears the list. */
   confirm: string;
-  /** The button that keeps it. */
   cancel: string;
 };
 
@@ -66,13 +55,13 @@ const defaultLabels: NewTabLabels = {
   cancel: "Cancel",
 };
 
-// A shortcut is 144px wide with 16px between: `w-36` and `gap-4`.
 const column = 160;
 
 /**
  * What an empty tab shows: a heading, how to begin, and recent websites to open again, remove one by one or
  * clear after one question.
  * @model spec/app/browser.md
+ * @design packages/design-system/design.md#screens
  */
 export function NewTabPage({
   heading = "You’re ready to browse the internet.",
@@ -93,16 +82,13 @@ export function NewTabPage({
   const labels = { ...defaultLabels, ...words };
   const listRef = useRef<HTMLDivElement>(null);
   const columns = useColumns(listRef, shortcuts.length > 0);
-  // spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation": at most two rows, by the width there is.
   const shown = shortcuts.slice(0, columns * 2);
   return (
-    // Prototype `.site` and `.newtab`: centred, 128px down the page.
     <div className={cn("size-full overflow-y-auto bg-site px-6 pt-32 pb-6 text-center font-sans text-chrome", className)} {...props}>
       <h2 className="text-title leading-[34px] font-semibold">{heading}</h2>
       <p className="mt-2.5 text-body leading-6 text-address-placeholder">{text}</p>
       {shortcuts.length > 0 && (
         <section aria-label={labels.recent} ref={listRef} className="mx-auto mt-12 max-w-[860px]">
-          {/* As wide as the shortcuts it holds, so Clear sits over the last column. */}
           <div className="mx-auto w-fit">
             {clearable && (
               <div className="mb-2 flex items-center justify-between px-4">
@@ -130,7 +116,6 @@ export function NewTabPage({
                     <span className="w-full truncate text-label font-medium">{s.title}</span>
                   </button>
                   {removable && (
-                    // A small ✕ on the shortcut's disc, at its top right.
                     <button
                       type="button"
                       aria-label={labels.remove(s.title)}
@@ -147,7 +132,6 @@ export function NewTabPage({
         </section>
       )}
       <Dialog open={confirmingClear} onOpenChange={(open) => !open && onCancelClear?.()}>
-        {/* Prototype `.a-dlg` with `.a-btns` as a column, as Calendar's delete question; focus starts on the panel, not on Clear. */}
         <DialogContent
           className="gap-0 text-left"
           onOpenAutoFocus={(event) => {
@@ -170,7 +154,6 @@ export function NewTabPage({
   );
 }
 
-/** How many shortcuts fit across the list's width, followed as it changes. */
 function useColumns(ref: RefObject<HTMLElement | null>, shown: boolean) {
   const [columns, setColumns] = useState(5);
   useLayoutEffect(() => {

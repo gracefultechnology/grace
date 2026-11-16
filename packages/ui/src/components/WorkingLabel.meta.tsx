@@ -3,15 +3,12 @@ import { GuideRing } from "./GuideRing.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 import type { WorkingLabelProps } from "./WorkingLabel.tsx";
 
-// The prototype's Chase payment form: Grace types the payment date (`showWork`), her ring held still around the field.
 const field = { x: 208, y: 530, width: 472, height: 46 };
 
 export const meta: ComponentMeta<WorkingLabelProps> = {
   args: { text: "Grace is typing", className: "absolute left-[702px] bottom-[225px]" },
   examples: {
-    // `.glab.wl.below`: no room beside the field, so under it, 36px in.
     "Placement below": { placement: "below", className: "absolute left-[244px] top-[594px]" },
-    // showWork(el, text, true): her work is held, the pause sign in place of the spinner.
     Paused: { paused: true },
   },
   decorator: (story) => (

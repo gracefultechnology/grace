@@ -7,13 +7,10 @@ import { ListRow } from "./ListRow.tsx";
 import { PageHeading } from "./PageHeading.tsx";
 import { SearchField } from "./TextField.tsx";
 
-/** One saved password, without its secret. */
 export interface SavedPassword {
   id: string;
-  /** The account's name: "City Water". */
   label: string;
   username?: string;
-  /** Where it is used: "citywater.example.com". */
   site?: string;
 }
 
@@ -87,9 +84,10 @@ export type PasswordsAppProps = Omit<AppWindowProps, "title" | "icon" | "childre
 };
 
 /**
- * Grace's password vault on the tablet (senior-care PasswordsApp.tsx): the list with search, and one password with its
- * site and username, the secret hidden until asked for, in an app window like the prototype's apps.
+ * Grace's password vault on the tablet: the list with search, and one password with its site and username, the secret
+ * hidden until asked for, in an app window like the prototype's apps.
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function PasswordsApp({ passwords, anySaved = passwords.length > 0, query = "", onQueryChange, onAdd, onLock, onOpenPassword, open, revealed, onBack, onShow, onCopy, onOpenWebsite, onEdit, onDelete, notice, labels, ...props }: PasswordsAppProps) {
   const l = { ...passwordsAppLabels, ...labels };
@@ -98,16 +96,13 @@ export function PasswordsApp({ passwords, anySaved = passwords.length > 0, query
     return (
       <AppWindow title={open.label} icon={icon} backLabel={l.back} onBack={onBack} {...props}>
         <div className="mx-auto flex w-[760px] max-w-full flex-col gap-5 pb-10 font-sans">
-          {/* Prototype `.a-row+.a-row`: 12px between rows. */}
           <div className="flex flex-col gap-3">
             {open.site && <ListRow title={l.website} subtitle={open.site} />}
             <ListRow title={l.username} subtitle={open.username || l.noUsername} />
             <ListRow
               title={l.password}
-              // senior-care Passwords.css `.passwords-secret p`: the secret spaced at .1em.
               subtitle={revealed ? <span className="tracking-[.1em] select-text">{revealed}</span> : <span aria-label={l.hidden} className="tracking-[.1em]">••••••••••••</span>}
               trailing={
-                // Prototype `.a-btns`: 12px apart.
                 <span className="flex gap-3">
                   <Button variant="capsule" size="pill" onClick={onShow}>{l.show}</Button>
                   <Button variant="capsule" size="pill" onClick={onCopy}>{l.copy}</Button>
@@ -120,7 +115,6 @@ export function PasswordsApp({ passwords, anySaved = passwords.length > 0, query
             <Button variant="capsule" size="pill" onClick={onEdit}>{l.edit}</Button>
             <Button variant="warn" size="pill" onClick={onDelete}>{l.remove}</Button>
           </div>
-          {/* senior-care PasswordsApp.tsx: what happened is said last, under the actions. */}
           <div role="status" aria-live="polite" className="text-body leading-[26px] font-medium text-muted-foreground">{notice}</div>
         </div>
       </AppWindow>

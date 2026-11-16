@@ -88,7 +88,6 @@ export function SettingsVoice({
       <SettingsSwitchRow
         className="mt-2.5"
         title={wakeLabel}
-        // spec/app/wake.md, "Only a current human wake detection can start the interaction": no detector, no listening.
         subtitle={wakeUnavailable ? <span className="text-label-ink">{wakeUnavailable}</span> : wakeHint}
         checked={wake && !wakeUnavailable}
         onCheckedChange={onWakeChange}

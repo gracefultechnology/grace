@@ -3,7 +3,6 @@ import { PageText } from "./PageHeading.tsx";
 import type { PanelProps } from "./Panel.tsx";
 
 export const meta: ComponentMeta<PanelProps> = {
-  // prototype Settings › About this tablet.
   args: {
     className: "w-[804px]",
     children: (
@@ -14,7 +13,6 @@ export const meta: ComponentMeta<PanelProps> = {
     ),
   },
   examples: {
-    // Home's Calendar card: tomorrow's appointment on white over the card's glass.
     White: {
       variant: "white",
       className: "flex w-[432px] items-center gap-[18px]",

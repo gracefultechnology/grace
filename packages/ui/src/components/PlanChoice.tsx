@@ -7,16 +7,11 @@ import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 import { Spinner } from "./Spinner.tsx";
 
-/** One plan Grace offers, its amounts written as the app shows them. */
 export interface GracePlan {
   key: string;
-  /** "Grace Plus". */
   name: string;
-  /** "$25.00". */
   price: string;
-  /** "a month". */
   period: string;
-  /** What it includes, or that it could not be checked: "Includes $25.00 of help each month." */
   includes?: string;
 }
 
@@ -45,11 +40,6 @@ export function PlanCard({ plan, note, action, className, ...props }: PlanCardPr
   );
 }
 
-/**
- * Where starting a plan stands: `loading` or `failed` the plans; `summary` the plan offered; `pay` the secure card
- * form; `family` a code for someone else to pay on their phone; `others` the other plans; `submitted` the payment is
- * being confirmed.
- */
 export type PlanChoiceView = "loading" | "failed" | "summary" | "pay" | "family" | "others" | "submitted";
 
 export type PlanChoiceLabels = {
@@ -185,9 +175,9 @@ export function PlanWait({ children }: { children: ReactNode }) {
 }
 
 /**
- * Starting a Grace plan (senior-care PlanPayment.tsx): the recommended plan with its price and what it includes, paying
- * on Stripe's secure form on the tablet or by a code someone else scans, the other plans, and the wait while the payment
- * is confirmed. Once a family link exists, paying here waits for one successful check.
+ * Starting a Grace plan: the recommended plan with its price and what it includes, paying on Stripe's secure form on the
+ * tablet or by a code someone else scans, the other plans, and the wait while the payment is confirmed. Once a family
+ * link exists, paying here waits for one successful check.
  * @design packages/design-system/design.md#windows
  */
 export function PlanChoice({
@@ -224,7 +214,6 @@ export function PlanChoice({
   const later = onLater ? <Button variant="capsule" size="pill" onClick={onLater}>{l.later}</Button> : null;
   const trouble = problem == null ? null : <RetryNotice onRetry={onRetry} retryLabel={l.tryAgain}>{problem}</RetryNotice>;
   const wait = (words: string) => <PlanWait>{words}</PlanWait>;
-  // senior-care PlanPayment.tsx, M5: the family-link warning and its Check again.
   const guard = linkIssued ? (
     <div className="flex flex-col items-start gap-3">
       <Alert variant="caution" role="note">{l.linkWarning}</Alert>
@@ -247,7 +236,6 @@ export function PlanChoice({
       </>
     );
   else if (view === "submitted")
-    // A sent payment is never followed by a new checkout here: Check again only reads the account.
     body = (
       <>
         {wait(slow ? l.slow : l.confirming)}

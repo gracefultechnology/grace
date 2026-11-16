@@ -12,7 +12,6 @@ export const meta: ComponentMeta<SettingsVoiceProps> = {
   args: { speeds, speed: "1", speaks: true, wake: true, onPlaySample: sample, onWakeChange: wake },
   examples: {
     Quiet: { speed: "0.8", speaks: false, wake: false },
-    // spec/app/wake.md: the native host reports that wake detection is unavailable.
     "Hey Grace unavailable": {
       wakeUnavailable: "Grace can’t listen until the tablet lets her use the microphone.",
       canFixWake: true,

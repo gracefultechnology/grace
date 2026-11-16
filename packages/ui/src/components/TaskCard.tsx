@@ -3,20 +3,16 @@ import { CircleCheck, Clock, Pause, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 
-/** Where a task stands: stopped part-way, waiting on someone else, or finished. */
 export type TaskStatus = "paused" | "waiting" | "done";
 
-/** The words of a task card, for another language. */
 export type TaskCardLabels = Record<TaskStatus, string> & {
   resume: string;
   ask: string;
   stop: string;
   remove: string;
-  /** The question Stop this task asks on the card. */
   stopQuestion: string;
   confirmStop: string;
   keep: string;
-  /** The question Remove from list asks on a finished card. */
   removeQuestion: string;
   confirmRemove: string;
 };
@@ -36,7 +32,6 @@ export const taskCardLabels: TaskCardLabels = {
   confirmRemove: "Yes, remove it",
 };
 
-// Each status is an icon and a word on a small opaque tag, as PaymentStatusBadge draws a payment.
 const tags: Record<TaskStatus, { icon: LucideIcon; tone: string }> = {
   paused: { icon: Pause, tone: "text-primary inset-ring-primary/30" },
   waiting: { icon: Clock, tone: "text-warn inset-ring-warn/30" },
@@ -114,7 +109,6 @@ export function TaskCard({
   const questionRef = useRef<HTMLParagraphElement>(null);
   const done = status === "done";
   const ask = asking === "stop" && !done ? "stop" : asking === "remove" && done ? "remove" : undefined;
-  // The question takes focus when it appears, so a screen reader says it and Enter is not "Yes".
   useEffect(() => {
     if (ask) questionRef.current?.focus();
   }, [ask]);
@@ -124,7 +118,6 @@ export function TaskCard({
     <article
       aria-labelledby={titleId}
       aria-busy={pending || stopping || undefined}
-      // A paused task waits on Margaret, so it sits on the accent tint; the others on the window's panel (prototype `.a-panel`).
       className={cn("box-border flex flex-col gap-3.5 rounded-window px-7 py-[26px] font-sans text-foreground", status === "paused" ? "bg-accent" : "bg-panel", className)}
       {...props}
     >
@@ -140,7 +133,6 @@ export function TaskCard({
       </Heading>
       <p className="m-0 text-body-lg leading-[30px] text-foreground">{line}</p>
       {ask ? (
-        // senior-care tasks.css `.task-card__confirm`: 4 above, a hairline, 12 below it and 8 to the answers.
         <div role="group" aria-labelledby={questionId} className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
           <p id={questionId} ref={questionRef} tabIndex={-1} className="m-0 text-body-lg leading-[30px] font-semibold text-chrome outline-none">
             {ask === "stop" ? l.stopQuestion : l.removeQuestion}

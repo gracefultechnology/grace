@@ -3,7 +3,6 @@ import { cn } from "../lib/cn.ts";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceBubble } from "./GraceBubble.tsx";
 
-/** What the conversation needs: a plan (a turn refused with 402) or her account (refused while signed out). */
 export type FundingPromptKind = "plan" | "account";
 
 export type FundingPromptLabels = Record<FundingPromptKind, { name: string; line: string; detail: string }> & {
@@ -28,15 +27,14 @@ export type FundingPromptProps = ComponentProps<"section"> & {
 };
 
 /**
- * Grace's calm word in place of a refused turn (senior-care FundingPrompt.tsx): the conversation needs a plan or her
- * account, nothing is charged, and two answers. Her line takes focus as it appears, so a screen reader lands on it.
+ * Grace's calm word in place of a refused turn: the conversation needs a plan or her account, nothing is charged,
+ * and two answers. Her line takes focus as it appears, so a screen reader lands on it.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */
 export function FundingPrompt({ kind = "plan", onSetUp, onLater, labels, className, ...props }: FundingPromptProps) {
   const l = { ...fundingPromptLabels, ...labels };
   const lineRef = useRef<HTMLSpanElement>(null);
-  // senior-care FundingPrompt.tsx, J-18: the line is announced and focused when the prompt appears.
   useEffect(() => {
     lineRef.current?.focus({ preventScroll: true });
   }, [kind]);

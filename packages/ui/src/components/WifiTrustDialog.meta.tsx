@@ -6,7 +6,6 @@ import type { WifiTrustDialogProps } from "./WifiTrustDialog.tsx";
 const trust = fn();
 
 export const meta: ComponentMeta<WifiTrustDialogProps> = {
-  // Prototype `trustDlg()`: the community center's network asks to be trusted.
   args: { network: "Sunrise Community Center", issuer: "wifi.sunrisecommunity.org", onTrust: trust, onAskGrace: fn(), onCancel: fn() },
   decorator: overWifiPage,
   play: {

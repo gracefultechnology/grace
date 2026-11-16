@@ -12,7 +12,6 @@ export const meta: ComponentMeta<SettingsBrightnessProps> = {
   examples: { Evening: { brightness: 40, nightDim: false } },
   decorator: settingsPage,
   play: {
-    // Tapping the setting's name flips its switch.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByText("Dim the screen at night"));

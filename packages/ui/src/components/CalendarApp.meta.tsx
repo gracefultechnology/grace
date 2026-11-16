@@ -10,9 +10,6 @@ import { Rail } from "./Rail.tsx";
 import { homeRail } from "./Rail.meta.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 
-// The prototype's calendar at 8:56 PM on Friday, November 13, 2026 (X.cal, lines 1799–1802).
-
-/** The tablet with its rail, as the prototype's Calendar screenshots show it. */
 export const onTablet = (story: () => ReactNode) => (
   <TabletScreen>
     <Rail {...homeRail(null)} />
@@ -20,7 +17,6 @@ export const onTablet = (story: () => ReactNode) => (
   </TabletScreen>
 );
 
-/** A part on the white of the Calendar window, its page's width. */
 export const onWindow = (story: () => ReactNode) => <div className="w-[1082px] bg-background p-6">{story()}</div>;
 
 export const doctor: CalendarEventItem = {
@@ -115,7 +111,6 @@ const times = Array.from({ length: 25 }, (_, i) => {
     label: `${((h + 11) % 12) + 1}${m % 60 ? ":30" : ""} ${h < 12 ? "am" : "pm"}`,
   };
 });
-// Prototype `calForm` `pick:'day'`: the next 21 days.
 const days = [
   "Today · Nov 13",
   "Tomorrow · Nov 14",
@@ -166,7 +161,6 @@ export const form: CalendarEventFormProps & { heading: string } = {
 const openEvent = fn();
 const onMode = fn();
 const save = fn();
-// Prototype `formsave` (line 2171) with a title typed: Save is ready.
 const lunch = { ...form, title: "Lunch", time: { ...form.time, value: "12 pm to 1 pm", selected: "720" }, remind: { ...form.remind, value: "No" } };
 
 export const meta: ComponentMeta<CalendarAppProps> = {
@@ -185,7 +179,6 @@ export const meta: ComponentMeta<CalendarAppProps> = {
   },
   examples: {
     Week: {},
-    // Prototype `hdr()` follows the one `X.hdrMode` in every app.
     "Header Mode Large": { headerMode: "large" },
     "Header Mode None": { headerMode: "none" },
     Month: { view: "month", nav: { period: "November 2026" } },
@@ -206,7 +199,6 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       dayEvents: [bridgeDraft],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
     },
-    // Prototype `formsave` (JS 2172): Margaret saved Bridge club herself, and Grace's green ring confirms the new row.
     "Added By Margaret": {
       dayEvents: [{ ...bridgeDraft, draft: false }],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
@@ -222,7 +214,6 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
     },
-    // spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes": the fields wait for the storage.
     "Form, saving": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.getByLabelText("What")).toBeDisabled();
@@ -230,7 +221,6 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       await expect(canvas.getByRole("radio", { name: "Every week" })).toBeDisabled();
       await expect(canvas.getByRole("button", { name: /Save/ })).toBeDisabled();
     },
-    // spec/app/calendar.md, "Saving requires the current complete draft and explicit confirmation": the draft stays, to save again.
     "Form, save failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.getByRole("alert")).toHaveTextContent("This wasn’t saved");

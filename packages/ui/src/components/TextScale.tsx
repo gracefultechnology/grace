@@ -6,15 +6,11 @@ export type TextScaleProps = ComponentProps<"div"> & {
   percent: number;
 };
 
-// Inside these, words keep their size: a website zooms as a whole (`data-text-zoom`, prototype `.ts-on #pg`), the sleep
-// screen stays as it is (`data-text-fixed`, prototype `.zzsleep`).
 const zoomed = "[data-text-zoom]";
 const kept = `${zoomed} *, [data-text-fixed], [data-text-fixed] *, svg *`;
 
-/** Gives `el` and every element below it that sets its own size that size × `k`; the rest inherit it (prototype tsWalk()). */
 function scale(el: Element, k: number, root: boolean) {
   const all = [el, ...el.querySelectorAll("*")].filter((e): e is HTMLElement => e instanceof HTMLElement && !e.matches(kept));
-  // Read every size before writing any, so an element is compared with its parent's own size, not a scaled one.
   const found = all.map((e) => {
     if (e.dataset.bfs || e.matches(zoomed)) return e;
     if (k === 1) return null;
@@ -33,12 +29,10 @@ function scale(el: Element, k: number, root: boolean) {
       continue;
     }
     e.style.setProperty("font-size", `${(Number(e.dataset.bfs) * k).toFixed(2)}px`, "important");
-    // Not `!important`: text-spacing overrides (WCAG 1.4.12) must still reach the line height.
     if (e.dataset.blh) e.style.setProperty("line-height", `${(Number(e.dataset.blh) * k).toFixed(2)}px`);
   }
 }
 
-/** Forgets the sizes recorded in `el` and below, after its classes change what size it is drawn at. */
 function forget(el: HTMLElement) {
   for (const e of [el, ...el.querySelectorAll<HTMLElement>("[data-bfs]")]) {
     e.style.removeProperty("font-size");
@@ -57,7 +51,6 @@ function forget(el: HTMLElement) {
  */
 export function TextScale({ percent, className, children, ...props }: TextScaleProps) {
   const ref = useRef<HTMLDivElement>(null);
-  // Prototype applyTS(): scale what is drawn now, then what is added or restyled later (its MutationObserver).
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;

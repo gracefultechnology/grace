@@ -37,11 +37,9 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
  * @design packages/design-system/design.md#windows
  */
 export function MailAttachment({ name, detail, kind = "PDF", onOpen, printable = true, onPrint, openLabel = "Open", printLabel = "Print", saveStatus, printStatus, onRetry, statusLabels, className, ...props }: MailAttachmentProps) {
-  // spec/app/files.md, "Printing reports actual printer acceptance and preserves an uncertain request": the latest action reports.
   const report = printStatus ? ({ action: "print", status: printStatus } as const) : saveStatus ? ({ action: "save", status: saveStatus } as const) : null;
   return (
     <div className={cn("flex max-w-[760px] items-center gap-4 rounded-row bg-panel px-4 py-3.5 font-sans", className)} {...props}>
-      {/* Prototype `.a-att .ft`: a white page with the file's type in red; its 800 draws at 700, the heaviest Figtree it loads. */}
       <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-[13px] leading-none font-bold text-destructive shadow-tile">
         <mailIcons.file size={26} strokeWidth={2} />
         {kind}
@@ -55,7 +53,6 @@ export function MailAttachment({ name, detail, kind = "PDF", onOpen, printable =
         )}
       </div>
       <span className="ml-auto flex gap-3">
-        {/* Prototype `.a-att .a-btn:not(.prom)`: glass capsules on the panel, over the markup's inline white; `.a-btn` is `20px/1` with no transition, and `#awin .a-btn[aria-disabled]` fades whole to .4. */}
         <Button variant="capsule" size="pill" className={appButton} onClick={onOpen}>
           {openLabel}
         </Button>

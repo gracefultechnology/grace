@@ -5,7 +5,6 @@ import { TaskProblem } from "./TaskProblem.tsx";
 import { TextField } from "./TextField.tsx";
 
 export type PaymentAmountChoiceLabels = {
-  /** The field's question: "How much do you want to pay City Water?" */
   question: string;
   use: string;
   keep: string;
@@ -38,8 +37,8 @@ export type PaymentAmountChoiceProps = Omit<ComponentProps<"section">, "onChange
 };
 
 /**
- * Paying other than the bill's amount (senior-care BillTaskPanel.tsx, AmountChoice): the amount asked for, why it can't
- * be used or what it comes to, then Use this amount or Keep the bill amount. Opened by "Pay a different amount".
+ * Paying other than the bill's amount: the amount asked for, why it can't be used or what it comes to, then Use this
+ * amount or Keep the bill amount. Opened by "Pay a different amount".
  * @design packages/design-system/design.md#windows
  */
 export function PaymentAmountChoice({ value, onValueChange, problem, readBack, failed = false, busy = false, onUse, onKeep, labels, className, ...props }: PaymentAmountChoiceProps) {

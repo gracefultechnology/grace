@@ -9,55 +9,40 @@ import { RetryNotice } from "./RetryNotice.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
 import { Skeleton } from "./Skeleton.tsx";
 
-/** A saved photo. */
 export interface FilesPhoto {
   id: string;
   src: string;
-  /** Its accessible name. */
   label: string;
 }
 
-/** Photos saved at one time, such as "This week", with where they came from. */
 export interface FilesPhotoGroup {
   title: string;
-  /** Where they came from, such as "From Susan · Lily’s recital". */
   from?: string;
   photos: FilesPhoto[];
 }
 
-/** A saved document. */
 export interface FilesDocument {
   id: string;
   name: string;
-  /** Where it came from and when it was saved. */
   detail?: string;
-  /** What its last Print actually did. */
   printStatus?: MailPrintStatus;
 }
 
 export type FilesTab = "photos" | "documents";
 
-/** One of several saved files a find matched. */
 export interface FilesMatch {
   id: string;
-  /** Its name, and where it came from where names repeat. */
   label: string;
 }
 
-/** The words of Files, for another language. */
 export type FilesAppLabels = {
   photos: string;
   documents: string;
-  /** The hint beside the tabs. */
   hint: string;
-  /** The library could not be read. */
   loadFailed: string;
   retry: string;
-  /** Over several matches of a find. */
   whichOne: string;
-  /** A find that matched nothing: `{query}` becomes what was asked for. */
   noMatch: string;
-  /** The placeholders' accessible name while the library loads. */
   loading: string;
 };
 
@@ -108,6 +93,7 @@ export type FilesAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "chi
  * (prototype `filesView()`); a find's answer over them, and Try again when the library could not be read.
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
+ * @design packages/design-system/design.md#screens
  */
 export function FilesApp({
   tab,
@@ -128,15 +114,12 @@ export function FilesApp({
   ...props
 }: FilesAppProps) {
   const l = { ...filesAppLabels, ...labels };
-  // spec/app/files.md, "Find help distinguishes one match, multiple matches and no match": Grace's ring on the one match.
-  // Prototype axGuide() with kind `point` (JS 2146): the ring 8px outside the tile's 18px or the row's 22px corners, beating three times.
   const ring = (id: string, radius: number) =>
     id === highlightId && <GuideRing gap={8} radius={radius + 8} motion="pulse" />;
   return (
     <AppWindow
       title={title}
       icon={
-        // Prototype `AXP.folder`: flatter than Lucide's Folder.
         <svg aria-hidden width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         </svg>
@@ -144,7 +127,6 @@ export function FilesApp({
       {...props}
     >
       <div className="mb-[18px] flex items-center gap-4">
-        {/* Prototype `.a-seg` 420px wide plus its 6px padding (content-box). */}
         <SegmentedControl
           aria-label={title}
           className="w-[432px] p-1.5 [&>button]:h-13"
@@ -169,7 +151,6 @@ export function FilesApp({
         </section>
       )}
       {status === "failed" ? (
-        // spec/app/files.md, "Opening and retrying load the authoritative local library": never an empty library.
         <RetryNotice onRetry={onRetry} retryLabel={l.retry}>{l.loadFailed}</RetryNotice>
       ) : status === "loading" ? (
         <div role="status" aria-label={l.loading} className={tab === "photos" ? "grid grid-cols-4 gap-3.5" : "flex flex-col gap-3"}>

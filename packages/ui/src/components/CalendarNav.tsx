@@ -45,7 +45,6 @@ export function CalendarNav({
   className,
   ...props
 }: CalendarNavProps) {
-  // Prototype `.a-rb` (line 659): a 64px round glass capsule.
   const arrow = { size: 28, strokeWidth: 2.4, "aria-hidden": true } as const;
   return (
     <div className={cn("flex items-center gap-3.5 font-sans", className)} {...props}>
@@ -57,7 +56,6 @@ export function CalendarNav({
         <ChevronRight {...arrow} />
       </Button>
       <span className="flex-1" />
-      {/* Prototype `.a-seg` `width:320px;padding:6px`, content-box: 332px across; inline `height:52px` segments. */}
       <SegmentedControl
         size="md"
         aria-label={modeGroupLabel}

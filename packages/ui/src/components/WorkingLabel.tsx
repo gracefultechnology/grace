@@ -16,7 +16,6 @@ export type WorkingLabelProps = Omit<GuideLabelProps, "title" | "detail" | "tone
  * @design packages/design-system/design.md#guidance
  */
 export function WorkingLabel({ text, paused = false, pausedText = "Paused", className, ...props }: WorkingLabelProps) {
-  // Prototype `showWork`: the text and an ellipsis, or "Paused" with the pause sign.
   return (
     <GuideLabel
       role="status"

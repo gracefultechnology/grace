@@ -3,7 +3,6 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { BillFact, BillSummaryCardProps } from "./BillSummaryCard.tsx";
 
-// The prototype's mock chase.com/card (`account` page, "Credit card ending 7731 summary").
 const chase: BillFact[] = [
   { label: "Statement balance", value: "$84.20" },
   { label: "Minimum payment due", value: "$35.00" },
@@ -14,7 +13,6 @@ const chase: BillFact[] = [
 const open = fn();
 const recheck = fn();
 
-/** Grace's white window, where her cards sit among her messages. */
 export const inGrace = (story: () => ReactNode) => (
   <div className="group/grace w-[720px] bg-background p-6" data-surface="white">
     {story()}
@@ -24,7 +22,6 @@ export const inGrace = (story: () => ReactNode) => (
 export const meta: ComponentMeta<BillSummaryCardProps> = {
   args: { company: "Chase", account: "••7731", rows: chase, onOpen: open, onRecheck: undefined },
   examples: {
-    // A fee the website does not show is not $0.
     "Fee unknown": { rows: [...chase, { label: "Fee" }] },
     "No payment due": {
       rows: [{ label: "Statement balance", value: "$0.00" }, { label: "Current balance", value: "$0.00" }],
@@ -44,7 +41,6 @@ export const meta: ComponentMeta<BillSummaryCardProps> = {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Open bill" }));
       await expect(open).toHaveBeenCalled();
     },
-    // spec/app/billpay.md, "Current bill facts distinguish payment choices, no payment due and an existing payment": unknown is labelled, never $0.
     "Fee unknown": ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       return expect([canvas.getByText("Not shown on the website").previousElementSibling?.textContent, canvas.queryByText(/\$0/)]).toEqual(["Fee", null]);

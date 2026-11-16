@@ -6,8 +6,6 @@ export type IconProps = ComponentProps<"svg"> & {
   size?: number;
 };
 
-// Prototype `AXP` and `axi()` (prototype/Grace Prototype.html): 24-unit outlines in the current color, 24px and stroke
-// 2.2 unless told otherwise. Decorative; name the action on what they sit in. Size with a class: `size-7`.
 const outline = (paths: ReactNode) =>
   function Icon({ size, className, ...props }: IconProps) {
     return (
@@ -17,7 +15,6 @@ const outline = (paths: ReactNode) =>
     );
   };
 
-/** The outlines shared with `CalendarGlyph`, which draws several in one svg. */
 export const iconPaths = {
   trash: (
     <>

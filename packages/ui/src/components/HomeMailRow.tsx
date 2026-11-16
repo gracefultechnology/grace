@@ -29,19 +29,16 @@ export type HomeMailRowProps = Omit<ComponentProps<"div">, "children"> & {
  * @design packages/design-system/design.md#glass
  */
 export function HomeMailRow({ name, subject, src, tone, icon, unread = false, unreadLabel, wrap = false, className, ...props }: HomeMailRowProps) {
-  // Prototype `homeCards()`: `.lpanel` with `.a-av.hav` (a white ring) and a 10px unread dot.
   return (
     <Panel variant="white" className={cn("flex items-center gap-4 px-[18px] py-3.5", className)} {...props}>
       <Avatar name={name} src={src} tone={tone} size={52} className="ring-3 ring-glass/90">
         {icon}
       </Avatar>
-      {/* `#home .lpanel>div:last-child`: the words wrap and hyphenate inside the panel. */}
       <div className="min-w-0 [overflow-wrap:break-word] hyphens-auto">
         <b className="block text-body-lg leading-7">
           {name}
           {unread && <> <UnreadDot label={unreadLabel} className="ml-1.5 size-2.5 align-middle" /></>}
         </b>
-        {/* Prototype `.home.cmp .lc[data-app="Email"] .lpanel span` (line 394). */}
         <span className={cn("block text-body leading-[26px] text-muted-foreground", !wrap && "truncate")}>{subject}</span>
       </div>
     </Panel>

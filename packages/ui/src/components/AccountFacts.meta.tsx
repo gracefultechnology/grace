@@ -2,7 +2,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { AccountFactsProps } from "./AccountFacts.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
-// The original app's invoice, estimate and charge lines (senior-care AccountInvoices.tsx, PlanChange.tsx `Estimate`, UsageBalance.tsx).
 export const meta: ComponentMeta<AccountFactsProps> = {
   args: {
     facts: [

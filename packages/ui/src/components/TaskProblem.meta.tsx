@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import { Button } from "./Button.tsx";
 import type { TaskProblemProps } from "./TaskProblem.tsx";
 
-// The original app's words (senior-care BillTaskPanel.tsx).
 const answers = (way: string) => (
   <>
     <Button variant="prominent" size="pill" onClick={fn()}>{way}</Button>

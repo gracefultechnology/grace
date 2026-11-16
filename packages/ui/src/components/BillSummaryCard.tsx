@@ -6,13 +6,9 @@ import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 import { PaymentStatusBadge, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
 
-/** One fact read from the bill's website. */
 export type BillFact = {
-  /** What it is: "Statement balance". */
   label: string;
-  /** What the website shows: "$84.20". Left out when the website does not show it. */
   value?: string;
-  /** What to say when the website does not show it; never "$0". */
   unknownLabel?: string;
 };
 
@@ -70,7 +66,6 @@ export function BillSummaryCard({
     <Panel
       role="group"
       aria-label={title}
-      // On Grace's frosted window the panel is white and lifted, as her bubbles are (GraceBubble).
       className={cn("flex flex-col gap-5 group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-float", className)}
       {...props}
     >
@@ -79,7 +74,6 @@ export function BillSummaryCard({
         {account && <span className="ml-2.5 font-semibold text-muted-foreground">{account}</span>}
       </p>
       {conflict ? <Alert variant="caution">{conflict}</Alert> : null}
-      {/* spec/app/billpay.md, "Current bill facts distinguish payment choices, no payment due and an existing payment" */}
       <dl className={factList}>
         {rows.map((row) => (
           <FactRow key={row.label} label={row.label} className={row.value ? "font-bold text-foreground" : "font-medium text-muted-foreground"}>

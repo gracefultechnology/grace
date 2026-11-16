@@ -26,14 +26,13 @@ export type BillDiscoverySettingProps = Omit<ComponentProps<"div">, "onChange"> 
 };
 
 /**
- * Settings → Gmail → Look for new bills (senior-care apps/app/src/BillDiscoverySetting.tsx): Margaret's separate,
- * revocable yes to Grace reading Gmail for bills that arrive, with what it allows and what Grace still never does.
+ * Settings → Gmail → Look for new bills: Margaret's separate, revocable yes to Grace reading Gmail for bills that
+ * arrive, with what it allows and what Grace still never does.
  * @design packages/design-system/design.md#windows
  */
 export function BillDiscoverySetting({ title, about, limits, askedAgain, checked, onCheckedChange, busy = false, notice, onRetry, className, ...props }: BillDiscoverySettingProps) {
   return (
     <div className={cn("flex flex-col gap-3", className)} {...props}>
-      {/* Prototype `.a-s`, inset by `.a-row`'s 22px so it lines up with the row's words. */}
       {askedAgain && <PageText tone="secondary" className="px-[22px]">{askedAgain}</PageText>}
       <SettingsSwitchRow title={title} subtitle={about} checked={checked} onCheckedChange={onCheckedChange} disabled={busy} />
       <PageText tone="secondary" className="px-[22px]">{limits}</PageText>

@@ -3,16 +3,11 @@ import { cn } from "../lib/cn.ts";
 import { LauncherCard, type LauncherCardProps } from "./LauncherCard.tsx";
 import { Panel } from "./Panel.tsx";
 
-/** A photo on the Files card. */
 export type FilesCardPhoto = { src: string; alt?: string };
 
-/** A document on the Files card. */
 export type FilesCardDocument = {
-  /** Its name: "Visit form". */
   name: string;
-  /** Who sent it: "From Main St Clinic". */
   from?: string;
-  /** The short word on its badge: "PDF". */
   kind?: string;
 };
 
@@ -29,7 +24,6 @@ export type FilesCardProps = Omit<LauncherCardProps, "title" | "children" | "art
   compact?: boolean;
 };
 
-// Prototype `hmFilesInner('B')`: where each print lies, the newest on top, as share of the card's width.
 const pile = [
   "top-24 left-1/4 h-[180px] w-1/2 -rotate-1",
   "top-4 left-[40%] h-[170px] w-[48%] rotate-6",
@@ -50,14 +44,11 @@ export function FilesCard({ title = "Files", photos, document, layout = "recent"
   return (
     <LauncherCard title={title} size={size} compact={compact} {...props}>
       {layout === "recent" && (
-        // Prototype `hmFilesInner('A')`: a grid of 62% and the rest, 12px apart; `.home.cmp .lc[data-app="Files"] .hfbig span` (line 636).
         <span className="mb-3 grid min-h-0 flex-1 grid-cols-2 grid-rows-[62%_1fr] gap-3">
           {photos.slice(0, 3).map((p, i) => photo(p, i === 0 ? cn("col-span-2 rounded-photo", compact && "h-[150px]") : "rounded-xl"))}
         </span>
       )}
       {layout === "pile" && (
-        // Prototype `hmFilesInner('B')`: a 300px area across the whole card, 4px under the title's clearance, each print in a 6px white mat (the
-        // print shadows carry it).
         <span className="relative -mx-6 mt-1 h-[300px] flex-none">
           {photos
             .slice(0, 3)
@@ -66,18 +57,14 @@ export function FilesCard({ title = "Files", photos, document, layout = "recent"
         </span>
       )}
       {layout === "grid" && (
-        // Prototype `hmFilesInner('C')`: two columns of 140px photos, 12px apart.
         <span className="grid grid-cols-2 gap-3">{photos.slice(0, 4).map((p) => photo(p, "h-[140px] rounded-xl"))}</span>
       )}
       {document && (
-        // Prototype `hmDoc()`, `#home .hfdoc .lpanel`: at the bottom, 24px in. In `pile` and `grid` the prototype's fitTops() takes
-        // `.hfdoc` for the card's body and sets its top 16px under the title, so the row lies there, over the photos.
         <Panel variant="white" className={cn("flex flex-none items-center gap-4 px-3.5 py-2.5", layout === "recent" ? "mt-auto" : "absolute inset-x-0 top-0")}>
           <span className="flex h-[52px] w-11 flex-none flex-col items-center justify-center gap-0.5 rounded-md bg-card text-[11px] leading-none font-extrabold text-destructive shadow-badge">
             <FileIcon strokeWidth={2} className="size-5.5" />
             {document.kind ?? "PDF"}
           </span>
-          {/* `#home .lpanel>div:last-child`: name and sender wrap and hyphenate inside the panel. */}
           <span className="min-w-0 [overflow-wrap:break-word] hyphens-auto">
             <b className="block text-body-lg leading-7">{document.name}</b>
             {document.from && <span className="block text-body leading-[26px] text-muted-foreground">{document.from}</span>}

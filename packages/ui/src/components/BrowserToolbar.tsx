@@ -38,7 +38,6 @@ export type BrowserToolbarProps = ComponentProps<"div"> & {
   stopLabel?: string;
 };
 
-// Prototype `.pill.main` in `.bz-bar` is Button's `capsule` at `pill` size: padded 0 26px 0 22px (Go too), pressed to 97%, disabled with the label at 32%.
 const arrow = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
 /**
@@ -70,7 +69,6 @@ export function BrowserToolbar({
   ...props
 }: BrowserToolbarProps) {
   return (
-    // Prototype `.bz-bar`: 80px of white glass joined to the selected tab.
     <div className={cn("relative z-[1] flex h-20 items-center gap-2 border-b border-glass/70 bg-glass/78 px-4", className)} {...props}>
       <Button variant="capsule" size="pill" disabled={!canGoBack} onClick={onBack}>
         <ArrowLeft {...arrow} />
@@ -81,7 +79,6 @@ export function BrowserToolbar({
         {forwardLabel}
       </Button>
       {reloadable && (
-        // spec/app/browser.md, "Back and Forward stay within the selected tab's history": a reload is an actual load, and Stop ends it.
         <Button variant="capsule" size="pill-icon" aria-label={pageLoading ? stopLabel : reloadLabel} onClick={pageLoading ? onStop : onReload}>
           {pageLoading ? <X {...arrow} /> : <RotateCw {...arrow} />}
         </Button>

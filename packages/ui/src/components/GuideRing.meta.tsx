@@ -9,15 +9,12 @@ import { homeRail } from "./Rail.meta.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 import type { GuideRingProps } from "./GuideRing.tsx";
 
-// The prototype's mock Chase website (renderSite(), `.sbar`, `.scard`, `.srow`, `.sfield`, `.sradio`, `.sbtn2`): a third party's
-// page in Arial and its own navy (`site-brand`), drawn here in tokens. Positions are on the website's layer, as ringBox() measures them.
 const card = "absolute rounded-sm bg-card px-6 py-5 text-grace-ink shadow-sm";
 const button = "absolute flex h-12 items-center rounded-tag bg-site-brand px-7 text-[17px] font-bold text-primary-foreground";
 const row = "flex justify-between border-b border-border py-2 text-[17px] [&>span]:text-chrome-muted";
 const label = "mt-3.5 mb-1.5 block text-[16px] text-chrome-muted";
 const field = "flex h-[46px] items-center rounded-tag border border-input bg-card px-3 text-[18px]";
 
-/** The prototype's `account` page: the bill, and Pay card under it. */
 export const accountPage = (
   <>
     <div className={card} style={{ left: 40, top: 92, width: 560 }}>
@@ -30,7 +27,6 @@ export const accountPage = (
   </>
 );
 
-/** The prototype's `pay` page: the payment form, ending in Continue. */
 export const payPage = (
   <div className={card} style={{ left: 40, top: 84, width: 520 }}>
     <div className="text-[22px] font-bold">Pay your card</div>
@@ -49,11 +45,6 @@ export const payPage = (
   </div>
 );
 
-/**
- * The tablet with the browser open on the prototype's Chase site at `address`, `page` on its website and `overlay` on the
- * guidance layer over it (`#ov`); `screen` goes on the tablet above everything, as Grace's pointer does. `short` raises the
- * window's bottom to make room for Grace's window, as `.bwin` does while she is open.
- */
 export const onChase = ({ title, address, page, short = false }: { title: string; address: string; page: ReactNode; short?: boolean }) =>
   function OnChase(overlay: () => ReactNode, screen?: () => ReactNode) {
     return (
@@ -82,16 +73,12 @@ export const onChase = ({ title, address, page, short = false }: { title: string
     );
   };
 
-/** The Chase card page, where Grace points at Pay card and the bill. */
 export const onAccount = onChase({ title: "Credit card · Chase", address: "chase.com/card", page: accountPage });
 
 export const meta: ComponentMeta<GuideRingProps> = {
-  // `renderOverlay` on the card page: Pay card between the bill and the edge, so `.gring.tapt.tight`, 7px above it and 8 on the other sides.
   args: { rect: { x: 40, y: 330, width: 127, height: 48 }, gap: { top: 7, right: 8, bottom: 8, left: 8 }, tight: true, motion: "tap" },
   examples: {
-    // `.gring` with room around it, as axGuide() rings a target inside the apps: the line, its glow and its shadow.
     Glow: { tight: false },
-    // `.gring.ok.tight` on the statement balance row, once confirmed: its row's neighbour 0px below, so the line sits 4px inside it.
     Done: { rect: { x: 64, y: 112, width: 512, height: 37 }, gap: { top: 8, right: 8, bottom: -4, left: 8 }, tone: "ok", motion: "pulse" },
   },
   decorator: (story) => onAccount(story),

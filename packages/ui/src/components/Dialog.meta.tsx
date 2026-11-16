@@ -3,10 +3,8 @@ import type { ComponentMeta } from "vibestack/stories";
 import { Button } from "./Button.tsx";
 import { DialogClose, DialogContent, type DialogProps, DialogTitle, DialogTrigger } from "./Dialog.tsx";
 
-// The prototype's trash can, without the two lines Lucide's has now.
 const trash = <svg aria-hidden width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 
-// Deleting an appointment in Calendar (prototype `calDlg`).
 const children = (
   <>
     <DialogTrigger asChild>
@@ -35,9 +33,7 @@ export const meta: ComponentMeta<DialogProps> = {
   args: { children },
   examples: { Open: { defaultOpen: true } },
   play: {
-    // Opened from the keyboard, it takes focus; Escape and Keep it dismiss it, and focus goes back to the trigger.
     Default: async () => {
-      // Focus goes back a moment after the dialog closes.
       const trigger = screen.getByRole("button", { name: "Delete" });
       trigger.focus();
       await userEvent.keyboard("{Enter}");

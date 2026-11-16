@@ -7,7 +7,6 @@ import { PaymentStatusBadge } from "./PaymentStatusBadge.tsx";
 const confirm = fn();
 const open = fn();
 
-// A sample water bill, found in an email.
 export const waterBill = { company: "City Water", amount: "$64.20", due: "Nov 28", site: "citywater.gov" };
 
 export const meta: ComponentMeta<BillOfferProps> = {
@@ -22,7 +21,6 @@ export const meta: ComponentMeta<BillOfferProps> = {
       await expect(confirm).toHaveBeenCalled();
       unfocus();
     },
-    // Opening the bill is the next step; there is no Pay.
     Confirmed: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByRole("button", { name: "Open bill" }));

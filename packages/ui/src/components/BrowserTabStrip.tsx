@@ -4,19 +4,14 @@ import { ChevronDown, Plus, X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { BrowserTab, type BrowserTabProps, TabFavicon } from "./BrowserTab.tsx";
 
-/** The words of the list of more tabs. */
 export type BrowserTabStripLabels = {
-  /** The pill's words for `n` more tabs: "2 more". */
   more: (n: number) => string;
-  /** The list's heading and accessible name. */
   moreTabs: string;
 };
 
 const defaultLabels: BrowserTabStripLabels = { more: (n) => `${n} more`, moreTabs: "More tabs" };
 
-/** One open tab, as the strip shows it. */
 export type BrowserTabItem = Pick<BrowserTabProps, "title" | "favicon" | "initial" | "pageLoading" | "closeLabel"> & {
-  /** The tab's identity in the browser model. */
   id: number;
 };
 
@@ -47,7 +42,6 @@ export type BrowserTabStripProps = ComponentProps<"div"> & {
   closeBrowserLabel?: string;
 };
 
-// Prototype `.bz-ic` / `.bz-close`: plain 48px buttons, 8px above the strip's foot to sit on the tab's row.
 const plain = cn(focusRing, "mb-2 flex size-12 shrink-0 items-center justify-center rounded-xl");
 
 /**
@@ -73,7 +67,6 @@ export function BrowserTabStrip({
 }: BrowserTabStripProps) {
   const labels = { ...defaultLabels, ...words };
   return (
-    // Prototype `.bz-strip`: 64px, the tabs standing on its foot.
     <div className={cn("relative z-[1] flex h-16 items-end gap-1 pt-2 pr-3 pl-4", className)} {...props}>
       {tabs.map((tab) => (
         <BrowserTab
@@ -89,7 +82,6 @@ export function BrowserTabStrip({
         />
       ))}
       {overflow.length > 0 && (
-        // spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"
         <Popover.Root open={overflowOpen} onOpenChange={onOverflowOpenChange}>
           <Popover.Trigger
             className={cn(
@@ -102,11 +94,9 @@ export function BrowserTabStrip({
           </Popover.Trigger>
           <Popover.Portal>
             <BrowserPopoverContent aria-label={labels.moreTabs} align="start" className="w-[380px]">
-              {/* Prototype `.spdl`: 6px over it and 16px in; the panel's 8px gap below. */}
               <p className="mt-1.5 ml-4 text-label leading-5 font-bold tracking-[.04em] text-label-ink uppercase">{labels.moreTabs}</p>
               <ul className="flex flex-col gap-2">
                 {overflow.map((tab) => (
-                  // Prototype `.spdo`: a 64px round row of the menu's glass with its 20/700 words, here the tab's favicon, title and ✕.
                   <li key={tab.id} className="flex h-16 items-center rounded-full bg-glass/70 pr-2">
                     <Popover.Close
                       onClick={() => onSelectTab?.(tab.id)}
@@ -133,7 +123,6 @@ export function BrowserTabStrip({
       <button type="button" aria-label={newTabLabel} onClick={onNewTab} className={cn(plain, overflow.length > 0 ? "ml-1" : "ml-2.5", "text-chrome-muted")}>
         <Plus size={24} strokeWidth={2} aria-hidden />
       </button>
-      {/* Prototype `.bz-close:active`: a faint disc. */}
       <button type="button" aria-label={closeBrowserLabel} onClick={onCloseBrowser} className={cn(plain, "ml-auto text-chrome active:bg-chrome/8")}>
         <X size={24} strokeWidth={1.75} aria-hidden />
       </button>
@@ -151,7 +140,6 @@ export function BrowserPopoverContent({ sideOffset = 8, className, ...props }: B
   return (
     <Popover.Content
       sideOffset={sideOffset}
-      // Prototype `.spdpop` opens with no row ringed: focus goes to the panel, and Tab moves into it.
       onOpenAutoFocus={(event) => {
         event.preventDefault();
         (event.currentTarget as HTMLElement).focus();

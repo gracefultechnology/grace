@@ -7,11 +7,9 @@ const check = fn();
 const openSite = fn();
 const retrySave = fn();
 
-// Coming back to the prototype's Chase bill after its payment was submitted but no confirmation was seen.
 export const meta: ComponentMeta<PaymentCheckCardProps> = {
   args: { site: "chase.com", onCheck: check, onOpenSite: openSite, onRetrySave: undefined },
   examples: {
-    // Chase's result was seen but the record could not be saved: only saving again is offered, never paying again.
     "Save failed": { message: "Chase accepted the payment. Saving the record didn’t work.", onRetrySave: retrySave },
     Resolved: { title: "It went through", message: "Chase has your payment.", result: { status: "scheduled", date: "Nov 12", reference: "4F7K-22Q" } },
   },

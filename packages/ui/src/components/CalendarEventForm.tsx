@@ -11,7 +11,6 @@ import { TextField } from "./TextField.tsx";
 
 export interface CalendarChoice {
   value: string;
-  /** What the option says: "Tomorrow · Nov 14", "10:30 am". */
   label: string;
 }
 
@@ -47,31 +46,25 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
         {label}
       </Label>
       <Popover.Root open={open} onOpenChange={onOpenChange}>
-        {/* Prototype `.a-fld .v`: 12px between icon, value and Change. */}
         <Popover.Anchor className={cn(fieldCapsule, "gap-3", disabled && "opacity-40")}>
           <span className="flex shrink-0">{icon}</span>
           <span className="min-w-0 flex-1 truncate py-1 leading-none">{value}</span>
           <Popover.Trigger asChild>
-            {/* Prototype `.a-fld .v .a-btn`: 48px, `18px/1` words with no transition, its edge 8px from the capsule's. */}
-            {/* Disabled, it keeps its ink: the capsule around it already fades. */}
             <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-lg leading-none transition-none disabled:text-grace-ink" aria-label={`${changeLabel} ${label}`} disabled={disabled}>
               {changeLabel}
             </Button>
           </Popover.Trigger>
         </Popover.Anchor>
         <Popover.Portal>
-          {/* Prototype `.apop` at `left:0;top:76px` of the field: 20px over the capsule's foot. */}
           <Popover.Content
             side="bottom"
             align="start"
             sideOffset={-20}
             aria-label={label}
-            // The list opens at its top, as the prototype's does; Tab moves into the choices.
             onOpenAutoFocus={(event) => {
               event.preventDefault();
               (event.currentTarget as HTMLElement).focus();
             }}
-            // `.apop` `min-width:320px;max-height:360px;padding:8px`, content-box: 336px wide, at most 376px tall.
             className={cn(menuPanel({ surface: "page" }), "max-h-[376px] overflow-auto font-sans [scrollbar-width:none]")}
           >
             {choices.map((choice) => (
@@ -80,7 +73,6 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
                 type="button"
                 aria-pressed={choice.value === selected}
                 onClick={() => onPick?.(choice.value)}
-                // Merged, so the chosen option's white wins over `.apop .spdo`'s pale fill (prototype line 621).
                 className={cn(menuOption({ surface: "page", selected: choice.value === selected }))}
               >
                 {choice.label}
@@ -142,7 +134,6 @@ const defaultLabels = {
   remind: "Remind me",
 };
 
-/** A labelled choice of a few, side by side (prototype `.a-fld .a-seg`). */
 function ChoiceField({ label, options, value, onChange, disabled }: Choices & { label: string; disabled: boolean }) {
   const id = useId();
   return (
@@ -169,7 +160,6 @@ function ChoiceField({ label, options, value, onChange, disabled }: Choices & { 
  */
 export function CalendarEventForm({ title, onTitleChange, where, onWhereChange, day, time, repeat, remind, disabled = false, labels = defaultLabels, className, ...props }: CalendarEventFormProps) {
   return (
-    // Prototype `.a-form`: two columns, 16px between rows and 28px between columns.
     <div className={cn("grid grid-cols-2 gap-x-7 gap-y-4 font-sans", className)} {...props}>
       <TextField className="col-span-2" label={labels.title} placeholder={labels.titlePlaceholder} value={title} disabled={disabled} onChange={(e) => onTitleChange?.(e.target.value)} />
       <CalendarPickerField label={labels.day} icon={<CalendarGlyph name="calendar" strokeWidth={2} />} disabled={disabled} {...day} />

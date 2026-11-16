@@ -19,8 +19,8 @@ export type SuggestionOfferProps = Omit<ComponentProps<"section">, "title"> & {
 };
 
 /**
- * Grace offers a value she has saved for the field Margaret is filling (senior-care SuggestionOffer.tsx): her question,
- * the value or the values with their purpose, and the answers.
+ * Grace offers a value she has saved for the field Margaret is filling: her question, the value or the values with
+ * their purpose, and the answers.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */

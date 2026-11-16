@@ -9,7 +9,7 @@ import { Slider } from "./Slider.tsx";
 export type SettingsBrightnessProps = Omit<ComponentProps<"section">, "onChange"> & {
   /** Screen brightness, `min` to 100. */
   brightness: number;
-  /** The dimmest the screen goes (spec/app/preferences.md: never below 20). */
+  /** The dimmest the screen goes, never below 20. */
   min?: number;
   /** Called with the new brightness: dragged, tapped or stepped by − and +. */
   onBrightnessChange?: (brightness: number) => void;
@@ -36,7 +36,6 @@ export type SunIconProps = Omit<ComponentProps<"svg">, "children"> & {
 
 /** Brightness's sun, as Settings' list and page show it. Decorative. */
 export function SunIcon({ size = 28, ...props }: SunIconProps) {
-  // Prototype `AXP.sun`: Lucide's older sun, each ray one path segment.
   return (
     <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <circle cx="12" cy="12" r="4" />
@@ -72,7 +71,6 @@ export function SettingsBrightness({
       <SettingsPageHeading>{title}</SettingsPageHeading>
       <PageText tone="secondary" className="mt-1.5">{description}</PageText>
       <Panel className="mt-[22px]">
-        {/* Prototype `.a-panel .a-h` with the value at its end. */}
         <div className="flex items-center gap-3 text-title-sm leading-8 font-bold text-chrome">
           <SunIcon />
           {brightnessLabel}

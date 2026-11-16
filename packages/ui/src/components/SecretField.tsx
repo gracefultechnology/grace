@@ -3,15 +3,11 @@ import { ArrowUp } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 
-/** The words of the field, for another language. */
 export type SecretFieldLabels = {
-  /** Shown in the empty field. */
   placeholder: string;
   show: string;
   hide: string;
-  /** Show's accessible name, which contains its visible word. */
   showName: string;
-  /** Hide's accessible name, which contains its visible word. */
   hideName: string;
   send: string;
 };
@@ -38,9 +34,9 @@ export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
 };
 
 /**
- * The one place a secret is typed during set-up, in place of the answer field (senior-care ui/onboarding/SecretField.tsx):
- * masked, with Show or Hide inside it and Send beside it. The value stays in the field, is never lifted or mirrored, and
- * is cleared after Send and when the field goes.
+ * The one place a secret is typed during set-up, in place of the answer field: masked, with Show or Hide inside it and
+ * Send beside it. The value stays in the field, is never lifted or mirrored, and is cleared after Send and when the field
+ * goes.
  * @design packages/design-system/design.md#grace
  */
 export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels: words, className, ...props }: SecretFieldProps) {
@@ -68,7 +64,6 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
   };
   return (
     <div className={cn("flex items-end gap-2 font-sans", className)} {...props}>
-      {/* GraceDock's `.cap` (prototype `.gwin .cap` on the frosted window), holding the masked field and Show. */}
       <div className="flex h-16 min-w-0 flex-1 items-center gap-2 rounded-full bg-glass/62 pr-1 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 group-data-[surface=frost]/grace:bg-glass/55 group-data-[surface=frost]/grace:shadow-frost group-data-[surface=frost]/grace:backdrop-saturate-150">
         <input
           ref={inputRef}
@@ -89,7 +84,6 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
           variant="plain"
           size="compact"
           aria-label={shown ? labels.hideName : labels.showName}
-          // Keeps the keyboard up: the field keeps focus while Show is tapped.
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => setShown((value) => !value)}
           className="px-5 text-grace-ink"

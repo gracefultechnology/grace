@@ -52,8 +52,7 @@ export type ShortcutEditorProps = Omit<DialogProps, "children"> & {
 };
 
 /**
- * Changing, fixing or removing a Home shortcut, opened by holding its tile (senior-care ShortcutManager.tsx,
- * ShortcutEditor), in the prototype's dialog.
+ * Changing, fixing or removing a Home shortcut, opened by holding its tile, in the prototype's dialog.
  * @design packages/design-system/design.md#windows
  */
 export function ShortcutEditor({ title, name, onNameChange, address, onAddressChange, needsRepair = false, notice, removing = false, onSave, onCancel, onRemove, onConfirmRemove, onKeep, labels, ...props }: ShortcutEditorProps) {

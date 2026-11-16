@@ -1,14 +1,10 @@
 import type { ComponentProps } from "react";
 import { cn, focusRing } from "../lib/cn.ts";
 
-/** One value Grace offers in the chat, such as a Wi-Fi network. Never a secret. */
 export interface ValueCardOption {
   id: string;
-  /** What Margaret picks: "Smith Family Wi-Fi". */
   value: string;
-  /** A line under it that tells the offers apart: "Strong signal". */
   detail?: string;
-  /** What a saved value is kept for, shown as a tag beside it: "Home address". */
   tag?: string;
 }
 
@@ -22,8 +18,8 @@ export type ValueCardsProps = Omit<ComponentProps<"div">, "onSelect"> & {
 };
 
 /**
- * Values Grace offers in the chat for Margaret to tap as her answer (senior-care ui/onboarding/ValueCards.tsx), drawn
- * in her ink like the prototype's answer chips (`.uchip`), one per row, with a line under each.
+ * Values Grace offers in the chat for Margaret to tap as her answer, drawn in her ink like the prototype's answer
+ * chips (`.uchip`), one per row, with a line under each.
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */
@@ -31,7 +27,6 @@ export function ValueCards({ options, onPick, label, className, ...props }: Valu
   return (
     <div role="group" aria-label={label} className={cn("flex flex-col items-end gap-3 font-sans", className)} {...props}>
       {options.map((option) => (
-        // senior-care value-cards.css: the value at 22/28 bold, its detail 2px under it.
         <button
           key={option.id}
           type="button"

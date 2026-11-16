@@ -46,7 +46,6 @@ export function CalendarEventRow({
 }: CalendarEventRowProps) {
   const details = draft ? draftNote : [who, where, repeat].filter(Boolean).join(" · ");
   return (
-    // Prototype `.a-row`, `.a-row[data-ax]:active`, `[aria-disabled]` at .4; a draft is `.a-new`.
     <button
       type="button"
       className={cn(
@@ -57,12 +56,10 @@ export function CalendarEventRow({
       )}
       {...props}
     >
-      {/* Prototype `.a-when`. */}
       <span className="w-[92px] flex-none text-center">
         <span className="block text-lg leading-[22px] font-bold tracking-[.06em] text-muted-foreground uppercase">{dayLabel}</span>
         <span className="block text-body-lg leading-7 font-bold text-chrome">{startLabel}</span>
       </span>
-      {/* Prototype `.a-bar`, `.a-bar.red`. */}
       <span className={cn("w-[3px] flex-none self-stretch rounded-full", important ? "bg-alert" : "bg-lavender")}>{important && <span className="sr-only">{importantLabel}</span>}</span>
       <span className="min-w-0">
         <span className="block text-lead leading-[30px] font-bold text-chrome">{title}</span>
