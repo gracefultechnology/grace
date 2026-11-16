@@ -1,4 +1,4 @@
-import { NodeHttpServer } from "@effect/platform-node"
+import { ExperimentalNodeHttpServer } from "vibelang-runtime/experimental/platform-node"
 import type { TestProject } from "vitest/node"
 import { cloud } from "./cloud.vibe"
 
@@ -9,22 +9,35 @@ declare module "vitest" {
   }
 }
 
-const site = Layer.mergeAll(
-  HttpStaticServer.layer({ root: `${import.meta.dirname}/site` }),
-  HttpRouter.addAll([
+schema Payment { amount: string; to: string }
+
+effect function routes() {
+  const paid = try Ref.make<Payment[]>([])
+
+  effect function pay() {
+    const payment = try HttpServerRequest.schemaBodyUrlParams(Payment)
+    try Ref.update(paid, (all) => [...all, payment])
+    return HttpServerResponse.redirect("/bill/confirmation.html", { status: 303 })
+  }
+
+  return [
+    HttpRouter.route("POST", "/bill/", HttpServerResponse.redirect("/bill/amount.html", { status: 303 })),
+    HttpRouter.route("POST", "/pay", orDie(pay())),
+    HttpRouter.route("GET", "/paid", orDie(effect { return try HttpServerResponse.json(try Ref.get(paid)) })),
     HttpRouter.route("GET", "/slow", effect {
       try sleep("3 seconds")
       return HttpServerResponse.text("<!doctype html><title>A page that took its time</title><h1>A page that took its time</h1>", { contentType: "text/html" })
     }),
     HttpRouter.route("GET", "/never", Effect.never)
-  ])
-)
+  ] as const
+}
+
+const site = Layer.mergeAll(HttpStaticServer.layer({ root: `${import.meta.dirname}/site` }), HttpRouter.addAll(routes()))
 
 effect function serve(app: Layer.Layer<never, PlatformError.PlatformError, HttpRouter.HttpRouter | FileSystem.FileSystem | Path.Path | HttpPlatform.HttpPlatform>) {
-  const context = try Layer.build(Layer.provideMerge(HttpRouter.serve(app, { disableLogger: true, disableListenLog: true }), Layer.fresh(NodeHttpServer.layerTest)))
-  const { address } = Context.get(context, HttpServer.HttpServer)
-  if (address._tag === "UnixPathAddress") return try die(new Error("the test server listens on a socket file"))
-  return `http://localhost:${address.port}`
+  const listening = Layer.fresh(ExperimentalNodeHttpServer.layer({ port: 0, host: "127.0.0.1" }))
+  const context = try Layer.build(Layer.provideMerge(HttpRouter.serve(app, { disableLogger: true, disableListenLog: true }), listening))
+  return HttpServer.formatAddress(Context.get(context, HttpServer.HttpServer).address)
 }
 
 export default async function setup(project: TestProject) {
