@@ -912,24 +912,24 @@ lemma confirmAppointment_ensures(v: CalendarView, request: ConfirmedAppointment,
   }
 }
 
-lemma importBillOccurrence_ensures(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, by_: ViewActor)
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysViewIdentity(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysViewWindow(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysEntriesBelongToCalendar(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysOccurrenceIsUnique(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysEditingIsSelected(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysCancelledIdsAreAbsent(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysSeriesDefinitions(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysEntriesUseSeries(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysSelectionIsCurrent(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysDeletionHasSelection(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysDeletedSeriesStayDeleted(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysDeletedSeriesIdsAreNonempty(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> alwaysSeriesDeletionIsRecurring(importBillOccurrence(v, entry, billEvidence, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> stepOccurrenceIdentityIsFixed(v, importBillOccurrence(v, entry, billEvidence, by_)))
+lemma importBillOccurrence_ensures(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by_: ViewActor)
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysViewIdentity(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysViewWindow(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEditingIsSelected(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSeriesDefinitions(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEntriesUseSeries(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletionHasSelection(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
 {
-  if inv(v) && canImportBillOccurrence(v, entry, billEvidence, by_) {
-    PublishAllowedEnsures(v, importedBill(entry), importVersion(v, entry), true, by_);
+  if inv(v) && canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) {
+    PublishAllowedEnsures(v, importedBill(entry), importVersion(v, entry), scheduleVerified, by_);
   }
 }
 

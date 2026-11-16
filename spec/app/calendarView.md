@@ -415,7 +415,8 @@ equal the evidence's bill key, the payment aggregate's key, and its source
 reference names that evidence. The evidence carries the payment aggregate's
 key fields (owner, origin, account and bill) with its source reference. The
 import is a publish of the saved row, so every publishing check applies to it,
-including a following bill's distinct invoice; it is the only way a new bill
+including the store's verification of the occurrence's local time and a
+following bill's distinct invoice; it is the only way a new bill
 row is added, since an ordinary publish refuses one. It neither opens Calendar nor changes the selection.
 
 ```quint
@@ -429,14 +430,14 @@ pure def importedBill(entry: EntrySeed): C::Calendar =
   C::save(C::approveSave(created, created.revision, C::CalendarUser), created.revision, true, C::CalendarStore)
 pure def importVersion(v: CalendarView, entry: EntrySeed): int =
   if (seriesAt(v, entry.details.seriesId).version == -1) 0 else seriesAt(v, entry.details.seriesId).version
-pure def canImportBillOccurrence(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, by: ViewActor): bool =
+pure def canImportBillOccurrence(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by: ViewActor): bool =
   by == ViewStore and billEvidence.verified and provesBill(entry.identity, billEvidence) and
   v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
-  publishAllowed(v, importedBill(entry), importVersion(v, entry), true, by)
-pure def importBillOccurrence(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, by: ViewActor): CalendarView =
-  publishOccurrence(v, importedBill(entry), importVersion(v, entry), true, by)
-pure def lawImportedBillHasVerifiedKey(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, by: ViewActor): bool =
-  canImportBillOccurrence(v, entry, billEvidence, by) implies
+  publishAllowed(v, importedBill(entry), importVersion(v, entry), scheduleVerified, by)
+pure def importBillOccurrence(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by: ViewActor): CalendarView =
+  publishOccurrence(v, importedBill(entry), importVersion(v, entry), scheduleVerified, by)
+pure def lawImportedBillHasVerifiedKey(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by: ViewActor): bool =
+  canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by) implies
     (billEvidence.verified and C::billAvailable(importedBill(entry)) and provesBill(importedBill(entry).identity, billEvidence))
 ```
 
@@ -569,7 +570,7 @@ pure def sometimesCalendarClosed(v: CalendarView): bool = not(v.opened) and v.ow
 
 On Home, a shown reminder is the banner with the bell, the event's title, its
 day, time and place, See details and Dismiss
-(`Grace Prototype.html:1866–1871`). The banner is hidden while Grace is
+(`Grace Prototype.html:1865–1871`). The banner is hidden while Grace is
 expanded or the tablet sleeps. On any other screen it arrives as the toast
 "Reminder: " followed by the title, the day in lower case, "at" and the time,
 with no comma (`Grace Prototype.html:2275`). See details opens
