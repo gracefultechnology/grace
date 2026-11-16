@@ -3,12 +3,10 @@ import path from "node:path";
 import {createHash} from "node:crypto";
 import os from "node:os";
 import {parseArgs} from "node:util";
-import {Schema} from "effect";
 import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "../../../vendor/eliza/packages/os/scripts/android/stage-launcher-overlay.ts";
-import capacitor from "../capacitor.config.ts";
-import {buildTool as tool} from "./android.ts";
+import {buildTool as tool, identity as capacitor} from "./android.ts";
 
-const {appId, appName} = Schema.decodeUnknownSync(Schema.Struct({appId: Schema.String, appName: Schema.String}))(capacitor);
+const {appId, appName} = capacitor;
 const identity = {brand: appName.toLowerCase(), moduleName: appName, packageName: appId};
 const defaultPermissions = ["android.permission.RECORD_AUDIO"];
 

@@ -32,8 +32,9 @@ refuses a partial set, and the build fails if they are set and a release comes o
 otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build produced
 with its size, its SHA-256 and the signer the newest installed build-tools' `apksigner` verified; a debug
 build removes release APKs left by an earlier `--release` run. The build fails if an APK carries an
-on-device model or local inference: a `.gguf` or `.onnx` file, llama, ggml, `elizainference` or
-`omnivoice` libraries, or a `tts/` or `asr/` directory. Both flavors' `versionCode` is `package.json`'s
+on-device model or local inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`, `.safetensors`, `.pte` or
+`.task` file, a native library under `lib/` named for llama, ggml, onnxruntime, sherpa, whisper, piper,
+executorch, `elizainference` or `omnivoice`, or a `tts/`, `asr/`, `model/` or `models/` directory. Both flavors' `versionCode` is `package.json`'s
 version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
 ### On the emulator
@@ -47,14 +48,14 @@ builds, then attaches to the named AVD or boots it without a window and with hos
 Home (`cmd package set-home-activity`), starts Home and fails unless Grace is what Home opens, her WebView
 shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
 Responding". It prints the emulator's WebView package and version, and leaves the emulator running. Every
-`adb` call has a time limit (the boot 15 minutes, the install 5), and an emulator that exits before it
-boots fails the command with its log. `--install emulator-<port>` does the same
+`adb` call has a time limit (the boot 15 minutes, the install 5) and is killed when the command exits,
+and an emulator that exits before it boots fails the command with its log. `--install emulator-<port>` does the same
 on an emulator that is already running; it refuses any serial that is not an emulator's, so a tablet
 on USB is never touched.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket: an
 array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible name>" }`, `{ "press": "Enter" }`
-or `{ "expect": "<text on screen>" }`, each given two minutes; a tap fails when no visible thing or more
+or `{ "expect": "<text on screen>" }`, each given two minutes; a step with any other key is refused before the build, and a tap fails when no visible thing or more
 than one has that name. Each feature adds its own file;
 `home.json` walks Home.
 
