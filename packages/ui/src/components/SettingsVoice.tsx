@@ -22,27 +22,19 @@ export type SettingsVoiceProps = Omit<ComponentProps<"section">, "onChange"> & {
   /** The tablet listens for "Hey Grace". */
   wake: boolean;
   onWakeChange?: (on: boolean) => void;
-  title?: string;
-  sampleTitle?: string;
-  sampleLabel?: string;
-  speedLabel?: string;
-  speaksLabel?: string;
-  wakeLabel?: string;
-  /** What listening for "Hey Grace" means. */
-  wakeHint?: string;
   /** Why the tablet cannot listen for "Hey Grace" now, such as no microphone permission: its switch is off and waits. */
   wakeUnavailable?: string;
   /** Shows a button under `wakeUnavailable` that fixes it, such as "Allow microphone". */
   canFixWake?: boolean;
   /** Called by that button. */
   onFixWake?: () => void;
-  /** The words of that button. */
-  fixWakeLabel?: string;
 };
 
+const speedLabel = "How fast she speaks";
+
 /**
- * Settings' page for Grace's voice: a sample, how fast she speaks, whether she speaks aloud and whether she listens for
- * "Hey Grace" (prototype `setView()`, "Grace’s voice").
+ * Settings' page for Grace's voice: a sample, how fast she speaks, whether she speaks aloud, which uses the internet,
+ * and whether she listens for "Hey Grace" (prototype `setView()`, "Grace’s voice").
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md#windows
  */
@@ -55,47 +47,39 @@ export function SettingsVoice({
   onSpeaksChange,
   wake,
   onWakeChange,
-  title = "Grace’s voice",
-  sampleTitle = "Hear Grace",
-  sampleLabel = "Play a sample",
-  speedLabel = "How fast she speaks",
-  speaksLabel = "Grace speaks out loud",
-  wakeLabel = "Listen for “Hey Grace”",
-  wakeHint = "Works any time, even when the screen is asleep. Turn off to use Ask Grace only.",
   wakeUnavailable,
   canFixWake = false,
   onFixWake,
-  fixWakeLabel = "Allow microphone",
   className,
   ...props
 }: SettingsVoiceProps) {
   return (
-    <section aria-label={title} className={cn("font-sans", className)} {...props}>
-      <SettingsPageHeading>{title}</SettingsPageHeading>
+    <section aria-label="Grace’s voice" className={cn("font-sans", className)} {...props}>
+      <SettingsPageHeading>Grace’s voice</SettingsPageHeading>
       <ListRow
         className="mt-[18px] min-h-[76px]"
-        title={sampleTitle}
+        title="Hear Grace"
         trailing={
           <Button variant="capsule" size="pill" className="h-13 pr-[26px] pl-[22px]" onClick={onPlaySample}>
             <PlayIcon className="size-5" />
-            {sampleLabel}
+            Play a sample
           </Button>
         }
       />
       <PageHeading level="section" className="mt-5">{speedLabel}</PageHeading>
       <SegmentedControl aria-label={speedLabel} className="mt-2.5" options={speeds} value={speed} onValueChange={(next) => next && onSpeedChange?.(next)} />
-      <SettingsSwitchRow className="mt-3.5 min-h-[76px]" title={speaksLabel} checked={speaks} onCheckedChange={onSpeaksChange} />
+      <SettingsSwitchRow className="mt-3.5 min-h-[76px]" title="Grace speaks out loud" subtitle="Her voice comes over the internet." checked={speaks} onCheckedChange={onSpeaksChange} />
       <SettingsSwitchRow
         className="mt-2.5"
-        title={wakeLabel}
-        subtitle={wakeUnavailable ? <span className="text-label-ink">{wakeUnavailable}</span> : wakeHint}
+        title="Listen for “Hey Grace”"
+        subtitle={wakeUnavailable ? <span className="text-label-ink">{wakeUnavailable}</span> : "Works any time, even when the screen is asleep. Turn off to use Ask Grace only."}
         checked={wake && !wakeUnavailable}
         onCheckedChange={onWakeChange}
         disabled={!!wakeUnavailable}
       />
       {wakeUnavailable && canFixWake && (
         <Button variant="capsule" size="pill" className="mt-3.5" onClick={onFixWake}>
-          {fixWakeLabel}
+          Allow microphone
         </Button>
       )}
     </section>

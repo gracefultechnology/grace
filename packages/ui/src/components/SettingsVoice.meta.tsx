@@ -9,15 +9,15 @@ const wake = fn();
 const allow = fn();
 
 export const meta: ComponentMeta<SettingsVoiceProps> = {
-  args: { speeds, speed: "1", speaks: true, wake: true, onPlaySample: sample, onWakeChange: wake },
+  args: { speeds, speed: "1", speaks: true, wake: false, wakeUnavailable: "Not available yet.", onPlaySample: sample, onWakeChange: wake },
   examples: {
-    Quiet: { speed: "0.8", speaks: false, wake: false },
-    "Hey Grace unavailable": {
+    Quiet: { speed: "0.8", speaks: false },
+    "Hey Grace available": { wake: true, wakeUnavailable: undefined },
+    "Microphone not allowed": {
       wakeUnavailable: "Grace can’t listen until the tablet lets her use the microphone.",
       canFixWake: true,
       onFixWake: allow,
     },
-    "Hey Grace unavailable, no fix": { wakeUnavailable: "Listening for “Hey Grace” isn’t available on this tablet." },
   },
   decorator: settingsPage,
   play: {
@@ -25,15 +25,14 @@ export const meta: ComponentMeta<SettingsVoiceProps> = {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByRole("button", { name: "Play a sample" }));
       await expect(sample).toHaveBeenCalled();
-      await userEvent.click(canvas.getByRole("switch", { name: "Listen for “Hey Grace”" }));
+      await expect(canvas.getByRole("switch", { name: "Listen for “Hey Grace”" })).toBeDisabled();
+    },
+    "Hey Grace available": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("switch", { name: "Listen for “Hey Grace”" }));
       await expect(wake).toHaveBeenCalledWith(false);
     },
-    "Hey Grace unavailable": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
-      const toggle = canvas.getByRole("switch", { name: "Listen for “Hey Grace”" });
-      await expect(toggle).toBeDisabled();
-      await expect(toggle.getAttribute("aria-checked")).toBe("false");
-      await userEvent.click(canvas.getByRole("button", { name: "Allow microphone" }));
+    "Microphone not allowed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Allow microphone" }));
       await expect(allow).toHaveBeenCalled();
     },
   },

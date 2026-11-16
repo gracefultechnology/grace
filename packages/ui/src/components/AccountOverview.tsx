@@ -1,81 +1,30 @@
 import type { ComponentProps, ReactNode } from "react";
-import { CircleCheck, CircleHelp, Clock, TriangleAlert, type LucideIcon } from "lucide-react";
-import { cn } from "../lib/cn.ts";
-import { AccountHelp, type AccountHelpLabels } from "./AccountHelp.tsx";
-import { Alert } from "./Alert.tsx";
+import { AccountFacts } from "./AccountFacts.tsx";
+import { AccountHelp } from "./AccountHelp.tsx";
 import { Button } from "./Button.tsx";
-import { ListRow } from "./ListRow.tsx";
-import { PageHeading, PageText } from "./PageHeading.tsx";
+import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
-import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
+import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 
-export type AccountAccess = "active" | "funding_required" | "payment_pending" | "unavailable";
+export type AccountAccess = "active" | "attention" | "unavailable";
 
-export interface AccountSubscription {
-  plan: string;
-  status: string;
-  periodEnd: string;
-  cancelled?: boolean;
-}
-
-export type AccountPage = "methods" | "plan" | "usage" | "invoices";
-
-export type AccountOverviewLabels = {
-  title: Record<AccountAccess, string>;
-  unavailable: string;
-  pending: string;
-  planStatus: (status: string) => string;
-  renews: (date: string) => string;
-  cancelled: (date: string) => string;
-  pages: Record<AccountPage, string>;
-  checkAgain: string;
-  signOut: string;
-  notCancelled: string;
-  reviewTitle: string;
-  reviewText: string;
-  stay: string;
-  confirmSignOut: string;
-  signingOut: string;
+const problems: Record<Exclude<AccountAccess, "active">, string> = {
+  attention: "Your account needs attention, so Grace can’t talk or think yet. Ask the person who helps you with Grace.",
+  unavailable: "We couldn’t check your account. Check the internet and try again.",
 };
 
-export const accountOverviewLabels: AccountOverviewLabels = {
-  title: { active: "Account and plan", funding_required: "Your payment needs attention", payment_pending: "Your payment is being checked", unavailable: "We couldn’t check your account" },
-  unavailable: "Nothing has changed with your account or plan. The connection to your account isn’t answering right now, so check the internet and try again. Everything else on this tablet keeps working.",
-  pending: "We have not confirmed the result yet. Do not make another purchase. Check the same account again.",
-  planStatus: (status) => `Status: ${status}`,
-  renews: (date) => `Current period ends: ${date}`,
-  cancelled: (date) => `Renewal cancelled. Paid period ends: ${date}`,
-  pages: { methods: "Sign-in methods", plan: "Change your plan", usage: "Usage and balance", invoices: "Invoices and receipts" },
-  checkAgain: "Check again",
-  signOut: "Sign out",
-  notCancelled: "Signing out does not cancel your subscription.",
-  reviewTitle: "Sign out of Grace?",
-  reviewText: "This signs this tablet out of Grace. It pauses your current task and stops voice.",
-  stay: "Stay signed in",
-  confirmSignOut: "Confirm sign out",
-  signingOut: "Signing out…",
-};
-
-const marks: Record<AccountAccess, { icon: LucideIcon; tone: string }> = {
-  active: { icon: CircleCheck, tone: "text-ok" },
-  funding_required: { icon: TriangleAlert, tone: "text-destructive" },
-  payment_pending: { icon: Clock, tone: "text-warn" },
-  unavailable: { icon: CircleHelp, tone: "text-warn" },
-};
-
-export type AccountOverviewProps = ComponentProps<"section"> & {
+export type AccountOverviewProps = Omit<ComponentProps<"section">, "title"> & {
+  /** Where the account stands: working, needing attention, or not answering. */
   access: AccountAccess;
-  /** The account signed in: "margaret.s@example.com". */
-  account?: string;
-  subscription?: AccountSubscription;
-  /** The pages offered, in order; each opens with `onOpen`. */
-  pages?: readonly AccountPage[];
-  onOpen?: (page: AccountPage) => void;
-  /** Billing parts the app adds under the plan, such as a payment that needs attention. */
-  children?: ReactNode;
+  /** The Google account signed in: "margaret.s@gmail.com". */
+  account: string;
+  /** Grace can read this account's email. */
+  mailConnected: boolean;
+  /** Where to write to have the account deleted: "help@example.com". */
+  support: string;
   /** Asks before signing out, in place of the page. */
   reviewSignOut?: boolean;
-  /** What signing out changes, one sentence each: Gmail, websites, saved passwords. */
+  /** What signing out changes, one sentence each. */
   signOutEffects?: readonly string[];
   busy?: boolean;
   /** What happened, or why signing out did not finish. */
@@ -85,25 +34,18 @@ export type AccountOverviewProps = ComponentProps<"section"> & {
   onSignOut?: () => void;
   onConfirmSignOut?: () => void;
   onStay?: () => void;
-  /** Help folded at the foot. */
-  help?: boolean;
-  /** The help's words, for another language. */
-  helpLabels?: Partial<AccountHelpLabels>;
-  labels?: Partial<AccountOverviewLabels>;
 };
 
 /**
- * Settings' account page: the account and where it stands, its plan, the account's own pages, Check again and Sign out,
- * which asks first and says what it changes.
+ * Settings' account page: who is signed in, whether email is connected, Sign out, which asks first and says what it
+ * changes, and where to ask for the account to be deleted.
  * @design packages/design-system/design.md#windows
  */
 export function AccountOverview({
   access,
   account,
-  subscription,
-  pages = ["methods", "plan", "usage", "invoices"],
-  onOpen,
-  children,
+  mailConnected,
+  support,
   reviewSignOut = false,
   signOutEffects = [],
   busy = false,
@@ -112,19 +54,14 @@ export function AccountOverview({
   onSignOut,
   onConfirmSignOut,
   onStay,
-  help = true,
-  helpLabels,
-  labels,
   className,
   ...props
 }: AccountOverviewProps) {
-  const l = { ...accountOverviewLabels, ...labels };
   const status = notice == null ? null : <RetryNotice role="status">{notice}</RetryNotice>;
   if (reviewSignOut)
     return (
-      <section aria-label={l.reviewTitle} className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
-        <SettingsPageHeading>{l.reviewTitle}</SettingsPageHeading>
-        <PageText>{l.reviewText}</PageText>
+      <SettingsAccountPage title="Sign out of Grace?" className={className} {...props}>
+        <PageText>This signs this tablet out of Grace. It pauses your current task and stops voice.</PageText>
         {signOutEffects.length ? (
           <ul className="m-0 flex flex-col gap-3 rounded-window bg-panel py-[26px] pr-7 pl-12">
             {signOutEffects.map((effect) => (
@@ -133,50 +70,28 @@ export function AccountOverview({
           </ul>
         ) : null}
         <div className="flex flex-wrap gap-3">
-          <Button variant="prominent" size="pill" disabled={busy} onClick={onStay}>{l.stay}</Button>
-          <Button variant="warn" size="pill" loading={busy} onClick={onConfirmSignOut}>{busy ? l.signingOut : l.confirmSignOut}</Button>
+          <Button variant="prominent" size="pill" disabled={busy} onClick={onStay}>Stay signed in</Button>
+          <Button variant="warn" size="pill" loading={busy} onClick={onConfirmSignOut}>{busy ? "Signing out…" : "Confirm sign out"}</Button>
         </div>
         {status}
-      </section>
+      </SettingsAccountPage>
     );
-  const { icon: Mark, tone } = marks[access];
-  const settled = access !== "unavailable";
   return (
-    <section aria-label={l.title[access]} className={cn("flex flex-col gap-5 font-sans", className)} {...props}>
-      <SettingsPageHeading>{l.title[access]}</SettingsPageHeading>
-      {account ? (
-        <ListRow
-          className="min-h-[76px]"
-          leading={<Mark aria-hidden size={28} strokeWidth={2.2} className={cn("flex-none", tone)} />}
-          title={account}
-        />
-      ) : null}
-      {access === "unavailable" ? <PageText>{l.unavailable}</PageText> : null}
-      {access === "payment_pending" ? <Alert variant="caution">{l.pending}</Alert> : null}
-      {subscription ? (
-        <div className="flex flex-col gap-1.5 rounded-window bg-panel px-7 py-[26px]">
-          <PageHeading level="section" className="text-chrome">{subscription.plan}</PageHeading>
-          <PageText>{l.planStatus(subscription.status)}</PageText>
-          <PageText tone="secondary">{subscription.cancelled ? l.cancelled(subscription.periodEnd) : l.renews(subscription.periodEnd)}</PageText>
-        </div>
-      ) : null}
-      {children}
-      {account && settled && pages.length ? (
-        <div className="flex flex-col gap-2.5">
-          {pages
-            .filter((page) => page !== "plan" || subscription != null)
-            .map((page) => (
-              <ListRow key={page} className="min-h-[76px]" title={l.pages[page]} chevron onClick={() => onOpen?.(page)} />
-            ))}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-3">
-        <Button variant="capsule" size="pill" loading={busy} onClick={onCheckAgain}>{l.checkAgain}</Button>
-        {settled ? <Button variant="warn" size="pill" disabled={busy} onClick={onSignOut}>{l.signOut}</Button> : null}
-      </div>
+    <SettingsAccountPage title="Account" busy={busy} className={className} {...props}>
+      <AccountFacts
+        facts={[
+          { label: "Signed in", value: account },
+          { label: "Email", value: mailConnected ? "Connected" : "Not connected" },
+        ]}
+      />
+      {access === "active" ? null : (
+        <RetryNotice role="status" onRetry={onCheckAgain} retryLabel="Check again" retrying={busy}>
+          {problems[access]}
+        </RetryNotice>
+      )}
+      <Button variant="warn" size="pill" disabled={busy} onClick={onSignOut} className="self-start">Sign out</Button>
       {status}
-      <PageText tone="secondary">{l.notCancelled}</PageText>
-      {help ? <AccountHelp labels={helpLabels} /> : null}
-    </section>
+      <AccountHelp support={support} />
+    </SettingsAccountPage>
   );
 }
