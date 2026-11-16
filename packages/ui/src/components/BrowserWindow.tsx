@@ -1,13 +1,12 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
+import { besideRail } from "./AppWindow.tsx";
 
 export type BrowserWindowProps = ComponentProps<"section"> & {
   /** The tab strip, a `BrowserTabStrip`. */
   tabStrip: ReactNode;
   /** The toolbar, a `BrowserToolbar` holding an `AddressBar`. */
   toolbar: ReactNode;
-  /** `screen` places the window on a `TabletScreen`, right of the rail; `inline` fills its container. */
-  placement?: "screen" | "inline";
 };
 
 /**
@@ -17,12 +16,12 @@ export type BrowserWindowProps = ComponentProps<"section"> & {
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens
  */
-export function BrowserWindow({ tabStrip, toolbar, placement = "screen", className, children, ...props }: BrowserWindowProps) {
+export function BrowserWindow({ tabStrip, toolbar, className, children, ...props }: BrowserWindowProps) {
   return (
     <section
       className={cn(
-        "isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
-        placement === "screen" ? "absolute top-1.5 bottom-1.5 left-[144px] z-[1] right-1.5" : "relative size-full",
+        besideRail,
+        "z-[1] isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
         className,
       )}
       {...props}

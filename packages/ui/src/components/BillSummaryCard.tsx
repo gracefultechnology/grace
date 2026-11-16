@@ -66,7 +66,7 @@ export function BillSummaryCard({
     <Panel
       role="group"
       aria-label={title}
-      className={cn("flex flex-col gap-5 group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-float", className)}
+      className={cn("flex flex-col gap-5", className)}
       {...props}
     >
       <p className="m-0 text-lead leading-[30px] font-bold text-chrome">

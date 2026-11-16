@@ -179,8 +179,6 @@ export const meta: ComponentMeta<CalendarAppProps> = {
   },
   examples: {
     Week: {},
-    "Header Mode Large": { headerMode: "large" },
-    "Header Mode None": { headerMode: "none" },
     Month: { view: "month", nav: { period: "November 2026" } },
     Detail: { view: "detail" },
     Form: { view: "form" },

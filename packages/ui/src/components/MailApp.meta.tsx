@@ -75,7 +75,6 @@ const retry = fn();
 export const meta: ComponentMeta<MailAppProps> = {
   args: { folder: "inbox", counts: { inbox: 2 }, messages: inbox, onOpen: open, onSelectFolder: folder, onWrite: write, onClose: fn() },
   examples: {
-    "Large title": { headerMode: "large" },
     Sent: { folder: "sent", messages: sent },
     Search: { query: "book", messages: inbox.filter((m) => m.id === "book") },
     "Nothing found": { query: "Thanksgiving", messages: [] },

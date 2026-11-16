@@ -4,8 +4,6 @@ import { cn } from "../lib/cn.ts";
 export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref"> & {
   /** `compact` is three rows over the page (header, the current message, the answer row); `expanded` fills the screen. */
   size?: "compact" | "expanded";
-  /** `white` is the solid chat window; `frost` the frosted glass one with white bubbles. */
-  surface?: "white" | "frost";
   /** The compact window's height; by default it fits what it shows (prototype `sizeCompact()`). */
   height?: number;
   /** Called with the compact window's height as it fits what it shows, so what is under it can make room. */
@@ -16,8 +14,6 @@ export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref
   children?: ReactNode;
   /** The answer row, a `GraceDock`, floating over the conversation. */
   dock?: ReactNode;
-  /** `screen` places the window on a `TabletScreen`, right of the rail; `inline` fills its container's width. */
-  placement?: "screen" | "inline";
 };
 
 const COMPACT = 260;
@@ -38,7 +34,7 @@ function fitted(section: HTMLElement): number {
  * @design packages/design-system/design.md#grace
  * @design packages/design-system/design.md#screens
  */
-export function GraceWindow({ size = "expanded", surface = "white", height, onHeightChange, header, dock, placement = "screen", className, style, children, ...props }: GraceWindowProps) {
+export function GraceWindow({ size = "expanded", height, onHeightChange, header, dock, className, style, children, ...props }: GraceWindowProps) {
   const expanded = size === "expanded";
   const ref = useRef<HTMLElement>(null);
   const [fit, setFit] = useState(COMPACT);
@@ -56,20 +52,14 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
     if (log) observer.observe(log);
     return () => observer.disconnect();
   });
-  const white = surface === "white";
-  const fade = white ? "from-background/55 via-background/15 via-70%" : "from-frost/60 via-frost/25 via-60%";
   return (
     <section
       ref={ref}
       aria-label="Grace"
       data-size={size}
-      data-surface={surface}
       className={cn(
-        "group/grace isolate flex flex-col gap-6 overflow-hidden rounded-device p-4 font-sans text-grace-ink transition-[height,bottom] duration-slow ease-settle motion-reduce:transition-none",
-        white
-          ? "bg-background shadow-window"
-          : cn("shadow-banner backdrop-blur-2xl backdrop-saturate-150", expanded ? "bg-frost/94" : "bg-frost/86"),
-        placement === "screen" ? cn("absolute bottom-1.5 left-[144px] z-[3] right-1.5", expanded && "h-[calc(100%-12px)]") : cn("relative w-full", expanded && "h-full"),
+        "group/grace relative isolate flex w-full flex-col gap-6 overflow-hidden rounded-device bg-background p-4 font-sans text-grace-ink shadow-window transition-[height,bottom] duration-slow ease-settle motion-reduce:transition-none",
+        expanded && "h-full",
         className,
       )}
       style={expanded ? style : { height: height ?? fit, ...style }}
@@ -77,11 +67,7 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
     >
       <span
         aria-hidden
-        className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 z-[1] rounded-t-device bg-linear-to-b to-transparent mask-b-from-50%",
-          white ? "h-[100px] backdrop-blur-soft" : "h-[120px] backdrop-blur-fade",
-          fade,
-        )}
+        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[100px] rounded-t-device bg-linear-to-b from-background/55 via-background/15 via-70% to-transparent mask-b-from-50% backdrop-blur-soft"
       />
       {header}
       <div className="-mt-[88px] flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
@@ -89,7 +75,7 @@ export function GraceWindow({ size = "expanded", surface = "white", height, onHe
         <>
           <span
             aria-hidden
-            className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-[1] rounded-b-device bg-linear-to-t to-transparent mask-t-from-50% backdrop-blur-fade", expanded ? "h-[120px]" : "h-[110px]", white ? "from-background/75 via-background/35 via-60%" : fade)}
+            className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-[1] rounded-b-device bg-linear-to-t from-background/75 via-background/35 via-60% to-transparent mask-t-from-50% backdrop-blur-fade", expanded ? "h-[120px]" : "h-[110px]")}
           />
           <div className="absolute inset-x-4 bottom-4 z-[2]">{dock}</div>
         </>

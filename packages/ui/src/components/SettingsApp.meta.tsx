@@ -6,8 +6,6 @@ import { AccountOverview } from "./AccountOverview.tsx";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import { SettingsApp, type SettingsAppProps, type SettingsPage } from "./SettingsApp.tsx";
-import { SettingsAbout } from "./SettingsAbout.tsx";
-import { voiceCredits, voiceCreditsIntro } from "./SettingsAbout.meta.tsx";
 import { SettingsBrightness } from "./SettingsBrightness.tsx";
 import { SettingsPrivacy } from "./SettingsPrivacy.tsx";
 import { savedDetails } from "./SettingsPrivacy.meta.tsx";
@@ -80,9 +78,6 @@ export const meta: ComponentMeta<SettingsAppProps> = {
         <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} guide={{ targetId: "Largest", kind: "instruction", title: "Tap Largest", onClose: fn() }} />
       ),
     },
-    "Header Mode Large": { headerMode: "large" },
-    "Header Mode Large, Wi-Fi join": { headerMode: "large", page: "wifi", pageTitle: "Join Home Network", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
-    "Header Mode None": { headerMode: "none", page: "wifi", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
     "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
     "Brightness not changed": {
       page: "brightness",
@@ -95,11 +90,6 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       children: <AccountOverview access="active" account="margaret.s@example.com" subscription={{ plan: "Grace Plus", status: "Active", periodEnd: "Dec 1, 2026" }} onOpen={fn()} onSignOut={fn()} />,
     },
     "Saved details": { page: "privacy", pages: appPages, children: <SettingsPrivacy details={savedDetails} /> },
-    "About with voice software": {
-      page: "about",
-      pages: appPages,
-      children: <SettingsAbout device="Grace tablet · Prototype" status="Everything is up to date." credits={voiceCredits} creditsIntro={voiceCreditsIntro} />,
-    },
   },
   decorator: (story) => onTablet(story, "Settings"),
   play: {
@@ -108,11 +98,6 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       await expect(list.getByRole("button", { name: "Text size" }).getAttribute("aria-current")).toBe("page");
       await userEvent.click(list.getByRole("button", { name: "Wi-Fi" }));
       await expect(pick).toHaveBeenCalledWith("wifi");
-    },
-    "Header Mode Large": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
-      await expect(canvas.getAllByRole("heading", { name: "Text size" })).toHaveLength(1);
-      await expect(canvas.getByRole("button", { name: "Close Settings" })).toBeVisible();
     },
     "Not saved": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));

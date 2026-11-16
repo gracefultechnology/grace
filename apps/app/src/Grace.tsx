@@ -22,7 +22,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   // shown page, and expanded over one the host has not hidden yet. One window at both sizes, so resizing keeps its focus.
   return (
     <OverPage className="absolute right-1.5 left-[144px] z-[3]" style={{ bottom: 6 + keyboard }}>
-      <GraceWindow size={expanded ? "expanded" : "compact"} surface={expanded ? "white" : "frost"} placement="inline" onHeightChange={onHeightChange}
+      <GraceWindow size={expanded ? "expanded" : "compact"} onHeightChange={onHeightChange}
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
         style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={

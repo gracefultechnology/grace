@@ -1,4 +1,6 @@
 import type { ComponentMeta } from "vibestack/stories";
+import { cn } from "../lib/cn.ts";
+import { besideRail } from "./AppWindow.tsx";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceDock } from "./GraceDock.tsx";
 import { dockArgs } from "./GraceDock.meta.tsx";
@@ -58,7 +60,10 @@ export const meta: ComponentMeta<GraceWindowProps> = {
         </GraceMessages>
       ),
     },
-    Frost: { surface: "frost", size: "compact", header: header(false), dock: dock(false, "grace") },
   },
-  decorator: (story) => <TabletScreen>{story()}</TabletScreen>,
+  decorator: (story) => (
+    <TabletScreen>
+      <div className={cn(besideRail, "z-[3] flex flex-col justify-end")}>{story()}</div>
+    </TabletScreen>
+  ),
 };
