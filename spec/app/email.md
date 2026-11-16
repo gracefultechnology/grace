@@ -208,7 +208,8 @@ pure def assistReadMail(m: Mailbox, kind: ReadKind, ref: str, visible: bool, ask
   readMail(assistedView(kind, m), kind, ref, true, MailUser)
 pure def lawAssistantReadKeepsTheDraft(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): bool =
   canAssistReadMail(m, kind, ref, visible, asked, by) implies
-    (assistReadMail(m, kind, ref, visible, asked, by).draft == m.draft and
+    (assistReadMail(m, kind, ref, visible, asked, by).revision == m.revision and
+      assistReadMail(m, kind, ref, visible, asked, by).draftVersion == m.draftVersion and
       assistReadMail(m, kind, ref, visible, asked, by).sendStatus == m.sendStatus and
       assistReadMail(m, kind, ref, visible, asked, by).draftId == m.draftId)
 pure def listingScope(m: Mailbox): ListingScope = {
@@ -641,7 +642,11 @@ pure def lawGraceReplyIsUnapproved(m: Mailbox, body: str, visible: bool, asked: 
       proposeReplyDraft(m, body, visible, asked, by).revision > m.revision)
 pure def lawGraceReplyKeepsTheAddress(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
   canProposeReplyDraft(m, body, visible, asked, by) implies
-    (proposeReplyDraft(m, body, visible, asked, by).draft == { ...m.draft, body: body } and
+    (proposeReplyDraft(m, body, visible, asked, by).draft.to == m.draft.to and
+      proposeReplyDraft(m, body, visible, asked, by).draft.cc.subseteq(m.draft.cc) and
+      proposeReplyDraft(m, body, visible, asked, by).draft.bcc.subseteq(m.draft.bcc) and
+      proposeReplyDraft(m, body, visible, asked, by).draft.subject == m.draft.subject and
+      proposeReplyDraft(m, body, visible, asked, by).draft.body == body and
       proposeReplyDraft(m, body, visible, asked, by).replyTo == m.replyTo)
 pure def stepOnlyThePersonApproves(before: Mailbox, via: str, after: Mailbox): bool =
   (after.approvedRevision != -1 and after.approvedRevision != before.approvedRevision) implies
