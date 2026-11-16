@@ -44,7 +44,7 @@ type EntryIdentity = {
 }
 type EntryDetails = {
   title: str, location: str, participant: str, notes: str, startAt: int, endAt: int, timezone: str, allDay: bool,
-  seriesId: str, recurrence: Recurrence, reminderEnabled: bool, leadTime: int
+  seriesId: str, recurrence: Recurrence, reminderEnabled: bool, leadTime: int, important: bool
 }
 type Calendar = {
   phase: CalendarPhase, identity: EntryIdentity,
@@ -57,7 +57,7 @@ pure val noIdentity: EntryIdentity = {
 }
 pure val noDetails: EntryDetails = {
   title: "", location: "", participant: "", notes: "", startAt: 0, endAt: 0, timezone: "", allDay: false,
-  seriesId: "", recurrence: Once, reminderEnabled: false, leadTime: 0
+  seriesId: "", recurrence: Once, reminderEnabled: false, leadTime: 0, important: false
 }
 pure val initial: Calendar = {
   phase: Empty, identity: noIdentity, committed: noDetails, draft: noDetails,
@@ -83,11 +83,19 @@ A bill's immutable source reference points to the email/provider evidence, not
 a sample biller. Editing a title or reminder cannot change its payment identity.
 Incomplete drafts remain editable and cannot be saved. The form edits title, day,
 start time, location, repeat and reminder; detail also displays the imported
-participant and notes. Imported fields survive edits. The prototype's hour-long
+participant and notes. `edit` replaces the draft with what it is given; Calendar
+view gives it the form applied by `formDetails` (next rule), so imported fields
+survive edits. The prototype's hour-long
 new appointment is a default; existing duration and real calendar dates are not
 restricted to its sample 21-day picker or half-hour daytime options. Repeat UI
 choices are Never, Every week and Every month. Reminder UI choices are No, Day
-before and 1 hour before, interpreted in the occurrence timezone.
+before and 1 hour before, interpreted in the occurrence timezone. An entry
+marked important by its source, such as the clinic appointment that came from
+the clinic's email, draws the red bar, red month label and red Home day label
+(`Grace Prototype.html:1800,1876,1895,1908`). The form has no control for it,
+so Calendar view refuses a new entry marked important, `formDetails` keeps
+the draft's mark on every edit, and Calendar view keeps each member's own mark
+when a repeating event is edited and saved as a series.
 
 ```quint
 pure def canCreate(c: Calendar, identity: EntryIdentity, by: CalendarActor): bool =
@@ -105,6 +113,38 @@ pure def cancelEdit(c: Calendar, by: CalendarActor): Calendar =
   { ...c, phase: if (c.hasSaved) Saved else Empty,
     identity: if (c.hasSaved) c.identity else noIdentity,
     draft: c.committed, approvedRevision: -1, storageError: NoStorageError }
+```
+
+### Changing the start keeps the event's length
+
+The form has a start time and no end time. Choosing another day or time moves
+the whole event: `formDetails` takes the form's start and keeps the draft's
+length, so the end follows the start by that duration. The form shows "start to
+end" from the draft. This deliberately departs from the prototype, whose form
+always shows the start to one hour later (`Grace Prototype.html:1926`) and sets
+the end to one hour after the start on every save (`Grace Prototype.html:2171`),
+which silently shortens the 90-minute "Lunch with Susan"
+(`Grace Prototype.html:1801`); the model keeps the duration. Only a new
+appointment's seed carries the one-hour default length. `formDetails` takes the
+title, location, repeat (with its series ID) and reminder from the form; the
+fields it has no control for, the participant, notes, important mark, timezone
+and all-day flag, stay as they are in the draft.
+
+```quint
+pure def withStart(details: EntryDetails, startAt: int): EntryDetails =
+  { ...details, startAt: startAt, endAt: startAt + (details.endAt - details.startAt) }
+pure def formDetails(draft: EntryDetails, form: EntryDetails): EntryDetails =
+  { ...withStart(draft, form.startAt), title: form.title, location: form.location, seriesId: form.seriesId,
+    recurrence: form.recurrence, reminderEnabled: form.reminderEnabled, leadTime: form.leadTime }
+pure def lawChangingStartKeepsDuration(details: EntryDetails, startAt: int): bool =
+  val shifted = withStart(details, startAt)
+  shifted.startAt == startAt and shifted.endAt - shifted.startAt == details.endAt - details.startAt and
+    (validDetails(details) implies validDetails(shifted))
+pure def lawFormKeepsLengthAndImportedFields(draft: EntryDetails, form: EntryDetails): bool =
+  val applied = formDetails(draft, form)
+  applied.startAt == form.startAt and applied.endAt - applied.startAt == draft.endAt - draft.startAt and
+    applied.participant == draft.participant and applied.notes == draft.notes and
+    applied.important == draft.important and applied.timezone == draft.timezone and applied.allDay == draft.allDay
 ```
 
 ### Saving requires the current complete draft and explicit confirmation
@@ -207,6 +247,11 @@ pure def sometimesDeleted(c: Calendar): bool = c.phase == Deleted
 > As a user, I want a due reminder that I can dismiss or snooze, and I want
 > opening a bill to take me to its details without paying it automatically.
 
+The prototype's reminder offers See details and Dismiss only
+(`Grace Prototype.html:1870`). Snooze is kept from the user's reminder
+requirement (CAL-05): it is offered in the open occurrence's detail beside
+Dismiss while its reminder is shown, never on the Home banner.
+
 ### Time only makes an enabled reminder eligible and never executes the task
 
 Clock updates do not change entries, approvals or payment state. A reminder is
@@ -243,9 +288,6 @@ not payment authorization. All-day and timed views use the same occurrence ID.
 pure def billAvailable(c: Calendar): bool =
   c.hasSaved and c.phase != Deleted and c.identity.kind == Bill
 pure def occurrenceBill(c: Calendar): str = if (billAvailable(c)) c.identity.billRef else ""
-pure def occurrenceId(c: Calendar): str = if (billAvailable(c)) c.identity.occurrenceId else ""
-pure def billOrigin(c: Calendar): str = if (billAvailable(c)) c.identity.billOrigin else ""
-pure def billAccount(c: Calendar): str = if (billAvailable(c)) c.identity.billAccount else ""
 pure def lawEmptyCalendarCannotOpenBill(c: Calendar): bool =
   c.phase == Empty and not(c.hasSaved) implies occurrenceBill(c) == ""
 ```
@@ -270,7 +312,9 @@ An invalid or ambiguous local time requires an explicit validated resolution
 before an occurrence is materialized; the adapter cannot silently choose one. The registry creates a new machine after checking that the
 new occurrence ID is unused; the prior occurrence, receipt and reminder remain
 independent. A following bill requires a distinct verified invoice/cycle reference
-and source evidence before it becomes payable. Its amount and provider evidence
+and source evidence before it becomes payable: Calendar view's publishing
+checks `followingAllowed` against every live saved member of the bill's series,
+so a series' bills are materialized in date order. Its amount and provider evidence
 are fetched for that bill, never copied from the last payment. Two calendar
 entries for the same invoice still resolve the same payment ledger entry.
 
@@ -308,14 +352,16 @@ pure val billIdentity: EntryIdentity = {
 }
 pure val timedDetails: EntryDetails = {
   title: "Appointment", location: "Clinic", participant: "", notes: "", startAt: 3, endAt: 4, timezone: "America/New_York", allDay: false,
-  seriesId: "", recurrence: Once, reminderEnabled: true, leadTime: 1
+  seriesId: "", recurrence: Once, reminderEnabled: true, leadTime: 1, important: false
 }
 pure val repeatingDetails: EntryDetails = {
   title: "Bill due", location: "", participant: "", notes: "", startAt: 5, endAt: 6, timezone: "America/New_York", allDay: true,
-  seriesId: "seriesA", recurrence: Monthly, reminderEnabled: true, leadTime: 2
+  seriesId: "seriesA", recurrence: Monthly, reminderEnabled: true, leadTime: 2, important: false
 }
 pure val identityValues = Set(noIdentity, appointmentIdentity, billIdentity)
 pure val detailsValues = Set(noDetails, timedDetails, repeatingDetails, { ...timedDetails, recurrence: Weekly, seriesId: "weeklySeries" })
+pure val draftValues = detailsValues
+pure val formValues = detailsValues
 pure val nextIdValues = Set("", "periodA", "periodB")
 pure val nextBillRefValues = Set("", "billA", "billB")
 pure val nextSourceRefValues = Set("", "messageA", "messageB")
@@ -345,12 +391,6 @@ pure def inView(c: Calendar, owner: str, calendarId: str, fromTime: int, untilTi
   c.committed.startAt < untilTime and c.committed.endAt > fromTime
 pure def visibleEntries(entries: List[Calendar], owner: str, calendarId: str, fromTime: int, untilTime: int): List[Calendar] =
   entries.select(c => inView(c, owner, calendarId, fromTime, untilTime))
-pure def matchingEntries(entries: List[Calendar], owner: str, calendarId: str, selectedId: str): List[Calendar] =
-  entries.select(c => c.hasSaved and c.phase != Deleted and c.identity.owner == owner and
-    c.identity.calendarId == calendarId and c.identity.occurrenceId == selectedId)
-pure def selectedEntry(entries: List[Calendar], owner: str, calendarId: str, selectedId: str): Calendar =
-  val matches = matchingEntries(entries, owner, calendarId, selectedId)
-  if (matches.length() == 1) matches.nthOr(0, initial) else initial
 type ViewQuery = { owner: str, calendarId: str, fromTime: int, untilTime: int }
 pure def lawViewExcludesAnotherOwner(c: Calendar, query: ViewQuery): bool =
   c.identity.owner != query.owner implies not(inView(c, query.owner, query.calendarId, query.fromTime, query.untilTime))
@@ -377,8 +417,8 @@ by a late import or callback. The complete identity of an existing occurrence
 must match, including its source and bill reference; a higher content revision
 does not authorize retargeting the bill. This import boundary does not handle
 live reminder updates: Calendar view routes them to its actual stored row.
-Selection returns no entry
-for a missing or ambiguous key, rather than displaying somebody else's entry.
+Calendar view's selection returns no entry for a missing or ambiguous key,
+rather than displaying somebody else's entry.
 
 ```quint
 pure def sameOccurrence(left: Calendar, right: Calendar): bool =
@@ -414,13 +454,12 @@ pure def lawUpsertLeavesOne(entries: List[Calendar], incoming: Calendar): bool =
     upsertOccurrence(entries, incoming).select(c => sameOccurrence(c, incoming)).length() == 1
 pure def lawRefusedUpsertPreservesEntries(entries: List[Calendar], incoming: Calendar): bool =
   not(admissibleOccurrence(entries, incoming)) implies upsertOccurrence(entries, incoming) == entries
-pure val cValues = Set(initial,
+pure val incomingValues = Set(initial,
   approveSave(create(initial, appointmentIdentity, timedDetails, CalendarUser), 1, CalendarUser),
   save(approveSave(create(initial, appointmentIdentity, timedDetails, CalendarUser), 1, CalendarUser), 1, true, CalendarStore),
   save(approveSave(create(initial, billIdentity, repeatingDetails, CalendarUser), 1, CalendarUser), 1, true, CalendarStore))
-pure val leftValues = cValues
-pure val rightValues = cValues
-pure val incomingValues = cValues
+pure val leftValues = incomingValues
+pure val rightValues = incomingValues
 pure val entriesValues = Set(List(initial),
   List(save(approveSave(create(initial, appointmentIdentity, timedDetails, CalendarUser), 1, CalendarUser), 1, true, CalendarStore)),
   List(save(approveSave(create(initial, billIdentity, repeatingDetails, CalendarUser), 1, CalendarUser), 1, true, CalendarStore),
