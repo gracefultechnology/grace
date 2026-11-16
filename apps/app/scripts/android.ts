@@ -251,7 +251,7 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   } finally {
     await adb(["-s", serial, "forward", "--remove", `tcp:${port}`]);
   }
-  const notResponding = /Application Not Responding: (\S+)/.exec(await shell(serial, "dumpsys window"))?.[1];
+  const notResponding = /Application Not Responding: ([\w.:]+)/.exec(await shell(serial, "dumpsys window"))?.[1];
   if (notResponding) throw new Error(`${notResponding} is not responding on ${serial}`);
   process.stdout.write(`${serial} Grace is Home and responding\n`);
 }
