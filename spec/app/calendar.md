@@ -93,8 +93,9 @@ before and 1 hour before, interpreted in the occurrence timezone. An entry
 marked important by its source, such as the clinic appointment that came from
 the clinic's email, draws the red bar, red month label and red Home day label
 (`Grace Prototype.html:1800,1876,1895,1908`). The form has no control for it,
-so Calendar view refuses a new entry marked important and `formDetails` keeps
-the draft's mark on every edit.
+so Calendar view refuses a new entry marked important, `formDetails` keeps
+the draft's mark on every edit, and Calendar view keeps each member's own mark
+when a repeating event is edited and saved as a series.
 
 ```quint
 pure def canCreate(c: Calendar, identity: EntryIdentity, by: CalendarActor): bool =

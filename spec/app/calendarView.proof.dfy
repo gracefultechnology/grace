@@ -333,7 +333,7 @@ lemma CalendarDistinctUnique(v: CalendarView)
 }
 
 lemma CalendarPublishedView(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
-  requires canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)
+  requires publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_)
   ensures publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_).entries ==
     ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries) + [incoming]
 {
@@ -347,23 +347,23 @@ lemma CalendarDeletedSeriesView(v: CalendarView, generation: int, succeeded: boo
 {
 }
 
-lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewIdentity(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewWindow(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEditingIsSelected(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDefinitions(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+lemma PublishAllowedEnsures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewIdentity(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewWindow(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEditingIsSelected(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDefinitions(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
 {
-  if inv(v) && canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) {
+  if inv(v) && publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) {
     CalendarUniqueDistinct(v);
     CalendarPublishedView(v, incoming, seriesVersion, scheduleVerified, by_);
     var remaining := ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries);
@@ -416,6 +416,25 @@ lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calenda
       }
     }
   }
+}
+
+lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewIdentity(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewWindow(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEditingIsSelected(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDefinitions(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+{
+  PublishAllowedEnsures(v, incoming, seriesVersion, scheduleVerified, by_);
 }
 
 lemma deletionResult_ensures(v: CalendarView, generation: int, succeeded: bool, evidence: string, by_: ViewActor)
@@ -910,7 +929,7 @@ lemma importBillOccurrence_ensures(v: CalendarView, entry: EntrySeed, billEviden
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, by_) ==> stepOccurrenceIdentityIsFixed(v, importBillOccurrence(v, entry, billEvidence, by_)))
 {
   if inv(v) && canImportBillOccurrence(v, entry, billEvidence, by_) {
-    publishOccurrence_ensures(v, importedBill(entry), importVersion(v, entry), true, by_);
+    PublishAllowedEnsures(v, importedBill(entry), importVersion(v, entry), true, by_);
   }
 }
 
