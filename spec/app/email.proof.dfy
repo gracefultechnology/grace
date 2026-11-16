@@ -5,9 +5,9 @@ lemma SendDraftIssuedView(m: Mailbox, operationId: string, recipientValid: bool,
 }
 
 lemma sendDraft_ensures(m: Mailbox, operationId: string, recipientValid: bool, persisted: bool, by_: MailActor)
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysAccountIdentityIsBound(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysGenerationAndRevision(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysConnectedIdentity(sendDraft(m, operationId, recipientValid, persisted, by_)))
-  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysAccountIdentityIsBound(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysReadAccess(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysSelectedContent(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysReadSelectionIsBound(sendDraft(m, operationId, recipientValid, persisted, by_)))
@@ -17,6 +17,9 @@ lemma sendDraft_ensures(m: Mailbox, operationId: string, recipientValid: bool, p
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysListedMessagesAreCurrent(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysSelectionUsesCanonicalMessage(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysBillProvenance(sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysScamWarningIsCurrent(sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysLinkBelongsToSelection(sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysFlaggedMessageIsNoBillSource(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysResultPersistenceHasTerminal(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysApprovalIsCurrent(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysSendHasRecipient(sendDraft(m, operationId, recipientValid, persisted, by_)))
@@ -29,7 +32,11 @@ lemma sendDraft_ensures(m: Mailbox, operationId: string, recipientValid: bool, p
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysDraftAssetsAreValid(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> alwaysMessageAssetsAreBound(sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepMessageRecordsAreRetained(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepOnlyThePersonApproves(m, "sendDraft", sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepSendingNeedsCurrentApproval(m, "sendDraft", sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepUnresolvedDraftIsFixed(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepWorthyComposerIsNotDropped(m, "sendDraft", sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepMailboxIdentityIsFixed(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepRetirementRequiresCompletion(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
 {
@@ -53,9 +60,9 @@ lemma EmailForwardedAssetsView(m: Mailbox, content: DraftContent, by_: MailActor
 }
 
 lemma removeAsset_ensures(m: Mailbox, assetId: string, by_: MailActor)
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysAccountIdentityIsBound(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysGenerationAndRevision(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysConnectedIdentity(removeAsset(m, assetId, by_)))
-  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysAccountIdentityIsBound(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysReadAccess(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysSelectedContent(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysReadSelectionIsBound(removeAsset(m, assetId, by_)))
@@ -65,6 +72,9 @@ lemma removeAsset_ensures(m: Mailbox, assetId: string, by_: MailActor)
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysListedMessagesAreCurrent(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysSelectionUsesCanonicalMessage(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysBillProvenance(removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysScamWarningIsCurrent(removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysLinkBelongsToSelection(removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysFlaggedMessageIsNoBillSource(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysResultPersistenceHasTerminal(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysApprovalIsCurrent(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysSendHasRecipient(removeAsset(m, assetId, by_)))
@@ -77,7 +87,11 @@ lemma removeAsset_ensures(m: Mailbox, assetId: string, by_: MailActor)
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysDraftAssetsAreValid(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> alwaysMessageAssetsAreBound(removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepMessageRecordsAreRetained(m, removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepOnlyThePersonApproves(m, "removeAsset", removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepSendingNeedsCurrentApproval(m, "removeAsset", removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepUnresolvedDraftIsFixed(m, removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepWorthyComposerIsNotDropped(m, "removeAsset", removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepMailboxIdentityIsFixed(m, removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepRetirementRequiresCompletion(m, removeAsset(m, assetId, by_)))
 {
@@ -89,9 +103,9 @@ lemma removeAsset_ensures(m: Mailbox, assetId: string, by_: MailActor)
 
 
 lemma forwardAttachment_ensures(m: Mailbox, content: DraftContent, by_: MailActor)
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysAccountIdentityIsBound(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysGenerationAndRevision(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysConnectedIdentity(forwardAttachment(m, content, by_)))
-  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysAccountIdentityIsBound(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysReadAccess(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysSelectedContent(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysReadSelectionIsBound(forwardAttachment(m, content, by_)))
@@ -101,6 +115,9 @@ lemma forwardAttachment_ensures(m: Mailbox, content: DraftContent, by_: MailActo
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysListedMessagesAreCurrent(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysSelectionUsesCanonicalMessage(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysBillProvenance(forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysScamWarningIsCurrent(forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysLinkBelongsToSelection(forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysFlaggedMessageIsNoBillSource(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysResultPersistenceHasTerminal(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysApprovalIsCurrent(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysSendHasRecipient(forwardAttachment(m, content, by_)))
@@ -113,7 +130,11 @@ lemma forwardAttachment_ensures(m: Mailbox, content: DraftContent, by_: MailActo
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysDraftAssetsAreValid(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> alwaysMessageAssetsAreBound(forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepMessageRecordsAreRetained(m, forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepOnlyThePersonApproves(m, "forwardAttachment", forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepSendingNeedsCurrentApproval(m, "forwardAttachment", forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepUnresolvedDraftIsFixed(m, forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepWorthyComposerIsNotDropped(m, "forwardAttachment", forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepMailboxIdentityIsFixed(m, forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepRetirementRequiresCompletion(m, forwardAttachment(m, content, by_)))
 {
@@ -144,9 +165,9 @@ lemma lawRetirementPreservesOtherDrafts_ensures(m: Mailbox, draftId: string)
 
 
 lemma receiveMessage_ensures(m: Mailbox, scope: ListingScope, listing: app__emailItem_MetadataReceipt, by_: MailActor)
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysAccountIdentityIsBound(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysGenerationAndRevision(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysConnectedIdentity(receiveMessage(m, scope, listing, by_)))
-  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysAccountIdentityIsBound(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysReadAccess(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysSelectedContent(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysReadSelectionIsBound(receiveMessage(m, scope, listing, by_)))
@@ -156,6 +177,9 @@ lemma receiveMessage_ensures(m: Mailbox, scope: ListingScope, listing: app__emai
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysListedMessagesAreCurrent(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysSelectionUsesCanonicalMessage(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysBillProvenance(receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysScamWarningIsCurrent(receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysLinkBelongsToSelection(receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysFlaggedMessageIsNoBillSource(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysResultPersistenceHasTerminal(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysApprovalIsCurrent(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysSendHasRecipient(receiveMessage(m, scope, listing, by_)))
@@ -168,7 +192,11 @@ lemma receiveMessage_ensures(m: Mailbox, scope: ListingScope, listing: app__emai
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysDraftAssetsAreValid(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysMessageAssetsAreBound(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepMessageRecordsAreRetained(m, receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepOnlyThePersonApproves(m, "receiveMessage", receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepSendingNeedsCurrentApproval(m, "receiveMessage", receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepUnresolvedDraftIsFixed(m, receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepWorthyComposerIsNotDropped(m, "receiveMessage", receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepMailboxIdentityIsFixed(m, receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepRetirementRequiresCompletion(m, receiveMessage(m, scope, listing, by_)))
 {
@@ -211,9 +239,9 @@ lemma receiveMessage_ensures(m: Mailbox, scope: ListingScope, listing: app__emai
 
 
 lemma readResult_ensures(m: Mailbox, readReceipt: ReadReceipt, by_: MailActor)
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysAccountIdentityIsBound(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysGenerationAndRevision(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysConnectedIdentity(readResult(m, readReceipt, by_)))
-  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysAccountIdentityIsBound(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysReadAccess(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysSelectedContent(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysReadSelectionIsBound(readResult(m, readReceipt, by_)))
@@ -223,6 +251,9 @@ lemma readResult_ensures(m: Mailbox, readReceipt: ReadReceipt, by_: MailActor)
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysListedMessagesAreCurrent(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysSelectionUsesCanonicalMessage(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysBillProvenance(readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysScamWarningIsCurrent(readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysLinkBelongsToSelection(readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysFlaggedMessageIsNoBillSource(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysResultPersistenceHasTerminal(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysApprovalIsCurrent(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysSendHasRecipient(readResult(m, readReceipt, by_)))
@@ -235,7 +266,11 @@ lemma readResult_ensures(m: Mailbox, readReceipt: ReadReceipt, by_: MailActor)
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysDraftAssetsAreValid(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysMessageAssetsAreBound(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepMessageRecordsAreRetained(m, readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepOnlyThePersonApproves(m, "readResult", readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepSendingNeedsCurrentApproval(m, "readResult", readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepUnresolvedDraftIsFixed(m, readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepWorthyComposerIsNotDropped(m, "readResult", readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepMailboxIdentityIsFixed(m, readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepRetirementRequiresCompletion(m, readResult(m, readReceipt, by_)))
 {
@@ -254,9 +289,9 @@ lemma readResult_ensures(m: Mailbox, readReceipt: ReadReceipt, by_: MailActor)
 
 
 lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: app__emailItem_MessageChange, by_: MailActor)
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysAccountIdentityIsBound(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysGenerationAndRevision(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysConnectedIdentity(changeSelectedMessage(m, target, change, by_)))
-  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysAccountIdentityIsBound(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysReadAccess(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysSelectedContent(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysReadSelectionIsBound(changeSelectedMessage(m, target, change, by_)))
@@ -266,6 +301,9 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysListedMessagesAreCurrent(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysSelectionUsesCanonicalMessage(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysBillProvenance(changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysScamWarningIsCurrent(changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysLinkBelongsToSelection(changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysFlaggedMessageIsNoBillSource(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysResultPersistenceHasTerminal(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysApprovalIsCurrent(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysSendHasRecipient(changeSelectedMessage(m, target, change, by_)))
@@ -278,7 +316,11 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysDraftAssetsAreValid(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysMessageAssetsAreBound(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepMessageRecordsAreRetained(m, changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepOnlyThePersonApproves(m, "changeSelectedMessage", changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepSendingNeedsCurrentApproval(m, "changeSelectedMessage", changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepUnresolvedDraftIsFixed(m, changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepWorthyComposerIsNotDropped(m, "changeSelectedMessage", changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepMailboxIdentityIsFixed(m, changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepRetirementRequiresCompletion(m, changeSelectedMessage(m, target, change, by_)))
 {
@@ -316,9 +358,9 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
 
 
 lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysAccountIdentityIsBound(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysGenerationAndRevision(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysConnectedIdentity(undoMessageTrash(m, target, by_)))
-  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysAccountIdentityIsBound(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysReadAccess(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysSelectedContent(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysReadSelectionIsBound(undoMessageTrash(m, target, by_)))
@@ -328,6 +370,9 @@ lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysListedMessagesAreCurrent(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysSelectionUsesCanonicalMessage(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysBillProvenance(undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysScamWarningIsCurrent(undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysLinkBelongsToSelection(undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysFlaggedMessageIsNoBillSource(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysResultPersistenceHasTerminal(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysApprovalIsCurrent(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysSendHasRecipient(undoMessageTrash(m, target, by_)))
@@ -340,7 +385,11 @@ lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysDraftAssetsAreValid(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysMessageAssetsAreBound(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepMessageRecordsAreRetained(m, undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepOnlyThePersonApproves(m, "undoMessageTrash", undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepSendingNeedsCurrentApproval(m, "undoMessageTrash", undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepUnresolvedDraftIsFixed(m, undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepWorthyComposerIsNotDropped(m, "undoMessageTrash", undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepMailboxIdentityIsFixed(m, undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepRetirementRequiresCompletion(m, undoMessageTrash(m, target, by_)))
 {
@@ -382,9 +431,9 @@ lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor
 
 
 lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_ChangeReceipt, by_: MailActor)
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysAccountIdentityIsBound(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysGenerationAndRevision(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysConnectedIdentity(completeMessageChange(m, messageReceipt, by_)))
-  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysAccountIdentityIsBound(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysReadAccess(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysSelectedContent(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysReadSelectionIsBound(completeMessageChange(m, messageReceipt, by_)))
@@ -394,6 +443,9 @@ lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_C
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysListedMessagesAreCurrent(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysSelectionUsesCanonicalMessage(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysBillProvenance(completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysScamWarningIsCurrent(completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysLinkBelongsToSelection(completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysFlaggedMessageIsNoBillSource(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysResultPersistenceHasTerminal(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysApprovalIsCurrent(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysSendHasRecipient(completeMessageChange(m, messageReceipt, by_)))
@@ -406,7 +458,11 @@ lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_C
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysDraftAssetsAreValid(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysMessageAssetsAreBound(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepMessageRecordsAreRetained(m, completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepOnlyThePersonApproves(m, "completeMessageChange", completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepSendingNeedsCurrentApproval(m, "completeMessageChange", completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepUnresolvedDraftIsFixed(m, completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepWorthyComposerIsNotDropped(m, "completeMessageChange", completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepMailboxIdentityIsFixed(m, completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepRetirementRequiresCompletion(m, completeMessageChange(m, messageReceipt, by_)))
 {
@@ -449,7 +505,7 @@ lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_C
 
 lemma EmailRegistryView(m: Mailbox, ref: string, record: app__emailItem_MessageRecord)
   ensures alwaysMessageRegistry(m) == (forall entry :: entry in m.messages ==>
-    entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && validMessageRecord(entry) &&
+    entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && app__emailItem_validMessageRecord(entry) &&
     |ProofLib.Filter((other: app__emailItem_MessageRecord) => (other.identity.ref == entry.identity.ref), m.messages)| == 1)
   ensures messageRecord(m, ref) == (if |ProofLib.Filter((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages)| == 1 then
     ProofLib.Filter((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages)[0] else app__emailItem_initial)
@@ -477,7 +533,7 @@ lemma EmailRegistryDistinct(m: Mailbox)
 lemma EmailRegistryFromDistinct(m: Mailbox)
   requires ProofLib.DistinctBy(m.messages, (record: app__emailItem_MessageRecord) => record.identity.ref)
   requires forall entry :: entry in m.messages ==>
-    (entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && validMessageRecord(entry))
+    (entry.loaded && entry.identity == messageIdentity(m, entry.identity.ref) && app__emailItem_validMessageRecord(entry))
   ensures alwaysMessageRegistry(m)
 {
   EmailRegistryView(m, "", app__emailItem_initial);
@@ -509,7 +565,7 @@ lemma EmailLookupFacts(m: Mailbox, ref: string)
   ensures hasMessage(m, ref) == messageRecord(m, ref).loaded
   ensures hasMessage(m, ref) ==> messageRecord(m, ref) in m.messages && messageRecord(m, ref).identity == messageIdentity(m, ref)
   ensures !hasMessage(m, ref) ==> messageRecord(m, ref) == app__emailItem_initial
-  ensures validMessageRecord(messageRecord(m, ref))
+  ensures app__emailItem_validMessageRecord(messageRecord(m, ref))
 {
   EmailRegistryView(m, ref, app__emailItem_initial);
   if hasMessage(m, ref) {
@@ -522,7 +578,7 @@ lemma EmailLookupFacts(m: Mailbox, ref: string)
 
 lemma EmailPutRecord(m: Mailbox, record: app__emailItem_MessageRecord)
   requires alwaysMessageRegistry(m)
-  requires record.loaded && validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
+  requires record.loaded && app__emailItem_validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
   ensures alwaysMessageRegistry(m.(messages := putMessage(m.messages, record)))
   ensures messageRecord(m.(messages := putMessage(m.messages, record)), record.identity.ref) == record
   ensures forall ref :: ref != record.identity.ref ==>
@@ -560,7 +616,7 @@ lemma EmailPutRecord(m: Mailbox, record: app__emailItem_MessageRecord)
 
 lemma EmailPutKeepsHistory(m: Mailbox, record: app__emailItem_MessageRecord)
   requires alwaysMessageRegistry(m)
-  requires record.loaded && validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
+  requires record.loaded && app__emailItem_validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
   requires hasMessage(m, record.identity.ref) ==>
     (record.revision >= messageRecord(m, record.identity.ref).revision &&
       (messageRecord(m, record.identity.ref).folder.PurgedFolder? ==> record.folder.PurgedFolder?))
@@ -740,7 +796,7 @@ lemma EmailFrame_completeMessageChange(m: Mailbox, messageReceipt: app__emailIte
 
 lemma EmailPutInto(m: Mailbox, record: app__emailItem_MessageRecord, after: Mailbox)
   requires alwaysMessageRegistry(m)
-  requires record.loaded && validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
+  requires record.loaded && app__emailItem_validMessageRecord(record) && record.identity == messageIdentity(m, record.identity.ref)
   requires after.messages == putMessage(m.messages, record)
   requires after.owner == m.owner && after.provider == m.provider && after.account == m.account
   requires hasMessage(m, record.identity.ref) ==> (record.revision >= messageRecord(m, record.identity.ref).revision &&

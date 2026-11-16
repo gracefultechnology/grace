@@ -8,6 +8,13 @@ reading and the current composer. Runtime message changes pass through that
 mailbox owner; no separate mutable child copy can outlive its selected message.
 Rendered text, avatars and sample contacts are not message identity.
 
+A row the person has answered reads "You replied: …" in place of its subject
+(`prototype/Grace Prototype.html:1935`). `answered` is the provider's own
+answered flag, carried by each listing and refresh. The prototype marks the row
+the instant Send is tapped (`prototype/Grace Prototype.html:2204`); here it
+appears when the provider reports it, deliberately, so a send that failed or is
+still unknown never shows as a reply.
+
 The mailbox owner checks current account access and exact message identity
 before passing `MessageUser` or `MessageProvider`; its receipt route addresses
 the canonical registry entry even when another message is now selected. Provider changes below require real receipts;
@@ -29,32 +36,32 @@ type ChangeStatus = ChangeIdle | ChangePending | ChangeUnknown | ChangeFailed
 type MessageIdentity = { owner: str, provider: str, account: str, ref: str }
 type MessageRecord = {
   identity: MessageIdentity, loaded: bool, folder: Folder, previousFolder: Folder,
-  unread: bool, revision: int, pending: MessageChange, status: ChangeStatus,
-  undoRevision: int, evidence: str
+  unread: bool, answered: bool, revision: int, pending: MessageChange, status: ChangeStatus,
+  undoRevision: int
 }
-type MessageSeed = { identity: MessageIdentity, folder: Folder, unread: bool }
+type MessageSeed = { identity: MessageIdentity, folder: Folder, unread: bool, answered: bool }
 type MetadataReceipt = { seed: MessageSeed, revision: int, evidence: str }
 type ChangeReceipt = { identity: MessageIdentity, revision: int, result: ChangeStatus, evidence: str }
 pure val noIdentity: MessageIdentity = { owner: "", provider: "", account: "", ref: "" }
 pure val initial: MessageRecord = {
   identity: noIdentity, loaded: false, folder: InboxFolder, previousFolder: InboxFolder,
-  unread: false, revision: 0, pending: NoMessageChange, status: ChangeIdle,
-  undoRevision: -1, evidence: ""
+  unread: false, answered: false, revision: 0, pending: NoMessageChange, status: ChangeIdle,
+  undoRevision: -1
 }
 pure def validIdentity(identity: MessageIdentity): bool =
   identity.owner != "" and identity.provider != "" and identity.account != "" and identity.ref != ""
 pure def canLoadMessage(m: MessageRecord, seed: MessageSeed, by: MessageActor): bool =
   by == MessageProvider and not(m.loaded) and validIdentity(seed.identity) and seed.folder != PurgedFolder
 pure def loadMessage(m: MessageRecord, seed: MessageSeed, by: MessageActor): MessageRecord =
-  { ...m, loaded: true, identity: seed.identity, folder: seed.folder, unread: seed.unread }
+  { ...m, loaded: true, identity: seed.identity, folder: seed.folder, unread: seed.unread, answered: seed.answered }
 pure def canRefreshMetadata(m: MessageRecord, metadata: MetadataReceipt, by: MessageActor): bool =
   by == MessageProvider and m.loaded and m.folder != PurgedFolder and
   (m.status == ChangeIdle or m.status == ChangeFailed) and metadata.seed.identity == m.identity and
   metadata.revision == m.revision and metadata.evidence != ""
 pure def refreshMetadata(m: MessageRecord, metadata: MetadataReceipt, by: MessageActor): MessageRecord =
-  { ...m, folder: metadata.seed.folder, unread: metadata.seed.unread,
+  { ...m, folder: metadata.seed.folder, unread: metadata.seed.unread, answered: metadata.seed.answered,
     previousFolder: if (metadata.seed.folder == TrashFolder and m.folder != TrashFolder) m.folder else m.previousFolder,
-    revision: m.revision + 1, status: ChangeIdle, pending: NoMessageChange, undoRevision: -1, evidence: metadata.evidence }
+    revision: m.revision + 1, status: ChangeIdle, pending: NoMessageChange, undoRevision: -1 }
 pure def visibleIn(m: MessageRecord, identity: MessageIdentity, folder: Folder): bool =
   m.loaded and m.identity.owner == identity.owner and m.identity.provider == identity.provider and
   m.identity.account == identity.account and m.folder == folder and folder != PurgedFolder
@@ -62,9 +69,6 @@ pure def visibleMessages(entries: List[MessageRecord], identity: MessageIdentity
   entries.select(m => visibleIn(m, identity, folder))
 pure def unreadCount(entries: List[MessageRecord], identity: MessageIdentity, folder: Folder): int =
   visibleMessages(entries, identity, folder).select(m => m.unread).length()
-pure def selectedMessage(entries: List[MessageRecord], identity: MessageIdentity): MessageRecord =
-  val matches = entries.select(m => m.loaded and m.folder != PurgedFolder and m.identity == identity)
-  if (matches.length() == 1) matches.nthOr(0, initial) else initial
 pure def alwaysMessageIdentity(m: MessageRecord): bool = m.loaded implies validIdentity(m.identity)
 pure def alwaysPurgedIsLoaded(m: MessageRecord): bool = m.folder == PurgedFolder implies m.loaded
 pure def alwaysMessageRevision(m: MessageRecord): bool = m.revision >= 0 and m.undoRevision >= -1
@@ -85,23 +89,13 @@ from a later state when its callback arrives.
 
 Switching folders clears search and selection. Search covers sender, subject and
 body in that folder; provider/local-index text normalization is an adapter duty.
-A search result has an exact query revision and source account. A stale result
-cannot replace the latest query. No results and an empty folder have different
+Search results are Email's `listedMessages`: only records the current listing,
+fenced by its scope, returned. No results and an empty folder have different
 copy; both are successful empty lists. Search failure preserves the error and a
 retry path in Email's read lifecycle. Duplicate source IDs never select an
-arbitrary message: `selectedMessage` refuses ambiguity.
+arbitrary message: Email's `messageRecord` refuses ambiguity.
 
 ```quint
-type FolderQuery = { identity: MessageIdentity, folder: Folder, text: str, revision: int }
-type SearchReceipt = { query: FolderQuery, refs: Set[str] }
-pure def acceptsSearch(query: FolderQuery, searchReceipt: SearchReceipt): bool =
-  validIdentity(query.identity) and query.folder != PurgedFolder and query.revision >= 0 and searchReceipt.query == query
-pure def searchMessages(entries: List[MessageRecord], query: FolderQuery, searchReceipt: SearchReceipt): List[MessageRecord] =
-  if (acceptsSearch(query, searchReceipt))
-    visibleMessages(entries, query.identity, query.folder).select(m => searchReceipt.refs.contains(m.identity.ref))
-  else List()
-pure def lawWrongQueryReturnsNothing(entries: List[MessageRecord], query: FolderQuery, searchReceipt: SearchReceipt): bool =
-  searchReceipt.query != query implies searchMessages(entries, query, searchReceipt) == List()
 pure def lawAnotherOwnerCannotAppear(m: MessageRecord, identity: MessageIdentity, folder: Folder): bool =
   m.identity.owner != identity.owner implies not(visibleIn(m, identity, folder))
 ```
@@ -123,6 +117,11 @@ returns to Inbox. The prototype's Delete forever tap is final user intent, not
 an extra invented confirmation dialog. Each request is scoped to a stable
 message and increasing revision. Pending or uncertain requests cannot be
 reissued; reconciliation queries that same operation before another mutation.
+Undo names the revision of an acknowledged move to Trash, so it is offered only
+after that acknowledgment, never while the move is pending, and any later refresh
+or change of the message withdraws it, as does closing the Undo toast
+(`closeUndo`), which changes nothing else about the message. Provider evidence is checked on each
+receipt and kept by the adapter, not in the record.
 
 ```quint
 pure def canChangeMessage(m: MessageRecord, change: MessageChange, by: MessageActor): bool =
@@ -132,19 +131,23 @@ pure def canChangeMessage(m: MessageRecord, change: MessageChange, by: MessageAc
     (change == TrashMessage and m.folder != TrashFolder) or
     ((change == RestoreMessage or change == PurgeMessage) and m.folder == TrashFolder))
 pure def changeMessage(m: MessageRecord, change: MessageChange, by: MessageActor): MessageRecord =
-  { ...m, pending: change, status: ChangePending, revision: m.revision + 1, evidence: "" }
+  { ...m, pending: change, status: ChangePending, revision: m.revision + 1 }
 pure def canUndoTrash(m: MessageRecord, revision: int, by: MessageActor): bool =
   by == MessageUser and m.folder == TrashFolder and m.status == ChangeIdle and
   m.undoRevision == revision and revision == m.revision
 pure def undoTrash(m: MessageRecord, revision: int, by: MessageActor): MessageRecord =
   changeMessage(m, RestoreMessage, by)
+pure def canCloseUndo(m: MessageRecord, revision: int, by: MessageActor): bool =
+  by == MessageUser and m.undoRevision != -1 and m.undoRevision == revision
+pure def closeUndo(m: MessageRecord, revision: int, by: MessageActor): MessageRecord =
+  { ...m, undoRevision: -1 }
 pure def canCompleteChange(m: MessageRecord, receipt: ChangeReceipt, by: MessageActor): bool =
   by == MessageProvider and (m.status == ChangePending or m.status == ChangeUnknown) and
   receipt.identity == m.identity and receipt.revision == m.revision and
   (receipt.result == ChangeUnknown or ((receipt.result == ChangeIdle or receipt.result == ChangeFailed) and receipt.evidence != ""))
 pure def completeChange(m: MessageRecord, receipt: ChangeReceipt, by: MessageActor): MessageRecord =
   val succeeded = receipt.result == ChangeIdle
-  { ...m, status: receipt.result, evidence: if (receipt.result == ChangeUnknown) "" else receipt.evidence,
+  { ...m, status: receipt.result,
     folder: if (not(succeeded)) m.folder else if (m.pending == TrashMessage) TrashFolder
       else if (m.pending == RestoreMessage) m.previousFolder else if (m.pending == PurgeMessage) PurgedFolder else m.folder,
     previousFolder: if (succeeded and m.pending == TrashMessage) m.folder else m.previousFolder,
@@ -171,25 +174,34 @@ pure def sometimesUncertain(m: MessageRecord): bool = m.status == ChangeUnknown
 pure def sometimesMutationFailed(m: MessageRecord): bool = m.status == ChangeFailed
 ```
 
+### A message record is valid when it meets every rule above
+
+`validMessageRecord` gathers this spec's `always` rules beside them, for the
+[Email](./email.md) registry that holds many records.
+
+```quint
+pure def validMessageRecord(m: MessageRecord): bool =
+  alwaysMessageIdentity(m) and alwaysPurgedIsLoaded(m) and alwaysMessageRevision(m) and
+  alwaysSettledHasNoPendingChange(m) and alwaysPendingChangeIsBound(m) and
+  alwaysPendingChangeMatchesFolder(m) and alwaysPreviousFolderIsRecoverable(m) and
+  alwaysUndoNamesCurrentTrash(m)
+```
+
 ### Simulation exercises identities, folder changes, stale receipts and uncertainty
 
 ```quint
 pure val messageIdentity: MessageIdentity = { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }
 pure val identityValues = Set(noIdentity, messageIdentity, { ...messageIdentity, owner: "ownerB" })
-pure val seedValues = Set({ identity: messageIdentity, folder: InboxFolder, unread: true },
-  { identity: messageIdentity, folder: SentFolder, unread: false },
-  { identity: messageIdentity, folder: DraftsFolder, unread: false },
-  { identity: messageIdentity, folder: TrashFolder, unread: false })
+pure val seedValues = Set({ identity: messageIdentity, folder: InboxFolder, unread: true, answered: false },
+  { identity: messageIdentity, folder: SentFolder, unread: false, answered: false },
+  { identity: messageIdentity, folder: DraftsFolder, unread: false, answered: false },
+  { identity: messageIdentity, folder: TrashFolder, unread: false, answered: false })
 pure val metadataValues = Set(
-  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false }, revision: 0, evidence: "providerMetadata" },
-  { seed: { identity: messageIdentity, folder: TrashFolder, unread: false }, revision: 1, evidence: "providerMetadata" },
-  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false }, revision: 2, evidence: "providerMetadata" },
-  { seed: { identity: noIdentity, folder: InboxFolder, unread: false }, revision: 0, evidence: "" })
-pure val mValues = Set(initial, loadMessage(initial, { identity: messageIdentity, folder: InboxFolder, unread: true }, MessageProvider))
-pure val entriesValues = Set(List(), List(initial), List(loadMessage(initial, { identity: messageIdentity, folder: InboxFolder, unread: true }, MessageProvider)))
-pure val queryValues = Set({ identity: messageIdentity, folder: InboxFolder, text: "", revision: 0 })
-pure val searchReceiptValues = Set({ query: { identity: messageIdentity, folder: InboxFolder, text: "", revision: 0 }, refs: Set("messageA") },
-  { query: { identity: messageIdentity, folder: InboxFolder, text: "other", revision: 1 }, refs: Set("messageA") })
+  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false, answered: false }, revision: 0, evidence: "providerMetadata" },
+  { seed: { identity: messageIdentity, folder: TrashFolder, unread: false, answered: false }, revision: 1, evidence: "providerMetadata" },
+  { seed: { identity: messageIdentity, folder: InboxFolder, unread: false, answered: false }, revision: 2, evidence: "providerMetadata" },
+  { seed: { identity: noIdentity, folder: InboxFolder, unread: false, answered: false }, revision: 0, evidence: "" })
+pure val entriesValues = Set(List(), List(initial), List(loadMessage(initial, { identity: messageIdentity, folder: InboxFolder, unread: true, answered: false }, MessageProvider)))
 pure val receiptValues = Set(
   { identity: messageIdentity, revision: 1, result: ChangeIdle, evidence: "providerReceipt" },
   { identity: messageIdentity, revision: 2, result: ChangeIdle, evidence: "providerReceipt" },
