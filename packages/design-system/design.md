@@ -67,19 +67,19 @@ prototype does not draw, built in its look.
 
 | Component | Prototype state | Stories |
 | --- | --- | --- |
-| `TabletScreen` | `.device` and `#screen` (801) | Default, In The Bezel, Device: `.device`'s 18px bezel; Background Frame: `.screen .sbg` |
-| `HomeScreen` | `render()` 1266, `homeCards()` 1874, `hmGeom()` 2297 mode G | Default: Home's first page; Layout Compact: `layout()` 1256 with Grace compact (`.home.cmp`); Page Files, Compact Page Files: `hmGo(1)` 2352; Layout Greeting: `.home.tight`, keyboard up; Reminder: `drawBanner()` 1865, `X.banner = "rem"`; Offline: `X.online = false` |
+| `TabletScreen` | `.device` and `#screen` (801) | Default: the bare `#screen`; In The Bezel, Device: `.device`'s 18px bezel; Background Frame: `.screen .sbg` |
+| `HomeScreen` | `render()` 1266, `homeCards()` 1874, `hmGeom()` 2297 mode G | Default: Home's first page; Layout Compact: `layout()` 1256 with Grace compact (`.home.cmp`); Page Files, Compact Page Files: `hmGo(1)` 2352; Layout Greeting: `.home.tight`, keyboard up; Reminder: `drawBanner()` 1865, `X.banner = "rem"` (2275); Offline: `X.online = false` |
 | `SleepScreen` | `drawSleep()` 2254 | Default: `X.wake`; Wake Word Off: `X.wake = false`; Nothing Next: no event ahead |
 | `StartupScreen` | app only: `.screen`, `.orb-w`, `.zzsleep` type, `.a-btn.prom` | Default, State Failed |
-| `GraceWindow` | `renderGrace()` 1173 in `.chat-white`, `dock()` 1646 | Default: Ask Grace full screen; Compact, Size Compact: `sizeCompact()` 1287; Conversation; Compact Question; Compact Question Listening: `.sugg.fade`; Compact Thinking; Compact Long Reply: `sizeCompact()`, `focusMsg()` 1290; Frost, Surface Frost: `#gwin` frosted |
+| `GraceWindow` | `renderGrace()` 1173 in `.chat-white`, `dock()` 1646 | Default: Ask Grace full screen; Compact, Size Compact: `sizeCompact()` 1287; Conversation; Compact Question; Compact Question Listening: `.sugg.fade`; Compact Thinking; Compact Long Reply: `sizeCompact()`, `focusMsg()` 1290; Frost, Surface Frost: `.gwin`'s frosted glass without `.chat-white` (67–68) |
 | `SetupStep` | app only, in Grace's window (`renderGrace()` 1173) | every step |
-| `BrowserWindow` | `#bwin` (819), `renderSite()` 1005 on `PAGES` (973) | Default, Empty Go: `PAGES.newtab`; Website Sign In, Website Sign In Error: `signin` with `S.site.err`; Website Account, Website Pay, Website Review, Website Payment Scheduled: `account`, `pay`, `review`, `done`; Grace Typing: `.addr.typing`; Loading With More Tabs, Page Failed: app only |
+| `BrowserWindow` | `#bwin` (819), `renderSite()` 1005 on `PAGES` (973) | Default, Empty Go: `PAGES.newtab`; Website Sign In: `signin`; Website Sign In Error: `signin` with `S.site.err` (1041); Website Account, Website Pay, Website Review, Website Payment Scheduled: `account`, `pay`, `review`, `done`; Grace Typing: `.addr.typing`; Loading With More Tabs, Page Failed: app only |
 | `NewTabPage` | `renderSite()` 1011, `.newtab` | Default; Recent Websites, Remove And Clear, Confirming Clear, Removable, Clearable: app only |
 | `PracticePage` | app only, `.scard` of `renderSite()` | Default, Guided, Done |
-| `CalendarApp` | `axRender()` 2056, `calView()` 1896 | Default, Week: `X.cal` (1799–1802); Month; Detail; Form, Form Picking A Time, Form Saving, With A Draft: `calForm()` 1918, Save ready once titled (`formsave` 2171); Form Save Failed: `.a-caution` as `wifiPage()` 2002; Added By Margaret: `formsave` 2171–2172 with `axGuide()` 2072 |
-| `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Large Title; Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
-| `FilesApp` | `axRender()` 2056, `filesView()` 1982 | Default: `X.files` photos; Documents: `X.files.tab`; Found One Photo, Found One Document, Which One: `axGuide()` 2072 kind `point`; Print Unknown, Nothing Matched, Loading, Load Failed: app only |
-| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join, Header Mode Large Wi Fi Join: `X.wifi.join`; Grace Points At Largest: `axGuide()` 2072 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
+| `CalendarApp` | `axRender()` 2056, `calView()` 1896 | Default, Week: `X.cal` (1799–1802); Month; Detail; Form, Form Picking A Time: `calForm()` 1918, Save ready once titled (`formsave` 2171); Form Saving: app only, `calForm()` with the Save pill's spinner; Form Save Failed: app only, `.a-caution` as `wifiPage()` 2002 shows a refusal; With A Draft: Grace's unconfirmed row, dashed `.a-new` (471), in `calView()` 1915–1916, as her draft puts it there (2134–2135); Added By Margaret: the row confirmed with `axGuide()` 2072–2079 kind `confirm`, the ring Grace sets on adding her draft (2137), as Margaret's own save (`formsave` 2171–2172) draws none |
+| `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Large Title: `X.hdrMode` `large` (2060); Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
+| `FilesApp` | `axRender()` 2056, `filesView()` 1982 | Default: `X.files` photos; Documents: `X.files.tab`; Found One Photo, Found One Document: `axGuide()` 2072–2079 kind `point` on the one match (2146); Which One, Print Unknown, Nothing Matched, Loading, Load Failed: app only |
+| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join: `X.wifi.join` (2004) on a network that needs an account, refused (`W.err`, 2006); Header Mode Large Wi Fi Join: `X.wifi.join` (2004); Grace Points At Largest: `axGuide()` 2072–2079 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
 | `PasswordsApp` | app only, in an app window (`axRender()` 2056) | every story |
 | `CameraApp` | app only, in an app window (`axRender()` 2056) | every story |
 | `TasksScreen` | app only, in an app window (`axRender()` 2056) | every story |
@@ -91,24 +91,24 @@ The parts below the screens copy these rules and lines of the prototype.
 | `AddressBar` | `.addr` (89) in `.bz-bar` (435), whose `!important` glass outranks `.addr.typing` (273) |
 | `BrowserTab` | `.bz-tw` (82–85) |
 | `Button` | `.a-btn` capsule (474); disabled fades its label at full opacity, as `#ahdr [aria-disabled]` does (674) |
-| `CalendarApp` header | `#ahdr .pill.prom` (673), pressed `.pill:not(.prom)` (669–672), disabled keeps its indigo and white words (673–674); saving spinner white on the filled pill (434); `axGuide()` on an `ev` row (2136) |
+| `CalendarApp` header | `#ahdr .pill.prom` (673), pressed `.pill:not(.prom)` (669–672), disabled keeps its indigo and white words (673–674); clear `#awin .aphdr .hgrp .pill:not(.prom)` (682); saving spinner white on the filled pill, as the filled working label's spinner (434); `axGuide()` on an `ev` row, kind `point` on Grace's draft (2136) and `confirm` once she adds it (2137) |
 | `CalendarDeleteDialog`, `CalendarApp` save error | `.a-caution` (493–494), as `wifiPage()` shows a refusal (2006) |
 | `CalendarEventForm` | `.spdo.sel` (621) over `.apop .spdo` (558, 615) |
 | `CalendarIcon` | `AXP` (1770), drawn by `axi()` (1786) |
 | `CalendarNav` | `.a-rb` (569, 659–661) |
 | `FilePhotoViewer` | `filesView()` photo view (1983) |
 | `PdfViewer` | `filesView()` pdf view (1985) |
-| `FilesApp` pointing | `axGuide()` kind `point` (2072), target chosen at 2146 |
-| `MailMessageView` pointing | `axGuide()` kind `point` (2072) |
+| `FilesApp` pointing | `axGuide()` kind `point` (2072–2079), target chosen at 2146 |
+| `MailMessageView` pointing | `axGuide()` kind `point` (2072–2079) |
 | `FilesCard` | `hmFilesInner()` (2283); compact `.home.cmp .lc[data-app="Files"]` (636–637) |
 | `HomeGreeting` | `.hgr`, `.hgr h2`, `.hgr .sub` (320–323); compact (390–392) |
 | `HomeMailRow` | compact `.home.cmp .lc[data-app="Email"] .lpanel span` (394) |
 | `HomeCalendarCard` | `.lc[data-app="Calendar"]` markup (817); compact `.home.cmp .lc[data-app="Calendar"]` (395, 400–401) |
 | `HomePager` | `hmChrome()` (2347); `.harrow`, `#hArrowL` (627–629, 653–655); `.hpager` (630–634, 648) |
-| `HomeScreen` layout | markup of `.home`, `.hgr` and the `.hgrid` cards (815–817); `.home` (230, 318, 647), `.hgrid` (324, 651), compact (393–397), `.home.tight .hgrid` (429), transitions (389, 405–406), swipe (2361) |
+| `HomeScreen` layout | markup of `.home`, `.hgr` and the `.hgrid` cards (815–817); `.home` (230, 318), `.hgr` (320), `.hgrid` (324); beside the rail `.home`, `.hpager`, `.hfade`, `.hgr`, `.hgrid` (647–651); compact `.home.cmp` (389–401), its Files column (636); `.home.tight .hgrid` (429); transitions (389, 405–406); swipe (2361–2365) |
 | `InternetCard` | `#netThumb` in the cards' markup (817), compact (399) |
 | `Keyboard` | `L` (1672): the three layers |
-| `LauncherCard` | `.lc` markup (817), `.lc` (325), its title and status (336–337), no live blur (440), `.lc .sheen` (330–331, 441–442) |
+| `LauncherCard` | `.lc` markup (817), `.lc` (325–327), its title and status (336–337), no live blur (440), `.lc .sheen` (330–331, 441–443) |
 | `MailAttachment` | `.a-att`, `.a-att .ft` (544–545) |
 | `Rail` | `.rail` (52, 305, 652) |
 | `RailPopover` | `.rpop` (506–515), drawn by `drawPop()` (1851) |
