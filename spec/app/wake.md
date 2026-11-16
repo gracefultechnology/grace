@@ -28,6 +28,7 @@ app it opens compact; an already visible window keeps its size. A short chime
 uses device volume/mute. The transcript and unsent draft remain intact. Existing
 website work is paused and old authorization invalidated before listening.
 Touching the sleep screen wakes it without opening Grace or starting capture.
+The native host reports unavailable detection instead of pretending it works.
 When Grace cannot answer, the [workspace](./workspace.md) gives the
 `ExplainUnavailable` signal in place of the chime and starts no wake
 interaction; this module never emits it.
