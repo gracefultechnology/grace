@@ -7,10 +7,8 @@ import type { LabelProps } from "./Label.tsx";
 const checked = fn();
 
 export const meta: ComponentMeta<LabelProps> = {
-  // A label wrapping its checkbox: tapping the words ticks it.
   args: { children: <><Checkbox onCheckedChange={checked} />Gift wrap</> },
   examples: {
-    // A label pointing at its field by `htmlFor`.
     "With Input": { htmlFor: "quantity", children: <>Quantity<Input id="quantity" /></> },
   },
   play: {

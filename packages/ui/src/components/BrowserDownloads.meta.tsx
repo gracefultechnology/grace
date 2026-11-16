@@ -9,7 +9,6 @@ import { unfocus } from "./MailApp.meta.tsx";
 const openFile = fn();
 const dismiss = fn();
 
-// The prototype's documents in Files (`FILES`), as a website might have offered them.
 const downloads: BrowserDownload[] = [
   { id: 4, name: "Visit form.pdf", status: "saving", progress: 40 },
   { id: 3, name: "Medicare summary.pdf", status: "saved" },
@@ -22,7 +21,6 @@ export const meta: ComponentMeta<BrowserDownloadsProps> = {
   examples: {
     Open: { open: true },
   },
-  // At the end of the browser's toolbar (prototype `.bz-bar`), with room under it for the list.
   decorator: (story) => (
     <div className="h-[560px] w-[1130px] bg-gradient-frame">
       <BrowserToolbar canGoBack canGo trailing={story() as ReactNode}>
@@ -31,7 +29,6 @@ export const meta: ComponentMeta<BrowserDownloadsProps> = {
     </div>
   ),
   play: {
-    // The button opens the list; a saved file opens in Files, and a finished entry can go; one being saved cannot.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       openFile.mockClear();
       dismiss.mockClear();

@@ -1,8 +1,6 @@
 import type { ComponentMeta } from "vibestack/stories";
 import type { GraceActionLineProps } from "./GraceActionLine.tsx";
 
-// Prototype siteEvent(): Margaret tapped Sign in on Chase's page while Grace guided her. The tones after it are the
-// original app's system lines (senior-care ConversationLog.tsx).
 export const meta: ComponentMeta<GraceActionLineProps> = {
   args: { children: "You tapped Sign in." },
   examples: {

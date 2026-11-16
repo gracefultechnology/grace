@@ -10,7 +10,6 @@ const reply = fn();
 const retry = fn();
 const confirmBill = fn();
 
-// A sample bill email, its bill found by Grace.
 const bill: Partial<MailMessageViewProps> = {
   from: { name: "City Water", tone: 1 },
   time: "9:40 AM",
@@ -23,7 +22,6 @@ const bill: Partial<MailMessageViewProps> = {
   onOpenBill: fn(),
 };
 
-// The prototype's X.mail.items, opened.
 const scam: Partial<MailMessageViewProps> = {
   from: people.security,
   address: "security-alert@acc0unt-help.co",
@@ -50,7 +48,6 @@ const clinic: Partial<MailMessageViewProps> = {
 };
 
 export const meta: ComponentMeta<MailMessageViewProps> = {
-  // Susan's email with Lily's recital photos.
   args: {
     from: people.susan,
     time: "2:15 PM",
@@ -72,11 +69,9 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
   examples: {
     "Large title": { headerMode: "large" },
     Scam: scam,
-    // Prototype axGuide() with kind `point` (JS 2072-2079): Grace points at her own warning while she explains it.
     "Grace Points At The Warning": { ...scam, guide: { targetId: "scam", kind: "point" } },
     Attachment: clinic,
     "In Trash": { ...clinic, backLabel: "Trash", inTrash: true, onRestore: fn(), onDeleteForever: fn() },
-    // Reply and Forward wait until every attachment is known.
     Loading: { status: "loading" },
     "Couldn’t open": { status: "failed", onRetry: retry },
     "Photos saved": { saveAllStatus: "saved" },

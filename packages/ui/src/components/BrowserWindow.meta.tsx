@@ -14,7 +14,6 @@ import { onTablet } from "./SettingsApp.meta.tsx";
 const closeBrowser = fn();
 const newTab = fn();
 
-// Prototype `#bwin` on a new tab: Back, Forward and Go have nowhere to go.
 const newTabWindow: BrowserWindowProps = {
   "aria-label": "Browser",
   tabStrip: <BrowserTabStrip tabs={[{ id: 1, title: "New tab" }]} selectedId={1} onNewTab={newTab} onCloseBrowser={closeBrowser} />,
@@ -28,10 +27,8 @@ const newTabWindow: BrowserWindowProps = {
 
 const payTab = [{ id: 1, title: "Pay your card · Chase", initial: "C" }];
 
-/** Prototype `.screen` with the rail beside the browser, as at 8:57 PM on Friday, November 13. */
 const tablet = (children: ReactNode) => onTablet(() => children);
 
-/** A story over the browser on the payment page, paused behind it: for the website's requests and the browser's notices. */
 export const onBrowser = (story: () => ReactNode, site = "chase.com/pay") =>
   tablet(
     <>
@@ -48,7 +45,6 @@ export const onBrowser = (story: () => ReactNode, site = "chase.com/pay") =>
     </>,
   );
 
-// Prototype `PAGES` and `AMT`: Chase's pages as the mock website draws them, one tab, its address and title.
 const pages = {
   signin: { title: "Sign in · Chase", url: "chase.com", bar: "Chase" },
   account: { title: "Credit card · Chase", url: "chase.com/card", bar: "Credit card ••7731" },
@@ -59,13 +55,10 @@ const pages = {
 const amounts = { statement: "$84.20", minimum: "$35.00" };
 type Site = { password?: string; amount?: keyof typeof amounts; date?: string; error?: string; focus?: "username" | "password" | "date" };
 
-// Prototype `.sbtn2`.
 const siteButton = "h-12 cursor-pointer rounded-tag border-0 bg-site-brand px-7 font-site text-label font-bold text-glass";
 
-// Prototype `.slbl`.
 const SiteLabel = ({ children }: { children: ReactNode }) => <label className="mt-3.5 mb-1.5 block text-base/[normal] text-site-muted">{children}</label>;
 
-// Prototype `.srow`: a label on the left in the site's muted ink, its value in bold on the right.
 const SiteRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex justify-between border-b border-site-line py-2 text-label">
     <span className="text-site-muted">{label}</span>
@@ -73,7 +66,6 @@ const SiteRow = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-// Prototype `sfield()` and `.sfield`, `.sfield.focus`: the placeholder until filled, a password as dots, the caret while its keyboard is up.
 const SiteField = ({ value = "", placeholder, focused = false, masked = false }: { value?: string; placeholder: string; focused?: boolean; masked?: boolean }) => (
   <div
     role="textbox"
@@ -85,23 +77,18 @@ const SiteField = ({ value = "", placeholder, focused = false, masked = false }:
     )}
   >
     {(masked ? "•".repeat(value.length) : value) || (focused ? "" : (
-      // Prototype `sfield()`'s placeholder grey, in its own ink by the user's choice (.storybook/preview.ts, `data-prototype-ink`).
       <span data-prototype-ink="" className="text-site-placeholder">
         {placeholder}
       </span>
     ))}
-    {/* Prototype `.caret`. */}
     {focused && <span className="ml-0.5 inline-block h-[22px] w-0.5 animate-blink bg-site-brand motion-reduce:animate-none" />}
   </div>
 );
 
-// Prototype `.serr`.
 const SiteError = ({ children }: { children?: string }) => (children ? <div className="mt-2.5 text-base/[normal] text-site-error">{children}</div> : null);
 
-/** Prototype `renderSite()`: the mock bank website on one of its pages, in `#pg` under the toolbar, as a `BrowserWindow` example. */
 const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindowProps> => {
   const amount = site.amount ? amounts[site.amount] : "not chosen";
-  // Prototype `.scard`: 40px in and 92px down, 560 wide unless a page says otherwise.
   const card = "absolute top-[92px] left-10 box-border w-[560px] rounded-sm bg-glass px-6 py-5 shadow-site-card";
   return {
     tabStrip: <BrowserTabStrip tabs={[{ id: 1, title: pages[page].title, initial: "C" }]} selectedId={1} />,
@@ -111,9 +98,7 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
       </BrowserToolbar>
     ),
     children: (
-      // Prototype `.site` and `.pg`: Arial in the site's own ink, scrolling under the toolbar.
       <div className="absolute inset-0 overflow-y-auto bg-site font-site leading-[normal] text-site-ink">
-        {/* Prototype `.sbar`. */}
         <div className="box-border flex h-16 items-center justify-between bg-site-brand px-10 text-body-lg font-bold text-glass">
           {pages[page].bar}
           <span className="text-caption font-normal opacity-85">Website mock · not a real page</span>
@@ -160,7 +145,6 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
                   ["minimum", "Minimum payment $35.00"],
                 ] as const
               ).map(([key, label]) => (
-                // Prototype `.sradio`, `.sradio.on`: the chosen option's ring fills to a 6px navy border.
                 <div
                   key={key}
                   role="radio"
@@ -205,7 +189,6 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
         )}
         {page === "done" && (
           <div className={cn(card, "top-[84px]")}>
-            {/* Prototype `renderSite()` 'done': the site's own green. */}
             <div className="text-lead font-bold text-site-ok">Payment scheduled</div>
             <p className="my-[18px] text-lg/[26px]">
               Thanks. Your payment of {amount} to card ••7731 is scheduled for {site.date}.
@@ -229,7 +212,6 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
     "Website: pay": chase("pay", { amount: "statement", date: "11/12/2026" }),
     "Website: review": chase("review", { amount: "statement", date: "11/12/2026" }),
     "Website: payment scheduled": chase("done", { amount: "statement", date: "11/12/2026" }),
-    // Prototype `.addr.typing`: Grace types the address on the new tab, so Go can go.
     "Grace typing": {
       toolbar: (
         <BrowserToolbar canGo>
@@ -237,7 +219,6 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
         </BrowserToolbar>
       ),
     },
-    // Go on an empty address: the notice under the field stays while the person types.
     "Empty Go": {
       toolbar: (
         <BrowserToolbar>
@@ -245,7 +226,6 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
         </BrowserToolbar>
       ),
     },
-    // A page loading in the selected tab, with tabs that do not fit behind "2 more".
     "Loading with more tabs": {
       tabStrip: (
         <BrowserTabStrip
@@ -261,7 +241,6 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
       ),
       children: <BrowserPageState kind="checking" site="chase.com" />,
     },
-    // The page did not open: Grace's own page stands in the website's place.
     "Page failed": {
       tabStrip: <BrowserTabStrip tabs={[{ id: 1, title: "chase.com", initial: "C" }]} selectedId={1} />,
       toolbar: (

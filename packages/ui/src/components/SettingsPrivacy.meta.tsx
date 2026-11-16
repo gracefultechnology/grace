@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { SavedDetail, SettingsPrivacyProps } from "./SettingsPrivacy.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
-// What Grace might remember for Margaret: her phone, her address, and a card number kept for one pharmacy.
 export const savedDetails: SavedDetail[] = [
   { id: "phone", label: "Phone number", value: "(555) 214-0187" },
   { id: "address", label: "Home address", value: "42 Maple Street, Riverside" },

@@ -6,14 +6,12 @@ import { GraceBubble } from "./GraceBubble.tsx";
 import type { GraceMessagesProps } from "./GraceMessages.tsx";
 import { UserBubble } from "./UserBubble.tsx";
 
-// Prototype: Grace greets Margaret, still speaking (ref grace-open).
 export const greeting = (
   <GraceBubble activity="speaking" rest="What can I help with?">
     Hi Margaret.
   </GraceBubble>
 );
 
-// Prototype: Margaret asks about her Chase bill and Grace asks whether she wants to watch, with the prompt's two answers.
 export const conversation = (
   <>
     <GraceBubble>Hi Margaret. What can I help with?</GraceBubble>
@@ -26,7 +24,6 @@ export const conversation = (
   </>
 );
 
-// Prototype: Margaret has sent her question and Grace is thinking.
 export const thinking = (
   <>
     <GraceBubble>Hi Margaret. What can I help with?</GraceBubble>
@@ -35,7 +32,6 @@ export const thinking = (
   </>
 );
 
-// Prototype siteEvent(): Margaret tapped Sign in herself, logged between Grace's two messages.
 export const action = (
   <>
     <UserBubble>Can you help me pay my Chase bill?</UserBubble>
@@ -53,7 +49,6 @@ export const meta: ComponentMeta<GraceMessagesProps> = {
     Greeting: { children: greeting },
     Thinking: { children: thinking },
     "Margaret acted": { children: action },
-    // Margaret reads earlier messages while a newer one has arrived.
     "Reading earlier": { children: conversation, following: false, hasNewer: true, onJumpToLatest: jump },
   },
   decorator: (story) => (
@@ -62,7 +57,6 @@ export const meta: ComponentMeta<GraceMessagesProps> = {
     </div>
   ),
   play: {
-    // Only the pill moves her to the newest message.
     "Reading earlier": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       jump.mockClear();
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Newest message" }));

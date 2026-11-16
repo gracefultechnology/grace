@@ -2,7 +2,6 @@ import { fn } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { TaskCardProps } from "./TaskCard.tsx";
 
-// The original app's task list (senior-care apps/app/src/TasksScreen.tsx): one card per task Grace started.
 const actions = { onResume: fn(), onAsk: fn(), onStop: fn(), onConfirmStop: fn(), onKeep: fn(), onRemove: fn(), onConfirmRemove: fn() };
 
 export const meta: ComponentMeta<TaskCardProps> = {

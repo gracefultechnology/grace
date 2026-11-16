@@ -5,7 +5,6 @@ import type { BannerProps } from "./Banner.tsx";
 import { Button } from "./Button.tsx";
 import { WifiSlash } from "./Rail.tsx";
 
-// Prototype `drawBanner()`, X.banner = "rem": the doctor's appointment tomorrow.
 export const reminder: BannerProps = {
   icon: <span className="flex text-alert"><BellIcon className="size-7.5" /></span>,
   title: "Doctor’s appointment",
@@ -20,8 +19,6 @@ export const reminder: BannerProps = {
   ),
 };
 
-// spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task": a due reminder
-// can be put off, so Snooze stands beside See details: a round glass capsule with its word as its name.
 export const reminderSnooze: BannerProps = {
   ...reminder,
   actions: (
@@ -37,7 +34,6 @@ export const reminderSnooze: BannerProps = {
   ),
 };
 
-// Prototype `drawBanner()` while X.online is false.
 export const offline: BannerProps = {
   icon: <WifiSlash size={30} />,
   title: "Not connected to the internet",
@@ -53,6 +49,5 @@ export const offline: BannerProps = {
 export const meta: ComponentMeta<BannerProps> = {
   args: reminder,
   examples: { Snooze: reminderSnooze, Offline: offline },
-  // Where Home places it: 634px wide over Home's wash.
   decorator: (story) => <div className="w-[682px] bg-gradient-frame-soft p-6">{story()}</div>,
 };

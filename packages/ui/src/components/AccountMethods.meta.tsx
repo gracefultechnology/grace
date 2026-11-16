@@ -10,7 +10,6 @@ const methods = [
 ];
 const remove = fn();
 
-// The original app's words (senior-care AccountMethods.tsx).
 export const meta: ComponentMeta<AccountMethodsProps> = {
   args: {
     phase: "methods",

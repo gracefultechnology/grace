@@ -6,7 +6,6 @@ import { settingsPage } from "./WifiNetworkList.meta.tsx";
 const subscription = { plan: "Grace Plus", status: "Active", periodEnd: "Dec 1, 2026" };
 const open = fn();
 
-// The original app's words (senior-care AccountSetup.tsx, account-effects.ts).
 export const meta: ComponentMeta<AccountOverviewProps> = {
   args: { access: "active", account: "margaret.s@example.com", subscription, onOpen: open, onCheckAgain: fn(), onSignOut: fn(), onConfirmSignOut: fn(), onStay: fn() },
   decorator: settingsPage,

@@ -8,7 +8,6 @@ const go = fn();
 const stay = fn();
 
 export const meta: ComponentMeta<ExternalAppDialogProps> = {
-  // A phone number tapped on the prototype's bank's website.
   args: { kind: "call", target: "555-0100", canOpen: true, onContinue: go, onCancel: stay },
   examples: {
     Map: { kind: "map", target: "Main St Clinic" },
@@ -25,7 +24,6 @@ export const meta: ComponentMeta<ExternalAppDialogProps> = {
       await expect([go.mock.calls.length, stay.mock.calls.length]).toEqual([1, 1]);
       unfocus();
     },
-    // Never a Continue that would fail.
     "Cannot open": async () => {
       await expect(within(screen.getByRole("dialog")).getAllByRole("button").map((b) => b.textContent)).toEqual(["Close"]);
       unfocus();

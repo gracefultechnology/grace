@@ -30,7 +30,6 @@ const upgrade: PlanChangeReview = {
 };
 const review = fn();
 
-// The original app's words (senior-care PlanChange.tsx, QuoteAllowance.tsx).
 export const meta: ComponentMeta<PlanChangeProps> = {
   args: {
     view: "choose",

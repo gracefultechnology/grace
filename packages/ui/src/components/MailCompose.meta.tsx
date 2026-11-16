@@ -8,7 +8,6 @@ const add = fn();
 const retrySave = fn();
 
 export const meta: ComponentMeta<MailComposeProps> = {
-  // A new email to Susan with a photo attached.
   args: {
     to: [people.susan],
     subject: "Sunday",
@@ -32,7 +31,6 @@ export const meta: ComponentMeta<MailComposeProps> = {
     "Attach open": { attachOpen: true },
     "With copies": { cc: [people.david], bcc: [people.joan] },
     Sending: { sendStatus: "sending" },
-    // The draft stays as it was, to check and send again.
     "Send failed": { sendStatus: "failed" },
     "Not sure it sent": { sendStatus: "unknown" },
     "Record not saved": { sendStatus: "saveFailed", onRetrySave: retrySave },
@@ -49,9 +47,7 @@ export const meta: ComponentMeta<MailComposeProps> = {
       await expect(send).toHaveBeenCalled();
       unfocus();
     },
-    // An unknown send cannot be sent again until it is known.
     "Not sure it sent": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true),
-    // Try again saves the record only; it never sends again.
     "Record not saved": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByRole("button", { name: "Try again" }));

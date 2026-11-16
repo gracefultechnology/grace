@@ -11,7 +11,6 @@ const list: InvoiceSummary[] = [
 const paid: InvoiceDetail = { id: "in_3", date: "Nov 1, 2026", status: "paid", number: "GR-2026-0114", amount: "$25.00", paid: "$25.00", paidOn: "Nov 1, 2026", pdf: true, merchantPage: true };
 const openInvoice = fn();
 
-// The original app's words (senior-care AccountInvoices.tsx, account-money.ts).
 export const meta: ComponentMeta<AccountInvoicesProps> = {
   args: { view: "list", invoices: list, onOpenList: fn(), onOpenInvoice: openInvoice, onRefresh: fn(), onClose: fn(), onBack: fn(), onOpenPdf: fn(), onOpenMerchant: fn() },
   decorator: settingsPage,

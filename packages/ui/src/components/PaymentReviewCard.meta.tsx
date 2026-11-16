@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import { inGrace } from "./BillSummaryCard.meta.tsx";
 import type { PaymentReviewCardProps } from "./PaymentReviewCard.tsx";
 
-// The prototype's mock chase.com/pay form, filled in: the statement balance from Checking ••4821.
 export const meta: ComponentMeta<PaymentReviewCardProps> = {
   args: {
     company: "Chase",
@@ -18,7 +17,6 @@ export const meta: ComponentMeta<PaymentReviewCardProps> = {
   },
   decorator: inGrace,
   play: {
-    // spec/app/payment.md, "Explicit approval binds to the complete current proposal and is consumed once": a changed proposal says so.
     Stale: ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       return expect([canvas.getByRole("group").getAttribute("aria-busy"), canvas.getByRole("status").textContent]).toEqual(["true", "These details changed"]);

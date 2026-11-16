@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { InputProps } from "./Input.tsx";
 
 export const meta: ComponentMeta<InputProps> = {
-  // prototype Calendar › New appointment, the "What" field.
   args: { "aria-label": "What", placeholder: "For example: Bridge club" },
   decorator: (story) => <div className="w-[1130px] bg-background p-6">{story()}</div>,
   play: {

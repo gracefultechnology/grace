@@ -4,7 +4,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import { onTablet } from "./CalendarApp.meta.tsx";
 import type { DeviceAppHandoffProps } from "./DeviceAppHandoff.tsx";
 
-// The original app's words (senior-care DeviceApplication.tsx).
 export const meta: ComponentMeta<DeviceAppHandoffProps> = {
   args: {
     title: "Phone",

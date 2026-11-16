@@ -5,7 +5,6 @@ import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
 const choose = fn();
 
-// The original app's words (senior-care NativeCloudSignIn.tsx, GoogleSignIn.tsx, account-effects.ts).
 export const meta: ComponentMeta<AccountSignInProps> = {
   args: {
     step: "choose",

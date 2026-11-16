@@ -17,6 +17,5 @@ export const meta: ComponentMeta<CardProps> = {
     ),
   },
   decorator: (story) => <div className="bg-gradient-frame p-6">{story()}</div>,
-  // `asChild` needs an element to become, which no type can supply.
   examples: { AsChild: { asChild: true, children: <a href="#visit-form"><CardTitle>Visit form</CardTitle></a> } },
 };

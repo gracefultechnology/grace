@@ -5,7 +5,6 @@ import type { SecretFieldProps } from "./SecretField.tsx";
 const submit = fn();
 const empty = fn();
 
-// Set-up step 4, the Wi-Fi password, in place of the answer field (senior-care Onboarding §01 frame 4).
 export const meta: ComponentMeta<SecretFieldProps> = {
   args: { label: "Password for Smith Family Wi-Fi", onSubmit: submit, onEmptySubmit: empty },
   decorator: (story) => (
@@ -20,7 +19,6 @@ export const meta: ComponentMeta<SecretFieldProps> = {
     },
   },
   play: {
-    // Show reveals what she typed; Send hands it over once and clears the field. With nothing typed, Send asks again.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       submit.mockClear();
       empty.mockClear();

@@ -20,7 +20,6 @@ import { current, nearby } from "./WifiNetworkList.meta.tsx";
 
 const icon = { size: 28, strokeWidth: 1.9, "aria-hidden": true } as const;
 
-/** The prototype's screen at 8:57 PM on Friday, November 13: the rail, with Settings raised while it is open. */
 export const onTablet = (story: () => ReactNode, open?: "Settings") => (
   <TabletScreen>
     <Rail
@@ -40,7 +39,6 @@ export const onTablet = (story: () => ReactNode, open?: "Settings") => (
   </TabletScreen>
 );
 
-/** A story over the Wi-Fi page it was opened from, with Settings raised on the rail. */
 export const overWifiPage = (story: () => ReactNode) =>
   onTablet(
     () => (
@@ -54,19 +52,16 @@ export const overWifiPage = (story: () => ReactNode) =>
     "Settings",
   );
 
-// Prototype `TS` and `[['Slower',.8],['Normal',1],['Faster',1.15]]`.
 export const textSizes = ["Smaller", "Normal", "Larger", "Largest"];
 export const speeds = [
   { value: "0.8", label: "Slower" },
   { value: "1", label: "Normal" },
   { value: "1.15", label: "Faster" },
 ];
-// The preview on Friday evening: tomorrow is Saturday.
 export const textSizePreview = { greeting: "Good morning, Margaret", eventWhen: "SAT 10 am", eventTitle: "Doctor’s appointment", graceMessage: "Your doctor’s appointment is tomorrow at 10 am." };
 
 const pick = fn();
 const retrySave = fn();
-// The app's side list: the prototype's pages, with the account after Wi-Fi and saved details before About.
 const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "account", "privacy", "about"];
 
 export const meta: ComponentMeta<SettingsAppProps> = {
@@ -80,19 +75,15 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       onBack: fn(),
       children: <WifiJoinForm network="Sunrise Community Center" account userPlaceholder="For example: margaret" error="That account name or password didn’t work. Check both and try again." askGrace onAskGrace={fn()} />,
     },
-    // Prototype axGuide() with kind `instruction` on a size (JS 2072-2079): Margaret makes the words bigger herself.
     "Grace Points At Largest": {
       children: (
         <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} guide={{ targetId: "Largest", kind: "instruction", title: "Tap Largest", onClose: fn() }} />
       ),
     },
-    // Prototype `X.hdrMode`: the large title names the page and the page leaves out its own (`axRender()`).
     "Header Mode Large": { headerMode: "large" },
     "Header Mode Large, Wi-Fi join": { headerMode: "large", page: "wifi", pageTitle: "Join Home Network", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
     "Header Mode None": { headerMode: "none", page: "wifi", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
-    // spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence".
     "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
-    // spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it".
     "Brightness not changed": {
       page: "brightness",
       saveError: "The screen brightness couldn’t be changed.",
@@ -104,7 +95,6 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       children: <AccountOverview access="active" account="margaret.s@example.com" subscription={{ plan: "Grace Plus", status: "Active", periodEnd: "Dec 1, 2026" }} onOpen={fn()} onSignOut={fn()} />,
     },
     "Saved details": { page: "privacy", pages: appPages, children: <SettingsPrivacy details={savedDetails} /> },
-    // Prototype "About this tablet" with the credits the app always ships; the bare page is SettingsAbout's Default.
     "About with voice software": {
       page: "about",
       pages: appPages,

@@ -4,13 +4,11 @@ import { ConfirmIdentity } from "./ConfirmIdentity.tsx";
 import type { GracePlan, PlanChoiceProps } from "./PlanChoice.tsx";
 import { settingsPage } from "./WifiNetworkList.meta.tsx";
 
-// The original app's words and catalog (senior-care PlanPayment.tsx, account-money.ts).
 export const gracePlans: GracePlan[] = [
   { key: "grace_plus", name: "Grace Plus", price: "$25.00", period: "a month", includes: "Includes $25.00 of help each month. It is not cash. Unused help ends with each billing period and does not carry over." },
   { key: "grace_pro", name: "Grace Pro", price: "$50.00", period: "a month", includes: "Includes $60.00 of help each month." },
 ];
 
-// A stand-in for the payment link's code: a fixed pattern of modules in the page's ink.
 const cells = Array.from({ length: 21 * 21 }, (_, index) => index).filter((index) => (index * 7 + (index % 21) * 3) % 5 < 2);
 export const sampleQr = (
   <svg viewBox="0 0 21 21" className="text-foreground" aria-hidden>
@@ -41,7 +39,6 @@ export const meta: ComponentMeta<PlanChoiceProps> = {
   examples: {
     "Loading plans": { view: "loading", plans: [] },
     "Plans failed": { view: "failed", plans: [] },
-    // Stripe's embedded page mounts in `checkout`; an empty white sheet stands in for it.
     "Card form": { view: "pay", checkout: <div className="h-[320px] rounded-tile bg-card shadow-tile" /> },
     "Card form loading": { view: "pay", formLoading: true },
     "Card form failed": { view: "pay", problem: "The secure card form could not load. Check the internet connection and try again." },

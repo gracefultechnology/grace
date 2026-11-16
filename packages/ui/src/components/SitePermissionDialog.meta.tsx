@@ -8,7 +8,6 @@ const allow = fn();
 const deny = fn();
 
 export const meta: ComponentMeta<SitePermissionDialogProps> = {
-  // A video visit on the prototype's bank's website: camera and microphone, answered together.
   args: { site: "chase.com", devices: ["camera", "microphone"], onAllow: allow, onDeny: deny },
   examples: {
     Location: { devices: ["location"] },
@@ -24,7 +23,6 @@ export const meta: ComponentMeta<SitePermissionDialogProps> = {
       await expect([allow.mock.calls.length, deny.mock.calls.length]).toEqual([1, 1]);
       unfocus();
     },
-    // While Android asks, neither answer can be given again.
     Waiting: async () => {
       const question = within(screen.getByRole("dialog"));
       await expect([question.getByRole("status").textContent, question.getByRole("button", { name: "Don’t allow" }).hasAttribute("disabled")]).toEqual(["Asking the tablet…", true]);

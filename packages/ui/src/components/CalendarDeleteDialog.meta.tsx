@@ -3,7 +3,6 @@ import type { ComponentMeta } from "vibestack/stories";
 import type { CalendarDeleteDialogProps } from "./CalendarDeleteDialog.tsx";
 
 export const meta: ComponentMeta<CalendarDeleteDialogProps> = {
-  // Prototype `calDlg` for the doctor's appointment, which does not repeat.
   args: {
     open: true,
     title: "Delete Doctor’s appointment?",
@@ -17,7 +16,6 @@ export const meta: ComponentMeta<CalendarDeleteDialogProps> = {
       description: "It repeats every week.",
       repeating: true,
     },
-    // spec/app/calendar.md, "Deleting an occurrence requires confirmation and leaves payment records alone": a failed deletion asks again.
     "Delete failed": { error: "This wasn’t deleted. Choose again, or keep it." },
   },
   play: {

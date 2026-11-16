@@ -18,7 +18,6 @@ export const meta: ComponentMeta<MailActionStatusProps> = {
   decorator: (story) => <div className="w-[640px] bg-background p-6">{story()}</div>,
   play: {
     "Save failed": tapCalls("Try again", retry, { rest: true }),
-    // Uncertain is not a failure: nothing to retry until the printer answers.
     "Print unknown": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).queryByRole("button")).toBeNull(),
   },
 };

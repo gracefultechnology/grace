@@ -3,7 +3,6 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { WifiNetwork, WifiNetworkListProps } from "./WifiNetworkList.tsx";
 
-// Prototype `X.wifi.nets`: joined to the home network, the others strongest first.
 export const current: WifiNetwork = { name: "Home Network", signal: 3, locked: true };
 export const nearby: WifiNetwork[] = [
   { name: "Riverside Library Guest", signal: 2 },
@@ -14,7 +13,6 @@ export const nearby: WifiNetwork[] = [
   ...["DIRECT-printer", "Apartment 2B", "Garcia home", "TP-Link_7A31", "Apartment 3C", "Linksys-guest", "Ring Setup", "ATT-2849", "Verizon_X9K4", "CenturyLink5512"].map((name) => ({ name, signal: 1, locked: true })),
 ];
 
-/** A page of Settings beside its side list. */
 export const settingsPage = (story: () => ReactNode) => <div className="w-[852px] bg-background p-6 font-sans">{story()}</div>;
 
 const select = fn();

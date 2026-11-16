@@ -7,7 +7,6 @@ const join = fn();
 const show = fn();
 
 export const meta: ComponentMeta<WifiJoinFormProps> = {
-  // Prototype `wifiPage()` with `X.wifi.join`: a home router's password.
   args: { network: "NETGEAR-4F2", userPlaceholder: "For example: margaret", onJoin: join, onShowPasswordChange: show, onCancel: fn() },
   examples: {
     Typed: { password: "garden2024" },
@@ -25,7 +24,6 @@ export const meta: ComponentMeta<WifiJoinFormProps> = {
   },
   decorator: settingsPage,
   play: {
-    // Join waits for the password.
     Default: ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole<HTMLButtonElement>("button", { name: "Join" }).disabled).toBe(true),
     Typed: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);

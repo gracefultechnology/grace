@@ -7,10 +7,8 @@ import { MenuLabel, MenuOption, type MenuProps } from "./Menu.tsx";
 import { SwitchTrack } from "./Switch.tsx";
 
 const chose = fn();
-// The prototype's own drawings (stroke 2.2 unless given), which differ from Lucide's.
 const draw = (paths: ReactNode, size = 24, stroke = 2.2) => <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">{paths}</svg>;
 const voice = draw(<><path d="M11 5 6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></>, 22, 2);
-// prototype #spdPop: Grace's voice switch, then her reading speed, Normal chosen.
 const speed = (
   <>
     <MenuOption role="menuitemcheckbox" aria-checked onSelect={(event) => event.preventDefault()} className="h-14 justify-between gap-2.5 bg-transparent pr-5 pl-4">
@@ -27,11 +25,9 @@ export const meta: ComponentMeta<MenuProps> = {
     children: speed,
   },
   examples: {
-    // prototype #addPop: what Margaret can attach.
     Attach: {
       defaultOpen: true,
       trigger: <Button variant="glass" size="pill"><Paperclip size={24} strokeWidth={2.2} aria-hidden />Attach</Button>,
-      // .addpop: it opens upward from the dock, flush with the button's right edge; the panel stays 286px and its 280px options reach 2px past it.
       className: "w-[286px]",
       side: "top",
       align: "end",
@@ -42,10 +38,8 @@ export const meta: ComponentMeta<MenuProps> = {
       ],
     },
   },
-  // Room on every side, so a menu opens the way the prototype's does.
   decorator: (story) => <div className="flex h-[800px] w-[640px] items-center justify-center bg-gradient-frame">{story()}</div>,
   play: {
-    // The button opens the menu; the current speed says it is chosen; a choice closes it.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       chose.mockClear();
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Voice" }));

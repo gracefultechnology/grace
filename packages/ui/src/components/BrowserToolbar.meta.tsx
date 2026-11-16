@@ -9,14 +9,10 @@ const reload = fn();
 const stop = fn();
 
 export const meta: ComponentMeta<BrowserToolbarProps> = {
-  // Prototype `.bz-bar` on a new tab.
   args: { children: <AddressBar value="" /> },
   examples: {
-    // On the payment page, one page back.
     Website: { canGoBack: true, canGo: true, onBack: back, children: <AddressBar value="chase.com/pay" /> },
-    // The same page, with Reload.
     Reload: { canGoBack: true, canGo: true, reloadable: true, onReload: reload, onStop: stop, children: <AddressBar value="chase.com/pay" /> },
-    // While the page loads, Reload is Stop.
     "Loading page": { canGoBack: true, canGo: true, reloadable: true, pageLoading: true, onReload: reload, onStop: stop, children: <AddressBar value="chase.com/pay/review" /> },
   },
   decorator: (story) => <div className="w-[1130px] bg-gradient-frame">{story()}</div>,

@@ -6,14 +6,12 @@ import type { MailMessageRowProps } from "./MailMessageRow.tsx";
 const open = fn();
 
 export const meta: ComponentMeta<MailMessageRowProps> = {
-  // Susan's email, the first in the prototype's Inbox.
   args: { from: people.susan, subject: "Photos from Lily’s recital", time: "2:15 PM", unread: true, attachment: true, onOpen: open },
   examples: {
     Clinic: { ...inbox[1], onOpen: open },
     Read: { ...inbox[2], onOpen: open },
     Replied: { from: people.susan, subject: "You replied: “See you on Sunday! Love, Mo…”", time: "2:15 PM", onOpen: open },
   },
-  // Prototype `#awin .a-row`: the list column is 804px wide.
   decorator: (story) => <div className="w-[852px] bg-background p-6">{story()}</div>,
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {

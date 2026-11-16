@@ -7,7 +7,6 @@ import { onTablet } from "./SettingsApp.meta.tsx";
 const retry = fn();
 
 export const meta: ComponentMeta<FilePhotoViewerProps> = {
-  // Prototype `filesView()` with `X.files.view = 1`: the second photo of six.
   args: {
     title: "Photo 2 of 6",
     backLabel: "Files",

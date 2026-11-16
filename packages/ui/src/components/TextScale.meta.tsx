@@ -9,10 +9,8 @@ import { HomeScreen, type HomeScreenProps } from "./HomeScreen.tsx";
 import { meta as home } from "./HomeScreen.meta.tsx";
 import type { TextScaleProps } from "./TextScale.tsx";
 
-// Each screen as its own stories draw it, on the tablet.
 const homeScreen = home.decorator?.(() => <HomeScreen {...(home.args as HomeScreenProps)} />) as ReactNode;
 
-// Prototype applyTS() with X.ts = "Largest" (130%) over Home, Grace opened over it, and Calendar.
 export const meta: ComponentMeta<TextScaleProps> = {
   args: { percent: 130, children: homeScreen },
   examples: {
@@ -22,7 +20,6 @@ export const meta: ComponentMeta<TextScaleProps> = {
     "Calendar, Largest": { children: calendar.decorator?.(() => <CalendarApp {...(calendar.args as CalendarAppProps)} />) as ReactNode },
   },
   play: {
-    // Home’s greeting is drawn at 130% of the size it sets or inherits (34px in the prototype’s `.greet`, 44.2px at Largest).
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const greeting = within(canvasElement).getByRole("heading", { name: /Good evening/ });
       const sized = greeting.closest<HTMLElement>("[data-bfs]");

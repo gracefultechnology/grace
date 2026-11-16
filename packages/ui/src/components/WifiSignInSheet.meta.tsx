@@ -12,7 +12,6 @@ const sans = "Arial, sans-serif";
 const field = { width: "100%", boxSizing: "border-box", height: 46, padding: "0 12px", border: `1px solid ${library.field}`, borderRadius: 4, background: library.white, font: `18px ${sans}` } as const;
 const label = { display: "block", margin: "12px 0 6px", font: `700 15px ${sans}` } as const;
 
-// Prototype `portalSheet()`: the Riverside Public Library's sign-in page.
 const page = (
   <div style={{ minHeight: "100%", background: library.page, fontFamily: serif, lineHeight: "normal", color: library.ink }}>
     <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 32px", background: library.green, color: library.white, fontSize: 22 }}>

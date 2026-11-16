@@ -4,7 +4,6 @@ import { mailScreen, people, unfocus } from "./MailApp.meta.tsx";
 import type { MailRecipientPickerProps } from "./MailRecipientPicker.tsx";
 
 const pick = fn();
-// The prototype's PEOPLE.
 const everyone = [people.susan, people.david, people.clinic, people.linda, people.book, people.joan];
 
 export const meta: ComponentMeta<MailRecipientPickerProps> = {

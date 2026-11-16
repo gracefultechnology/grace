@@ -8,7 +8,6 @@ const networks = [
   { id: "cafe", value: "Corner Cafe", detail: "Weak signal" },
 ];
 
-// The offers in the chat during set-up (senior-care Onboarding §01 frame 3).
 export const meta: ComponentMeta<ValueCardsProps> = {
   args: { label: "Networks", options: networks, onPick: fn() },
   decorator: (story) => <div className="w-[1130px] bg-background p-6">{story()}</div>,

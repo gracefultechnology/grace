@@ -5,12 +5,10 @@ import { AnswerChips, type AnswerChipProps } from "./AnswerChip.tsx";
 
 const chose = fn();
 
-// Prototype `.sugg`: the answers to Grace's question, read from the right.
 export const meta: ComponentMeta<AnswerChipProps> = {
   args: { children: "Yes, show me", onClick: chose },
   examples: {
     Longer: { children: "Yes, pay $84.20 today" },
-    // A chip without words is named by `aria-label`.
     Empty: { children: undefined, "aria-label": "Yes, show me" },
   },
   decorator: (story) => (
@@ -19,7 +17,6 @@ export const meta: ComponentMeta<AnswerChipProps> = {
     </div>
   ),
   play: {
-    // A tap is Margaret's answer.
     Default: tapCalls("Yes, show me", chose),
   },
 };

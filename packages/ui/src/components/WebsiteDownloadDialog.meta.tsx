@@ -8,12 +8,10 @@ const save = fn();
 const decline = fn();
 
 export const meta: ComponentMeta<WebsiteDownloadDialogProps> = {
-  // The prototype's bank offers a document, named as in Files (`FILES`).
   args: { offer: { site: "chase.com", name: "Medicare summary.pdf", size: "240 KB" }, onSave: save, onDecline: decline },
   examples: { "Without size": { offer: { site: "chase.com", name: "Visit form.pdf" } } },
   decorator: (story) => onBrowser(story),
   play: {
-    // Nothing is saved but by Save; Escape is Don't save.
     Default: async () => {
       save.mockClear();
       decline.mockClear();

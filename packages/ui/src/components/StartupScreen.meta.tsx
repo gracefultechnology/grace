@@ -5,7 +5,6 @@ import { TabletScreen } from "./TabletScreen.tsx";
 
 const onRetry = fn();
 
-// spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": Starting, then StartupFailed.
 const failed: StartupScreenProps = { state: "failed", message: "The tablet couldn’t reach Grace’s service. Your calendar, email and files are safe.", onRetry };
 
 export const meta: ComponentMeta<StartupScreenProps> = {

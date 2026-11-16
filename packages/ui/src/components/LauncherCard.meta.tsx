@@ -6,11 +6,9 @@ import type { LauncherCardProps } from "./LauncherCard.tsx";
 const onClick = fn();
 
 export const meta: ComponentMeta<LauncherCardProps> = {
-  // Prototype `.lc`: the Calendar card's glass, title, status and tear-off page, before its rows.
   args: { title: "Calendar", status: "Nothing else today", art: <CalendarIcon weekday="FRI" day={13} aria-hidden />, children: undefined, onClick },
   examples: {
     Medium: { title: "Email", status: "2 new", size: "medium" },
-    // Rolling off the right edge of Home's first page, as the Files card does (prototype `hmLayers`).
     Turned: { title: "Calendar", status: "Nothing else today", turn: 0.65 },
   },
   bounds: { turn: [-1, 1] },
@@ -20,7 +18,6 @@ export const meta: ComponentMeta<LauncherCardProps> = {
     </div>
   ),
   play: {
-    // The whole card opens its app; its name is its title and status.
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const card = within(canvasElement).getByRole("button", { name: "Calendar Nothing else today" });
       await userEvent.click(card);

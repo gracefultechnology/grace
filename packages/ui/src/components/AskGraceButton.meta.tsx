@@ -5,7 +5,6 @@ import type { AskGraceButtonProps } from "./AskGraceButton.tsx";
 export const meta: ComponentMeta<AskGraceButtonProps> = {
   args: { onClick: fn() },
   examples: {
-    // Prototype `#askRing.halo`: the start-up pulse that invites the first tap.
     Welcome: { glow: "welcome" },
     "Grace open": { selected: true, glow: "off" },
   },

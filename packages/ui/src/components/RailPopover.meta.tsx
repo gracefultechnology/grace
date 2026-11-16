@@ -10,7 +10,6 @@ import type { RailPopoverProps } from "./RailPopover.tsx";
 import { Slider } from "./Slider.tsx";
 import { TabletScreen } from "./TabletScreen.tsx";
 
-// Prototype `drawPop()`: Volume at 60%, and Wi-Fi on "Home Network"; each opens 30px above its rail button.
 const volume: RailPopoverProps = {
   icon: <SpeakerIcon strokeWidth={2} className="size-7.5" />,
   title: "Volume",
@@ -57,7 +56,6 @@ export const meta: ComponentMeta<RailPopoverProps> = {
       actions: <Button variant="prominent" size="pill"><Wifi aria-hidden size={22} strokeWidth={2.2} />Fix Wi-Fi</Button>,
     },
   },
-  // The rail it opens from (prototype `railSel()`): only the button whose popover is open is raised.
   decorator: (story) => (
     <TabletScreen className="group/tablet">
       <Rail

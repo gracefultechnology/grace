@@ -2,7 +2,6 @@ import { expect, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import type { SearchFieldProps } from "./TextField.tsx";
 
-// prototype Email › Inbox, and the compose page's recipient picker (`data-axin="pickq"`).
 export const meta: ComponentMeta<SearchFieldProps> = {
   args: { label: "Search email" },
   examples: {

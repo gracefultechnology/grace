@@ -6,7 +6,6 @@ import { AppHeader } from "./AppHeader.tsx";
 import type { SplitViewProps } from "./SplitView.tsx";
 
 export const meta: ComponentMeta<SplitViewProps> = {
-  // Email's inbox inside a window, without the header's row.
   args: { nav: emailNav, children: inbox },
   examples: {
     "With header": { nav: settingsNav, header: <AppHeader title="Settings" icon={<Settings size={26} strokeWidth={2} aria-hidden />} onClose={() => {}} split />, children: undefined },
