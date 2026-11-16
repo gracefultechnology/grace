@@ -77,7 +77,6 @@ import shell as S from "./shell"
 import browser as B from "./browser"
 import conversation as C from "./conversation"
 import wake as W from "./wake"
-import preferences as R from "./preferences"
 
 pure def observedSample(starting: WS::Workspace): WS::Workspace = {
   val ready = WS::changeLifecycle(starting, WS::StartupSucceeded, WS::Host)
