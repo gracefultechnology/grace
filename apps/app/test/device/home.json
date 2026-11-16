@@ -14,6 +14,8 @@
   { "tap": "Internet" },
   { "expect": "You’re ready to browse the internet." },
   { "type": "example.com", "into": "Address" },
+  { "tap": "Go" },
+  { "expect": "example.com" },
   { "tap": "Close browser" },
   { "expect": "Good" }
 ]

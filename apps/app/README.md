@@ -46,18 +46,21 @@ builds, then attaches to the named AVD or boots it without a window and with hos
 `artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs the launcher debug APK, makes Grace
 Home (`cmd package set-home-activity`), starts Home and fails unless Grace is what Home opens, her WebView
 shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
-Responding". It prints the emulator's WebView package and version. `--install emulator-<port>` does the same
+Responding". It prints the emulator's WebView package and version, and leaves the emulator running. Every
+`adb` call has a time limit (the boot 15 minutes, the install 5), and an emulator that exits before it
+boots fails the command with its log. `--install emulator-<port>` does the same
 on an emulator that is already running; it refuses any serial that is not an emulator's, so a tablet
 on USB is never touched.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket: an
 array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible name>" }`
-or `{ "expect": "<text on screen>" }`, each given 30 seconds. Each feature adds its own file;
+or `{ "expect": "<text on screen>" }`, each given 30 seconds; a tap fails when no visible thing or more
+than one has that name. Each feature adds its own file;
 `home.json` walks Home.
 
-The AVD to use: API 36 `google_apis` arm64-v8a, 2560x1600 at 320 dpi (the tablet's panel), 4 GB.
-Started by hand without `-gpu host`, an AVD with `hw.gpu.enabled=no` renders in software, slow enough to
-show "not responding" dialogs.
+The command has been run on `grace-tablet-2` (API 35, 1280x800). The tablet's panel is 2560x1600 at
+320 dpi, which an API 36 `google_apis` arm64-v8a AVD with 4 GB matches; that AVD has not been run with
+the command yet.
 
 `scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
