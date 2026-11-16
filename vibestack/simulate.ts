@@ -126,10 +126,8 @@ export async function simulate(root: string, model: Model, invariant: string, tr
     const derivedSeed = seedFor(seed, model.harness, invariant, step, String(samples), String(steps), ...(shards === 1 ? [] : [`${k} of ${shards}`]));
     const args = ["run", `gen/${model.name}.run.qnt`, "--main", `${model.name}_run`, "--step", step, "--invariant", invariant,
       "--max-samples", String(Math.ceil(samples / shards)), "--max-steps", String(steps), "--mbt", "--seed", derivedSeed, ...(shards === 1 ? [] : ["--n-threads", "1"])];
-    // The traces are read from their files. Printed as well, a long one can be cut off with Quint's verdict after it,
-    // when Quint exits before a pipe takes all it wrote, so only the verdict is printed.
-    const r = await simulating(root, () => run("quint", [...args, "--verbosity", "1", "--n-traces", String(Math.ceil(traces / shards)), "--out-itf", path.join(out, "{seq}.itf.json")], root));
-    const broken = r.out.includes("[violation]");
+    const r = await simulating(root, () => run("quint", [...args, "--n-traces", String(Math.ceil(traces / shards)), "--out-itf", path.join(out, "{seq}.itf.json")], root));
+    const broken = r.status === 1 && /(?:^|\n)error: Invariant violated$/.test(r.stderr.trimEnd());
     // In the order Quint wrote them, so that the same simulation always gives the traces in the same order.
     const files = fs.readdirSync(out).filter((f) => f.endsWith(".itf.json")).sort((x, y) => parseInt(x, 10) - parseInt(y, 10) || x.localeCompare(y));
     const again = `seed ${derivedSeed}; to simulate again: pnpm exec quint ${args.join(" ")}`;

@@ -85,9 +85,11 @@ it.effect("Check out", effect () => {
   `machineOver` or on `apply` and the decoders, needs a driver that `check`
   compares with the spec ([SPEC.md, "Conformance"](../../../SPEC.md#conformance)):
   `check` writes one to fill in when `src/` imports `apply`.
-- **Match an event by its `type`**: `match (event.type) { when "pay": …; }`.
-  The compiler does not yet check that a `match` on the event itself, or on
-  a variant by its `tag`, covers every case.
+- **Cover every case in a finite match.** Match `event.type` with literal
+  patterns or match the event itself with patterns such as
+  `when { type: "pay", let amount }: …`. A match without `default` must
+  cover the whole finite union (`EK4701`), including variants distinguished
+  by `tag`.
 - **A `.vibe` file reaches the platform through Effect**, not through
   `node:*` imports, `console`, `fetch` or the DOM: an Effect service
   (`Console`, `FileSystem`, `HttpClient`, …), a `module node { … }` body in
@@ -134,7 +136,4 @@ components before writing one, and follow the
 VibeLang's packages move together, and with one version of Effect: pin them
 exactly, at the versions in the tools' own `package.json`, which `spec init`
 adds. The compiler writes declarations for other tools under `.vibe/`, even
-when it only checks: keep it out of Git, like `dist/`. `tsconfig.json` puts
-it on `compilerOptions.rootDirs`, so TypeScript and the linter see `.vibe`
-modules; `pnpm check` first deletes what was declared for a `.vibe` file since
-deleted or renamed, so an import of it fails as it should.
+when it only checks: keep it out of Git, like `dist/`.
