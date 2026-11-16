@@ -67,7 +67,7 @@ pure val accessReportValues = Set(
 pure val factReportValues = factsValues.map(f => { key: P::exampleKey, facts: f, evidence: "source", version: 2 })
   .union(factsValues.map(f => { key: P::exampleKey, facts: f, evidence: "source", version: 3 }))
   .union(Set({ key: P::emptyKey, facts: noFacts, evidence: "", version: 2 }))
-pure val formReportValues = P::reviewReportValues
+pure val formReportValues = P::reviewReportValues.union(Set(4, 5).map(v => { ...P::exampleReview, proposal: { ...P::exampleProposal, amount: 3500 }, revision: v }))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 2
