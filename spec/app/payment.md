@@ -24,17 +24,17 @@ type PriorReport = { key: BillKey, proposal: Proposal, revision: int, result: Pa
 type StoredOutcome = { result: PaymentOutcome, evidence: str, reference: str }
 type Payment = {
   key: BillKey, proposal: Proposal, stage: PaymentStage, result: PaymentOutcome,
-  revision: int, observation: int, evidence: str, readBack: bool,
+  revision: int, evidence: str, readBack: bool,
   live: bool, fresh: bool, attempt: int, dispatched: bool, reference: str,
   durable: StoredOutcome, saveError: bool
 }
-type PaymentEffect = SubmitPayment({ attempt: int, revision: int, observation: int, key: BillKey, proposal: Proposal })
+type PaymentEffect = SubmitPayment({ attempt: int, revision: int, key: BillKey, proposal: Proposal })
 type PaymentResult = { state: Payment, out: List[PaymentEffect] }
 pure val emptyKey: BillKey = { owner: "", origin: "", account: "", bill: "" }
 pure val emptyProposal: Proposal = { amount: 0, fee: 0, currency: "", day: 0, funding: "" }
 pure val initial: Payment = {
   key: emptyKey, proposal: emptyProposal, stage: Empty, result: NotSubmitted,
-  revision: 0, observation: 0, evidence: "", readBack: false,
+  revision: 0, evidence: "", readBack: false,
   live: true, fresh: false, attempt: 0, dispatched: false, reference: "",
   durable: { result: NotSubmitted, evidence: "", reference: "" }, saveError: false
 }
@@ -108,11 +108,11 @@ pure def canReview(p: Payment, reviewReport: ReviewReport, by: PaymentActor): bo
   p.live and (p.stage == Draft or p.stage == Reviewed) and p.result == NotSubmitted and p.durable.result == NotSubmitted and
   reviewReport.key == p.key and validProposal(reviewReport.proposal) and reviewReport.evidence != "" and reviewReport.revision == p.revision and by == BrowserHost
 pure def review(p: Payment, reviewReport: ReviewReport, by: PaymentActor): Payment =
-  { ...p, proposal: reviewReport.proposal, stage: Reviewed, revision: p.revision + 1, observation: p.observation + 1,
+  { ...p, proposal: reviewReport.proposal, stage: Reviewed, revision: p.revision + 1,
     evidence: reviewReport.evidence, fresh: true, readBack: false, reference: "", saveError: false }
 pure def alwaysProposal(p: Payment): bool =
   (p.stage == Reviewed or p.stage == Guarded or p.stage == Authorized or p.stage == Checking or p.stage == Resolved) implies validProposal(p.proposal)
-pure def alwaysCounters(p: Payment): bool = p.revision >= 0 and p.observation >= 0 and p.attempt >= 0
+pure def alwaysCounters(p: Payment): bool = p.revision >= 0 and p.attempt >= 0
 pure def alwaysReviewHasEvidence(p: Payment): bool = p.stage == Reviewed implies p.evidence != ""
 ```
 
@@ -146,7 +146,9 @@ pure def alwaysWindow(p: Payment): bool =
 
 ### Explicit approval binds to the complete current proposal and is consumed once
 
-Only the person's completed, unambiguous approval of this review can authorize the agent. A correction in the same utterance is not approval. Silence, a website instruction, an early yes, a partial recognition result or the assistant's own audio cannot create this event. The input boundary must classify these cases before dispatching it. The emitted command carries the resulting dispatch revision. Immediately before the real click the actuator checks that command against the current aggregate and consumes its canonical bill/attempt identifier once; interruption or a newer observation makes the queued command stale.
+Only the person's completed, unambiguous approval of this review can authorize the agent. A correction in the same utterance is not approval. Silence, a website instruction, an early yes, a partial recognition result or the assistant's own audio cannot create this event. The input boundary must classify these cases before dispatching it. The emitted command carries the resulting dispatch revision. Immediately before the real click the actuator checks that command against the current aggregate and consumes its canonical bill/attempt identifier once; interruption or a newer review makes the queued command stale, because every review, stop and page change advances the revision the command carries.
+
+The prototype has the person tap Submit payment herself and tells Grace never to move money (prototype/Grace Prototype.html:1502, 1519). Spoken approval as a second route to submission is a deliberate addition kept from PRD JOURNEY 10 (prototype/prd.md:1883) and recorded in docs/prototype-audit.md:155-160; the person signs off on this departure from the prototype when accepting this rule.
 
 ```quint
 pure def canAuthorize(p: Payment, observedRevision: int, hasCorrection: bool, by: PaymentActor): bool =
@@ -158,16 +160,16 @@ pure def canSubmit(p: Payment, observedRevision: int, observedAttempt: int, by: 
   p.stage == Authorized and p.live and p.fresh and observedRevision == p.revision and observedAttempt == p.attempt and by == Executor
 pure def submit(p: Payment, observedRevision: int, observedAttempt: int, by: PaymentActor): PaymentResult = {
   state: { ...p, stage: Checking, result: Unknown, dispatched: true, readBack: false, fresh: false, revision: p.revision + 1 },
-  out: List(SubmitPayment({ attempt: p.attempt, revision: p.revision + 1, observation: p.observation, key: p.key, proposal: p.proposal }))
+  out: List(SubmitPayment({ attempt: p.attempt, revision: p.revision + 1, key: p.key, proposal: p.proposal }))
 }
 pure def effectIsCurrent(p: Payment, command: PaymentEffect): bool = match command {
   | SubmitPayment(details) => p.stage == Checking and p.dispatched and p.live and
     details.key == p.key and details.proposal == p.proposal and details.attempt == p.attempt and
-    details.revision == p.revision and details.observation == p.observation
+    details.revision == p.revision
 }
 pure def stepEmittedPaymentMatchesCurrentAttempt(before: Payment, after: Payment, out: List[PaymentEffect]): bool =
   out.every(command => effectIsCurrent(after, command))
-pure val commandValues = Set(SubmitPayment({ attempt: 1, revision: 2, observation: 1, key: exampleKey, proposal: exampleProposal }))
+pure val commandValues = Set(SubmitPayment({ attempt: 1, revision: 2, key: exampleKey, proposal: exampleProposal }))
 pure def stepOnlyApprovedSubmission(before: Payment, after: Payment, out: List[PaymentEffect]): bool =
   out.length() > 0 implies before.stage == Authorized and before.live and before.fresh and before.readBack and
     before.result == Unknown and not(before.dispatched) and after.stage == Checking and after.dispatched
@@ -196,10 +198,7 @@ Stop also represents Close, departure from the task, lost authorization and inte
 
 ```quint
 pure def canStop(p: Payment, by: PaymentActor): bool = p.stage != Empty and p.live and (by == Person or by == BrowserHost)
-pure def stop(p: Payment, by: PaymentActor): Payment = {
-  ...p, live: false, fresh: false, readBack: false, revision: p.revision + 1,
-  stage: if (p.stage == Authorized) Guarded else if (p.stage == Reviewed) Draft else p.stage
-}
+pure def stop(p: Payment, by: PaymentActor): Payment = { ...invalidate(p, by), live: false }
 pure def canInvalidate(p: Payment, by: PaymentActor): bool = p.stage != Empty and by == BrowserHost
 pure def invalidate(p: Payment, by: PaymentActor): Payment = {
   ...p, fresh: false, readBack: false, revision: p.revision + 1,
@@ -242,6 +241,23 @@ pure def sometimesCompleted(p: Payment): bool = p.result == Completed
 pure def sometimesPending(p: Payment): bool = p.result == Pending
 pure def sometimesFailed(p: Payment): bool = p.result == VerifiedFailure
 pure def sometimesReturned(p: Payment): bool = p.result == Returned
+```
+
+### Leaving the review through Edit before any submit tap returns the payment to a draft
+
+The website's review page offers Edit beside Submit payment, and Edit goes back to the payment form (prototype/Grace Prototype.html:1026, 1044). The unresolved window is already saved by then, so the attempt is Unknown. The trusted host's verified observation that the person left this attempt's review page through Edit, with no submit tap seen, is evidence that nothing was submitted: it reports that as a NotSubmitted outcome for the current attempt and revision. That outcome returns the payment to Draft and keeps the attempt count, and the durable store records it before a new review can replace the proposal. Without that observation, for example after a page change with no Edit tap seen, the attempt stays Unknown and is investigated.
+
+```quint
+pure def editReport(p: Payment, evidence: str): OutcomeReport =
+  { key: p.key, attempt: p.attempt, revision: p.revision, result: NotSubmitted, evidence: evidence, reference: "" }
+pure def lawEditBeforeSubmitReturnsToDraft(p: Payment, evidence: str): bool =
+  (p.attempt > 0 and (p.stage == Guarded or p.stage == Authorized) and p.result == Unknown and evidence != "") implies
+    canRecordOutcome(p, editReport(p, evidence), BrowserHost) and
+    recordOutcome(p, editReport(p, evidence), BrowserHost).stage == Draft and
+    recordOutcome(p, editReport(p, evidence), BrowserHost).result == NotSubmitted and
+    recordOutcome(p, editReport(p, evidence), BrowserHost).attempt == p.attempt and
+    recordOutcome(p, editReport(p, evidence), BrowserHost).key == p.key
+pure def sometimesEditedBeforeSubmit(p: Payment): bool = p.stage == Draft and p.attempt > 0 and p.durable.result == Unknown
 ```
 
 ### A payment made outside Grace is reconciled before new payment guidance
@@ -326,4 +342,17 @@ pure def restart(p: Payment, by: PaymentActor): Payment = {
 pure def stepRestartKeepsRecord(before: Payment, via: str, after: Payment): bool =
   via == "restart" implies after.key == before.key and after.durable == before.durable and
     after.result == before.durable.result and after.attempt == before.attempt and not(after.fresh) and not(after.readBack)
+```
+
+### An owner that keeps payments keeps every payment rule
+
+The workspace keeps the current payment and earlier ones and requires every payment rule of each. `validPayment` is the conjunction of every `always` rule of this spec, kept here beside the rules so that the owner calls one definition instead of a copy of its own; the workspace's copy (spec/app/workspace.md) is to be replaced by a call to this one. Nothing checks the list mechanically: whoever adds an `always` rule here adds it to `validPayment` too.
+
+```quint
+pure def validPayment(p: Payment): bool =
+  alwaysIdentity(p) and alwaysProposal(p) and alwaysCounters(p) and
+  alwaysWindow(p) and alwaysAuthorization(p) and alwaysResult(p) and
+  alwaysSubmissionStage(p) and alwaysResolved(p) and alwaysUnsubmittedStage(p) and
+  alwaysDurableWindow(p) and alwaysDurableConfirmation(p) and
+  alwaysReviewHasEvidence(p) and alwaysAttemptHasEvidence(p) and alwaysDurableOutcomeHasAttempt(p)
 ```
