@@ -5,7 +5,7 @@
 import { type Rect, Machine as PageLayers, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
 import { type Tab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
-import { type AndroidOutcome, type Event as WebsiteEvent, Machine as WebsiteRequests, type WebsiteActor, type WebsiteReply, opensElsewhere } from "../gen/app__websiteRequests.effect.vibe"
+import { type AndroidOutcome, type Event as WebsiteEvent, Machine as WebsiteRequests, type WebsiteActor, type WebsiteReply, canFollowView, opensElsewhere } from "../gen/app__websiteRequests.effect.vibe"
 import { type Corners, NativePage, type PageEvent } from "./nativePage.vibe"
 
 /** What the interface measured: the page's rect and outer corners, and the rect of every Grace control over it. */
@@ -128,14 +128,12 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (opensElsewhere(reply.answer)) try website({ type: "finishOpening", id: reply.request, opened: done }, "WebsiteHost")
   }
 
-  /** The website requests follow the page shown and whether it runs. */
+  // spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it": the website requests
+  // follow the page shown, its tab and whether it runs, as one view, whenever it changes.
   effect function syncRequests() {
     const w = try workspace.get()
-    const shown = pageShows(w.device, w.assistant)
-    if (shown !== (try requests.get()).shown) try website(shown ? { type: "showBrowser" } : { type: "hideBrowser" }, "WebsiteHost")
-    if (w.browser.selected !== (try requests.get()).selected) try website({ type: "selectTab", tab: w.browser.selected }, "WebsiteHost")
-    const paused = !pageRuns(try layer.get())
-    if (paused !== (try requests.get()).paused) try website(paused ? { type: "pauseBrowser" } : { type: "resumeBrowser" }, "WebsiteHost")
+    const view = { shown: pageShows(w.device, w.assistant), selected: w.browser.selected, paused: !pageRuns(try layer.get()) }
+    if (canFollowView(try requests.get(), view, "WebsiteHost")) try website({ type: "followView", view }, "WebsiteHost")
     // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation": leaving Settings cancels its confirmation.
     if (w.device.surface !== "DeviceSettings" && (try requests.get()).clearing === "ConfirmingClear") try website({ type: "settingsClosed" }, "WebsiteHost")
   }

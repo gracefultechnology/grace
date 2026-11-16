@@ -15,9 +15,11 @@ Forward or reload, the surface first ends what the page held, each ended site
 permission's `sitePermissionWithdrawn` included, and then sends its
 `pageStarted` event; the host reports each such event here as that tab's
 page start, and reports no page start of its own. The adapter also reports
-each tab selection, tab close, hide, pause and Close browser; tab ids are
-plain numbers, so this machine needs nothing else of the browser, and none of
-Grace's own load counters.
+each tab close and Close browser, and what the person now sees whenever it
+changes: whether the browser is shown, which tab is selected and whether the
+shown page is paused (the view, next rule). Tab ids are plain numbers, so
+this machine needs nothing else of the browser, and none of Grace's own load
+counters.
 
 The website never acts here. The native browser surface reports each request
 it raises, with the facts that decide it measured by the surface, not taken
@@ -270,8 +272,6 @@ pure def answer(s: WebsiteRequests, id: int, choice: Choice, by: WebsiteActor): 
   if (reply.answer == AskAndroid) { state: { ...rest, asking: s.asking.append(r).concat(alongside) }, out: List(reply) }
   else { state: done.state, out: done.out.concat(shared) }
 }
-pure def canShowBrowser(s: WebsiteRequests, by: WebsiteActor): bool = by == WebsiteHost and not(s.shown)
-pure def showBrowser(s: WebsiteRequests, by: WebsiteActor): WebsiteRequests = { ...s, shown: true }
 pure def grants(a: Answer): bool = match a {
   | Ok => true | OpenFilePicker => true | AskAndroid => true | Allowed => true
   | SaveDownload => true | OpenOtherApp => true | OpenSystemBrowser => true | _ => false
@@ -293,6 +293,15 @@ pure val weight_answer = 3
 ```
 
 ### Looking away from a page ends what it asked, and never accepts it
+
+The shell reports the view as one event, from the
+[browser](./browser.md)'s selected tab and the [page layer](./surface.md)'s
+`pageShows` and `pageRuns`, each time any of the three changes, so the view
+kept here is always the one reported last: selecting another tab, hiding or
+showing the browser, and pausing or resuming the shown page are each a new
+view, and a new view that changes several at once ends what each change
+would end, in one step. Hiding the browser on its own (`hideBrowser`) is the
+same as a view that differs only in being hidden.
 
 Selecting another tab, hiding the browser, the tab's surface starting a new
 page, closing the tab, Close browser and clearing browsing data each end what
@@ -338,26 +347,25 @@ pure def stopAsking(gone: List[WebsiteRequest], kept: List[WebsiteRequest], left
     out: left.out.concat(gone.listMap(r => replyOf(r, Cancelled))).concat(called.listMap(q => replyOf(q, AskAndroid))) }
 }
 pure def stopsWhilePaused(ask: Ask): bool = isMessage(ask) or isFileChoice(ask) or isPermission(ask)
-pure def canSelectTab(s: WebsiteRequests, tab: int, by: WebsiteActor): bool = by == WebsiteHost and tab > 0
-pure def selectTab(s: WebsiteRequests, tab: int, by: WebsiteActor): WebsiteResult = {
-  val left = stopAsking(s.asking.select(r => r.tab != tab), s.asking.select(r => r.tab == tab),
-    withdraw(s.requests.select(r => r.tab != tab and not(isBlockedSignIn(r.ask))),
-      s.requests.select(r => r.tab == tab or isBlockedSignIn(r.ask)), s))
-  { state: { ...left.state, selected: tab }, out: left.out }
+type PageView = { shown: bool, selected: int, paused: bool }
+pure def viewOf(s: WebsiteRequests): PageView = { shown: s.shown, selected: s.selected, paused: s.paused }
+pure def heldInView(view: PageView, r: WebsiteRequest): bool =
+  isBlockedSignIn(r.ask) or (view.shown and r.tab == view.selected and not(view.paused and isMessage(r.ask)))
+pure def askingInView(view: PageView, r: WebsiteRequest): bool = view.shown and r.tab == view.selected
+pure def canFollowView(s: WebsiteRequests, view: PageView, by: WebsiteActor): bool =
+  by == WebsiteHost and view.selected > 0 and viewOf(s) != view
+pure def followView(s: WebsiteRequests, view: PageView, by: WebsiteActor): WebsiteResult = {
+  val left = stopAsking(s.asking.select(r => not(askingInView(view, r))), s.asking.select(r => askingInView(view, r)),
+    withdraw(s.requests.select(r => not(heldInView(view, r))), s.requests.select(r => heldInView(view, r)), s))
+  { state: { ...left.state, shown: view.shown, selected: view.selected, paused: view.paused }, out: left.out }
 }
 pure def canHideBrowser(s: WebsiteRequests, by: WebsiteActor): bool = by == WebsiteHost and s.shown
-pure def hideBrowser(s: WebsiteRequests, by: WebsiteActor): WebsiteResult = {
-  val left = stopAsking(s.asking, List(),
-    withdraw(s.requests.select(r => not(isBlockedSignIn(r.ask))), s.requests.select(r => isBlockedSignIn(r.ask)), s))
-  { state: { ...left.state, shown: false }, out: left.out }
-}
-pure def canPauseBrowser(s: WebsiteRequests, by: WebsiteActor): bool = by == WebsiteHost and not(s.paused)
-pure def pauseBrowser(s: WebsiteRequests, by: WebsiteActor): WebsiteResult = {
-  val left = withdraw(s.requests.select(r => isMessage(r.ask)), s.requests.select(r => not(isMessage(r.ask))), s)
-  { state: { ...left.state, paused: true }, out: left.out }
-}
-pure def canResumeBrowser(s: WebsiteRequests, by: WebsiteActor): bool = by == WebsiteHost and s.paused
-pure def resumeBrowser(s: WebsiteRequests, by: WebsiteActor): WebsiteRequests = { ...s, paused: false }
+pure def hideBrowser(s: WebsiteRequests, by: WebsiteActor): WebsiteResult = followView(s, { ...viewOf(s), shown: false }, by)
+pure def lawFollowingTheViewKeepsIt(s: WebsiteRequests, view: PageView, by: WebsiteActor): bool =
+  canFollowView(s, view, by) implies viewOf(followView(s, view, by).state) == view
+pure val viewValues = Set({ shown: true, selected: 1, paused: false }, { shown: true, selected: 2, paused: false },
+  { shown: false, selected: 1, paused: false }, { shown: true, selected: 1, paused: true },
+  { shown: false, selected: 2, paused: true }, { shown: true, selected: 0, paused: false })
 pure def canPageStarted(s: WebsiteRequests, tab: int, by: WebsiteActor): bool =
   by == WebsiteHost and tab > 0 and s.clearing != Purging
 pure def pageStarted(s: WebsiteRequests, tab: int, by: WebsiteActor): WebsiteResult = {
@@ -625,7 +633,7 @@ waiting behind it would never be called:
   ends it. Nothing is stored or forgotten and no notice is shown; the others
   stay waiting for Android, and the earliest of them is called next.
 - `denied` is what `grant: false` returns, so Grace never gets it for the
-  request it called; were it reported, it would count as `ended`.
+  request it called; were it reported, the shell reports it as `ended`.
 
 The page withdrawing it and everything that ends a page's requests in
 "Looking away from a page ends what it asked, and never accepts it"
@@ -640,7 +648,7 @@ surface already told its page. It sends Allowed or Denied to each of the
 others with `answerSitePermission`, with `grant: true` or `false`.
 
 ```quint
-type AndroidOutcome = AndroidGranted | AndroidDenied | AndroidRefused | AndroidEnded
+type AndroidOutcome = AndroidGranted | AndroidRefused | AndroidEnded
 pure def waitingOnAndroid(s: WebsiteRequests, ask: Ask): bool = s.asking.some(q => sameSite(q.ask, ask))
 pure def toAndroid(s: WebsiteRequests, report: HostReport): bool = {
   val ask = report.ask
@@ -779,7 +787,8 @@ pure val weight_finishOpening = 2
 The sign-in page is not loaded inside Grace. The request always waits for the
 person, on its own tab, and is never refused for them: Continue opens it in
 the system browser; Cancel keeps the person on the website. Selecting another
-tab or hiding the browser keeps it, as the surface does. Only a page start or
+tab or hiding the browser keeps it, as the surface does: no new view ends
+it. Only a page start or
 close of its tab, a later sign-in on the same tab (which replaces it, as the
 surface keeps only the last), Close browser or clearing browsing data ends
 it.
@@ -793,9 +802,9 @@ pure def lawABlockedSignInIsExplained(s: WebsiteRequests, report: HostReport, by
 pure def lawHidingKeepsASignIn(s: WebsiteRequests, by: WebsiteActor): bool =
   canHideBrowser(s, by) implies
     s.requests.every(r => not(isBlockedSignIn(r.ask)) or hideBrowser(s, by).state.requests.includes(r))
-pure def lawSelectingATabKeepsASignIn(s: WebsiteRequests, tab: int, by: WebsiteActor): bool =
-  canSelectTab(s, tab, by) implies
-    s.requests.every(r => not(isBlockedSignIn(r.ask)) or selectTab(s, tab, by).state.requests.includes(r))
+pure def lawANewViewKeepsASignIn(s: WebsiteRequests, view: PageView, by: WebsiteActor): bool =
+  canFollowView(s, view, by) implies
+    s.requests.every(r => not(isBlockedSignIn(r.ask)) or followView(s, view, by).state.requests.includes(r))
 pure def sometimesASignInIsExplained(s: WebsiteRequests): bool = isBlockedSignIn(presented(s).ask)
 pure def sometimesASignInWaitsWhileHidden(s: WebsiteRequests): bool = not(s.shown) and s.requests.length() > 0
 pure def sometimesASignInWaitsOnAnotherTab(s: WebsiteRequests): bool =

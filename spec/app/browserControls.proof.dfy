@@ -14,7 +14,7 @@ lemma lawControlsPreserveBrowser_ensures(b: app__browser_Browser, browserInput: 
       case ExplainEmptyAddress => app__browser_explainEmptyAddress_ensures(b);
       case DismissAddress =>
         app__browser_dismissAddress_ensures(b);
-        if b.editingAddress { app__browser_pageChanged_ensures(app__browser_dismissAddress(b)); }
+        app__browser_pageChanged_ensures(app__browser_dismissAddress(b));
       case Back => app__browser_goBack_ensures(b);
       case Forward => app__browser_goForward_ensures(b);
       case Reload => app__browser_reload_ensures(b);
