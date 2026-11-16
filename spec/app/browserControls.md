@@ -18,7 +18,8 @@ scroll, zoom, tab selection and layout changes invalidate observations;
 editing recent shortcuts changes no displayed website. Host geometry reports
 must name the current browser revision; page reports also name the selected
 tab, so an old or background scroll callback cannot alter a newer page.
-Repeated reports of unchanged geometry are refused.
+Repeated reports of unchanged geometry are refused. Every control keeps the
+browser's rules true, including that only a loaded secure page shows the padlock.
 
 ```quint
 import browser as B from "./browser"
@@ -77,7 +78,7 @@ pure def control(b: B::Browser, browserInput: BrowserInput, by: BrowserControlAc
 pure def validBrowser(b: B::Browser): bool =
   B::alwaysTabsAreWellFormed(b) and B::alwaysTabIdentifiersAreUnique(b) and
   B::alwaysSelectedTabExists(b) and B::alwaysBrowserCountersAreValid(b) and
-  B::alwaysRecentDestinationsAreDistinct(b)
+  B::alwaysRecentDestinationsAreDistinct(b) and B::alwaysOnlyALoadedPageIsSecure(b)
 pure def lawControlsPreserveBrowser(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool =
   validBrowser(b) and canControl(b, browserInput, by) implies validBrowser(control(b, browserInput, by))
 pure def editsRecent(browserInput: BrowserInput): bool = match browserInput {
