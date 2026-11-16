@@ -119,7 +119,8 @@ message and increasing revision. Pending or uncertain requests cannot be
 reissued; reconciliation queries that same operation before another mutation.
 Undo names the revision of an acknowledged move to Trash, so it is offered only
 after that acknowledgment, never while the move is pending, and any later refresh
-or change of the message withdraws it. Provider evidence is checked on each
+or change of the message withdraws it, as does closing the Undo toast
+(`closeUndo`), which changes nothing else about the message. Provider evidence is checked on each
 receipt and kept by the adapter, not in the record.
 
 ```quint
@@ -136,6 +137,10 @@ pure def canUndoTrash(m: MessageRecord, revision: int, by: MessageActor): bool =
   m.undoRevision == revision and revision == m.revision
 pure def undoTrash(m: MessageRecord, revision: int, by: MessageActor): MessageRecord =
   changeMessage(m, RestoreMessage, by)
+pure def canCloseUndo(m: MessageRecord, revision: int, by: MessageActor): bool =
+  by == MessageUser and m.undoRevision != -1 and m.undoRevision == revision
+pure def closeUndo(m: MessageRecord, revision: int, by: MessageActor): MessageRecord =
+  { ...m, undoRevision: -1 }
 pure def canCompleteChange(m: MessageRecord, receipt: ChangeReceipt, by: MessageActor): bool =
   by == MessageProvider and (m.status == ChangePending or m.status == ChangeUnknown) and
   receipt.identity == m.identity and receipt.revision == m.revision and

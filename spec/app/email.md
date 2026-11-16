@@ -170,11 +170,23 @@ message or attachment even though the request guard validated its reference.
 
 Grace can search and open for the person (`prototype/Grace Prototype.html:2107,2117,2140–2141`).
 Her search and open run the same read with the same guards, only while Email is
-on screen (`visible`, which the workspace grants only with Grace compact, so she
-never acts on a hidden page) and only when the person asked (`asked`). She never
-opens an attachment for herself, and never leaves an open composer. Her search
+on screen and only when the person asked. Both are facts the host supplies with
+her request: `visible`, which the workspace must grant only while Email is the
+page shown beside Grace compact, and `asked`, the person's request; this spec
+refuses her read without them but cannot itself establish them. Her search
 covers Inbox, as the prototype's does: from another folder it first returns to
 Inbox, clearing the selection and query as choosing a folder does.
+
+This departs from the prototype on purpose in three places. The prototype's
+search switches to the Email page when it is not on screen
+(`prototype/Grace Prototype.html:2141`); here Grace never acts on a hidden page,
+so she is refused instead. The prototype's open and search drop an open
+composer (`prototype/Grace Prototype.html:2140–2141`); here she is refused while
+a composer is open, so she never discards what the person is writing. The
+prototype's search always clears the open message; here a search from Inbox
+keeps the selection reference and its success returns to the list, where the
+selection is not shown, and only a search from another folder clears it. She
+never opens an attachment for herself.
 
 ```quint
 pure def canReadMail(m: Mailbox, kind: ReadKind, ref: str, approved: bool, by: MailActor): bool =
@@ -194,8 +206,11 @@ pure def canAssistReadMail(m: Mailbox, kind: ReadKind, ref: str, visible: bool, 
   not(m.composeVisible) and canReadMail(assistedView(kind, m), kind, ref, true, MailUser)
 pure def assistReadMail(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): Mailbox =
   readMail(assistedView(kind, m), kind, ref, true, MailUser)
-pure def lawAssistantNeedsVisibleRequest(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): bool =
-  canAssistReadMail(m, kind, ref, visible, asked, by) implies (visible and asked and not(m.composeVisible))
+pure def lawAssistantReadKeepsTheDraft(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): bool =
+  canAssistReadMail(m, kind, ref, visible, asked, by) implies
+    (assistReadMail(m, kind, ref, visible, asked, by).draft == m.draft and
+      assistReadMail(m, kind, ref, visible, asked, by).sendStatus == m.sendStatus and
+      assistReadMail(m, kind, ref, visible, asked, by).draftId == m.draftId)
 pure def listingScope(m: Mailbox): ListingScope = {
   owner: m.owner, provider: m.provider, account: m.account, folder: m.folder, query: m.query, generation: m.generation
 }
@@ -323,7 +338,9 @@ per-message operation revision even after the user opens another message.
 Undo appears only after the provider acknowledges the move to Trash, never while
 it is pending, and stays available until the toast closes (six seconds in
 `prototype/Grace Prototype.html:1826`), the next listing refresh, or another
-change to that message, whichever comes first.
+change to that message, whichever comes first. The host reports the toast
+closing, by its timer or the person's dismissal, through `closeUndoToast`,
+which withdraws that Undo and nothing else.
 
 Successful moves and purges cannot leave a stale Reply, Forward, attachment,
 link or bill-source action. The affected selection and any content read are invalidated
@@ -352,6 +369,13 @@ pure def undoMessageTrash(m: Mailbox, target: MessageTarget, by: MailActor): Mai
   val affected = m.messageRef == target.ref or (m.readStatus == Reading and m.readKind == OpenMessage and m.requestedRef == target.ref)
   clearSelection(affected, { ...m, messages: putMessage(m.messages, I::undoTrash(messageRecord(m, target.ref), target.revision, I::MessageUser)),
     messageRefs: m.messageRefs.exclude(Set(target.ref)) })
+pure def canCloseUndoToast(m: Mailbox, target: MessageTarget, by: MailActor): bool =
+  (by == MailHost or by == MailUser) and messageRecord(m, target.ref).identity == messageIdentity(m, target.ref) and
+  I::canCloseUndo(messageRecord(m, target.ref), target.revision, I::MessageUser)
+pure def closeUndoToast(m: Mailbox, target: MessageTarget, by: MailActor): Mailbox =
+  { ...m, messages: putMessage(m.messages, I::closeUndo(messageRecord(m, target.ref), target.revision, I::MessageUser)) }
+pure def lawClosedToastCannotUndo(m: Mailbox, target: MessageTarget, by: MailActor): bool =
+  canCloseUndoToast(m, target, by) implies not(canUndoMessageTrash(closeUndoToast(m, target, by), target, MailUser))
 pure def canCompleteMessageChange(m: Mailbox, messageReceipt: I::ChangeReceipt, by: MailActor): bool =
   by == MailConnector and m.connection == Connected and m.canRead and
   messageReceipt.identity == messageIdentity(m, messageReceipt.identity.ref) and
@@ -366,8 +390,8 @@ pure def completeMessageChange(m: Mailbox, messageReceipt: I::ChangeReceipt, by:
 pure def stepMessageRecordsAreRetained(before: Mailbox, after: Mailbox): bool =
   before.messages.every(prior => after.messages.some(record => record.identity == prior.identity and
     record.revision >= prior.revision and (prior.folder == I::PurgedFolder implies record.folder == I::PurgedFolder)))
-pure def lawMovedSelectionCannotReply(m: Mailbox, target: MessageTarget, change: I::MessageChange, by: MailActor): bool =
-  canChangeSelectedMessage(m, target, change, by) implies not(canStartDraft(changeSelectedMessage(m, target, change, by), true, MailUser))
+pure def lawMovedSelectionCannotReply(m: Mailbox, target: MessageTarget, change: I::MessageChange, header: ReplyHeader, by: MailActor): bool =
+  canChangeSelectedMessage(m, target, change, by) implies not(canReplyToMessage(changeSelectedMessage(m, target, change, by), header, MailConnector))
 pure def lawStaleMessageReceiptIsRejected(m: Mailbox, messageReceipt: I::ChangeReceipt, by: MailActor): bool =
   messageReceipt.revision != messageRecord(m, messageReceipt.identity.ref).revision implies
     not(canCompleteMessageChange(m, messageReceipt, by))
@@ -438,8 +462,11 @@ links." above a suspicious message, with the sender's real address
 (`prototype/Grace Prototype.html:1960–1961`). The warning comes only from the
 connector's classifier evidence in the read that opened that message, bound to
 its reference and read generation; rendered text cannot raise or clear it.
-Opening another message, leaving the message or reconnecting clears it, and a
-fresh read of the same message brings fresh evidence or none.
+Opening another message, choosing a folder, moving the message or reconnecting
+clears it, and a fresh read of the same message, including reopening it from
+the list, brings fresh evidence or none. Returning to the list hides it without
+clearing it: the warning shows only beside the message on screen, and a link
+held behind it cannot be confirmed from the list.
 
 Links in a flagged message never open from a single tap. The prototype draws the
 link as plain text (`prototype/Grace Prototype.html:1962`); here a tap holds it
@@ -494,23 +521,28 @@ an unbound mailbox cannot create or persist a draft. The draft contains
 sanitized message content, never credentials or tokens.
 Switching screens or disconnecting does not discard it. A hidden draft may be
 replaced only after its exact contents are durably saved; a failed or unsaved
-hidden draft remains recoverable and cannot be silently overwritten. Reply uses the selected
-message reference; the adapter supplies and validates the actual recipient,
-including a reply-to address that differs from the sender. No reply is sent
+hidden draft remains recoverable and cannot be silently overwritten. `startDraft`
+opens only a new, unaddressed message; a reply opens only through
+`replyToMessage` (next rule), so there is one reply path. No reply is sent
 merely by selecting an email. Trash exposes Restore and Delete forever, so
 reply and forwarding are unavailable until that message is restored.
 
 ```quint
-pure def canStartDraft(m: Mailbox, reply: bool, by: MailActor): bool =
-  (by == MailUser) and m.owner != "" and m.provider != "" and m.account != "" and
+pure def composerFree(m: Mailbox): bool =
+  m.owner != "" and m.provider != "" and m.account != "" and
   not(heldSend(m)) and not(draftStoreBusy(m)) and
-  (m.sendStatus == NoDraft or m.sendStatus == Sent or (not(m.composeVisible) and m.draftStorage == DraftSaved)) and
-  (not(reply) or (m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle))
-pure def startDraft(m: Mailbox, reply: bool, by: MailActor): Mailbox =
+  (m.sendStatus == NoDraft or m.sendStatus == Sent or (not(m.composeVisible) and m.draftStorage == DraftSaved))
+pure def replyable(m: Mailbox): bool =
+  composerFree(m) and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and
+  selectedMessageIsCurrent(m) and m.readStatus == ReadIdle
+pure def openComposer(replyTo: str, m: Mailbox): Mailbox =
   { ...m, sendStatus: Composing, draft: emptyContent, autoSubject: "",
     draftAttachments: List(), draftId: "", draftVersion: 0, composeVisible: true, draftStorage: DraftUnstored, storedRevision: -1,
-    replyTo: if (reply) m.messageRef else "", revision: m.revision + 1,
+    replyTo: replyTo, revision: m.revision + 1,
     approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
+pure def canStartDraft(m: Mailbox, reply: bool, by: MailActor): bool =
+  by == MailUser and not(reply) and composerFree(m)
+pure def startDraft(m: Mailbox, reply: bool, by: MailActor): Mailbox = openComposer("", m)
 pure def canEditDraft(m: Mailbox, by: MailActor): bool =
   (by == MailUser) and not(terminalUnsaved(m)) and not(draftStoreBusy(m)) and m.composeVisible and
   (m.sendStatus == Composing or m.sendStatus == Reviewing or m.sendStatus == SendFailed)
@@ -550,9 +582,13 @@ pure def currentDraft(m: Mailbox): DraftSnapshot = {
 
 Reply opens the composer already addressed, with the "Re:" subject and no
 recipient picker (`prototype/Grace Prototype.html:2197`). The connector reads the
-reply-to address of the message on screen, which may differ from its sender,
-and verifies it against the current read's generation; the host then dispatches
-`replyToMessage`. The recipient therefore never arrives as an edit the person
+reply address of the message on screen and verifies it against the current
+read's generation; the host then dispatches `replyToMessage`. The prototype
+addresses every reply to the sender (`m.from`,
+`prototype/Grace Prototype.html:2142,2197`); this spec deliberately follows the
+message's own reply-to header instead, which may name a different address, as
+mail clients do, and the connector supplies whichever address that header
+names. The recipient therefore never arrives as an edit the person
 did not make, and a stale header from an earlier read cannot address the reply.
 The automatic subject is remembered, so it alone does not make the composer
 worth keeping (`prototype/Grace Prototype.html:2199`).
@@ -560,10 +596,10 @@ worth keeping (`prototype/Grace Prototype.html:2199`).
 ```quint
 type ReplyHeader = { generation: int, address: str, subject: str, verified: bool }
 pure def canReplyToMessage(m: Mailbox, header: ReplyHeader, by: MailActor): bool =
-  (by == MailConnector or by == MailHost) and m.view == Message and canStartDraft(m, true, MailUser) and
+  (by == MailConnector or by == MailHost) and m.view == Message and replyable(m) and
   header.generation == m.generation and header.verified and header.address != ""
 pure def replyToMessage(m: Mailbox, header: ReplyHeader, by: MailActor): Mailbox =
-  { ...startDraft(m, true, MailUser), draft: { ...emptyContent, to: header.address, subject: header.subject },
+  { ...openComposer(m.messageRef, m), draft: { ...emptyContent, to: header.address, subject: header.subject },
     autoSubject: header.subject }
 pure def lawReplyIsAddressedFromVerifiedHeader(m: Mailbox, header: ReplyHeader, by: MailActor): bool =
   canReplyToMessage(m, header, by) implies
@@ -576,25 +612,37 @@ pure def sometimesReplyAddressed(m: Mailbox): bool = m.composeVisible and m.repl
 
 When the person asks Grace to answer the email on screen, Grace writes the body
 in the person's voice and the reply opens with her words in it; she points at
-Send and never sends (`prototype/Grace Prototype.html:2107,2142`). Her draft is
-an ordinary reply: addressed from the connector's verified header, visible in
-the composer, at a new revision and with no approval. Only the person's Send tap
+Send and never sends (`prototype/Grace Prototype.html:2107,2142`). Her request
+first opens an ordinary reply through `replyToMessage`, so the connector, not
+Grace, supplies its recipient and subject from the verified header; Grace then
+adds only the body to that open, still empty reply (`proposeReplyDraft`). She
+cannot change who it goes to, and she never writes over words the person typed.
+Unlike the prototype, which builds the whole reply from Grace's request in one
+step (`prototype/Grace Prototype.html:2142`), nothing Grace sends can address
+an email. Her draft is visible in the composer, at a new revision and with no
+approval. Only the person's Send tap
 (`confirmVisibleSend`) or explicit approval (`approveDraft`) at that exact
 revision approves a draft, and only an approved current revision is dispatched,
 so a draft Grace wrote reaches Sending only after the person approved exactly
 what she sees.
 
 ```quint
-pure def canProposeReplyDraft(m: Mailbox, header: ReplyHeader, body: str, visible: bool, asked: bool, by: MailActor): bool =
-  by == MailAssistant and visible and asked and body != "" and canReplyToMessage(m, header, MailConnector)
-pure def proposeReplyDraft(m: Mailbox, header: ReplyHeader, body: str, visible: bool, asked: bool, by: MailActor): Mailbox =
-  { ...replyToMessage(m, header, MailConnector), draft: { ...emptyContent, to: header.address, subject: header.subject, body: body } }
-pure def lawGraceReplyIsUnapproved(m: Mailbox, header: ReplyHeader, body: str, visible: bool, asked: bool, by: MailActor): bool =
-  canProposeReplyDraft(m, header, body, visible, asked, by) implies
-    (proposeReplyDraft(m, header, body, visible, asked, by).approvedRevision == -1 and
-      proposeReplyDraft(m, header, body, visible, asked, by).composeVisible and
-      proposeReplyDraft(m, header, body, visible, asked, by).sendStatus == Composing and
-      proposeReplyDraft(m, header, body, visible, asked, by).revision > m.revision)
+pure def canProposeReplyDraft(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
+  by == MailAssistant and visible and asked and body != "" and canEditDraft(m, MailUser) and
+  m.replyTo != "" and m.replyTo == m.messageRef and selectedMessageIsCurrent(m) and
+  m.draft.to != "" and m.draft.body == ""
+pure def proposeReplyDraft(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): Mailbox =
+  editDraft(m, { ...m.draft, body: body }, MailUser)
+pure def lawGraceReplyIsUnapproved(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
+  canProposeReplyDraft(m, body, visible, asked, by) implies
+    (proposeReplyDraft(m, body, visible, asked, by).approvedRevision == -1 and
+      proposeReplyDraft(m, body, visible, asked, by).composeVisible and
+      proposeReplyDraft(m, body, visible, asked, by).sendStatus == Composing and
+      proposeReplyDraft(m, body, visible, asked, by).revision > m.revision)
+pure def lawGraceReplyKeepsTheAddress(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
+  canProposeReplyDraft(m, body, visible, asked, by) implies
+    (proposeReplyDraft(m, body, visible, asked, by).draft == { ...m.draft, body: body } and
+      proposeReplyDraft(m, body, visible, asked, by).replyTo == m.replyTo)
 pure def stepOnlyThePersonApproves(before: Mailbox, via: str, after: Mailbox): bool =
   (after.approvedRevision != -1 and after.approvedRevision != before.approvedRevision) implies
     (via == "confirmVisibleSend" or via == "approveDraft")
@@ -602,7 +650,7 @@ pure def stepSendingNeedsCurrentApproval(before: Mailbox, via: str, after: Mailb
   (after.sendStatus == Sending and before.sendStatus != Sending) implies
     (via == "sendDraft" and before.approvedRevision == before.revision)
 pure def sometimesGraceReplyOpen(m: Mailbox): bool =
-  m.composeVisible and m.replyTo != "" and m.draft.body != "" and m.draftVersion == 0 and m.approvedRevision == -1
+  m.composeVisible and m.replyTo != "" and m.draft.to != "" and m.draft.body != "" and m.approvedRevision == -1
 ```
 
 ### Only the current approved draft may dispatch and an unknown send cannot retry
@@ -759,9 +807,15 @@ pure def sometimesSavedDraftReopened(m: Mailbox): bool = m.composeVisible and m.
 
 A composer is worth keeping when it already has a stored draft, a body, an
 attachment, or a subject the person typed rather than the automatic "Re:" or
-"Fwd:" one (`prototype/Grace Prototype.html:2199`). Back and Close both use
-this one test, so a subject the person typed is kept on Close too, where the
-prototype's Close (`prototype/Grace Prototype.html:2156`) would drop it. A
+"Fwd:" one. The prototype's Back (`prototype/Grace Prototype.html:2199`) keeps a
+body, an attachment, or a typed subject on a new message only. This spec
+departs from it in three ways, on purpose. A subject the person typed is kept
+on a reply too, where the prototype drops any reply subject (`!c.replyTo`), so
+words the person wrote are never lost. A composer reopened from a stored draft
+counts even when emptied, so closing it never silently abandons that stored
+draft; only Discard removes it. Back and Close both use this one test, so a
+typed subject is kept on Close too, where the prototype's Close
+(`prototype/Grace Prototype.html:2156`) would drop it. A
 composer worth keeping is preserved (`preserveDraft`); any other closes without
 being stored (`closeEmptyComposer`), as the prototype drops it. A composer worth
 keeping never ends with no draft except through the person's Discard: at once
