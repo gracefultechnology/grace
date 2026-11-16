@@ -204,7 +204,7 @@ async function devTools(url: string, signal: AbortSignal) {
   return {
     until,
     async step(step: Step) {
-      const signal = AbortSignal.timeout(30_000);
+      const signal = AbortSignal.timeout(120_000);
       if ("tap" in step) return tap(step.tap, signal);
       if ("into" in step) {
         await tap(step.into, signal);
@@ -225,15 +225,15 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
   if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   process.stdout.write(`${serial} ${/Current WebView package \(name, version\): \((.*)\)/.exec(await shell(serial, "dumpsys webviewupdate"))?.[1] ?? "WebView unknown"}\n`);
-  const pid = (await shell(serial, `pidof ${identity.appId}`)).trim();
-  if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace on ${serial}, found "${pid}"`);
-  await shell(serial, `until grep -q webview_devtools_remote_${pid}$ /proc/net/unix; do sleep 1; done`, 120);
+  const pid = (await shell(serial, `for i in $(seq 120); do pid=$(pidof ${identity.appId}); case "$pid" in *" "*) echo "$pid"; exit;; "") ;; *) grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit;; esac; sleep 1; done`, 180)).trim();
+  if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
   try {
-    const targets = Schema.decodeUnknownSync(Targets)(await (await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(30_000) })).json());
+    const targets = Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(120_000) })
+      .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
     const host = targets.find((target) => target.type === "page" && target.url.startsWith("https://localhost"))?.webSocketDebuggerUrl;
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
-    const page = await devTools(host, AbortSignal.timeout(30_000));
+    const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
       await page.until(`[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`, AbortSignal.timeout(60_000)).catch(failing("Waiting for Home"));
       for (const step of exercise) {

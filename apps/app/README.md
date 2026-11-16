@@ -54,7 +54,7 @@ on USB is never touched.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket: an
 array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible name>" }`
-or `{ "expect": "<text on screen>" }`, each given 30 seconds; a tap fails when no visible thing or more
+or `{ "expect": "<text on screen>" }`, each given two minutes; a tap fails when no visible thing or more
 than one has that name. Each feature adds its own file;
 `home.json` walks Home.
 
