@@ -70,8 +70,9 @@ export function FilesCard({ title = "Files", photos, document, layout = "recent"
         <span className="grid grid-cols-2 gap-3">{photos.slice(0, 4).map((p) => photo(p, "h-[140px] rounded-xl"))}</span>
       )}
       {document && (
-        // Prototype `hmDoc()`, `#home .hfdoc .lpanel`: at the bottom, 24px in.
-        <Panel variant="white" className="mt-auto flex flex-none items-center gap-4 px-3.5 py-2.5">
+        // Prototype `hmDoc()`, `#home .hfdoc .lpanel`: at the bottom, 24px in. In `pile` and `grid` the prototype's fitTops() takes
+        // `.hfdoc` for the card's body and sets its top 16px under the title, so the row lies there, over the photos.
+        <Panel variant="white" className={cn("flex flex-none items-center gap-4 px-3.5 py-2.5", layout === "recent" ? "mt-auto" : "absolute inset-x-0 top-0")}>
           <span className="flex h-[52px] w-11 flex-none flex-col items-center justify-center gap-0.5 rounded-md bg-card text-[11px] leading-none font-extrabold text-destructive shadow-badge">
             <FileIcon strokeWidth={2} className="size-5.5" />
             {document.kind ?? "PDF"}

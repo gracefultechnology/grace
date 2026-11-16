@@ -122,7 +122,9 @@ export function WifiJoinForm({
             placeholder={passwordPlaceholder}
             autoComplete="off"
             invalid={!!error}
-            className="h-16 flex-1"
+            // Prototype wifiPage(): the browser rewrites its inline #B3261E to rgb(), so `#awin input.v[style*="B3261E"]` never
+            // matches and a refused password shows the plain glass capsule; the error line says why.
+            className="h-16 flex-1 aria-invalid:shadow-capsule aria-invalid:focus:shadow-field-focus"
           />
           <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px]" onClick={() => onShowPasswordChange?.(!showPassword)}>
             {showPassword ? hideLabel : showLabel}
