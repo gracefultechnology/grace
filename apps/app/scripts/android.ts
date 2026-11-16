@@ -28,6 +28,7 @@ const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.String }),
   Schema.Struct({ type: Schema.String, into: Schema.String }),
+  Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.String }),
 ]);
 type Step = typeof Step.Type;
@@ -209,6 +210,10 @@ async function devTools(url: string, signal: AbortSignal) {
       if ("into" in step) {
         await tap(step.into, signal);
         return void await send("Input.insertText", { text: step.type }, Nothing, signal);
+      }
+      if ("press" in step) {
+        for (const type of ["keyDown", "keyUp"]) await send("Input.dispatchKeyEvent", { type, key: step.press, code: step.press, windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) }, Nothing, signal);
+        return;
       }
       return until(`document.body.innerText.includes(${JSON.stringify(step.expect)})`, signal);
     },

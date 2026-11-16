@@ -53,7 +53,7 @@ on an emulator that is already running; it refuses any serial that is not an emu
 on USB is never touched.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket: an
-array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible name>" }`
+array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible name>" }`, `{ "press": "Enter" }`
 or `{ "expect": "<text on screen>" }`, each given two minutes; a tap fails when no visible thing or more
 than one has that name. Each feature adds its own file;
 `home.json` walks Home.
