@@ -11,7 +11,7 @@ export type AccountFoldProps = Omit<ComponentProps<"div">, "title"> & {
   children: ReactNode;
 };
 
-/** A row that opens in place to show what it holds, as Settings' licences do (prototype `.a-row`). */
+/** A row that opens in place to show what it holds (prototype `.a-row`). */
 export function AccountFold({ title, defaultOpen = false, className, children, ...props }: AccountFoldProps) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
