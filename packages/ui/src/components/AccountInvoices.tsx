@@ -10,31 +10,22 @@ import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 
-/** What the billing company says of an invoice. Only `paid` is confirmed paid. */
 export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible";
 
-/** One invoice in the list. Dates and amounts come written as the app shows them. */
 export interface InvoiceSummary {
   id: string;
-  /** "Nov 1, 2026". */
   date: string;
   status: InvoiceStatus;
 }
 
-/** One invoice in full, read only. */
 export interface InvoiceDetail extends InvoiceSummary {
   number?: string;
-  /** What the invoice asks for: "$25.00". */
   amount: string;
-  /** What was paid of it. */
   paid: string;
   dueDate?: string;
   paidOn?: string;
-  /** An automatic credit purchase, line by line, when its lines add up. */
   breakdown?: { credit: string; serviceFee: string; handlingFee: string; total: string };
-  /** The invoice's PDF can be opened. */
   pdf?: boolean;
-  /** The billing company's own page for it can be opened. */
   merchantPage?: boolean;
 }
 
@@ -106,7 +97,6 @@ export const accountInvoicesLabels: AccountInvoicesLabels = {
   back: "Back to invoices",
 };
 
-// Only a paid invoice is good news; an open one waits on the billing company; the others ask nothing of her.
 const tones: Record<InvoiceStatus, { icon: LucideIcon; tone: string }> = {
   paid: { icon: CircleCheck, tone: "text-ok inset-ring-ok/30" },
   open: { icon: Clock, tone: "text-warn inset-ring-warn/30" },

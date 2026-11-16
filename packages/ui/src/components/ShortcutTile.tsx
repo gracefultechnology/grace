@@ -45,7 +45,6 @@ export function ShortcutTile({ label, icon = <Globe size={30} strokeWidth={2} ar
       }}
       className={cn(
         focusRing,
-        // As LauncherCard (prototype `.lc`): no press, since `hmApply`'s inline transform hides `.lc:active`'s scale.
         "relative flex h-[140px] w-[200px] cursor-pointer flex-col items-start justify-between rounded-card bg-glass/40 p-5 text-left font-sans text-foreground shadow-launcher",
         className,
       )}
@@ -54,7 +53,6 @@ export function ShortcutTile({ label, icon = <Globe size={30} strokeWidth={2} ar
       <span className="text-primary">{icon}</span>
       <span className="text-body-lg leading-[30px] font-bold">{label}</span>
       {tag && (
-        // senior-care shortcut-management.css `.home-tile__tag`: a pill, 4px 12px, the small size (17px) in bold.
         <span className={cn("absolute top-4 right-4 rounded-full px-3 py-1 text-label leading-[22px] font-bold", tagTone === "warn" ? "bg-warn/12 text-warn" : "bg-primary/10 text-primary")}>{tag}</span>
       )}
     </button>

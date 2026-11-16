@@ -5,7 +5,6 @@ import { TaskProblem } from "./TaskProblem.tsx";
 import { TextField } from "./TextField.tsx";
 
 export type PaymentAmountChoiceLabels = {
-  /** The field's question: "How much do you want to pay City Water?" */
   question: string;
   use: string;
   keep: string;

@@ -28,7 +28,6 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
   bill?: Omit<BillOfferProps, "confirmed" | "onConfirm" | "onDismiss">;
 };
 
-
 /**
  * One event's details, a line each with its icon, then Edit and Delete (prototype `calView` detail).
  * @model spec/app/calendarView.md
@@ -45,7 +44,6 @@ export function CalendarEventDetail({ when, where, who, reminder, repeat, note, 
   ] as const;
   return (
     <div className={cn("font-sans", className)} {...props}>
-      {/* Prototype `.a-panel` with `max-width:880px;padding-top:8px`. */}
       <Panel className="max-w-[880px] pt-2">
         <ul className="m-0 list-none p-0">
           {lines.map(([glyph, text]) =>
@@ -60,9 +58,7 @@ export function CalendarEventDetail({ when, where, who, reminder, repeat, note, 
           )}
         </ul>
       </Panel>
-      {/* spec/app/handoffs.md, "Story: Open the same bill from any surface": a saved bill occurrence opens its bill. */}
       {bill && <BillOffer confirmed {...bill} className="mt-3.5 max-w-[880px]" />}
-      {/* Prototype `.a-btns` with `margin-top:22px`; `.a-btn` is `20px/1` and has no transition, its press snaps. */}
       <div className="mt-[22px] flex flex-wrap gap-3">
         <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none transition-none" onClick={onEdit}>
           <CalendarGlyph name="pencil" size={22} />

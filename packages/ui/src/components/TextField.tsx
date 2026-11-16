@@ -13,7 +13,6 @@ type Field = Omit<ComponentProps<"input">, "children"> & {
   invalid?: boolean;
 };
 
-/** The capsule both fields share: its ring lights while the input inside has focus. */
 function Capsule({ icon, action, invalid = false, className, ...props }: Field) {
   return (
     <div className={cn(fieldCapsule, "focus-within:shadow-field-focus", className)}>
@@ -50,6 +49,5 @@ export type SearchFieldProps = Omit<Field, "icon" | "type"> & {
 
 /** A search capsule with an indigo magnifier, such as "Search email" (prototype .a-search). */
 export function SearchField({ label = "Search", placeholder, className, ...props }: SearchFieldProps) {
-  // prototype .a-search: 14px from the magnifier, and the input's own 2px inset before the words.
   return <Capsule type="search" aria-label={label} placeholder={placeholder ?? label} icon={<Search size={26} strokeWidth={2.2} aria-hidden className="shrink-0 text-primary" />} className={cn("gap-3.5 [&_input]:px-0.5", className)} {...props} />;
 }

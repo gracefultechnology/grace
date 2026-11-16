@@ -7,12 +7,10 @@ import { SunIcon } from "./SettingsBrightness.tsx";
 import { SettingsLargeTitleContext } from "./SettingsPageHeading.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
 
-/** Settings' pages, in the side list's order. */
 export type SettingsPage = "text-size" | "brightness" | "voice" | "wifi" | "account" | "privacy" | "about";
 
 const icons: Record<SettingsPage, ReactNode> = {
   "text-size": (
-    // Prototype `AXP.type`: square corners, unlike Lucide's Type.
     <svg aria-hidden width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 7V4h16v3" />
       <path d="M9 20h6" />
@@ -27,7 +25,6 @@ const icons: Record<SettingsPage, ReactNode> = {
   about: <Info size={26} strokeWidth={2} aria-hidden />,
 };
 
-/** The prototype's side list (`setView()`); the app adds "account" after Wi-Fi and "privacy" where saved details are kept (senior-care `SettingsScreen` `SECTIONS`). */
 const prototypePages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "about"];
 
 const defaultLabels: Record<SettingsPage, string> = {

@@ -27,7 +27,6 @@ export type RailProps = ComponentProps<"nav"> & {
  * @design packages/design-system/design.md#glass
  */
 export function Rail({ battery, batteryLabel, time, period, date, status, footer, ask, className, children, ...props }: RailProps) {
-  // Prototype `.rail` (lines 52, 305, 652): a 132px glass column; `.time`, `.ampm`, `.rdate`, `.tiles`, `.rdiv`.
   return (
     <nav
       className={cn(
@@ -54,7 +53,6 @@ export function Rail({ battery, batteryLabel, time, period, date, status, footer
 
 const RailDivider = ({ className }: { className?: string }) => <div className={cn("h-px w-[84px] shrink-0 bg-foreground/10", className)} />;
 
-/** The battery glyph, filled to the charge. */
 function Battery({ level, label, className }: { level: number; label?: string; className?: string }) {
   const charge = Math.max(0, Math.min(100, level));
   return (
@@ -77,7 +75,6 @@ export type RailButtonProps = ComponentProps<"button"> & {
 
 /** One of the rail's buttons: an icon over its word. */
 export function RailButton({ icon, label, selected = false, type = "button", className, ...props }: RailButtonProps) {
-  // Prototype `.tile`, `.tile:active`, `.rail .tile.on`.
   return (
     <button
       type={type}
@@ -103,7 +100,6 @@ export type WifiSlashProps = ComponentProps<"svg"> & {
 
 /** The Wi-Fi glyph struck through in red: not connected. Decorative; name the state on what it sits in. */
 export function WifiSlash({ size = 28, ...props }: WifiSlashProps) {
-  // Prototype `wifiSlash()`: the arcs are cut where the slash crosses them.
   const mask = `wifi${useId().replace(/[^\w-]/g, "")}`;
   return (
     <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>

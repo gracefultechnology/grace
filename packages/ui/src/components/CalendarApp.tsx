@@ -14,7 +14,6 @@ import { CalendarWeekStrip, type CalendarWeekStripProps } from "./CalendarWeekSt
 import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 
-/** An event in a list, with the id `onOpenEvent` is called with. */
 export type CalendarEventItem = Omit<CalendarEventRowProps, "onClick"> & {
   id: string;
 };
@@ -108,7 +107,6 @@ export function CalendarApp({
       <div className="flex flex-col gap-3">
         {items.map(({ id, ...item }) => {
           const row = <CalendarEventRow key={id} {...item} onClick={() => onOpenEvent?.(id)} />;
-          // Prototype axGuide() on an `ev` row (JS 2136, 2137, 2172): the ring follows the row's 22px corners.
           return id === targetId ? <GuideAnchor key={id} radius={22} className="flex" {...pointing}>{row}</GuideAnchor> : row;
         })}
       </div>
@@ -131,7 +129,6 @@ export function CalendarApp({
         backLabel={title}
         onBack={onBack}
         actions={
-          // Prototype `#ahdr .pill.prom` (line 673) keeps its indigo and white words while `aria-disabled`; its spinner is white on a filled surface (line 434), the check's size.
           <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary disabled:text-primary-foreground disabled:opacity-100 [&>svg]:size-[22px] [&>svg]:text-primary-foreground" disabled={!canSave} loading={saving} onClick={onSave}>
             {!saving && <Check {...pill} />}
             {labels.save}
@@ -139,7 +136,6 @@ export function CalendarApp({
         }
         {...props}
       >
-        {/* Prototype `.a-caution`, as the Wi-Fi password's refusal shows it (line 2006). */}
         {saveStatus === "failed" && (
           <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-[18px]">
             {saveError}
@@ -156,11 +152,9 @@ export function CalendarApp({
       icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />}
       actions={
         <>
-          {/* Prototype `#awin .aphdr .hgrp .pill:not(.prom)` (line 677): pressed, it stays clear and sinks to 97% (line 667) on `.pill`'s spring. */}
           <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")} onClick={onToday}>
             {labels.today}
           </Button>
-          {/* Prototype `#ahdr .pill.prom` (line 673): its indigo is `!important`, so a press only grows it. */}
           <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary" onClick={onAdd}>
             <Plus {...pill} />
             {labels.add}
@@ -175,7 +169,6 @@ export function CalendarApp({
       ) : (
         <>
           <CalendarWeekStrip days={week} onSelect={onSelectDay} />
-          {/* Prototype: the day's heading at `margin:26px 0 14px`, "Coming up" at `24px 0 14px`. */}
           <div className="mt-[26px] mb-3.5 flex items-baseline gap-3.5">
             <PageHeading level="title">{dayHeading}</PageHeading>
             {dayEvents.length === 0 && <PageText tone="secondary">{emptyLabel}</PageText>}

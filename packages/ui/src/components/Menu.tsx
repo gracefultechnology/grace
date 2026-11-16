@@ -4,31 +4,24 @@ import { cva } from "class-variance-authority";
 import { Check } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 
-/** Where a menu opens: over the frame as frosted glass (.spdpop), or over an app window's page (.apop). */
 export type MenuSurface = "glass" | "page";
 
-/** The panel of a menu, shared with a list built on another primitive, such as the Calendar form's picker. */
 export const menuPanel = cva("z-50 flex flex-col gap-2 rounded-menu p-2 outline-none", {
   variants: {
     surface: {
-      // .spdpop: 270px inside 8px of padding.
       glass: "min-w-[286px] bg-glass/86 shadow-menu backdrop-blur-frost backdrop-saturate-160",
-      // .apop: near-white, no blur, 320px inside 8px of padding (content-box).
       page: "min-w-[336px] bg-glass/95 shadow-popover",
     },
   },
   defaultVariants: { surface: "glass" },
 });
 
-/** One option of a menu, shared as `menuPanel` is. */
 export const menuOption = cva(
   [focusRing, "flex w-full cursor-pointer items-center gap-2 rounded-full px-[22px] text-body font-bold text-grace-ink outline-none select-none data-[disabled]:text-grace-ink/38"],
   {
     variants: {
       surface: {
-        // .spdo
         glass: "h-16 bg-glass/70 data-[highlighted]:bg-glass",
-        // "#awin .apop .spdo" and ".apop .spdo": 60px on a pale panel, reading from the left.
         page: "h-15 flex-none justify-start bg-panel",
       },
       selected: { true: "bg-card text-primary shadow-raised data-[highlighted]:bg-card", false: "" },

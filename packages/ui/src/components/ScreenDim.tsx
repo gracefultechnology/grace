@@ -14,7 +14,6 @@ export type ScreenDimProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function ScreenDim({ brightness, className, style, ...props }: ScreenDimProps) {
   return (
-    // Prototype `.axdim` and applyBright(): black at (100 − brightness)% of 0.6, over everything (z-index 60).
     <div
       aria-hidden
       className={cn("pointer-events-none absolute inset-0 z-60 bg-dim", className)}

@@ -54,7 +54,6 @@ export function WifiTrustDialog({
 }: WifiTrustDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onCancel?.()}>
-      {/* Prototype `.a-dlg`: 560px plus its 32px padding (content-box), its parts spaced only by their own margins. */}
       <DialogContent className={cn("gap-0", className)} {...props}>
         <div className="flex items-center gap-3.5">
           <span className="flex size-14 flex-none items-center justify-center rounded-xl bg-panel text-primary">

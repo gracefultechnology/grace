@@ -8,14 +8,8 @@ import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 import { SignInCodeField } from "./SignInCodeField.tsx";
 import { TextField } from "./TextField.tsx";
 
-/** How Margaret signs in: a code by email or text, or Google's own page. */
 export type SignInMethod = "email" | "phone" | "google";
 
-/**
- * Where the sign-in stands: `choose` a method; `start` the address to send a code to (Google: open its page);
- * `waiting` for Google's page; `code` the code sent; `saved` an unfinished sign-in can be finished; `unavailable` the
- * sign-in could not be checked; `signing-out` the account is disconnected and signing out must be finished.
- */
 export type AccountSignInStep = "choose" | "start" | "waiting" | "code" | "saved" | "unavailable" | "signing-out";
 
 export type AccountSignInLabels = {

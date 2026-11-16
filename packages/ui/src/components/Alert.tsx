@@ -10,7 +10,6 @@ const alertVariants = cva("rounded-md border-l-4 bg-muted px-4 py-3 text-sm text
       ok: "border-ok",
       warn: "border-warn",
       destructive: "border-destructive",
-      // Prototype `.a-caution`: a warning about safety, such as a scam email.
       caution: "flex items-center gap-4 rounded-row border-0 bg-caution px-5 py-4 text-[21px] leading-7 font-semibold inset-ring-[1.5px] inset-ring-destructive/22",
     },
   },

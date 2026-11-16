@@ -1,10 +1,8 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
 
-/** A box on the page, in pixels from the top-left corner of the layer the guidance is drawn on. */
 export type GuideRect = { x: number; y: number; width: number; height: number };
 
-/** How far outside each edge of the target the ring's line sits; negative sits inside it. */
 export type GuideGap = number | { top: number; right: number; bottom: number; left: number };
 
 export type GuideRingProps = Omit<ComponentProps<"div">, "children"> & {
@@ -22,8 +20,6 @@ export type GuideRingProps = Omit<ComponentProps<"div">, "children"> & {
   motion?: "pulse" | "tap" | "still";
 };
 
-// Prototype `.gring`, `.gring.ok`, `.gring.tight`, `.gring.tight.ok`: the ring's shadow token and its pulse, by tone and spacing.
-// The shadow is set alone, not through `shadow-*` and its four empty layers, so each pulse keyframe changes it layer for layer.
 const looks = {
   guide: [["--shadow-guide", "animate-guide-pulse"], ["--shadow-guide-tight", "animate-guide-pulse-tight"]],
   ok: [["--shadow-guide-ok", "animate-guide-pulse-ok"], ["--shadow-guide-tight-ok", "animate-guide-pulse-tight-ok"]],
@@ -35,7 +31,6 @@ const looks = {
  * @design packages/design-system/design.md#guidance
  */
 export function GuideRing({ rect, gap = 8, radius = 12, tone = "guide", tight = false, motion = "pulse", className, style, ...props }: GuideRingProps) {
-  // Prototype ringBox(): each edge offset on its own.
   const { top, right, bottom, left } = typeof gap === "number" ? { top: gap, right: gap, bottom: gap, left: gap } : gap;
   const [shadow, pulse] = looks[tone][Number(tight)];
   return (
@@ -44,13 +39,11 @@ export function GuideRing({ rect, gap = 8, radius = 12, tone = "guide", tight = 
       className={cn(
         "pointer-events-none absolute motion-reduce:animate-none",
         pulse,
-        // `.gring` beats three times; `.gring.tapt` until it is tapped; `.gring.sel` and `.gring.dash` hold still.
         motion === "pulse" && "[animation-iteration-count:3]",
         motion === "still" && "animate-none",
         className,
       )}
       style={{
-        // `.gring.anch`: inset by the gap from its element's edges, whatever size it takes.
         ...(rect ? { left: rect.x - left, top: rect.y - top, width: rect.width + left + right, height: rect.height + top + bottom } : { left: -left, top: -top, right: -right, bottom: -bottom }),
         borderRadius: radius,
         boxShadow: `var(${shadow})`,

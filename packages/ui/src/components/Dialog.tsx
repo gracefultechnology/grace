@@ -34,7 +34,6 @@ export function DialogContent({ closeLabel, className, children, ...props }: Dia
       <DialogPrimitive.Content
         aria-describedby={undefined}
         className={cn("fixed top-1/2 left-1/2 box-border flex w-[calc(100%-2rem)] max-w-[624px] -translate-1/2 flex-col gap-2 rounded-screen bg-card p-8 text-foreground shadow-dialog outline-none", className)}
-        // Prototype `.a-dlg` opens with no button ringed: the panel itself takes focus, as WifiSignInSheet's does.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           (event.currentTarget as HTMLElement).focus();
@@ -43,7 +42,6 @@ export function DialogContent({ closeLabel, className, children, ...props }: Dia
       >
         {children}
         {closeLabel && (
-          // Prototype `.hgrp .winx`: a round 56px ✕ with no fill, `axi('x',24,1.75)`; a tap shows a faint disc (.winx:active).
           <DialogPrimitive.Close asChild>
             <Button variant="plain" size="compact-icon" aria-label={closeLabel} className="absolute top-5 right-5">
               <X aria-hidden size={24} strokeWidth={1.75} />

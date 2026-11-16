@@ -17,7 +17,6 @@ export type SplitViewProps = ComponentProps<"div"> & {
   pageRef?: Ref<HTMLDivElement>;
 };
 
-// Prototype `#awin.splitw .a-split>div:last-child`: `.icmode` and `.lgmode.hasback` 84px, `.lgmode` 12px, none 18px, none `.hasback` 88px.
 const pageTops = { header: "pt-[84px]", beside: "pt-3", clear: "pt-[18px]", clearBack: "pt-[88px]" } as const;
 
 /**
@@ -26,8 +25,6 @@ const pageTops = { header: "pt-[84px]", beside: "pt-3", clear: "pt-[18px]", clea
  */
 export function SplitView({ nav, header, pageTop = "header", onPageScroll, pageRef, className, children, ...props }: SplitViewProps) {
   return (
-    // Prototype `#awin.splitw .pg.hassplit` and `.a-split`: 16px around, a 270px list, 24px apart; the page column
-    // reaches the window's edge (`margin:0 -24px 0 0; padding-right:24px`).
     <div className={cn("relative grid h-full grid-cols-[270px_minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
       {nav}
       <div
@@ -37,7 +34,6 @@ export function SplitView({ nav, header, pageTop = "header", onPageScroll, pageR
       >
         {children}
       </div>
-      {/* Prototype `#awin.splitw .aphdr`: the header spans the page column only. */}
       {header != null && <div className="pointer-events-none absolute top-0 right-0 left-[310px]">{header}</div>}
     </div>
   );
@@ -48,7 +44,6 @@ export type SideNavProps = ComponentProps<"nav">;
 /** The side list of a split app window: lighter glass floating inside the window, with a bright rim. */
 export function SideNav({ className, children, ...props }: SideNavProps) {
   return (
-    // Prototype `#awin.splitw .a-split>.a-nav`, last rule.
     <nav
       className={cn(
         "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-sidebar backdrop-blur-frost backdrop-saturate-160",
@@ -73,7 +68,6 @@ export type SideNavItemProps = ComponentProps<"button"> & {
 /** One place in a `SideNav`: an icon, a label and an optional count. */
 export function SideNavItem({ icon, count, selected = false, type = "button", className, children, ...props }: SideNavItemProps) {
   return (
-    // Prototype `.a-nav .a-ni`, selected as `.a-nav .a-ni.sel` (the shared selected platter).
     <button
       type={type}
       aria-current={selected ? "page" : undefined}

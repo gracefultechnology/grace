@@ -2,7 +2,6 @@ import { HomeMailRow, type HomeMailRowProps } from "./HomeMailRow.tsx";
 import { HomeWaiting } from "./HomeWaiting.tsx";
 import { LauncherCard, type LauncherCardProps, LauncherRows } from "./LauncherCard.tsx";
 
-/** One email on the card. */
 export type HomeMail = Omit<HomeMailRowProps, "className" | "id"> & { id: string | number };
 
 export type HomeEmailCardProps = Omit<LauncherCardProps, "title" | "children" | "art"> & {
@@ -22,7 +21,6 @@ export type HomeEmailCardProps = Omit<LauncherCardProps, "title" | "children" | 
  * @design packages/design-system/design.md#glass
  */
 export function HomeEmailCard({ title = "Email", messages, waiting, compact = false, size = "medium", ...props }: HomeEmailCardProps) {
-  // Prototype `homeCards()`: the rows start 100px down, 12px apart, and keep to 12px above the card's bottom.
   return (
     <LauncherCard title={title} size={size} compact={compact} {...props}>
       <LauncherRows className="-mb-2.5 gap-y-3">

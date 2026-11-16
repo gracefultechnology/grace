@@ -19,7 +19,6 @@ export type GuideAnchorProps = Omit<ComponentProps<"span">, "title"> & {
   closeLabel?: string;
 };
 
-// Prototype axGuide(): the ring 8px outside the element.
 const gap = 8;
 
 /**
@@ -35,8 +34,6 @@ export function GuideAnchor({ children, radius = 12, kind = "point", title, onCl
       {children}
       <GuideRing gap={gap} radius={Math.min(radius + gap, 999)} tone={kind === "confirm" ? "ok" : "guide"} motion={instruction ? "tap" : "pulse"} />
       {instruction && title && (
-        // `.glab.anch`: 22px right of the target, its bottom 22px below the target's middle (at most 40px down), always with its
-        // `.glx`; it takes taps, unlike `#ov .glab` over a website.
         <GuideLabel
           title={title}
           closable

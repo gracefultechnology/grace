@@ -87,8 +87,6 @@ export function FilePhotoViewer({
   return (
     <AppWindow
       actions={
-        // Prototype `filesView()` (JS 1983): Share with `fwd`, Delete with the line-less `trash`.
-        // Prototype `#awin .aphdr .hgrp .pill:not(.prom)`: pressed, each stays clear and sinks to 97% (`#ahdr .pill:not(.prom):active`).
         <>
           <Button variant="plain" size="compact" className={headerPill} onClick={onShare}>
             <Forward {...pill} />
@@ -105,7 +103,6 @@ export function FilePhotoViewer({
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <PhotoStage src={src} alt={alt} onPrevious={first ? undefined : onPrevious} onNext={last ? undefined : onNext} previousLabel={previousLabel} nextLabel={nextLabel} />
         {deleteError != null && (
-          // spec/app/files.md, "Delete is the explicit local action and does not delete its source email": failure keeps the photo.
           <RetryNotice className="w-[780px]" onRetry={onRetryDelete} retryLabel={retryLabel}>
             {deleteError}
           </RetryNotice>

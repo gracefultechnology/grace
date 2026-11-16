@@ -3,7 +3,6 @@ import { cn } from "../lib/cn.ts";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceBubble } from "./GraceBubble.tsx";
 
-/** What the conversation needs: a plan (a turn refused with 402) or her account (refused while signed out). */
 export type FundingPromptKind = "plan" | "account";
 
 export type FundingPromptLabels = Record<FundingPromptKind, { name: string; line: string; detail: string }> & {
@@ -36,7 +35,6 @@ export type FundingPromptProps = ComponentProps<"section"> & {
 export function FundingPrompt({ kind = "plan", onSetUp, onLater, labels, className, ...props }: FundingPromptProps) {
   const l = { ...fundingPromptLabels, ...labels };
   const lineRef = useRef<HTMLSpanElement>(null);
-  // senior-care FundingPrompt.tsx, J-18: the line is announced and focused when the prompt appears.
   useEffect(() => {
     lineRef.current?.focus({ preventScroll: true });
   }, [kind]);

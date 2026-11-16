@@ -26,7 +26,6 @@ export type MailNoticeProps = Omit<ComponentProps<"div">, "children"> & {
 export function MailNotice({ tone = "caution", children, actionLabel, onAction, className, ...props }: MailNoticeProps) {
   const offline = tone === "offline";
   const action = actionLabel && (
-    // Prototype `.a-btn`, offline the banner's `.a-btn.prom` at `height:56px`.
     <Button variant={offline ? "prominent" : "capsule"} size="compact" className={cn("ml-auto", offline ? appProminent : cn(appButton, "text-grace-ink"))} onClick={onAction}>
       {offline && <Wifi size={22} strokeWidth={2.2} aria-hidden />}
       {actionLabel}
@@ -39,7 +38,6 @@ export function MailNotice({ tone = "caution", children, actionLabel, onAction, 
         {action}
       </Alert>
     );
-  // Prototype `.lwait` (white on its panel shadow, the slash at 26px), with the offline banner's Fix Wi-Fi.
   return (
     <div role="status" className={cn("flex items-center gap-3.5 rounded-row bg-card/88 px-5 text-body-lg leading-7 font-medium text-foreground shadow-panel", action ? "py-3" : "py-[18px]", className)} {...props}>
       <WifiSlash size={26} className="flex-none" />

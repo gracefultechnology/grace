@@ -42,7 +42,6 @@ export function MailRecipientPicker({
       <div className="font-sans">
         <PageHeading level="title">{question}</PageHeading>
         <SearchField label={searchLabel} value={query} onChange={(event) => onQueryChange?.(event.target.value)} className="mt-4 mb-5" />
-        {/* Prototype `.a-people`, `.a-person`: pressed, it shrinks at once (`#awin .a-person:active`). */}
         <ul className="m-0 grid list-none grid-cols-4 gap-4 p-0">
           {people.map((person) => (
             <li key={person.name}>
@@ -54,7 +53,6 @@ export function MailRecipientPicker({
                   "flex w-full cursor-pointer flex-col items-center gap-3 rounded-day bg-panel px-2.5 py-[22px] text-center text-body-lg leading-[26px] font-bold text-chrome active:scale-[.99]",
                 )}
               >
-                {/* Prototype `.a-person .a-av`: 88px. */}
                 <MailContactAvatar contact={person} size={88} aria-hidden />
                 {person.name}
               </button>

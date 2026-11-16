@@ -15,7 +15,6 @@ export type AppTitleProps = ComponentProps<"span"> & {
 /** An app window's title on the header's row, with the app's icon tile. */
 export function AppTitle({ icon, small = false, className, children, ...props }: AppTitleProps) {
   return (
-    // Prototype `#awin.icmode .aphdr .aptl`, `.apic`; beside Back, `.hgrp+.aptl`.
     <span
       className={cn(
         "flex min-w-0 items-center gap-3.5 font-sans font-bold text-chrome",
@@ -30,7 +29,6 @@ export function AppTitle({ icon, small = false, className, children, ...props }:
   );
 }
 
-/** One glass capsule of header controls (prototype `#awin .aphdr .hgrp`). */
 const capsule = "pointer-events-auto flex h-16 shrink-0 items-center gap-0.5 rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160";
 
 export type AppHeaderProps = Omit<ComponentProps<"header">, "title" | "children"> & {
@@ -80,12 +78,9 @@ export function AppHeader({
 }: AppHeaderProps) {
   const bar = mode === "large" && collapsed;
   return (
-    // Prototype `#awin .aphdr`: 24px in, 10px between groups; `.aphdr.bar` once the large title has scrolled away, its top
-    // corners the window's (`#awin.splitw .aphdr.bar`: the right one only).
     <header
       className={cn(
         "pointer-events-none relative isolate flex items-center gap-2.5 p-6 font-sans transition-colors duration-quick ease-css-default",
-        // Its line is `box-shadow: 0 1px 0`, just below the bar.
         bar && "bg-background/92 backdrop-blur-frost backdrop-saturate-160 shadow-hairline",
         bar && (split ? "rounded-tr-window" : "rounded-t-window"),
         className,
@@ -93,12 +88,10 @@ export function AppHeader({
       {...props}
     >
       {!split && !bar && (
-        // Prototype `#awin .aphdr::before`: content fades out under the capsules (`#awin.splitw .aphdr::before` has none).
         <span aria-hidden className="absolute inset-x-0 top-0 -bottom-10 -z-10 rounded-t-window bg-linear-to-b from-background/75 via-background/35 via-60% to-transparent" />
       )}
       {backLabel && (
         <div className={capsule}>
-          {/* `#awin .aphdr .hgrp .pill:not(.prom)` with `#ahdr .pill:not(.prom):active`: it sinks to 97% and stays clear. */}
           <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")} aria-label={backAriaLabel} onClick={onBack}>
             <ArrowLeft size={22} strokeWidth={2.2} aria-hidden />
             {backLabel}
@@ -112,7 +105,6 @@ export function AppHeader({
       )}
       <span className="flex-1" />
       {mode === "large" && (
-        // Prototype `#awin .aphdr .ctitle`.
         <span
           aria-hidden
           className={cn(
@@ -125,7 +117,6 @@ export function AppHeader({
       )}
       <div className={capsule}>
         {actions}
-        {/* `#awin .aphdr .hgrp .winx`, in every header hdr() draws: transparent even while pressed. */}
         <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="active:bg-transparent">
           <X size={24} strokeWidth={1.75} aria-hidden />
         </Button>

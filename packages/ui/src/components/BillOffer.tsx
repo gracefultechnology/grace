@@ -4,7 +4,6 @@ import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 
-/** A bill found in an email or on a calendar occurrence, as Grace read it. */
 export type BillDetails = {
   /** Who it is from: "City Water". */
   company: string;
@@ -20,7 +19,6 @@ export type BillDetails = {
   status?: ReactNode;
 };
 
-/** The words of a bill offer, for another language. */
 export type BillOfferLabels = {
   heading: (company: string) => string;
   due: (due: string) => string;
@@ -63,7 +61,6 @@ export function BillOffer({ company, amount, due, site, confirmed = false, statu
   const l = { ...billLabels, ...labels };
   return (
     <Panel role="group" aria-label={l.heading(company)} className={cn("max-w-[760px] font-sans", className)} {...props}>
-      {/* Prototype `.a-ttl`. */}
       <div className="flex items-center gap-3.5 text-lead leading-[30px] font-bold text-chrome">
         <ReceiptText size={26} strokeWidth={2.2} aria-hidden className="flex-none text-primary" />
         {l.heading(company)}

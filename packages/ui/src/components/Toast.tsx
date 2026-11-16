@@ -26,12 +26,10 @@ export function Toast({ open = true, onUndo, undoLabel = "Undo", placement = "in
       role="status"
       className={cn(
         "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 font-sans text-body leading-[normal] text-primary-foreground transition-opacity duration-quick ease-css-default",
-        // Prototype `.axtoast`, appended to `#screen`.
         placement === "screen" && "absolute bottom-6 left-1/2 z-[45] -translate-x-1/2",
         open ? "opacity-100" : "pointer-events-none opacity-0",
         className,
       )}
-      // Prototype `axToast()`: `bottom` is Grace's window height + 24 while she is open and compact.
       style={above === undefined ? style : { bottom: above + 24, ...style }}
       {...props}
     >

@@ -5,19 +5,12 @@ import { PageText } from "./PageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 
-/** One piece of on-device speech software and the licence it ships under. */
 export interface VoiceCredit {
-  /** Its name, such as "Phonon-2". */
   name: string;
-  /** Who made it. */
   by: string;
-  /** What it does on the tablet, such as "Listening". */
   part: string;
-  /** Its licence, such as "Apache 2.0". */
   license: string;
-  /** Any attribution its licence asks for. */
   note?: string;
-  /** Where its source and licence are. */
   links: string[];
 }
 
@@ -63,7 +56,6 @@ export function SettingsAbout({
         <PageText tone="secondary" className="mt-1.5">{status}</PageText>
       </Panel>
       {credits.length > 0 && (
-        // Prototype `.a-row`: the section folds like a row that opens in place.
         <div className="mt-3.5 rounded-row bg-panel">
           <button
             type="button"

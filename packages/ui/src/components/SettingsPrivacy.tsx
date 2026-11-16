@@ -10,31 +10,23 @@ import { PageHeading } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 
-/** One fact Grace remembers to fill in for Margaret. */
 export interface SavedDetail {
   id: string;
-  /** What it is, such as "Phone number". */
   label: string;
-  /** The fact itself. */
   value: string;
-  /** The website it is kept for, when only one may use it. */
   site?: string;
 }
 
-/** `confirm` asks before clearing browsing data; `running` clears it; `failed` it was not cleared. */
 export type BrowsingClearState = "idle" | "confirm" | "running" | "failed";
 
-/** The words of the page, for another language. */
 export type SettingsPrivacyLabels = {
   title: string;
   details: string;
   empty: string;
   remove: string;
   clearAll: string;
-  /** The question before one detail is removed, from its label. */
   removeTitle: (label: string) => string;
   removeText: string;
-  /** The question before every detail is removed. */
   clearAllTitle: string;
   clearAllText: string;
   keep: string;
@@ -43,11 +35,9 @@ export type SettingsPrivacyLabels = {
   clearBrowsing: string;
   clearBrowsingHint: string;
   clear: string;
-  /** The question before browsing data is cleared. */
   clearBrowsingTitle: string;
   clearBrowsingText: string;
   cancel: string;
-  /** Browsing data was not cleared. */
   notCleared: string;
   retry: string;
 };
@@ -174,7 +164,6 @@ export function SettingsPrivacy({
         }
       />
       {clearing === "failed" && (
-        // spec/app/websiteRequests.md: browsing data stays until a clear is confirmed and succeeds.
         <RetryNotice className="mt-2.5" onRetry={onConfirmClear} retryLabel={l.retry}>
           {l.notCleared}
         </RetryNotice>
@@ -193,7 +182,6 @@ export function SettingsPrivacy({
         dismiss={l.keep}
         onDismiss={onKeep}
       />
-      {/* spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation". */}
       <Confirm
         open={clearing === "confirm"}
         title={l.clearBrowsingTitle}
@@ -217,7 +205,6 @@ type ConfirmProps = {
   onDismiss?: () => void;
 };
 
-/** One question before something is removed (prototype `calDlg`): focus starts on the panel, not on the removal. */
 function Confirm({ open, title, text, confirm, onConfirm, dismiss, onDismiss }: ConfirmProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onDismiss?.()}>

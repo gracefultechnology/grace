@@ -49,7 +49,6 @@ export function ListRow({ title, subtitle, truncate = false, leading, trailing, 
     >
       {leading}
       {onClick ? (
-        // The button stretches over the whole row (prototype `.a-row[data-ax]`); `trailing` sits above it.
         <button type="button" onClick={onClick} className="min-w-0 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-row focus-visible:after:outline-3 focus-visible:after:outline-offset-3 focus-visible:after:outline-solid focus-visible:after:outline-ring">
           {text}
         </button>
@@ -58,7 +57,6 @@ export function ListRow({ title, subtitle, truncate = false, leading, trailing, 
       )}
       {time && <span className="ml-auto self-start pt-1.5 text-lg leading-6 font-medium whitespace-nowrap text-muted-foreground">{time}</span>}
       {trailing ? <span className="relative ml-auto flex flex-none items-center">{trailing}</span> : null}
-      {/* Prototype `.a-row .chev`: at the row's end, or 14px past what trails (wifiPage(): `.chev` margin-left 14px). */}
       {chevron && <ChevronRight aria-hidden size={26} strokeWidth={2.4} className={cn("flex-none text-chevron", trailing ? "ml-3.5" : "ml-auto")} />}
     </div>
   );

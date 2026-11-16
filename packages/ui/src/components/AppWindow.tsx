@@ -16,8 +16,6 @@ export type AppWindowProps = Omit<ComponentProps<"section">, "title"> &
 
 type PageTop = { split: SplitViewProps["pageTop"]; page: string };
 
-// Prototype `#awin.icmode`, `#awin.lgmode` and, with neither (no title), the bare `#awin` rules: where the page starts
-// below the header, in a split window's page column and in a whole-window page.
 const pageTops: Record<NonNullable<AppHeaderProps["mode"]>, Record<"plain" | "back", PageTop>> = {
   icon: { plain: { split: "header", page: "pt-[104px]" }, back: { split: "header", page: "pt-[104px]" } },
   large: { plain: { split: "beside", page: "pt-7" }, back: { split: "header", page: "pt-[100px]" } },
@@ -49,7 +47,6 @@ export function AppWindow({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [scroll, setScroll] = useState({ collapsed: false, opacity: 1 });
   const large = headerMode === "large";
-  // Prototype lgtScroll(): the large title fades as it rises and the header becomes a bar once it has passed.
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     const t = headingRef.current;
     if (!t) return;
@@ -85,7 +82,6 @@ export function AppWindow({
   );
   const top = pageTops[headerMode][backLabel ? "back" : "plain"];
   return (
-    // Prototype `.bwin.appw#awin`: 144px from the left (the rail and its gap) and 6px from the other edges, 1130 wide on a landscape tablet.
     <section
       aria-label={title}
       className={cn(

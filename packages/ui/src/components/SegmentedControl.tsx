@@ -5,7 +5,6 @@ import { cn, focusRing } from "../lib/cn.ts";
 export interface SegmentedOption {
   value: string;
   label: ReactNode;
-  /** A Lucide icon before the label. */
   icon?: ReactNode;
 }
 
@@ -35,7 +34,6 @@ export function SegmentedControl({ options, value, defaultValue, onValueChange, 
       defaultValue={defaultValue}
       onValueChange={onValueChange}
       disabled={disabled}
-      // Disabled, nothing in it takes focus, the group included.
       rovingFocus={!disabled}
       className={cn("flex gap-2.5 rounded-segment bg-panel", size === "md" ? "p-2" : "p-1.5", disabled && "opacity-40", className)}
       {...props}
@@ -44,12 +42,10 @@ export function SegmentedControl({ options, value, defaultValue, onValueChange, 
         <ToggleGroup.Item
           key={option.value}
           value={option.value}
-          // A single group always has one choice: the chosen item ignores a second press.
           onClick={(event) => event.currentTarget.dataset.state === "on" && event.preventDefault()}
           className={cn(
             focusRing,
             "flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-transparent font-bold whitespace-nowrap text-grace-ink data-[state=on]:bg-card data-[state=on]:text-primary data-[state=on]:shadow-raised",
-            // .spdo: a pointer; "#awin .a-seg .spdo" keeps both at 56px; in a field the words are smaller and closer to the edge.
             size === "md" ? "h-14 px-[22px] text-body" : "h-14 px-2.5 text-[19px]",
           )}
         >

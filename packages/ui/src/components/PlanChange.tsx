@@ -7,39 +7,23 @@ import { PageHeading, PageText } from "./PageHeading.tsx";
 import { PlanCard, PlanWait, type GracePlan } from "./PlanChoice.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 
-/** The terms of one reviewed plan change, as the saved quote gives them; never filled in from today's catalog. */
 export interface PlanChangeReview {
-  /** The plan it changes to: "Grace Pro". */
   plan: string;
-  /** An upgrade is paid now; a lower plan starts at the period's end. */
   kind: "upgrade" | "downgrade";
-  /** "$50.00". */
   baseRate: string;
-  /** The help it includes, with its terms (senior-care QuoteAllowance.tsx). */
   allowance: string;
-  /** The extra help for the rest of this period, after an upgrade is confirmed. */
   additionalAllowance?: string;
-  /** When the lower plan starts, or when the paid period ends: "Dec 1, 2026". */
   date: string;
-  /** What is due now, line by line, the amount due last. */
   dueNow?: readonly AccountFact[];
-  /** The estimated renewal, line by line. */
   renewal: readonly AccountFact[];
 }
 
-/** A plan change sent and not yet confirmed. */
 export interface PendingPlanChange {
   id: string;
-  /** The plan it changes to. */
   plan: string;
-  /** An upgrade may wait on a payment. */
   upgrade?: boolean;
 }
 
-/**
- * Where the change stands: `idle` and `unknown` offer a check; `loading` and `sending` wait; `verify` confirms it is
- * her; `choose` the other plans; `review` one change's terms; `pending` changes still being confirmed.
- */
 export type PlanChangeView = "idle" | "unknown" | "loading" | "sending" | "verify" | "choose" | "review" | "pending";
 
 export type PlanChangeLabels = {

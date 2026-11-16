@@ -6,10 +6,6 @@ import { ListRow, type ListRowProps } from "./ListRow.tsx";
 
 const icon = (name: string, ...paths: string[]) => createLucideIcon(name, paths.map((d): LucideIconNode => ["path", { d, key: d }]));
 
-/**
- * The prototype's own drawings (`AXP`) of the Email icons whose Lucide drawings have since changed: Trash without
- * its two lines, the older paperclip, pens, send, download, printer, file, envelope and camera.
- */
 export const mailIcons = {
   trash: TrashIcon,
   draft: icon("mail-draft", "M12 20h9", "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"),
@@ -26,15 +22,10 @@ export const mailIcons = {
   ]),
 };
 
-/** Someone email comes from or goes to, as their avatar shows them. */
 export type MailContact = {
-  /** Their name, as Margaret knows them: "Susan", "Main St Clinic". */
   name: string;
-  /** A photo of them. */
   photo?: string;
-  /** The color behind their initial or mark, 1 to 6. */
   tone?: AvatarProps["tone"];
-  /** A mark in place of the initial, such as the clinic's cross. */
   mark?: ReactNode;
 };
 

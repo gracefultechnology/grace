@@ -25,8 +25,6 @@ export type StartupScreenProps = Omit<ComponentProps<"div">, "title" | "children
  */
 export function StartupScreen({ state, title, message, onRetry, retryLabel = "Try again", className, ...props }: StartupScreenProps) {
   const failed = state === "failed";
-  // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure". Drawn in the
-  // prototype's language: the frame wash (`.screen`), the orb (`.orb-w`), `.zz` type and one prominent pill (`.a-btn.prom`).
   return (
     <div
       role={failed ? "alert" : "status"}

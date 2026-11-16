@@ -5,19 +5,13 @@ import { PageHeading, PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SignInCodeField } from "./SignInCodeField.tsx";
 
-/**
- * Where the check stands: `start` before a code is sent; `code` the code sent to the account's email or phone;
- * `verification` the account's extra check, by text or authenticator; `passkey` an extra check the tablet cannot use.
- */
 export type ConfirmIdentityStep = "start" | "code" | "verification" | "passkey";
 
 export type ConfirmIdentityLabels = {
   title: string;
-  /** What the check comes before, from `purpose`. */
   intro: (purpose: string) => string;
   send: string;
   sentTo: (destination: string) => string;
-  /** Where the code went when the app cannot say. */
   anyDestination: string;
   textCode: string;
   authenticatorCode: string;

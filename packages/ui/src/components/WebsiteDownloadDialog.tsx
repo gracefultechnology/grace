@@ -4,21 +4,14 @@ import { BrowserDialog } from "./BrowserNoticeDialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 
-/** A file a website offers, as the website describes it. */
 export type WebsiteDownloadOffer = {
-  /** The website, as the address shows it. */
   site: string;
-  /** The file's name, as the website gave it. */
   name: string;
-  /** Its size, as the website gave it: "240 KB". */
   size?: string;
 };
 
-/** The words of the offer. */
 export type WebsiteDownloadLabels = {
-  /** The title, given the site: "chase.com offers a file". */
   title: (site: string) => string;
-  /** The line that says the name and size are the website's. */
   fromWebsite: string;
   save: string;
   decline: string;
@@ -69,7 +62,6 @@ export function WebsiteDownloadDialog({ offer, onSave, onDecline, open = true, l
         </>
       }
     >
-      {/* The file, as the website names it: the row of a document in Files (prototype `.a-panel`). */}
       <Panel className="mt-3.5 flex items-center gap-4 px-5 py-4">
         <FileText size={30} strokeWidth={2} aria-hidden className="shrink-0 text-primary" />
         <div className="min-w-0">

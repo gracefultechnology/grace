@@ -18,7 +18,6 @@ export type RetryNoticeProps = Omit<AlertProps, "variant"> & {
  */
 export function RetryNotice({ onRetry, retryLabel = "Try again", retrying = false, children, ...props }: RetryNoticeProps) {
   return (
-    // Prototype `.a-caution` with `axi('alert',26,2.2)`, as on Wi-Fi's join error.
     <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} {...props}>
       <span className="min-w-0 flex-1">{children}</span>
       {onRetry && (

@@ -60,7 +60,6 @@ export function SettingsTextSize({
           {eventTitle}
         </div>
         <div className="flex">
-          {/* Prototype `.chat-white .gb`: Grace's lilac bubble, at most 940px, long words wrapping inside it (`.ub,.gb`). */}
           <div className="ml-2 max-w-[940px] rounded-day bg-bubble px-[22px] py-3 text-lead leading-8 font-medium wrap-anywhere text-grace-ink">{graceMessage}</div>
         </div>
       </Panel>
@@ -72,8 +71,6 @@ export function SettingsTextSize({
           onValueChange={(next) => next && onValueChange?.(next)}
         />
         {guide && (
-          // Prototype axGuide() on a size: SegmentedControl's md geometry (8px inset, 10px gaps, 56px pills) drawn again over it,
-          // so the ring follows the one pill's round ends.
           <div className="pointer-events-none absolute inset-0 flex gap-2.5 p-2">
             {sizes.map((size) =>
               size === targetId ? <GuideAnchor key={size} radius={999} className="h-14 flex-1" {...pointing}><span /></GuideAnchor> : <span key={size} className="flex-1" />,

@@ -9,15 +9,11 @@ import { GuideLabel } from "./GuideLabel.tsx";
 import { GuideRing } from "./GuideRing.tsx";
 import { ProgressStrip, type ProgressStripProps } from "./ProgressStrip.tsx";
 
-/** The words of set-up's own controls, for another language. */
 export type SetupStepLabels = {
-  /** Grace's name, at the start of the header. */
   grace: string;
-  /** What the window is, for assistive technology. */
   region: string;
   tasks: string;
   close: string;
-  /** Grace's label under the control she points at. */
   tapHere: string;
 };
 
@@ -79,8 +75,6 @@ export function SetupStep({
   const labels = { ...setupStepLabels, ...words };
   const labelId = useId();
   const band = progress !== undefined || language != null;
-  // The ring 4px out from a pill inside its capsule (radius 28 + 4), the label 22px under it; at the right edge its tail
-  // is on the right, 36px in from the pill's end as the prototype's `.glab.below` is from a field's start.
   const pointer = (target: SetupStepProps["guide"]) =>
     guide === target ? (
       <>

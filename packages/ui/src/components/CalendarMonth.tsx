@@ -2,21 +2,13 @@ import type { ComponentProps } from "react";
 import { cn, focusRing } from "../lib/cn.ts";
 
 export interface CalendarMonthDay {
-  /** Identifies the day to `onSelect`, such as its ISO date. */
   key: string;
-  /** The date's number: "13". */
   day: string;
-  /** The month's name, which a screen reader says before the date: "November". */
   month?: string;
-  /** A day of the month before or after: pale, with no tile. */
   outside?: boolean;
-  /** The current day: its number is red. */
   today?: boolean;
-  /** The chosen day: a raised white platter. */
   selected?: boolean;
-  /** The day's first event, shortened: "Doctor". */
   event?: string;
-  /** Marks that event as one not to miss with a red bar. */
   important?: boolean;
 }
 
@@ -52,7 +44,6 @@ export function CalendarMonth({ weekdays, days, onSelect, className, ...props }:
           className={cn(
             focusRing,
             "relative box-border flex h-[78px] items-start cursor-pointer rounded-tab bg-panel px-3 py-2 text-left text-body-lg leading-[26px] font-bold text-chrome",
-            // Prototype `.a-month .d.o`, in its own pale ink by the user's choice (.storybook/preview.ts, `data-prototype-ink`).
             d.outside && "bg-transparent text-outside-day",
             d.selected && "bg-card text-primary shadow-raised",
             d.today && "text-alert",
@@ -61,7 +52,6 @@ export function CalendarMonth({ weekdays, days, onSelect, className, ...props }:
           {d.month && <span className="sr-only">{d.month} </span>}
           {d.day}
           {d.event && !d.outside && (
-            // Prototype `.a-month .d em`.
             <em
               className={cn(
                 "absolute right-2 bottom-2 left-3 truncate border-l-3 pl-2 text-caption leading-[18px] font-semibold text-primary not-italic",

@@ -14,9 +14,7 @@ export type ProgressProps = Omit<ComponentProps<typeof ProgressPrimitive.Root>, 
  * @design packages/design-system/design.md#selected
  */
 export function Progress({ value, max = 100, className, ...props }: ProgressProps) {
-  // Radix reads a value outside 0 to `max` as unknown, so it is given the one the bar shows.
   const done = value == null ? null : Math.min(Math.max(value, 0), max);
-  // senior-care apps/app/src/ui/onboarding/progress-strip.css, `.progress-strip__fill`: the fill moves over `--dur-progress` with `ease`.
   return (
     <ProgressPrimitive.Root value={done} max={max} className={cn("h-3.5 w-full overflow-hidden rounded-full bg-primary/12", className)} {...props}>
       <ProgressPrimitive.Indicator

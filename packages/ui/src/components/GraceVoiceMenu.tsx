@@ -4,7 +4,6 @@ import { GracePill, press } from "./Button.tsx";
 import { Menu, MenuLabel, MenuOption, type MenuProps } from "./Menu.tsx";
 import { SwitchTrack } from "./Switch.tsx";
 
-// Prototype ICON.spkOn and ICON.spkOff, 22px.
 const speaker = (on: boolean) => (
   <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M11 5 6 9H3v6h3l5 4z" />
@@ -71,7 +70,6 @@ export function GraceVoiceMenu({
   ...props
 }: GraceVoiceMenuProps) {
   return (
-    // .spdpop: 16px from the pill; its 270px rows inside 8px of padding.
     <Menu
       side={side}
       sideOffset={sideOffset}
@@ -85,7 +83,6 @@ export function GraceVoiceMenu({
       }
       {...props}
     >
-      {/* #voiceC: a 56px header pill with no fill that grows on a tap (.pill:active); the menu stays open so the switch's new state shows. */}
       <MenuOption
         role="menuitemcheckbox"
         aria-checked={voiceOn}
@@ -101,18 +98,15 @@ export function GraceVoiceMenu({
       </MenuOption>
       <MenuLabel className="leading-5">{speedLabel}</MenuLabel>
       {(Object.keys(speeds) as Speed[]).map((s) => (
-        // #spdPop .spdo.sel: ICON.check, 20px at stroke 2.4.
         <MenuOption key={s} selected={s === speed} className="[&>svg]:size-5 [&>svg]:stroke-[2.4]" onSelect={() => onSpeedChange?.(s)}>
           {speeds[s]}
         </MenuOption>
       ))}
-      {/* spec/app/conversation.md, "Repeat reads the latest Grace response without turning on a muted microphone" */}
       {canRepeat !== undefined && (
         <MenuOption icon={<RotateCcw size={24} strokeWidth={2.2} aria-hidden />} disabled={!canRepeat} className="mt-2" onSelect={onRepeat}>
           {repeatLabel}
         </MenuOption>
       )}
-      {/* spec/app/conversation.md, "A deliberate new conversation clears the old view but never reuses callback tokens" */}
       {canStartOver && (
         <MenuOption icon={<MessageSquarePlus size={24} strokeWidth={2.2} aria-hidden />} className={cn(canRepeat === undefined && "mt-2")} onSelect={onNewConversation}>
           {newConversationLabel}

@@ -1,7 +1,6 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
 
-// Prototype `EQ`: four bars at rest heights, staggered by .15s while Grace speaks (`.eq.live`), breathing while she waits (`.eq.idle`).
 const bars = [8, 20, 13, 17];
 
 export type VoiceBarsProps = Omit<ComponentProps<"span">, "children"> & {

@@ -2,14 +2,10 @@ import type { ComponentProps } from "react";
 import { CalendarCheck, CircleCheck, CircleHelp, CircleX, Clock, Undo2, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 
-/** What is known of one payment attempt (spec/app/payment.md, `PaymentOutcome`): `unknown` is not "unpaid". */
 export type PaymentStatus = "unknown" | "pending" | "scheduled" | "accepted" | "completed" | "failed" | "returned";
 
-/** The words of each status; `{date}`, `{company}` and `{reference}` are filled in. */
 export type PaymentStatusLabels = Record<PaymentStatus, string> & {
-  /** The reference after the status, such as "Confirmation {reference}". */
   reference: string;
-  /** What the badge is about, first in its accessible name. */
   name: string;
 };
 
@@ -25,9 +21,6 @@ export const paymentStatusLabels: PaymentStatusLabels = {
   name: "Payment",
 };
 
-// spec/app/payment.md, "Only matching authoritative evidence can resolve an existing attempt": Scheduled, Accepted and
-// Completed are different positive results; Unknown and Pending stay unresolved; a failure or a return is a warning.
-// Each tag is opaque so its ink keeps AA contrast on white, on `panel` and on frost.
 const tones: Record<PaymentStatus, { icon: LucideIcon; tone: string }> = {
   unknown: { icon: CircleHelp, tone: "bg-card text-warn inset-ring-[1.5px] inset-ring-warn/30" },
   pending: { icon: Clock, tone: "bg-card text-warn inset-ring-[1.5px] inset-ring-warn/30" },

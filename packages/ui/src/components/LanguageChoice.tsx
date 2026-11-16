@@ -3,12 +3,9 @@ import { cn } from "../lib/cn.ts";
 import { PageHeading } from "./PageHeading.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
 
-/** A language Grace can speak and show, named in itself: "Español". */
 export interface LanguageOption {
   value: string;
-  /** Its own name for itself. */
   label: string;
-  /** Its BCP 47 tag, so a screen reader says the name in that language: "es". */
   lang: string;
 }
 

@@ -2,8 +2,6 @@ import { type ComponentProps, useId, useSyncExternalStore } from "react";
 import { cva } from "class-variance-authority";
 import { cn } from "../lib/cn.ts";
 
-// Prototype `#askRing`: its washes, streak and sheen morph between these shapes all the time (SMIL `<animate>` on
-// `d`, eased .45 0 .55 1), and the tint turns; reduced motion keeps the first shape.
 const top = ["M-10 -10H130V40C100 30 84 62 60 60S20 30 -10 52Z", "M-10 -10H130V54C104 40 80 50 58 70S16 44 -10 40Z", "M-10 -10H130V34C96 44 86 70 62 52S24 22 -10 60Z"];
 const bottom = ["M130 130H-10V96C20 86 40 110 66 100S110 70 130 84Z", "M130 130H-10V104C24 96 44 96 70 108S106 84 130 76Z", "M130 130H-10V90C18 100 46 118 62 96S112 62 130 92Z"];
 const streak = ["M14 96C34 70 52 74 62 50S78 18 96 10", "M10 84C36 74 48 88 66 60S88 26 104 20", "M18 100C30 76 58 66 64 44S74 16 90 6"];
@@ -16,7 +14,6 @@ const subscribe = (change: () => void) => {
   return () => query.removeEventListener("change", change);
 };
 
-/** A path at its first shape, morphing through the rest and back over `dur` unless motion is reduced. */
 function Morph({ shapes, dur, still, ...props }: ComponentProps<"path"> & { shapes: string[]; dur: string; still: boolean }) {
   return (
     <path d={shapes[0]} {...props}>
@@ -43,7 +40,6 @@ export function GraceOrb({ glow = "rest", size = 96, className, style, ...props 
   const still = useSyncExternalStore(subscribe, () => matchMedia(reduced).matches, () => false);
   return (
     <span aria-hidden className={cn("relative flex shrink-0 items-center justify-center", className)} style={{ width: size, height: size, ...style }} {...props}>
-      {/* Prototype `.orb-w .gp1`: the soft glow, pulsing in `welcome`, held at 1.28 in `rest`. */}
       <i
         className={cn(
           "pointer-events-none absolute inset-0 rounded-full bg-radial from-lavender/85 from-35% via-lavender/45 via-55% to-lavender/0 to-72% opacity-0 transition-opacity duration-glow ease-css-default motion-reduce:animate-none",
@@ -51,7 +47,6 @@ export function GraceOrb({ glow = "rest", size = 96, className, style, ...props 
           glow === "rest" && "scale-[1.28] opacity-70",
         )}
       />
-      {/* Prototype `.orb-w .gp2`: the ring that spreads out with each pulse. */}
       <i className={cn("pointer-events-none absolute inset-[10.4%] rounded-full opacity-0 ring-3 ring-lavender/55 transition-opacity duration-glow ease-css-default motion-reduce:animate-none", glow === "welcome" && "animate-glow-ring")} />
       <svg className="relative" width={size} height={size} viewBox="-14 -14 148 148">
         <defs>
@@ -106,7 +101,6 @@ export type GraceMarkProps = ComponentProps<"span"> & {
 
 /** Grace's simple mark: a white disc with her initial in a gradient ring, as on her pointing hand. */
 export function GraceMark({ size = "md", halo = false, initial = "G", className, ...props }: GraceMarkProps) {
-  // Prototype `.ring` / `.disc`, and `.gcur .orb .ring` for `sm`.
   return (
     <span aria-hidden className={cn(markVariants({ size, halo }), className)} {...props}>
       <span className={cn("flex items-center justify-center rounded-full bg-glass font-bold text-primary", discVariants[size])}>{initial}</span>

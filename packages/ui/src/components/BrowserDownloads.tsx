@@ -7,32 +7,23 @@ import { BrowserPopoverContent } from "./BrowserTabStrip.tsx";
 import { Panel } from "./Panel.tsx";
 import { Progress } from "./Progress.tsx";
 
-/** Where a download stands: being saved, saved, failed, or not saved (declined or ended with its page). */
 export type BrowserDownloadStatus = "saving" | "saved" | "failed" | "not-saved";
 
-/** One file a website offered, as the downloads list shows it. */
 export type BrowserDownload = {
-  /** The request's number in the website-requests model. */
   id: number;
-  /** The file's name, as the website gave it. */
   name: string;
   status: BrowserDownloadStatus;
-  /** How much is saved, from 0 to 100, while saving; leave out while unknown. */
   progress?: number;
 };
 
-/** The words of the list. */
 export type BrowserDownloadsLabels = {
-  /** The button's accessible name and the list's heading. */
   title: string;
   empty: string;
   saved: string;
   failed: string;
   notSaved: string;
-  /** What a screen reader hears for a save in progress, given the file's name. */
   saving: (name: string) => string;
   open: string;
-  /** The accessible name of a finished entry's ✕, given the file's name. */
   dismiss: (name: string) => string;
 };
 
@@ -72,7 +63,6 @@ export function BrowserDownloads({ downloads, onOpen, onDismiss, open, onOpenCha
   const labels = { ...defaultLabels, ...words };
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
-      {/* Prototype `.pill.icon` in `.bz-bar`: a 64px round capsule. */}
       <Popover.Trigger asChild>
         <Button variant="capsule" size="pill-icon" aria-label={labels.title} className={className} {...props}>
           <Download size={22} strokeWidth={2.2} aria-hidden />
@@ -86,7 +76,6 @@ export function BrowserDownloads({ downloads, onOpen, onDismiss, open, onOpenCha
           ) : (
             <ul className="flex flex-col gap-2">
               {downloads.map((d) => (
-                // spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved".
                 <li key={d.id}>
                   <Panel variant="white" className="flex items-center gap-3.5 py-3.5 pr-2.5 pl-4">
                     <FileText size={28} strokeWidth={2} aria-hidden className="shrink-0 text-primary" />

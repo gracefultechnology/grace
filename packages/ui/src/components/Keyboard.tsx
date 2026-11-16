@@ -1,13 +1,11 @@
 import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
 
-/** The keys that do something rather than type: each is named by this word in a layout's rows. */
 export type KeyboardAction = "shift" | "backspace" | "numbers" | "letters" | "symbols" | "space" | "go" | "hide";
 
 const actions = new Set<string>(["shift", "backspace", "numbers", "letters", "symbols", "space", "go", "hide"]);
 const bottom = ["space", ".", "go", "hide"];
 
-// Prototype `L` (line 1672): the tablet's three layers.
 export const keyboardLayouts = {
   letters: [["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"], ["a", "s", "d", "f", "g", "h", "j", "k", "l"], ["shift", "z", "x", "c", "v", "b", "n", "m", "backspace"], ["numbers", ...bottom]],
   numbers: [["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""], ["symbols", ".", ",", "?", "!", "'", "%", "backspace"], ["letters", ...bottom]],
@@ -46,7 +44,6 @@ export function Keyboard({ layout = "letters", rows, shift = false, labels, name
   const text = { ...defaultLabels, ...labels };
   const name = { ...defaultNames, ...names };
   const capitals = shift && layout === "letters";
-  // Prototype `.kb`, `.kr`, `.kb button` and `drawKb()`.
   return (
     <div
       aria-hidden={!open || undefined}
@@ -71,12 +68,10 @@ export function Keyboard({ layout = "letters", rows, shift = false, labels, name
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => onKey?.(action ?? character)}
                 className={cn(
-                  // `.kb button` keeps the browser's 1px 6px padding, which widens the flexed keys; `.kb button:active`.
                   "max-w-24 flex-1 cursor-pointer touch-manipulation rounded-md bg-card px-1.5 py-px text-title-sm leading-[normal] font-medium text-grace-ink shadow-key active:bg-key-pressed",
                   action && action !== "space" && "max-w-[140px] bg-key-fn text-[19px] leading-[normal] font-semibold",
                   action === "space" && "max-w-none flex-[5]",
                   action === "go" && "max-w-[150px]",
-                  // `.kb button.go.on` outranks `:active`; drawKb() lights ⇧ with an inline background, which does too.
                   action === "go" && ready && "bg-primary text-primary-foreground active:bg-primary",
                   action === "shift" && shift && "bg-card active:bg-card",
                 )}

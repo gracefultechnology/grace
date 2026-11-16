@@ -22,11 +22,8 @@ export function MailLink({ className, ...props }: MailLinkProps) {
   return <a className={cn(focusRing, "rounded-sm font-semibold text-link underline", className)} {...props} />;
 }
 
-/** A photo carried by an email. */
 export type MailPhoto = {
-  /** The photo. */
   src: string;
-  /** What it shows, for a screen reader. */
   alt: string;
 };
 
@@ -56,20 +53,14 @@ export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPho
   );
 }
 
-/** A file attached to an email. */
 export type MailFile = {
-  /** The file's name: "Visit form.pdf". */
   name: string;
-  /** What it holds: "2 pages". */
   detail?: string;
-  /** What printing it actually did. */
   printStatus?: MailPrintStatus;
 };
 
-/** Where reading an email, photo or file stands: `failed` says so with Try again in place of the content. */
 export type MailReadStatus = "loading" | "failed" | "ready";
 
-/** The words of an open email, for another language. */
 export type MailMessageViewLabels = {
   title: string;
   reply: string;
@@ -77,17 +68,12 @@ export type MailMessageViewLabels = {
   delete: string;
   restore: string;
   deleteForever: string;
-  /** Before the time when the email has no address shown: "To you". */
   toYou: string;
-  /** Grace's warning over a scam. */
   scam: string;
-  /** Over the photos: "3 photos". */
   photos: (count: number) => string;
   saveAll: string;
-  /** The email could not be opened. */
   failed: string;
   retry: string;
-  /** For assistive technology while the email loads. */
   loading: string;
 };
 
@@ -212,10 +198,8 @@ export function MailMessageView({
 }: MailMessageViewProps) {
   const { targetId, ...pointing } = guide ?? {};
   const l = { ...viewLabels, ...labels };
-  // spec/app/email.md, "Each search or content read needs current access and the user's choice": Reply and Forward wait for the whole read.
   const held = status !== "ready";
   const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (
-    // Prototype `#ahdr [aria-disabled="true"]`: held, Forward fades to 32% ink while Reply keeps its indigo and white (`#ahdr .pill.prom` is `!important`).
     <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "disabled:text-primary-foreground disabled:opacity-100" : headerPill} disabled={disabled} onClick={onClick}>
       {icon}
       {label}
@@ -244,7 +228,6 @@ export function MailMessageView({
       <article className="font-sans" aria-busy={status === "loading" || undefined}>
         {scam &&
           (targetId === "scam" ? (
-            // Prototype axGuide(): the ring follows the warning's 22px corners.
             <GuideAnchor radius={22} className="mb-5 flex" {...pointing}>
               <Alert variant="caution" className="flex-1">{l.scam}</Alert>
             </GuideAnchor>
@@ -262,7 +245,6 @@ export function MailMessageView({
         </div>
         <PageHeading className="mt-5 mb-2.5">{subject}</PageHeading>
         {status === "loading" ? (
-          // Three lines of the body's 30px rhythm.
           <div role="status" aria-label={l.loading} className="flex max-w-[880px] flex-col gap-2 py-1">
             {["w-full", "w-11/12", "w-2/3"].map((width) => (
               <Skeleton key={width} className={cn("h-[22px] rounded-full", width)} />
@@ -275,11 +257,9 @@ export function MailMessageView({
         ) : (
           <PageText className="max-w-[880px]">{body}</PageText>
         )}
-        {/* spec/app/email.md, "A bill handoff retains verified source identity and never starts a payment". */}
         {bill && !held && <BillOffer {...bill} onConfirm={onConfirmBill} onDismiss={onDismissBill} onOpen={onOpenBill} labels={billLabels} className="mt-[22px]" />}
         {!held && photos?.length ? (
           <>
-            {/* Prototype `.a-attbar`. */}
             <div className="mt-[22px] mb-3 flex items-center gap-3.5 text-foreground">
               <mailIcons.clip size={24} strokeWidth={2.2} aria-hidden />
               <span className="flex-1 text-body-lg leading-[30px] font-bold text-chrome">{l.photos(photos.length)}</span>

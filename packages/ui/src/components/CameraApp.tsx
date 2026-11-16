@@ -72,7 +72,6 @@ export function CameraApp({ state, preview, thumbnail, problem, zooms = [], zoom
   const l = { ...cameraAppLabels, ...labels };
   const ready = state === "live";
   const actions = flash !== undefined && ready && (
-    // Prototype `#awin .aphdr .hgrp .pill:not(.prom)`: clear in the header's capsule; pressed, it sinks to 97% (`#ahdr .pill:not(.prom):active`).
     <Button variant="plain" size="compact" className={headerPill} aria-pressed={flash} onClick={onFlash}>
       {flash ? <Zap size={22} strokeWidth={2.2} aria-hidden /> : <ZapOff size={22} strokeWidth={2.2} aria-hidden />}
       {flash ? l.flashOn : l.flashOff}
@@ -81,7 +80,6 @@ export function CameraApp({ state, preview, thumbnail, problem, zooms = [], zoom
   return (
     <AppWindow
       title={l.title}
-      // Prototype `AXP.camera`, the glyph of "Take a photo".
       icon={<CameraIcon size={26} strokeWidth={2} />}
       actions={actions || undefined}
       {...props}

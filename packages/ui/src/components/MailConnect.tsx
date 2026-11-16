@@ -14,24 +14,16 @@ import { Spinner } from "./Spinner.tsx";
 
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
-/**
- * Where the mailbox's connection stands: not yet connected, waiting on Google's page, connected, connected without
- * permission to read, access expired or removed, the check failed, or Google returned another account than before.
- */
 export type MailConnectState = "disconnected" | "authorizing" | "connected" | "readDenied" | "expired" | "failed" | "otherAccount";
 
-/** The words of connecting Email, for another language. */
 export type MailConnectLabels = {
   title: string;
   connectHeading: string;
   connect: string;
-  /** Under Connect Gmail: where signing in happens. */
   officialPage: string;
   waiting: string;
-  /** For assistive technology, on the spinner. */
   waitingStatus: string;
   cancel: string;
-  /** Under the connected account: "Connected to Gmail". */
   connected: string;
   provider: string;
   readDenied: string;
@@ -123,7 +115,6 @@ export function MailConnect({
           {l.disconnect}
         </Button>
       </DialogTrigger>
-      {/* Prototype `.a-dlg`: the question and a column of full-width buttons; focus starts on the panel, not on Disconnect. */}
       <DialogContent
         className="gap-0"
         onOpenAutoFocus={(event) => {
@@ -147,11 +138,9 @@ export function MailConnect({
       </DialogContent>
     </Dialog>
   );
-  // spec/app/email.md, "Official authentication binds the chosen identity and the current request": the account Google returned, by its address.
   const accountRow = (subtitle = l.provider, trailing?: ReactNode) =>
     account && <ListRow className="w-full max-w-[760px]" leading={<Avatar name={account} aria-hidden />} title={account} subtitle={subtitle} trailing={trailing} />;
   const page: Record<MailConnectState, ReactNode> = {
-    // spec/app/email.md, "A mailbox starts disconnected with no selected message or outgoing draft".
     disconnected: (
       <>
         <PageHeading>{l.connectHeading}</PageHeading>

@@ -3,17 +3,11 @@ import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 import { PaymentStatusBadge, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
 
-/** The words of a `PaymentCheckCard`; `{site}` is filled in. */
 export type PaymentCheckLabels = {
-  /** The heading. */
   title: string;
-  /** What Margaret is asked to do first. */
   message: string;
-  /** Looks for the result again. */
   check: string;
-  /** Opens the bill's website. */
   open: string;
-  /** Saves the result already seen. */
   retrySave: string;
 };
 
@@ -56,7 +50,6 @@ export function PaymentCheckCard({ site, title, message, onCheck, onOpenSite, on
   const words = { ...paymentCheckLabels, ...labels };
   const fill = (template: string) => template.replaceAll("{site}", site);
   const heading = title ?? words.title;
-  // spec/app/payment.md, "A failed outcome save does not undo the observed payment": its only action saves again.
   const actions = !result && (onRetrySave || onCheck || onOpenSite);
   return (
     <Panel

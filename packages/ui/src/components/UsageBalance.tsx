@@ -10,19 +10,13 @@ import { Progress } from "./Progress.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 
-/** The help a plan includes this period, its amounts written as the app shows them. */
 export interface PlanAllowance {
-  /** "Nov 1 to Dec 1, 2026". */
   period: string;
   included: string;
   used: string;
-  /** What is left; left out when it could not be confirmed. */
   left?: string;
-  /** How much of it is used, from 0 to 1, for the bar. */
   usedShare?: number;
-  /** "Dec 1, 2026". */
   endsOn: string;
-  /** The period has ended and needs a fresh check. */
   ended?: boolean;
   added: string;
   reserved: string;
@@ -30,11 +24,9 @@ export interface PlanAllowance {
   takenBack: string;
 }
 
-/** What the account's help may be spent on, by everyday name. */
 export interface UsageCategories {
   included: readonly string[];
   notIncluded: readonly string[];
-  /** Account-internal ones (payouts, domain names…), folded away. */
   otherIncluded?: readonly string[];
   otherNotIncluded?: readonly string[];
 }
@@ -48,7 +40,6 @@ export type UsageBalanceLabels = {
   left: string;
   leftUnknown: string;
   usedBar: string;
-  /** The bar's value in words. */
   usedOf: (used: string, included: string) => string;
   period: string;
   includedThisMonth: string;

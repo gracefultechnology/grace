@@ -4,16 +4,11 @@ import { Button } from "./Button.tsx";
 import { BrowserDialog } from "./BrowserNoticeDialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 
-/** A device a website can ask for. */
 export type SiteDevice = "camera" | "microphone" | "location";
 
-/** The words of the question. */
 export type SitePermissionLabels = {
-  /** The title, given the site and the devices it asks for together. */
   title: (site: string, devices: SiteDevice[]) => string;
-  /** How long and for whom the answer holds. */
   scope: string;
-  /** Shown while Android's own prompt is open. */
   waiting: string;
   allow: string;
   deny: string;
@@ -73,7 +68,6 @@ export function SitePermissionDialog({ site, devices, waiting = false, onAllow, 
       className={className}
       actions={
         <>
-          {/* spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too". */}
           <Button variant="prominent" size="pill" loading={waiting} onClick={onAllow}>
             {labels.allow}
           </Button>

@@ -2,19 +2,12 @@ import type { ComponentProps } from "react";
 import { cn, focusRing } from "../lib/cn.ts";
 
 export interface CalendarWeekDay {
-  /** Identifies the day to `onSelect`, such as its ISO date. */
   key: string;
-  /** The weekday, short, or "Today": "Mon". */
   weekday: string;
-  /** The date's number: "9". */
   day: string;
-  /** The month's name, which a screen reader says after the date: "November". */
   month?: string;
-  /** The current day: its weekday is red. */
   today?: boolean;
-  /** The day whose events show below: a raised white platter. */
   selected?: boolean;
-  /** It has events: a dot under the date. */
   busy?: boolean;
 }
 
@@ -43,7 +36,6 @@ export function CalendarWeekStrip({ days, onSelect, busyLabel = "has plans", cla
           onClick={() => onSelect?.(d.key)}
           className={cn(focusRing, "relative flex h-24 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-day bg-panel", d.selected && "bg-card text-primary shadow-raised")}
         >
-          {/* Prototype `.a-day.today b`, in its own red by the user's choice (.storybook/preview.ts, `data-prototype-ink`). */}
           <span
             data-prototype-ink={d.today ? "" : undefined}
             className={cn("text-label leading-5 font-bold tracking-[.06em] uppercase", d.today ? "text-alert" : "text-muted-foreground")}

@@ -16,7 +16,6 @@ export type HomeWaitingProps = Omit<ComponentProps<"div">, "children"> & {
  * @design packages/design-system/design.md#glass
  */
 export function HomeWaiting({ message, icon = <WifiSlash size={26} />, className, ...props }: HomeWaitingProps) {
-  // Prototype `.lwait`.
   return (
     <Panel variant="white" className={cn("flex items-center gap-3.5 py-[18px] text-body-lg leading-7 font-medium", className)} {...props}>
       <span className="flex flex-none">{icon}</span>

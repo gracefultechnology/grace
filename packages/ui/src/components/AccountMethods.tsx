@@ -8,22 +8,13 @@ import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 import { SignInCodeField } from "./SignInCodeField.tsx";
 import { TextField } from "./TextField.tsx";
 
-/** One way Margaret signs in to her account. */
 export interface AccountSignInMethod {
   id: string;
-  /** "margaret.s@example.com" or "(555) 214-0187". */
   label: string;
-  /** The account's main sign-in. */
   primary?: boolean;
-  /** It can be removed, leaving another. */
   removable?: boolean;
 }
 
-/**
- * Where the page stands: `idle` and `unknown` (a change's result is not known) offer a check; `verify` confirms it is
- * her; `methods` the list; `security` the extra check before a change; `phone` and `enroll` a number to link or to
- * receive security codes; `code` the code sent; `remove` the question before one is removed.
- */
 export type AccountMethodsPhase = "idle" | "unknown" | "verify" | "methods" | "security" | "phone" | "enroll" | "code" | "remove";
 
 export type AccountMethodsLabels = {
@@ -281,7 +272,6 @@ export function AccountMethods({
       </div>
       {problem == null ? null : <RetryNotice>{problem}</RetryNotice>}
       <Dialog open={phase === "remove" && asked != null} onOpenChange={(open) => (open ? undefined : onKeep?.())}>
-        {/* Prototype `calDlg`: the question, its line 8px under it in secondary ink, the buttons 24px under that. */}
         <DialogContent className="gap-0">
           <DialogTitle>{asked ? l.removeTitle(asked.label) : null}</DialogTitle>
           <PageText className="mt-2 text-muted-foreground">{l.removeText}</PageText>

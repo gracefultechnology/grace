@@ -34,7 +34,6 @@ export function BrowserTab({ title, favicon, initial, pageLoading = false, loadi
   const ref = useRef<HTMLDivElement>(null);
   const width = useWidth(ref);
   return (
-    // Prototype `.bz-tw`: 240×56, 18px top corners, its content on the top 48px.
     <div
       ref={ref}
       className={cn(
@@ -47,7 +46,6 @@ export function BrowserTab({ title, favicon, initial, pageLoading = false, loadi
       {selected && (
         <>
           <TabShadow width={width} />
-          {/* Prototype `.bz-tw::before/::after`: the concave feet where the tab meets the toolbar. */}
           <span aria-hidden className="absolute bottom-0 -left-3 size-3 bg-[radial-gradient(circle_at_0_0,transparent_11.5px,var(--glass)_12px)] opacity-78" />
           <span aria-hidden className="absolute -right-3 bottom-0 size-3 bg-[radial-gradient(circle_at_100%_0,transparent_11.5px,var(--glass)_12px)] opacity-78" />
         </>
@@ -61,7 +59,6 @@ export function BrowserTab({ title, favicon, initial, pageLoading = false, loadi
         <TabFavicon favicon={favicon} initial={initial} pageLoading={pageLoading} loadingLabel={loadingLabel} />
         <span className="min-w-0 flex-1 truncate text-body leading-[normal] font-medium">{title}</span>
       </button>
-      {/* Prototype `.bz-ic`. */}
       <button
         type="button"
         aria-label={closeLabel}
@@ -79,7 +76,6 @@ export type TabFaviconProps = Pick<BrowserTabProps, "favicon" | "initial" | "pag
 /** A tab's 20px mark: its favicon, its site's letter, a new tab's "·", or a spinner while it loads. */
 export function TabFavicon({ favicon, initial, pageLoading = false, loadingLabel = "Loading" }: TabFaviconProps) {
   if (pageLoading) return <Spinner label={loadingLabel} className="size-5" />;
-  // Prototype `.bz-fv`: a 20px tile, the site's letter on its colour, or "·" on grey for a new tab (renderSite, `#tabFav`).
   if (favicon) return <img src={favicon} alt="" className="size-5 shrink-0 rounded-tag object-cover" />;
   return (
     <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-tag text-xs leading-[normal] font-bold text-primary-foreground", initial ? "bg-site-brand" : "bg-favicon")}>
@@ -88,7 +84,6 @@ export function TabFavicon({ favicon, initial, pageLoading = false, loadingLabel
   );
 }
 
-/** The tab's width, followed as the strip shares its room among the tabs. */
 function useWidth(ref: RefObject<HTMLElement | null>) {
   const [width, setWidth] = useState(240);
   useLayoutEffect(() => {
@@ -102,10 +97,6 @@ function useWidth(ref: RefObject<HTMLElement | null>) {
   return width;
 }
 
-/**
- * Prototype `.bz-tsh` / `#tabShadow`: a shadow cast only outside the outline of the tab and the toolbar
- * under it, so it falls on the strip and never on the tab or the toolbar.
- */
 function TabShadow({ width }: { width: number }) {
   const id = `tab-shadow${useId().replace(/[^\w-]/g, "")}`;
   const far = 4000;

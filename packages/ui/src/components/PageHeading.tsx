@@ -5,20 +5,15 @@ import { cn } from "../lib/cn.ts";
 const headingVariants = cva("m-0 font-sans", {
   variants: {
     level: {
-      // Prototype `#awin.lgmode .lgt`: the large title that collapses into the header's bar.
       large: "pr-[84px] text-display leading-[56px] font-extrabold tracking-[-.01em] text-foreground",
-      // Prototype `.a-h` at 30/38: a page's own title (a settings page, an email's subject).
       page: "text-title-lg leading-[38px] font-bold text-chrome",
-      // Prototype `.a-h`: a heading inside a page (a day, "Coming up").
       title: "text-title-sm leading-8 font-bold text-chrome",
-      // Prototype `.a-h2`: the label over a group of rows.
       section: "text-body-lg leading-7 font-bold tracking-[.01em] text-muted-foreground",
     },
   },
   defaultVariants: { level: "page" },
 });
 
-// Under the window's title (h1): a page's title or a heading in it is h2, a group's label h3.
 const tags = { large: "h1", page: "h2", title: "h2", section: "h3" } as const;
 
 export type PageHeadingProps = ComponentProps<"h2"> & {

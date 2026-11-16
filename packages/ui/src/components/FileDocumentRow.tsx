@@ -33,11 +33,9 @@ export type FileDocumentRowProps = Omit<ComponentProps<"div">, "children"> & {
  * @design packages/design-system/design.md#windows
  */
 export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, printable = true, onPrint, openLabel = "Open", printLabel = "Print", printStatus, onRetryPrint, statusLabels, className, ...props }: FileDocumentRowProps) {
-  // spec/app/files.md, "Printing reports actual printer acceptance and preserves an uncertain request".
   const printing = printStatus === "pending";
   return (
     <div className={cn("flex items-center gap-4 rounded-row bg-panel px-4 py-3.5 font-sans", className)} {...props}>
-      {/* Prototype `.a-att .ft`. */}
       <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-[13px] leading-none font-extrabold text-destructive shadow-tile">
         <FileIcon className="size-[26px]" strokeWidth={2} />
         {kind}
@@ -50,7 +48,6 @@ export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, printable 
           <div className="mt-0.5 truncate text-body leading-[26px] font-medium text-muted-foreground">{detail}</div>
         ) : null}
       </div>
-      {/* Prototype `.a-att .a-btns`, `.a-btn`: `20px/1`. */}
       <div className="ml-auto flex flex-none gap-3">
         <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none" aria-label={`${openLabel} ${name}`} onClick={onOpen}>
           {openLabel}
@@ -59,7 +56,6 @@ export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, printable 
           <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none" aria-label={`${printLabel} ${name}`} aria-busy={printing || undefined} disabled={printing || printStatus === "unknown"} onClick={onPrint}>
             {pendingMark(
               printing,
-              // Prototype `axi('printer',22,2.2)`: square corners, unlike Lucide's Printer.
               <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 9V2h12v7" />
                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />

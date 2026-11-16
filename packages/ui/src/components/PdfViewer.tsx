@@ -73,7 +73,6 @@ export function PdfViewer({
   ...props
 }: PdfViewerProps) {
   const held = status !== "ready";
-  // spec/app/files.md, "Printing reports actual printer acceptance and preserves an uncertain request": the latest action reports.
   const report = printStatus ? ({ action: "print", status: printStatus } as const) : saveStatus ? ({ action: "save", status: saveStatus } as const) : null;
   return (
     <AppWindow
@@ -83,7 +82,6 @@ export function PdfViewer({
             {pendingMark(printStatus === "pending", <mailIcons.printer {...pill} />)}
             {printLabel}
           </Button>
-          {/* Prototype `filesView()` pdf (JS 1985): a file already in Files has no Save. */}
           {savable && (
             <Button variant="plain" size="compact" className="text-grace-ink" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
               {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
@@ -94,21 +92,17 @@ export function PdfViewer({
       }
       {...props}
     >
-      {/* The desk reaches the window's sides, under the header; prototype `#awin .pg>*:last-child{margin-bottom:0}` keeps the page's bottom padding white. */}
       <div className="-mx-6 -mt-6 box-border min-h-full bg-panel p-7">
         {status === "failed" ? (
-          // spec/app/files.md, "Opening a file verifies that exact content before presenting a preview".
           <MailNotice actionLabel={retryLabel} onAction={onRetry} className="mx-auto w-[620px]">
             {errorLabel}
           </MailNotice>
         ) : status === "loading" ? (
-          // The prototype's one-page form is 352px tall.
           <Skeleton role="status" aria-hidden={false} aria-label={loadingLabel} className="mx-auto h-[352px] w-[520px] rounded-sm bg-card shadow-paper" />
         ) : (
           <>
             <div className="mx-auto box-border w-[520px] rounded-sm bg-card px-12 py-11 font-sans shadow-paper">{children}</div>
             {pageLabel && <PageText tone="secondary" className="mt-3.5 text-center">{pageLabel}</PageText>}
-            {/* Under the page, so the page stays where it was. */}
             {report && <MailActionStatus {...report} onRetry={onRetryAction} labels={statusLabels} className="mx-auto mt-3.5 w-max" />}
           </>
         )}

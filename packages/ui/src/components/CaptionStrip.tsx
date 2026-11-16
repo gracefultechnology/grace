@@ -7,7 +7,6 @@ import { Spinner } from "./Spinner.tsx";
 import { ThinkingDots } from "./ThinkingDots.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 
-// Prototype stripBtn()'s speech bubble, 22px, stroke 2.
 const chatIcon = (
   <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -73,7 +72,6 @@ export function CaptionStrip({
   ...props
 }: CaptionStripProps) {
   const lineRef = useRef<HTMLSpanElement>(null);
-  // Prototype tailFit(): a long line drops whole words from its start, after "… ", until its latest words fit.
   const [fit, setFit] = useState({ text, cut: 0 });
   const cut = fit.text === text ? fit.cut : 0;
   const words = text.split(/\s+/);
@@ -81,7 +79,6 @@ export function CaptionStrip({
     const el = lineRef.current;
     if (el && el.scrollWidth > el.clientWidth + 1 && cut < words.length - 1) setFit({ text, cut: cut + 1 });
   }, [fit, text, cut, words.length]);
-  // Fits again from the whole line when the strip's width or its font changes.
   useLayoutEffect(() => {
     const el = lineRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -96,7 +93,6 @@ export function CaptionStrip({
   }, []);
   const grace = who === "grace" || !!answers?.length;
   return (
-    // The whole strip opens the chat, like a notification banner; Show chat is its visible, focusable control.
     <div
       onClick={onShowChat}
       className={cn(
@@ -106,15 +102,12 @@ export function CaptionStrip({
       )}
       {...props}
     >
-      {/* .capstrip: Grace's washes under white at 62%, brighter while pressed. */}
       <span aria-hidden className="absolute inset-0 -z-10 rounded-segment bg-glass/62 transition-colors duration-press ease-css-default group-active/strip:bg-glass/82" />
       {grace ? (
-        // .gmk: her small mark.
         <span role="img" aria-label={graceLabel} className="flex size-8 flex-none items-center justify-center rounded-full bg-gradient-ring">
           <span className="flex size-[27px] items-center justify-center rounded-full bg-glass text-caption font-bold text-primary">{graceInitial}</span>
         </span>
       ) : (
-        // .capstrip .who: 20px bold at the normal line height.
         <span className="flex-none text-body leading-[normal] font-bold text-label-ink">{youLabel}</span>
       )}
       {answers?.length ? (
@@ -148,9 +141,7 @@ export function CaptionStrip({
           </span>
         </>
       )}
-      {/* spec/app/assistant.md, "Dismiss hides only the label and Show restores only a still-current target". */}
       {showGuide && <GuideShowButton surface="strip" label={showGuideLabel} onSelect={onShowGuide} />}
-      {/* .capstrip .pill: the toolbar's tinted glass, so it shows on the pale strip. */}
       <Button variant="glass" size="pill" className="bg-primary/8 shadow-strip-pill" onClick={(event) => { event.stopPropagation(); onShowChat?.(); }}>
         {chatIcon}
         {showChatLabel}

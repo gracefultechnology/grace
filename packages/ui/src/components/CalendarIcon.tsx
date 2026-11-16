@@ -32,7 +32,6 @@ export function CalendarIcon({
       height={size}
       viewBox="0 0 120 120"
       className={cn(
-        // Prototype `.lc[data-app="Calendar"] svg`.
         "block rotate-[8deg] overflow-visible drop-shadow-calendar",
         className,
       )}
@@ -103,7 +102,6 @@ export function CalendarIcon({
   );
 }
 
-// Prototype `AXP` (line 1786): the calendar's outlines, older than Lucide's icons of the same names.
 const glyphs = {
   calendar: (
     <>
