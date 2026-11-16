@@ -246,8 +246,8 @@ async function devTools(url: string, signal: AbortSignal) {
 const failing = (what: string) => (error: unknown) => { throw new Error(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); };
 
 async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>) {
-  const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
-  await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]);
+  const booted = 'until [ "$(getprop sys.boot_completed)" = 1 ] && [ "$(settings get global device_provisioned)" = 1 ]; do sleep 1; done';
+  await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot and finish its own set-up"));
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
