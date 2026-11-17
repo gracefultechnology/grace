@@ -44,6 +44,7 @@ const plainKinds = {
   fraction: (values: number[]) => `0.${Array.from({ length: 16 }, (_, k) => digit(values[k] ?? k)).join("")}`,
   call: (values: number[]) => `Call ${dialled(values)} to verify your account`,
   texted: (values: number[]) => `We texted a code to ${dialled(values)}`,
+  callback: (values: number[]) => `Please enter ${dialled(values)} as the callback number`,
   meeting: (values: number[]) => `Meeting ID ${phone(values, 0).replaceAll("-", " ")}\nPasscode garden\nAmount: ${amount(values, 3).split(".")[0]}`,
 };
 
@@ -70,6 +71,8 @@ const printed = (grouping: keyof typeof groupings) => grouping === "4-4-4-4" || 
 const codes = {
   six: (code: number[]) => Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)),
   four: (code: number[]) => [3 + digit(code[0] ?? 0) % 7, ...Array.from({ length: 3 }, (_, k) => digit(code[k + 1] ?? k))],
+  seven: (code: number[]) => Array.from({ length: 7 }, (_, k) => digit(code[k] ?? k)),
+  ten: (code: number[]) => Array.from({ length: 10 }, (_, k) => digit(code[k] ?? k)),
   lettered: (code: number[]) => Array.from({ length: 6 }, (_, k) => (k % 3 === 1 ? "ABCDEFGHJK"[digit(code[k] ?? k)] : digit(code[k] ?? k))),
 };
 
@@ -87,9 +90,9 @@ const outgoing = Arbitrary.schema(
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
     placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered"]),
     grouping: Schema.Literals(["4-4-4-4", "4-6-5", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
-    form: Schema.Literals(["six", "four", "lettered"]),
+    form: Schema.Literals(["six", "four", "seven", "ten", "lettered"]),
     code: Schema.Array(Schema.Int),
-    kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction", "call", "texted", "meeting"]),
+    kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction", "call", "texted", "callback", "meeting"]),
     gap: Schema.Literals([" ", "\t", "\n", "  "]),
     numbers: Schema.Array(Schema.Int),
   }),
@@ -98,7 +101,7 @@ const outgoing = Arbitrary.schema(
     const shape = extra === " next" && named !== " is my card" && !printed(grouping) ? "4-4-4-4" : grouping;
     const isolated = named === "" && !printed(shape);
     const card = cardNumber(Array.from({ length: groupings[shape].reduce((sum, size) => sum + size, -1) }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), isolated ? gaps.slice(0, 1) : [...gaps], groupings[shape]);
-    const kept = form === "lettered" ? "before" : form === "four" && placement === "verb" ? "entered" : placement;
+    const kept = form === "lettered" || (form === "ten" && placement === "spaced") ? "before" : (form === "four" || form === "ten") && placement === "verb" ? "entered" : placement;
     const secret = codes[form]([...code]).join(kept === "spaced" ? " " : "");
     const plain = plainKinds[kind]([...numbers], gap);
     const head = [`${plain}.`, "ok", before, ...passwords, ...passwords.map((word) => word.toUpperCase()), "ok", named === " is my card" ? "" : named].join(" ");
