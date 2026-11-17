@@ -249,8 +249,7 @@ function cueAt(text: string, start: number, end: number): number {
   if (word === "number") return before === "time" || before === "account" || before === "routing" || before === "security" || (before === "in" && wordBefore(text, start - 3) === "sign") ? 4 : 0;
   if (word === "codigo" || word === "c\u00f3digo") return isPlaceWord(wordAfter(text, end)) || (wordAfter(text, end) === "de" && isPlaceWord(wordAfter(text, end + 3))) ? 0 : 4;
   if (word !== "code" && word !== "codes") return codeCue(word);
-  return before === "zip" || before === "postal" || before === "area" || before === "country" || before === "promo" || before === "coupon"
-    || before === "discount" || before === "referral" ? 0 : before === "security" ? 3 : 4;
+  return before === "zip" || before === "postal" || before === "area" || before === "country" ? 0 : before === "security" ? 3 : 4;
 }
 
 function isPlaceWord(word: string): boolean {

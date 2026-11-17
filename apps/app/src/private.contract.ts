@@ -64,6 +64,7 @@ const placements = {
   entered: (cue: string) => `ok the ${cue} you need to enter is #`,
   copula: (cue: string) => `ok il tuo ${cue} \u00e8 # per la carta`,
   es: (cue: string) => `ok su ${cue} es # y vence pronto`,
+  promo: (cue: string) => `ok use promo ${cue} # at checkout`,
 };
 
 const groupings = { "4-4-4-4": [4, 4, 4, 4], "4-6-5": [4, 6, 5], "8-8": [8, 8], "8-4-4": [8, 4, 4], "5-5-6": [5, 5, 6], "3-4-4-5": [3, 4, 4, 5] };
@@ -90,7 +91,7 @@ const outgoing = Arbitrary.schema(
     named: Schema.Literals(["", "card ", "Visa ", " is my card"]),
     extra: Schema.Literals(["", " 12 27", " 12 2027 123", ",123", "/12/27", " 415 555 0123", " next"]),
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
-    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered", "copula", "es"]),
+    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered", "copula", "es", "promo"]),
     grouping: Schema.Literals(["4-4-4-4", "4-6-5", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
     form: Schema.Literals(["six", "four", "seven", "ten", "lettered"]),
     code: Schema.Array(Schema.Int),
