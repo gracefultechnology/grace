@@ -6,6 +6,7 @@ import type { BrowserInput } from "../gen/app__browserControls.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import type { DeleteScope } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
+import type { GuidedRead } from "../gen/app__workspace.effect.vibe"
 import type { FileTab } from "../gen/app__files.effect.vibe"
 
 const Words = Schema.Trimmed.check(Schema.isMinLength(1))
@@ -61,6 +62,7 @@ export const Action = Schema.Union([
   action("cancelProposal", {}),
   action("findFile", { tab: of<FileTab>()(["Photos", "Documents"]), query: Words }),
   action("beginTask", { task: Schema.Literals(["PayBill", "BookAppointment"]) }),
+  action("proposeReadPlan", { steps: Schema.Array(of<GuidedRead>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadCalendar"])).check(Schema.isBetweenLength(1, 4)) }),
   action("fill", {}),
 ])
 

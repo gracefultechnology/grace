@@ -9,6 +9,7 @@ import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { accounts, signIns } from "./accounts.vibe"
 import { calendarFeeds, calendars } from "./calendar.vibe"
 import { agent } from "./actions.vibe"
+import { browserGuide } from "./browserGuide.vibe"
 import { connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
 import { instances, reading } from "./instances.vibe"
@@ -92,5 +93,5 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept)
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), grace), machines)
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), grace, browserGuide(cloud)), machines)
 }

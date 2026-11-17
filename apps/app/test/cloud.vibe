@@ -218,6 +218,10 @@ const scripted: readonly Scripted[] = [
     text: "I made the text larger. Is that easier to read?", isQuestion: true, answers: ["Yes, thanks", "A bit bigger"],
     actions: [{ kind: "setTextSize", size: "Larger" }, { kind: "searchMail", query: "clinic" }]
   }) },
+  { said: "Check the help page on this website, then read my open email and saved appointment. Don't move or change anything.", answer: JSON.stringify({
+    text: "Review and start the read plan.", isQuestion: false, answers: [],
+    actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser", "ReadMail", "ReadCalendar"] }]
+  }) },
   { said: "Say nothing.", answer: JSON.stringify({ actions: [] }) }
 ]
 const heard = "I would like to pay my power bill."
@@ -805,6 +809,18 @@ effect function store(site: string) {
     })
   }
 
+  effect function decide() {
+    try signedIn()
+    const body = try HttpServerRequest.schemaBodyJson(Schema.Struct({
+      kind: Schema.Literal("choice"), goal: Schema.String,
+      candidates: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String }))
+    }))
+    const choice = body.goal.includes("help page") ? body.candidates.find((candidate) => candidate.label === "Help center")?.id ?? null : null
+    const winner = choice ?? "__none__"
+    return try HttpServerResponse.json({ status: "ok", kind: "choice", model: "fixture", choice, confidence: 1,
+      probabilities: { [winner]: 1 } })
+  }
+
   effect function speechConsent() {
     const { key } = try signedIn()
     const consentNonce = uuid(try next())
@@ -917,6 +933,7 @@ effect function store(site: string) {
     HttpRouter.route("GET", "/api/v1/eliza/connections/sessions/:sessionId", answered(sessionOutcome())),
     HttpRouter.route("DELETE", "/api/v1/eliza/connections/sessions/:sessionId", answered(closeSession())),
     HttpRouter.route("POST", "/api/v1/chat/completions", answered(chat())),
+    HttpRouter.route("POST", "/api/v1/decisions", answered(decide())),
     HttpRouter.route("POST", "/api/v1/voice/speech/consent", answered(speechConsent())),
     HttpRouter.route("POST", "/api/v1/voice/speech/session", answered(speechSession())),
     HttpRouter.route("POST", "/api/v1/voice/speech/session/:sessionId/revoke", answered(speechRevoke())),
