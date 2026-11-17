@@ -241,12 +241,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
     }]), client));
     await transport({ kind: "decisionRoute", cloud });
-    const { runtime, workspace } = await launch(native.plugin, { url: cloud, key: secret });
-    await runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (machine) =>
-      Effect.flatMap(machine.get(), ({ device }) => machine.send({
-        type: "setAvailability",
-        availability: { connection: navigator.onLine ? "Online" : "Offline", reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true },
-      }, "Host"))));
+    const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -260,6 +255,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
     const showLink = page.getByRole("button", { name: "Show me the link" });
     try {
@@ -332,11 +328,7 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
       said: question,
       answer: JSON.stringify({ text: "Review the statement read.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadStatement"] }] }),
     }]), client));
-    const { runtime, workspace } = await launch(native.plugin, { url: cloud, key: secret });
-    await runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (machine) =>
-      Effect.flatMap(machine.get(), ({ device }) => machine.send({
-        type: "setAvailability", availability: { connection: "Online", reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true },
-      }, "Host"))));
+    const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet", exact: true }));
     await userEvent.fill(page.getByRole("textbox", { name: "Address" }), url);
     await userEvent.click(page.getByRole("button", { name: "Go", exact: true }));
@@ -346,6 +338,7 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
     await userEvent.click(page.getByRole("button", { name: "Read statement", exact: true }));
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText("Read checks complete", { exact: true })).toBeVisible();

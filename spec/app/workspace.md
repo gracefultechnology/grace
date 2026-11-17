@@ -94,6 +94,7 @@ type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effec
   | WakeFeedback({ signal: W::WakeSignal })
   | PreferenceFeedback({ revision: int, effect: R::PreferenceEffect })
 type WorkspaceResult = { state: Workspace, out: List[WorkspaceEffect] }
+type BrowserObservationChoice = { allowed: bool, deviceVersion: int, browserRevision: int }
 type Availability = {
   connection: S::Connectivity, reasoning: bool, microphone: bool, observation: bool
 }
@@ -352,7 +353,8 @@ pure def lawRestartKeepsPaymentRecords(w: Workspace, by: WorkspaceActor): bool =
     w.otherPayments.every(prior => after.otherPayments.some(restored => sameDurablePaymentRecord(prior, restored))) and
     after.otherPayments.every(p => p.result == p.durable.result and not(p.live) and not(p.fresh))
 pure def canSetAvailability(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
-  by == Host and (availability.connection != w.device.connectivity or
+  by == Host and (availability.observation implies w.device.observationAllowed) and
+  (availability.connection != w.device.connectivity or
     availability.reasoning != w.device.reasoningAvailable or
     availability.microphone != w.device.microphoneAllowed or
     availability.observation != w.device.observationAllowed)
@@ -361,6 +363,34 @@ pure def setAvailability(w: Workspace, availability: Availability, by: Workspace
   val reasoning = S::setReasoningAvailability(connected, availability.reasoning)
   val microphone = S::setMicrophonePermission(reasoning, availability.microphone)
   interrupted(S::setObservationPermission(microphone, availability.observation), w.browser, w)
+```
+
+### The person can allow Grace to read her browser and revoke that choice
+
+Browser reading starts off. The person may allow it from Grace's window on
+the Browser surface. They can turn it off from Grace's window on any
+surface. The choice applies to this Grace session. Restarting resets it.
+Only a current device and browser revision can change it. A change
+interrupts outstanding browser work and advances the device context.
+The host cannot grant this permission. Native surface refusals still apply.
+
+```quint
+pure def canSetBrowserObservation(w: Workspace, choice: BrowserObservationChoice, by: WorkspaceActor): bool =
+  by == Person and w.device.readiness == S::Ready and A::isVisible(w.assistant) and
+  choice.deviceVersion == w.device.contextVersion and choice.browserRevision == w.browser.revision and
+  choice.allowed != w.device.observationAllowed and (choice.allowed implies w.device.surface == S::Browser)
+pure def setBrowserObservation(w: Workspace, choice: BrowserObservationChoice, by: WorkspaceActor): Workspace =
+  interrupted(S::setObservationPermission(w.device, choice.allowed), w.browser, w)
+pure def lawOnlyPersonCanAllowBrowserObservation(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
+  not(w.device.observationAllowed) and availability.observation implies not(canSetAvailability(w, availability, by))
+pure val choiceValues = Set(
+  { allowed: true, deviceVersion: 2, browserRevision: 0 },
+  { allowed: true, deviceVersion: 6, browserRevision: 0 },
+  { allowed: true, deviceVersion: 6, browserRevision: 1 },
+  { allowed: true, deviceVersion: 7, browserRevision: 1 },
+  { allowed: true, deviceVersion: 8, browserRevision: 1 },
+  { allowed: false, deviceVersion: 7, browserRevision: 0 },
+  { allowed: false, deviceVersion: 8, browserRevision: 1 })
 ```
 
 ### Home, native controls and Close have explicit interruption semantics
