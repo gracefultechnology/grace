@@ -356,7 +356,8 @@ pure val exampleReport: GuidanceReport =
 pure val reportValues = Set(exampleReport,
   { ...exampleReport, workVersion: 0, conversationVersion: 2 }, { ...exampleReport, conversationVersion: 2 },
   { ...exampleReport, verified: false }, { ...exampleReport, target: "" },
-  { ...exampleReport, workVersion: 2, conversationVersion: 3 })
+  { ...exampleReport, workVersion: 2, conversationVersion: 3 },
+  { ...exampleReport, workVersion: 2 }, { ...exampleReport, workVersion: 2, conversationVersion: 2 })
 ```
 
 ### Page guidance shows only on the visible page and steps aside while Grace talks or works
