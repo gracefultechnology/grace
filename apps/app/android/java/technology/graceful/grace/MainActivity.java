@@ -25,6 +25,7 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onCreate(Bundle state) {
   registerPlugin(EmbeddedAgentPlugin.class);
+  registerPlugin(GraceSignInPlugin.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   registerPlugin(PasswordsPlugin.class);
   registerPlugin(PrivateViewPlugin.class);

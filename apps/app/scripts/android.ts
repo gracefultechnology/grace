@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseArgs, promisify } from "node:util";
@@ -70,6 +70,7 @@ const Step = Schema.Union([
   Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.NonEmptyString }),
   Schema.Struct({ agent: AgentStatus }),
+  Schema.Struct({ signIn: Schema.Struct({ signedIn: Schema.Boolean, google: Schema.Boolean }) }),
   Schema.Struct({ service: Schema.String.check(Schema.isPattern(/^[A-Z]\w*$/)) }),
   Schema.Struct({ leaveFor: Schema.String.check(Schema.isPattern(/^android\.settings\.[A-Z_]+$/)) }),
 ]);
@@ -148,11 +149,14 @@ function buildAndroid({ release = false, abi }: { release?: boolean; abi: Abi })
     profile,
     runtimeDirectory: agentRuntime(abi),
   });
+  const userHome = path.join(app, project, "android-user");
+  mkdirSync(userHome, { recursive: true });
+  copyFileSync(path.join(app, "android/debug.keystore"), path.join(userHome, "debug.keystore"));
   if (!release) for (const flavor of flavors) for (const suffix of ["", "-unsigned"])
     rmSync(path.join(artifacts, `${flavor}-release${suffix}.apk`), { force: true });
   buildAndroidConsumer({
     root: app,
-    environment: environment(),
+    environment: { ...environment(), ANDROID_USER_HOME: userHome },
     variants: flavors,
     release,
     lint: false,
@@ -277,6 +281,10 @@ const Document = Schema.Struct({ root: Schema.Struct({ nodeId: Schema.Number }) 
 const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Schema.Struct({ value: Schema.Unknown })), backendDOMNodeId: Schema.optional(Schema.Number) });
 const AXNodes = Schema.Struct({ nodes: Schema.Array(AXNode) });
 const Quads = Schema.Struct({ quads: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number])) });
+const SignInReport = Schema.Struct({
+  status: Schema.Struct({ active: Schema.Boolean, google: Schema.Boolean, googleScopes: Schema.Array(Schema.String) }),
+  identity: Schema.Struct({ credentialId: Schema.NullOr(Schema.String) }),
+});
 const Targets = Schema.Array(Schema.Struct({ type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
 
 async function devTools(url: string, signal: AbortSignal) {
@@ -364,6 +372,18 @@ async function devTools(url: string, signal: AbortSignal) {
         const status = Schema.decodeUnknownSync(Schema.Struct({ ...AgentStatus.fields, error: Schema.optional(Schema.String) }))(result.value);
         if (status.state !== step.agent.state || status.failure !== step.agent.failure)
           throw new Error(`The agent is ${JSON.stringify(status)}, not ${JSON.stringify(step.agent)}`);
+        return;
+      }
+      if ("signIn" in step) {
+        const expression = `(async () => { const signIn = Capacitor.Plugins.GraceSignIn; return JSON.stringify({ status: await signIn.status({ refreshNegative: true }), identity: await signIn.credentialIdentity({ environment: "production" }) }); })()`;
+        const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const reply = String(result.value);
+        if (/eliza_mobile_/.test(reply)) throw new Error("A sign-in result carries an Eliza Cloud key");
+        const { status, identity } = Schema.decodeUnknownSync(Schema.fromJsonString(SignInReport))(reply);
+        const found = { signedIn: identity.credentialId !== null, google: status.google };
+        process.stdout.write(`sign-in status ${JSON.stringify({ ...status, ...found })}\n`);
+        if (found.signedIn !== step.signIn.signedIn || found.google !== step.signIn.google)
+          throw new Error(`Sign-in is ${JSON.stringify(found)}, not ${JSON.stringify(step.signIn)}`);
         return;
       }
       if ("tap" in step) return await tap(step.tap, signal);
