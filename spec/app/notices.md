@@ -7,15 +7,25 @@ the banner at the top of Home (not connected to the internet, a due
 reminder) and the Android notification for a reminder that comes due while
 Grace is not in front. The calendar, Email, Files, Settings and the
 connection raise notices here; each still owns what its notice is about.
-[The calendar view](./calendarView.md) owns whether a reminder is shown,
-[Email](./email.md) owns the Undo it offers and withdraws it when its toast
-closes, and [the shell](./shell.md) owns whether the tablet is online.
+[The calendar view](./calendarView.md) owns whether a reminder is shown and
+alone dismisses one, [Email](./email.md) owns the Undo it offers and
+withdraws it when it no longer applies, and [the shell](./shell.md) owns
+whether the tablet is online.
+
+The prototype's toasts are all raised here: "Saved to your calendar" and
+"Deleted" with the event's title from the calendar
+(`prototype/Grace Prototype.html:2173–2176`), "Connected to" with the
+network's name from the Wi-Fi page (`:2035`), "The internet isn't connected.
+Tap Wi-Fi to fix it." and "Email needs the internet" when the person opens
+the internet or Email while offline (`:2249–2250`), Email's and Files' own
+messages, and "Back online" and the reminder toast below. Its "In the full
+version…" toasts and the "Hey Grace is off" toast are demo messages with no
+counterpart in this delivery.
 
 The prototype's toast replaces whatever toast was showing
-(`prototype/Grace Prototype.html:1825–1826`), so a second message could wipe
-an Undo the person was reaching for. Here notices queue instead and show one
-at a time. The prototype's "In the full version…" toasts and the "Hey Grace
-is off" toast are demo messages with no counterpart in this delivery.
+(`Grace Prototype.html:1825–1826`), so a second message could wipe an Undo
+the person was reaching for. Here notices queue instead and show one at a
+time.
 
 Grace does not speak a notice. It is written on the screen, and she reads it
 aloud only when the person asks her to.
@@ -29,12 +39,13 @@ aloud only when the person asks her to.
 
 A notice is raised by its source with what it is about (a message, an event,
 a file) and at most one action: Undo, from Email or Settings, or See details,
-on a reminder. The calendar raises only reminders, through the reminder rule
-below. A new toast joins the end of the line; while one is showing the
-others wait, and when it closes the next in line shows, so toasts show first
-come, first shown. A toast waiting shows as soon as nothing stops it. The
-toast sits 24 pixels above compact Grace, or above the bottom edge when she
-is closed or expanded (`Grace Prototype.html:1826`).
+which only a reminder's toast has and only the reminder rule below raises.
+"Back online" is raised only by the connection rule below. A new toast joins
+the end of the line; while one is showing the others wait, and when it
+closes the next in line shows, so toasts show first come, first shown. A
+toast waiting shows as soon as nothing stops it. The toast sits 24 pixels
+above compact Grace, or above the bottom edge when she is closed or expanded
+(`Grace Prototype.html:1826`).
 
 ```quint
 type NoticeActor = Person | App | Host
@@ -55,6 +66,7 @@ pure val initial: Notices = {
 pure def offerFits(source: Source, offer: Offer): bool =
   offer == NoOffer or (offer == Undo and (source == Email or source == Settings)) or
     (offer == SeeDetails and source == Calendar)
+pure def isBackOnline(x: Notice): bool = x.source == Connectivity and x.subject == "online"
 pure def withShown(shown: List[Notice], n: Notices): Notices =
   if (shown.length() == 0 and not(n.blocked) and n.place != Background and n.waiting.length() > 0)
     { ...n, shown: List(n.waiting.head()), waiting: n.waiting.tail() }
@@ -65,7 +77,8 @@ pure def withNotice(source: Source, offer: Offer, subject: str, n: Notices): Not
     waiting: n.waiting.append({ id: n.nextId, source: source, offer: offer, subject: subject }),
     nextId: n.nextId + 1 })
 pure def canRaise(n: Notices, source: Source, offer: Offer, subject: str, by: NoticeActor): bool =
-  by == App and subject != "" and source != Calendar and offerFits(source, offer)
+  by == App and subject != "" and offer != SeeDetails and offerFits(source, offer) and
+    not(isBackOnline({ id: n.nextId, source: source, offer: offer, subject: subject }))
 pure def raise(n: Notices, source: Source, offer: Offer, subject: str, by: NoticeActor): Notices =
   withNotice(source, offer, subject, n)
 pure def queued(n: Notices): List[Notice] = n.shown.concat(n.waiting)
@@ -85,16 +98,36 @@ pure def sometimesUndoShown(n: Notices): bool = n.shown.some(x => x.offer == Und
 pure val subjectValues = Set("message", "event")
 ```
 
+### Each notice has its own number, below the next one to be given
+
+Each notice is given a number when it is raised, one higher than the last,
+and keeps it while it is showing or waiting. No two notices in the line share
+a number, and none has a number not yet given. The host's timer, the
+person's buttons and a source taking its notice back name the notice by that
+number, so a timer left over from an earlier toast never closes a later one.
+
+```quint
+pure def hasItsOwnNumber(line: List[Notice], x: Notice): bool =
+  line.select(y => y.id == x.id).length() == 1
+pure def alwaysEachNoticeHasItsOwnNumber(n: Notices): bool =
+  queued(n).every(x => x.id < n.nextId and hasItsOwnNumber(queued(n), x))
+```
+
 ### A toast stays its whole lifetime unless the person closes it or acts
 
-A toast without an action stays 2.6 seconds; one with Undo or See details
-stays 6 seconds (`Grace Prototype.html:1826`). The host's timer closes only
-the toast showing now, and never before its lifetime; the time counts from
-when it was last shown. The person may close it or press its action at any
-time. Pressing the action closes the toast, and the host sends the action to
-the toast's source: Undo to Email's or Settings' undo, See details to the
-calendar view's reminder. Every closed Undo toast is reported to its source,
-which then withdraws that Undo.
+A toast without an action stays 2.6 seconds and one with Undo stays 6
+seconds, as in the prototype (`Grace Prototype.html:1826`). A reminder's
+toast, with See details, also stays 6 seconds; this departs from the
+prototype, whose reminder toast has no button and stays 2.6 seconds
+(`Grace Prototype.html:2275`), so that the person has time to reach See
+details. The host's timer closes only the toast showing now, and never
+before that toast's lifetime; the time counts from when it was last shown.
+The person may close the toast showing or press its action at any time; the
+prototype's toasts have no close control, and this one is added so that a
+toast never stands in the person's way. Pressing the action closes the
+toast, and the host sends the action to the toast's source: Undo to Email's
+or Settings' undo, See details to the calendar view's reminder. Every closed
+Undo toast is reported to its source, which then withdraws that Undo.
 
 ```quint
 pure def lifetimeMs(offer: Offer): int = if (offer == NoOffer) 2600 else 6000
@@ -105,38 +138,41 @@ pure def expire(n: Notices, id: int, elapsed: int, by: NoticeActor): Notices = w
 pure def canAct(n: Notices, id: int, by: NoticeActor): bool =
   by == Person and n.shown.some(x => x.id == id and x.offer != NoOffer)
 pure def act(n: Notices, id: int, by: NoticeActor): Notices = withShown(List(), n)
+pure def canCloseToast(n: Notices, id: int, by: NoticeActor): bool = by == Person and isShown(n, id)
+pure def closeToast(n: Notices, id: int, by: NoticeActor): Notices = withShown(List(), n)
 pure def lawActionsStayLonger(offer: Offer): bool =
   offer != NoOffer implies lifetimeMs(offer) > lifetimeMs(NoOffer)
 pure def lawOnlyTheShownToastCloses(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
   not(isShown(n, id)) implies not(canExpire(n, id, elapsed, by))
 pure def lawNoToastClosesEarly(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
-  elapsed < 2600 implies not(canExpire(n, id, elapsed, by))
+  n.shown.some(x => elapsed < lifetimeMs(x.offer)) implies not(canExpire(n, id, elapsed, by))
 pure val idValues = Set(0, 1, 2)
 pure val elapsedValues = Set(1000, 2600, 6000)
 ```
 
-### Closing a reminder's toast dismisses the reminder
+### A source takes back a notice that no longer applies
 
-Closing an ordinary toast only hides it. Closing the toast of a reminder is
-the reminder's Dismiss, as on its banner: the reminder is gone from Home and
-from Android's notifications, and its toast waits nowhere. Its timer running
-out dismisses nothing, so the banner is back on Home until the person
-dismisses it.
+A source may take back a notice it raised while the notice is showing or
+waiting: Email withdraws its Undo at the next listing refresh or another
+change to that message, whichever comes before the toast closes. The notice
+leaves the line wherever it is, the rest keep their order, and if it was
+showing the next in line shows. So an Undo whose message has moved on never
+shows.
 
 ```quint
-pure def withoutReminder(subject: str, n: Notices): Notices = {
-  ...n,
-  reminders: n.reminders.select(r => r != subject),
-  androidNotifications: n.androidNotifications.select(r => r != subject),
-  waiting: n.waiting.select(x => not(x.source == Calendar and x.subject == subject))
-}
-pure def canCloseToast(n: Notices, id: int, by: NoticeActor): bool = by == Person and isShown(n, id)
-pure def closeToast(n: Notices, id: int, by: NoticeActor): Notices =
-  if (n.shown.length() > 0 and n.shown.head().source == Calendar)
-    withShown(List(), withoutReminder(n.shown.head().subject, n))
-  else withShown(List(), n)
-pure def lawExpiringKeepsTheReminder(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
-  canExpire(n, id, elapsed, by) implies expire(n, id, elapsed, by).reminders == n.reminders
+pure def leaves(x: Notice, id: int, reminder: str): bool =
+  x.id != id and not(x.offer == SeeDetails and x.subject == reminder)
+pure def withoutNotices(id: int, reminder: str, n: Notices): Notices =
+  withShown(n.shown.select(x => leaves(x, id, reminder)),
+    { ...n, waiting: n.waiting.select(x => leaves(x, id, reminder)) })
+pure def canWithdraw(n: Notices, id: int, by: NoticeActor): bool =
+  by == App and queued(n).some(x => x.id == id)
+pure def withdraw(n: Notices, id: int, by: NoticeActor): Notices = withoutNotices(id, "", n)
+pure def lawRemovingLeavesTheRestInOrder(id: int, reminder: str, n: Notices): bool =
+  queued(withoutNotices(id, reminder, n)) == queued(n).select(x => leaves(x, id, reminder))
+pure def lawAWithdrawnNoticeIsGone(n: Notices, id: int, by: NoticeActor): bool =
+  not(queued(withdraw(n, id, by)).some(x => x.id == id))
+pure val reminderValues = Set("", "event")
 ```
 
 ## Story: Never have a decision covered
@@ -158,6 +194,8 @@ pure def cover(n: Notices, blocked: bool, by: NoticeActor): Notices =
   else withShown(n.shown, { ...n, blocked: false })
 pure def alwaysNothingCoversADecision(n: Notices): bool =
   n.blocked implies (n.shown.length() == 0 and bannerOf(n).kind == NoBanner)
+pure def lawCoveringKeepsTheLine(n: Notices, blocked: bool, by: NoticeActor): bool =
+  queued(cover(n, blocked, by)) == queued(n)
 pure def sometimesAToastWaitsForADecision(n: Notices): bool = n.blocked and n.waiting.length() > 0
 ```
 
@@ -166,15 +204,16 @@ pure def sometimesAToastWaitsForADecision(n: Notices): bool = n.blocked and n.wa
 > As a person coming back to Home, I want to see at once if the internet is
 > down or something is coming up.
 
-### Home shows one banner: the connection first, then the earliest reminder
+### Home shows one banner: the connection first, then the first reminder to come due
 
 The banner sits at the top of Home, hidden while Grace is expanded, while
 the tablet sleeps and while a decision is open (`Grace Prototype.html:1865–1871`).
 When the tablet is not connected it reads "Not connected to the internet"
-with Fix Wi-Fi, which opens the written steps on the Wi-Fi page. Otherwise
-the earliest reminder not yet dismissed is the banner, with its event's title, day,
-time and place, See details and Dismiss. A banner stays until what it reports
-ends; it has no timer.
+over "Grace can help you reconnect.", with Fix Wi-Fi, which opens the
+written steps on the Wi-Fi page. Otherwise the reminder that came due first
+and is not yet dismissed is the banner, with its event's title, day, time and
+place, See details and Dismiss. A banner stays until what it reports ends; it
+has no timer.
 
 ```quint
 type BannerKind = NoBanner | OfflineBanner | ReminderBanner
@@ -195,20 +234,23 @@ pure def sometimesReminderBanner(n: Notices): bool = bannerOf(n).kind == Reminde
 ### Coming back online is told once, in a toast
 
 When the connection returns, the offline banner goes and the toast "Back
-online" says so once (`Grace Prototype.html:2132`). Losing the connection,
-or hearing again that it is still up or still down, raises no toast: the banner says it on Home, and Email and the browser say
-it where they need it.
+online" says so once (`Grace Prototype.html:2132`). Nothing else raises
+"Back online". Losing the connection, or hearing again that it is still up
+or still down, raises no toast: the banner says it on Home, and Email and
+the browser say it where they need it.
 
 ```quint
 pure def canObserveConnection(n: Notices, online: bool, by: NoticeActor): bool = by == Host
 pure def observeConnection(n: Notices, online: bool, by: NoticeActor): Notices =
   if (online and not(n.online)) withNotice(Connectivity, NoOffer, "online", { ...n, online: true })
   else { ...n, online: online }
-pure def sometimesBackOnline(n: Notices): bool =
-  n.online and queued(n).some(x => x.source == Connectivity)
+pure def sometimesBackOnline(n: Notices): bool = n.online and queued(n).some(x => isBackOnline(x))
 pure def stepBackOnlineIsToldOnce(before: Notices, via: str, after: Notices): bool =
   (via == "observeConnection" and not(after.online and not(before.online))) implies
     queued(after) == queued(before)
+pure def stepOnlyReconnectingSaysBackOnline(before: Notices, via: str, after: Notices): bool =
+  queued(after).every(x => (isBackOnline(x) and x.id >= before.nextId) implies
+    (via == "observeConnection" and after.online and not(before.online)))
 ```
 
 ## Story: Hear about a reminder wherever I am
@@ -219,13 +261,15 @@ pure def stepBackOnlineIsToldOnce(before: Notices, via: str, after: Notices): bo
 ### A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background
 
 On Home a reminder that comes due is the banner. On any other screen it is
-also the toast "Reminder: " with the title, the day and the time, with See
-details (`Grace Prototype.html:2275`), and the banner is waiting on Home.
-When Grace is not in front, or the tablet sleeps, it is an Android
-notification with the same words, and the banner is waiting on Home.
-Tapping the notification brings Grace forward on Home and removes it from
-Android. Dismissing a reminder anywhere, on the banner, its toast, the event
-or the notification, dismisses it everywhere.
+also the toast "Reminder: " with the title, the day and the time
+(`Grace Prototype.html:2275`), here with See details, and the banner is
+waiting on Home. A reminder's toast already showing when the person comes
+back to Home stays out its lifetime while the banner shows the same reminder.
+When Grace is not in front, or the tablet sleeps, every reminder that is due
+and not dismissed is an Android notification with the same words, whether it
+came due there or before Grace left the front, and the banner is waiting on
+Home. Tapping the notification brings Grace forward on Home and removes it
+from Android.
 
 ```quint
 pure def canRemind(n: Notices, subject: str, by: NoticeActor): bool =
@@ -236,11 +280,6 @@ pure def remind(n: Notices, subject: str, by: NoticeActor): Notices = {
   else if (n.place == OtherScreen) withNotice(Calendar, SeeDetails, subject, due)
   else due
 }
-pure def canDismissReminder(n: Notices, subject: str, by: NoticeActor): bool =
-  by != Host and n.reminders.includes(subject)
-pure def dismissReminder(n: Notices, subject: str, by: NoticeActor): Notices =
-  if (n.shown.some(x => x.source == Calendar and x.subject == subject)) withShown(List(), withoutReminder(subject, n))
-  else withoutReminder(subject, n)
 pure def canOpenAndroidNotification(n: Notices, subject: str, by: NoticeActor): bool =
   by == Person and n.androidNotifications.includes(subject)
 pure def openAndroidNotification(n: Notices, subject: str, by: NoticeActor): Notices =
@@ -248,32 +287,65 @@ pure def openAndroidNotification(n: Notices, subject: str, by: NoticeActor): Not
 pure def alwaysNotificationsAreDueReminders(n: Notices): bool =
   n.androidNotifications.every(r => n.reminders.includes(r))
 pure def alwaysReminderToastsAreDue(n: Notices): bool =
-  queued(n).every(x => x.source == Calendar implies n.reminders.includes(x.subject))
-pure def reminderGone(n: Notices, subject: str): bool =
-  not(n.reminders.includes(subject)) and not(n.androidNotifications.includes(subject)) and
-    not(queued(n).some(x => x.source == Calendar and x.subject == subject))
-pure def lawDismissedEverywhere(n: Notices, subject: str, by: NoticeActor): bool =
-  canDismissReminder(n, subject, by) implies reminderGone(dismissReminder(n, subject, by), subject)
-pure def sometimesReminderToast(n: Notices): bool = n.shown.some(x => x.source == Calendar)
+  queued(n).every(x => x.offer == SeeDetails implies n.reminders.includes(x.subject))
+pure def alwaysEveryDueReminderReachesAndroidInTheBackground(n: Notices): bool =
+  n.place == Background implies n.reminders.every(r => n.androidNotifications.includes(r))
+pure def sometimesReminderToast(n: Notices): bool = n.shown.some(x => x.offer == SeeDetails)
 pure def sometimesAndroidNotification(n: Notices): bool = n.androidNotifications.length() > 0
 ```
 
-### Only reminders reach Android, and only while Grace is in the background
+### Only the calendar dismisses a reminder, and then it is gone everywhere
 
-Nothing else becomes an Android notification: no new-mail notification in
-this delivery. A toast raised while Grace is in the background is not kept
-for later, because it described a moment that has passed; leaving the
-foreground closes the toast showing and the ones waiting, and each closed
-Undo is withdrawn by its source. Coming back to Home or another screen shows
-the next toast raised from then on.
+Closing a reminder's toast, like Dismiss on its banner, on the event or on
+the notification, asks the calendar view to dismiss the reminder. The toast
+closes either way; the reminder leaves Home and Android only when the
+calendar view dismisses it, which it refuses while a deletion question is
+open, being stored or failed. Closing or acting on a toast, or its timer
+running out, dismisses nothing here. When the calendar view dismisses a
+reminder it is gone everywhere at once: from the banner, from Android's
+notifications and from the line of toasts.
 
 ```quint
+pure def canDismissReminder(n: Notices, subject: str, by: NoticeActor): bool =
+  by == App and n.reminders.includes(subject)
+pure def withoutReminder(subject: str, n: Notices): Notices = { ...n,
+  reminders: n.reminders.select(r => r != subject),
+  androidNotifications: n.androidNotifications.select(r => r != subject) }
+pure def dismissReminder(n: Notices, subject: str, by: NoticeActor): Notices =
+  withoutNotices(n.nextId, subject, withoutReminder(subject, n))
+pure def reminderGone(n: Notices, subject: str): bool =
+  not(n.reminders.includes(subject)) and not(n.androidNotifications.includes(subject)) and
+    not(queued(n).some(x => x.offer == SeeDetails and x.subject == subject))
+pure def lawDismissedEverywhere(n: Notices, subject: str, by: NoticeActor): bool =
+  canDismissReminder(n, subject, by) implies reminderGone(dismissReminder(n, subject, by), subject)
+pure def lawOnlyTheCalendarDismisses(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
+  expire(n, id, elapsed, by).reminders == n.reminders and act(n, id, by).reminders == n.reminders and
+    closeToast(n, id, by).reminders == n.reminders
+```
+
+### Only reminders reach Android, and a new one only while Grace is in the background
+
+Nothing else becomes an Android notification: no new-mail notification in
+this delivery. A reminder's notification is posted only while Grace is in
+the background, and stays after she comes back to the front until it is
+tapped or its reminder is dismissed. A toast raised while Grace is in the
+background is not kept for later, because it described a moment that has
+passed; leaving the foreground closes the toast showing and the ones
+waiting, and each closed Undo is withdrawn by its source. Coming back to
+Home or another screen shows the next toast raised from then on.
+
+```quint
+pure def everyReminderPosted(n: Notices): List[str] =
+  n.androidNotifications.concat(n.reminders.select(r => not(n.androidNotifications.includes(r))))
 pure def canMove(n: Notices, place: Place, by: NoticeActor): bool = by == Host
 pure def move(n: Notices, place: Place, by: NoticeActor): Notices =
-  if (place == Background) { ...n, place: Background, shown: List(), waiting: List() }
+  if (place == Background)
+    { ...n, place: Background, shown: List(), waiting: List(), androidNotifications: everyReminderPosted(n) }
   else withShown(n.shown, { ...n, place: place })
+pure def lawMovingInFrontKeepsTheLine(n: Notices, place: Place, by: NoticeActor): bool =
+  place != Background implies queued(move(n, place, by)) == queued(n)
 pure def stepAndroidOnlyInTheBackground(before: Notices, after: Notices): bool =
-  after.androidNotifications.every(r => before.androidNotifications.includes(r) or before.place == Background)
+  after.androidNotifications.every(r => before.androidNotifications.includes(r) or after.place == Background)
 pure def alwaysNoToastInTheBackground(n: Notices): bool =
   n.place == Background implies queued(n).length() == 0
 ```
