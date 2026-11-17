@@ -141,7 +141,9 @@ it("Connect the email I already use", async () => {
   await expect.element(servers.getByLabelText("Incoming mail server")).toHaveValue("mail.riverview.net");
   await tap(servers.getByRole("button", { name: "Ask Grace" }));
   const asked = "What are mail servers?";
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), `${asked}{Enter}`));
+  const field = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.element(field).toBeVisible();
+  await act(() => userEvent.type(field, `${asked}{Enter}`));
   await expect.element(page.getByText(reply(asked))).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await act(() => servers.getByLabelText("Incoming mail server").fill("mail.wrong.net"));
@@ -177,6 +179,8 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await tap(page.getByRole("button", { name: /St\. Mark’s Church Office/ }));
+  await expect.element(page.getByText("This message couldn’t be opened. Try again.")).toBeVisible();
+  await tap(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Outlook needs you to sign in again")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
   await openEmailSettings();

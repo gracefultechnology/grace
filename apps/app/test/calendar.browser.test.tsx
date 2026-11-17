@@ -34,7 +34,7 @@ async function company(key: string) {
   return boxes[0].calendar;
 }
 
-const held = async (key: string) => (await company(key)).map((e) => ({ title: e.title, startAt: Date.parse(e.startAt) }));
+const held = async (key: string) => (await company(key)).filter((e) => e.title !== "Joan’s birthday").map((e) => ({ title: e.title, startAt: Date.parse(e.startAt) }));
 
 function kept(): Accounts {
   const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
@@ -56,7 +56,7 @@ async function start() {
   return {
     secret, eyeAt, eyeDay, card, run,
     toEyeWeek: async () => {
-      await act(() => userEvent.click(card));
+      await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
       await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
@@ -132,7 +132,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
 it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eyeAt, eyeDay, toEyeWeek, stop } = await start();
-  const titles = async () => (await company(secret)).map((e) => e.title).filter((t) => t !== "Joan’s birthday");
+  const titles = async () => (await held(secret)).map((e) => e.title);
   const edit = async (title: string, repeats: string) => {
     await click("Edit");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), title));
