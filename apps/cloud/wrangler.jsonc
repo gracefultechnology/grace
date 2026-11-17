@@ -39,6 +39,8 @@
         "PUBLIC_API_ORIGIN": "https://api.graceforseniors.com",
         "WEB_ORIGIN": "https://app.graceforseniors.com",
         "NATIVE_AUTH_CALLBACK": "https://app.graceforseniors.com/android/auth/callback",
+        "NATIVE_CLIENT_ID": "technology.graceful.grace",
+        "NATIVE_CLIENT_REGISTRY": "[{\"clientId\":\"technology.graceful.grace\",\"environment\":\"production\",\"displayName\":\"Grace\",\"androidPackage\":\"technology.graceful.grace\",\"certFingerprints\":[\"B8:9E:0E:36:E3:6E:75:3E:9E:95:1C:EA:A6:3B:AE:85:3F:AB:76:93:5D:F7:A4:15:3B:CF:C2:CC:EB:C7:D3:D7\"],\"signInReturn\":\"https://app.graceforseniors.com/android/auth/callback\",\"billingReturn\":\"https://app.graceforseniors.com/\",\"enabled\":true}]",
         "CLOUD_ENVIRONMENT": "production",
         "CLOUD_IDENTITY_DIGEST": "54d302ab7acb27c0a3b326e5bc4301d8963d5eac4e181da58598d4968f95c3ec",
         "CHAT_MODEL": "qwen-3.8-27b",
