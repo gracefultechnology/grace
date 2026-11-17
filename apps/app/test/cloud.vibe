@@ -1,6 +1,6 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 
-type Attachment = { id: string; name: string; mimeType: string; pages: number }
+type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number }
 
 type Mail = {
   externalId: string
@@ -11,6 +11,7 @@ type Mail = {
   replyTo: string | null
   to: string[]
   cc: string[]
+  bcc: string[]
   snippet: string
   receivedAt: string
   isUnread: boolean
@@ -20,7 +21,7 @@ type Mail = {
   triageReason: string
   labels: string[]
   htmlLink: string | null
-  metadata: { historyId: string }
+  metadata: { historyId: string; messageIdHeader: string; referencesHeader: string | null }
   attachments: Attachment[]
   bodyText: string
 }
@@ -123,12 +124,18 @@ schema Extras { sourceRef?: string; participant?: string; recurrence?: "Once" | 
 schema NewAppointment { side?: "owner" | "agent"; grantId?: string; calendarId?: string; eventId?: string; title: string; description?: string; location?: string; startAt: string; endAt: string; timeZone: string; isAllDay?: boolean; attendees?: Attendee[]; metadata?: Extras }
 schema AppointmentChange { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title?: string; description?: string; location?: string; startAt?: string; endAt?: string; timeZone?: string; isAllDay?: boolean; attendees?: Attendee[]; metadata?: Extras }
 schema Selected { grantId?: string }
-schema FeedQuery { timeMin: Instant; timeMax: Instant; grantId?: string }
+schema FeedQuery { timeMin: Instant; timeMax: Instant; grantId?: string; calendarId?: string; timeZone?: string }
 schema MessageQuery { messageId: string; grantId?: string }
 schema SearchQuery { query: string; grantId?: string }
 schema RemovalQuery { grantId?: string; scope?: "occurrence" | "series" }
-schema Outgoing { grantId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; inReplyTo?: string | null }
-schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string }
+schema Carried { kind: "Pdf" | "Photo"; name: string; origin: string; account: string; sourceRef: string; contentRef: string; pages: number }
+schema MessageSend { grantId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string }
+schema ReplySend { grantId?: string; to: string[]; cc?: string[]; subject: string; bodyText: string; inReplyTo?: string | null; references?: string | null }
+schema ComposeSend { grantId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; inReplyTo?: string; references?: string; attachments: Carried[] }
+schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; attachments?: Carried[] }
+schema SentMail { subject: string; bcc: string[]; attachments: { filename: string }[] }
+schema SentBox { mail: SentMail[] }
+schema Boxes { boxes: SentBox[] }
 schema SessionStart { loginHint?: string }
 schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
@@ -225,9 +232,10 @@ const people: Contact[] = [
 
 function letter(externalId: string, address: string, at: number, from: string, fromEmail: string, subject: string, bodyText: string, extra: Partial<Mail> = {}): Mail {
   return {
-    externalId, threadId: externalId, subject, from, fromEmail, replyTo: null, to: [address], cc: [], snippet: bodyText.slice(0, 80),
+    externalId, threadId: externalId, subject, from, fromEmail, replyTo: null, to: [address], cc: [], bcc: [], snippet: bodyText.slice(0, 80),
     receivedAt: new Date(at - day).toISOString(), isUnread: true, isImportant: false, likelyReplyNeeded: false, triageScore: 40,
-    triageReason: "Unread", labels: ["INBOX", "UNREAD"], htmlLink: null, metadata: { historyId: "100" }, attachments: [], bodyText, ...extra
+    triageReason: "Unread", labels: ["INBOX", "UNREAD"], htmlLink: null, metadata: { historyId: "100", messageIdHeader: `<${externalId}@mail.fake.test>`, referencesHeader: null },
+    attachments: [], bodyText, ...extra
   }
 }
 
@@ -241,7 +249,7 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
       letter("family", address, at, "Ruth", "ruth@family.test", "Lunch on Sunday?", "Would you like to have lunch on Sunday at noon?", { likelyReplyNeeded: true, triageScore: 70, triageReason: "A person asked you a question" }),
       letter("clinic", address, at, "Main St Clinic", "frontdesk@mainst-clinic.test", "Reminder: your appointment tomorrow at 10 am",
         "Dear Margaret, this is a reminder of your appointment with Dr. Patel tomorrow at 10:00 am. Please fill in the attached form and bring it with you.",
-        { attachments: [{ id: "visit-form", name: "Visit form.pdf", mimeType: "application/pdf", pages: 2 }] })
+        { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] })
     ];
     when "outlook": one("St. Mark’s Church Office", "office@stmarks.test", "Thanksgiving dinner sign-up", "Dear Margaret, our Thanksgiving dinner is on Thursday the 26th at 5 pm in the hall. Reply to let us know if you’ll come.");
     when "yahoo": one("Garden Club", "club@garden.test", "Bulb swap on Saturday", "Bring your spare bulbs to the library steps on Saturday at 10. Coffee provided!");
@@ -271,16 +279,18 @@ function seed(n: number, grantId: string | null, at: number, site: string): Acco
   }
 }
 
-const listedMessage = ({ bodyText: _, ...message }: Mail) => message
+const listedMessage = ({ bodyText: _, attachments, bcc: _bcc, ...message }: Mail) => ({ ...message, hasAttachments: attachments.length > 0 })
+const wired = (files: readonly Carried[]): Attachment[] => files.map((f, i) => ({
+  partId: String(i + 1), attachmentId: f.contentRef, filename: f.name, mimeType: f.kind === "Pdf" ? "application/pdf" : "image/jpeg", size: 0, ...f.kind === "Pdf" ? { pages: f.pages } : {}
+}))
 const folders: Record<string, string> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH" }
 
-/** Whether `m` answers a Gmail-style query: `in:<folder>` narrows the folder (all but Trash by default), the other words must each appear. */
 function matches(m: Mail, query: string) {
   const words = query.toLowerCase().split(/\s+/).filter((w) => w !== "")
   const folder = words.find((w) => w.startsWith("in:"))
   const label = folder === undefined ? undefined : folders[folder.slice(3)]
   const text = `${m.subject} ${m.from} ${m.fromEmail ?? ""} ${m.bodyText}`.toLowerCase()
-  return (label === undefined ? !m.labels.includes("TRASH") : m.labels.includes(label)) && words.every((w) => w.startsWith("in:") || text.includes(w))
+  return (label === undefined ? !m.labels.includes("TRASH") : m.labels.includes(label)) && words.every((w) => w.startsWith("in:") || text.includes(w.replace(/^"(.*)"$/, "$1")))
 }
 
 const escaped = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -400,7 +410,11 @@ effect function store(site: string) {
     if (account.outage) throw new Unavailable()
     const provider = try slugOf(fixed)
     const boxes = account.boxes.filter((b) => b.provider === provider)
-    return try HttpServerResponse.json(boxes.map((b) => ({ id: b.grantId, email: b.address, provider, status: b.expired ? "reauth_required" : "connected" })))
+    return try HttpServerResponse.json(boxes.map((b) => ({
+      provider, side: "owner", mode: "cloud_managed", configured: true, connected: !b.expired, reason: b.expired ? "needs_reauth" : "connected",
+      identity: { email: b.address }, grantedCapabilities: b.expired ? [] : capabilities, grantedScopes: b.expired ? [] : scopes, expiresAt: null,
+      hasRefreshToken: !b.expired, connectionId: b.grantId, linkedAt: null, lastUsedAt: null
+    })))
   }
 
   effect function triage(fixed?: Slug) {
@@ -420,8 +434,7 @@ effect function store(site: string) {
     const { box } = try connection(fixed, grantId)
     const found = box.mail.find((m) => m.externalId === messageId)
     if (!found) throw new Missing()
-    const { bodyText, ...message } = found
-    return try HttpServerResponse.json({ message, bodyText, bodyHtml: null, bodyHtmlStatus: "none" })
+    return try HttpServerResponse.json({ message: listedMessage(found), bodyText: found.bodyText, attachments: found.attachments, bodyHtml: null, bodyHtmlStatus: "none" })
   }
 
   effect function reviewed(found: Box, grantId: string, proposal: Proposal) {
@@ -435,8 +448,8 @@ effect function store(site: string) {
   effect function prepareChange(fixed?: Slug) {
     const { grantId, requestId, proposal } = try HttpServerRequest.schemaBodyJson(Prepare, exact)
     const { key, box: found, account } = try connection(fixed, grantId)
-    try reviewed(found, grantId, proposal)
     const known = account.changes.find((c) => c.receipt.requestId === requestId)
+    if (!known) try reviewed(found, grantId, proposal)
     const receipt: Receipt = known?.receipt ?? {
       requestId, kind: proposal.kind, reviewDigest: (try next()).toString(16).padStart(64, "0"), state: "prepared",
       providerResult: null, rejectionCode: null, createdAt: try now(), dispatchedAt: null, finishedAt: null
@@ -473,39 +486,49 @@ effect function store(site: string) {
       ...b,
       mail: proposal.kind === "purge"
         ? b.mail.filter((m) => m.externalId !== message.externalId)
-        : b.mail.map((m) => m.externalId === message.externalId ? { ...m, labels: labelIds, isUnread: labelIds.includes("UNREAD"), metadata: { historyId } } : m)
+        : b.mail.map((m) => m.externalId === message.externalId ? { ...m, labels: labelIds, isUnread: labelIds.includes("UNREAD"), metadata: { ...m.metadata, historyId } } : m)
     }))
     return try HttpServerResponse.json({ version: 1, receipt, providerExactlyOnce: false })
   }
 
-  /** Sends once per Idempotency-Key: the same operation again answers with the message it already sent. */
-  effect function send(fixed?: Slug) {
+  effect function sendOnce(fixed: Slug | undefined, outgoing: typeof ComposeSend.Type) {
     const request = try HttpServerRequest.HttpServerRequest
     const operationId = request.headers["idempotency-key"] ?? ""
-    const outgoing = try HttpServerRequest.schemaBodyJson(Outgoing)
     const { key, box: found } = try connection(fixed, outgoing.grantId)
     if (operationId === "" || outgoing.to.length === 0 || outgoing.to.some((to) => !/^[^@\s]+@[^@\s]+$/.test(to))) return try HttpServerResponse.json(invalid.body, { status: 400 })
-    const known = found.sent.find((s) => s.operationId === operationId)
-    if (known) return try HttpServerResponse.json({ ok: true, messageId: known.messageId })
+    if (found.sent.some((s) => s.operationId === operationId)) return try HttpServerResponse.json({ ok: true })
     const messageId = `sent-${try next()}`
     const at = try Clock.currentTimeMillis
+    const replied = found.mail.find((m) => m.metadata.messageIdHeader === outgoing.inReplyTo)
     const sent = letter(messageId, found.address, at + day, found.address, found.address, outgoing.subject, outgoing.bodyText, {
-      to: outgoing.to, cc: outgoing.cc ?? [], isUnread: false, labels: ["SENT"], metadata: { historyId: String(try next()) }
+      to: outgoing.to, cc: outgoing.cc ?? [], bcc: outgoing.bcc ?? [], isUnread: false, labels: ["SENT"], attachments: wired(outgoing.attachments),
+      metadata: { historyId: String(try next()), messageIdHeader: `<${messageId}@mail.fake.test>`, referencesHeader: outgoing.references ?? null }
     })
     try changeBox(key, found.grantId, (b) => ({
       ...b, sent: [...b.sent, { operationId, messageId }],
-      mail: [...b.mail.map((m) => m.externalId === outgoing.inReplyTo ? { ...m, labels: [...m.labels, "ANSWERED"] } : m), sent]
+      mail: [...b.mail.map((m) => m === replied ? { ...m, labels: [...m.labels, "ANSWERED"] } : m), sent]
     }))
-    return try HttpServerResponse.json({ ok: true, messageId })
+    return try HttpServerResponse.json({ ok: true })
+  }
+
+  effect function messageSend(fixed?: Slug) {
+    return try sendOnce(fixed, { ...try HttpServerRequest.schemaBodyJson(MessageSend), attachments: [] })
+  }
+
+  effect function replySend(fixed?: Slug) {
+    const { inReplyTo, references, ...rest } = try HttpServerRequest.schemaBodyJson(ReplySend)
+    return try sendOnce(fixed, { ...rest, ...inReplyTo ? { inReplyTo } : {}, ...references ? { references } : {}, attachments: [] })
+  }
+
+  effect function composeSend(fixed?: Slug) {
+    return try sendOnce(fixed, try HttpServerRequest.schemaBodyJson(ComposeSend))
   }
 
   effect function sendLookup(fixed?: Slug) {
     const { operationId } = try HttpRouter.params
     const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
     const { box: found } = try connection(fixed, grantId)
-    const known = found.sent.find((s) => s.operationId === operationId)
-    if (!known) throw new Missing()
-    return try HttpServerResponse.json({ ok: true, messageId: known.messageId })
+    return try HttpServerResponse.json({ sent: found.sent.some((s) => s.operationId === operationId) })
   }
 
   effect function saveDraft(fixed?: Slug) {
@@ -513,7 +536,8 @@ effect function store(site: string) {
     const { key, box: found } = try connection(fixed, draft.grantId)
     const draftId = draft.draftId ?? `draft-${try next()}`
     const saved = letter(draftId, found.address, (try Clock.currentTimeMillis) + day, found.address, found.address, draft.subject, draft.bodyText, {
-      to: draft.to, cc: draft.cc ?? [], isUnread: false, labels: ["DRAFT"], metadata: { historyId: String(try next()) }
+      to: draft.to, cc: draft.cc ?? [], bcc: draft.bcc ?? [], isUnread: false, labels: ["DRAFT"], attachments: wired(draft.attachments ?? []),
+      metadata: { historyId: String(try next()), messageIdHeader: `<${draftId}@mail.fake.test>`, referencesHeader: null }
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, mail: [...b.mail.filter((m) => m.externalId !== draftId), saved] }))
     return try HttpServerResponse.json({ draftId })
@@ -547,7 +571,7 @@ effect function store(site: string) {
     const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, eventId, isAllDay, metadata, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
     const { key, box: found } = try connection(fixed, grantId)
     const known = found.calendar.find((e) => e.externalId === eventId)
-    if (known) return try HttpServerResponse.json({ event: known })
+    if (known) return try HttpServerResponse.json(known)
     const added: Appointment = {
       externalId: eventId ?? `appointment-${try next()}`, calendarId: calendarId ?? "primary", title, description: description ?? "", location: location ?? "",
       status: "confirmed", startAt, endAt, isAllDay: isAllDay ?? false, timezone: timeZone, htmlLink: null, conferenceLink: null, etag: "1", organizer: null,
@@ -555,7 +579,7 @@ effect function store(site: string) {
       metadata: metadata ?? {}
     }
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
-    return try HttpServerResponse.json({ event: added }, { status: 201 })
+    return try HttpServerResponse.json(added, { status: 201 })
   }
 
   effect function existing(fixed: Slug | undefined, grantId: string | undefined) {
@@ -810,8 +834,9 @@ effect function store(site: string) {
     HttpRouter.route("GET", `${mail}/read`, answered(readMail(fixed))),
     HttpRouter.route("POST", `${mail}/inbox-v1/operations`, answered(prepareChange(fixed))),
     HttpRouter.route("POST", `${mail}/inbox-v1/operations/:requestId/dispatch`, answered(dispatchChange(fixed))),
-    HttpRouter.route("POST", `${mail}/message-send`, answered(send(fixed))),
-    HttpRouter.route("POST", `${mail}/reply-send`, answered(send(fixed))),
+    HttpRouter.route("POST", `${mail}/message-send`, answered(messageSend(fixed))),
+    HttpRouter.route("POST", `${mail}/reply-send`, answered(replySend(fixed))),
+    HttpRouter.route("POST", `${mail}/compose-send`, answered(composeSend(fixed))),
     HttpRouter.route("GET", `${mail}/message-send/:operationId`, answered(sendLookup(fixed))),
     HttpRouter.route("POST", `${mail}/drafts`, answered(saveDraft(fixed))),
     HttpRouter.route("DELETE", `${mail}/drafts/:draftId`, answered(deleteDraft(fixed))),
@@ -899,16 +924,30 @@ export effect function outage(cloud: string, key: string, down: boolean) {
   try post(cloud, "/fake/outage", { down }, key)
 }
 
-export type Visit = { readonly choice: "allow" | "cancel" | "unfinished"; readonly address?: string }
+export effect function sentMail(cloud: string, key: string) {
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
+  return (try Schema.decodeUnknownEffect(Boxes)(try response.json)).boxes.flatMap((b) => b.mail)
+}
+
+schema SessionState { status: string }
+schema Sessions { sessions: SessionState[] }
+
+export effect function sessions(cloud: string, key: string) {
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
+  return (try Schema.decodeUnknownEffect(Sessions)(try response.json)).sessions.map((s) => s.status)
+}
+
+export type Visit = { readonly choice: "allow" | "cancel" | "unfinished" | "away"; readonly address?: string }
 
 /** Margaret at each company's own sign-in page the tablet opens, in turn: she ends each visit with its `choice`. The tablet hears only the outcome. */
-export effect function visiting(visits: readonly Visit[]) {
+export effect function visiting(visits: readonly Visit[], opened?: Deferred.Deferred<string>) {
   const left = try Ref.make(visits)
   return {
     open: effect (url: string) => {
       const [visit, ...rest] = try Ref.get(left)
       try Ref.set(left, rest)
-      if (visit !== undefined) try Effect.ignore(Effect.provide(HttpClient.execute(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(url), { address: visit.address ?? "", choice: visit.choice })), client))
+      if (visit !== undefined && visit.choice !== "away") try Effect.ignore(Effect.provide(HttpClient.execute(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(url), { address: visit.address ?? "", choice: visit.choice })), client))
+      if (opened !== undefined) try Deferred.succeed(opened, url)
     },
     close: (_url: string) => Effect.void
   }

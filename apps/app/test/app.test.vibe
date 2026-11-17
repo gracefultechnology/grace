@@ -1,15 +1,15 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
-import { approveSave, beginEdit, create, edit, initial as noEntry } from "../gen/app__calendar.effect.vibe"
+import { approveSave, beginEdit, create, edit, initial as noEntry, type Calendar } from "../gen/app__calendar.effect.vibe"
+import { initial as noView } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
-import { client, expire, otherPassword, outage, parts, reply, script, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
+import { client, expire, otherPassword, outage, parts, reply, script, sentMail, sessions, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
-/** The tablet's connector on the fake cloud, signed in with `key`, with Margaret making `visits` to the sign-in pages it opens. */
-const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits)))
+const connectorAt = (key: string, visits: readonly Visit[] = [], opened?: Deferred.Deferred<string>) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits, opened)))
 
 schema Payment { amount: string; to: string }
 schema Booking { time: string }
@@ -78,7 +78,6 @@ const outlook: AccountRef = { provider: "Outlook", address: "margaret@outlook.co
 const riverview: AccountRef = { provider: "OtherEmail", address: "margaret@riverview.net" }
 const scope = (account: AccountRef, folder: Folder, query = "") => ({ owner: account.address, provider: account.provider, account: account.address, folder, query, generation: 1 })
 
-/** The messages of `account`'s `folder` the connector lists, as subjects, or the failure that stopped the listing. */
 effect function listed(account: AccountRef, folder: Folder, query = "") {
   const found = Stream.runCollect((try Connector).mail(account).list(scope(account, folder, query), () => 0)) catch (e) => e._tag
   return typeof found === "string" ? found : found.map((m) => m.content.subject)
@@ -130,17 +129,24 @@ it.live("Connect the email I already use: each company's own page answers with i
   }
 })
 
-it.live("Choose what each email brings and take it off the tablet: an expired sign-in asks again, and signing in again renews the same account", () => effect {
+it.live("Choose what each email brings and take it off the tablet: Cancel on the tablet closes the company's page, an expired sign-in asks again, and signing in again renews the same account", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
-    provide connectorAt(secret, [{ choice: "allow", address: outlook.address }, { choice: "allow", address: outlook.address }]) {
+    const opened = try Deferred.make<string>()
+    provide connectorAt(secret, [{ choice: "away" }, { choice: "allow", address: outlook.address }, { choice: "allow", address: outlook.address }], opened) {
       const connector = try Connector
-      try connector.signIn({ provider: "Outlook", attempt: 1, renewing: "" })
+      const waiting = try Effect.forkChild(connector.signIn({ provider: "Yahoo", attempt: 1, renewing: "" }))
+      try Deferred.await(opened)
+      try Fiber.interrupt(waiting)
+      const closed = try sessions(cloud, secret)
+      try connector.signIn({ provider: "Outlook", attempt: 2, renewing: "" })
       try expire(cloud, secret, outlook.address)
       const expired = try listed(outlook, "InboxFolder")
-      const renewed = try connector.signIn({ provider: "Outlook", attempt: 2, renewing: outlook.address })
+      const renewed = try connector.signIn({ provider: "Outlook", attempt: 3, renewing: outlook.address })
       const again = try listed(outlook, "InboxFolder")
-      try Effect.try(() => assert.deepStrictEqual({ expired, renewed: renewed.outcome, again }, { expired: new NeedsSignIn()._tag, renewed: "Allowed", again: ["Thanksgiving dinner sign-up"] }))
+      try Effect.try(() => assert.deepStrictEqual({ closed, expired, renewed: renewed.outcome, again }, {
+        closed: ["cancelled"], expired: new NeedsSignIn()._tag, renewed: "Allowed", again: ["Thanksgiving dinner sign-up"]
+      }))
     }
   }
 })
@@ -161,8 +167,8 @@ it.live("Read an email and its original attachment, and find and open the email 
         found: ["Reminder: your appointment tomorrow at 10 am"],
         header: { ref: "clinic", generation: 4, address: "frontdesk@mainst-clinic.test", subject: "Re: Reminder: your appointment tomorrow at 10 am", verified: true },
         receipt: { generation: 4, succeeded: true, suspicion: "", assets: [{
-          id: "clinic/visit-form", kind: "Pdf", name: "Visit form.pdf", origin: "frontdesk@mainst-clinic.test", account: gmail.address, container: "clinic",
-          sourceRef: "clinic", contentRef: "visit-form", group: "clinic", savedAt: 0, pages: 2
+          id: "clinic/2", kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
+          sourceRef: "clinic", contentRef: "2", group: "clinic", savedAt: opened.content.receivedAt, pages: 2
         }] },
         from: ["Main St Clinic", "frontdesk@mainst-clinic.test"],
         body: true
@@ -204,18 +210,21 @@ it.live("Delete a message and recover it safely: Trash, Restore, unread and Dele
   }
 })
 
-it.live("Write or reply and confirm before sending: contacts resolve, drafts keep, a send goes once per operation, and one sent while the cloud is down goes later", () => effect {
+it.live("Write or reply and confirm before sending: contacts resolve, drafts keep their attachments, a send goes once per operation with its attachments and Bcc, and one sent while the cloud is down goes later", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
       const mail = (try Connector).mail(gmail)
       const content = { to: "susan@family.test", cc: [], bcc: [], subject: "Sunday", body: "See you on Sunday. Love, Mom" }
-      const draft = { id: "draft-sunday", version: 1, content, attachments: [], replyTo: "" }
-      const reply = { ...draft, id: "", content: { ...content, to: "ruth@family.test", subject: "Re: Lunch on Sunday?", body: "Yes please." }, replyTo: "family" }
+      const photo = { id: "family/1", kind: "Photo" as const, name: "Garden.jpg", origin: "Gmail", account: gmail.address, container: "family", sourceRef: "family", contentRef: "1", group: "family", savedAt: 0, pages: 0 }
+      const draft = { id: "draft-sunday", version: 1, content, attachments: [photo], replyTo: "" }
+      const reply = { ...draft, id: "", attachments: [], content: { ...content, to: "ruth@family.test", subject: "Re: Lunch on Sunday?", body: "Yes please." }, replyTo: "family" }
+      const withPhoto = { ...reply, attachments: [photo], content: { ...reply.content, bcc: ["david@family.test"], subject: "Re: Lunch on Sunday? (photo)" } }
       const people = (try mail.contacts()).length
       const resolved = [try mail.resolve("susan"), try mail.resolve("Nobody")]
       const saved = try mail.saveDraft(draft)
       const drafts = try listed(gmail, "DraftsFolder")
+      const reopened = (try mail.read("draft-sunday", 5)).receipt.assets.map((a) => a.name)
       const removed = try mail.deleteDraft("draft-sunday")
       const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
       const sent = try listed(gmail, "SentFolder")
@@ -225,51 +234,69 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const offline = try mail.send("operation-2", draft)
       try outage(cloud, secret, false)
       const later = [try mail.lookup("operation-2"), try mail.send("operation-2", draft), try mail.send("operation-2", draft)]
-      const evidence = sends[0].evidence
+      const whole = try mail.send("operation-3", withPhoto)
+      const carried = (try sentMail(cloud, secret)).filter((m) => m.subject === "Sunday" || m.subject.endsWith("(photo)")).map((m) => [m.subject, m.bcc, m.attachments.map((a) => a.filename)])
       const once = try listed(gmail, "SentFolder")
-      try Effect.try(() => assert.deepStrictEqual({ people, resolved, saved, drafts, removed, sends, sent, answered, looked, offline, later: later.map((s) => s.resultStatus), once }, {
+      const sentAs = (operationId: string) => ({ resultStatus: "Sent", evidence: `operation:${operationId}` })
+      try Effect.try(() => assert.deepStrictEqual({ people, resolved, saved, drafts, reopened, removed, sends, sent, answered, looked, offline, later, whole, carried, once }, {
         people: 6,
         resolved: [{ address: "susan@family.test", verified: true }, { address: "", verified: false }],
-        saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], removed: true,
-        sends: [{ resultStatus: "Sent", evidence }, { resultStatus: "Sent", evidence }],
+        saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Garden.jpg"], removed: true,
+        sends: [sentAs("operation-1"), sentAs("operation-1")],
         sent: ["Re: Lunch on Sunday?"], answered: true,
-        looked: [{ resultStatus: "Sent", evidence }, { resultStatus: "SendFailed", evidence: "refused:404" }],
+        looked: [sentAs("operation-1"), { resultStatus: "SendFailed", evidence: "not-sent" }],
         offline: { resultStatus: "SendUnknown", evidence: "" },
-        later: ["SendFailed", "Sent", "Sent"],
-        once: ["Re: Lunch on Sunday?", "Sunday"]
+        later: [{ resultStatus: "SendFailed", evidence: "not-sent" }, sentAs("operation-2"), sentAs("operation-2")],
+        whole: sentAs("operation-3"),
+        carried: [["Sunday", [], ["Garden.jpg"]], ["Re: Lunch on Sunday? (photo)", ["david@family.test"], ["Garden.jpg"]]],
+        once: ["Re: Lunch on Sunday?", "Sunday", "Re: Lunch on Sunday? (photo)"]
       }))
     }
   }
 })
 
-it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email, a change and a deletion", () => effect {
+it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email, a change, a newer change elsewhere, and a deletion", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
       const calendar = (try Connector).calendar(gmail)
       const now = try Clock.currentTimeMillis
-      const window = { owner: gmail.address, calendarId: "primary", fromTime: now - 24 * 60 * 60 * 1000, untilTime: now + 30 * 24 * 60 * 60 * 1000 }
-      const feed = effect () => (try Stream.runCollect(calendar.feed(window))).map((p) => p.incoming)
-      const [eyeCheck] = try feed()
-      const start = now + 24 * 60 * 60 * 1000
+      const day = 24 * 60 * 60 * 1000
+      const view = (entries: Calendar[]) => ({ ...noView, owner: gmail.address, calendarId: "primary", timezone: "UTC", window: { ...noView.window, fromTime: now - day, untilTime: now + 30 * day }, entries })
+      const feed = effect (entries: Calendar[]) => Array.from(try Stream.runCollect(calendar.feed(view(entries))))
+      const [{ incoming: eyeCheck, scheduleVerified }] = try feed([])
+      const start = now + day
       const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
-      const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + 60 * 60 * 1000, reminderEnabled: true, leadTime: 24 * 60 * 60 * 1000 }
+      const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + 60 * 60 * 1000, reminderEnabled: true, leadTime: day }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
       const added = [try calendar.write(fresh), try calendar.write(fresh)]
-      const [, visit] = try feed()
+      const [{ incoming: visit }] = try feed([eyeCheck])
       const moved = edit(beginEdit(visit, "CalendarUser"), { ...visit.committed, title: "Check-up with Dr. Patel" }, "CalendarUser")
       const changed = try calendar.write(moved)
-      const titles = (try feed()).map((c) => [c.committed.title, c.identity.sourceRef, c.committed.participant, c.committed.reminderEnabled])
+      const elsewhere = effect {
+        provide connectorAt(secret) {
+          const other = (try Connector).calendar(gmail)
+          try Stream.runCollect(other.feed(view([])))
+          return try other.write(edit(beginEdit(visit, "CalendarUser"), { ...visit.committed, title: "Check-up at 11" }, "CalendarUser"))
+        }
+      }
+      const otherTablet = try elsewhere
+      const stale = try calendar.write(moved)
+      const refreshed = (try feed([eyeCheck, visit])).map((p) => [p.incoming.identity.occurrenceId, p.incoming.committed.title, p.incoming.revision > visit.revision, p.scheduleVerified])
       const removed = [try calendar.remove("clinic-visit", "ThisOccurrence"), try calendar.remove("clinic-visit", "ThisOccurrence")]
-      const left = (try feed()).map((c) => c.identity.occurrenceId)
-      try Effect.try(() => assert.deepStrictEqual({ eyeCheck: [eyeCheck.phase, eyeCheck.identity.occurrenceId, eyeCheck.committed.participant], visit: visit.committed, added, changed, titles, removed, left }, {
-        eyeCheck: ["Saved", "eye-check", "Dr. Patel"],
+      const gone = (try feed([eyeCheck, visit])).map((p) => [p.incoming.identity.occurrenceId, p.incoming.phase])
+      try Effect.try(() => assert.deepStrictEqual({
+        eyeCheck: [eyeCheck.phase, eyeCheck.identity.occurrenceId, eyeCheck.committed.participant, scheduleVerified], visit: visit.committed, added, changed, elsewhere: otherTablet.succeeded, stale, refreshed, removed, gone
+      }, {
+        eyeCheck: ["Saved", "eye-check", "Dr. Patel", true],
         visit: details,
         added: [{ revision: 1, succeeded: true }, { revision: 1, succeeded: true }],
         changed: { revision: moved.revision, succeeded: true },
-        titles: [["Eye check with Dr. Patel", "", "Dr. Patel", false], ["Check-up with Dr. Patel", "clinic", "Dr. Patel", true]],
+        elsewhere: true,
+        stale: { revision: moved.revision, succeeded: false },
+        refreshed: [["clinic-visit", "Check-up at 11", true, true]],
         removed: [{ succeeded: true, evidence: "deleted:clinic-visit" }, { succeeded: true, evidence: "absent" }],
-        left: ["eye-check"]
+        gone: [["clinic-visit", "Deleted"]]
       }))
     }
   }

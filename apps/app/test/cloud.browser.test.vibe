@@ -2,12 +2,12 @@
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
 import { approveSave, beginEdit, create, edit, initial as noEntry } from "../gen/app__calendar.effect.vibe"
+import { initial as noView } from "../gen/app__calendarView.effect.vibe"
 import { Connector, connector, SignInPage } from "../src/connector.vibe"
 import { client, parts, reply, signIn, turns, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
-/** The tablet's connector on the fake cloud, signed in with `key`, with Margaret making `visits` to the sign-in pages it opens. */
 const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits)))
 
 it.live("Talk or type without losing the conversation, from the app's own page: the fake and the site answer across origins", () => effect {
@@ -40,8 +40,8 @@ it.live("Connect the email I already use and write from it, from the app's own p
       const details = { title: "Thanksgiving dinner", location: "St. Mark’s hall", participant: "", notes: "", startAt: 0, endAt: 60 * 60 * 1000, timezone: "UTC", allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
       const added = try calendar.write(fresh)
-      const window = { owner: outlook.address, calendarId: "primary", fromTime: -1, untilTime: 2 * 60 * 60 * 1000 }
-      const [saved] = (try Stream.runCollect(calendar.feed(window))).map((p) => p.incoming)
+      const view = { ...noView, owner: outlook.address, calendarId: "primary", timezone: "UTC", window: { ...noView.window, fromTime: -1, untilTime: 2 * 60 * 60 * 1000 } }
+      const [saved] = (try Stream.runCollect(calendar.feed(view))).map((p) => p.incoming)
       const changed = try calendar.write(edit(beginEdit(saved, "CalendarUser"), { ...saved.committed, title: "Thanksgiving dinner at 5" }, "CalendarUser"))
       const removed = try calendar.remove("dinner", "ThisOccurrence")
       try Effect.try(() => assert.deepStrictEqual({ page: page.outcome, sends: sends.map((s) => s.resultStatus), same: sends[0].evidence === sends[1].evidence, stored: [added.succeeded, changed.succeeded], removed: removed.succeeded }, {
