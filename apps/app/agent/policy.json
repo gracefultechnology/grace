@@ -136,6 +136,7 @@
         "NONE": "Ends a turn that needs no action. It changes nothing."
       },
       "refuse": {
+        "DISCOVER_ACTIONS": "local run only",
         "ASSERT_MEETING_MOCK_LEDGER": "Registered only by @elizaos/plugin-meetings, which this file refuses.",
         "ATTACHMENT": "Attachments are opened by the person in Email or Files.",
         "ATTACH_TO_CHAT": "Attachments are opened by the person in Email or Files.",

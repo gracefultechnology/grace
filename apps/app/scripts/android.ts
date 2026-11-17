@@ -426,7 +426,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
 }
 
 async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>) {
-  await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
+  await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 1800);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
