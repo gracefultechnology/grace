@@ -15,7 +15,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const runtime = useRuntime();
   const { assistant, device } = workspace!;
   const conversation = assistant.conversation;
-  const field = useRef<HTMLTextAreaElement>(null);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
@@ -48,12 +48,12 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             micUnavailable={micUnavailable}
             onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
             onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}
-            onFieldFocus={(event) => { field.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
+            onFieldFocus={(event) => { fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
               const revision = current().assistant.conversation.draftRevision;
               void send({ type: "interact", input: { tag: "SendDraft", revision } }).then((result) => {
-                if (Exit.isSuccess(result) && current().assistant.keyboard === "NoKeyboard") field.current?.blur();
+                if (Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
               });
             }} />
         }>

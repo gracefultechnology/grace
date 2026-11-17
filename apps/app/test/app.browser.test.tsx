@@ -446,7 +446,7 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await act(() => userEvent.type(input, "What can you do?"));
     await act(() => userEvent.click(page.getByRole("button", { name: "Send" })));
     await expect.poll(() => requests[0]?.body).toEqual({ text: "What can you do?" });
-    const id = requests[0]!.id;
+    const id = requests[0].id;
     const data = (eventId: string, payload: Record<string, unknown>) => listeners.get("streamData")?.({ id: eventId, data: JSON.stringify(payload) });
     await act(() => {
       data("previous", { type: "done", fullText: "Stale reply" });
@@ -460,7 +460,7 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await act(() => userEvent.click(page.getByRole("button", { name: "Tell me more" })));
     await expect.poll(() => requests[1]?.body).toEqual({ text: "Tell me more" });
     await act(() => {
-      const next = requests[1]!.id;
+      const next = requests[1].id;
       data(next, { type: "done", fullText: "I can talk with you." });
       listeners.get("streamEnd")?.({ id: next, status: 200 });
       return Promise.resolve();
@@ -510,7 +510,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     calls.push(pathname);
     if (pathname.endsWith("/consent")) return Response.json({ consentNonce: sessionId });
     if (pathname.endsWith("/session")) {
-      expect(JSON.parse(String(options?.body))).toEqual({ consentNonce: sessionId });
+      expect(options?.body).toBe(JSON.stringify({ consentNonce: sessionId }));
       return Response.json({
         version: 1,
         sessionId,
@@ -550,11 +550,12 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
         }
         return;
       }
-      const command = JSON.parse(value);
-      if (command.t === "hello") {
+      const command: unknown = JSON.parse(value);
+      if (typeof command !== "object" || command === null || !("t" in command)) return;
+      if (command.t === "hello" && "token" in command) {
         expect(command.token).toBe(token);
         this.receive({ t: "ready", version: 1, sampleRate: 16000, channels: 1 });
-      } else if (command.t === "tts") {
+      } else if (command.t === "tts" && "text" in command && typeof command.text === "string" && "id" in command && typeof command.id === "string") {
         phrases.push(command.text);
         const id = new TextEncoder().encode(command.id);
         const output = new Uint8Array(2 + id.length + 3200);
@@ -562,7 +563,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
         output[1] = id.length;
         output.set(id, 2);
         this.receive(output.buffer);
-      } else if (command.t === "finish") {
+      } else if (command.t === "finish" && "id" in command && typeof command.id === "string") {
         this.receive({ t: "complete", id: command.id });
       } else if (command.t === "stop") {
         this.close();
@@ -578,20 +579,20 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   vi.stubGlobal("WebSocket", FixtureSocket);
   const listeners = new Map<string, (input: unknown) => void>();
   const agent: EmbeddedAgent = {
-    getStatus: async () => ({ state: "running" }),
-    request: async () => ({ status: 201, data: { conversation: { id: "voice", roomId: "room" } } }),
-    requestStream: async ({ id, body }) => {
+    getStatus: () => Promise.resolve({ state: "running" }),
+    request: () => Promise.resolve({ status: 201, data: { conversation: { id: "voice", roomId: "room" } } }),
+    requestStream: ({ id, body }) => {
       expect(body).toEqual({ text: voiceInput });
       queueMicrotask(() => {
         listeners.get("streamData")?.({ id, data: JSON.stringify({ type: "done", fullText: voiceOutput }) });
         listeners.get("streamEnd")?.({ id, status: 200 });
       });
-      return { id };
+      return Promise.resolve({ id });
     },
-    abort: async () => ({ aborted: true }),
-    addListener: async (event, listener) => {
+    abort: () => Promise.resolve({ aborted: true }),
+    addListener: (event, listener) => {
       listeners.set(event, listener);
-      return { remove: async () => { listeners.delete(event); } };
+      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
     },
   };
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
@@ -699,7 +700,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     replyFromOwner = true;
     await tap(/Your receipt/);
     await expect.element(page.getByText(literalText, { exact: true })).toBeVisible();
-    expect(document.querySelector("strong")?.textContent).not.toBe("This stays plain text.");
+    expect(Array.from(document.querySelectorAll("strong")).some((node) => node.textContent === "This stays plain text.")).toBe(false);
 
     await tap("Back to Inbox");
     await tap("Close Email");

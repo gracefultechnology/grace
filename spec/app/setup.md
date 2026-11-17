@@ -531,7 +531,10 @@ type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | 
 pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true }))
 pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
   match account {
-    | GraceSignedIn(_) => link == GoogleLinkReady
+    | GraceSignedIn(_) => match link {
+      | GoogleLinkReady => true
+      | _ => false
+    }
     | _ => false
   }
 pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
