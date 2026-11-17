@@ -76,7 +76,8 @@ export service Connector {
 const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
 const routes: Record<Provider, Routes> = { Gmail: google, ...providers }
 const nothing: Use = { mail: false, calendar: false, contacts: false }
-const searched: Record<Folder, string | undefined> = { InboxFolder: "in:inbox", SentFolder: "in:sent", DraftsFolder: "in:drafts", TrashFolder: "in:trash", PurgedFolder: undefined }
+const sentMail = "in:sent"
+const searched: Record<Folder, string | undefined> = { InboxFolder: "in:inbox", SentFolder: sentMail, DraftsFolder: "in:drafts", TrashFolder: "in:trash", PurgedFolder: undefined }
 const operations: Record<ChangeOp["change"], string> = { ReadMessage: "mark-read", UnreadMessage: "mark-unread", TrashMessage: "trash", RestoreMessage: "untrash", PurgeMessage: "purge" }
 const checked: Record<typeof OtherCheck.Type["outcome"], OtherReport["outcome"]> = {
   allowed: "OtherAllowed", passwordRefused: "OtherPasswordRefused", needsServers: "OtherNeedsServers", refused: "OtherRefused"
@@ -97,11 +98,16 @@ function content(m: WireMessage, receivedAt: number, body: string): MailContent 
   return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "" }
 }
 
-function listed(scope: ListingScope, m: WireMessage, revision: number): Listed[] {
+function repliedTo(sent: readonly WireMessage[]): ReadonlySet<string> {
+  return new Set(sent.filter((s) => s.labels.includes("SENT")).flatMap((s) => (s.metadata.referencesHeader ?? "").trim().split(/\s+/).slice(-1).filter((id) => id !== "")))
+}
+
+function listed(scope: ListingScope, m: WireMessage, revision: number, replied: ReadonlySet<string>): Listed[] {
   const identity = { owner: scope.owner, provider: scope.provider, account: scope.account, ref: m.externalId }
   const receivedAt = receivedOf(m)
+  const answered = replied.has(m.metadata.messageIdHeader ?? "")
   return receivedAt === undefined ? [] : [{
-    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered: m.labels.includes("ANSWERED") }, revision, evidence: `history:${m.metadata.historyId ?? ""}` },
+    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered }, revision, evidence: `history:${m.metadata.historyId ?? ""}` },
     content: content(m, receivedAt, "")
   }]
 }
@@ -211,14 +217,17 @@ function event({ draft: d, committed: c, hasSaved }: Calendar) {
   return d.allDay || (hasSaved && c.allDay) ? undefined : { ...fields, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone }
 }
 
-function adopted(view: CalendarView, entry: Calendar, externalId: string): Published[] {
-  const identity = { ...entry.identity, occurrenceId: externalId }
-  if (externalId === entry.identity.occurrenceId || !validIdentity(identity)) return []
+function adopted(zones: ReadonlySet<string>, view: CalendarView, entry: Calendar, saved: WireEvent): Published[] {
+  const identity = { ...entry.identity, occurrenceId: saved.externalId }
+  const timezone = saved.timezone ?? entry.draft.timezone
+  const { startAt, endAt, verified } = schedule(zones, saved, timezone)
+  const stored = details(saved, startAt, endAt, timezone, entry.draft)
+  if (saved.externalId === entry.identity.occurrenceId || !validIdentity(identity) || !validDetails(stored)) return []
   const seriesVersion = seriesVersionOf(view, entry.draft.seriesId)
-  const placed = save(approveSave(create(noEntry, identity, entry.draft, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
+  const placed = save(approveSave(create(noEntry, identity, stored, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
   return [
     { incoming: deleted(save(entry, entry.revision, true, "CalendarStore")), seriesVersion, scheduleVerified: true },
-    { incoming: placed, seriesVersion, scheduleVerified: true }
+    { incoming: placed, seriesVersion, scheduleVerified: verified && startAt === entry.draft.startAt && endAt === entry.draft.endAt }
   ]
 }
 
@@ -353,7 +362,9 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         const folder = searched[scope.folder]
         return folder === undefined ? Stream.empty : Stream.unwrap(effect {
           const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query), maxResults: "50" }), Listing)
-          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId))))
+          const sent = scope.folder === "SentFolder" ? messages : (try fetched(asked("/search", { query: sentMail, maxResults: "50" }), Listing)).messages
+          const replied = repliedTo(sent)
+          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replied)))
         })
       },
       read: effect (ref, generation) => {
@@ -363,8 +374,8 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       },
       header: effect (ref, generation) => {
         const { message } = try read(ref)
-        const address = message.replyTo ?? message.fromEmail
-        return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== null && message.externalId === ref }
+        const address = [message.replyTo, message.fromEmail].find((a) => a?.includes("@"))
+        return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
       },
       resolve: effect (contact) => {
         const named = (try contacts(contact)).filter((c) => c.name.toLowerCase() === contact.trim().toLowerCase())
@@ -425,7 +436,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         ? HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)
         : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body)
       const { event: saved } = try fetched(Effect.succeed(request), Stored)
-      return entry.hasSaved ? [] : adopted(view, entry, saved.externalId)
+      return entry.hasSaved ? [] : adopted(zones, view, entry, saved)
     }
 
     return {

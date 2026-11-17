@@ -104,6 +104,9 @@ const IdToken = between(20, 8192)
 const ChallengeId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/))
 const ServerAuthCode = between(10, 2048).check(Schema.isPattern(/^[A-Za-z0-9/_.~-]+$/))
 const Url = between(1, 2000).check(Schema.makeFilter((s: string) => URL.canParse(s)))
+const mailbox = /^[A-Za-z0-9.!#$%&'*+\-/=?^_`{|}~]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$/
+const Filled = Schema.String.check(Schema.makeFilter((s: string) => s.trim() !== ""))
+const Mailbox = Schema.String.check(Schema.isPattern(mailbox))
 const Instant = Schema.String.check(Schema.makeFilter((s: string) => !Number.isNaN(Date.parse(s))))
 const Slugs = Schema.Literals(["google", "outlook", "yahoo", "icloud", "aol", "other"])
 
@@ -118,15 +121,15 @@ schema Outgoing { kind: "send"; mode: "compose" | "reply" | "reply-all" | "forwa
 schema Proposal = Change | Outgoing
 schema Prepare { grantId: Uuid; requestId: Uuid; proposal: Proposal }
 schema Dispatch { grantId: Uuid; reviewDigest: string; proposal: Proposal }
-schema Attendee { email: string; displayName?: string; optional?: boolean }
-schema NewAppointment { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title: string; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: string; attendees?: Attendee[] }
-schema AppointmentChange { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title?: string; description?: string; location?: string; startAt?: Instant; endAt?: Instant; timeZone?: string; attendees?: Attendee[] }
+schema Attendee { email: Mailbox; displayName?: Filled; optional?: boolean }
+schema NewAppointment { side?: "owner" | "agent"; grantId?: Filled; calendarId?: Filled; title: Filled; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: Filled; attendees?: Attendee[] }
+schema AppointmentChange { side?: "owner" | "agent"; grantId?: Filled; calendarId?: Filled; title?: Filled; description?: string; location?: string; startAt?: Instant; endAt?: Instant; timeZone?: Filled; attendees?: Attendee[] }
 schema Selected { grantId: Uuid }
 schema FeedQuery { timeMin: Instant; timeMax: Instant; grantId?: string; calendarId?: string; timeZone?: string }
 schema MessageQuery { messageId: string; grantId?: string }
 schema SearchQuery { query: string; grantId?: string; maxResults?: string }
 schema ContactQuery { query: string; grantId?: string }
-schema RemovalQuery { side?: "owner" | "agent"; grantId?: string; calendarId?: string }
+schema RemovalQuery { side?: "owner" | "agent"; grantId?: string; calendarId?: Filled }
 schema AccountsQuery { side?: string }
 schema Carried { kind: "Pdf" | "Photo"; name: string; origin: string; account: string; sourceRef: string; contentRef: string; pages: number }
 schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; attachments?: Carried[] }
@@ -164,6 +167,8 @@ error NoConnection
 error NoOperation
 error Stale
 error StaleRevision
+error ReviewChanged
+error DigestChanged
 error Rebound
 error SubjectMismatch
 error NoRecipient
@@ -185,6 +190,8 @@ const refusals: Record<string, { status: number; body: object }> = {
   NoOperation: { status: 404, body: { error: "Operation not found" } },
   Stale: { status: 412, body: { error: "The event changed since it was read. Read it again before changing it.", code: "precondition_failed" } },
   StaleRevision: { status: 409, body: { error: "Selected message changed; review its current labels", code: "stale_revision" } },
+  ReviewChanged: { status: 409, body: { error: "Reviewed content or provider state changed", code: "stale_revision" } },
+  DigestChanged: { status: 409, body: { error: "Review changed", code: "stale_revision" } },
   Rebound: { status: 409, body: { error: "Request ID is already bound to a different reviewed operation" } },
   SubjectMismatch: { status: 400, body: { error: "Reply subject must match the selected message", code: "reply_subject_mismatch" } },
   NoRecipient: { status: 400, body: { error: "At least one recipient is required to send" } },
@@ -201,6 +208,7 @@ const refusals: Record<string, { status: number; body: object }> = {
 }
 
 const invalid = { status: 400, body: { error: "invalid_request" } }
+const refusedAs = (error: string) => ({ status: 400, body: { error, details: [] } })
 const mobileInvalid = { status: 400, body: { success: false, error: "invalid_request", errorDescription: "Invalid mobile authorization request", retryable: false } }
 
 export const unending = "Keep talking until I stop you."
@@ -502,7 +510,7 @@ effect function store(site: string) {
     const to = proposal.to ?? []
     const cc = proposal.cc ?? []
     const bcc = proposal.bcc ?? []
-    if ([...to, ...cc, ...bcc].some((a) => !/^[A-Za-z0-9.!#$%&'*+\-/=?^_`{|}~]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$/.test(a))) throw new BadAddress()
+    if ([...to, ...cc, ...bcc].some((a) => !mailbox.test(a))) throw new BadAddress()
     if (to.length + cc.length + bcc.length === 0) throw new NoRecipient()
     const replying = proposal.mode === "reply" || proposal.mode === "reply-all"
     if (!replying && proposal.replyMessageId !== undefined) throw new ModeMismatch()
@@ -545,7 +553,7 @@ effect function store(site: string) {
       const threadId = parent?.threadId ?? messageId
       const sent = letter(messageId, found.address, (try Clock.currentTimeMillis) + day, found.address, found.address, proposal.subject, proposal.bodyText, {
         threadId, to: review.to, cc: review.cc, bcc: review.bcc, isUnread: false, labels: ["SENT"], attachments: review.attachments,
-        metadata: { historyId, messageIdHeader: `<${messageId}@mail.fake.test>`, referencesHeader: parent?.metadata.messageIdHeader ?? null }
+        metadata: { historyId, messageIdHeader: `<${messageId}@mail.fake.test>`, referencesHeader: parent === undefined ? null : [parent.metadata.referencesHeader, parent.metadata.messageIdHeader].filter((h) => h !== null).join(" ") }
       })
       try changeBox(key, found.grantId, (b) => ({ ...b, mail: [...b.mail, sent] }))
       return { messageId, threadId, mimeDigest: digestOf(JSON.stringify(review)) }
@@ -573,10 +581,10 @@ effect function store(site: string) {
     const { key, box: found, account } = try connection(fixed, grantId, true)
     const prepared = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
     if (!prepared) throw new NoOperation()
-    if (prepared.receipt.reviewDigest !== reviewDigest) throw new StaleRevision()
+    if (prepared.receipt.reviewDigest !== reviewDigest) throw new DigestChanged()
     if (prepared.receipt.state !== "prepared") return try HttpServerResponse.json({ version: 1, receipt: prepared.receipt, providerExactlyOnce: false })
     const review = proposal.kind === "send" ? (try reviewedSend(found, proposal)).review : (try reviewedChange(found, proposal)).review
-    if (digestOf(JSON.stringify(review)) !== reviewDigest || proposal.kind !== prepared.receipt.kind) throw new StaleRevision()
+    if (digestOf(JSON.stringify(review)) !== reviewDigest || proposal.kind !== prepared.receipt.kind) throw new ReviewChanged()
     const providerResult = try performed(key, found, proposal)
     const at = try now()
     const receipt: Receipt = { ...prepared.receipt, state: "succeeded", dispatchedAt: at, finishedAt: at, providerResult }
@@ -634,12 +642,12 @@ effect function store(site: string) {
     const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
     const { key, box: found } = try connection(fixed, grantId)
     const added = appointment({
-      externalId: `appointment${try next()}`, calendarId: calendarId ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
-      startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: false, timezone: timeZone, etag: `"${try next()}"`,
+      externalId: `appointment${try next()}`, calendarId: calendarId?.trim() ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
+      startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: false, timezone: timeZone.trim(), etag: `"${try next()}"`,
       attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false }))
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
-    return try HttpServerResponse.json({ event: shown(added, timeZone) }, { status: 201 })
+    return try HttpServerResponse.json({ event: shown(added, timeZone.trim()) }, { status: 201 })
   }
 
   effect function existing(fixed: Slug | undefined, grantId: string | undefined, calendarId: string | undefined) {
@@ -660,7 +668,7 @@ effect function store(site: string) {
     const moved: Appointment = {
       ...found, title: body.title?.trim() ?? found.title, description: body.description ?? found.description, location: body.location ?? found.location,
       startAt: body.startAt === undefined ? found.startAt : new Date(body.startAt).toISOString(), endAt: body.endAt === undefined ? found.endAt : new Date(body.endAt).toISOString(),
-      timezone: body.timeZone ?? found.timezone, isAllDay: found.isAllDay && body.startAt === undefined && body.endAt === undefined, etag, metadata: { ...found.metadata, etag }
+      timezone: body.timeZone?.trim() ?? found.timezone, isAllDay: found.isAllDay && body.startAt === undefined && body.endAt === undefined, etag, metadata: { ...found.metadata, etag }
     }
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === found.externalId ? moved : e) }))
     return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
@@ -893,9 +901,9 @@ effect function store(site: string) {
     HttpRouter.route("DELETE", `${mail}/drafts/:draftId`, answered(deleteDraft(fixed))),
     HttpRouter.route("GET", `${mail}/contacts`, answered(contacts(fixed))),
     HttpRouter.route("GET", `${calendar}/feed`, answered(calendarFeed(fixed))),
-    HttpRouter.route("POST", `${calendar}/events`, answered(addAppointment(fixed))),
-    HttpRouter.route("PATCH", `${calendar}/events/:eventId`, answered(moveAppointment(fixed))),
-    HttpRouter.route("DELETE", `${calendar}/events/:eventId`, answered(removeAppointment(fixed)))
+    HttpRouter.route("POST", `${calendar}/events`, answered(addAppointment(fixed), refusedAs("Invalid calendar event request."))),
+    HttpRouter.route("PATCH", `${calendar}/events/:eventId`, answered(moveAppointment(fixed), refusedAs("Invalid calendar event update request."))),
+    HttpRouter.route("DELETE", `${calendar}/events/:eventId`, answered(removeAppointment(fixed), { status: 400, body: { error: "Invalid calendar event delete request." } }))
   ]
 
   return [

@@ -229,6 +229,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const removed = try mail.deleteDraft("draft-sunday")
       const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
       const sent = try listed(gmail, "SentFolder")
+      const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => m.content.ref)
       const looked = [try mail.lookup("operation-1"), try mail.lookup("operation-never")]
       try outage(cloud, secret, true)
       const offline = try mail.send("operation-2", draft)
@@ -240,14 +241,14 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const evidence = (s: { readonly evidence: string }) => s.evidence.startsWith("message:")
       try Effect.try(() => assert.deepStrictEqual({
         people, resolved, saved, drafts, reopened, removed, sends: sends.map((s) => [s.resultStatus, evidence(s)]), same: sends[0].evidence === sends[1].evidence && looked[0].evidence === sends[0].evidence,
-        sent, looked: looked.map((s) => s.resultStatus), never: looked[1], offline, later: later.map((s) => s.resultStatus), again: later[1].evidence === later[2].evidence,
+        sent, answered, looked: looked.map((s) => s.resultStatus), never: looked[1], offline, later: later.map((s) => s.resultStatus), again: later[1].evidence === later[2].evidence,
         copied: copied.resultStatus, unsendable, carried
       }, {
         people: 6,
         resolved: [{ address: "susan@family.test", verified: true }, { address: "", verified: false }],
         saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Visit form.pdf"], removed: true,
         sends: [["Sent", true], ["Sent", true]], same: true,
-        sent: ["Re: Lunch on Sunday?"],
+        sent: ["Re: Lunch on Sunday?"], answered: ["family"],
         looked: ["Sent", "SendFailed"], never: { resultStatus: "SendFailed", evidence: "not-sent" },
         offline: { resultStatus: "SendUnknown", evidence: "" },
         later: ["SendFailed", "Sent", "Sent"], again: true,
@@ -302,7 +303,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const tokyoMidnight = Date.parse(`${new Date(Math.floor(now / day) * day + 3 * day).toISOString().slice(0, 10)}T00:00:00+09:00`)
       try Effect.try(() => assert.deepStrictEqual({
         eyeCheck: [eyeCheck.phase, eyeCheck.committed.participant, found("eye-check")?.scheduleVerified],
-        added: [added.revision, added.succeeded, added.published.map((p) => [p.incoming.identity.occurrenceId === "clinic-visit", p.incoming.phase])],
+        added: [added.revision, added.succeeded, added.published.map((p) => [p.incoming.identity.occurrenceId === "clinic-visit", p.incoming.phase, p.scheduleVerified])],
         visit: [visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled],
         unchanged, elsewhere: otherTablet.succeeded,
         refreshed: [r.title, r.participant, r.reminderEnabled, r.leadTime, refreshed.identity.sourceRef, refreshed.revision > visit.revision], changed,
@@ -312,7 +313,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         removed, gone
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
-        added: [1, true, [[true, "Deleted"], [false, "Saved"]]],
+        added: [1, true, [[true, "Deleted", true], [false, "Saved", true]]],
         visit: ["clinic", "Dr. Patel", true],
         unchanged: ["birthday"],
         elsewhere: true,
