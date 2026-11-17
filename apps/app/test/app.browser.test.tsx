@@ -411,3 +411,53 @@ it("Use the website under Grace's controls", async () => {
   await act(() => Promise.resolve(root.unmount()));
   await runtime.dispose();
 });
+
+it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  const runtime = ManagedRuntime.make(application(undefined));
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  const current = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
+  try {
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Email", exact: true })));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace", exact: true })));
+    const invitation = { surface: "Email", subject: "Library invitation", outcome: "Read the invitation" } as const;
+    await act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (m) => m.send({
+      type: "beginGuided", request: { owner: "reader", task: "library-visit", goal: "Save the library visit", steps: [
+        invitation,
+        { surface: "Browser", subject: "Library events", outcome: "Check the room and time" },
+        { surface: "Calendar", subject: "Library visit", outcome: "See the visit on my calendar" },
+      ] },
+    }, "Person"))).then(() => undefined));
+    const plan = page.getByRole("region", { name: "Task plan" });
+    await expect.element(plan).toBeVisible();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Collapse", exact: true })));
+    await expect.element(plan.getByRole("list")).not.toBeInTheDocument();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Expand", exact: true })));
+    await expect.poll(() => plan.getByRole("listitem").all().length).toBe(3);
+    await expect.element(plan.getByRole("listitem").nth(0)).toHaveAttribute("aria-current", "step");
+    await act(() => userEvent.click(page.getByRole("button", { name: "Collapse", exact: true })));
+
+    const { assistant, browser, device } = current();
+    await act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (m) => m.send({
+      type: "confirmGuided", report: { owner: "reader", task: "library-visit", version: assistant.workVersion,
+        deviceVersion: device.contextVersion, browserRevision: browser.revision, step: invitation, evidence: "library-invitation" },
+    }, "Host"))).then(() => undefined));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Home", exact: true })));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Internet", exact: true })));
+    expect(current().assistant.activity).toBe("Paused");
+    const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
+    await expect.element(resume).toBeEnabled();
+    await act(() => userEvent.click(resume));
+    await expect.element(resume).not.toBeInTheDocument();
+    expect(current().assistant).toMatchObject({ taskId: "library-visit", activity: "Rechecking" });
+    expect(current().plan.receipts).toEqual(["library-invitation"]);
+    await act(() => userEvent.click(page.getByRole("button", { name: "Expand", exact: true })));
+    await expect.element(plan.getByRole("listitem").nth(0).getByRole("img", { name: "Observed" })).toBeVisible();
+    await expect.element(plan.getByRole("listitem").nth(1)).toHaveAttribute("aria-current", "step");
+  } finally {
+    await act(() => Promise.resolve(root.unmount()));
+    await runtime.dispose();
+    container.remove();
+  }
+});
