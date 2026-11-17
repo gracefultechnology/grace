@@ -1,6 +1,4 @@
-// spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Story: Save a file a website offers"; spec/app/websiteRequests.md, "Story: Decide what a website may use"
-// What the shown page's website asks, one question at a time, over the top of the page; and the
-// downloads and the apps that did not open, until the person closes them.
+// spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Story: Save a file a website offers"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"
 import { Button, Card, CardFooter, CardTitle, Spinner, TextField } from "@repo/ui";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { useState } from "react";
@@ -8,9 +6,8 @@ import { type Ask, type DownloadRecord, type Kinds, type Opening, type WebsiteRe
 import { OverPage } from "./PageLayer.tsx";
 import { useWebsiteRequests } from "./useApp.ts";
 
-/** The site an address names, as a question, a tab or a recent website shows it. */
-export function site(origin: string): string {
-  try { return new URL(origin).hostname; } catch { return origin; }
+export function site(address: string): string {
+  try { return new URL(address).hostname; } catch { return address; }
 }
 
 function devices(kinds: Kinds): string {
@@ -18,7 +15,6 @@ function devices(kinds: Kinds): string {
   return named.length > 1 ? `${named.slice(0, -1).join(", ")} and ${named.at(-1)}` : String(named[0]);
 }
 
-/** The question, and the words of its two answers: decline first, accept last; no accept where it cannot. */
 function wording(ask: Ask, said: string): { title: string; words?: string; no: string; yes?: string } {
   switch (ask.tag) {
     case "WebsiteMessage":
@@ -34,7 +30,6 @@ function wording(ask: Ask, said: string): { title: string; words?: string; no: s
   }
 }
 
-/** What did not open, or what Android did not allow (spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"). */
 function failure(ask: Ask): string {
   switch (ask.tag) {
     case "BlockedSignIn": return "Your browser didn't open.";
@@ -46,7 +41,6 @@ function failure(ask: Ask): string {
 
 const downloadMark = { Saving: <Spinner size="sm" label="Saving" />, Saved: <CircleCheck aria-label="Saved" className="text-primary" />, SaveFailed: <CircleAlert aria-label="Not saved" className="text-destructive" />, NotSaved: <CircleAlert aria-label="Not saved" className="text-muted-foreground" /> };
 
-/** The question in front of the person, with the text they type for a prompt; keyed by its request, so a draft never carries over. */
 function Question({ request, said, answer }: { request: WebsiteRequest; said: string; answer: (accept: boolean, text: string) => void }) {
   const [text, setText] = useState("");
   const asked = wording(request.ask, said);
@@ -59,7 +53,6 @@ function Question({ request, said, answer }: { request: WebsiteRequest; said: st
       {prompt && <TextField label="Your answer" value={text} onChange={(e) => setText(e.target.value)} />}
       <CardFooter>
         {!alert && <Button variant="capsule" size="pill" onClick={() => answer(false, "")}>{asked.no}</Button>}
-        {/* spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text": only a prompt takes text. */}
         {asked.yes && <Button variant="prominent" size="pill" onClick={() => answer(true, prompt ? text : "")}>{asked.yes}</Button>}
       </CardFooter>
     </Card>

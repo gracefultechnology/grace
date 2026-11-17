@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ComponentProps } from "react";
+import { useCallback, useId, type ComponentProps } from "react";
 import { CircleCheck, Clock, Pause, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
@@ -106,12 +106,9 @@ export function TaskCard({
   const l = { ...taskCardLabels, ...labels };
   const titleId = useId();
   const questionId = useId();
-  const questionRef = useRef<HTMLParagraphElement>(null);
+  const focusQuestion = useCallback((question: HTMLParagraphElement | null) => question?.focus(), []);
   const done = status === "done";
   const ask = asking === "stop" && !done ? "stop" : asking === "remove" && done ? "remove" : undefined;
-  useEffect(() => {
-    if (ask) questionRef.current?.focus();
-  }, [ask]);
   const { icon: Icon, tone } = tags[status];
   const Heading = headingLevel === 2 ? "h2" : "h3";
   return (
@@ -134,7 +131,7 @@ export function TaskCard({
       <p className="m-0 text-body-lg leading-[30px] text-foreground">{line}</p>
       {ask ? (
         <div role="group" aria-labelledby={questionId} className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
-          <p id={questionId} ref={questionRef} tabIndex={-1} className="m-0 text-body-lg leading-[30px] font-semibold text-chrome outline-none">
+          <p id={questionId} ref={focusQuestion} tabIndex={-1} className="m-0 text-body-lg leading-[30px] font-semibold text-chrome outline-none">
             {ask === "stop" ? l.stopQuestion : l.removeQuestion}
           </p>
           <div className="flex flex-wrap gap-3">

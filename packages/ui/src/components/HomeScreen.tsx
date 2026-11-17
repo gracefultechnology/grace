@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
+import { useSize } from "../lib/observe.ts";
 import { FilesCard, type FilesCardProps } from "./FilesCard.tsx";
 import { HomeCalendarCard, type HomeCalendarCardProps } from "./HomeCalendarCard.tsx";
 import { HomeEmailCard, type HomeEmailCardProps } from "./HomeEmailCard.tsx";
@@ -96,50 +97,49 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
 export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
   const full = layout === "full";
   const compact = !full;
-  const [box, setBox] = useState({ width: STAGE.width, height: STAGE.height });
-  const measure = useCallback((element: HTMLDivElement | null) => {
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => setBox({ width: entry.contentRect.width, height: entry.contentRect.height }));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+  const [measure, measured] = useSize<HTMLDivElement>();
+  const box = measured ?? STAGE;
   const across = (box.width - STAGE.rail) / (STAGE.width - STAGE.rail);
   const scale = Math.min(1, across, full ? box.height / STAGE.height : 1);
   const x = Math.max(0, (box.width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2);
   const stops = full ? shifts : compactShifts;
   const [dragShift, setDragShift] = useState<number | null>(null);
-  const dragRef = useRef<{ x: number; from: number; shift: number; moved: boolean; stop: AbortController } | null>(null);
-  useEffect(() => () => dragRef.current?.stop.abort(), []);
+  const dragRef = useRef<{ x: number; k: number; from: number; shift: number; moved: boolean } | null>(null);
+  const swipedRef = useRef(false);
   const shift = dragShift ?? stops[page];
   const nearest: HomePage = shift > (stops.main + stops.files) / 2 ? "files" : "main";
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
+    swipedRef.current = false;
     if (layout === "greeting" || (event.target as Element).closest("[data-home-pager] button")) return;
-    dragRef.current?.stop.abort();
     const home = event.currentTarget;
     const k = ((home.getBoundingClientRect().width / home.offsetWidth) || 1) * scale;
-    const stop = new AbortController();
-    const state = { x: event.clientX, from: shift, shift, moved: false, stop };
-    dragRef.current = state;
-    addEventListener("pointermove", (move) => {
-      const dx = (move.clientX - state.x) / k;
-      state.moved ||= Math.abs(dx) > SWIPE.threshold;
-      if (!state.moved) return;
-      state.shift = Math.max(stops.main - SWIPE.overscroll, Math.min(stops.files + SWIPE.overscroll, state.from - dx));
-      setDragShift(state.shift);
-    }, { signal: stop.signal });
-    const settle = () => {
-      stop.abort();
-      setDragShift(null);
-      if (state.moved) onPageChange?.(state.shift > (stops.main + stops.files) / 2 ? "files" : "main");
-    };
-    addEventListener("pointerup", settle, { signal: stop.signal });
-    addEventListener("pointercancel", settle, { signal: stop.signal });
+    dragRef.current = { x: event.clientX, k, from: shift, shift, moved: false };
+  };
+  const drag = (event: PointerEvent<HTMLDivElement>) => {
+    const state = dragRef.current;
+    if (!state || event.buttons === 0) return;
+    const dx = (event.clientX - state.x) / state.k;
+    if (!state.moved && Math.abs(dx) > SWIPE.threshold) {
+      state.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    if (!state.moved) return;
+    state.shift = Math.max(stops.main - SWIPE.overscroll, Math.min(stops.files + SWIPE.overscroll, state.from - dx));
+    setDragShift(state.shift);
+  };
+  const settle = () => {
+    const state = dragRef.current;
+    dragRef.current = null;
+    if (!state?.moved) return;
+    swipedRef.current = true;
+    setDragShift(null);
+    onPageChange?.(state.shift > (stops.main + stops.files) / 2 ? "files" : "main");
   };
   const swallowSwipeClick = (event: MouseEvent) => {
-    if (!dragRef.current?.moved) return;
+    if (!swipedRef.current) return;
+    swipedRef.current = false;
     event.stopPropagation();
     event.preventDefault();
-    dragRef.current = null;
   };
   const place = (slot: keyof typeof slots, card: (turn: number) => ReactNode) => {
     const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { left: columns[slot], top: 0, width: 334, height: "100%", transform: `translateX(${-shift}px)` } };
@@ -157,6 +157,9 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     <div
       ref={measure}
       onPointerDown={startDrag}
+      onPointerMove={drag}
+      onPointerUp={settle}
+      onPointerCancel={settle}
       onClickCapture={swallowSwipeClick}
       className={cn("absolute inset-1.5 z-[1] overflow-hidden font-sans transition-[bottom] duration-slow ease-settle motion-reduce:transition-none", className)}
       {...props}
