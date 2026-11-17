@@ -22,7 +22,7 @@ import { Keyboard } from "./app.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
 import type { Contact } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
-import { Mail, type Note } from "./mail.vibe";
+import { type Board, Mail } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
@@ -123,18 +123,20 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const nothing = (): Note | undefined => undefined;
+const blank: Board = { note: undefined, undeleted: new Set() };
+const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 
 export function useMail() {
   const runtime = useRuntime();
   const mail = Option.getOrUndefined(runtime.runSync(Effect.serviceOption(Mail)));
-  const note = useSyncExternalStore(mail?.notes.subscribe ?? silence, mail?.notes.current ?? nothing);
+  const board = useSyncExternalStore(mail?.board.subscribe ?? silence, mail?.board.current ?? nothing);
   return mail && {
-    note,
+    ...board,
+    hush: mail.hush,
+    nameOf: mail.nameOf,
     reply: (id: number) => runtime.runPromise(mail.reply(id)),
-    confirmSend: (id: number) => runtime.runPromise(mail.confirmSend(id)),
-    openDraft: (id: number, ref: string) => runtime.runPromise(mail.openDraft(id, ref)),
+    confirmSend: (id: number, revision: number) => runtime.runPromise(mail.confirmSend(id, revision)),
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();

@@ -57,7 +57,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const mail = useMail();
   const [typed, setTyped] = useState<string | null>(null);
   const [picking, setPicking] = useState<Picking | null>(null);
-  const [outbox, setOutbox] = useState(false);
+  const [outboxChosen, setOutbox] = useState(false);
   if (!workspace) return null;
   const now = new Date();
   const fire = (event: WorkspaceEvent) => () => { if (can(event)) void send(event); };
@@ -107,8 +107,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const lead = shown[0]?.state;
   const folder: Folder = lead?.folder ?? "InboxFolder";
   const rows = accountRows(registry, sources);
+  const waitingCount = outboxCount(registry, sources);
+  const outbox = outboxChosen && waitingCount > 0;
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => ({
-    id: `${r.account}/${r.queued.operationId}`, from: { name: recipientsOf(r.queued.snapshot.content.to)[0] ?? "" }, subject: r.queued.snapshot.content.subject, time: "",
+    id: `${r.account}/${r.queued.operationId}`, from: { name: mail?.nameOf(r.queued.snapshot.content.to) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "" }, subject: r.queued.snapshot.content.subject, time: "",
     account: rows.length ? name(r.account) : undefined,
   }));
   const listed: MailSummary[] = folderRows(registry, sources, folder).sort(newest(read)).map((r) => {
@@ -133,7 +135,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const writable = mail && fromChoices(registry, sources).some((a) => shown.find((b) => b.id === a.id)?.can({ type: "startDraft", reply: false }));
 
   return (
-    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), outbox: outboxCount(registry, sources) }}
+    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), outbox: waitingCount }}
       accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
       onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
@@ -153,7 +155,6 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         const box = shown.find((b) => b.id === Number(owner));
         const ref = rest.join("/");
         const event: MailEvent = outbox ? { type: "reopenQueued", operationId: ref } : { type: "readMail", kind: "OpenMessage", ref, approved: true };
-        if (!outbox && folder === "DraftsFolder" && mail && box?.can(event)) return void mail.openDraft(box.id, ref);
         if (box?.can(event)) void box.send(event);
       }}
       onFixWifi={fire({ type: "chooseSettingsPage", page: "NetworkSettings" })} {...frame} />
