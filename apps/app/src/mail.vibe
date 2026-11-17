@@ -1,7 +1,7 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { currentDraft, draftStoreBusy, emptyContent, Machine as MailMachine, type DraftContent, type DraftSnapshot, type Mailbox, type QueuedSend } from "../gen/app__email.effect.vibe"
-import type { MessageRecord } from "../gen/app__emailItem.effect.vibe"
+import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
@@ -27,18 +27,12 @@ const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: 
 const noteFor = "2600 millis"
 const undoFor = "6 seconds"
 
-function settledRestores(before: Mailbox, after: Mailbox): MessageRecord[] {
-  return after.messages.filter((r) => r.status === "ChangeIdle" && r.folder !== "TrashFolder" &&
-    before.messages.some((o) => o.identity.ref === r.identity.ref && o.pending === "RestoreMessage" && o.status !== "ChangeIdle"))
-}
-
-function settledChanges(before: Mailbox, after: Mailbox): MessageRecord[] {
-  return after.messages.filter((r) => r.pending === "NoMessageChange" && r.status === "ChangeIdle" && r.folder !== "PurgedFolder" &&
-    before.messages.some((o) => o.identity.ref === r.identity.ref && o.pending !== "NoMessageChange"))
-}
-
-function purged(before: Mailbox, after: Mailbox): boolean {
-  return after.messages.some((r) => r.folder === "PurgedFolder" && before.messages.some((o) => o.identity.ref === r.identity.ref && o.folder !== "PurgedFolder"))
+function settled(before: Mailbox, after: Mailbox): { change: MessageChange; record: MessageRecord }[] {
+  return after.messages.flatMap((record) => {
+    const was = before.messages.find((o) => o.identity.ref === record.identity.ref)
+    return was !== undefined && was.pending !== "NoMessageChange" && record.pending === "NoMessageChange" && record.status === "ChangeIdle"
+      ? [{ change: was.pending, record }] : []
+  })
 }
 
 function leftOutbox(before: Mailbox, after: Mailbox): QueuedSend[] {
@@ -112,7 +106,8 @@ export const mailing = Layer.effect(Mail, effect {
   }
 
   effect function heard(account: Account, mail: MailConnection, box: MailMachine.Shape, before: Mailbox, after: Mailbox) {
-    for (const record of settledChanges(before, after)) {
+    const changes = settled(before, after)
+    for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
       const opened = mail.read(record.identity.ref, after.generation) catch () => undefined
       if (opened !== undefined) shelf.remember(account.id, opened.content)
     }
@@ -138,12 +133,12 @@ export const mailing = Layer.effect(Mail, effect {
       else try show("Email discarded")
     }
     if (before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored" && after.folder === "DraftsFolder") try relist(box)
-    const restored = settledRestores(before, after)
+    const restored = changes.filter((c) => c.change === "RestoreMessage").map((c) => c.record)
     if (restored.length > 0) {
       try show(`Moved back to ${folderNames[restored[0].folder] ?? "Inbox"}`)
       if (restored.some((r) => r.folder === after.folder)) try relist(box)
     }
-    if (purged(before, after)) try show("Deleted for good")
+    if (changes.some((c) => c.change === "PurgeMessage")) try show("Deleted for good")
   }
 
   effect function outcome(box: MailMachine.Shape, sent: SendOutcome!NeedsSignIn) {
@@ -293,7 +288,7 @@ export const mailing = Layer.effect(Mail, effect {
         const now = try chosen.get()
         try chosen.send({ type: "attachAsset", owner: now.owner, asset, draftRevision: now.revision, selected: true }, "MailHost")
       }
-    } catch () => undefined
+    } catch () => { quiet.delete(from) }
   }
 
   const traced = try HttpClient.TracerPropagationEnabled

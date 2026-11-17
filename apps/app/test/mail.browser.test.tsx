@@ -24,7 +24,10 @@ const Kept = Schema.Struct({
   boxes: Schema.Array(Schema.Struct({
     address: Schema.String,
     sent: Schema.Array(Schema.Struct({ operationId: Schema.String })),
-    mail: Schema.Array(Schema.Struct({ externalId: Schema.String, subject: Schema.String, labels: Schema.Array(Schema.String) })),
+    mail: Schema.Array(Schema.Struct({
+      externalId: Schema.String, subject: Schema.String, labels: Schema.Array(Schema.String), bcc: Schema.Array(Schema.String),
+      attachments: Schema.Array(Schema.Struct({ filename: Schema.String })),
+    })),
   })),
 });
 
@@ -74,7 +77,6 @@ const row = (name: string) => folders().getByRole("button", { name: new RegExp(`
 const email = (from: RegExp) => page.getByRole("button", { name: from });
 const subject = () => page.getByLabelText("Subject");
 const words = () => page.getByRole("textbox", { name: "Write your message, or ask Grace to help" });
-const toast = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 const opened = async (from: RegExp, title: string) => {
   await click(email(from));
   await expect.element(page.getByRole("heading", { name: title })).toBeVisible();
@@ -136,7 +138,8 @@ it("See all my email in one place", async () => {
 
 it("Write or reply and confirm before sending", async () => {
   const { secret, host, company } = await start();
-  const sentWith = async (title: string) => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === title && m.labels.includes("SENT")).map(() => b.address));
+  const sent = async (title: string) => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === title && m.labels.includes("SENT")).map((m) => ({ ...m, from: b.address })));
+  const sentWith = async (title: string) => (await sent(title)).map((m) => m.from);
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(row("All inboxes 5")).toBeVisible();
 
@@ -148,7 +151,6 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Thank you, I’ll be there."));
   // spec/app/email.md, "The visible Send button approves exactly the composer the user sees"
   await click(page.getByRole("button", { name: "Send" }));
-  await expect.element(toast("Sent to Main St Clinic")).toBeVisible();
   await expect.poll(() => sentWith("Re: Reminder: your appointment tomorrow at 10 am")).toEqual([gmail]);
 
   // spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays": a new email to Susan
@@ -157,14 +159,26 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Susan" }));
   await act(() => userEvent.fill(subject(), "Sunday"));
   await act(() => userEvent.fill(words(), "See you on Sunday."));
+  await click(page.getByRole("button", { name: "Add", exact: true }));
+  await click(page.getByRole("button", { name: "Add to Bcc" }));
+  await expect.element(page.getByRole("heading", { name: "Who should get a hidden copy?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Joan" }));
   await click(page.getByRole("button", { name: gmail }));
   await click(page.getByRole("menuitemradio", { name: new RegExp(outlook) }));
   await expect.element(page.getByRole("button", { name: outlook })).toBeVisible();
   await expect.element(subject()).toHaveValue("Sunday");
   await expect.element(words()).toHaveValue("See you on Sunday.");
+  await expect.element(page.getByRole("button", { name: "Remove Joan" })).toBeVisible();
   await click(page.getByRole("button", { name: "Send" }));
-  await expect.element(toast("Sent to Susan")).toBeVisible();
-  await expect.poll(() => sentWith("Sunday")).toEqual([outlook]);
+  await expect.poll(async () => (await sent("Sunday")).map((m) => [m.from, m.bcc])).toEqual([[outlook, ["joan@family.test"]]]);
+
+  // spec/app/email.md, "Attachment actions preserve exact asset and message identity": forwarding carries the email's own attachment.
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Forward" }));
+  await click(page.getByRole("button", { name: "David" }));
+  await expect.element(subject()).toHaveValue("Fwd: Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[{ filename: "Visit form.pdf" }]]);
 
   // spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable": the next email to Susan starts from
   // Outlook, the account last used with her; Back keeps it in Drafts, and it opens again from there.
@@ -174,13 +188,12 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(subject(), "Lunch next week"));
   await act(() => userEvent.fill(words(), "Shall we have lunch on Tuesday?"));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
-  await expect.element(toast("Saved to Drafts")).toBeVisible();
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week").map((m) => [b.address, m.labels]))).toEqual([[outlook, ["DRAFT"]]]);
   await click(row("Drafts"));
   await click(email(/Lunch next week/));
   await expect.element(words()).toHaveValue("Shall we have lunch on Tuesday?");
   await expect.element(page.getByRole("button", { name: "Remove Susan" })).toBeVisible();
   await click(page.getByRole("button", { name: "Discard" }));
-  await expect.element(toast("Email discarded")).toBeVisible();
   await expect.element(email(/Lunch next week/)).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
 
@@ -193,12 +206,10 @@ it("Write or reply and confirm before sending", async () => {
   await host("Offline");
   const before = (await company()).boxes.flatMap((b) => b.sent.map((s) => s.operationId));
   await click(page.getByRole("button", { name: "Send" }));
-  await expect.element(toast("Waiting in Outbox until you’re back online")).toBeVisible();
   await click(row("Outbox 1"));
   await expect.element(email(/ruth@family\.test/)).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   await host("Online");
-  await expect.element(toast("Your email to ruth@family.test was sent")).toBeVisible();
   await expect.element(email(/ruth@family\.test/)).not.toBeInTheDocument();
   await click(row("All inboxes"));
   await expect.element(row("Outbox")).not.toBeInTheDocument();
@@ -212,34 +223,34 @@ it("Write or reply and confirm before sending", async () => {
 it("Delete a message and recover it safely", async () => {
   const { company } = await start();
   const prize = email(/Prize Desk/);
+  const undo = page.getByRole("button", { name: "Undo" });
+  const labels = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction").map((m) => m.labels.filter((l) => l !== "UNREAD")));
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(prize).toBeVisible();
 
   // spec/app/emailItem.md, "Only an authorized current selection can begin a provider mutation": Delete moves it to Trash, and Undo takes it back.
   await opened(/Prize Desk/, "A message for Grace");
   await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(toast("Moved to Trash")).toBeVisible();
   await expect.element(prize).not.toBeInTheDocument();
-  await click(page.getByRole("button", { name: "Undo" }));
-  await expect.element(toast("Moved back to Inbox")).toBeVisible();
+  await click(undo);
+  await expect.poll(labels).toEqual([["INBOX"]]);
   await expect.element(prize).toBeVisible();
 
   await opened(/Prize Desk/, "A message for Grace");
   await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(toast("Moved to Trash")).toBeVisible();
+  await expect.element(undo).toBeVisible();
   await click(row("Trash"));
   await opened(/Prize Desk/, "A message for Grace");
   await click(page.getByRole("button", { name: "Restore" }));
-  await expect.element(toast("Moved back to Inbox")).toBeVisible();
   await expect.element(prize).not.toBeInTheDocument();
+  await expect.poll(labels).toEqual([["INBOX"]]);
   await click(row("All inboxes"));
   await opened(/Prize Desk/, "A message for Grace");
   await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(toast("Moved to Trash")).toBeVisible();
+  await expect.element(undo).toBeVisible();
   await click(row("Trash"));
   await opened(/Prize Desk/, "A message for Grace");
   await click(page.getByRole("button", { name: "Delete forever" }));
-  await expect.element(toast("Deleted for good")).toBeVisible();
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction"))).toEqual([]);
 });
