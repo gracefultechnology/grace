@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
 import { type Rect, Machine as PageLayers, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
 import { type Tab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canChangePage, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
@@ -74,7 +74,9 @@ function placedRects(controls: ReadonlyMap<HTMLElement, Control>): Rect[] {
 
 const pageOf = (tab: number) => PageId.make(`tab-${tab}`)
 
-type Page = { tab: Tab; url: string; load: number | undefined; asked: { version: number; url: string }[] }
+type Held = { from: number; to: number }
+
+type Page = { tab: Tab; held: Held; url: string; load: number | undefined; asked: { version: number; url: string }[] }
 
 type Request = { page: PageId; key: RequestKey }
 
@@ -90,6 +92,16 @@ data Signal {
 }
 
 const sameHistory = (a: Tab, b: Tab) => a.history.length === b.history.length && a.history.every((url, i) => url === b.history[i])
+
+const holds = (held: Held, cursor: number) => cursor >= held.from && cursor <= held.to
+
+function track(page: Page, tab: Tab) {
+  const { held, tab: before } = page
+  page.held = sameHistory(before, tab) && holds(held, tab.cursor) ? held
+    : tab.cursor === before.cursor + 1 ? { from: held.from, to: tab.cursor }
+    : { from: tab.cursor, to: tab.cursor }
+  page.tab = tab
+}
 
 effect function warn(what: string, page: PageId | undefined, cause: unknown) {
   try annotateLogs(logWarning(what, cause), { page: page ?? "every page" })
@@ -192,23 +204,27 @@ effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth
   if (resize.capacity !== w.browser.capacity && canChangePage(w, resize, "Host")) try report(workspace, { type: "changePage", browserInput: resize })
 }
 
-effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
-  const url = event.url
-  const went = url !== undefined && url !== "" && url !== page.url
-  if (went) page.url = url
+const goesElsewhere = (page: Page, url: string | undefined): url is string => url !== undefined && url !== "" && url !== page.url
+
+effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url: string) {
+  page.url = url
   const before = try workspace.get()
   const shown = before.browser.tabs.find((t) => t.id === tab)
-  if (went && shown !== undefined && shown.load !== "Loading" && page.url !== tabUrl(shown)) {
-    const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: page.url }
+  if (shown !== undefined && shown.load !== "Loading" && url !== tabUrl(shown)) {
+    const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: url }
     try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
   }
   const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
-  if (now === undefined) return
-  if (went && page.url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1)?.version === now.loadVersion)) {
+  if (now !== undefined && url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1)?.version === now.loadVersion)) {
     page.load = now.loadVersion
     page.asked = []
   }
-  if (!event.loading && now.load === "Loading" && page.load === now.loadVersion)
+}
+
+effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
+  if (goesElsewhere(page, event.url)) try moved(workspace, page, tab, event.url)
+  const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
+  if (now !== undefined && !event.loading && now.load === "Loading" && page.load === now.loadVersion)
     try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result } })
 }
 
@@ -224,6 +240,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   const saving = new Map<number, Request>()
   const signals = try Queue.unbounded<Signal>()
   const pages = new Map<PageId, Page>()
+  const unmade = new Map<number, number>()
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Measured()))
   let followed = try workspace.get()
   let presented: PageId | null | undefined = null
@@ -305,9 +322,15 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function open(tab: Tab, shown: boolean) {
     const id = pageOf(tab.id)
+    if (unmade.get(tab.id) === tab.loadVersion) return
     const made = Effect.as(native.create(id, tabUrl(tab)), true) catch effect (cause) => { try warn("create", id, cause); return false }
-    if (!made) return
-    pages.set(id, { tab, url: "", load: undefined, asked: [{ version: tab.loadVersion, url: tabUrl(tab) }] })
+    if (!made) {
+      unmade.set(tab.id, tab.loadVersion)
+      if (tab.load === "Loading") try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed" } })
+      return
+    }
+    unmade.delete(tab.id)
+    pages.set(id, { tab, held: { from: tab.cursor, to: tab.cursor }, url: "", load: undefined, asked: [{ version: tab.loadVersion, url: tabUrl(tab) }] })
     presented = undefined
     try place(id)
     const l = try layer.get()
@@ -318,13 +341,14 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function step(page: Page, tab: Tab) {
     const id = pageOf(tab.id)
-    if (page.load === tab.loadVersion) { page.tab = tab; return }
+    if (page.load === tab.loadVersion) return track(page, tab)
     const direction = sameHistory(tab, page.tab) ? Math.sign(tab.cursor - page.tab.cursor) : undefined
     if (direction !== undefined && direction !== 0 && page.asked.length > 0) return
     const to = direction !== undefined && page.tab.cursor + direction !== tab.cursor ? { ...tab, cursor: page.tab.cursor + direction, loadVersion: -1 } : tab
-    const command = direction === -1 ? native.back(id) : direction === 1 ? native.forward(id) : direction === 0 ? native.reload(id) : native.navigate(id, tabUrl(tab))
+    const inPage = direction === 0 || (direction !== undefined && holds(page.held, to.cursor))
+    const command = !inPage ? native.navigate(id, tabUrl(to)) : direction === -1 ? native.back(id) : direction === 1 ? native.forward(id) : native.reload(id)
     page.asked.push({ version: to.loadVersion, url: direction === 0 ? page.url : tabUrl(to) })
-    page.tab = to
+    track(page, to)
     command catch effect (cause) => { try warn("follow", id, cause); try close(tab.id) }
   }
 
@@ -338,7 +362,7 @@ export const pageHost = Layer.effect(PageHost, effect {
       if (page === undefined) { if (tabUrl(tab) !== "" && !purging) try open(tab, tab.id === w.browser.selected && pageShows(w.device, w.assistant)) }
       else if (tabUrl(tab) === "") try close(tab.id)
       else if (tab.loadVersion !== page.tab.loadVersion) try step(page, tab)
-      else page.tab = tab
+      else track(page, tab)
     }
   }
 
@@ -387,8 +411,10 @@ export const pageHost = Layer.effect(PageHost, effect {
   const numberOf = (requests: ReadonlyMap<number, Request>, page: PageId, key: RequestKey) => [...requests].find(([, r]) => r.page === page && r.key === key)?.[0]
 
   effect function started(page: Page, tab: number, url: string | undefined) {
+    const unasked = page.asked.length === 0
     const at = page.asked.findLastIndex((a) => a.url === url)
     page.load = page.asked.splice(0, at + 1 || 1).at(-1)?.version ?? page.load
+    if (unasked && goesElsewhere(page, url)) try moved(workspace, page, tab, url)
     const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
     if (now !== undefined && now.loadVersion !== page.tab.loadVersion) try step(page, now)
     try website({ type: "pageStarted", tab }, "WebsiteHost")
