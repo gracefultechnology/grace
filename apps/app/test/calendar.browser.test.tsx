@@ -28,20 +28,17 @@ const row = (title: string, tag?: string) => page.getByRole("button", { name: ne
 const mondayOf = (n: number) => n - ((new Date(n * day).getUTCDay() + 6) % 7);
 const tile = (n: number, plans = "(\\s*has plans)?") => new RegExp(`^(Today|${new Date(midnight(n)).toLocaleDateString("en-US", { weekday: "short" })})\\s*${new Date(midnight(n)).getDate()}${plans}$`);
 
-/** The appointments Gmail's calendar holds at the fake company. */
 async function company(key: string) {
   const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${key}` } });
   const { boxes } = await response.json() as { boxes: { calendar: { externalId: string; title: string; startAt: string }[] }[] };
   return boxes[0].calendar;
 }
 
-/** Gmail on the tablet, allowed on Google's own page with its calendar. */
 function kept(): Accounts {
   const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
   return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: gmail, granted: allowedUse }, "Gmail", "AccountConnector");
 }
 
-/** Margaret's tablet with Gmail connected at the fake company, on Home: the day of Gmail's eye check, and her and the host's hands. */
 async function start() {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const [eye] = await company(secret);
@@ -168,7 +165,6 @@ it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurr
   await expect.element(row("Bridge club")).not.toBeInTheDocument();
   expect((await company(secret)).map((e) => e.title)).toEqual(["Eye check at Riverside"]);
 
-  // Gmail's own appointment leaves its company.
   await click("Previous week");
   await click("Previous week");
   await act(() => userEvent.click(row("Eye check at Riverside")));

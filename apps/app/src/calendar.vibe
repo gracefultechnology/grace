@@ -10,18 +10,15 @@ import { Instances, tablet } from "./instances.vibe"
 
 export const day = 24 * 60 * 60 * 1000
 export const hour = 60 * 60 * 1000
-/** How far ahead Home, the sleep screen and each email's calendar feed look. */
 export const horizon = 60 * day
 
 const utc = (n: number) => new Date(n * day)
 
-/** The local calendar date of `at` as a day number: days from 1970-01-01. */
 export function dayOf(at: number) {
   const d = new Date(at)
   return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / day)
 }
 
-/** The local midnight that starts day number `n`. */
 export function midnight(n: number) {
   const d = utc(n)
   return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime()
@@ -35,7 +32,6 @@ function monthStart(n: number, months: number) {
   return Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1) / day)
 }
 
-/** The days the week or month of `anchor` shows, Monday first; a month's rows cover every date in it. */
 export function shownDays(mode: ViewMode, anchor: number) {
   const first = mode === "WeekView" ? monday(anchor) : monday(monthStart(anchor, 0))
   const weeks = mode === "WeekView" ? 1 : Math.ceil((monthStart(anchor, 1) - first) / 7)
@@ -49,7 +45,6 @@ function windowOf(mode: ViewMode, anchor: number, selected: number): ViewWindow 
 
 const opened = (w: ViewWindow) => w.untilTime - w.fromTime >= day
 
-/** The window a move leads to, worked out by the tablet's own calendar: `chosen` is the day a person picked, or today. */
 export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
   const week = w.mode === "WeekView"
   const step = (n: number) => week ? windowOf(w.mode, w.anchorDay + 7 * n, w.selectedDay + 7 * n) : windowOf(w.mode, monthStart(w.anchorDay, n), w.selectedDay)
@@ -63,7 +58,6 @@ export function navigation(w: ViewWindow, kind: Navigation, chosen: number): Nav
   return { window: windows[kind](), kind, verified: true }
 }
 
-/** What the calendars need at hand at `now`: the days shown, what is coming up after the chosen day, and Home's horizon. */
 function reach(w: ViewWindow, now: number) {
   const shown = opened(w) ? w : windowOf("WeekView", dayOf(now), dayOf(now))
   return { fromTime: Math.min(shown.fromTime, midnight(dayOf(now))), untilTime: Math.max(shown.untilTime, midnight(shown.selectedDay + 15), now + horizon) }
@@ -74,7 +68,6 @@ const sameReach = (a: Reach, b: Reach) => a.fromTime === b.fromTime && a.untilTi
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
-/** The start of the repetition `n` periods after `d`'s, at the same local time; none for a date the month lacks or an appointment that does not repeat. */
 export function repeated(d: EntryDetails, n: number) {
   const s = new Date(d.startAt)
   const weekly = d.recurrence === "Weekly"
@@ -82,19 +75,22 @@ export function repeated(d: EntryDetails, n: number) {
   return d.recurrence === "Once" || (!weekly && next.getDate() !== s.getDate()) ? undefined : next.getTime()
 }
 
-/** A repetition's place in its series: the series is named after its first occurrence, and the n-th after it is `<series>@n`. */
 function placeIn(seriesId: string, id: string) {
   if (id === seriesId) return 0
   const n = id.startsWith(`${seriesId}@`) ? Number(id.slice(seriesId.length + 1)) : Number.NaN
   return Number.isInteger(n) ? n : undefined
 }
 
+function placeOf(v: CalendarView, definition: EntryDetails) {
+  const member = v.entries.find((m) => m.hasSaved && m.committed.seriesId === definition.seriesId && m.committed.startAt === definition.startAt)
+  return member === undefined ? undefined : placeIn(definition.seriesId, member.identity.occurrenceId)
+}
+
 const single = (c: Calendar) => c.committed.seriesId === "" && c.draft.seriesId === "" && c.draft.recurrence === "Once"
 
-/** The store's answer for a saved series: every member it touches, each moved with the saved one or left as it is, all in one write. */
 function seriesReceipt(v: CalendarView, c: Calendar, receipt: StoreReceipt): SeriesReceipt {
   const d = c.draft
-  const at = placeIn(d.seriesId, c.identity.occurrenceId) ?? 0
+  const at = placeOf(v, seriesAt(v, d.seriesId).details) ?? placeIn(d.seriesId, c.identity.occurrenceId) ?? 0
   const members = v.entries.filter((m) => m.phase !== "Deleted" && (m.identity.occurrenceId === v.selectedId || (m.hasSaved && m.committed.seriesId === d.seriesId)))
   const schedules = members.map(({ identity: { occurrenceId: id }, committed }) => {
     if (id === c.identity.occurrenceId) return { id, include: true, startAt: d.startAt, endAt: d.endAt }
@@ -109,12 +105,10 @@ const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(
   owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", kind: "Appointment", billRef: "", billOrigin: "", billAccount: ""
 }, details, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
 
-/** The tablet's repeating appointments in `span`: each repetition not yet kept, deleted or cancelled, as its store publishes it. */
 function repetitions(v: CalendarView, span: Reach): Published[] {
   return v.series.flatMap(({ version, details: d }) => {
     if (d.recurrence === "Once" || v.deletedSeries.includes(d.seriesId)) return []
-    const anchor = v.entries.find((m) => m.committed.seriesId === d.seriesId && m.committed.startAt === d.startAt)
-    const at = anchor === undefined ? 0 : placeIn(d.seriesId, anchor.identity.occurrenceId) ?? 0
+    const at = placeOf(v, d) ?? 0
     const found: Published[] = []
     for (let n = 0; n < 1000; n++) {
       const start = repeated(d, n - at)
@@ -129,7 +123,6 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
   })
 }
 
-/** Where a calendar's writes are kept: the tablet itself, or the email company's calendar. */
 type Store = {
   readonly write: (entry: Calendar) => StoreReceipt!!
   readonly remove: (id: string, scope: DeleteScope) => DeletionReceipt!!
@@ -140,7 +133,6 @@ const device: Store = {
   remove: (id) => Effect.succeed({ succeeded: true, evidence: `tablet:${id}` })
 }
 
-/** What Grace is told of the calendars: what changed in one once its store kept it, and a yes the calendar no longer took. */
 export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
 
 export service CalendarNews {
@@ -148,7 +140,6 @@ export service CalendarNews {
   publish(report: CalendarReport): void!!
 }
 
-/** Keeps one calendar's approved saves and deletions in its store, sends the store's answers back, and tells what changed. */
 effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], extra: (v: CalendarView) => readonly Published[]) {
   const sent = try Ref.make<ReadonlySet<string>>(new Set())
   const last = try Ref.make<CalendarView | undefined>(undefined)
@@ -186,10 +177,6 @@ const consented = (p: Pending): CalendarEvent | undefined => match (p.ask) {
   when { tag: "NoAsk" }: undefined;
 }
 
-/**
- * The tablet's own calendar and what every calendar needs whatever email is connected: opening and closing them with the
- * Calendar screen, the tablet's store and repeating appointments, due reminders, and applying her yes to Grace's question.
- */
 export const calendars = Layer.effect(CalendarNews, effect {
   const registry = try Accounts
   const shelf = try Instances
@@ -245,7 +232,6 @@ export const calendars = Layer.effect(CalendarNews, effect {
   return { reports: Stream.fromPubSub(hub), publish }
 })
 
-/** Each email whose Calendar is on: its calendar bound to the account, filled from the company's feed for the days at hand, and its writes kept there. */
 export const calendarFeeds = Layer.effectDiscard(effect {
   const registry = try Accounts
   const shelf = try Instances

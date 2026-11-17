@@ -25,14 +25,12 @@ const byStart = (a: CalRow, b: CalRow) => a.details.startAt - b.details.startAt;
 const dateOf = (n: number) => new Date(midnight(n));
 const say = (n: number, options: Intl.DateTimeFormatOptions) => dateOf(n).toLocaleDateString("en-US", options);
 
-/** "10 am", "3:30 pm". */
 export function timeLabel(at: number) {
   const t = new Date(at);
   const h = t.getHours(), m = t.getMinutes();
   return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "am" : "pm"}`;
 }
 
-/** "Today", "Tomorrow", "Thursday" within the week ahead, else "Monday, November 23". */
 function relative(n: number, today: number) {
   const ahead = n - today;
   return ahead === 0 ? "Today" : ahead === 1 ? "Tomorrow" : ahead > 1 && ahead < 7 ? say(n, { weekday: "long" }) : longDate(n);
@@ -55,7 +53,6 @@ function period(mode: "WeekView" | "MonthView", anchor: number) {
     : `${say(days[0], { month: "short", day: "numeric" })} – ${say(days[6], { month: "short", day: "numeric" })}`;
 }
 
-/** Home's calendar card: the next three saved appointments of the shown calendars from `now`. */
 export function homeEvents(registry: Accounts, views: readonly CalendarInstance[], now: number): HomeEvent[] {
   const today = dayOf(now);
   return upcoming(registry, sourcesOf(views), now, now + horizon).sort(byStart).slice(0, 3).map((r, i) => ({
@@ -64,7 +61,6 @@ export function homeEvents(registry: Accounts, views: readonly CalendarInstance[
   }));
 }
 
-/** The sleep screen's next appointment: "Tomorrow: Doctor’s appointment, 10 am". */
 export function nextAppointment(registry: Accounts, views: readonly CalendarInstance[], now: number): string | undefined {
   const [next] = upcoming(registry, sourcesOf(views), now, now + horizon).sort(byStart);
   return next && `${relative(dayOf(next.details.startAt), dayOf(now))}: ${next.details.title}, ${timeLabel(next.details.startAt)}`;
@@ -185,7 +181,6 @@ function Shown({ registry, pending, views, ...props }: Covered & { registry: Acc
   );
 }
 
-/** Opens an appointment, opening its calendar first when it was bound after Calendar opened. */
 async function openOn(box: CalendarInstance, id: string) {
   const v = box.state;
   const opening: CalendarEvent = { type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone };
