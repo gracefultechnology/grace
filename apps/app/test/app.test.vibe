@@ -3,11 +3,13 @@ import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
 import { approveSave, beginEdit, create, edit, initial as noEntry } from "../gen/app__calendar.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
-import { type AccountRef, Connector, NeedsSignIn, secretPassword } from "../src/connector.vibe"
-import { client, connectorAt, expire, otherPassword, outage, parts, reply, script, signIn, turns, unending } from "./cloud.vibe"
+import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
+import { client, expire, otherPassword, outage, parts, reply, script, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
+/** The tablet's connector on the fake cloud, signed in with `key`, with Margaret making `visits` to the sign-in pages it opens. */
+const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits)))
 
 schema Payment { amount: string; to: string }
 schema Booking { time: string }
@@ -91,7 +93,7 @@ it.live("Connect the email I already use: each company's own page answers with i
   provide client {
     const { secret } = try signIn(cloud)
     const visits = [{ choice: "allow", address: outlook.address }, { choice: "cancel" }, { choice: "unfinished", address: "margaret@aol.com" }] as const
-    provide connectorAt(cloud, secret, visits) {
+    provide connectorAt(secret, visits) {
       const connector = try Connector
       const password = secretPassword(otherPassword)
       const pages = [
@@ -131,7 +133,7 @@ it.live("Connect the email I already use: each company's own page answers with i
 it.live("Choose what each email brings and take it off the tablet: an expired sign-in asks again, and signing in again renews the same account", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
-    provide connectorAt(cloud, secret, [{ choice: "allow", address: outlook.address }, { choice: "allow", address: outlook.address }]) {
+    provide connectorAt(secret, [{ choice: "allow", address: outlook.address }, { choice: "allow", address: outlook.address }]) {
       const connector = try Connector
       try connector.signIn({ provider: "Outlook", attempt: 1, renewing: "" })
       try expire(cloud, secret, outlook.address)
@@ -146,7 +148,7 @@ it.live("Choose what each email brings and take it off the tablet: an expired si
 it.live("Read an email and its original attachment, and find and open the email I intend: listing, search, the message with its PDF, and the reply's header", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
-    provide connectorAt(cloud, secret) {
+    provide connectorAt(secret) {
       const mail = (try Connector).mail(gmail)
       const inbox = try listed(gmail, "InboxFolder")
       const found = try listed(gmail, "InboxFolder", "clinic")
@@ -172,7 +174,7 @@ it.live("Read an email and its original attachment, and find and open the email 
 it.live("Delete a message and recover it safely: Trash, Restore, unread and Delete for good each come back with the company's receipt", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
-    provide connectorAt(cloud, secret) {
+    provide connectorAt(secret) {
       const mail = (try Connector).mail(gmail)
       const identity = { owner: gmail.address, provider: "Gmail", account: gmail.address, ref: "family" }
       const changed = effect (change: "TrashMessage" | "RestoreMessage" | "UnreadMessage" | "ReadMessage" | "PurgeMessage", folder: Folder) => {
@@ -205,7 +207,7 @@ it.live("Delete a message and recover it safely: Trash, Restore, unread and Dele
 it.live("Write or reply and confirm before sending: contacts resolve, drafts keep, a send goes once per operation, and one sent while the cloud is down goes later", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
-    provide connectorAt(cloud, secret) {
+    provide connectorAt(secret) {
       const mail = (try Connector).mail(gmail)
       const content = { to: "susan@family.test", cc: [], bcc: [], subject: "Sunday", body: "See you on Sunday. Love, Mom" }
       const draft = { id: "draft-sunday", version: 1, content, attachments: [], replyTo: "" }
@@ -243,7 +245,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
 it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email, a change and a deletion", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
-    provide connectorAt(cloud, secret) {
+    provide connectorAt(secret) {
       const calendar = (try Connector).calendar(gmail)
       const now = try Clock.currentTimeMillis
       const window = { owner: gmail.address, calendarId: "primary", fromTime: now - 24 * 60 * 60 * 1000, untilTime: now + 30 * 24 * 60 * 60 * 1000 }

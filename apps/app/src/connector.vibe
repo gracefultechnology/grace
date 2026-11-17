@@ -2,7 +2,7 @@
 // One way to reach an email company, whichever it is. It answers sign-in with its outcome only, and parses what the cloud sends into the
 // generated mail, message and calendar types; nothing above it sees a wire payload or the password.
 import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
-import { approveSave, create, initial as noEntry, save, validDetails, type Calendar, type EntryDetails, type ViewQuery } from "../gen/app__calendar.effect.vibe"
+import { approveSave, create, initial as noEntry, save, validDetails, validIdentity, type Calendar, type EntryDetails, type ViewQuery } from "../gen/app__calendar.effect.vibe"
 import type { DeleteScope } from "../gen/app__calendarView.effect.vibe"
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
@@ -124,7 +124,7 @@ const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((
 const iso = (at: number) => new Date(at).toISOString()
 const minute = 60 * 1000
 
-function details(window: ViewQuery, e: WireEvent): EntryDetails {
+function details(e: WireEvent): EntryDetails {
   const { metadata: x } = e
   return {
     title: e.title, location: e.location, participant: x.participant ?? "", notes: e.description, startAt: Date.parse(e.startAt), endAt: Date.parse(e.endAt),
@@ -136,8 +136,8 @@ function details(window: ViewQuery, e: WireEvent): EntryDetails {
 /** A provider event as the saved occurrence the calendar view admits, or nothing when it is not a complete one. */
 function published(window: ViewQuery, e: WireEvent): Published[] {
   const identity = { owner: window.owner, calendarId: window.calendarId, occurrenceId: e.externalId, sourceRef: e.metadata.sourceRef ?? "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
-  const entry = details(window, e)
-  if (!validDetails(entry) || identity.owner === "" || identity.calendarId === "" || identity.occurrenceId === "") return []
+  const entry = details(e)
+  if (!validIdentity(identity) || !validDetails(entry)) return []
   return [{ incoming: save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore"), seriesVersion: 0, scheduleVerified: true }]
 }
 
@@ -208,10 +208,10 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       try page.open(session.pageUrl)
       return try fetched(get(`/api/v1/eliza/connections/sessions/${session.sessionId}`, {}), SessionOutcome)
     }, page.close(session.pageUrl))
-    const outcome = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${session.sessionId}`)))))
-    const address = outcome.address ?? ""
-    const result = outcome.status === "allowed" && address === "" ? "Refused" : ended[outcome.status]
-    return { attempt, outcome: result, address: result === "Allowed" ? address : "", granted: result === "Allowed" ? outcome.granted ?? nothing : nothing } satisfies SheetReport
+    const answer = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${session.sessionId}`)))))
+    const address = answer.address ?? ""
+    const result = answer.status === "allowed" && address === "" ? "Refused" : ended[answer.status]
+    return { attempt, outcome: result, address: result === "Allowed" ? address : "", granted: result === "Allowed" ? answer.granted ?? nothing : nothing } satisfies SheetReport
   }
 
   effect function check(attempt: number, address: string, body: object) {

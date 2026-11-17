@@ -1,5 +1,4 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
-import { connector, SignInPage } from "../src/connector.vibe"
 
 type Attachment = { id: string; name: string; mimeType: string; pages: number }
 
@@ -903,7 +902,7 @@ export effect function outage(cloud: string, key: string, down: boolean) {
 export type Visit = { readonly choice: "allow" | "cancel" | "unfinished"; readonly address?: string }
 
 /** Margaret at each company's own sign-in page the tablet opens, in turn: she ends each visit with its `choice`. The tablet hears only the outcome. */
-export const atProviderPage = (visits: readonly Visit[]) => Layer.effect(SignInPage, effect {
+export effect function visiting(visits: readonly Visit[]) {
   const left = try Ref.make(visits)
   return {
     open: effect (url: string) => {
@@ -911,9 +910,6 @@ export const atProviderPage = (visits: readonly Visit[]) => Layer.effect(SignInP
       try Ref.set(left, rest)
       if (visit !== undefined) try Effect.ignore(Effect.provide(HttpClient.execute(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(url), { address: visit.address ?? "", choice: visit.choice })), client))
     },
-    close: () => Effect.void
+    close: (_url: string) => Effect.void
   }
-})
-
-/** The tablet's connector on this fake, signed in with `key`, with Margaret making `visits` to the sign-in pages it opens. */
-export const connectorAt = (cloud: string, key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), atProviderPage(visits))
+}
