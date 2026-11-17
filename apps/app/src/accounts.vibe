@@ -15,12 +15,32 @@ export type OtherDetails = { readonly address: string; readonly password: Secret
 export type MailServers = { readonly incoming: string; readonly outgoing: string }
 
 export type Note = { readonly id: number; readonly text: string }
-export type Notes = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Note | undefined }
+export type Watched<A> = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => A }
 
 export service SignIns {
   other(details: OtherDetails): void!!
   servers(servers: MailServers): void!!
-  readonly notes: Notes
+  readonly notes: Watched<Note | undefined>
+  readonly page: Watched<string | undefined>
+}
+
+function watched<A>(initial: A) {
+  const listeners = new Set<() => void>()
+  const held = { value: initial }
+  const view: Watched<A> = {
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    current: () => held.value
+  }
+  return {
+    view,
+    set: (value: A) => sync(() => {
+      held.value = value
+      listeners.forEach((listener) => listener())
+    })
+  }
 }
 
 const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook", Yahoo: "Yahoo", ICloud: "iCloud", Aol: "AOL", OtherEmail: "Email" }
@@ -62,18 +82,18 @@ export const signIns = Layer.effect(SignIns, effect {
   const shelf = try Instances
   const connector = Option.getOrUndefined(try Effect.serviceOption(Connector))
   const held = try Ref.make<Held | undefined>(undefined)
-  const listeners = new Set<() => void>()
-  const board: { note: Note | undefined; next: number } = { note: undefined, next: 1 }
+  const notes = watched<Note | undefined>(undefined)
+  const page = watched<string | undefined>(undefined)
+  const counter = { next: 1 }
 
   effect function show(text: string) {
-    const note = { id: board.next, text }
-    board.next += 1
-    board.note = note
-    listeners.forEach((listener) => listener())
+    try notes.set({ id: counter.next, text })
+    counter.next += 1
     try sleep(noteFor)
-    board.note = undefined
-    listeners.forEach((listener) => listener())
+    try notes.set(undefined)
   }
+
+  if (connector !== undefined) try fork.scoped Stream.runForEach(connector.framed, page.set)
 
   effect function renew(id: number) {
     const box = try shelf.mail(id)
@@ -142,12 +162,7 @@ export const signIns = Layer.effect(SignIns, effect {
   return {
     other: (details) => Effect.provideService(other(details), HttpClient.TracerPropagationEnabled, false),
     servers: (typed) => Effect.provideService(servers(typed), HttpClient.TracerPropagationEnabled, false),
-    notes: {
-      subscribe: (listener) => {
-        listeners.add(listener)
-        return () => { listeners.delete(listener) }
-      },
-      current: () => board.note
-    }
+    notes: notes.view,
+    page: page.view
   }
 })

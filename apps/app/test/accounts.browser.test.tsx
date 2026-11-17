@@ -13,6 +13,7 @@ const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT
 const cloud = inject("cloud");
 const outlook = "margaret@outlook.com";
 const riverview = "margaret@riverview.net";
+const yahoo = "margaret@yahoo.com";
 const wrongPassword = "Not-the-password-7";
 
 const chatBodies: string[] = [];
@@ -162,6 +163,7 @@ it("Connect the email I already use", async () => {
   for (const typed of [otherPassword, wrongPassword]) {
     expect(kept).not.toContain(typed);
     expect(chatBodies.join("\n")).not.toContain(typed);
+    expect(document.body.innerHTML).not.toContain(typed);
   }
 
   await act(() => Promise.resolve(root.unmount()));
@@ -213,6 +215,18 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(tile("Outlook"));
   await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
+
+  await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
+  await tap(page.getByRole("button", { name: "Add another email" }));
+  await tap(tile("Yahoo"));
+  const provider = page.frameLocator(sheet("Yahoo").getByTitle("Yahoo’s own sign-in page"));
+  await expect.element(sheet("Yahoo").getByText(`Yahoo’s own sign-in page · ${new URL(cloud).host}`)).toBeVisible();
+  await act(() => provider.getByLabelText("Email").fill(yahoo));
+  await tap(provider.getByRole("button", { name: "Allow" }));
+  await expect.element(sheet("Yahoo")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Yahoo · Connected")).toBeVisible();
+  await expect.element(page.getByText("Yahoo connected", { exact: true })).toBeVisible();
+  expect(providerPages).toEqual([]);
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
