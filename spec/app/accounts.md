@@ -27,7 +27,7 @@ seeded demo mail in the prototype are presentation, not policy.
 
 Every account has an issued number, an address, a name no other account has
 and a colour from five. The settings page shows the account it names and
-asks about removing only the account it shows.
+asks about removing only the account it shows, never while signing in.
 
 ```quint
 type AccountActor = AccountPerson | AccountConnector | AccountHost
@@ -70,7 +70,7 @@ pure def alwaysAccountsAreWellFormed(a: Accounts): bool =
   a.signIn.attempt >= 0 and a.signIn.renewing >= 0
 pure def alwaysPagesNameAnAccount(a: Accounts): bool =
   (a.page == AccountDetail implies hasAccount(a, a.shown)) and
-  (a.removing != 0 implies (a.page == AccountDetail and a.shown == a.removing)) and
+  (a.removing != 0 implies (a.page == AccountDetail and a.shown == a.removing and a.signIn.stage == NotSigningIn)) and
   (a.problem == EmailWaiting implies a.removing != 0)
 ```
 
@@ -82,11 +82,11 @@ closes the page, and a restart closes any page left open, both as a new
 attempt, so a late answer from the old one changes nothing. The page answers
 Allowed with the address and what she allowed, Cancelled, or Refused when
 she could not finish. Allowed adds the address as a new account and shows
-it; for the account she is signing in to again it renews that account
-instead, and a company’s page closed any other way leaves that account as it
-was and ends signing in again; an address already on the tablet as another
-account is refused with "This email is already on the tablet." New accounts take a colour by
-their place in the list.
+it; for the same address as the account she is signing in to again it renews
+that account instead, and a company’s page closed any other way leaves that
+account as it was and ends signing in again; an address already on the
+tablet as another account is refused with "This email is already on the
+tablet." New accounts take a colour by their place in the list.
 
 ```quint
 type SheetOutcome = Allowed | Cancelled | Refused
@@ -221,6 +221,7 @@ pure def lawStaleCheckCannotConnect(a: Accounts, check: OtherReport, name: str, 
   check.attempt != a.signIn.attempt implies not(canOtherResult(a, check, name, by) or canServersResult(a, check, name, by))
 pure def sometimesOtherNeedsServers(a: Accounts): bool = a.page == MailServersPage and a.signIn.domain != ""
 pure def sometimesPasswordRefused(a: Accounts): bool = a.problem == PasswordRefused
+pure def sometimesCheckingOther(a: Accounts): bool = a.signIn.stage == CheckingOther
 pure def sometimesCheckingServers(a: Accounts): bool = a.signIn.stage == CheckingServers
 pure def sometimesServersRefused(a: Accounts): bool = a.problem == ServersRefused and a.page == MailServersPage
 pure def sometimesOtherEmailConnected(a: Accounts): bool = a.accounts.some(x => x.provider == OtherEmail)
@@ -230,9 +231,9 @@ pure def sometimesOtherEmailConnected(a: Accounts): bool = a.accounts.some(x => 
 
 No password, verification code or recovery answer has a place in this state
 or in any event: the provider’s page keeps what she types there, and the
-Other email form hands the password straight to the connector. The only
-typed text kept is the domain of an Other email address, and only while its
-forms are open. Grace never sees the provider’s page or the password field.
+Other email form hands the password straight to the connector. Before an
+account exists, the only text kept from the forms is the domain of an Other
+email address, and only while its forms are open. Grace never sees the provider’s page or the password field.
 
 ```quint
 pure def alwaysTypedDomainStaysOnItsForm(a: Accounts): bool =
@@ -275,7 +276,8 @@ being told authorizes nothing. She hears that a provider’s page opened (she
 cannot see it), that an account was connected, renewed or removed, and the
 problem now shown: unfinished sign-in, already on the tablet, a listed
 company’s address, a refused Other email password, refused servers or email
-still waiting. Signing in again is told as renewed only when the company
+still waiting. A problem is told when it appears, not again while the same
+problem stays shown. Signing in again is told as renewed only when the company
 allowed it; Cancel or an unfinished sign-in on a company’s page renews
 nothing. A refused password on a provider’s own page cannot be told:
 the tablet learns only that sign-in was not finished.
@@ -317,8 +319,10 @@ pure def lawOnlyAnAllowedAnswerRenews(a: Accounts, sheet: SheetReport, name: str
 
 Sign in again, from an account’s page or from Email’s banner, opens that
 account’s provider page as a new attempt over that account’s settings page,
-or the Other email form for an Other email. Allowed for the same address renews the account and shows it;
-its switches, name and history stay as they were.
+or the Other email form for an Other email. Signing in again to a company’s
+account stays on that account’s page until it ends. Allowed for the same
+address renews the account and shows it; its switches, name and history
+stay as they were.
 
 ```quint
 pure def canSignInAgain(a: Accounts, id: int, by: AccountActor): bool =
@@ -332,6 +336,8 @@ pure def signInAgain(a: Accounts, id: int, by: AccountActor): Accounts =
       signIn: { ...nextAttempt(a.signIn), stage: ProviderPage, provider: provider, renewing: id } }
 pure def alwaysRenewingNamesAnAccount(a: Accounts): bool =
   a.signIn.renewing != 0 implies (hasAccount(a, a.signIn.renewing) and accountAt(a, a.signIn.renewing).provider == a.signIn.provider)
+pure def alwaysCompanyRenewalStaysOnItsAccount(a: Accounts): bool =
+  (a.signIn.renewing != 0 and a.signIn.provider != OtherEmail) implies (a.page == AccountDetail and a.shown == a.signIn.renewing)
 pure def stepRenewalKeepsTheAccount(before: Accounts, after: Accounts): bool =
   before.accounts.every(x => after.accounts.every(y => y.id == x.id implies
     (y.address == x.address and y.provider == x.provider and y.name == x.name and y.colour == x.colour)))
