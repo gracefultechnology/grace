@@ -26,13 +26,15 @@ is unavoidable, such as a chart series or third-party markup, say why on the lin
 
 ## Glass
 
-Clear glass: `bg-glass/10` with `backdrop-blur-glass` and `shadow-glass`, a bright rim and no lift. Glass is for
+Shadow token names use `elevation-` where a color has the same name, so Tailwind distinguishes the shadow from its color. The values remain the prototype's.
+
+Clear glass: `bg-glass/10` with `backdrop-blur-glass` and `shadow-elevation-glass`, a bright rim and no lift. Glass is for
 controls; Grace's window is solid white at both sizes, with glass controls over it. Every floating surface casts
 `shadow-float`.
 
 ## Buttons
 
-Three kinds only, all 64px tall and fully round: glass (`shadow-glass`), prominent (flat `primary`, the
+Three kinds only, all 64px tall and fully round: glass (`shadow-elevation-glass`), prominent (flat `primary`, the
 one next step) and plain (no fill, for ✕). Pressed: scale 1.05 and a brighter glass. Icon-only buttons are
 round. Disabled text is `grace-ink` at 38%.
 
@@ -264,12 +266,12 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.md` | 0 4px 12px oklch(0 0 0 / 0.12) |
 | `shadow.lg` | 0 12px 32px oklch(0 0 0 / 0.18) |
 | `shadow.float` | 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.glass` | inset 0 0 0 1px rgb(255 255 255 / 0.75), inset 0 1.5px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.35) |
+| `shadow.elevation-glass` | inset 0 0 0 1px rgb(255 255 255 / 0.75), inset 0 1.5px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.35) |
 | `shadow.glass-pressed` | inset 0 0 0 1px rgb(255 255 255 / 0.75), inset 0 1.5px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.35), inset 0 0 0 1.5px rgb(255 255 255 / 0.7), 0 6px 18px rgb(59 47 99 / 0.14) |
 | `shadow.capsule` | inset 0 0 0 1px rgb(255 255 255 / 0.9), inset 0 1.5px 1px #fff, 0 0 0 1px rgb(59 47 99 / 0.1), 0 4px 14px rgb(59 47 99 / 0.12) |
 | `shadow.raised` | 0 1px 2px rgb(59 47 99 / 0.08), 0 4px 14px rgb(59 47 99 / 0.12) |
 | `shadow.prominent` | 0 1px 2px rgb(59 47 99 / 0.1), 0 4px 14px rgb(59 47 99 / 0.18) |
-| `shadow.panel` | 0 2px 10px rgb(60 70 110 / 0.08) |
+| `shadow.elevation-panel` | 0 2px 10px rgb(60 70 110 / 0.08) |
 | `shadow.badge` | 0 1px 4px rgb(60 70 110 / 0.14) |
 | `shadow.photo` | 0 8px 30px rgb(60 70 110 / 0.18) |
 | `shadow.menu` | inset 0 0 0 1px rgb(255 255 255 / 0.85), 0 12px 32px rgb(59 47 99 / 0.18) |
@@ -278,13 +280,13 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.field-focus` | inset 0 0 0 1px rgb(255 255 255 / 0.9), 0 0 0 2.5px var(--primary), 0 4px 14px rgb(59 47 99 / 0.12) |
 | `shadow.selected` | inset 0 0 0 2.5px var(--primary) |
 | `shadow.key` | 0 1px 0 rgb(0 0 0 / 0.25) |
-| `shadow.halo` | 0 0 0 8px rgb(201 188 250 / 0.8), 0 0 22px 14px rgb(185 168 242 / 0.6) |
-| `shadow.guide` | 0 0 0 4px var(--guide), 0 0 0 10px rgb(122 99 238 / 0.22), 0 8px 24px rgb(59 47 99 / 0.14) |
+| `shadow.elevation-halo` | 0 0 0 8px rgb(201 188 250 / 0.8), 0 0 22px 14px rgb(185 168 242 / 0.6) |
+| `shadow.elevation-guide` | 0 0 0 4px var(--guide), 0 0 0 10px rgb(122 99 238 / 0.22), 0 8px 24px rgb(59 47 99 / 0.14) |
 | `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px rgb(30 122 70 / 0.15), 0 8px 24px rgb(59 47 99 / 0.14) |
-| `shadow.device` | 0 30px 60px rgb(20 16 32 / 0.25) |
+| `shadow.elevation-device` | 0 30px 60px rgb(20 16 32 / 0.25) |
 | `shadow.banner` | inset 0 1.5px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.7), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
 | `shadow.window` | 0 0 0 1px rgb(59 47 99 / 0.06), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.popover` | inset 0 0 0 1px rgb(255 255 255 / 0.85), 0 12px 32px rgb(59 47 99 / 0.22) |
+| `shadow.elevation-popover` | inset 0 0 0 1px rgb(255 255 255 / 0.85), 0 12px 32px rgb(59 47 99 / 0.22) |
 | `shadow.tile` | 0 1px 4px rgb(60 70 110 / 0.12) |
 | `shadow.picture` | 0 2px 10px rgb(60 70 110 / 0.12) |
 | `shadow.paper` | 0 2px 14px rgb(60 70 110 / 0.16) |
@@ -293,7 +295,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.tag` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 24px rgb(59 47 99 / 0.16) |
 | `shadow.cursor` | 0 0 0 6px rgb(122 99 238 / 0.35), 0 0 22px 8px rgb(122 99 238 / 0.35) |
 | `shadow.tile-pressed` | inset 0 0 0 1px rgb(255 255 255 / 0.95), 0 4px 12px rgb(59 47 99 / 0.12) |
-| `shadow.bubble` | 0 1px 2px rgb(59 47 99 / 0.06), 0 4px 14px rgb(59 47 99 / 0.08) |
+| `shadow.elevation-bubble` | 0 1px 2px rgb(59 47 99 / 0.06), 0 4px 14px rgb(59 47 99 / 0.08) |
 | `shadow.strip` | inset 0 0 0 1px rgb(255 255 255 / 0.75), 0 6px 20px rgb(59 47 99 / 0.14) |
 | `shadow.cursor-tag` | 0 8px 24px rgb(59 47 99 / 0.22) |
 | `shadow.cursor-tag-paused` | inset 0 0 0 2px var(--primary), 0 8px 24px rgb(59 47 99 / 0.18) |
@@ -303,7 +305,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.attachment` | 0 2px 8px rgb(60 70 110 / 0.12) |
 | `shadow.photo-tile` | 0 2px 10px rgb(60 70 110 / 0.1) |
 | `shadow.pane` | inset 0 0 0 1px rgb(255 255 255 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.55), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.sidebar` | inset 0 0 0 1px #fff, inset 0 1.5px 2px #fff, 0 0 0 1px rgb(59 47 99 / 0.07), 0 2px 6px rgb(59 47 99 / 0.06), 0 12px 36px rgb(59 47 99 / 0.16) |
+| `shadow.elevation-sidebar` | inset 0 0 0 1px #fff, inset 0 1.5px 2px #fff, 0 0 0 1px rgb(59 47 99 / 0.07), 0 2px 6px rgb(59 47 99 / 0.06), 0 12px 36px rgb(59 47 99 / 0.16) |
 | `shadow.launcher` | inset 0 1px 0 rgb(255 255 255 / 0.95), 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 22px rgb(59 47 99 / 0.1) |
 | `shadow.hairline` | 0 1px 0 rgb(59 47 99 / 0.1) |
 | `shadow.arrow` | -1px 1px 0 rgb(255 255 255 / 0.85) |
