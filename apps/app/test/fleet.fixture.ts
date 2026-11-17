@@ -11,7 +11,7 @@ import type { Page } from "playwright";
 const revision = "f335b651f9820c3454f447e3d4722b78c5298a0b";
 const Biller = Schema.Struct({ id: Schema.NonEmptyString, template: Schema.NonEmptyString, signal: Schema.String, brand: Schema.Struct({ shortName: Schema.NonEmptyString }) });
 const Routes = Schema.Struct({ routes: Schema.Struct({ home: Schema.String, help: Schema.NonEmptyString }) });
-const Intent = "Guide me to this provider's customer help and support information. Stop when that page opens.";
+const Intent = "Open the website's help center or frequently asked questions index. Stop on the page that lists help topics.";
 type Method = (...args: unknown[]) => unknown;
 const FixtureMethod = Schema.declare<Method>((value): value is Method => typeof value === "function");
 const Catalog = Schema.declare<ReadonlyMap<unknown, unknown>>((value) => value instanceof Map);
@@ -94,6 +94,9 @@ export async function fleetFixture(directory: string, results: string) {
     async close() {
       tls.closeAllConnections();
       await Promise.all([new Promise<void>(done => tls.close(() => done())), fleet.close()]);
+      const passed = [...graded.values()].filter(Boolean).length;
+      if (graded.size !== cases.length || passed !== cases.length)
+        throw new Error(`BillWorld graded ${passed}/${cases.length} correct destinations on ${graded.size} attempts. See ${run}/scores.json`);
     },
   };
 }
