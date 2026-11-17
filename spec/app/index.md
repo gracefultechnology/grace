@@ -57,6 +57,10 @@ to this Android user. A prior hosted account or account-bound vault is not
 opened by the device-only flow; when the app cannot verify ownership it
 leaves those records sealed.
 
+Showing, copying and deleting a saved sign-in require the same revision the
+person chose. If another native action updates it first, Passwords shows the
+current details and asks the person to choose again. Cancel keeps the entry.
+
 ~~~quint
 type VaultActor = PasswordsPerson | PasswordsHost
 type LoginBinding = { kind: str, facet: str, display: str }

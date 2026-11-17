@@ -432,6 +432,8 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   let locked = true;
   let edited = false;
   let shown = false;
+  let copied = false;
+  let phoneRevision: number | undefined;
   let recoveryOpened = false;
   let ownerAvailable = true;
   let ownerChanged: (() => void) | undefined;
@@ -446,15 +448,35 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
       locked = false;
       return Promise.resolve({ unlockRemainingMs: 60_000 });
     },
-    list: () => Promise.resolve([{ id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] }]),
+    list: () => Promise.resolve([
+      { id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] },
+      ...(phoneRevision === undefined ? [] : [{ id: "phone", revision: phoneRevision, updatedAt: 2, label: "Phone account", username: phoneRevision === 1 ? "Original" : "Updated on Android", bindings: [] }]),
+    ]),
     openEditor: (input) => {
+      if (input === undefined) {
+        phoneRevision = 1;
+        return Promise.resolve({ status: "saved", id: "phone", revision: 1 });
+      }
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
       edited = true;
       return Promise.resolve({ status: "saved", id: "first-login", revision: 5 });
     },
-    remove: () => Promise.resolve(),
-    reveal: () => { shown = true; return Promise.resolve({ hidesAfterMs: 30_000 }); },
-    copy: () => Promise.resolve({ clearsAfterMs: 45_000 }),
+    remove: (id, expectedRevision) => {
+      expect(id).toBe("phone");
+      if (expectedRevision !== undefined && expectedRevision !== phoneRevision) return Promise.reject(new PasswordsClientError("conflict", "Sign-in changed"));
+      phoneRevision = undefined;
+      return Promise.resolve();
+    },
+    reveal: (id, expectedRevision) => {
+      expect([id, expectedRevision]).toEqual(["first-login", 4]);
+      shown = true;
+      return Promise.resolve({ hidesAfterMs: 30_000 });
+    },
+    copy: (id, expectedRevision) => {
+      expect([id, expectedRevision]).toEqual(["first-login", 5]);
+      copied = true;
+      return Promise.resolve({ clearsAfterMs: 45_000 });
+    },
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
   const runtime = ManagedRuntime.make(application(undefined, undefined, vault, {
@@ -502,6 +524,28 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.poll(() => shown).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
   await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
+  await expect.poll(() => copied).toBe(true);
+  await act(() => userEvent.click(page.getByRole("button", { name: "All passwords" })));
+  await act(() => search.fill(""));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Add password" })));
+  const phone = page.getByRole("button", { name: /Phone account/ });
+  await act(() => userEvent.click(phone));
+  const remove = page.getByRole("button", { name: "Delete", exact: true });
+  const confirmRemove = page.getByRole("button", { name: "Delete saved password" });
+  await act(() => userEvent.click(remove));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Cancel", exact: true })));
+  expect(phoneRevision).toBe(1);
+  await act(() => userEvent.click(remove));
+  phoneRevision = 2;
+  await act(() => userEvent.click(confirmRemove));
+  await expect.element(page.getByText("This sign-in changed. Check its details and try again.")).toBeVisible();
+  await expect.element(page.getByText("Updated on Android", { exact: true })).toBeVisible();
+  await act(() => userEvent.click(remove));
+  await act(() => userEvent.click(confirmRemove));
+  await expect.element(phone).not.toBeInTheDocument();
+  await expect.element(page.getByText("Password deleted.")).toBeVisible();
+  await act(() => userEvent.click(login));
   await act(() => { ownerChanged?.(); return Promise.resolve(); });
   await expect.element(unlock).toBeEnabled();
   await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
