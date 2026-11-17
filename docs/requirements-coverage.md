@@ -5,10 +5,11 @@ the [acceptance list](implementation-acceptance.md): one row for each of the
 owner's directions and each PRD id, met, open, superseded or left to user QA.
 This file is the coverage index behind it, mapping the specs to those ids. The executable source is the linked spec, not this table. “Modeled” means a state, transition, guard, invariant, law or reachability obligation represents the requirement. It does not mean the external integration or user interface is implemented. Verification results are reported separately after the complete pipeline runs.
 
-The [model review](model-review.md) records the concrete corrections and
-discovered rules from the second pass over these requirements. The
-[owned-control inventory](owned-ui-coverage.md) maps every nested UI operation
-to its coordinated workspace route.
+The [model review](model-review.md) and the
+[owned-control inventory](owned-ui-coverage.md) are dated records of the
+models-only phase: the corrections and discovered rules of the second pass,
+and each nested UI operation's workspace route. The specs are where to read
+both now.
 
 ## Current scope and full journeys
 
@@ -30,8 +31,8 @@ acceptance list holds the planned state:
   and hotel sign-in pages go to Android's panel (decision 22). `network` on
   develop still models them, and its change is in flight.
 - Saved details are her name, phone and address, saved only with her approval
-  and deleted in Settings (decision 23). The `memory` change that names them is
-  in flight.
+  and deleted in Settings (decision 23). `memory` already has those kinds; the
+  saved-details spec that shows and deletes them is in flight.
 - The email and calendar build, not yet merged, makes accounts one per
   provider and removes Print from Files.
 
@@ -40,9 +41,9 @@ acceptance list holds the planned state:
 | Email | Home → select/authorize the intended provider account → Inbox/Sent/Drafts/Trash → capability-scoped search → open a returned message/attachment → confirm a sourced bill or compose/reply/forward → approve the visible draft or assisted review → single dispatch → provider acceptance, verified failure or uncertainty. To/Cc/Bcc, atomic attachment manifests, revision-bound attachment selection, saved/reopened/discarded drafts, Trash/Undo/Restore/Delete forever and stale callbacks preserve identity. | `shell`, `email`, `emailItem`, `files`, `conversation`, `handoffs` |
 | Calendar | Home → Week/Month/Today and selected day → create or edit an appointment/bill occurrence → approve and durably save → reminder/show/snooze/dismiss → open the linked canonical bill. Location/participants/notes, one-occurrence versus entire-series deletion, recurrence identity, coordinated whole-series edits, duplicate import and timezone boundaries are explicit. Close preserves submitted saves/deletions and cancels an unsubmitted form. Deleting an entry does not delete a payment. | `shell`, `calendar`, `calendarView`, `handoffs` |
 | Files | Second Home page or Email Save → load the local library → Photos/Documents → exact photo/document → browse, share into an unsent email, print, or delete a photo. Single/batch saves use immutable source identity, acknowledged storage and retry; duplicate names never merge distinct files. Search distinguishes no match and ambiguity, and stale results cannot reopen a closed view. | `shell`, `files`, `email`, `handoffs`, `conversation` |
-| Browser | Home → ordinary address/search navigation → current page or explicit loading/security failure → tabs/back/forward/zoom/history → Home retaining pages or Close discarding tabs. Grace opening, hiding, keyboard changes and manual navigation invalidate dependent observation without making browser use depend on inference. | `shell`, `browser`, `assistant`, `conversation`, `execution`, `workspace` |
+| Browser | Home → ordinary address/search navigation → current page or explicit loading/security failure → tabs/back/forward/zoom/history (zoom is still modeled on develop; decision 21 removes the control) → Home retaining pages or Close discarding tabs. Grace opening, hiding, keyboard changes and manual navigation invalidate dependent observation without making browser use depend on inference. | `shell`, `browser`, `assistant`, `conversation`, `execution`, `workspace` |
 | A task: bill payment, the first kind, from Calendar, Email or Grace | Select canonical bill → verify site/account → private sign-in if needed → inspect current facts and existing payment → choose amount/date/funding → populate/read back → exact review → durable unresolved window → website tap or fresh voice approval → one submission → observed outcome → save evidence. Pause, correction, restart, prior manual payment, mismatched identity and uncertain outcomes cannot create a blind retry. | `task`, `handoffs`, `billpay`, `execution`, `payment`, `assistant`, `workspace` |
-| Set-up | Wi-Fi → Sign in with Google or Not now → her name → speaking pace and text size with a live preview → one sentence on what Grace does → practise Talk, Type, Close and reopen → "What would you like to do?". Resumes at the step it reached after a restart (decision 10). | `setup`, `shell`, `preferences` |
+| Set-up | Wi-Fi → connect an email account, or Not now (accounts are per provider) → her name → speaking pace and text size with a live preview → one sentence on what Grace does → practise Talk, Type, Close and reopen → "What would you like to do?". Resumes at the step it reached after a restart (`setup.md` "The host's report starts set-up, and a restart keeps the step"; decision 16). | `setup`, `shell`, `preferences` |
 | Settings and connectivity | Rail popovers retain the current app; Settings selects its intended pane. Text size, voice pace/output, device volume/mute, brightness and night dimming preserve current choices and Undo. Wi-Fi joins use current OS results and private password entry; on develop the model also has enterprise entry, certificate decisions and captive-portal consent, which decision 22 hands to Android's panel. | `shell`, `preferences`, `network`, `workspace` |
 
 The replacement `prototype/Grace Prototype.html` now supplies actual Email, Calendar and Files screens as well as Home, settings, the browser shell and bill-payment presentation. Its application flows supersede the former placeholder assessment and are mapped in [the email/calendar requirements](email-calendar-requirements.md), [Files audit](new-prototype-files-audit.md) and executable models. Calendar-launched bill payment remains required by this request even though the prototype calendar demonstrates appointments.
@@ -66,7 +67,7 @@ Source: the “Grace MVP PRD” and current decisions in `prototype/prd.md`, beg
 | JOURNEY 06–08, HELP 03 | `billpay`, `execution`: known/unknown balances and fees, provider-confirmed no-due versus unavailable, contradictory minimum rejection, existing-payment conflict, complete choice only with an observed fee, arbitrary valid values, correction/version invalidation and actual form readback. | Accurate website interpretation, calendar-date resolution, choice-dependent fees, validation and no inferred affordability. |
 | JOURNEY 09–11, HELP 07–08 | `payment`: review, both authorization routes, outcome verification and minimal evidence. | Real provider acceptance and settlement evidence; a test fixture is not live proof. |
 | HELP 04–05, HELP 09 | `conversation`, `assistant`, `execution`: questions/detours, readable current instruction, Stop, repeat, current guidance and recovery. | Grounded explanations, physical pointer placement and useful unsupported-case copy. |
-| HELP 10, MEM 01–04 | `memory`, `memoryActuation`: saved details are her name, phone and address, used for the greeting and booking forms (decision 23; the `memory` change that names them and keys her name once is in flight). Approved non-secret fact types, scoped identifiers, proposal/review/save/reject, correction, individual and collection-wide deletion, and queued-fill revocation. The stateless Memory/Workspace join rechecks the exact original saved-value receipt against the current fact at physical dispatch; non-fill plans recheck their original fact revision dependencies. | Immutable owner-scoped valueRef-to-receipt resolution; serialization of correction/deletion/Clear all with outbox claim and physical fill; durable storage across device restart; conversational and touch saved-details views; explicit confirmation on persistence failures. |
+| HELP 10, MEM 01–04 | `memory`, `memoryActuation`: saved details are her name, phone and address, used for the greeting and booking forms (decision 23; `memory` has those kinds, and the saved-details spec that shows and deletes them is in flight). Approved non-secret fact types, scoped identifiers, proposal/review/save/reject, correction, individual and collection-wide deletion, and queued-fill revocation. The stateless Memory/Workspace join rechecks the exact original saved-value receipt against the current fact at physical dispatch; non-fill plans recheck their original fact revision dependencies. | Immutable owner-scoped valueRef-to-receipt resolution; serialization of correction/deletion/Clear all with outbox claim and physical fill; durable storage across device restart; conversational and touch saved-details views; explicit confirmation on persistence failures. |
 | INT 01–03 | `assistant`, `workspace`: explicit open, compact/expanded view, same conversation, no automatic microphone/task resume. New bottom-window geometry supersedes old sidebar geometry. | Home/browser entries, automatic presentation of the intended website, clear return destination and correct keyboard focus. |
 | INT 04–07 | `assistant`, `browser`, `workspace`, `payment`: Close/pause, explicit resume/reobserve, Home versus Close browser, endpoint/abandonment without a persistent End task control. | Actual host cancellation and provider-state preservation, including manual progress while hidden. |
 | INT 08–11 | `conversation`, `assistant`: shared draft/transcript, typed mic-off exchange, one send, scroll/reading continuity, explicit new conversation. | Native IME/focus, screen-reader labels, long-composer scrolling, partial caption delivery and readable new-response affordance. |
@@ -106,7 +107,7 @@ The latest PRD still defers a companion app, caregiver delegation, password/paym
 | Owner | State that belongs here | State deliberately derived or owned elsewhere |
 |---|---|---|
 | `shell` / `network` | Device readiness, app surface, actual connectivity / one private network-join attempt. | A completed join is not a second permanent online flag. No passwords or certificate trust inferred from a name. |
-| `browser` | Ordered tabs, selected tab, page history/load/version, recent destinations and zoom. | No provider-specific page state or automation step number. |
+| `browser` | Ordered tabs, selected tab, page history/load/version, recent destinations and zoom, which decision 21 removes from the interface. | No provider-specific page state or automation step number. |
 | `conversation` / `assistant` | Transcript, draft and active voice turn / window, keyboard and one task. | Compact/expanded windows share the same conversation. Hidden does not mean completed. |
 | `wake` / `preferences` | One wake timer and prior window / one persisted set of display, sound and wake choices. | Wake detection is separate from an active conversation microphone, and no detector is installed in the MVP. Timer expiry is not user intent. |
 | `email` / `emailItem` | Account access, current folder/query/content and composer / each stable message's folder, read and mutation status. | No separate mailbox-view machine or duplicated unread counter. Counts and lists are projections. |
@@ -115,6 +116,11 @@ The latest PRD still defers a companion app, caregiver delegation, password/paym
 | `memory` | Proposed, approved and deleted non-secret facts with revisions. | Chat history is not permanent permission to reuse deleted facts. |
 | `execution` | One current semantic operation, observation and bounded failed-approach memory. | No fixed URL/selector script, stored click queue or final-payment operation. |
 | `task` | A task's kind, its subject and the terms she chose. | The kinds share one shape; nothing else reads a kind's own fields. |
+| `setup` | The ordered set-up steps, each pending, done or put off, and the current one, kept across a restart. | Accounts, the cloud connection, her name and pace and text size stay their own owners'; set-up only hears them. |
+| `notices` | The toasts, Home banners and Android notifications in front of the person. | What each notice is about stays its raiser's: a reminder's, an Undo's or the connection's. |
+| `surface` | The page's rect and the rects of every Grace control drawn over it, and which the host has routed. | The page is drawn below the interface with nothing cut out; tabs and loads stay the browser's. |
+| `websiteRequests` | Each message, file, permission, other-app or sign-in request a page raised, until answered, cancelled or refused. | A request belongs to its tab's current page and ends when that page does. |
+| `deviceKeys` | Nothing: a stateless library. | Android Back and Home map to one existing workspace or website-request event each. |
 | `billpay` / `payment` | Current provider facts and chosen preparation / exact review, durable attempt and observed provider outcome. | Preparation is not submission. Scheduled/accepted/completed/returned remain distinct facts. |
 | `handoffs` / `workspace` | Canonical bill-to-record references / actual composed active states and retained payment records. | No second copy of payment status, no new bill identity per entry point and no independent task scheduler. |
 

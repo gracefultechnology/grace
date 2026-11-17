@@ -1,5 +1,12 @@
 # Owned UI operation inventory
 
+This is the inventory of the models-only phase (13 to 15 November 2026), and it
+is not kept in step: the specs that own these routes are where to read them.
+Where a row differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults),
+the decisions win: the browser has no zoom control (decision 21), no wake
+detector is installed (decision 5), and Print is being removed from Files by
+the email and calendar build.
+
 `Workspace` owns the actual Shell, Browser, Assistant/Conversation, Preferences,
 Wake, Execution and payment states. A component must dispatch through that
 owning aggregate rather than instantiate a second child machine. The two

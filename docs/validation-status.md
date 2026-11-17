@@ -1,7 +1,7 @@
 # Specification validation status
 
-This is the dated log of the models-only phase, from `eb1c1e7` to `de1d909`
-(14 November 2026). It is not the current state. What `pnpm check`
+This is the dated log of the models-only phase, from 13 to 15 November 2026
+(checkpoints `887d411` to `de1d909`, last entry with `e1e1768`). It is not the current state. What `pnpm check`
 reports, with its cached results, is the current evidence, and each pull
 request carries its own verify output while hosted CI is blocked by billing
 ([acceptance list](implementation-acceptance.md#decisions-and-their-defaults),

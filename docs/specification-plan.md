@@ -1,6 +1,6 @@
 # Grace specification rebuild
 
-This is the plan of the models-only phase, which ended on 14 November 2026.
+This is the plan of the models-only phase, which ended on 15 November 2026.
 The interface, the shell and the Android host are now being built from the
 spec, and the owner's directions in the
 [acceptance list](implementation-acceptance.md#owner-directions) replace the
@@ -20,7 +20,7 @@ Source order for this rebuild:
 3. The latest requirements and dated decisions in `prototype/prd.md` for behavioral controls and recovery. This file contains historical versions as well as the November 5 MVP PRD and November 9 amendments; old and new sections must not be combined indiscriminately.
 4. Legacy product vision, helper PRD, exploration plan, wireframes and formal models for requirements and reusable invariants that do not conflict with the above.
 
-The legacy source snapshot is `gracefultechnology/grace` at `c6e3fbbc38028ccb53ce05817e06c671d9e21642`, verified against remote `main`. The working checkout at `~/Documents/senior-care` is a different branch and is not modified. The snapshot contains 32 Quint files, including a generated capture graph and diagnostic variants that deliberately fail. Their intended safety properties are migration inputs; their failing behavior and fixed simulation bounds are not product requirements.
+The legacy source snapshot is `gracefultechnology/grace` at `c6e3fbbc38028ccb53ce05817e06c671d9e21642`, verified against remote `main`. The legacy working checkout is a different branch and is not modified. The snapshot contains 32 Quint files, including a generated capture graph and diagnostic variants that deliberately fail. Their intended safety properties are migration inputs; their failing behavior and fixed simulation bounds are not product requirements.
 
 The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa9454443482d38f5af2d7f4760f31694a9ef4d5ab64f843144294e` (2,401 lines). The PRD remains 2,345 lines, SHA-256 `1dec011b43682026f75525783ceb92758ef6e7ecb76c8f4ff0ae3fe62c030510`.
 
