@@ -1,10 +1,14 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import character from "../agent/character.json" with { type: "json" }
+import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import type { Interaction } from "../gen/app__interaction.effect.vibe"
+import { told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
-import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied } from "./agent.vibe"
-import { render } from "./context.vibe"
+import { CalendarNews } from "./calendar.vibe"
+import { looker, render, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
+import { Instances } from "./instances.vibe"
 import { withhold } from "./private.ts"
 import { Reply } from "./reply.schema.ts"
 
@@ -46,13 +50,44 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const agent = try Agent
   const asked = try Ref.make<{ readonly generation: number; readonly origin: Origin }>({ generation: -1, origin: "FromDevice" })
   const notDone = try Ref.make<readonly Applied[]>([])
+  const told = try Ref.make<readonly string[]>([])
+  const look = try looker()
+  const registry = try Accounts
+  const shelf = try Instances
+  const news = try CalendarNews
+  const scope = try Scope.Scope
+
+  effect function tell(words: string) {
+    if (words !== "") try Ref.update(told, (all) => [...all, words])
+  }
+
+  effect function following<S>(changes: Stream.Stream<S>, words: (before: S, after: S) => string!!) {
+    const last = try Ref.make<S | undefined>(undefined)
+    try fork.in(scope) Stream.runForEach(changes, effect (after) => {
+      const before = try Ref.getAndSet(last, after)
+      if (before !== undefined) try tell(try words(before, after))
+    })
+  }
+
+  const watched = new Set<number>()
+  try following(registry.changes, effect (before: Registry, after: Registry) => {
+    for (const { id } of after.accounts) {
+      const box = watched.has(id) ? undefined : shelf.mail(id) catch () => undefined
+      if (box === undefined) continue
+      watched.add(id)
+      try following(box.changes, effect (was, now) => toldOfMail(try look(), mailTold(id, was, now)))
+    }
+    return toldOfAccounts(before, after)
+  })
+  try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
 
   effect function fail(token: number) {
     workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: apology } }, "Host") catch () => undefined
   }
 
   effect function answer(link: CloudLink, token: number) {
-    const w: Workspace = try workspace.get()
+    const scene = try look()
+    const w = scene.workspace
     const { messages } = w.assistant.conversation
     const latest = messages.length - 1
     const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
@@ -60,7 +95,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
       return
     }
-    const shown = render(w, try Clock.currentTimeMillis, try Ref.get(notDone))
+    const shown = render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), try Ref.getAndSet(told, []))
     const said = ask(link, [{ role: "system", content: `${character.system}\n\n${shown.text}` }, ...outgoing]) catch () => undefined
     const reply = said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
     if (reply === undefined) return try fail(token)

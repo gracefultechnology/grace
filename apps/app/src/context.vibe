@@ -1,30 +1,292 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"
-import type { Surface } from "../gen/app__shell.effect.vibe"
-import type { Workspace } from "../gen/app__workspace.effect.vibe"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"; spec/app/mailboxes.md, "Grace is shown only what Margaret can see"; spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
+import { Machine as Accounts, type Accounts as Registry, mailAccounts, type Problem, type Provider, told as accountsTold } from "../gen/app__accounts.effect.vibe"
+import { calendarContext, type CalendarSource, type CalendarTold, dayRows, lead, openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
+import type { EntryDetails } from "../gen/app__calendar.effect.vibe"
+import { entryAt } from "../gen/app__calendarView.effect.vibe"
+import { messageRecord, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
+import type { Folder } from "../gen/app__emailItem.effect.vibe"
+import { folderRows, fromChoices, mailContext, type MailTold, needsSignIn, openSource, outboxCount, showsMail, type MailSource } from "../gen/app__mailboxes.effect.vibe"
+import { type Ask, Machine as Proposal, type Pending } from "../gen/app__proposal.effect.vibe"
+import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
+import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Applied, Outcome } from "./agent.vibe"
+import type { MailContent } from "./connector.vibe"
+import { Instances, tablet } from "./instances.vibe"
+
+/** Everything on the tablet Grace's turn is decided on: the workspace, the accounts, each account's mailbox, each calendar, her waiting question. */
+export type Scene = {
+  readonly workspace: Workspace
+  readonly registry: Registry
+  readonly mail: MailSource[]
+  readonly calendars: CalendarSource[]
+  readonly pending: Pending
+  readonly content: (account: number, ref: string) => MailContent | undefined
+}
 
 /** What Grace is shown with a turn, and the screen's targets she may point at. */
 export type Shown = { readonly text: string; readonly targets: ReadonlySet<string> }
 
+type Part = { readonly lines: readonly string[]; readonly targets: readonly string[] }
+
+/** How to look at the tablet for a turn, over the machines as the layer that asks holds them. */
+export effect function looker() {
+  const shelf = try Instances
+  const accounts = try Accounts
+  const proposals = try Proposal
+  const workspace = try Workspaces
+  return effect (): Scene!! => {
+    const registry = try accounts.get()
+    const mail: MailSource[] = []
+    const calendars: CalendarSource[] = []
+    for (const key of [tablet, ...registry.accounts.map((a) => a.id)]) {
+      const view = shelf.calendar(key) catch () => undefined
+      if (view !== undefined) calendars.push({ key, view: try view.get() })
+      const box = key === tablet ? undefined : shelf.mail(key) catch () => undefined
+      if (box !== undefined) mail.push({ account: key, mailbox: try box.get() })
+    }
+    return { workspace: try workspace.get(), registry, mail, calendars, pending: try proposals.get(), content: shelf.content }
+  }
+}
+
 const surfaces: Record<Surface, string> = {
   Home: "Home", Calendar: "Calendar", Email: "Email", Browser: "the internet", Files: "Files", DeviceSettings: "Settings"
 }
-const outcomes: Record<Outcome, string> = { Applied: "was done", Refused: "was not allowed", NotYetAvailable: "is not available on this tablet yet" }
-
-/** The part Grace is shown on every turn, whatever is on the screen, at `now` (milliseconds since the epoch), with what of her last actions was not done. */
-export function render(w: Workspace, now: number, notDone: readonly Applied[]): Shown {
-  const { device, assistant, preferences: { session } } = w
-  const lines = [
-    `It is ${new Date(now).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}.`,
-    `On the screen: ${surfaces[device.surface]}. The internet is ${device.connectivity === "Online" ? "connected" : "not connected"}. Your window is ${assistant.presentation === "Expanded" ? "expanded" : "compact"}.`,
-    `Settings: text size ${session.textSize}, volume ${session.muted ? "muted" : session.volume}, brightness ${session.brightness}, you ${session.voiceOutput ? "speak aloud" : "do not speak aloud"}, pace ${session.pace}.`,
-    ...assistant.activity === "NoTask" ? [] : [`You are helping with: ${assistant.goal}.`],
-    ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`)
-  ]
-  return { text: lines.join("\n"), targets: targets(w) }
+const pages: Record<SettingsPage, string> = {
+  TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi", EmailCalendarSettings: "Email & calendar", AboutSettings: "About"
+}
+const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook", Yahoo: "Yahoo", ICloud: "iCloud", Aol: "AOL", OtherEmail: "Other email" }
+const folders: Record<Folder, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts", TrashFolder: "Trash", PurgedFolder: "deleted for good" }
+const problems: Record<Problem, string> = {
+  NoProblem: "",
+  ListedProvider: "The address she typed belongs to a company with its own sign-in page, so the tablet sends her there.",
+  PasswordRefused: "Her email company said the password she typed was wrong. You cannot see it: help her calmly to type it again exactly.",
+  ServersRefused: "Her email company did not accept the mail server settings.",
+  SignInUnfinished: "Signing in at her email company was not finished.",
+  AlreadyOnTablet: "That email is already on the tablet.",
+  EmailWaiting: "That email cannot be removed yet: an email from it still waits in Outbox."
+}
+const outcomes: Record<Outcome, string> = {
+  Applied: "was done",
+  NotYetAvailable: "is not available on this tablet yet",
+  NotFound: "found nothing that matched what you named",
+  NotHerTurn: "was not done: only Margaret’s own words in her latest turn can ask for it",
+  NotShown: "was not done: that email or calendar is not shown on the tablet",
+  OwnerRefused: "was not done: the screen does not allow it as it is now",
+  AlreadyInCalendar: "was not done: it is already in her calendar, or you already asked her",
+  NothingAsked: "was not done: you are not waiting on her answer to a question",
+  NotOnScreen: "was not done: that is not on the screen"
 }
 
-/** The controls on the screen Grace may point at: none until a screen names its own. */
-export function targets(_w: Workspace): ReadonlySet<string> {
-  return new Set()
+export const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
+export const eventTarget = (key: number, id: string) => `event:${key}:${id}`
+export const unlinked = (text: string) => text.replace(/https?:\/\/\S+/g, "[a link]")
+const said = (text: string) => text.trim() === "" ? "(empty)" : `“${text}”`
+const quoted = (text: string) => `“${text}”`
+
+export const when = (at: number) =>
+  new Date(at).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
+
+export function calendarName(registry: Registry, key: number) {
+  return key === tablet ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "a calendar no longer on the tablet"
+}
+
+function appointment(registry: Registry, key: number, d: EntryDetails) {
+  const extras = [d.location, d.participant && `with ${d.participant}`, d.recurrence === "Weekly" ? "every week" : d.recurrence === "Monthly" ? "every month" : ""]
+  return `${quoted(d.title)} ${when(d.startAt)}${extras.filter((e) => e !== "").map((e) => `, ${e}`).join("")} [${calendarName(registry, key)}]`
+}
+
+function asked(s: Scene, ask: Ask): string {
+  return match (ask) {
+    when { tag: "AddAsk", let target, let review }: `You asked Margaret whether to add ${appointment(s.registry, target, review.entry.details)}.`;
+    when { tag: "ChangeAsk", let target, let review }: `You asked Margaret whether to change ${quoted(entryAt(sourceAt(s.calendars, target).view, review.id).committed.title)} to ${appointment(s.registry, target, review.details)}.`;
+    when { tag: "DeleteAsk", let target, let review }: `You asked Margaret whether to remove ${review.scope === "EntireSeries" ? "every repeat of " : ""}${appointment(s.registry, target, entryAt(sourceAt(s.calendars, target).view, review.id).committed)}.`;
+    when { tag: "NoAsk" }: "";
+  }
+}
+
+function sender(s: Scene, account: number, ref: string) {
+  const c = s.content(account, ref)
+  return c === undefined ? "an email" : `${c.from}’s email ${quoted(c.subject)}`
+}
+
+function always(s: Scene, now: number): readonly string[] {
+  const { registry, mail, calendars, pending } = s
+  const rows = calendarContext(registry, calendars, now, now + 14 * 24 * 60 * 60 * 1000).sort((a, b) => a.details.startAt - b.details.startAt)
+  const inbox = mailContext(registry, mail).filter((r) => r.record.folder === "InboxFolder")
+  const waiting = outboxCount(registry, mail)
+  return [
+    `Margaret’s calendar for the next two weeks: ${rows.length === 0 ? "nothing planned" : rows.map((r) => appointment(registry, r.key, r.details)).join("; ")}.`,
+    ...pending.ask.tag === "NoAsk" ? [] : [`${asked(s, pending.ask)} It happens only if she says yes${pending.agreed > 0 ? ", and she has said yes" : ""}.`],
+    `Email accounts on the tablet: ${registry.accounts.length === 0 ? "none yet" : registry.accounts.map((a) => {
+      const box = mail.find((m) => m.account === a.id)
+      const uses = [a.use.mail && "email", a.use.calendar && "calendar", a.use.contacts && "contacts"].filter((u) => u !== false)
+      return `${a.name} (${a.address}${box !== undefined && needsSignIn(box.mailbox) ? ", needs her to sign in again" : ""}; ${uses.length === 0 ? "nothing turned on" : `${uses.join(", ")} on`})`
+    }).join("; ")}.`,
+    ...mailAccounts(registry).length === 0 ? [] : [`Email inbox: ${inbox.length === 0 ? "empty" : inbox.map((r) => `${sender(s, r.account, r.record.identity.ref)}${r.record.unread ? " (unread)" : ""} [${mailTarget(r.account, r.record.identity.ref)}]`).join("; ")}.`],
+    ...waiting === 0 ? [] : [`${waiting === 1 ? "One email waits" : `${waiting} emails wait`} in Outbox and will go by itself when the tablet is back online.`]
+  ]
+}
+
+function reading(s: Scene, account: number, m: Mailbox): Part {
+  const c = s.content(account, m.messageRef)
+  const files = m.assets.filter((a) => a.kind === "Pdf").map((a) => a.name)
+  const photos = m.assets.filter((a) => a.kind === "Photo").length
+  const scam = showsScamWarning(m)
+  const linked = c !== undefined && /https?:\/\//.test(c.body)
+  return {
+    lines: [
+      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "her"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(unlinked(c?.body ?? ""))}.`,
+      ...files.length === 0 ? [] : [`Attached: ${files.join(", ")}.`],
+      ...photos === 0 ? [] : [`${photos} photo${photos === 1 ? "" : "s"} attached.`],
+      ...scam ? ["The caution strip says this email looks like a scam."] : []
+    ],
+    targets: ["mbody", ...scam ? ["caution"] : [], ...linked ? ["link"] : [], ...files.length > 0 ? ["file"] : [], ...photos > 0 ? ["saveall"] : []]
+  }
+}
+
+function composing(s: Scene, account: number, m: Mailbox): Part {
+  const from = s.registry.accounts.find((a) => a.id === account)?.address ?? ""
+  const several = fromChoices(s.registry, s.mail).length > 1
+  return {
+    lines: [
+      `Email: Margaret is writing ${m.replyTo === "" ? "a new email" : "a reply"} to ${m.draft.to === "" ? "nobody yet" : m.draft.to} from ${from}. Subject ${said(m.draft.subject)}. Message so far: ${said(m.draft.body)}.${m.draftAttachments.length === 0 ? "" : ` ${m.draftAttachments.length} attached.`}`,
+      "Only Margaret taps Send."
+    ],
+    targets: [...several ? ["from"] : [], "body", "send"]
+  }
+}
+
+function emailScreen(s: Scene): Part {
+  const { registry, mail } = s
+  if (mailAccounts(registry).length === 0) return { lines: ["Email shows that no email is on the tablet yet; Connect your email opens Settings, Email & calendar."], targets: [] }
+  const shown = mail.filter((m) => showsMail(registry, m.account))
+  const writing = shown.find((m) => m.mailbox.composeVisible)
+  if (writing !== undefined) return composing(s, writing.account, writing.mailbox)
+  const open = shown.find((m) => m.account === openSource(registry, mail))
+  if (open !== undefined && open.mailbox.view !== "Inbox") return reading(s, open.account, open.mailbox)
+  const folder = shown[0]?.mailbox.folder ?? "InboxFolder"
+  const query = shown[0]?.mailbox.query ?? ""
+  const only = registry.accounts.find((a) => a.id === registry.inboxFilter)
+  const rows = folderRows(registry, mail, folder)
+  return {
+    lines: [
+      `Email is open on ${folders[folder]}${only === undefined ? "" : ` for ${only.name} only`}${query === "" ? "" : `, searching for ${quoted(query)}`}.`,
+      `Rows you can point at: ${rows.length === 0 ? "none" : rows.map((r) => `${mailTarget(r.account, r.record.identity.ref)} = ${sender(s, r.account, r.record.identity.ref)}`).join("; ")}.`
+    ],
+    targets: rows.map((r) => mailTarget(r.account, r.record.identity.ref))
+  }
+}
+
+function calendarScreen(s: Scene): Part {
+  const { registry, calendars, pending } = s
+  const w = lead(calendars).view.window
+  const open = openSelected(registry, calendars)
+  const selected = open < 0 ? undefined : entryAt(sourceAt(calendars, open).view, sourceAt(calendars, open).view.selectedId)
+  const rows = dayRows(registry, calendars, pending, w.fromTime, w.untilTime).filter((r) => !r.draft)
+  return {
+    lines: [
+      `Calendar is open, ${w.mode === "WeekView" ? "week" : "month"} view, ${new Date(w.selectedDay * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" })} selected.`,
+      ...selected === undefined ? [] : [`It is showing ${appointment(registry, open, selected.phase === "Editing" ? selected.draft : selected.committed)}${selected.phase === "Editing" ? ", in its form" : ""}.`],
+      `Appointments you can point at or name: ${rows.length === 0 ? "none" : rows.map((r) => `${eventTarget(r.key, r.identity.occurrenceId)} = ${appointment(registry, r.key, r.details)}`).join("; ")}.`
+    ],
+    targets: rows.map((r) => eventTarget(r.key, r.identity.occurrenceId))
+  }
+}
+
+function accountsPage(s: Scene): Part {
+  const { registry: a } = s
+  const company = companies[a.signIn.provider]
+  if (a.signIn.stage === "ProviderPage")
+    return { lines: [`Her ${company} sign-in page is open; you cannot see it. She types her own email address and password there, and you never ask for them.`], targets: [] }
+  const shown = a.accounts.find((x) => x.id === a.shown)
+  const grid = Object.keys(companies).map((p) => `prov-${p}`)
+  const parts: Record<Registry["page"], Part> = {
+    AccountList: a.accounts.length === 0
+      ? { lines: ["It asks which email she uses, with a tile for each email company."], targets: grid }
+      : { lines: ["It lists her emails, with Add another email."], targets: [...a.accounts.map((x) => `acc-${x.id}`), "acadd"] },
+    AddAccount: { lines: ["It asks which email company she uses, with a tile for each."], targets: grid },
+    OtherEmailPage: { lines: ["It shows the Other email form: her name, her email address and her password, which she types herself."], targets: [] },
+    MailServersPage: { lines: [`It shows Mail settings for ${a.signIn.domain}: the incoming and outgoing mail servers, which are not secret.`], targets: [] },
+    AccountDetail: { lines: [`It shows ${shown?.name ?? "an email"} (${shown?.address ?? ""}), with Email, Calendar and Contacts switches and Remove from this tablet.`], targets: [] }
+  }
+  const checking = a.signIn.stage === "CheckingOther" || a.signIn.stage === "CheckingServers" ? ["The tablet is checking her email details with her email company."] : []
+  const part = parts[a.page]
+  return { lines: [...part.lines, ...checking, ...problems[a.problem] === "" ? [] : [problems[a.problem]]], targets: part.targets }
+}
+
+function settingsScreen(s: Scene): Part {
+  const page = s.workspace.device.settingsPage
+  const nav = Object.keys(pages).map((p) => `nav-${p}`)
+  const part = page === "EmailCalendarSettings" ? accountsPage(s) : { lines: [], targets: [] }
+  return { lines: [`Settings is open on ${pages[page]}.`, ...part.lines], targets: s.registry.signIn.stage === "ProviderPage" && page === "EmailCalendarSettings" ? [] : [...nav, ...part.targets] }
+}
+
+/** What Grace is told of an email that changed, in words; empty when nothing is told. */
+export function toldOfMail(s: Scene, news: MailTold): string {
+  const name = s.registry.accounts.find((a) => a.id === news.account)?.name ?? "her email"
+  return match (news.news) {
+    when "OpenedEmail": `Margaret opened ${sender(s, news.account, news.ref)}.`;
+    when "SentEmail": `Margaret tapped Send, and her email from ${name} is sent.`;
+    when "QueuedEmail": `Margaret tapped Send while the tablet is offline: her email from ${name} waits in Outbox and goes by itself when the tablet is back online.`;
+    when "OutboxSent": `An email waiting in Outbox from ${name} was sent.`;
+    when "TrashedEmail": `${sender(s, news.account, news.ref)} was moved to Trash; Undo can bring it back.`;
+    when "NoMailNews": "";
+  }
+}
+
+/** What Grace is told of a calendar that changed, or of a yes the calendar could not take. */
+export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold } | { readonly refused: Ask }): string {
+  if ("refused" in report) return "Margaret said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if she still wants it."
+  const { news, key, id } = report.told
+  const c = entryAt(sourceAt(s.calendars, key).view, id)
+  const what = appointment(s.registry, key, c.committed)
+  return match (news) {
+    when "AddedAppointment": `${what} was added to the calendar.`;
+    when "ChangedAppointment": `${what} was changed in the calendar.`;
+    when "DeletedAppointment": `${quoted(c.committed.title)} was removed from the calendar.`;
+    when "NoCalendarNews": "";
+  }
+}
+
+/** What Grace is told of the accounts on the tablet, never anything Margaret typed. */
+export function toldOfAccounts(before: Registry, after: Registry): string {
+  const t = accountsTold(before, after)
+  const account = [...after.accounts, ...before.accounts].find((a) => a.id === t.account)
+  const company = companies[t.provider]
+  return match (t.kind) {
+    when "TellPageOpen": `Margaret chose ${company}. ${company}’s own sign-in page is open on the tablet; she types her own email address and password there, and you cannot see it.`;
+    when "TellConnected": `Margaret connected her ${account?.name ?? company} email (${account?.address ?? ""}) to the tablet.`;
+    when "TellRenewed": `Margaret signed in to ${account?.name ?? company} again.`;
+    when "TellRemoved": `Margaret removed her ${account?.name ?? company} email from the tablet. Its emails and appointments no longer show here; they are still safe with ${company}.`;
+    when "TellProblem": problems[t.problem];
+    when "TellNothing": "";
+  }
+}
+
+/** The part of what Grace is shown that belongs to the open screen, with what on it she may point at. */
+export function screen(s: Scene): Part {
+  return match (s.workspace.device.surface) {
+    when "Email": emailScreen(s);
+    when "Calendar": calendarScreen(s);
+    when "DeviceSettings": settingsScreen(s);
+    default: { lines: [], targets: [] };
+  }
+}
+
+/** Everything Grace is shown with a turn at `now` (milliseconds since the epoch): the screen, the tablet, what of her last actions was not done, and what she was told since. */
+export function render(s: Scene, now: number, notDone: readonly Applied[], told: readonly string[]): Shown {
+  const { device, assistant, preferences: { session } } = s.workspace
+  const part = screen(s)
+  const lines = [
+    `It is ${when(now)}.`,
+    `On the screen: ${surfaces[device.surface]}. The internet is ${device.connectivity === "Online" ? "connected" : "not connected"}. Your window is ${assistant.presentation === "Expanded" ? "expanded" : "compact"}.`,
+    ...part.lines,
+    ...part.targets.length === 0 ? [] : [`Targets you may point at: ${part.targets.join(", ")}.`],
+    `Settings: text size ${session.textSize}, volume ${session.muted ? "muted" : session.volume}, brightness ${session.brightness}, you ${session.voiceOutput ? "speak aloud" : "do not speak aloud"}, pace ${session.pace}.`,
+    ...always(s, now),
+    ...assistant.activity === "NoTask" ? [] : [`You are helping with: ${assistant.goal}.`],
+    ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`),
+    ...told.length === 0 ? [] : [`What happened on the tablet since, as the tablet tells you (it asks nothing of you): ${told.join(" ")}`]
+  ]
+  return { text: lines.join("\n"), targets: new Set(part.targets) }
 }

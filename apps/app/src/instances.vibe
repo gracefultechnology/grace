@@ -1,0 +1,204 @@
+// spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"
+import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
+import { Machine as CalendarMachine, stored as storedCalendar } from "../gen/app__calendarView.effect.vibe"
+import { hasMessage, listingScope, Machine as MailMachine, messageRecord, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
+import type { ChangeReceipt } from "../gen/app__emailItem.effect.vibe"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import { Connector, type MailConnection, type MailContent, NeedsSignIn } from "./connector.vibe"
+
+export error NotAnAccount { id: number }
+
+export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
+export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>
+
+export service Instances {
+  mail(id: number): MailMachine.Shape!NotAnAccount
+  calendar(key: number): CalendarMachine.Shape!NotAnAccount
+  readonly mailRuntime: (id: number) => MailRuntime
+  readonly calendarRuntime: (key: number) => CalendarRuntime
+  readonly content: (id: number, ref: string) => MailContent | undefined
+  readonly remember: (id: number, content: MailContent) => void
+}
+
+export const tablet = 0
+const owner = "tablet"
+const mailKey = (id: number) => `mail/${id}`
+const calendarKey = (key: number) => `calendar/${key}`
+const contentKey = (id: number, ref: string) => `${id}/${ref}`
+const keyPattern = /^(?:mail|calendar)\/(\d+)$/
+
+export const instances = Layer.effect(Instances, effect {
+  const registry = try Accounts
+  const store = try KeyValueStore.KeyValueStore
+  const kept = Layer.succeed(KeyValueStore.KeyValueStore, store)
+  const mails = try SynchronizedRef.make(new Map<number, MailMachine.Shape>())
+  const calendars = try SynchronizedRef.make(new Map<number, CalendarMachine.Shape>())
+  const mailRuntimes = new Map<number, MailRuntime>()
+  const calendarRuntimes = new Map<number, CalendarRuntime>()
+  const contents = new Map<string, MailContent>()
+
+  effect function listed(id: number) {
+    if (id !== tablet && !(try registry.get()).accounts.some((a) => a.id === id)) throw new NotAnAccount({ id })
+  }
+
+  effect function ensure<S>(all: SynchronizedRef.SynchronizedRef<Map<number, S>>, id: number, open: S!!) {
+    try listed(id)
+    return try SynchronizedRef.modifyEffect(all, effect (known: Map<number, S>) => {
+      const found = known.get(id)
+      if (found !== undefined) return [found, known] as const
+      const made = try open
+      return [made, new Map(known).set(id, made)] as const
+    })
+  }
+
+  const openMail = (id: number) => effect {
+    const box = try Effect.orDie(Effect.provide(effect { return try MailMachine }, Layer.provide(storedMail(mailKey(id)), kept)))
+    try Effect.orDie(box.send({ type: "restartMailbox" }, "MailHost"))
+    return box
+  }
+  const openCalendar = (key: number) => Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(calendarKey(key)), kept)))
+  const mail = (id: number) => id === tablet ? Effect.fail(new NotAnAccount({ id })) : ensure(mails, id, openMail(id))
+  const calendar = (key: number) => ensure(calendars, key, openCalendar(key))
+
+  effect function forget(id: number) {
+    try SynchronizedRef.update(mails, (all) => new Map([...all].filter(([k]) => k !== id)))
+    try SynchronizedRef.update(calendars, (all) => new Map([...all].filter(([k]) => k !== id)))
+    const runtimes = [mailRuntimes.get(id), calendarRuntimes.get(id)]
+    mailRuntimes.delete(id)
+    calendarRuntimes.delete(id)
+    for (const runtime of runtimes) if (runtime !== undefined) try runtime.disposeEffect
+    for (const key of [...contents.keys()]) if (key.startsWith(contentKey(id, ""))) contents.delete(key)
+    try Effect.orDie(store.remove(mailKey(id)))
+    try Effect.orDie(store.remove(calendarKey(id)))
+  }
+
+  effect function follow(a: Registry) {
+    const ids = new Set(a.accounts.map((x) => x.id))
+    for (const id of ids) {
+      mail(id) catch () => undefined
+      calendar(id) catch () => undefined
+    }
+    for (const id of (try SynchronizedRef.get(mails)).keys()) if (!ids.has(id)) try forget(id)
+  }
+
+  const stale = (try Effect.orDie(store.keys)).flatMap((key) => {
+    const id = Number(keyPattern.exec(key)?.[1] ?? tablet)
+    return id === tablet ? [] : [id]
+  })
+  const present = new Set((try registry.get()).accounts.map((x) => x.id))
+  for (const id of stale) if (!present.has(id)) try forget(id)
+  try Effect.orDie(calendar(tablet))
+  try fork.scoped Stream.runForEach(registry.changes, follow)
+
+  function cached<R>(all: Map<number, R>, id: number, make: () => R) {
+    const found = all.get(id)
+    if (found !== undefined) return found
+    const made = make()
+    all.set(id, made)
+    return made
+  }
+
+  return {
+    mail,
+    calendar,
+    mailRuntime: (id) => cached(mailRuntimes, id, () => ManagedRuntime.make(Layer.effect(MailMachine, mail(id)))),
+    calendarRuntime: (key) => cached(calendarRuntimes, key, () => ManagedRuntime.make(Layer.effect(CalendarMachine, calendar(key)))),
+    content: (id, ref) => contents.get(contentKey(id, ref)),
+    remember: (id, content) => {
+      const known = contents.get(contentKey(id, content.ref))
+      contents.set(contentKey(id, content.ref), content.body === "" && known !== undefined ? { ...content, body: known.body } : content)
+    }
+  }
+})
+
+const unread = (generation: number): ReadReceipt => ({ generation, succeeded: false, assets: [], suspicion: "" })
+
+export const reading = Layer.effectDiscard(effect {
+  const registry = try Accounts
+  const shelf = try Instances
+  const connector = try Connector
+  const watched = try Ref.make(new Map<number, Fiber.Fiber<void>>())
+
+  effect function begin(account: Account, box: MailMachine.Shape) {
+    effect {
+      try box.send({ type: "connect", owner, provider: account.provider, account: account.address }, "MailUser")
+      const { generation } = try box.get()
+      try box.send({ type: "authorize", generation, verified: true, readGranted: account.use.mail, sendGranted: account.use.mail }, "MailConnector")
+      try box.send({ type: "readMail", kind: "Search", ref: "", approved: true }, "MailUser")
+    } catch () => undefined
+  }
+
+  effect function expired(box: MailMachine.Shape) {
+    box.send({ type: "endConnection", resultStatus: "Expired" }, "MailConnector") catch () => undefined
+  }
+
+  effect function read(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
+    const answered = match (m.readKind) {
+      when "Search": effect {
+        const scope = listingScope(m)
+        const revisionOf = (ref: string) => hasMessage(m, ref) ? messageRecord(m, ref).revision : -1
+        try Stream.runForEach(mail.list(scope, revisionOf), effect (found) => {
+          shelf.remember(id, found.content)
+          box.send({ type: "receiveMessage", scope, listing: found.receipt }, "MailConnector") catch () => undefined
+        })
+        return { generation: m.generation, succeeded: true, assets: [], suspicion: "" } satisfies ReadReceipt
+      };
+      when "OpenMessage": effect {
+        const opened = try mail.read(m.requestedRef, m.generation)
+        shelf.remember(id, opened.content)
+        return opened.receipt
+      };
+      when "OpenAttachment": Effect.succeed(unread(m.generation));
+    }
+    const receipt = answered catch (e) => match (e) {
+      when NeedsSignIn: undefined;
+      default: unread(m.generation);
+    }
+    if (receipt === undefined) return try expired(box)
+    box.send({ type: "readResult", readReceipt: receipt }, "MailConnector") catch () => undefined
+  }
+
+  effect function settle(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox, sent: Ref.Ref<ReadonlySet<string>>) {
+    for (const record of m.messages) {
+      const key = `${record.identity.ref}@${record.revision}`
+      if (record.status !== "ChangePending" || record.pending === "NoMessageChange" || (try Ref.get(sent)).has(key)) continue
+      try Ref.update(sent, (all) => new Set(all).add(key))
+      const op = { identity: record.identity, change: record.pending, revision: record.revision, version: shelf.content(id, record.identity.ref)?.version ?? "" }
+      const receipt: ChangeReceipt | undefined = mail.change(op) catch () => undefined
+      if (receipt === undefined) return try expired(box)
+      box.send({ type: "completeMessageChange", messageReceipt: receipt }, "MailConnector") catch () => undefined
+    }
+  }
+
+  effect function watch(account: Account, box: MailMachine.Shape) {
+    const mail = connector.mail({ provider: account.provider, address: account.address })
+    const handled = try Ref.make(-1)
+    const sent = try Ref.make<ReadonlySet<string>>(new Set())
+    return try fork.scoped Stream.runForEach(box.changes, effect (m) => {
+      if (m.readStatus === "Reading" && (try Ref.get(handled)) !== m.generation) {
+        try Ref.set(handled, m.generation)
+        try read(account.id, mail, box, m)
+      }
+      try settle(account.id, mail, box, try box.get(), sent)
+    })
+  }
+
+  effect function follow(a: Registry) {
+    for (const account of a.accounts) {
+      const box = shelf.mail(account.id) catch () => undefined
+      if (box === undefined) continue
+      if (!(try Ref.get(watched)).has(account.id)) {
+        const fiber = try watch(account, box)
+        try Ref.update(watched, (all) => new Map(all).set(account.id, fiber))
+      }
+      if (account.use.mail && (try box.get()).connection === "Disconnected") try begin(account, box)
+    }
+    for (const [id, fiber] of try Ref.get(watched)) {
+      if (a.accounts.some((x) => x.id === id)) continue
+      try Fiber.interrupt(fiber)
+      try Ref.update(watched, (all) => new Map([...all].filter(([k]) => k !== id)))
+    }
+  }
+
+  try fork.scoped Stream.runForEach(registry.changes, follow)
+})
