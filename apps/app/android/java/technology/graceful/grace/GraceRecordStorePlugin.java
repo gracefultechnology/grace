@@ -8,6 +8,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -34,10 +35,12 @@ public class GraceRecordStorePlugin extends Plugin {
  }
 
  static Stored load(File file) throws IOException, JSONException {
-  AtomicFile atomic = new AtomicFile(file);
-  if (!atomic.exists()) return new Stored(0, null);
-  JSONObject stored = new JSONObject(new String(atomic.readFully(), StandardCharsets.UTF_8));
-  return new Stored(stored.getLong("revision"), stored.optString("value", null));
+  try {
+   JSONObject stored = new JSONObject(new String(new AtomicFile(file).readFully(), StandardCharsets.UTF_8));
+   return new Stored(stored.getLong("revision"), stored.optString("value", null));
+  } catch (FileNotFoundException absent) {
+   return new Stored(0, null);
+  }
  }
 
  static long commit(File file, long expected, String value) throws IOException, JSONException, Stale {
