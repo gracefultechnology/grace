@@ -45,7 +45,7 @@ function isCardGapAt(text: string, i: number): boolean {
 
 function isCodeJoinAt(text: string, i: number): boolean {
   const c = charAt(text, i);
-  return c === 32 || c === 45 || c === 160 || c === 8209;
+  return c === 32 || c === 45 || c === 160 || c === 8201 || c === 8209 || c === 8239;
 }
 
 function isNumberMarkAt(text: string, i: number): boolean {
@@ -227,7 +227,7 @@ function codeCue(word: string): number {
     || word === "passcode" || word === "passcodes" || word === "password" || word === "passwords"
     || word === "verification" || word === "verify" || word === "authentication" || word === "token" || word === "tokens"
     || word === "routing" || word === "ssn"
-    || word === "verificacion" || word === "verificaci\u00f3n" || word === "contrasena" || word === "contrase\u00f1a" || word === "clave" ? 4 : 0;
+    || word === "codice" || word === "verificacion" || word === "verificaci\u00f3n" || word === "contrasena" || word === "contrase\u00f1a" || word === "clave" ? 4 : 0;
 }
 
 function meets(cue: number, length: number): boolean {
@@ -260,7 +260,7 @@ function isPlaceWord(word: string): boolean {
 function isFiller(word: string): boolean {
   return word === "is" || word === "was" || word === "are" || word === "number" || word === "no" || word === "it" || word === "s"
     || word === "its" || word === "here" || word === "the" || word === "your" || word === "my" || word === "this" || word === "be"
-    || word === "will" || word === "now" || word === "again" || word === "just" || word === "on" || word === "back" || word === "es";
+    || word === "will" || word === "now" || word === "again" || word === "just" || word === "on" || word === "back" || word === "es" || word === "est" || word === "ist";
 }
 
 function cueBefore(text: string, j: number, words: number, numbers: boolean, lines: boolean, sentences: boolean, steps: number): number {
