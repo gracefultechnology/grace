@@ -18,28 +18,23 @@ export const WireMessage = Schema.Struct({
 export const Listing = Schema.Struct({ messages: Schema.Array(WireMessage) })
 export const ReadResponse = Schema.Struct({ message: WireMessage, bodyText: Text, attachments: optional(Schema.Array(WireAttachment)) })
 export const Grants = Schema.Array(Schema.Struct({
-  connectionId: NullableText, connected: Flag, identity: Schema.NullOr(Schema.Struct({ email: optional(Text) })),
+  connectionId: NullableText, connected: Flag, identity: Schema.NullOr(Schema.Struct({ email: optional(NullableText) })),
 }))
-export const Prepared = Schema.Struct({
+export const Refusal = Schema.Struct({ code: optional(Text) })
+export const Operation = Schema.Struct({
   receipt: Schema.Struct({
-    requestId: Text, reviewDigest: Text, state: Schema.Literals(["prepared", "succeeded", "failed"]),
-    providerResult: Schema.NullOr(Schema.Struct({ messageId: Text, labelIds: Texts, historyId: Text })),
+    requestId: Text, reviewDigest: Text, state: Schema.Literals(["prepared", "dispatched", "succeeded", "rejected", "outcome-unknown"]),
+    rejectionCode: NullableText, providerResult: Schema.NullOr(Schema.Struct({ messageId: optional(Text), historyId: optional(NullableText) })),
   }),
 })
-export const Sent = Schema.Struct({ ok: Schema.Literal(true) })
-export const SendRecord = Schema.Struct({ sent: Flag })
 export const DraftSaved = Schema.Struct({ draftId: Text })
 export const ContactList = Schema.Struct({ contacts: Schema.Array(Schema.Struct({ name: Text, email: Text })) })
-export const Extras = Schema.Struct({
-  sourceRef: optional(Text), participant: optional(Text), recurrence: optional(Schema.Literals(["Once", "Weekly", "Monthly"])),
-  seriesId: optional(Text), reminderMinutes: optional(Schema.Int), important: optional(Flag),
-})
 export const WireEvent = Schema.Struct({
-  externalId: Text, status: Text, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag,
-  timezone: NullableText, etag: NullableText, metadata: Extras,
+  externalId: Text, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,
+  attendees: Schema.Array(Schema.Struct({ email: NullableText, displayName: NullableText, self: Flag })),
 })
 export const Feed = Schema.Struct({ events: Schema.Array(WireEvent) })
-export const Created = Schema.Struct({ etag: NullableText })
+export const Stored = Schema.Struct({ event: WireEvent })
 export const Session = Schema.Struct({ sessionId: Text, pageUrl: Text })
 export const SessionOutcome = Schema.Struct({
   status: Schema.Literals(["allowed", "cancelled", "refused"]), address: optional(Text),
