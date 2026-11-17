@@ -4,10 +4,13 @@ The new prototype's Voice menu and Settings control audible output separately
 from the microphone, with Slower, Normal and Faster choices. Settings also
 provides four text sizes, display brightness and optional night dimming. The
 Volume rail controls device sound and mute. These follow the new prototype
-(lines 1832–1858, 2040–2050 and 2210–2215) and VOICE 03 accessibility rules. These are local preferences,
-not onboarding, multilingual support, a voice catalog or cloud account setup.
+(lines 1832–1858, 2040–2050 and 2210–2215) and VOICE 03 accessibility rules.
+These preferences are kept on the tablet; set-up may offer them too. Grace's
+voice is her cloud speech service in English with one voice, so there is no
+language switch or voice catalog, and pace is the only voice choice.
 The user-approved “Hey Grace” preference controls whether the separate wake
-lifecycle may detect the wake phrase, including while the screen sleeps.
+lifecycle may detect the wake phrase, including while the screen sleeps; the
+MVP has no detector, so its Settings row shows that it is not available.
 Conversation still owns active request capture; the wake model owns detection,
 permission and transient wake state. The UI uses design tokens
 and measures legibility on hardware; this model does not prescribe new pixels.
@@ -163,6 +166,9 @@ brightness returns. A native settings failure is reported and leaves the last
 confirmed device value; a CSS overlay is not evidence of actual device control.
 Play a sample and Test sound emit an explicit request at the chosen pace and
 system volume, respect mute, and neither activate the mic nor change Voice on/off.
+A sample is spoken by Grace's cloud voice, so it needs the internet and the
+signed-in account; when it cannot play, the conversation's written speech
+failure says why.
 
 ```quint
 pure def nightDimmingApplies(settings: DisplayPreferences, hour: int): bool =

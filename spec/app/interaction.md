@@ -13,7 +13,9 @@ while coordinating browser observations, payment and wake timers.
 ### Each interaction uses the existing guarded assistant operation
 
 User controls and trusted service results have distinct variants and retain
-their original actor checks. Runtime text is never a user choice. A complete
+their original actor checks. Trusted service results come from Grace's cloud
+agent and her cloud speech service; nothing is recognised or spoken by a model
+on the tablet. Runtime text is never a user choice. A complete
 human utterance keeps its audio provenance and current generation. Open,
 Close, Talk, privacy removal, task replacement and a new conversation have
 their own coordinated workspace routes. Pause and Resume act on Grace's
