@@ -286,7 +286,7 @@ function cueAfter(text: string, j: number, words: number, lines: boolean, steps:
   const end = wordEnd(text, j, 16);
   const cue = isLetterAt(text, j) ? cueAt(text, j, end) : 0;
   if (cue === 3) return 3;
-  const further = isLetterAt(text, j) && words > 0 ? cueAfter(text, end, words - 1, lines, steps - 1) : 0;
+  const further = !isDigitAt(text, j) && words > 0 ? cueAfter(text, end, words - 1, lines, steps - 1) : 0;
   return cue === 4 && further !== 3 ? 4 : further;
 }
 
