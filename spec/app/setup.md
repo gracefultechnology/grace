@@ -51,7 +51,7 @@ type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
 type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
 type StepOutcome = Pending | Done | PutOff
 type SetupProgress = { step: SetupStage, outcomes: int -> StepOutcome }
-type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int }
+type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int, graceAccount: GraceAccount, tabletSignIn: bool, googleLink: GoogleLink }
 type SetupEffect = | AskWhatToDo
 type SetupResult = { state: Setup, out: List[SetupEffect] }
 pure val allSetupSteps: List[SetupStage] = List(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, ReopenStep, HandOverStep)
@@ -79,7 +79,7 @@ show from that report on.
 ```quint
 pure val initial: Setup = {
   phase: Unstarted, progress: { step: WifiStep, outcomes: Map() },
-  facts: noFacts, wentAway: false, endToken: 0
+  facts: noFacts, wentAway: false, endToken: 0, graceAccount: CheckingAccount, tabletSignIn: false, googleLink: GoogleLinkUnknown
 }
 pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending or s.phase == EndFailed
 ```
@@ -463,4 +463,70 @@ pure def sometimesResumed(s: Setup): bool = s.phase == Answering and s.wentAway 
 pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and outcomeOf(s.progress, WifiStep) == Done and s.phase == Answering
 pure def sometimesTalkTriedAloud(s: Setup): bool = outcomeOf(s.progress, TalkStep) == Done
 pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away and s.progress.step == HandOverStep and not(graceThinks(s.facts))
+```
+
+
+## Story: Sign in to Grace and manage my subscription
+
+> As a person using Grace, I can sign in to my own Grace account, see my
+> subscription, manage it with the payment provider, or sign out from Settings.
+
+### Subscription actions belong to the Grace account that is signed in
+
+Settings opens Account even without a network connection. The device uses
+the Grace service's authenticated account and subscription response. An
+account from another service, a checkout return, or a browser tab's sign-in
+does not establish a Grace session or an active subscription. If the check
+fails, offer to check again. Account details are private to the device UI.
+The web page shows the sign-in methods Grace offers. The Android app checks
+its own session and opens Grace's web account to manage the subscription.
+A web session authorizes a tablet only after the person confirms the tablet
+sign-in in the browser.
+
+```quint
+type GracePlan = PlanUnknown | PlanInactive | PlanActive | PlanInactiveManaged | PlanActiveManaged
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+pure def mayStartCheckout(account: GraceAccount): bool = match account {
+  | GraceSignedIn(info) => info.plan == PlanInactive
+  | _ => false
+}
+pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
+  | GraceSignedIn(info) => info.plan == PlanInactiveManaged or info.plan == PlanActiveManaged
+  | _ => false
+}
+pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup = { ...s, graceAccount: report, googleLink: link }
+pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: waiting }
+pure val reportValues: Set[GraceAccount] = Set(
+  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignedIn, AccountUnavailable,
+  GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanUnknown }),
+  GraceSignedIn({ accountId: "other", email: "", plan: PlanActive }),
+  GraceSignedIn({ accountId: "other", email: "", plan: PlanActiveManaged })
+)
+pure val accountValues: Set[GraceAccount] = reportValues
+pure def lawCheckoutAndBillingPortalAreDistinct(account: GraceAccount): bool =
+  not(mayStartCheckout(account) and mayOpenBillingPortal(account))
+```
+
+
+### Google mail and calendar access requires separate consent for the Grace account
+
+Grace shows Google connection controls only in a signed-in Grace web
+account when the cloud reports the connector is available. The person
+chooses mail, calendar or both. On a phone-only Grace account the person
+names the Google address to connect. The cloud checks the confirmed Google
+identity against the Grace account and discloses only the resulting connection.
+
+```quint
+type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str })
+pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com" }))
+pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
+  match account {
+    | GraceSignedIn(_) => link == GoogleLinkReady
+    | _ => false
+  }
+pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
+  not(mayOfferGoogleLink(GraceDeviceSignedIn, link))
 ```

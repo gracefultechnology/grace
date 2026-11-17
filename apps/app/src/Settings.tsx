@@ -4,11 +4,13 @@ import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow,
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import type { SettingsPage } from "../gen/app__shell.ts";
+import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 const names: Record<SettingsPage, PageName> = {
-  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AboutSettings: "about",
+  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", AboutSettings: "about",
 };
+const pages = Object.values(names);
 
 /** @model spec/app/websiteRequests.md */
 export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
@@ -25,9 +27,9 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
   };
 
   return (
-    <SettingsApp page={names[page]} onPageChange={choose} {...props}
+    <SettingsApp pages={pages} page={names[page]} onPageChange={choose} {...props}
       onClose={() => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }}>
-      {page === "AboutSettings" ? (
+      {page === "AccountSettings" ? <GraceAccountSettings /> : page === "AboutSettings" ? (
         <>
           <PageHeading>About this tablet</PageHeading>
           {/* spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation" */}

@@ -4,8 +4,8 @@ The Home and system rail follow `prototype/Grace Prototype.html`: Calendar,
 Email, Internet and Files cards, persistent Ask Grace, and clearly separate
 Home and Close browser controls. Two Home pages have arrow, dot and swipe
 navigation; the final prototype uses the progressive-blur carousel and icon
-app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi and
-About this tablet; Volume and Wi-Fi also open rail popovers over the current app.
+app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
+Account and About this tablet; Volume and Wi-Fi also open rail popovers over the current app.
 
 This module owns device readiness and the selected surface. The assistant
 owns its conversation, task and microphone. `contextVersion` changes when
@@ -31,7 +31,7 @@ type Surface = Home | Calendar | Email | Browser | Files | DeviceSettings
 type Connectivity = Offline | Scanning | NoNetworks | Connecting | Online | CaptivePortal | WrongPassword | ConnectionFailed
 type HomePage = MainCards | FilesCard
 type RailPopover = NoPopover | WifiPopover | VolumePopover
-type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | AboutSettings
+type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | AccountSettings | AboutSettings
 type Shell = {
   readiness: Readiness,
   surface: Surface,

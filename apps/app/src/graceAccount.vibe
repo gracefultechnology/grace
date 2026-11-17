@@ -1,0 +1,278 @@
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
+import {
+  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout
+} from "../gen/app__setup.effect.vibe"
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { accountPlugin } from "./accountPlugin.ts"
+import { webView } from "./surfacePlugin.ts"
+
+const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schema.NonEmptyString, email: Schema.NullOr(Schema.String) })) })
+schema Providers { google: boolean; email: boolean; sms: boolean }
+const Subscription = Schema.Struct({ status: Schema.Literals(["inactive", "active"]), canManage: Schema.Boolean })
+schema Destination { url: string }
+schema DeviceApproval { redirectUrl: string }
+schema DeviceAttempt { challenge: string; state: string }
+const GoogleStatus = Schema.Struct({
+  provider: Schema.Literal("google"),
+  side: Schema.Literal("owner"),
+  mode: Schema.Literal("cloud_managed"),
+  configured: Schema.Boolean,
+  connected: Schema.Boolean,
+  identity: Schema.NullOr(Schema.Struct({ email: Schema.NonEmptyString })),
+})
+schema GoogleAuthorization { authorizeUrl: string }
+
+const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
+const deviceAttemptKey = "grace-device-sign-in"
+const deviceChallenge = /^[A-Za-z0-9_-]{43}$/
+const deviceState = /^[A-Za-z0-9_-]{43,128}$/
+
+effect function pendingDevice() {
+  const candidate = Effect.try(() => {
+    const storage = webView.window.sessionStorage
+    const params = new URLSearchParams(webView.window.location.search)
+    if (!params.has("device_challenge") && !params.has("device_state")) {
+      const saved = storage.getItem(deviceAttemptKey)
+      return saved === null ? undefined : JSON.parse(saved)
+    }
+    const pending = { challenge: params.get("device_challenge"), state: params.get("device_state") }
+    storage.removeItem(deviceAttemptKey)
+    webView.window.history.replaceState(undefined, "", "#account")
+    return pending
+  }) catch () => undefined
+  const parsed = Schema.decodeUnknownEffect(DeviceAttempt)(candidate) catch () => undefined
+  if (parsed === undefined || !deviceChallenge.test(parsed.challenge) || !deviceState.test(parsed.state)) return undefined
+  Effect.try(() => webView.window.sessionStorage.setItem(deviceAttemptKey, JSON.stringify(parsed))) catch () => undefined
+  return parsed
+}
+
+const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeItem(deviceAttemptKey))
+
+type CodeProvider = "email" | "sms"
+export type Operation =
+  | { kind: "refresh" | "signIn" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "sendCode"; provider: CodeProvider; address: string }
+  | { kind: "connectGoogle"; mail: boolean; calendar: boolean; expectedEmail: string }
+  | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
+type RequestPath = `/api/auth/${CodeProvider}/${"send" | "verify"}` | "/api/auth/providers" | "/api/auth/device/authorize" | "/api/auth/session" | "/api/auth/refresh" | "/api/auth/logout" | "/api/v1/billing/subscription" | "/api/v1/billing/checkout" | "/api/v1/billing/portal" | `/api/v1/eliza/google/${"status" | "connect/initiate" | "disconnect"}`
+type Transport = {
+  request(path: RequestPath, method: "GET" | "POST", body?: Record<string, string | boolean>): Response!unknown
+  begin(): void!unknown
+  openExternal(url: URL): void!unknown
+}
+
+export service AccountActions {
+  run(operation: Operation): boolean!!
+}
+
+const webTransport: Transport = {
+  request: (path, method, body) => tryPromise((signal) => webView.window.fetch(
+    apiOrigin + path,
+    {
+      method, credentials: "include", cache: "no-store", signal,
+      headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+  )),
+  begin: () => Effect.try(() => webView.window.location.assign(
+    apiOrigin + "/api/auth/google/start",
+  )),
+  openExternal: (url) => Effect.try(() => webView.window.location.assign(url)),
+}
+
+error AccountRequestFailed
+
+effect function accepted(transport: Transport, path: RequestPath, method: "GET" | "POST", body?: Record<string, string | boolean>) {
+  const response = try timeout(transport.request(path, method, body), "10 seconds")
+  if (!response.ok) throw new AccountRequestFailed()
+  return response
+}
+
+effect function decode<A>(response: Response, decoder: Schema.Decoder<A>) {
+  const input: unknown = try tryPromise(() => response.json())
+  return try Schema.decodeUnknownEffect(decoder)(input)
+}
+
+const planFrom = ({ status, canManage }: typeof Subscription.Type): GracePlan =>
+  status === "active" ? (canManage ? "PlanActiveManaged" : "PlanActive") : (canManage ? "PlanInactiveManaged" : "PlanInactive")
+
+effect function session(transport: Transport) {
+  const first = try decode(try accepted(transport, "/api/auth/session", "GET"), Session)
+  const registry = webView.window.navigator.locks
+  if (first.account !== null || registry === undefined) return first
+  return try tryPromise((signal) => registry.request("grace-browser-session", { signal }, () => runPromise(effect {
+    const latest = try decode(try accepted(transport, "/api/auth/session", "GET"), Session)
+    if (latest.account !== null) return latest
+    const renewed = try timeout(transport.request("/api/auth/refresh", "POST"), "10 seconds")
+    if (renewed.status === 401) return latest
+    if (!renewed.ok) throw new AccountRequestFailed()
+    return try decode(renewed, Session)
+  })))
+}
+
+effect function readAccount(transport: Transport): GraceAccount!unknown {
+  const { account } = try session(transport)
+  if (account === null) {
+    const providers = try decode(try accepted(transport, "/api/auth/providers", "GET"), Providers)
+    return { tag: "GraceSignedOut", google: providers.google, emailCode: providers.email, smsCode: providers.sms }
+  }
+  const subscription = effect {
+    return try decode(try accepted(transport, "/api/v1/billing/subscription", "GET"), Subscription)
+  } catch () => undefined
+  return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan: subscription === undefined ? "PlanUnknown" : planFrom(subscription) }
+}
+
+effect function googleLink(transport: Transport): GoogleLink!unknown {
+  const status = try decode(try accepted(transport, "/api/v1/eliza/google/status", "GET"), GoogleStatus)
+  if (!status.configured) return { tag: "GoogleLinkUnavailable" }
+  if (!status.connected) return { tag: "GoogleLinkReady" }
+  if (status.identity === null) throw new AccountRequestFailed()
+  return { tag: "GoogleLinkConnected", email: status.identity.email }
+}
+
+effect function connectGoogle(transport: Transport, operation: Extract<Operation, { kind: "connectGoogle" }>) {
+  const response = try accepted(transport, "/api/v1/eliza/google/connect/initiate", "POST", {
+    mail: operation.mail, calendar: operation.calendar, expectedEmail: operation.expectedEmail,
+  })
+  const { authorizeUrl } = try decode(response, GoogleAuthorization)
+  const url = try Effect.try(() => new URL(authorizeUrl))
+  if (url.origin !== "https://accounts.google.com" || url.pathname !== "/o/oauth2/v2/auth" || url.username !== "" || url.password !== "") throw new AccountRequestFailed()
+  try transport.openExternal(url)
+}
+
+effect function openBilling(transport: Transport, operation: "checkout" | "portal") {
+  const path = operation === "checkout" ? "/api/v1/billing/checkout" : "/api/v1/billing/portal"
+  const { url } = try decode(try accepted(transport, path, "POST"), Destination)
+  const destination = try Effect.try(() => new URL(url))
+  const origin = operation === "checkout" ? "https://checkout.stripe.com" : "https://billing.stripe.com"
+  if (destination.origin !== origin || destination.username !== "" || destination.password !== "") throw new AccountRequestFailed()
+  try transport.openExternal(destination)
+}
+
+export const graceAccount = (native: boolean) => Layer.effect(AccountActions, effect {
+  const setup = try Setup
+  const workspace = try Workspaces
+  const gate = try Semaphore.make(1)
+  const attempt = try Ref.make(native ? undefined : (try pendingDevice()))
+  if ((try Ref.get(attempt)) !== undefined) {
+    setup.send({ type: "reportTabletSignIn", waiting: true }) catch () => undefined
+  }
+  effect function dismissDevice() {
+    try Ref.set(attempt, undefined)
+    clearDevice() catch () => undefined
+    setup.send({ type: "reportTabletSignIn", waiting: false }) catch () => undefined
+  }
+
+  effect function refresh() {
+    const account: GraceAccount = native ? (readDevice() catch () => ({ tag: "AccountUnavailable" } as const)) :
+      (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
+    const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
+      (googleLink(webTransport) catch () => ({ tag: "GoogleLinkUnknown" } as const))
+    setup.send({ type: "reportGraceAccount", report: account, link }) catch () => undefined
+    return account
+  }
+
+  effect function readDevice(): GraceAccount!unknown {
+    const plugin = accountPlugin
+    if (plugin === undefined) throw new AccountRequestFailed()
+    const status: unknown = try tryPromise(() => plugin.status())
+    const result = try Schema.decodeUnknownEffect(Schema.Struct({ kind: Schema.Literals(["signedIn", "signedOut"]) }))(status)
+    return result.kind === "signedIn" ? { tag: "GraceDeviceSignedIn" } : { tag: "GraceDeviceSignedOut" }
+  }
+
+  effect function perform(operation: Operation) {
+    if (operation.kind === "refresh") return (try refresh()).tag !== "AccountUnavailable"
+    if (native) {
+      const plugin = accountPlugin
+      if (plugin === undefined) return false
+      const current = try refresh()
+      if (operation.kind === "signIn" && current.tag === "GraceDeviceSignedOut") try tryPromise(() => plugin.beginSignIn())
+      else if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
+      else if (operation.kind === "signOut" && current.tag === "GraceDeviceSignedIn") {
+        try tryPromise(() => plugin.signOut())
+        return (try refresh()).tag === "GraceDeviceSignedOut"
+      } else return false
+      return true
+    }
+    const transport = webTransport
+    if (operation.kind === "cancelDevice") {
+      try dismissDevice()
+      return true
+    }
+    if (operation.kind === "authorizeDevice") {
+      const device = try Ref.get(attempt)
+      const original = (try setup.get()).graceAccount
+      const current = try refresh()
+      if (device === undefined || original.tag !== "GraceSignedIn" || current.tag !== "GraceSignedIn" || original.accountId !== current.accountId) return false
+      const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", device), DeviceApproval)
+      const destination = try Effect.try(() => new URL(redirectUrl))
+      if (destination.origin !== "https://app.graceforseniors.com" || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||
+        destination.searchParams.get("state") !== device.state || !destination.searchParams.get("code")) return false
+      try dismissDevice()
+      try Effect.try(() => webView.window.location.assign(destination))
+      return true
+    }
+    if (operation.kind === "manageAccount") return false
+    const original = (try setup.get()).graceAccount
+    if (operation.kind === "signIn") {
+      if (original.tag !== "GraceSignedOut" || !original.google) return false
+      try transport.begin()
+      return true
+    }
+    if (operation.kind === "sendCode" || operation.kind === "verifyCode") {
+      if (original.tag !== "GraceSignedOut" || !(operation.provider === "email" ? original.emailCode : original.smsCode)) return false
+      const body: Record<string, string | boolean> = operation.provider === "email" ? { email: operation.address } : { phone: operation.address }
+      if (operation.kind === "sendCode") {
+        try accepted(transport, `/api/auth/${operation.provider}/send`, "POST", body)
+        return true
+      }
+      try accepted(transport, `/api/auth/${operation.provider}/verify`, "POST", { ...body, code: operation.code })
+      return (try refresh()).tag === "GraceSignedIn"
+    }
+    const account = try refresh()
+    if (original.tag !== "GraceSignedIn" || account.tag !== "GraceSignedIn" || account.accountId !== original.accountId) return false
+    if (operation.kind === "connectGoogle") {
+      if (!mayOfferGoogleLink(account, (try setup.get()).googleLink) || (!operation.mail && !operation.calendar)) return false
+      if (account.email === "" && operation.expectedEmail === "") return false
+      try connectGoogle(transport, operation)
+      return true
+    }
+    if (operation.kind === "disconnectGoogle") {
+      if ((try setup.get()).googleLink.tag !== "GoogleLinkConnected") return false
+      try accepted(transport, "/api/v1/eliza/google/disconnect", "POST")
+      try refresh()
+      return true
+    }
+    if (operation.kind === "signOut") {
+      try accepted(transport, "/api/auth/logout", "POST")
+      try refresh()
+      return true
+    }
+    if (operation.kind === "checkout" ? !mayStartCheckout(account) : !mayOpenBillingPortal(account)) return false
+    try openBilling(transport, operation.kind)
+    return true
+  }
+
+  try fork.scoped gate.withPermit(refresh())
+  if (webView.window.location.hash === "#account") {
+    try fork.scoped effect {
+      try Stream.runHead(Stream.filter(workspace.changes, (w) => w.device.readiness === "Ready"))
+      workspace.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person") catch () => undefined
+    }
+  }
+  if (!native) {
+    const visible = Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
+    try fork.scoped Stream.runForEach(visible, () => gate.withPermit(refresh()))
+  }
+  if (native && accountPlugin !== undefined) {
+    const plugin = accountPlugin
+    try fork.scoped Stream.runForEach(
+      Stream.callback<void>((queue) => acquireRelease(
+        promise(() => plugin.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
+        (handle) => promise(() => handle.remove()),
+      )),
+      () => gate.withPermit(refresh()),
+    )
+  }
+  return { run: effect (operation) => gate.withPermit(perform(operation)) catch () => false }
+})
