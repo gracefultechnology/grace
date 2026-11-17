@@ -62,3 +62,22 @@ export const SitePermissionAnswer = Schema.Struct({ outcome: Schema.Literals(["g
 export const PermissionClosed = Schema.Struct({ code: Schema.Literal("SITE_PERMISSION_CLOSED") })
 
 export const PurgeResult = Schema.Struct({ clean: Schema.optional(Schema.Boolean) })
+
+export const LinkObservation = Schema.Struct({
+  documentId: Schema.NonEmptyString,
+  frameScope: Schema.Literal("main"),
+  result: Schema.Struct({
+    snapshotId: Schema.NonEmptyString,
+    url: Schema.String,
+    complete: Schema.Literal(true),
+    readyState: Schema.String,
+    blockers: Schema.Array(Schema.Struct({ kind: Schema.String, covers: Schema.String })),
+    elements: Schema.Array(Schema.Struct({
+      id: Schema.NonEmptyString, tag: Schema.String, label: Schema.NullOr(Schema.String),
+      href: Schema.NullOr(Schema.String), disabled: Schema.optional(Schema.Boolean),
+      sensitive: Schema.optional(Schema.NullOr(Schema.String)), inViewport: Schema.Boolean
+    }))
+  })
+})
+export type LinkObservation = typeof LinkObservation.Type
+export const PointResult = Schema.Struct({ result: Schema.Struct({ accepted: Schema.optional(Schema.Boolean) }) })

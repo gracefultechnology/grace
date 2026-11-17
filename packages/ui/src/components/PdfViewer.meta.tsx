@@ -4,7 +4,7 @@ import { tapCalls } from "./Button.meta.tsx";
 import { mailScreen, retriesUnshown } from "./MailApp.meta.tsx";
 import type { PdfViewerProps } from "./PdfViewer.tsx";
 
-const print = fn();
+const save = fn();
 const retry = fn();
 const line = (width: string, gap = "mt-3.5") => <i className={`block h-3 rounded-line bg-pdf ${gap}`} style={{ width }} />;
 const page = (heading: string, subheading?: string) => (
@@ -27,23 +27,21 @@ export const meta: ComponentMeta<PdfViewerProps> = {
     backLabel: "Clinic email",
     pageLabel: "Page 1 of 2",
     onBack: fn(),
-    onPrint: print,
     savable: true,
-    onSave: fn(),
+    onSave: save,
     onClose: fn(),
     children: page("Main St Clinic", "Patient visit form"),
   },
   examples: {
     Loading: { status: "loading" },
     "Can’t show": { status: "failed", errorLabel: "This PDF can’t be shown on this tablet.", onRetry: retry },
-    Printed: { printStatus: "accepted" },
-    "Print unknown": { printStatus: "unknown" },
-    "Print failed": { printStatus: "failed", onRetryAction: fn() },
+    Saved: { saveStatus: "saved" },
+    "Save failed": { saveStatus: "failed", onRetryAction: fn() },
     "From Files": { title: "Medicare summary.pdf", backLabel: "Files", pageLabel: "Page 1 of 4", savable: false, children: page("Medicare summary") },
   },
   decorator: mailScreen,
   play: {
-    Default: tapCalls("Print", print, { rest: true }),
-    "Can’t show": retriesUnshown("Print", retry),
+    Default: tapCalls("Save to Files", save, { rest: true }),
+    "Can’t show": retriesUnshown("Save to Files", retry),
   },
 };
