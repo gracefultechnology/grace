@@ -478,7 +478,7 @@ type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str
 type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ credentialId: str })
 pure def passwordAdmission(custody: PasswordCustody, account: PasswordAccount): bool =
   match custody {
-    | DevicePasswordCustody => account == DevicePasswordAccount
+    | DevicePasswordCustody => match account { | DevicePasswordAccount => true | _ => false }
     | BoundPasswordCustody(owner) => match account {
         | ActivePasswordAccount(active) => owner.scope != "" and owner.generationId != "" and owner.generationId == active.credentialId
         | _ => false
