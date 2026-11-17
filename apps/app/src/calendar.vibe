@@ -2,7 +2,7 @@
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { Machine as CalendarMachine, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
@@ -58,13 +58,13 @@ export function navigation(w: ViewWindow, kind: Navigation, chosen: number): Nav
   return { window: windows[kind](), kind, verified: true }
 }
 
-function reach(w: ViewWindow, now: number) {
-  const shown = opened(w) ? w : windowOf("WeekView", dayOf(now), dayOf(now))
-  return { fromTime: Math.min(shown.fromTime, midnight(dayOf(now))), untilTime: Math.max(shown.untilTime, midnight(shown.selectedDay + 15), now + horizon) }
+function reach(w: ViewWindow, today: number) {
+  const shown = opened(w) ? w : windowOf("WeekView", today, today)
+  return { fromTime: Math.min(shown.fromTime, midnight(today)), untilTime: Math.max(shown.untilTime, midnight(shown.selectedDay + 15), midnight(today + horizon / day)) }
 }
 
 type Reach = ReturnType<typeof reach>
-const sameReach = (a: Reach, b: Reach) => a.fromTime === b.fromTime && a.untilTime === b.untilTime
+const within = (next: Reach, fetched: Reach) => next.fromTime >= fetched.fromTime && next.untilTime <= fetched.untilTime
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -81,6 +81,13 @@ function placeIn(seriesId: string, id: string) {
   return Number.isInteger(n) ? n : undefined
 }
 
+const generated = (seriesId: string, id: string) => seriesId !== "" && id.startsWith(`${seriesId}@`)
+
+const rootOf = (v: CalendarView, seriesId: string) =>
+  v.entries.find((m) => m.hasSaved && m.phase !== "Deleted" && m.committed.seriesId === seriesId && !generated(seriesId, m.identity.occurrenceId))
+
+const provided = (v: CalendarView): CalendarView => ({ ...v, entries: v.entries.filter((m) => !generated(m.committed.seriesId, m.identity.occurrenceId)) })
+
 function placeOf(v: CalendarView, definition: EntryDetails) {
   const member = v.entries.find((m) => m.hasSaved && m.committed.seriesId === definition.seriesId && m.committed.startAt === definition.startAt)
   return member === undefined ? undefined : placeIn(definition.seriesId, member.identity.occurrenceId)
@@ -88,17 +95,34 @@ function placeOf(v: CalendarView, definition: EntryDetails) {
 
 const single = (c: Calendar) => c.committed.seriesId === "" && c.draft.seriesId === "" && c.draft.recurrence === "Once"
 
-function seriesReceipt(v: CalendarView, c: Calendar, receipt: StoreReceipt): SeriesReceipt {
+function schedulesOf(v: CalendarView, c: Calendar) {
   const d = c.draft
   const at = placeOf(v, seriesAt(v, d.seriesId).details) ?? placeIn(d.seriesId, c.identity.occurrenceId) ?? 0
   const members = v.entries.filter((m) => m.phase !== "Deleted" && (m.identity.occurrenceId === v.selectedId || (m.hasSaved && m.committed.seriesId === d.seriesId)))
-  const schedules = members.map(({ identity: { occurrenceId: id }, committed }) => {
+  return members.map(({ identity: { occurrenceId: id }, committed }) => {
     if (id === c.identity.occurrenceId) return { id, include: true, startAt: d.startAt, endAt: d.endAt }
     const n = placeIn(d.seriesId, id)
     const start = n === undefined ? (d.recurrence === "Once" ? undefined : committed.startAt) : repeated(d, n - at)
     return start === undefined ? { id, include: false, startAt: committed.startAt, endAt: committed.endAt } : { id, include: true, startAt: start, endAt: start + d.endAt - d.startAt }
   })
-  return { occurrenceId: c.identity.occurrenceId, revision: receipt.revision, definitionVersion: seriesAt(v, d.seriesId).version, schedules, verified: true, persisted: receipt.succeeded }
+}
+
+const seriesReceipt = (v: CalendarView, c: Calendar, receipt: StoreReceipt): SeriesReceipt => ({
+  occurrenceId: c.identity.occurrenceId, revision: receipt.revision, definitionVersion: seriesAt(v, c.draft.seriesId).version,
+  schedules: schedulesOf(v, c), verified: true, persisted: receipt.succeeded
+})
+
+function written(v: CalendarView, c: Calendar): Calendar {
+  const d = c.draft
+  const root = generated(d.seriesId, c.identity.occurrenceId) ? rootOf(v, d.seriesId) : undefined
+  const at = root === undefined ? undefined : schedulesOf(v, c).find((s) => s.include && s.id === root.identity.occurrenceId)
+  return root === undefined || at === undefined ? c : { ...root, draft: { ...d, startAt: at.startAt, endAt: at.endAt }, revision: c.revision }
+}
+
+function removed(v: CalendarView) {
+  const seriesId = entryAt(v, v.selectedId).committed.seriesId
+  const whole = v.scope === "EntireSeries" && generated(seriesId, v.selectedId)
+  return (whole ? rootOf(v, seriesId)?.identity.occurrenceId : undefined) ?? v.selectedId
 }
 
 const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(approveSave(create(noEntry, {
@@ -140,7 +164,7 @@ export service CalendarNews {
   publish(report: CalendarReport): void!!
 }
 
-effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], extra: (v: CalendarView) => readonly Published[]) {
+effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!) {
   const sent = try Ref.make<ReadonlySet<string>>(new Set())
   const last = try Ref.make<CalendarView | undefined>(undefined)
   effect function first(mark: string) {
@@ -154,21 +178,34 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     }
     for (const c of v.entries) {
       if (c.phase !== "Editing" || c.approvedRevision !== c.revision || !(try first(`${c.identity.occurrenceId}@${c.revision}`))) continue
-      const receipt = try store.write(c)
+      const receipt = try store.write(written(v, c))
       const event: CalendarEvent = single(c)
         ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
         : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
       box.send(event, "ViewStore") catch () => undefined
     }
     if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) {
-      const result = try store.remove(v.selectedId, v.scope)
+      const result = try store.remove(removed(v), v.scope)
       box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
     }
-    for (const p of extra(try box.get())) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
+    try repeat(box, try span)
   })
 }
 
+effect function repeat(box: CalendarMachine.Shape, span: Reach) {
+  for (const p of repetitions(try box.get(), span)) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
+}
+
+effect function spanOf(lead: CalendarMachine.Shape) {
+  return reach((try lead.get()).window, dayOf(try Clock.currentTimeMillis))
+}
+
+export effect function settled(box: CalendarMachine.Shape, id: string) {
+  return try Stream.runHead(Stream.filter(box.changes, (v) => entryAt(v, id).approvedRevision === -1))
+}
+
 const keysOf = (a: Registry) => [tablet, ...a.accounts.map((x) => x.id)]
+const shownKeys = (a: Registry) => [tablet, ...a.accounts.filter((x) => x.use.calendar).map((x) => x.id)]
 
 const consented = (p: Pending): CalendarEvent | undefined => match (p.ask) {
   when { tag: "AddAsk" }: { type: "confirmAppointment", request: confirmationOf(p) };
@@ -177,7 +214,7 @@ const consented = (p: Pending): CalendarEvent | undefined => match (p.ask) {
   when { tag: "NoAsk" }: undefined;
 }
 
-export const calendars = Layer.effect(CalendarNews, effect {
+export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect {
   const registry = try Accounts
   const shelf = try Instances
   const proposals = try Proposal
@@ -187,7 +224,7 @@ export const calendars = Layer.effect(CalendarNews, effect {
   const lead = try Effect.orDie(shelf.calendar(tablet))
 
   if ((try lead.get()).owner === "") lead.send({ type: "bindCalendar", owner: "tablet", calendarId: "tablet", timezone: zone() }, "ViewStore") catch () => undefined
-  try fork.scoped keep(tablet, lead, device, publish, (v) => repetitions(v, reach(v.window, Date.now())))
+  try fork.scoped keep(tablet, lead, device, publish, spanOf(lead))
 
   effect function each(act: (box: CalendarMachine.Shape, v: CalendarView) => CalendarEvent | undefined, by: "ViewUser" | "ViewClock") {
     for (const key of keysOf(try registry.get())) {
@@ -206,7 +243,7 @@ export const calendars = Layer.effect(CalendarNews, effect {
 
   try fork.scoped Stream.runForEach(Stream.tick("30 seconds"), effect () => {
     const now = try Clock.currentTimeMillis
-    for (const key of keysOf(try registry.get())) {
+    for (const key of shownKeys(try registry.get())) {
       const box = shelf.calendar(key) catch () => undefined
       if (box === undefined) continue
       for (const c of (try box.get()).entries) {
@@ -222,7 +259,9 @@ export const calendars = Layer.effect(CalendarNews, effect {
     const p = try proposals.get()
     if (p.agreed === 0) return
     const event = consented(p)
-    const box = shelf.calendar(targetOf(p.ask)) catch () => undefined
+    const target = targetOf(p.ask)
+    const kept = target === tablet || (linked && shownKeys(try registry.get()).includes(target))
+    const box = kept ? shelf.calendar(target) catch () => undefined : undefined
     const applied = box === undefined || event === undefined ? false : Effect.as(box.send(event, "ViewConsent"), true) catch () => false
     proposals.send({ type: "settleAsk", revision: p.revision }, "Host") catch () => undefined
     if (!applied) try publish({ refused: p.ask })
@@ -237,23 +276,27 @@ export const calendarFeeds = Layer.effectDiscard(effect {
   const shelf = try Instances
   const connector = try Connector
   const news = try CalendarNews
+  const workspace = try Workspaces
   const lead = try Effect.orDie(shelf.calendar(tablet))
   const watched = try Ref.make(new Map<number, Fiber.Fiber<void>>())
 
   effect function watch(account: Account, box: CalendarMachine.Shape) {
     if ((try box.get()).owner === "") box.send({ type: "bindCalendar", owner: account.address, calendarId: "primary", timezone: zone() }, "ViewStore") catch () => undefined
+    const bound = try box.get()
+    if ((try workspace.get()).device.surface === "Calendar" && !bound.opened) box.send({ type: "openCalendar", owner: bound.owner, calendarId: bound.calendarId, timezone: bound.timezone }, "ViewUser") catch () => undefined
     const link = connector.calendar({ provider: account.provider, address: account.address })
     const store: Store = {
       write: effect (entry) => link.write(entry) catch () => ({ revision: entry.revision, succeeded: false }),
       remove: effect (id, scope) => link.remove(id, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
-    const spans = Stream.changesWith(Stream.map(lead.changes, (v) => reach(v.window, Date.now())), sameReach)
+    const spans = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
     const fill = Stream.runForEach(spans, effect (span) => {
-      const v = try box.get()
+      const v = provided(try box.get())
       const feed = link.feed({ ...v, window: { ...v.window, ...span } })
       Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch () => undefined
+      try repeat(box, span)
     })
-    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, () => []), fill], { concurrency: "unbounded" }))
+    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead)), fill], { concurrency: "unbounded" }))
   }
 
   effect function follow(a: Registry) {

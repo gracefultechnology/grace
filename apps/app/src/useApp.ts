@@ -5,7 +5,7 @@ import { Effect, type ManagedRuntime, Stream } from "effect";
 import { createContext, createElement, type ReactNode, use, useEffect, useState } from "react";
 import { type Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
-import type { Event as CalendarEvent } from "../gen/app__calendarView.effect.vibe";
+import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
@@ -19,6 +19,7 @@ import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/a
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
+import { settled } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
 import { Instances } from "./instances.vibe";
 import { PageHost } from "./page.vibe";
@@ -114,8 +115,12 @@ function useMailbox(id: number) {
 }
 
 function useCalendar(key: number) {
-  const { state, can, send } = useCalendarMachine(useInstances().calendarRuntime(key));
-  return state && { key, state, can: (event: CalendarEvent) => can(event, "ViewUser"), send: (event: CalendarEvent) => send(event, "ViewUser") };
+  const runtime = useInstances().calendarRuntime(key);
+  const { state, can, send } = useCalendarMachine(runtime);
+  return state && {
+    key, state, can: (event: CalendarEvent) => can(event, "ViewUser"), send: (event: CalendarEvent) => send(event, "ViewUser"),
+    settled: (id: string) => runtime.runPromise(Effect.flatMap(Effect.service(CalendarMachine), (box) => settled(box, id))),
+  };
 }
 
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;

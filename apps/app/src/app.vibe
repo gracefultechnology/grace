@@ -77,7 +77,7 @@ const signInPage = Layer.sync(SignInPage, () => {
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
 const calendar = (cloud: CloudLink | undefined) =>
-  cloud === undefined ? calendars : Layer.provideMerge(Layer.provide(calendarFeeds, Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced)), calendars)
+  cloud === undefined ? calendars(false) : Layer.provideMerge(Layer.provide(calendarFeeds, Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced)), calendars(true))
 
 const mail = (cloud: CloudLink | undefined) => cloud === undefined ? Layer.empty : Layer.provide(reading, Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced))
 

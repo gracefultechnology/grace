@@ -1,11 +1,11 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
 import { Banner, BannerButton, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph, type HomeEvent } from "@repo/ui";
-import { Exit } from "effect";
+import { Option } from "effect";
 import { useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, rowTag, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type Event as CalendarEvent, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
+import { type Event as CalendarEvent, enabled, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { dayOf, horizon, hour, midnight, navigation, shownDays } from "./calendar.vibe";
@@ -54,12 +54,14 @@ function period(mode: "WeekView" | "MonthView", anchor: number) {
     : `${say(days[0], { month: "short", day: "numeric" })} – ${say(days[6], { month: "short", day: "numeric" })}`;
 }
 
-export function homeEvents(registry: Accounts, views: readonly CalendarInstance[], now: number): HomeEvent[] {
+export function homeCalendar(registry: Accounts, views: readonly CalendarInstance[], now: number): { events: HomeEvent[]; status: string } {
   const today = dayOf(now);
-  return upcoming(registry, sourcesOf(views), now, now + horizon).sort(byStart).slice(0, 3).map((r, i) => ({
+  const sources = sourcesOf(views);
+  const events = upcoming(registry, sources, now, now + horizon).sort(byStart).slice(0, 3).map((r) => ({
     id: `${r.key}/${r.identity.occurrenceId}`, weekday: short(dayOf(r.details.startAt), today).toUpperCase(), time: timeLabel(r.details.startAt),
-    title: r.details.title, detail: whoWhere(r.details) || undefined, next: i === 0,
+    title: r.details.title, detail: whoWhere(r.details) || undefined, next: r.details.important,
   }));
+  return { events, status: upcoming(registry, sources, midnight(today), midnight(today + 1)).length > 0 ? "Today" : "Nothing else today" };
 }
 
 export function nextAppointment(registry: Accounts, views: readonly CalendarInstance[], now: number): string | undefined {
@@ -133,7 +135,8 @@ function Shown({ registry, pending, views, ...props }: Covered & { registry: Acc
     onOpenEvent: (id) => {
       const [key, ...rest] = id.split("/");
       const box = views.find((v) => v.key === Number(key));
-      if (box) void openOn(box, rest.join("/"));
+      const open: CalendarEvent = { type: "openOccurrence", id: rest.join("/") };
+      if (box?.can(open)) void box.send(open);
     },
     onToday: go("Today"),
     onAdd: () => {
@@ -182,62 +185,65 @@ function Shown({ registry, pending, views, ...props }: Covered & { registry: Acc
   );
 }
 
-async function openOn(box: CalendarInstance, id: string) {
-  const v = box.state;
-  const opening: CalendarEvent = { type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone };
-  if (!v.opened && box.can(opening)) await box.send(opening);
-  await box.send({ type: "openOccurrence", id });
-}
-
-type Fields = { title: string; where: string; startAt: number; recurrence: Recurrence; reminder: Reminder };
+type Texts = { title: string; where: string };
 
 function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: Entry; today: number; browsing: CalendarAppProps }) {
   const id = entry.identity.occurrenceId;
-  const [fields, setFields] = useState<Fields>(() => ({
-    title: entry.draft.title, where: entry.draft.location, startAt: entry.draft.startAt, recurrence: entry.draft.recurrence, reminder: reminderOf(entry.draft),
-  }));
+  const d = entry.draft;
+  const [texts, setTexts] = useState<Texts>({ title: d.title, where: d.location });
   const [pick, setPick] = useState<"day" | "time" | null>(null);
-  const details = (f: Fields): EntryDetails => ({
-    ...entry.draft, title: f.title, location: f.where, startAt: f.startAt, endAt: f.startAt + entry.draft.endAt - entry.draft.startAt, recurrence: f.recurrence,
-    seriesId: entry.committed.seriesId || (f.recurrence === "Once" ? "" : entry.draft.seriesId || id),
-    reminderEnabled: f.reminder !== "No", leadTime: reminders[f.reminder],
-  });
-  const changing = (f: Fields): CalendarEvent => ({ type: "changeOccurrence", id, command: { tag: "ChangeDetails", details: details(f) } });
-  const change = (next: Partial<Fields>) => {
-    const f = { ...fields, ...next };
-    setFields(f);
-    if (box.can(changing(f))) void box.send(changing(f));
+  const change = (next: Partial<EntryDetails>, typed: Texts = texts) => {
+    const details = { ...d, ...next, title: typed.title.trim(), location: typed.where.trim() };
+    const recurring = details.recurrence !== "Once";
+    const event: CalendarEvent = {
+      type: "changeOccurrence", id,
+      command: { tag: "ChangeDetails", details: { ...details, seriesId: entry.committed.seriesId || (recurring ? d.seriesId || id : "") } },
+    };
+    if (box.can(event)) void box.send(event);
   };
+  const type = (next: Partial<Texts>) => {
+    const typed = { ...texts, ...next };
+    setTexts(typed);
+    change({}, typed);
+  };
+  const approve: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "ApproveEntry", revision: entry.revision } };
   const save = async () => {
-    const changed = await box.send(changing(fields));
-    const revision = Exit.isSuccess(changed) ? entryAt(changed.value, id).revision : entry.revision;
-    await box.send({ type: "changeOccurrence", id, command: { tag: "ApproveEntry", revision } });
+    if (!box.can(approve)) return;
+    await box.send(approve);
+    if (entry.hasSaved) return;
+    const after = await box.settled(id);
+    if (Option.isNone(after) || entryAt(after.value, id).phase !== "Saved") return;
+    const shown: CalendarEvent = { type: "navigate", report: navigation(after.value.window, "SelectDay", dayOf(d.startAt)) };
+    if (enabled(after.value, shown, "ViewUser")) await box.send(shown);
   };
-  const start = new Date(fields.startAt);
+  const start = new Date(d.startAt);
   const minutes = start.getHours() * 60 + start.getMinutes();
   const days = Array.from({ length: 21 }, (_, i) => today + i);
   const times = Array.from({ length: 25 }, (_, i) => 7 * 60 + 30 * i);
-  const saving = entry.approvedRevision !== -1;
+  const cancel: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "CancelEditing" } };
   return (
-    <CalendarApp {...browsing} view="form" onBack={() => { const cancel: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "CancelEditing" } }; if (box.can(cancel)) void box.send(cancel); }}
-      canSave={fields.title.trim() !== "" && !saving} onSave={() => void save()}
-      saveStatus={saving ? "saving" : entry.storageError === "SaveFailure" ? "failed" : undefined}
+    <CalendarApp {...browsing} view="form" onBack={() => { if (box.can(cancel)) void box.send(cancel); }}
+      canSave={box.can(approve)} onSave={() => void save()}
+      saveStatus={entry.approvedRevision !== -1 ? "saving" : entry.storageError === "SaveFailure" ? "failed" : undefined}
       form={{
         heading: entry.hasSaved ? "Edit appointment" : "New appointment",
-        title: fields.title, onTitleChange: (title) => change({ title }), where: fields.where, onWhereChange: (where) => change({ where }),
+        title: texts.title, onTitleChange: (title) => type({ title }), where: texts.where, onWhereChange: (where) => type({ where }),
         day: {
-          value: longDate(dayOf(fields.startAt)), selected: String(dayOf(fields.startAt)), open: pick === "day",
+          value: longDate(dayOf(d.startAt)), selected: String(dayOf(d.startAt)), open: pick === "day",
           onOpenChange: (o) => setPick(o ? "day" : null),
           choices: days.map((n) => ({ value: String(n), label: n - today < 7 ? `${relative(n, today)} · ${say(n, { month: "short", day: "numeric" })}` : longDate(n) })),
           onPick: (n) => { setPick(null); change({ startAt: at(Number(n), minutes) }); },
         },
         time: {
-          value: span(details(fields)), selected: String(minutes), open: pick === "time", onOpenChange: (o) => setPick(o ? "time" : null),
+          value: span(d), selected: String(minutes), open: pick === "time", onOpenChange: (o) => setPick(o ? "time" : null),
           choices: times.map((m) => ({ value: String(m), label: timeLabel(at(today, m)) })),
-          onPick: (m) => { setPick(null); change({ startAt: at(dayOf(fields.startAt), Number(m)) }); },
+          onPick: (m) => { setPick(null); change({ startAt: at(dayOf(d.startAt), Number(m)) }); },
         },
-        repeat: { options: Object.values(repeats), value: repeats[fields.recurrence], onChange: (v) => change({ recurrence: (Object.keys(repeats) as Recurrence[]).find((r) => repeats[r] === v) ?? "Once" }) },
-        remind: { options: Object.keys(reminders), value: fields.reminder, onChange: (v) => change({ reminder: (Object.keys(reminders) as Reminder[]).find((r) => r === v) ?? "No" }) },
+        repeat: { options: Object.values(repeats), value: repeats[d.recurrence], onChange: (v) => change({ recurrence: (Object.keys(repeats) as Recurrence[]).find((r) => repeats[r] === v) ?? "Once" }) },
+        remind: {
+          options: Object.keys(reminders), value: reminderOf(d),
+          onChange: (v) => { const r = (Object.keys(reminders) as Reminder[]).find((k) => k === v) ?? "No"; change({ reminderEnabled: r !== "No", leadTime: reminders[r] }); },
+        },
       }} />
   );
 }
