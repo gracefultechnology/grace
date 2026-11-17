@@ -1,26 +1,28 @@
-import type { ComponentProps, CSSProperties } from "react";
+import type { ReactNode } from "react";
 import tokens from "@repo/design-system/tokens.json" with { type: "json" };
-import { cn } from "../lib/cn.ts";
 
-export type TextScaleProps = ComponentProps<"div"> & {
+export type TextScaleProps = {
   /** Every word's size, in percent of its type token: 90 Smaller, 100 Normal, 115 Larger, 130 Largest. */
   percent: number;
+  children?: ReactNode;
 };
 
-const sizes = Object.entries(tokens.text);
+const text: Record<string, string | { size: string }> = tokens.text;
+const sizes = Object.entries(text).map(([name, token]) => [name, typeof token === "string" ? token : token.size] as const);
 
 /**
- * Scales every word inside it by the Text size setting: it sets each type token (`text-body`, `text-title` …) to its
- * size times `percent` on its own style, so Home, the rail, apps and Grace's messages all follow, while their boxes keep
- * their size. Wraps a `TabletScreen`'s content without a box of its own.
+ * Scales every word on the screen by the Text size setting: it sets each type token (`text-body`, `text-title` …) on the
+ * document's root to its size times `percent`, so Home, the rail, apps, Grace's messages and the dialogs and menus drawn
+ * outside the screen all follow, while their boxes keep their size. Wraps a `TabletScreen`'s content without a box of its own.
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md
  */
-export function TextScale({ percent, className, style, children, ...props }: TextScaleProps) {
-  const scaled: CSSProperties = Object.fromEntries(sizes.map(([name, size]) => [`--text-${name}`, `calc(${size} * ${percent / 100})`]));
+export function TextScale({ percent, children }: TextScaleProps) {
+  const scaled = sizes.map(([name, size]) => `--text-${name}:calc(${size} * ${percent / 100})`).join(";");
   return (
-    <div className={cn("contents", className)} style={{ ...scaled, ...style }} {...props}>
+    <>
+      <style>{`:root:root{${scaled}}`}</style>
       {children}
-    </div>
+    </>
   );
 }

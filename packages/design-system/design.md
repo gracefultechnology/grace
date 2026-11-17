@@ -16,9 +16,9 @@ Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 pro
 - **Shape.** `radius` is 12px (`rounded-sm` 8 … `rounded-xl` 16); named radii by role: `rounded-row` 22,
   `rounded-window` 26, `rounded-card` 30, `rounded-menu` 38, `rounded-full` for every button.
 - **Type.** Figtree. Every size is a `text-*` token: `text-body` 20, `text-body-lg` 22, `text-lead` 24 (Grace's
-  words), `text-title` 28, `text-display` 40. The Text size setting is one style on the screen's root, `TextScale`,
-  which sets each `--text-*` to its token times the chosen percent, so every word that names a token follows and no
-  box changes size. A size or line height written in pixels (`text-[19px]`, `leading-[26px]`) stays put, so a word
+  words), `text-title` 28, `text-display` 40. The Text size setting is `TextScale`, which sets each `--text-*` on the
+  document's root to its token times the chosen percent, so every word that names a token follows, in dialogs and
+  menus too, and no box changes size. A size or line height written in pixels (`text-[19px]`, `leading-[26px]`) stays put, so a word
   that must scale names a token and a line height that must follow it is unitless.
 - **Motion.** `press` with `ease-spring` for a tap (scale 1.05), `window` for a window changing size.
 - **Dark.** The tablet keeps its light look; `.dark` changes only the semantic colors, for tools around it.
@@ -267,8 +267,6 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
 | `font.site` | Arial, Helvetica, sans-serif |
 | `shadow.sm` | 0 1px 2px color-mix(in srgb, var(--dim) 8%, transparent) |
-| `shadow.md` | 0 4px 12px color-mix(in srgb, var(--dim) 12%, transparent) |
-| `shadow.lg` | 0 12px 32px color-mix(in srgb, var(--dim) 18%, transparent) |
 | `shadow.float` | 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
 | `shadow.elevation-glass` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent) |
 | `shadow.glass-pressed` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent), inset 0 0 0 1.5px color-mix(in srgb, var(--glass) 70%, transparent), 0 6px 18px color-mix(in srgb, var(--primary) 14%, transparent) |
@@ -282,11 +280,9 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.dialog` | 0 24px 60px color-mix(in srgb, var(--scrim) 30%, transparent) |
 | `shadow.field` | inset 0 0 0 1.5px color-mix(in srgb, var(--primary) 16%, transparent) |
 | `shadow.field-focus` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 90%, transparent), 0 0 0 2.5px var(--primary), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
-| `shadow.selected` | inset 0 0 0 2.5px var(--primary) |
-| `shadow.key` | 0 1px 0 color-mix(in srgb, var(--dim) 25%, transparent) |
 | `shadow.elevation-halo` | 0 0 0 8px color-mix(in srgb, var(--frame-lilac) 80%, transparent), 0 0 22px 14px color-mix(in srgb, var(--halo) 60%, transparent) |
 | `shadow.elevation-guide` | 0 0 0 4px var(--guide), 0 0 0 10px color-mix(in srgb, var(--guide) 22%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
-| `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px rgb(30 122 70 / 0.15), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px color-mix(in srgb, var(--ok) 15%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
 | `shadow.elevation-device` | 0 30px 60px rgb(20 16 32 / 0.25) |
 | `shadow.banner` | inset 0 1.5px 0 color-mix(in srgb, var(--glass) 95%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--glass) 70%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
 | `shadow.window` | 0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
@@ -369,9 +365,9 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `keyframes.bob` | 0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1} |
 | `keyframes.blink` | 50%{opacity:0} |
 | `keyframes.guide-pulse` | 50%{box-shadow:0 0 0 6px var(--guide),0 0 0 16px color-mix(in srgb, var(--guide) 18%, transparent),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
-| `keyframes.guide-pulse-ok` | 50%{box-shadow:0 0 0 6px var(--ok),0 0 0 16px rgb(30 122 70 / .12),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
+| `keyframes.guide-pulse-ok` | 50%{box-shadow:0 0 0 6px var(--ok),0 0 0 16px color-mix(in srgb, var(--ok) 12%, transparent),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
 | `keyframes.guide-pulse-tight` | 50%{box-shadow:0 0 0 4px color-mix(in srgb, var(--lavender) 20%, transparent)} |
-| `keyframes.guide-pulse-tight-ok` | 50%{box-shadow:0 0 0 4px rgb(30 122 70 / .2)} |
+| `keyframes.guide-pulse-tight-ok` | 50%{box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent)} |
 | `keyframes.label-in` | from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none} |
 | `keyframes.orb-in` | from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none} |
 | `keyframes.ripple` | from{transform:scale(.4);opacity:1}to{transform:scale(1.6);opacity:0} |
