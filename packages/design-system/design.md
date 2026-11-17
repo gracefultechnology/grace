@@ -30,13 +30,15 @@ is unavoidable, such as a chart series or third-party markup, say why on the lin
 
 ## Glass
 
-Clear glass: `bg-glass/10` with `backdrop-blur-glass` and `shadow-glass`, a bright rim and no lift. Glass is for
+Shadow token names use `elevation-` where a color has the same name, so Tailwind distinguishes the shadow from its color. The values remain the prototype's.
+
+Clear glass: `bg-glass/10` with `backdrop-blur-glass` and `shadow-elevation-glass`, a bright rim and no lift. Glass is for
 controls; Grace's window is solid white at both sizes, with glass controls over it. Every floating surface casts
 `shadow-float`.
 
 ## Buttons
 
-Three kinds only, all 64px tall and fully round: glass (`shadow-glass`), prominent (flat `primary`, the
+Three kinds only, all 64px tall and fully round: glass (`shadow-elevation-glass`), prominent (flat `primary`, the
 one next step) and plain (no fill, for ✕). Pressed: scale 1.05 and a brighter glass. Icon-only buttons are
 round. Disabled text is `grace-ink` at 38%.
 
@@ -268,12 +270,12 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.md` | 0 4px 12px color-mix(in srgb, var(--dim) 12%, transparent) |
 | `shadow.lg` | 0 12px 32px color-mix(in srgb, var(--dim) 18%, transparent) |
 | `shadow.float` | 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
-| `shadow.glass` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent) |
+| `shadow.elevation-glass` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent) |
 | `shadow.glass-pressed` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent), inset 0 0 0 1.5px color-mix(in srgb, var(--glass) 70%, transparent), 0 6px 18px color-mix(in srgb, var(--primary) 14%, transparent) |
 | `shadow.capsule` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 90%, transparent), inset 0 1.5px 1px var(--glass), 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
 | `shadow.raised` | 0 1px 2px color-mix(in srgb, var(--primary) 8%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
 | `shadow.prominent` | 0 1px 2px color-mix(in srgb, var(--primary) 10%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 18%, transparent) |
-| `shadow.panel` | 0 2px 10px color-mix(in srgb, var(--shade) 8%, transparent) |
+| `shadow.elevation-panel` | 0 2px 10px color-mix(in srgb, var(--shade) 8%, transparent) |
 | `shadow.badge` | 0 1px 4px color-mix(in srgb, var(--shade) 14%, transparent) |
 | `shadow.photo` | 0 8px 30px color-mix(in srgb, var(--shade) 18%, transparent) |
 | `shadow.menu` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 85%, transparent), 0 12px 32px color-mix(in srgb, var(--primary) 18%, transparent) |
@@ -282,13 +284,13 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.field-focus` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 90%, transparent), 0 0 0 2.5px var(--primary), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
 | `shadow.selected` | inset 0 0 0 2.5px var(--primary) |
 | `shadow.key` | 0 1px 0 color-mix(in srgb, var(--dim) 25%, transparent) |
-| `shadow.halo` | 0 0 0 8px color-mix(in srgb, var(--frame-lilac) 80%, transparent), 0 0 22px 14px color-mix(in srgb, var(--halo) 60%, transparent) |
-| `shadow.guide` | 0 0 0 4px var(--guide), 0 0 0 10px color-mix(in srgb, var(--guide) 22%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `shadow.elevation-halo` | 0 0 0 8px color-mix(in srgb, var(--frame-lilac) 80%, transparent), 0 0 22px 14px color-mix(in srgb, var(--halo) 60%, transparent) |
+| `shadow.elevation-guide` | 0 0 0 4px var(--guide), 0 0 0 10px color-mix(in srgb, var(--guide) 22%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
 | `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px rgb(30 122 70 / 0.15), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
-| `shadow.device` | 0 30px 60px rgb(20 16 32 / 0.25) |
+| `shadow.elevation-device` | 0 30px 60px rgb(20 16 32 / 0.25) |
 | `shadow.banner` | inset 0 1.5px 0 color-mix(in srgb, var(--glass) 95%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--glass) 70%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
 | `shadow.window` | 0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
-| `shadow.popover` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 85%, transparent), 0 12px 32px color-mix(in srgb, var(--primary) 22%, transparent) |
+| `shadow.elevation-popover` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 85%, transparent), 0 12px 32px color-mix(in srgb, var(--primary) 22%, transparent) |
 | `shadow.tile` | 0 1px 4px color-mix(in srgb, var(--shade) 12%, transparent) |
 | `shadow.picture` | 0 2px 10px color-mix(in srgb, var(--shade) 12%, transparent) |
 | `shadow.paper` | 0 2px 14px color-mix(in srgb, var(--shade) 16%, transparent) |
@@ -297,7 +299,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.tag` | 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 16%, transparent) |
 | `shadow.cursor` | 0 0 0 6px color-mix(in srgb, var(--guide) 35%, transparent), 0 0 22px 8px color-mix(in srgb, var(--guide) 35%, transparent) |
 | `shadow.tile-pressed` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 95%, transparent), 0 4px 12px color-mix(in srgb, var(--primary) 12%, transparent) |
-| `shadow.bubble` | 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 8%, transparent) |
+| `shadow.elevation-bubble` | 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 8%, transparent) |
 | `shadow.strip` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), 0 6px 20px color-mix(in srgb, var(--primary) 14%, transparent) |
 | `shadow.cursor-tag` | 0 8px 24px color-mix(in srgb, var(--primary) 22%, transparent) |
 | `shadow.cursor-tag-paused` | inset 0 0 0 2px var(--primary), 0 8px 24px color-mix(in srgb, var(--primary) 18%, transparent) |
@@ -307,7 +309,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.attachment` | 0 2px 8px color-mix(in srgb, var(--shade) 12%, transparent) |
 | `shadow.photo-tile` | 0 2px 10px color-mix(in srgb, var(--shade) 10%, transparent) |
 | `shadow.pane` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 65%, transparent), inset 0 1px 0 color-mix(in srgb, var(--glass) 95%, transparent), 0 0 0 1px color-mix(in srgb, var(--glass) 55%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
-| `shadow.sidebar` | inset 0 0 0 1px var(--glass), inset 0 1.5px 2px var(--glass), 0 0 0 1px color-mix(in srgb, var(--primary) 7%, transparent), 0 2px 6px color-mix(in srgb, var(--primary) 6%, transparent), 0 12px 36px color-mix(in srgb, var(--primary) 16%, transparent) |
+| `shadow.elevation-sidebar` | inset 0 0 0 1px var(--glass), inset 0 1.5px 2px var(--glass), 0 0 0 1px color-mix(in srgb, var(--primary) 7%, transparent), 0 2px 6px color-mix(in srgb, var(--primary) 6%, transparent), 0 12px 36px color-mix(in srgb, var(--primary) 16%, transparent) |
 | `shadow.launcher` | inset 0 1px 0 color-mix(in srgb, var(--glass) 95%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 8px 22px color-mix(in srgb, var(--primary) 10%, transparent) |
 | `shadow.hairline` | 0 1px 0 color-mix(in srgb, var(--primary) 10%, transparent) |
 | `shadow.arrow` | -1px 1px 0 color-mix(in srgb, var(--glass) 85%, transparent) |

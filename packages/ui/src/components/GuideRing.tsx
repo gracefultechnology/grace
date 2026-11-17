@@ -21,7 +21,7 @@ export type GuideRingProps = Omit<ComponentProps<"div">, "children"> & {
 };
 
 const looks = {
-  guide: [["--shadow-guide", "animate-guide-pulse"], ["--shadow-guide-tight", "animate-guide-pulse-tight"]],
+  guide: [["--shadow-elevation-guide", "animate-guide-pulse"], ["--shadow-guide-tight", "animate-guide-pulse-tight"]],
   ok: [["--shadow-guide-ok", "animate-guide-pulse-ok"], ["--shadow-guide-tight-ok", "animate-guide-pulse-tight-ok"]],
 } as const;
 
