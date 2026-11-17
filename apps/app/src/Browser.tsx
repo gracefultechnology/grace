@@ -1,17 +1,17 @@
 // spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, NewTabPage } from "@repo/ui";
-import { Effect } from "effect";
-import { type ComponentProps, useCallback } from "react";
+import type { ComponentProps } from "react";
 import type { BrowserInput } from "../gen/app__browserControls.ts";
-import { type TypedAddress, activeTab, addressDestination, tabUrl, visibleTabs } from "../gen/app__browser.ts";
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { type Load, type TypedAddress, activeTab, addressDestination, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "../../../vendor/eliza/packages/contracts/src/browser-address-input.ts";
-import { OverPage, PageArea } from "./PageLayer.tsx";
-import { useDraft, useRuntime, useWorkspace } from "./useApp.ts";
+import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
+import { Part } from "./page.vibe";
+import { useDraft, useWorkspace } from "./useApp.ts";
 import { WebsiteRequests, site } from "./WebsiteRequests.tsx";
 
-const TAB_WIDTH = 240;
-const STRIP_SPARE = 140;
+const tabStrip = Part.Strip();
+
+const failures: Partial<Record<Load, string>> = { LoadFailed: "This page didn't open.", SecurityBlocked: "This page isn't safe to open." };
 
 function typed(text: string): TypedAddress {
   const parsed = parseBrowserAddressInput(text, { defaultProtocol: "https:" });
@@ -28,25 +28,17 @@ function destination(text: string): string | undefined {
     case "Visit": return to.url;
     case "Search": return `${to.provider}${encodeURIComponent(to.query)}`;
     case "Nowhere": return undefined;
+    default: {
+      const unreached: never = to;
+      return unreached;
+    }
   }
 }
 
-const resizeTabs = (width: number) => Effect.flatMap(Effect.service(Workspaces), (workspaces) => Effect.flatMap(workspaces.get(), ({ browser }) => {
-  const capacity = Math.max(1, Math.floor((width - STRIP_SPARE) / TAB_WIDTH));
-  return capacity === browser.capacity ? Effect.void
-    : Effect.ignore(workspaces.send({ type: "changePage", browserInput: { tag: "ResizeTabs", revision: browser.revision, capacity } }, "Host"));
-}));
-
 /** @model spec/app/browserControls.md */
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
-  const runtime = useRuntime();
+  const strip = useWatch(tabStrip);
   const { workspace, can, send, closeBrowser } = useWorkspace();
-  const strip = useCallback((element: HTMLDivElement | null) => {
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => runtime.runFork(resizeTabs(entry.contentRect.width)));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [runtime]);
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
   const [address, setAddress] = useDraft(browser?.editingAddress ? browser.addressDraft : active ? tabUrl(active) : "", browser?.editingAddress ?? false);
@@ -58,14 +50,14 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
     edit(url ? { tag: "Navigate", url } : { tag: "ExplainEmptyAddress" });
     if (url && document.activeElement instanceof HTMLElement) document.activeElement.blur();
   };
-  const fixWifi = () => void send({ type: "visit", destination: "DeviceSettings" }).then(() => send({ type: "chooseSettingsPage", page: "NetworkSettings" }));
-  const failed = active.load === "LoadFailed" || active.load === "SecurityBlocked";
+  const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
+  const failure = failures[active.load];
 
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
       tabStrip={
         <BrowserTabStrip ref={strip} selectedId={browser.selected}
-          tabs={visibleTabs(browser).map((tab) => ({ id: tab.id, title: tabUrl(tab) === "" ? "New tab" : site(tabUrl(tab)), initial: site(tabUrl(tab)).slice(0, 1).toUpperCase() || undefined }))}
+          tabs={visibleTabs(browser).map((tab) => ({ id: tab.id, title: tabUrl(tab) === "" ? "New tab" : site(tabUrl(tab)), initial: site(tabUrl(tab)).slice(0, 1).toUpperCase() || undefined, pageLoading: tab.load === "Loading" }))}
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
@@ -84,11 +76,10 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           <NewTabPage shortcuts={browser.recent.map((url) => ({ url, title: site(url) }))} onOpenShortcut={(url) => edit({ tag: "Navigate", url })} />
         </OverPage>
       )}
-      {failed && (
+      {failure !== undefined && (
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
-          <BrowserPageState site={site(tabUrl(active))}
-            kind={active.load === "SecurityBlocked" ? "blocked" : workspace.device.connectivity === "Online" ? "failed" : "offline"}
-            onRetry={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onFixWifi={fixWifi} />
+          <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"} labels={{ failed: () => failure }}
+            onRetry={() => edit({ tag: "Reload" })} onFixWifi={() => { if (can(fixWifi)) void send(fixWifi); }} />
         </OverPage>
       )}
       <WebsiteRequests />

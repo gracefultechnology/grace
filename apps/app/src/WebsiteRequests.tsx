@@ -7,7 +7,7 @@ import { OverPage } from "./PageLayer.tsx";
 import { useWebsiteRequests } from "./useApp.ts";
 
 export function site(address: string): string {
-  return URL.parse(address)?.hostname || address;
+  try { return new URL(address).hostname; } catch { return address; }
 }
 
 function devices(kinds: Kinds): string {

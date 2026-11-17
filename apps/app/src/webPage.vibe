@@ -55,6 +55,7 @@ export function webPage() {
         const element = document.createElement("iframe")
         element.dataset.page = id
         element.title = "Website"
+        element.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms", "allow-popups")
         element.hidden = true
         Object.assign(element.style, { position: "fixed", zIndex: "2147483647", border: "0", left: "0", top: "0", width: "0", height: "0" })
         const frame: Frame = { element, history: [url], at: 0, going: undefined, placed: { x: 0, y: 0, width: 0, height: 0 }, routed: undefined }
