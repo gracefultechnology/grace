@@ -4,7 +4,7 @@ import { Option } from "effect";
 import { useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
-import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, rowTag, tabletKey, upcoming } from "../gen/app__calendars.ts";
+import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, tabletKey, upcoming } from "../gen/app__calendars.ts";
 import { type CalendarView, type Event as CalendarEvent, enabled, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
@@ -119,7 +119,8 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
   const act = (box: CalendarInstance, event: CalendarEvent) => () => { if (box.can(event)) void box.send(event); };
   const go = (kind: Parameters<typeof navigation>[1], chosen = today) => act(lead, { type: "navigate", report: navigation(w, kind, chosen) });
   const name = (key: number) => (key === tabletKey ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "");
-  const rows = (from: number, until: number) => dayRows(registry, sources, pending, midnight(from), midnight(until)).sort(byStart);
+  const shownRows = dayRows(registry, sources, pending);
+  const rows = (from: number, until: number) => shownRows.filter((r) => overlaps(r.details, midnight(from), midnight(until))).sort(byStart);
   const item = (r: CalRow): CalendarEventItem => ({
     id: `${r.key}/${r.identity.occurrenceId}`, title: r.details.title, dayLabel: short(dayOf(r.details.startAt), today), startLabel: timeLabel(r.details.startAt),
     who: r.details.participant || undefined, where: r.details.location || undefined, important: r.details.important, draft: r.draft,

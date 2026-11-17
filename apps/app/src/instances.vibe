@@ -16,6 +16,7 @@ schema HeldFile {
 schema HeldContent {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
   readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
+  readonly to: readonly string[]
 }
 schema Held { readonly content: HeldContent; readonly assets?: readonly HeldFile[] }
 

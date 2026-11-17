@@ -182,7 +182,7 @@ function calendarScreen(s: Scene): Part {
   const w = lead(calendars).view.window
   const open = openSelected(registry, calendars)
   const selected = open < 0 ? undefined : entryAt(sourceAt(calendars, open).view, sourceAt(calendars, open).view.selectedId)
-  const rows = dayRows(registry, calendars, pending, w.fromTime, w.untilTime).filter((r) => !r.draft)
+  const rows = dayRows(registry, calendars, pending).filter((r) => !r.draft)
   return {
     lines: [
       `Calendar is open, ${w.mode === "WeekView" ? "week" : "month"} view, ${new Date(w.selectedDay * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" })} selected.`,

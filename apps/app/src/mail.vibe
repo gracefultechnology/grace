@@ -137,7 +137,7 @@ export const mailing = Layer.effect(Mail, effect {
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
       const opened = mail.read(record.identity.ref, after.generation) catch () => undefined
-      if (opened !== undefined) shelf.remember(account.id, opened.content)
+      if (opened !== undefined) shelf.remember(account.id, { content: opened.content, assets: opened.receipt.succeeded ? opened.receipt.assets : undefined })
     }
     const news = told(account.id, before, after).news
     if (news === "SentEmail") {

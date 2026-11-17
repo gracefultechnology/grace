@@ -280,14 +280,14 @@ pure def routeFromMessage(w: World, request: R::Request, account: int, seed: V::
   else if (K::alreadyFrom(w.calendars, source.mailbox.messageRef) or K::pendingFrom(w.pending, source.mailbox.messageRef))
     Refused({ why: AlreadyInCalendar })
   else routeAsk(w, request, P::AddAsk({ target: key, review: review }),
-    K::fromMessageAllowed(w.accounts, w.calendars, source, w.pending, review))
+    K::fromMessageAllowed(w.accounts, w.calendars, w.mail, w.pending, review))
 
 pure def lawEmailAppointmentFollowsTheCalendarRules(w: World, request: R::Request, command: AgentAction): bool =
   val routed = route(w, request, command)
   val asked = match routed { | ToProposal(x) => true | _ => false }
   match command {
     | ProposeFromMessage(x) => asked implies
-        K::fromMessageAllowed(w.accounts, w.calendars, M::sourceOf(w.mail, x.account), w.pending,
+        K::fromMessageAllowed(w.accounts, w.calendars, w.mail, w.pending,
           appointmentReview(w, K::targetCalendar(w.accounts, x.account), x.seed))
     | _ => true
   }
