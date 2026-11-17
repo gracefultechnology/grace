@@ -4,11 +4,9 @@ import { directSignInRequest } from "../gen/app__browserControls.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { NativePage } from "./nativePage.vibe"
 
-export effect function requestedPrivateSignIn(words: string, tab: number, revision: number) {
+export effect function requestedPrivateSignIn(words: string, tab: number, revision: number, workspace: Workspaces.Shape, native: NativePage.Shape) {
   if (!directSignInRequest(words.trim().toLowerCase().replace(/[.!?]+$/, ""))) return false
-  const native = try NativePage
   if (!native.privateSignIn) return false
-  const workspace = try Workspaces
   const now = try workspace.get()
   if (now.device.surface !== "Browser" || now.browser.selected !== tab || now.browser.revision !== revision) return false
   const parsed = URL.parse(tabUrl(activeTab(now.browser)))
