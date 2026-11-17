@@ -7,10 +7,13 @@ provider operations. The prototype is authoritative for the described screens
 and interaction count; the PRD's privacy, user-control and evidence rules still
 apply to its simulated shortcuts.
 
-This audit dates from the models-only phase (13 November 2026). Where it
-differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults),
-the decisions win: no wake detector is installed (decision 5), and the email
-and calendar build, not yet merged, removes Print from Files.
+This audit dates from the models-only phase (13 November 2026). Its source
+lines point into the prototype of that day (2,401 lines, which
+`git show "7007516^:prototype/Grace Prototype.html"` prints); an updated
+prototype replaced it on 16 November 2026. Where it differs from the
+[acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults)
+or the specs, those win: no wake detector is installed (decision 5), and
+Files has no Print, so the print rows below no longer apply.
 
 ## Files: observed screens, data and transitions
 

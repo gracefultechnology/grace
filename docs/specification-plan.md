@@ -1,7 +1,8 @@
 # Grace specification rebuild
 
-This is the plan of the models-only phase, which ended on 15 November 2026.
-The interface, the shell and the Android host are now being built from the
+Up to [Guided tasks across applications](#guided-tasks-across-applications),
+this is the plan of the models-only phase, which ended on 15 November 2026;
+that section and its qualification of 17 November are current. The interface, the shell and the Android host are now being built from the
 spec, and the owner's directions in the
 [acceptance list](implementation-acceptance.md#owner-directions) replace the
 request below: bill payment is the first kind of a general task, set-up and
@@ -22,7 +23,7 @@ Source order for this rebuild:
 
 The legacy source snapshot is `gracefultechnology/grace` at `c6e3fbbc38028ccb53ce05817e06c671d9e21642`, verified against remote `main`. The legacy working checkout is a different branch and is not modified. The snapshot contains 32 Quint files, including a generated capture graph and diagnostic variants that deliberately fail. Their intended safety properties are migration inputs; their failing behavior and fixed simulation bounds are not product requirements.
 
-The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa9454443482d38f5af2d7f4760f31694a9ef4d5ab64f843144294e` (2,401 lines). The PRD remains 2,345 lines, SHA-256 `1dec011b43682026f75525783ceb92758ef6e7ecb76c8f4ff0ae3fe62c030510`.
+The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa9454443482d38f5af2d7f4760f31694a9ef4d5ab64f843144294e` (2,401 lines); commit `7007516` replaced it with the updated prototype on November 16. The PRD remains 2,345 lines, SHA-256 `1dec011b43682026f75525783ceb92758ef6e7ecb76c8f4ff0ae3fe62c030510`.
 
 ## Decisions established by the research
 
