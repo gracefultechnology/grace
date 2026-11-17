@@ -9,13 +9,15 @@ const digit = (value: number) => Math.abs(Math.trunc(value)) % 10;
 const pick = (values: number[], k: number, size: number) => digit(values[k] ?? k) * 11 % size;
 const two = (value: number) => String(value).padStart(2, "0");
 
-const cardNumber = (body: number[], separator: string) => {
+const cardNumber = (body: number[], gaps: string[]) => {
   const sum = body.reduceRight((total, value, k) => {
     const twice = value * 2 > 9 ? value * 2 - 9 : value * 2;
     return total + ((body.length - 1 - k) % 2 === 0 ? twice : value);
   }, 0);
   const digits = [...body, (10 - (sum % 10)) % 10].join("");
-  return [0, 4, 8, 12].map((at) => digits.slice(at, at + 4)).join(separator);
+  const first = gaps[0] ?? " ";
+  const gapAt = (k: number) => (first === "" || first === "\n" || gaps[k] === "" || gaps[k] === "\n" ? first : gaps[k] ?? first);
+  return [4, 8, 12].reduce((card, at, k) => `${card}${gapAt(k)}${digits.slice(at, at + 4)}`, digits.slice(0, 4));
 };
 
 const dayGrid = (values: number[], separator: string) => {
@@ -27,6 +29,7 @@ const dayGrid = (values: number[], separator: string) => {
 
 const date = (values: number[], k: number) => `2026-${two(1 + pick(values, k, 12))}-${two(1 + pick(values, k + 1, 28))}`;
 const amount = (values: number[], k: number) => `${10 + pick(values, k, 9) * 97}.${two(pick(values, k + 1, 100))}`;
+const dialled = (values: number[]) => `${2 + pick(values, 0, 8)}${Array.from({ length: 9 }, (_, k) => digit(values[k + 1] ?? k)).join("")}`;
 const phone = (values: number[], k: number) => `${200 + pick(values, k, 8) * 97}-${555 + pick(values, k + 1, 9)}-${1000 + pick(values, k + 2, 9) * 997}`;
 
 const plainKinds = {
@@ -38,14 +41,21 @@ const plainKinds = {
   years: (values: number[], separator: string) => Array.from({ length: 4 }, (_, k) => String(1990 + pick(values, 0, 9) * 4 + k)).join(separator),
   answers: (values: number[], separator: string) => Array.from({ length: 20 }, (_, k) => String(1 + pick(values, k, 5))).join(separator),
   fraction: (values: number[]) => `0.${Array.from({ length: 16 }, (_, k) => digit(values[k] ?? k)).join("")}`,
+  call: (values: number[]) => `Call ${dialled(values)} to verify your account`,
+  texted: (values: number[]) => `We texted a code to ${dialled(values)}`,
+  meeting: (values: number[]) => `Meeting ID ${phone(values, 0).replaceAll("-", " ")}\nPasscode garden\nAmount: ${amount(values, 3).split(".")[0]}`,
 };
 
 const placements = {
-  before: (cue: string) => ({ lead: `${cue} is `, trail: "" }),
-  after: (cue: string) => ({ lead: "ok ", trail: ` is your ${cue}` }),
-  colon: (cue: string) => ({ lead: `ok use this ${cue} to finish signing in: `, trail: "" }),
-  below: (cue: string) => ({ lead: `ok your ${cue} is below.\n\n`, trail: "\n" }),
-  verb: () => ({ lead: "ok enter ", trail: " to continue" }),
+  before: (cue: string) => `${cue} is #`,
+  after: (cue: string) => `ok # is your ${cue}`,
+  colon: (cue: string) => `ok use this ${cue} to finish signing in: #`,
+  below: (cue: string) => `ok your ${cue} is below.\n\n#\n`,
+  verb: () => "ok enter # to continue",
+  earlier: (cue: string) => `ok they sent me a ${cue}. It's #.`,
+  bold: (cue: string) => `ok your ${cue} is **#**`,
+  list: (cue: string) => `ok your backup ${cue}\n1. #\n2. #\n`,
+  row: (cue: string) => `ok backup ${cue}: # # #`,
 };
 
 const outgoing = Arbitrary.schema(
@@ -54,28 +64,29 @@ const outgoing = Arbitrary.schema(
     passwords: Schema.Array(Schema.String),
     after: Schema.String,
     body: Schema.Array(Schema.Int),
-    separator: Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    "]),
+    gaps: Schema.Array(Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    ", "\u00a0", "\n", "\u200b"])),
+    named: Schema.Literals(["", "card ", "Visa "]),
+    extra: Schema.Literals(["", " 12 27", " 12 2027 123", ",123", "/12/27", " 415 555 0123", " next"]),
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
-    placement: Schema.Literals(["before", "after", "colon", "below", "verb"]),
+    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row"]),
     code: Schema.Array(Schema.Int),
-    kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction"]),
+    kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction", "call", "texted", "meeting"]),
     gap: Schema.Literals([" ", "\t", "\n", "  "]),
     numbers: Schema.Array(Schema.Int),
   }),
 ).pipe(
-  Arbitrary.map(({ before, passwords, after, body, separator, cue, placement, code, kind, gap, numbers }): Outgoing => {
-    const card = cardNumber(Array.from({ length: 15 }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), separator);
+  Arbitrary.map(({ before, passwords, after, body, gaps, named, extra, cue, placement, code, kind, gap, numbers }): Outgoing => {
+    const card = cardNumber(Array.from({ length: 15 }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), [...gaps]);
     const secret = Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)).join("");
     const plain = plainKinds[kind]([...numbers], gap);
-    const head = [`${plain}.`, "ok", before, ...passwords, "ok", ""].join(" ");
-    const { lead, trail } = placements[placement](cue);
-    const middle = `${card} ${lead}`;
-    const tail = `${trail} ${after}`;
+    const head = [`${plain}.`, "ok", before, ...passwords, "ok", named].join(" ");
+    const parts = [card, ...(extra === " next" ? [" ", card] : [extra]), " ", ...placements[placement](cue).split("#").flatMap((part, k) => (k === 0 ? [part] : [secret, part])), ` ${after}`];
+    const starts = parts.map((_, k) => head.length + parts.slice(0, k).join("").length);
     return {
-      text: `${head}${middle}${secret}${tail}`,
+      text: head + parts.join(""),
       passwords: [...passwords],
       plain,
-      secrets: [[head.length, head.length + card.length], [head.length + middle.length, head.length + middle.length + secret.length]],
+      secrets: parts.flatMap((part, k): [number, number][] => (part === card || part === secret ? [[starts[k], starts[k] + part.length]] : [])),
     };
   }),
 );
