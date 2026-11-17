@@ -197,8 +197,11 @@ pure def passwordOwnerChanged(v: PasswordView, by: VaultActor): PasswordView =
   { ...v,
     vault: if (v.vault == ClosedPasswords) ClosedPasswords else CheckingVault,
     generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle, backupReady: false }
-pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool =
-  via == "passwordOwnerChanged" implies not(match after.vault { | OpenVault(_) => true | _ => false }) and after.guide == NoPasswordGuide and not(after.backupReady)
+pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool = {
+  val mode = after.vault
+  val hasOpenVault = match mode { | OpenVault(_) => true | _ => false }
+  via == "passwordOwnerChanged" implies not(hasOpenVault) and after.guide == NoPasswordGuide and not(after.backupReady)
+}
 ```
 
 
