@@ -328,8 +328,9 @@ ended at (`endedAt`, next rule); only a page that loaded keeps the
 connection's security. `finishLoad` is the same report from a host that says
 neither: it keeps the address the load started at and counts the page as not
 secure, so a page finished that way never shows the padlock. The
-[workspace](./workspace.md) passes the adapter's report through
-`finishPageLoad`. A website that asks for a user name and password in the
+[workspace](./workspace.md) is to pass the adapter's report through
+`finishPageLoad`: while it finishes loads with `finishLoad`, no page in the
+application shows the padlock or records where it ended. A website that asks for a user name and password in the
 browser's own sign-in box (HTTP authentication) is not supported: the box is
 cancelled and the website's own refusal page loads as any page does.
 
