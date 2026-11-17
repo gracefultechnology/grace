@@ -1,9 +1,17 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"
+import type { Rect } from "../gen/app__surface.effect.vibe"
 import { NativePage, PageEvent, PageFailed } from "./nativePage.vibe"
 import { type PageId, Url } from "./nativePage.schema.ts"
 import { webView } from "./surfacePlugin.ts"
 
-type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined }
+type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined; placed: Rect; routed: Rect[] | undefined }
+
+const hole = (r: Rect, placed: Rect) => `M${r.x - placed.x} ${r.y - placed.y}h${r.width}v${r.height}h${-r.width}Z`
+
+function clip({ element, placed, routed }: Frame) {
+  element.style.pointerEvents = routed === undefined ? "none" : "auto"
+  element.style.clipPath = routed === undefined || routed.length === 0 ? "" : `path(evenodd, "M0 0H${placed.width}V${placed.height}H0Z${routed.map((r) => hole(r, placed)).join("")}")`
+}
 
 export function webPage() {
   return Layer.effect(NativePage, effect {
@@ -47,20 +55,27 @@ export function webPage() {
         const element = document.createElement("iframe")
         element.dataset.page = id
         element.title = "Website"
-        Object.assign(element.style, { position: "fixed", zIndex: "0", border: "0", left: "0", top: "0", width: "0", height: "0" })
-        const frame: Frame = { element, history: [url], at: 0, going: undefined }
+        element.hidden = true
+        Object.assign(element.style, { position: "fixed", zIndex: "2147483647", border: "0", left: "0", top: "0", width: "0", height: "0" })
+        const frame: Frame = { element, history: [url], at: 0, going: undefined, placed: { x: 0, y: 0, width: 0, height: 0 }, routed: undefined }
+        clip(frame)
         element.addEventListener("load", () => loaded(id, frame))
         frames.set(id, frame)
         go(id, frame, url)
-        document.body.prepend(element)
+        document.body.append(element)
       }),
-      place: (id, page, corners) => on(id, ({ element }) => {
-        Object.assign(element.style, {
+      place: (id, page, corners) => on(id, (frame) => {
+        frame.placed = page
+        clip(frame)
+        Object.assign(frame.element.style, {
           left: `${page.x}px`, top: `${page.y}px`, width: `${page.width}px`, height: `${page.height}px`,
           borderRadius: `${corners.topLeft}px ${corners.topRight}px ${corners.bottomRight}px ${corners.bottomLeft}px`
         })
       }),
-      route: (id) => on(id, () => undefined),
+      route: (id, rects) => on(id, (frame) => {
+        frame.routed = rects
+        clip(frame)
+      }),
       present: (id) => sync(() => { for (const [page, { element }] of frames) element.hidden = page !== id }),
       pause: (id) => on(id, () => undefined),
       resume: (id) => on(id, () => undefined),
