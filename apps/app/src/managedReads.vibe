@@ -45,6 +45,13 @@ export type ManagedWrite =
   | { kind: "appointment"; action: "create"; event: AppointmentEdit }
   | { kind: "appointment"; action: "update"; id: string; version: string; seriesFor?: string; event: AppointmentEdit }
   | { kind: "appointment"; action: "delete"; id: string; version: string; seriesFor?: string }
+export type ProposedWork = { accountId: string; grant: string } & (
+  | { kind: "draft"; recipient: string; subject: string; text: string; replyTo?: string }
+  | { kind: "appointment"; id?: string; version?: string; title: string; start: string; location: string }
+  | { kind: "removeAppointment"; id: string; version: string; series: boolean }
+  | { kind: "trash"; id: string; version: string }
+)
+export type StagedWork = { number: number; proposal: ProposedWork }
 schema Series { accountId: idField; occurrenceId: idField; event: EventRow }
 schema ActionReceipt { accountId: idField; operationId: idField; itemId: idField; version?: string }
 export type WriteReceipt = typeof ActionReceipt.Type
@@ -56,8 +63,8 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type }
-type Calendar = { kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
+type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type }
+type Calendar = { proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
   | { kind: "waiting"; view: ReadView; reason: Waiting }
@@ -66,12 +73,13 @@ export type ManagedSnapshot =
   | Mail
   | Calendar
 
-type Command = { kind: "refresh" | "more" | "back" | "account" | "openHosted" } | { kind: "open"; id: string }
+type Command = { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "dismissProposal" } | { kind: "open"; id: string }
 
 export service ManagedReads {
   readonly state: Stream.Stream<ManagedSnapshot>
   get(): ManagedSnapshot!!
   send(command: Command): boolean!!
+  stage(proposal: ProposedWork): boolean!!
   series(scope: WriteScope, occurrenceId: string): (EventRow | undefined)!!
   change(scope: WriteScope, action: ManagedWrite): (WriteReceipt | undefined)!!
   sendMail(input: { accountId: string; email: string; grant: string; draft: LocalMailDraft; checkOnly: boolean; replyTo?: string }): boolean!!
@@ -144,6 +152,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   const pending = try Ref.make(native ? undefined : (try intentOfPage()))
   const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
   const gate = try Semaphore.make(1)
+  const proposedNumber = try Ref.make(0)
 
   effect function saveIntent(intent: Intent | undefined) {
     try Ref.set(pending, intent)
@@ -230,8 +239,12 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
       (shown.kind === "mail") !== (scope.view === "Email")) return false
+    if (command.kind === "dismissProposal") {
+      try SubscriptionRef.set(latest, { ...shown, proposed: undefined })
+      return true
+    }
     if (command.kind === "back") {
-      try SubscriptionRef.set(latest, shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined } : { ...shown, selected: undefined })
+      try SubscriptionRef.set(latest, shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, proposed: undefined })
       return true
     }
     if (command.kind === "more") {
@@ -243,12 +256,47 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     }
     if (command.kind !== "open" || !shown.rows.some((row) => row.externalId === command.id)) return false
     if (shown.kind === "calendar") {
-      try SubscriptionRef.set(latest, { ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined })
+      try SubscriptionRef.set(latest, { ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
       return true
     }
     const preview = try query("gmail/read?messageId=" + encodeURIComponent(command.id) + (scope.grant ? "&grantId=" + encodeURIComponent(scope.grant) : ""), MailBody, authorization)
     if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) || !(try still(scope))) return false
-    try SubscriptionRef.set(latest, { ...shown, selected: preview })
+    try SubscriptionRef.set(latest, { ...shown, selected: preview, proposed: undefined })
+    return true
+  }
+
+  effect function stage(proposal: ProposedWork) {
+    const scope = try activeScope()
+    const { accountId, grant } = proposal
+    const mail = proposal.kind === "draft" || proposal.kind === "trash"
+    if (scope.kind !== "ready" || scope.accountId !== accountId || scope.grant !== grant ||
+      scope.view !== (mail ? "Email" : "Calendar")) return false
+    const account = try setup.get()
+    const shown = try SubscriptionRef.get(latest)
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== accountId || shown.grant !== grant) return false
+    if (proposal.kind === "draft") {
+      if (shown.kind !== "mail" || account.googleLink.tag !== "GoogleLinkConnected" ||
+        !maySendManagedMail(account.graceAccount, account.googleLink, accountId, grant)) return false
+      if (proposal.replyTo ? shown.selected?.message.externalId !== proposal.replyTo ||
+        shown.selected.reply?.recipient !== proposal.recipient || shown.selected.reply.subject !== proposal.subject : shown.selected !== undefined) return false
+      const email = account.googleLink.email
+      const saved = try localMailDraft(accountId, email, proposal.replyTo)
+      if (saved.operationId || saved.recipient || saved.subject || saved.text) return false
+      try keepMailDraft(accountId, email, { recipient: proposal.recipient, subject: proposal.subject, text: proposal.text }, proposal.replyTo)
+    } else if (proposal.kind === "trash") {
+      if (shown.kind !== "mail" || shown.selected?.message.externalId !== proposal.id || shown.selected.message.metadata?.historyId !== proposal.version ||
+        !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
+    } else {
+      if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange") ||
+        (proposal.id !== undefined && (shown.selected?.externalId !== proposal.id || shown.selected.etag !== proposal.version))) return false
+      if (proposal.kind === "removeAppointment" && proposal.series) {
+        if (!(try series({ accountId, grant }, proposal.id))) return false
+      }
+    }
+    const current = try SubscriptionRef.get(latest)
+    if (!(try still(scope)) || (current.kind !== "mail" && current.kind !== "calendar")) return false
+    const number = try Ref.updateAndGet(proposedNumber, (prior) => prior + 1)
+    try SubscriptionRef.set(latest, { ...current, proposed: { number, proposal } })
     return true
   }
 
@@ -295,7 +343,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (!managedReadMatches(accountId, receipt.accountId, expected, receipt.itemId) || receipt.operationId !== operationId ||
       !(try still(scope))) return undefined
     if (action.kind === "trash" && shown.kind === "mail") {
-      try SubscriptionRef.set(latest, { ...shown, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined })
+      try SubscriptionRef.set(latest, { ...shown, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, proposed: undefined })
     }
     if (action.kind === "undo" || action.kind === "appointment") try refresh(scope)
     return receipt
@@ -351,6 +399,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     state: SubscriptionRef.changes(latest),
     get: () => SubscriptionRef.get(latest),
     send: effect (command) => gate.withPermit(send(command)) catch () => false,
+    stage: effect (proposal) => gate.withPermit(stage(proposal)) catch () => false,
     series: effect (scope, occurrenceId) => gate.withPermit(series(scope, occurrenceId)) catch () => undefined,
     change: effect (scope, action) => gate.withPermit(change(scope, action)) catch () => undefined,
     sendMail: effect (input) => gate.withPermit(sendMail(input)) catch () => false,

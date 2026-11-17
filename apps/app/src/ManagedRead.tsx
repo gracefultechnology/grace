@@ -20,8 +20,8 @@ function start(event: EventRow) {
 
 const managedState = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.state));
 
-function MailDraft({ accountId, email, grant, reply }: {
-  accountId: string; email: string; grant: string; reply?: MailReply & { source: string };
+function MailDraft({ accountId, email, grant, reply, open }: {
+  accountId: string; email: string; grant: string; open?: boolean; reply?: MailReply & { source: string };
 }) {
   const runtime = useRuntime();
   const envelope = reply ? { recipient: reply.recipient, subject: reply.subject } : { recipient: "", subject: "" };
@@ -29,7 +29,7 @@ function MailDraft({ accountId, email, grant, reply }: {
     const saved = runtime.runSync(localMailDraft(accountId, email, reply?.source));
     return reply && !saved.operationId ? { ...saved, ...envelope } : saved;
   });
-  const [step, setStep] = useState<"Inbox" | "Edit" | "Review" | "Uncertain" | "Sent">(draft.operationId ? "Uncertain" : "Inbox");
+  const [step, setStep] = useState<"Inbox" | "Edit" | "Review" | "Uncertain" | "Sent">(draft.operationId ? "Uncertain" : open ? "Edit" : "Inbox");
   const [pending, startTransition] = useTransition();
   const [saveFailed, setSaveFailed] = useState(false);
   const update = (patch: Partial<LocalMailDraft>) => {
@@ -92,20 +92,24 @@ function dateInput(time: Date) {
   return new Date(time.getTime() - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-function AppointmentEditor({ event, seriesFor, write, pending, close }: {
+function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending, close }: {
   event?: EventRow;
   seriesFor?: string;
+  proposal?: { title: string; start: string; location: string };
+  remove?: boolean;
   write: (command: ManagedWrite) => void;
   pending: boolean;
   close: () => void;
 }) {
   const [draft, setDraft] = useState<AppointmentDraft>(() => ({
-    title: event?.title ?? "",
-    start: event?.isAllDay ? event.startAt : dateInput(event ? new Date(event.startAt) : new Date()),
-    end: event?.isAllDay ? event.endAt : dateInput(event ? new Date(event.endAt) : new Date(Date.now() + 3600000)),
-    location: event?.location ?? "",
+    title: proposal?.title ?? event?.title ?? "",
+    start: proposal?.start ?? (event?.isAllDay ? event.startAt : dateInput(event ? new Date(event.startAt) : new Date())),
+    end: proposal
+      ? dateInput(new Date(new Date(proposal.start).getTime() + (event ? Date.parse(event.endAt) - Date.parse(event.startAt) : 3600000)))
+      : event?.isAllDay ? event.endAt : dateInput(event ? new Date(event.endAt) : new Date(Date.now() + 3600000)),
+    location: proposal?.location ?? event?.location ?? "",
   }));
-  const [review, setReview] = useState<"save" | "delete">();
+  const [review, setReview] = useState<"save" | "delete" | undefined>(remove ? "delete" : undefined);
   const update = (field: keyof AppointmentDraft, value: string) => setDraft((previous) => ({ ...previous, [field]: value }));
   const start = new Date(draft.start);
   const end = new Date(draft.end);
@@ -197,7 +201,10 @@ export function ManagedRead({ view }: { view: ReadView }) {
     setWriteNotice(undefined);
     const out = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.change({ accountId, grant }, action)));
     const receipt = Exit.isSuccess(out) ? out.value : undefined;
-    if (action.kind === "appointment") setEditor(undefined);
+    if (action.kind === "appointment") {
+      setEditor(undefined);
+      await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.send({ kind: "dismissProposal" })));
+    }
     const text = !receipt ? "Grace couldn’t confirm that change. Refresh to check what Google saved."
       : action.kind === "trash" ? "Moved to Trash."
         : action.kind === "undo" ? "Message restored."
@@ -247,6 +254,9 @@ export function ManagedRead({ view }: { view: ReadView }) {
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;
+    const suggested = snapshot.proposed?.proposal;
+    const draft = suggested?.kind === "draft" ? snapshot.proposed : undefined;
+    const trash = suggested?.kind === "trash" && suggested.id === selected?.message.externalId;
     return selected ? (
       <section data-sensitive="true" className="flex flex-col items-start gap-4">
         {back}
@@ -254,13 +264,13 @@ export function ManagedRead({ view }: { view: ReadView }) {
         {canTrash && selected.message.metadata?.historyId && <Button variant="warn" size="pill" loading={pending} onClick={() => {
           const version = selected.message.metadata?.historyId;
           if (version) write({ kind: "trash", id: selected.message.externalId, version });
-        }}>Move to Trash</Button>}
+        }}>{trash ? "Confirm move to Trash" : "Move to Trash"}</Button>}
         <PageHeading>{selected.message.subject || "No subject"}</PageHeading>
         <PageText>{selected.message.from || "Unknown sender"}</PageText>
         <PageText tone="secondary">{day(selected.message.receivedAt)}</PageText>
         <PageText className="w-full whitespace-pre-wrap">{selected.bodyTextAvailable ? selected.bodyText : "This email has no plain-text preview."}</PageText>
         {selected.reply && signedIn && link?.tag === "GoogleLinkConnected" && maySendManagedMail(signedIn, link, snapshot.accountId, grant) && (
-          <MailDraft key={JSON.stringify([accountId, grant, selected.message.externalId])} accountId={accountId} email={link.email}
+          <MailDraft key={JSON.stringify([accountId, grant, selected.message.externalId, draft?.number])} open={draft !== undefined} accountId={accountId} email={link.email}
             grant={grant} reply={{ ...selected.reply, source: selected.message.externalId }} />
         )}
       </section>
@@ -270,7 +280,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
         {showNotice}
         {signedIn && account?.googleLink.tag === "GoogleLinkConnected" &&
           maySendManagedMail(signedIn, account.googleLink, snapshot.accountId, account.googleLink.grant) && (
-          <MailDraft key={JSON.stringify([snapshot.accountId, account.googleLink.email, account.googleLink.grant])}
+          <MailDraft key={JSON.stringify([snapshot.accountId, account.googleLink.email, account.googleLink.grant, draft?.number])} open={draft !== undefined}
             accountId={snapshot.accountId} email={account.googleLink.email} grant={account.googleLink.grant} />
         )}
         {snapshot.rows.length === 0 && <EmptyState title="Your inbox is empty." />}
@@ -284,6 +294,18 @@ export function ManagedRead({ view }: { view: ReadView }) {
     );
   }
 
+  const staged = snapshot.proposed;
+  if (canSchedule && staged) {
+    const suggestion = staged.proposal;
+    if (suggestion.kind === "appointment" || suggestion.kind === "removeAppointment") {
+      const series = suggestion.kind === "removeAppointment" && suggestion.series ? suggestion.id : undefined;
+      const target = series ? snapshot.series : suggestion.id ? snapshot.selected : undefined;
+      return <section data-sensitive="true">
+        <AppointmentEditor key={staged.number} event={target} seriesFor={series} remove={suggestion.kind === "removeAppointment"}
+          proposal={suggestion.kind === "appointment" ? suggestion : undefined} write={write} pending={pending} close={() => run({ kind: "dismissProposal" })} />
+      </section>;
+    }
+  }
   if (canSchedule && exact) return <section data-sensitive="true">
     <AppointmentEditor event={exact.event} seriesFor={exact.seriesFor} write={write} pending={pending} close={() => setEditor(undefined)} />
   </section>;

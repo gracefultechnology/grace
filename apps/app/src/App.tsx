@@ -1,10 +1,10 @@
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
-import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
 import { CalendarDays, Folder, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
-import { muteChoice, volumeChoice } from "../gen/app__preferences.ts";
+import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
@@ -115,7 +115,7 @@ function Screen() {
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
-    <div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+    <TextScale percent={textScalePercent(volume)}><div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
@@ -163,7 +163,8 @@ function Screen() {
         </OverPage>
       )}
       <Grace onHeightChange={setGraceHeight} />
-    </div>
+      {volume.brightness < 100 && <div aria-hidden className="pointer-events-none fixed inset-0 z-50 bg-foreground" style={{ opacity: (100 - volume.brightness) / 100 }} />}
+    </div></TextScale>
   );
 }
 

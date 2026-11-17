@@ -5,6 +5,7 @@ import type { Connectivity } from "../gen/app__shell.effect.vibe"
 import { machine as setup } from "../gen/app__setup.effect.vibe"
 import { graceAccount } from "./graceAccount.vibe"
 import { managedReads } from "./managedReads.vibe"
+import { replyControls } from "./replyControls.vibe"
 import { graceTurns } from "./graceTurns.vibe"
 import { graceSpeech } from "./graceSpeech.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
@@ -67,6 +68,8 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 
 /** Everything the interface runs on, over `plugin`, the native page's, and `wifi`, where the platform has them. */
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, platform: { native: boolean; agent?: EmbeddedAgent } = { native: false }) {
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), graceAccount(platform.native), graceTurns(platform.agent), graceSpeech(platform.native)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), setup()))
-  return Layer.provideMerge(managedReads(platform.native), shell)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), graceAccount(platform.native), graceSpeech(platform.native)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), setup()))
+  const managed = Layer.provideMerge(managedReads(platform.native), shell)
+  const controlled = Layer.provideMerge(replyControls(platform.native), managed)
+  return Layer.provideMerge(graceTurns(platform.agent), controlled)
 }

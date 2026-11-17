@@ -414,7 +414,7 @@ it("Use the website under Grace's controls", async () => {
 });
 
 
-it('Send a typed turn through the native agent (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+it(`Send a typed turn through the native agent and use a control (spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   const listeners = new Map<string, (input: unknown) => void>();
   const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
   const stopped: string[] = [];
@@ -461,11 +461,20 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await expect.poll(() => requests[1]?.body).toEqual({ text: "Tell me more" });
     await act(() => {
       const next = requests[1].id;
-      data(next, { type: "done", fullText: "I can talk with you." });
+      data(next, { type: "done", fullText: JSON.stringify({
+        text: "I can talk with you.", isQuestion: false, answers: [],
+        actions: [{ kind: "open", surface: "Calendar" }, { kind: "confirmAppointment" }],
+      }) });
       listeners.get("streamEnd")?.({ id: next, status: 200 });
       return Promise.resolve();
     });
     await expect.element(page.getByText("I can talk with you.", { exact: true })).toBeVisible();
+    expect(runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.surface).toBe("Home");
+    await expect.element(page.getByText("Grace can’t complete that action here.")).toBeVisible();
+    expect(page.getByRole("button", { name: /Confirm appointment/ }).query()).toBeNull();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Open Calendar", exact: true })));
+    await expect.element(page.getByRole("button", { name: "Close Calendar" })).toBeVisible();
+    expect(page.getByRole("button", { name: "Open Calendar", exact: true }).query()).toBeNull();
 
     await act(() => userEvent.type(input, "My password is c0mputer{Enter}"));
     await expect.poll(() => state().messages.at(-1)?.text).toBe("[Private information removed]");

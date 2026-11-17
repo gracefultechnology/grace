@@ -11,12 +11,13 @@ import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.t
 import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import type { ManagedReads } from "./managedReads.vibe";
 import type { AccountActions } from "./graceAccount.vibe";
+import type { ReplyControls } from "./replyControls.vibe";
 import type { SpeechActions } from "./graceSpeech.vibe";
 import { Keyboard } from "./app.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | SpeechActions, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | SpeechActions | ReplyControls, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 

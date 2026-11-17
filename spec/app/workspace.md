@@ -1315,3 +1315,38 @@ pure val tokenValues = Set(-1, 2)
 pure val destinationValues = Set(S::Browser, S::Home, S::DeviceSettings)
 pure val lifecycleValues = Set(StartupSucceeded)
 ```
+
+## Story: Open an available control from Grace's reply
+
+> As a person, I can choose a control Grace offers for my current request.
+> I see the available action before it runs, and I review drafts and
+> appointment changes before anything is sent or saved.
+
+### A reply offers controls for its current turn and visible context
+
+An offer identifies its exact turn, device surface, browser revision and
+preference revision. A newer turn, closed Grace window, or changed context
+retires the offer. Navigation, browser controls, preference previews and
+owned reads use the same rules as their visible controls. Opening a draft or
+appointment review never authorizes delivery, saving, removal, or a website
+submission. An action without a current supported path is not shown as
+completed.
+
+```quint
+type ReplyControlContext = { generation: int, device: int, browser: int, preferences: int }
+pure val replyValues = Set(
+  { generation: 0, device: 0, browser: 0, preferences: 0 },
+  { generation: 1, device: 0, browser: 0, preferences: 0 },
+  { generation: 1, device: 1, browser: 1, preferences: 1 })
+
+pure def replyControlContext(w: Workspace): ReplyControlContext =
+  { generation: w.assistant.conversation.generation, device: w.device.contextVersion,
+    browser: w.browser.revision, preferences: w.preferences.revision }
+pure def replyControlsCurrent(w: Workspace, reply: ReplyControlContext): bool =
+  w.device.readiness == S::Ready and w.assistant.presentation != A::Closed and
+  w.assistant.conversation.turn != C::Thinking and
+  reply.generation == w.assistant.conversation.generation and reply.device == w.device.contextVersion and
+  reply.browser == w.browser.revision and reply.preferences == w.preferences.revision
+pure def lawReplyControlStaleTurn(w: Workspace, reply: ReplyControlContext): bool =
+  reply.generation != w.assistant.conversation.generation implies not(replyControlsCurrent(w, reply))
+```

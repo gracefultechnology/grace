@@ -3,6 +3,7 @@ import { audible } from "../gen/app__preferences.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { withhold } from "./private.ts"
+import { ReplyControls } from "./replyControls.vibe"
 import { Reply } from "./reply.schema.ts"
 import { webView } from "./surfacePlugin.ts"
 
@@ -76,6 +77,7 @@ effect function finalReply(plugin: EmbeddedAgent, conversation: typeof Creation.
 export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDiscard(effect {
   if (plugin === undefined) return
   const workspace = try Workspaces
+  const controls = try ReplyControls
   const opened = try Ref.make<typeof Creation.Type.data.conversation | undefined>(undefined)
 
   effect function setReady(raw: unknown) {
@@ -104,7 +106,9 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
     return state.device.reasoningAvailable && conversation.turn === "Thinking" ? conversation.generation : -1
   }))
   try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(effect {
-    const { messages } = (try workspace.get()).assistant.conversation
+    const scene = try workspace.get()
+    const request = try controls.capture()
+    const { messages } = scene.assistant.conversation
     const index = messages.length - 1
     const message = messages[index]
     if (message === undefined || message.author !== "HumanMessage") return
@@ -119,14 +123,16 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       if (current === undefined) try Ref.set(opened, conversation)
       const raw = try finalReply(plugin, conversation, text)
       const reply = try Schema.decodeUnknownEffect(Reply)(raw)
-      if (reply.actions.length > 0) throw new TurnUnavailable()
       const safe = try Effect.orDie(Effect.try(() => withhold({ text: reply.text, passwords: [] })))
       const choicesSafe = try Effect.orDie(Effect.try(() => reply.answers.every((answer) => withhold({ text: answer, passwords: [] }) === answer)))
       const shouldSpeak = audible((try workspace.get()).preferences.session)
-      workspace.send({
-        type: "interact",
-        input: { tag: "Respond", token, text: safe, isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak },
-      }, "Host") catch () => undefined
+      try Effect.uninterruptible(effect {
+        try workspace.send({
+          type: "interact",
+          input: { tag: "Respond", token, text: safe, isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak },
+        }, "Host")
+        if (safe === reply.text) try controls.offer(request, reply.actions)
+      })
     } catch effect () => {
       workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: "Grace couldn’t answer just now. Please try again." } }, "Host") catch () => undefined
     }
