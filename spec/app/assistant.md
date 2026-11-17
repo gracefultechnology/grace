@@ -485,10 +485,7 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 ### Hidden assistance is quiet and every task status has its necessary context
 
 ```quint
-pure def alwaysConversationRules(a: Assistant): bool =
-  C::alwaysListeningHasAnActiveExchange(a.conversation) and C::alwaysRecognitionRetriesAreBounded(a.conversation) and
-  C::alwaysReadingPositionExists(a.conversation) and C::alwaysGenerationsAreNonnegative(a.conversation) and
-  C::alwaysMessagesHaveContent(a.conversation)
+pure def alwaysConversationRules(a: Assistant): bool = C::validConversation(a.conversation)
 pure def alwaysHiddenIsQuiet(a: Assistant): bool =
   a.presentation == Closed implies not(a.conversation.voice) and a.conversation.turn == C::Ready and
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)
@@ -528,4 +525,21 @@ pure def sometimesReopenedOverInterruptedWork(a: Assistant): bool =
 pure val weight_publishGuidance = 10
 pure val weight_dismissGuidance = 10
 pure val weight_showGuidance = 10
+```
+
+### An assistant is valid when it meets every rule above
+
+`validAssistant` gathers every `always` rule of this spec in one place, so
+that the [interaction dispatcher](./interaction.md) and the
+[workspace](./workspace.md), which holds the assistant, require the whole
+list and gain each new rule without keeping a copy of their own. Whoever
+adds an `always` rule here adds it to `validAssistant` too.
+
+```quint
+pure def validAssistant(a: Assistant): bool =
+  alwaysGraceWorksOnlyOnTheVisiblePage(a) and alwaysGuidanceIsNotAhead(a) and
+  alwaysDoneMeansVerifiedCompletion(a) and alwaysConversationRules(a) and alwaysHiddenIsQuiet(a) and
+  alwaysTaskContextExists(a) and alwaysOperationsBelongToWorkingTasks(a) and
+  alwaysOnlyVerifiedEndpointsClaimCompletion(a) and alwaysConversationOffersAndInterruptions(a) and
+  alwaysReplacementIsComplete(a)
 ```

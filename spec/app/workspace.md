@@ -107,14 +107,14 @@ pure def mayAssist(w: Workspace): bool =
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
 pure def observationIsCurrent(w: Workspace): bool =
   w.observedDevice == w.device.contextVersion and w.observedBrowser == w.browser.revision
-pure def quietAssistant(a: A::Assistant): A::Assistant =
-  if (A::unfinished(a)) A::pause(a, C::ConversationRuntime)
-  else if (A::canQuiet(a, C::ConversationRuntime)) A::quiet(a, C::ConversationRuntime) else a
-pure def quietExecution(x: X::Execution): X::Execution =
-  if (X::canPause(x, X::BrowserBridge)) X::pause(x, X::BrowserBridge) else x
-pure def quietPayment(p: P::Payment): P::Payment =
-  if (P::canStop(p, P::BrowserHost)) P::stop(p, P::BrowserHost)
-  else if (P::canInvalidate(p, P::BrowserHost)) P::invalidate(p, P::BrowserHost) else p
+pure def quietAssistant(assistant: A::Assistant): A::Assistant =
+  if (A::unfinished(assistant)) A::pause(assistant, C::ConversationRuntime)
+  else if (A::canQuiet(assistant, C::ConversationRuntime)) A::quiet(assistant, C::ConversationRuntime) else assistant
+pure def quietExecution(execution: X::Execution): X::Execution =
+  if (X::canPause(execution, X::BrowserBridge)) X::pause(execution, X::BrowserBridge) else execution
+pure def quietPayment(payment: P::Payment): P::Payment =
+  if (P::canStop(payment, P::BrowserHost)) P::stop(payment, P::BrowserHost)
+  else if (P::canInvalidate(payment, P::BrowserHost)) P::invalidate(payment, P::BrowserHost) else payment
 pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Workspace =
   val leavesSurface = device.surface != w.device.surface or device.readiness != S::Ready
   val assistant = quietAssistant(w.assistant)
@@ -128,27 +128,11 @@ pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Works
   }
 pure def alwaysDeviceRules(w: Workspace): bool =
   S::alwaysContextVersionIsNonnegative(w.device) and S::alwaysReturnDestinationIsAnApplication(w.device)
-pure def alwaysBrowserRules(w: Workspace): bool =
-  B::alwaysTabsAreWellFormed(w.browser) and B::alwaysTabIdentifiersAreUnique(w.browser) and
-  B::alwaysSelectedTabExists(w.browser) and B::alwaysBrowserCountersAreValid(w.browser) and
-  B::alwaysRecentDestinationsAreDistinct(w.browser)
-pure def alwaysAssistantRules(w: Workspace): bool =
-  A::alwaysConversationRules(w.assistant) and A::alwaysHiddenIsQuiet(w.assistant) and
-  A::alwaysTaskContextExists(w.assistant) and A::alwaysOperationsBelongToWorkingTasks(w.assistant) and
-  A::alwaysOnlyVerifiedEndpointsClaimCompletion(w.assistant) and A::alwaysReplacementIsComplete(w.assistant)
-pure def alwaysExecutionRules(w: Workspace): bool =
-  X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
-  X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
-  X::alwaysNoExhaustedApproachQueued(w.execution)
-pure def validPayment(p: P::Payment): bool =
-  P::alwaysIdentity(p) and P::alwaysProposal(p) and P::alwaysCounters(p) and
-  P::alwaysWindow(p) and P::alwaysAuthorization(p) and P::alwaysResult(p) and
-  P::alwaysSubmissionStage(p) and P::alwaysResolved(p) and P::alwaysUnsubmittedStage(p) and
-  P::alwaysDurableWindow(p) and P::alwaysDurableConfirmation(p) and
-  P::alwaysReviewHasEvidence(p) and P::alwaysAttemptHasEvidence(p) and P::alwaysDurableOutcomeHasAttempt(p)
+pure def alwaysBrowserRules(w: Workspace): bool = B::validBrowser(w.browser)
+pure def alwaysAssistantRules(w: Workspace): bool = A::validAssistant(w.assistant)
+pure def alwaysExecutionRules(w: Workspace): bool = X::validExecution(w.execution)
 pure def alwaysPaymentRules(w: Workspace): bool =
-  validPayment(w.payment) and w.otherPayments.every(p => validPayment(p))
+  P::validPayment(w.payment) and w.otherPayments.every(record => P::validPayment(record))
 pure def alwaysPaymentRegistryIsCanonical(w: Workspace): bool =
   w.otherPayments.every(p => p.stage != P::Empty and not(p.live) and not(p.fresh) and not(p.readBack) and
     (w.payment.stage == P::Empty or p.key != w.payment.key) and
@@ -163,8 +147,7 @@ pure def matchingPayment(w: Workspace): bool =
   w.payment.key.owner == w.execution.owner and w.payment.key.origin == w.execution.origin
 pure def currentPaymentContext(w: Workspace): bool =
   mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
-  matchingPayment(w) and w.execution.matchedAccount == w.payment.key.account and
+  not(w.execution.privateInput) and matchingPayment(w) and w.execution.matchedAccount == w.payment.key.account and
   w.execution.matchedAccount != "" and w.paymentTask == w.assistant.taskId
 pure def alwaysPaymentAssociation(w: Workspace): bool =
   w.paymentTask != "" implies w.payment.stage != P::Empty and w.paymentTask == w.assistant.taskId
@@ -191,13 +174,10 @@ pure def alwaysOperationHasVisibleTask(w: Workspace): bool =
   iff w.assistant.activity == A::DoingWork
 pure def alwaysEvidenceVersionsAreNonnegative(w: Workspace): bool =
   w.observedDevice >= 0 and w.observedBrowser >= 0
-pure def alwaysWakeRules(w: Workspace): bool =
-  W::alwaysWakeCounters(w.wake) and W::alwaysActiveWakeHasDeadline(w.wake)
+pure def alwaysWakeRules(w: Workspace): bool = W::validWake(w.wake)
 pure def alwaysActiveWakePausesWebsiteWork(w: Workspace): bool =
   w.wake.phase != W::Dormant implies w.execution.phase == X::Idle or w.execution.phase == X::Paused
-pure def alwaysPreferencesRules(w: Workspace): bool =
-  R::alwaysSettingsAreValid(w.preferences) and R::alwaysVersionsAreOrdered(w.preferences) and
-  R::alwaysPendingSaveHasAVersion(w.preferences)
+pure def alwaysPreferencesRules(w: Workspace): bool = R::validPreferences(w.preferences)
 ```
 
 ### Device changes and permission changes stop work before the new context is used
@@ -234,11 +214,11 @@ pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceAct
     | WakeDevice => S::canWake(w.device)
     | RestartDevice => true
   }
-pure def restartedAssistant(a: A::Assistant): A::Assistant = {
-  ...A::initial, workVersion: a.workVersion + 1,
-  guidance: { ...A::noGuidance, revision: a.guidance.revision + 1 },
-  conversation: { ...C::initial, generation: a.conversation.generation + 1,
-    draftRevision: a.conversation.draftRevision + 1 }
+pure def restartedAssistant(assistant: A::Assistant): A::Assistant = {
+  ...A::initial, workVersion: assistant.workVersion + 1,
+  guidance: { ...A::noGuidance, revision: assistant.guidance.revision + 1 },
+  conversation: { ...C::initial, generation: assistant.conversation.generation + 1,
+    draftRevision: assistant.conversation.draftRevision + 1 }
 }
 pure def pausedLifecycle(device: S::Shell, closeAfterPause: bool, w: Workspace): Workspace =
   val stopped = interrupted(device, w.browser, w)
@@ -392,24 +372,27 @@ observation, preparation and completion wait while the conversation is
 Thinking or has an unanswered question, so an old task cannot act before a
 correction has been interpreted and any needed clarification answered.
 A fully classified payment approval uses its separate atomic route below.
+The assistant's own `supersede` is the one fence for submitted content; the
+workspace applies it again only for a geometry change. Whether a reply or a
+Repeat is spoken follows the person's actual voice output, volume and mute
+setting, whatever the host sent.
 
 ```quint
-
+pure def withVoiceOutput(input: I::Interaction, w: Workspace): I::Interaction =
+  I::withAudible(input, R::audible(w.preferences.session))
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and
   (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
-  I::canInteract(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime)
+  I::canInteract(w.assistant, withVoiceOutput(input, w), if (by == Person) C::ConversationUser else C::ConversationRuntime)
 pure def afterInteraction(changed: A::Assistant, geometry: bool, content: bool, w: Workspace): Workspace = {
   val fencesTask = content or geometry
   val browser = if (geometry and w.browser.editingAddress and changed.keyboard != A::WebsiteKeyboard)
     B::dismissAddress(w.browser) else w.browser
   {
     ...w,
-    assistant: if (fencesTask and A::unfinished(changed) and changed.activity != A::Paused and
-      (content or changed.activity != A::UserWait))
-      { ...changed, activity: A::Rechecking, operation: "", workVersion: changed.workVersion + 1 } else changed,
+    assistant: if (geometry and not(content)) A::supersede(true, changed) else changed,
     execution: if (fencesTask and X::canInvalidate(w.execution, X::BrowserBridge))
       X::invalidate(w.execution, X::BrowserBridge) else w.execution,
     payment: if (fencesTask and P::canInvalidate(w.payment, P::BrowserHost))
@@ -419,8 +402,9 @@ pure def afterInteraction(changed: A::Assistant, geometry: bool, content: bool, 
   }
 }
 pure def interact(w: Workspace, input: I::Interaction, by: WorkspaceActor): Workspace =
-  afterInteraction(I::interact(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime),
-    I::changesGeometry(input), I::submitsContent(input), w)
+  val heard = withVoiceOutput(input, w)
+  afterInteraction(I::interact(w.assistant, heard, if (by == Person) C::ConversationUser else C::ConversationRuntime),
+    I::changesGeometry(heard), I::submitsContent(heard), w)
 pure def lawGeometryDoesNotAnswerForThePerson(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   w.assistant.activity == A::UserWait and canInteract(w, input, by) and
   I::changesGeometry(input) and not(I::submitsContent(input))
@@ -569,10 +553,10 @@ active, website execution is idle or paused. Starting or resuming website work
 cancels that wake exchange before its timer can hide Grace.
 
 ```quint
-pure def priorWindow(a: A::Assistant): W::PriorWindow =
-  if (a.presentation == A::Closed) W::WasClosed else if (a.presentation == A::Compact) W::WasCompact else W::WasExpanded
-pure def wakeWindow(a: A::Assistant, presentation: A::Presentation): A::Assistant =
-  { ...a, keyboard: A::NoKeyboard, presentation: presentation }
+pure def priorWindow(assistant: A::Assistant): W::PriorWindow =
+  if (assistant.presentation == A::Closed) W::WasClosed else if (assistant.presentation == A::Compact) W::WasCompact else W::WasExpanded
+pure def wakeWindow(assistant: A::Assistant, presentation: A::Presentation): A::Assistant =
+  { ...assistant, keyboard: A::NoKeyboard, presentation: presentation }
 pure def listeningAfterWake(w: Workspace): A::Assistant =
   val paused = quietAssistant(w.assistant)
   val presentation = if (A::isVisible(paused)) paused.presentation else if (w.device.surface == S::Home) A::Expanded else A::Compact
@@ -595,7 +579,7 @@ pure def detectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActo
 }
 pure def canWakeNoSpeech(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): bool =
   by == Host and W::canNoSpeech(w.wake, timer, W::WakeHost) and A::isVisible(w.assistant) and
-  C::canWakeSilence(w.assistant.conversation, timer.conversationVersion, C::ConversationRuntime)
+  C::canSilence(w.assistant.conversation, timer.conversationVersion, C::ConversationRuntime)
 pure def wakeNoSpeech(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): WorkspaceResult = {
   state: { ...w, wake: W::noSpeech(w.wake, timer, W::WakeHost).state,
     assistant: { ...w.assistant, conversation: C::wakeSilence(w.assistant.conversation, timer.conversationVersion, C::ConversationRuntime) } },
@@ -948,8 +932,7 @@ its owning machine; event input cannot assign an arbitrary payment state.
 ```quint
 pure def canBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
   by == Person and mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
-  key.owner == w.execution.owner and key.origin == w.execution.origin and key.account == w.execution.matchedAccount and
+  not(w.execution.privateInput) and key.owner == w.execution.owner and key.origin == w.execution.origin and key.account == w.execution.matchedAccount and
   w.paymentTask == "" and P::validKey(key)
 pure def lawMismatchedAccountCannotBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
   key.account != w.execution.matchedAccount implies not(canBindPayment(w, key, by))
@@ -1163,28 +1146,30 @@ an ordinary step has the weight of the other website callbacks: ordinary
 completion needs one exact eleven-event path, which a rarer preparation
 almost never completes within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
-a later visit advances the context. Separate guarded traces cover permission,
-startup-failure and restart variants.
+a later visit advances the context. Walks also go offline, lose the
+microphone, fail to start and retry, sleep and wake, restart, and visit every
+application, so the interruption rules are exercised and not only proved.
+The laws are evaluated on the states the walks reach, not on fixed samples.
 
 ```quint
 pure val availabilityValues = Set(
-  { connection: S::Online, reasoning: true, microphone: true, observation: true })
-pure val aValues = Set(A::initial,
+  { connection: S::Online, reasoning: true, microphone: true, observation: true },
+  { connection: S::Offline, reasoning: false, microphone: true, observation: true },
+  { connection: S::Online, reasoning: true, microphone: false, observation: true })
+pure val assistantValues = Set(A::initial,
   A::pause(A::beginTask(A::open(A::initial, C::ConversationUser),
     "task", "Read the account", C::ConversationUser), C::ConversationUser))
-pure val changedValues = aValues
+pure val changedValues = assistantValues
 pure val preferencesValues = Set(R::initial)
 pure val preferenceEffectValues = Set(R::PlaySample({ pace: R::Normal, volume: 60, muted: false }))
-pure val xValues = Set(X::initial,
+pure val executionValues = Set(X::initial,
   X::pause(X::start(X::initial, "owner", "task", "https://utility.example", X::User), X::User))
-pure val pValues = Set(P::initial, P::bind(P::initial, P::exampleKey, P::Person))
-pure val paymentValues = pValues
-pure val priorPaymentValues = pValues
-pure val restoredPaymentValues = pValues
+pure val paymentValues = Set(P::initial, P::bind(P::initial, P::exampleKey, P::Person))
+pure val priorPaymentValues = paymentValues
+pure val restoredPaymentValues = paymentValues
 pure val recordsValues = Set(List(), List(P::bind(P::initial, P::exampleKey, P::Person)))
 pure val deviceValues = Set(S::initial, S::finishStartup(S::initial, true))
 pure val browserValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
-pure val wValues = Set(initial)
 pure val detectionValues = Set(
   { ...W::exampleDetection, generation: 2, conversationVersion: 1 },
   { ...W::exampleDetection, generation: 3, conversationVersion: 1 },
@@ -1312,6 +1297,6 @@ pure val weight_detectWake = 8
 pure val weight_wakeNoSpeech = 8
 pure val weight_wakeReturn = 8
 pure val tokenValues = Set(-1, 2)
-pure val destinationValues = Set(S::Browser, S::Home, S::DeviceSettings)
-pure val lifecycleValues = Set(StartupSucceeded)
+pure val destinationValues = Set(S::Home, S::Calendar, S::Email, S::Browser, S::Files, S::DeviceSettings)
+pure val lifecycleValues = Set(StartupSucceeded, StartupFailed, RetryStartup, SleepDevice, WakeDevice, RestartDevice)
 ```

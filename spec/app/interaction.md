@@ -17,7 +17,8 @@ their original actor checks. Runtime text is never a user choice. A complete
 human utterance keeps its audio provenance and current generation. Open,
 Close, Talk, privacy removal, task replacement and a new conversation have
 their own coordinated workspace routes. Pause and Resume act on Grace's
-speech only; stopping the website task is the workspace's Stop.
+speech only; stopping the website task is the workspace's Stop. Every
+allowed interaction keeps every rule of the assistant.
 
 ```quint
 import assistant as A from "./assistant"
@@ -84,12 +85,8 @@ pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor)
   | Silence(data) => A::silence(a, data.token, by)
   | UnusableSpeech(data) => A::unusableSpeech(a, data.token, data.owner, by)
 }
-pure def validAssistant(a: A::Assistant): bool =
-  A::alwaysConversationRules(a) and A::alwaysHiddenIsQuiet(a) and
-  A::alwaysTaskContextExists(a) and A::alwaysOperationsBelongToWorkingTasks(a) and
-  A::alwaysOnlyVerifiedEndpointsClaimCompletion(a) and A::alwaysReplacementIsComplete(a)
 pure def lawInteractionPreservesAssistant(a: A::Assistant, input: Interaction, by: C::ConversationActor): bool =
-  validAssistant(a) and canInteract(a, input, by) implies validAssistant(interact(a, input, by))
+  A::validAssistant(a) and canInteract(a, input, by) implies A::validAssistant(interact(a, input, by))
 ```
 
 ### The workspace can distinguish new requests, changed geometry and local reading

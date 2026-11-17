@@ -216,3 +216,17 @@ pure def retire(x: Execution, by: ExecutionActor): Execution =
 pure def stepRetirementClearsTargets(before: Execution, via: str, after: Execution): bool =
   via == "retire" implies after.phase == Idle and after.target == "" and after.valueRef == "" and after.generation > before.generation
 ```
+
+### A website controller is valid when it meets every rule above
+
+`validExecution` gathers every `always` rule of this spec in one place, so
+that the [workspace](./workspace.md), which holds the website controller,
+requires the whole list and gains each new rule without keeping a copy of
+its own. Whoever adds an `always` rule here adds it to `validExecution` too.
+
+```quint
+pure def validExecution(x: Execution): bool =
+  alwaysIdentity(x) and alwaysGenerations(x) and alwaysObservedContextExists(x) and alwaysPrepared(x) and
+  alwaysExplainedBlock(x) and alwaysFailureCount(x) and alwaysFailedApproachIsConcrete(x) and
+  alwaysNoExhaustedApproachQueued(x)
+```

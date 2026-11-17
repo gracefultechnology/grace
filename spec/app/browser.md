@@ -414,3 +414,17 @@ pure def alwaysRecentDestinationsAreDistinct(b: Browser): bool =
 pure def stepRevisionNeverMovesBack(before: Browser, after: Browser): bool = after.revision >= before.revision
 pure def sometimesRecentWebsiteExists(b: Browser): bool = b.recent.length() > 0
 ```
+
+### A browser is valid when it meets every rule above
+
+`validBrowser` gathers every `always` rule of this spec in one place, so
+that the [workspace](./workspace.md), which holds the browser, requires the
+whole list and gains each new rule without keeping a copy of its own.
+Whoever adds an `always` rule here adds it to `validBrowser` too.
+
+```quint
+pure def validBrowser(b: Browser): bool =
+  alwaysTabsAreWellFormed(b) and alwaysTabIdentifiersAreUnique(b) and alwaysSelectedTabExists(b) and
+  alwaysBrowserCountersAreValid(b) and alwaysOnlyALoadedPageIsSecure(b) and
+  alwaysRecentDestinationsAreDistinct(b)
+```

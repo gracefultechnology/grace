@@ -34,34 +34,34 @@ pure def currentOrdinaryEffect(x: X::Execution, operation: X::WebsiteEffect): bo
     details.target == x.target and details.valueRef == x.valueRef and details.kind == x.kind
 }
 
-pure def currentEffect(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
-  by == WS::Actuator and WS::mayAssist(w) and WS::observationIsCurrent(w) and match pendingEffect {
-    | Execute(command) => command.deviceVersion == w.device.contextVersion and
-      command.browserRevision == w.browser.revision and w.assistant.activity == A::DoingWork and
-      w.execution.task == w.assistant.taskId and currentOrdinaryEffect(w.execution, command.effect)
-    | Pay(command) => command.deviceVersion == w.device.contextVersion and
-      command.browserRevision == w.browser.revision and command.taskVersion == w.assistant.workVersion and
-      w.assistant.activity == A::WebsiteWait and w.payment.result == P::Unknown and
-      w.payment.durable.result == P::Unknown and WS::currentPaymentContext(w) and
-      P::effectIsCurrent(w.payment, command.effect)
+pure def currentEffect(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
+  by == WS::Actuator and WS::mayAssist(workspace) and WS::observationIsCurrent(workspace) and match pendingEffect {
+    | Execute(command) => command.deviceVersion == workspace.device.contextVersion and
+      command.browserRevision == workspace.browser.revision and workspace.assistant.activity == A::DoingWork and
+      workspace.execution.task == workspace.assistant.taskId and currentOrdinaryEffect(workspace.execution, command.effect)
+    | Pay(command) => command.deviceVersion == workspace.device.contextVersion and
+      command.browserRevision == workspace.browser.revision and command.taskVersion == workspace.assistant.workVersion and
+      workspace.assistant.activity == A::WebsiteWait and workspace.payment.result == P::Unknown and
+      workspace.payment.durable.result == P::Unknown and WS::currentPaymentContext(workspace) and
+      P::effectIsCurrent(workspace.payment, command.effect)
     | _ => false
   }
 
-pure def lawOnlyActuatorConsumes(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
-  currentEffect(w, pendingEffect, by) implies by == WS::Actuator
+pure def lawOnlyActuatorConsumes(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
+  currentEffect(workspace, pendingEffect, by) implies by == WS::Actuator
 
-pure def lawStaleBrowserCommandIsRefused(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool = match pendingEffect {
-  | Execute(command) => (command.deviceVersion != w.device.contextVersion or command.browserRevision != w.browser.revision)
-      implies not(currentEffect(w, pendingEffect, WS::Actuator))
-  | Pay(command) => (command.deviceVersion != w.device.contextVersion or command.browserRevision != w.browser.revision or
-      command.taskVersion != w.assistant.workVersion) implies not(currentEffect(w, pendingEffect, WS::Actuator))
-  | _ => not(currentEffect(w, pendingEffect, WS::Actuator))
+pure def lawStaleBrowserCommandIsRefused(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool = match pendingEffect {
+  | Execute(command) => (command.deviceVersion != workspace.device.contextVersion or command.browserRevision != workspace.browser.revision)
+      implies not(currentEffect(workspace, pendingEffect, WS::Actuator))
+  | Pay(command) => (command.deviceVersion != workspace.device.contextVersion or command.browserRevision != workspace.browser.revision or
+      command.taskVersion != workspace.assistant.workVersion) implies not(currentEffect(workspace, pendingEffect, WS::Actuator))
+  | _ => not(currentEffect(workspace, pendingEffect, WS::Actuator))
 }
 
-pure def lawPaymentConsumptionUsesDurableAttempt(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool = match pendingEffect {
-  | Pay(command) => currentEffect(w, pendingEffect, WS::Actuator) implies
-      w.payment.durable.result == P::Unknown and w.execution.matchedAccount == w.payment.key.account and
-      P::effectIsCurrent(w.payment, command.effect)
+pure def lawPaymentConsumptionUsesDurableAttempt(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool = match pendingEffect {
+  | Pay(command) => currentEffect(workspace, pendingEffect, WS::Actuator) implies
+      workspace.payment.durable.result == P::Unknown and workspace.execution.matchedAccount == workspace.payment.key.account and
+      P::effectIsCurrent(workspace.payment, command.effect)
   | _ => true
 }
 ```
@@ -120,7 +120,7 @@ pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin
 pure val xValues = Set(X::initial, ordinarySample(observedSample(WS::initial)).state.execution)
 pure val observedValues = Set(observedSample(WS::initial))
 pure val startingValues = Set(WS::initial)
-pure val wValues = {
+pure val workspaceValues = {
   val observed = observedSample(WS::initial)
   val ordinary = ordinarySample(observed).state
   val payment = paymentSample(observed).state

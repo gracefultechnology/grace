@@ -867,8 +867,9 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   if inv(w) && canInteract(w, input, by_) {
     ComponentInvariants(w);
     var actor := if by_ == WorkspaceActor.Person then app__conversation_ConversationActor.ConversationUser else app__conversation_ConversationActor.ConversationRuntime;
-    InteractionFrame(w.assistant, input, actor);
-    AfterInteractionInvariant(app__interaction_interact(w.assistant, input, actor), app__interaction_changesGeometry(input), app__interaction_submitsContent(input), w);
+    var heard := withVoiceOutput(input, w);
+    InteractionFrame(w.assistant, heard, actor);
+    AfterInteractionInvariant(app__interaction_interact(w.assistant, heard, actor), app__interaction_changesGeometry(heard), app__interaction_submitsContent(heard), w);
   }
 }
 

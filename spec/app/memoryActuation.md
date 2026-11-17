@@ -82,14 +82,14 @@ pure def currentSavedOperation(f: M::PersonalFact, saved: SavedFill, operation: 
       | FillAuthorized(receipt) => details.task == receipt.task and details.origin == receipt.destination
     }
 }
-pure def currentSavedEffect(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, f: M::PersonalFact, saved: SavedFill, by: WS::WorkspaceActor): bool =
-  AC::currentEffect(w, pendingEffect, by) and match pendingEffect {
+pure def currentSavedEffect(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect, f: M::PersonalFact, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  AC::currentEffect(workspace, pendingEffect, by) and match pendingEffect {
     | Execute(command) => currentSavedOperation(f, saved, command.effect)
     | _ => false
   }
-pure def lawSavedEffectRequiresCurrentContext(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, f: M::PersonalFact, saved: SavedFill, by: WS::WorkspaceActor): bool =
-  currentSavedEffect(w, pendingEffect, f, saved, by) implies
-    AC::currentEffect(w, pendingEffect, by) and currentFactAuthorization(f, saved.authorization)
+pure def lawSavedEffectRequiresCurrentContext(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect, f: M::PersonalFact, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  currentSavedEffect(workspace, pendingEffect, f, saved, by) implies
+    AC::currentEffect(workspace, pendingEffect, by) and currentFactAuthorization(f, saved.authorization)
 pure def lawSavedOwnerMustMatch(f: M::PersonalFact, saved: SavedFill, operation: X::WebsiteEffect): bool = match operation {
   | Operate(details) => details.owner != saved.owner implies not(currentSavedOperation(f, saved, operation))
 }
@@ -139,9 +139,9 @@ pure def lawRememberedCorrectionRevokesOldReceipt(f: M::PersonalFact, proposedFa
 pure def lawForgottenPlanDependencyIsRefused(f: M::PersonalFact, factKey: str, revision: int): bool =
   M::canForget(f, f.revision, M::MemoryUser) implies
     not(currentFactRevision(M::forget(f, f.revision, M::MemoryUser), factKey, revision))
-pure def lawForgetRevokesSavedCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, f: M::PersonalFact, saved: SavedFill, by: WS::WorkspaceActor): bool =
+pure def lawForgetRevokesSavedCommand(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect, f: M::PersonalFact, saved: SavedFill, by: WS::WorkspaceActor): bool =
   M::canForget(f, f.revision, M::MemoryUser) implies
-    not(currentSavedEffect(w, pendingEffect, M::forget(f, f.revision, M::MemoryUser), saved, by))
+    not(currentSavedEffect(workspace, pendingEffect, M::forget(f, f.revision, M::MemoryUser), saved, by))
 pure def lawClearAllRevokesReceipts(facts: List[M::PersonalFact], authorization: M::MemoryEffect): bool =
   M::clearAll(facts).every(f => not(currentFactAuthorization(f, authorization)))
 ```
@@ -163,13 +163,13 @@ pure def authorizedFill(f: M::PersonalFact): M::MemoryStep = {
   val queued = M::queueFill(f, { version: f.revision, task: "task", destination: P::exampleKey.origin, requestedKind: M::Name, verified: true, relevant: true }, M::MemoryRuntime)
   M::dispatchFill(queued, { version: f.revision, task: "task", destination: P::exampleKey.origin }, M::MemoryRuntime)
 }
-pure def savedWorkspace(w: WS::Workspace): WS::WorkspaceResult = {
-  val queued = WS::prepare(w, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1,
+pure def savedWorkspace(workspace: WS::Workspace): WS::WorkspaceResult = {
+  val queued = WS::prepare(workspace, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1,
     target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillOrdinary }, WS::Host)
   WS::dispatch(queued, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 }, WS::Actuator)
 }
 pure val correction: M::FactProposal = { factKey: "name", kind: M::Name, scope: "", value: "Grace", source: M::FreshUserChoice, version: 2 }
-pure val wValues = Set(WS::initial, AC::observedSample(WS::initial), savedWorkspace(AC::observedSample(WS::initial)).state,
+pure val workspaceValues = Set(WS::initial, AC::observedSample(WS::initial), savedWorkspace(AC::observedSample(WS::initial)).state,
   WS::stop(savedWorkspace(AC::observedSample(WS::initial)).state, WS::Person))
 pure val pendingEffectValues = Set(savedWorkspace(AC::observedSample(WS::initial)).out.nth(0),
   AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0), WS::WakeFeedback({ signal: W::WakeChime }))

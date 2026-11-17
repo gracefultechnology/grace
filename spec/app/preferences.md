@@ -203,3 +203,15 @@ pure def sometimesChangedWhileSaving(p: Preferences): bool = p.saving == Saving 
 pure def sometimesRevertedWhileSaving(p: Preferences): bool =
   p.saving == Saving and p.session == p.durable and p.session != p.snapshot
 ```
+
+### Preferences are valid when they meet every rule above
+
+`validPreferences` gathers every `always` rule of this spec in one place, so
+that the [workspace](./workspace.md), which holds the preferences, requires
+the whole list and gains each new rule without keeping a copy of its own.
+Whoever adds an `always` rule here adds it to `validPreferences` too.
+
+```quint
+pure def validPreferences(p: Preferences): bool =
+  alwaysVersionsAreOrdered(p) and alwaysPendingSaveHasAVersion(p) and alwaysSettingsAreValid(p)
+```

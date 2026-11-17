@@ -405,3 +405,18 @@ pure def sometimesDraftSurvivesTalk(c: Conversation): bool = c.voice and c.draft
 pure def sometimesAnswersOffered(c: Conversation): bool = c.answers.length() >= 2
 pure def sometimesTypedReplySpoken(c: Conversation): bool = not(c.voice) and c.turn == Speaking
 ```
+
+### A conversation is valid when it meets every rule above
+
+`validConversation` gathers every `always` rule of this spec in one place,
+so that the [assistant](./assistant.md), which holds the conversation,
+requires the whole list and gains each new rule without keeping a copy of
+its own. Whoever adds an `always` rule here adds it to `validConversation`
+too.
+
+```quint
+pure def validConversation(c: Conversation): bool =
+  alwaysListeningHasAnActiveExchange(c) and alwaysAnswersBelongToTheQuestion(c) and
+  alwaysInterruptionsMarkMessages(c) and alwaysRecognitionRetriesAreBounded(c) and
+  alwaysReadingPositionExists(c) and alwaysGenerationsAreNonnegative(c) and alwaysMessagesHaveContent(c)
+```
