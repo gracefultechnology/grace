@@ -289,8 +289,8 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   } finally {
     await adb(["-s", serial, "forward", "--remove", `tcp:${port}`]).catch((error: unknown) => process.stderr.write(`${String(error)}\n`));
   }
-  const notResponding = /Application Not Responding: ([\w.:]+)/.exec(await shell(serial, "dumpsys window"))?.[1];
-  if (notResponding) throw new Error(`${notResponding} is not responding on ${serial}`);
+  if ((await shell(serial, "dumpsys window")).includes(`Application Not Responding: ${identity.appId}`))
+    throw new Error(`Grace is not responding on ${serial}:\n${await shell(serial, "logcat -d -b events -s am_anr")}`);
   process.stdout.write(`${serial} Grace is Home and responding\n`);
 }
 

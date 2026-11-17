@@ -50,10 +50,12 @@ builds, then attaches to the named AVD or boots it without a window and with hos
 the launcher debug APK, makes Grace Home (`cmd package set-home-activity`), waits up to 10 minutes for
 the HOME intent to resolve to her (an image's first-boot set-up, such as `google_apis`'s
 `googlesdksetup`, holds Home at a higher priority until it has run), starts Home and fails unless
-Grace is what Home opens, her WebView shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
-Responding". It prints the emulator's WebView package and version. Every `adb` call has a time limit
-(the boot 15 minutes, the install 5) and is killed when the command exits, and an emulator that exits
-before it boots fails the command with its log. An emulator the command booted is stopped when the
+Grace is what Home opens, her WebView shows the Home screen (the rail's Home is current) and `dumpsys
+window` shows no "Application Not Responding" window of Grace's, printing the `am_anr` events when it
+does. Another process's is not hers: a cold boot on a busy host leaves the image's own (SystemUI, the
+phone, Google Play services) not responding for minutes. It prints the emulator's WebView package and
+version. Every `adb` call has a time limit (the boot 15 minutes, the install 5) and is killed when the
+command exits, and an emulator that exits before it boots fails the command with its log. An emulator the command booted is stopped when the
 command fails or is interrupted, and left running when it succeeds, for the next `--install`; stop it
 with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the same on an emulator that
 is already running and never stops it; it refuses any serial that is not an emulator's, so a tablet on
@@ -67,7 +69,14 @@ or more than one has that name. A failed wait or step names the page's address, 
 rail item and opening text. Each feature adds its own file; `home.json` walks
 `spec/app/shell.md`, "Story: Reach everyday tasks from Home".
 
-RUNRECORD
+A run of `develop` at `c8849b1` with this check, on a new `pixel_tablet` AVD of
+`android-35-ext15;google_apis;arm64-v8a` (2560×1600, 4 GB) on a host with a load average near 300:
+both debug APKs passed the content check at 11,203,659 and 11,203,523 bytes, the cold boot took
+7 minutes, the WebView was `com.google.android.webview` 124.0.6367.219, all 19 steps of `home.json`
+passed, it ended `Grace is Home and responding` and exited 0 in 14 minutes. SystemUI's "not
+responding" dialog held focus during the run, and the exercise's input still reached Grace's WebView.
+Interrupted with SIGTERM while booting, the command exited 143 and stopped the emulator it had
+started; a plain build has no handler and dies on the signal.
 
 `scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
