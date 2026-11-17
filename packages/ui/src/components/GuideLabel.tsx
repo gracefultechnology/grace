@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Check, Keyboard, X } from "lucide-react";
 import { bubbleOutline, bubbleTail } from "../lib/outline.ts";
 import { cn, focusRing } from "../lib/cn.ts";
+import { useSize } from "../lib/observe.ts";
 import { Button } from "./Button.tsx";
 import { Spinner } from "./Spinner.tsx";
 
@@ -58,19 +59,11 @@ export type GuideLabelProps = Omit<ComponentProps<"div">, "title"> & {
  * @design packages/design-system/design.md#guidance
  */
 export function GuideLabel({ title, detail, tone = "turn", mark, placement = "beside", selectable = false, onSelect, closable = false, onClose, closeLabel = "Close this tip", className, ...props }: GuideLabelProps) {
-  const ref = useRef<HTMLDivElement>(null);
+  const [ref, size] = useSize<HTMLDivElement>();
   const Words = selectable ? "button" : "div";
-  const [size, setSize] = useState<[number, number]>();
   const working = tone === "working";
   const below = placement !== "beside";
   const end = placement === "below-end";
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (working || !el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setSize([el.offsetWidth, el.offsetHeight]));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [working]);
   return (
     <div
       ref={ref}
@@ -92,8 +85,8 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
         </svg>
       ) : (
         size && (
-          <svg aria-hidden width={size[0] + 10} height={size[1]} viewBox={`0 0 ${size[0] + 10} ${size[1]}`} className={cn("pointer-events-none absolute top-0 overflow-visible", end ? "left-0 -scale-y-100" : cn("-left-2.5", below ? "-scale-100" : "-scale-x-100"))}>
-            <path d={bubbleOutline(...size, Math.min(size[1] / 2, 26), 1.5)} className={cn("fill-glass stroke-3", edges[tone])} strokeLinejoin="round" />
+          <svg aria-hidden width={size.width + 10} height={size.height} viewBox={`0 0 ${size.width + 10} ${size.height}`} className={cn("pointer-events-none absolute top-0 overflow-visible", end ? "left-0 -scale-y-100" : cn("-left-2.5", below ? "-scale-100" : "-scale-x-100"))}>
+            <path d={bubbleOutline(size.width, size.height, Math.min(size.height / 2, 26), 1.5)} className={cn("fill-glass stroke-3", edges[tone])} strokeLinejoin="round" />
           </svg>
         )
       )}

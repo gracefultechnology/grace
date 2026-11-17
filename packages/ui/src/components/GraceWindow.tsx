@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
+import { watch } from "../lib/observe.ts";
 
 export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref"> & {
   /** `compact` is three rows over the page (header, the current message, the answer row); `expanded` fills the screen. */
@@ -36,22 +37,19 @@ function fitted(section: HTMLElement): number {
  */
 export function GraceWindow({ size = "expanded", height, onHeightChange, header, dock, className, style, children, ...props }: GraceWindowProps) {
   const expanded = size === "expanded";
-  const ref = useRef<HTMLElement>(null);
+  const fits = !expanded && height === undefined;
   const [fit, setFit] = useState(COMPACT);
-  useLayoutEffect(() => {
-    const section = ref.current;
-    if (expanded || height !== undefined || !section) return;
-    const measure = () => {
-      const next = fitted(section);
-      setFit(next);
-      onHeightChange?.(next);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    const log = section.querySelector("[role=log]");
-    if (log) observer.observe(log);
-    return () => observer.disconnect();
-  });
+  const ref = useCallback(
+    (section: HTMLElement | null) =>
+      section && fits
+        ? watch(section, () => {
+            const next = fitted(section);
+            setFit(next);
+            onHeightChange?.(next);
+          })
+        : undefined,
+    [fits, onHeightChange],
+  );
   return (
     <section
       ref={ref}
