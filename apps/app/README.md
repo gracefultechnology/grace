@@ -6,26 +6,20 @@ and traces (SPEC.md, "One spec tree").
 
 | Piece | Is |
 |---|---|
-| `src/app.vibe` | the application's layers: the workspace machine (`spec/app/workspace.md`) as the one app state, the page layer (`spec/app/surface.md`) and website request (`spec/app/websiteRequests.md`) machines beside it, and the native page |
-| `src/nativePage.vibe`, `src/webPage.vibe`, `src/surfacePlugin.ts` | the native page plugin as an Effect service; with no plugin (Vite in a browser) every command succeeds at once |
+| `src/app.vibe` | the application's layers: the workspace machine (`spec/app/workspace.md`) as the one app state, the page layer machine (`spec/app/surface.md`) beside it, and the native page |
+| `src/nativePage.vibe`, `src/surfacePlugin.ts` | the native page plugin as an Effect service; with no plugin (Vite in a browser) every command succeeds at once |
 | `src/page.vibe` | the page layer's host side: native pages follow the tabs, and a Grace control is drawn over the page only after the host routes its rect |
-| `src/useApp.ts`, `src/PageLayer.tsx` | React hooks over the machines; what the interface measures (`PageArea`, `OverPage`) |
-| `src/App.tsx`, `src/Browser.tsx`, `src/Grace.tsx`, `src/Settings.tsx`, `src/WebsiteRequests.tsx` | Home, the browser window, Grace's window, Settings and what a website asks, on `@repo/ui` |
-| `src/private.ts` | the proved filter that keeps passwords, codes and card numbers out of what leaves the tablet |
-| `src/*.schema.ts`, `src/*.contract.ts` | parsers at the boundaries and declared contracts, each with its derived property tests |
-| `test/app.browser.test.tsx`, `test/browser.browser.test.tsx` | the journeys of the website under Grace's controls and of the browser, with the plugin faked at its boundary (`pnpm test:browser`) |
-| `test/app.test.vibe`, `test/cloud.browser.test.vibe` | the journeys against the local test website (`test/site/`) and the one fake of Eliza Cloud (`test/cloud.vibe`), both started by `test/setup.vibe` |
+| `src/useApp.ts`, `src/PageLayer.tsx` | React hooks over both machines; what the interface measures (`PageArea`, `OverPage`) |
+| `src/App.tsx`, `src/Browser.tsx`, `src/Grace.tsx` | Home, the browser window and Grace's window, on `@repo/ui` |
+| `test/app.browser.test.tsx` | the journey "Use the website under Grace's controls", with the plugin faked at its boundary (`pnpm test:browser`) |
 
 | Command | Does |
 |---|---|
 | `pnpm dev` | the app, with Vite |
 | `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
-| `pnpm android`, `pnpm aosp` | the APKs, below; the AOSP launcher image's staging (`aosp/README.md`) |
 
 ## Android
-
-### The pin
 
 Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
 and builds the agent from it. `vendor/eliza` is pinned to elizaOS/eliza's `grace/integration` branch
@@ -35,8 +29,6 @@ bridge), `grace/eliza-google-signin` (#39789) and `grace/eliza-cloud-speech-brid
 pushed branch holds all three so anyone can build Grace before they land; the Google sign-in path in
 it has never run with a real Google account.
 
-### Building
-
 Bun is used only to build that vendored payload, never for Grace's own packages: with Bun 1.4.2 on
 `PATH`, run `bun install --frozen-lockfile` in `vendor/eliza` once per pin (the `android` workflow
 does both only when its cache holds no payload for the pinned commit and `scripts/android.ts`).
@@ -44,8 +36,14 @@ does both only when its cache holds no payload for the pinned commit and `script
 JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
 usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
-`artifacts/apk-manifest.json` lists each APK this build produced with its processor type, size,
-SHA-256 and the signer the newest installed build-tools' `apksigner` verified. The build
+`--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
+(absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
+the working directory), `GRACE_KEYSTORE_PASSWORD`,
+`GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
+refuses a partial set, and the build fails if they are set and a release comes out unsigned),
+otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
+produced with its processor type, size, SHA-256 and the signer the newest installed build-tools'
+`apksigner` verified; a debug build removes release APKs left by an earlier `--release` run. The build
 fails unless an APK carries the agent (`assets/agent/agent-bundle.js`, `libeliza_bun.so` for exactly
 one processor type, `assets/agent-runtime.inventory` and every file that inventory lists, which the
 service unpacks before it starts), and if it carries an on-device model or local
@@ -57,23 +55,6 @@ mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omni
 `assets/agent/llama-kernel-diagnostic.mjs`, a 3 KB script that only lists which llama.cpp files and
 kernels a directory holds; it loads no model or library, and the check lets it pass. Both flavors'
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
-
-### The release build
-
-`pnpm android --release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when
-`GRACE_KEYSTORE` (absolute, or relative to the directory you ran the command from: `INIT_CWD` under
-pnpm, otherwise the working directory), `GRACE_KEYSTORE_PASSWORD`, `GRACE_KEY_ALIAS` and
-`GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle refuses a partial set, and
-the build fails if they are set and a release comes out unsigned), otherwise
-`<flavor>-release-unsigned.apk`. A debug build removes release APKs left by an earlier `--release`
-run.
-
-### Registrations
-
-Sign-in works only once Google, Steward and Eliza Cloud each register `technology.graceful.grace`
-with the certificate of every key that signs it. The owner or an operator makes them (acceptance
-list decision 31); none can be checked from this repository. The checklist, with the three reads that
-check each registration, arrives with the sign-in host, which is not merged yet.
 
 ### On the emulator
 
