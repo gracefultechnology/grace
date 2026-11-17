@@ -33,6 +33,7 @@ import assistant as A from "./assistant"
 import conversation as C from "./conversation"
 import execution as X from "./execution"
 import payment as P from "./payment"
+import task as T from "./task"
 import preferences as R from "./preferences"
 import wake as W from "./wake"
 import interaction as I from "./interaction"
@@ -86,10 +87,10 @@ type PaymentTokens = {
   deviceVersion: int, browserRevision: int, taskVersion: int,
   revision: int, attempt: int
 }
-type CurrentReview = { deviceVersion: int, browserRevision: int, taskVersion: int, review: P::ReviewReport }
+type CurrentReview = { deviceVersion: int, browserRevision: int, taskVersion: int, review: T::ReviewReport }
 type CurrentOutcome = { deviceVersion: int, browserRevision: int, taskVersion: int, report: P::OutcomeReport }
 type CurrentPrior = { deviceVersion: int, browserRevision: int, taskVersion: int, report: P::PriorReport }
-type SaveReport = { key: P::BillKey, revision: int, succeeded: bool }
+type SaveReport = { key: T::Subject, revision: int, succeeded: bool }
 type ProgressKind = OrdinaryProgress | PaymentProgress
 type ProgressReport = {
   owner: str, task: str, deviceVersion: int, browserRevision: int, taskVersion: int,
@@ -155,9 +156,9 @@ pure def alwaysPaymentRegistryIsCanonical(w: Workspace): bool =
     w.otherPayments.select(other => other.key == p.key).length() == 1)
 pure def paymentRecords(w: Workspace): List[P::Payment] =
   if (w.payment.stage == P::Empty) w.otherPayments else w.otherPayments.append(w.payment)
-pure def storedPayment(key: P::BillKey, records: List[P::Payment]): P::Payment =
+pure def storedPayment(key: T::Subject, records: List[P::Payment]): P::Payment =
   records.foldl(P::initial, (found, record) => if (record.key == key) record else found)
-pure def paymentByKey(w: Workspace, key: P::BillKey): P::Payment =
+pure def paymentByKey(w: Workspace, key: T::Subject): P::Payment =
   if (w.payment.stage != P::Empty and w.payment.key == key) w.payment else storedPayment(key, w.otherPayments)
 pure def matchingPayment(w: Workspace): bool =
   w.payment.key.owner == w.execution.owner and w.payment.key.origin == w.execution.origin
@@ -946,17 +947,17 @@ The future storage adapter validates and decodes that record before creating
 its owning machine; event input cannot assign an arbitrary payment state.
 
 ```quint
-pure def canBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
+pure def canBindPayment(w: Workspace, key: T::Subject, by: WorkspaceActor): bool =
   by == Person and mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
   w.execution.originVerified and w.execution.redactionReady and not(w.execution.privateInput) and
   key.owner == w.execution.owner and key.origin == w.execution.origin and key.account == w.execution.matchedAccount and
-  w.paymentTask == "" and P::validKey(key)
-pure def lawMismatchedAccountCannotBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
+  w.paymentTask == "" and T::validKey(key)
+pure def lawMismatchedAccountCannotBindPayment(w: Workspace, key: T::Subject, by: WorkspaceActor): bool =
   key.account != w.execution.matchedAccount implies not(canBindPayment(w, key, by))
 pure def lawMismatchedAccountCannotAdvancePayment(w: Workspace): bool =
   (w.execution.matchedAccount == "" or w.execution.matchedAccount != w.payment.key.account) implies
     not(currentPaymentContext(w))
-pure def bindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): Workspace =
+pure def bindPayment(w: Workspace, key: T::Subject, by: WorkspaceActor): Workspace =
   val existing = if (w.payment.stage != P::Empty and w.payment.key == key) w.payment
     else storedPayment(key, w.otherPayments)
   val others = w.otherPayments.select(p => p.key != key)
@@ -1119,7 +1120,7 @@ pure def canReconcilePriorPayment(w: Workspace, currentPrior: CurrentPrior, by: 
 pure def reconcilePriorPayment(w: Workspace, currentPrior: CurrentPrior, by: WorkspaceActor): Workspace =
   afterPaymentEvidence(P::reconcilePrior(w.payment, currentPrior.report, P::DurableStore), w)
 pure def canSavePayment(w: Workspace, saveReport: SaveReport, by: WorkspaceActor): bool =
-  by == Store and P::validKey(saveReport.key) and
+  by == Store and T::validKey(saveReport.key) and
   P::canSaveOutcome(paymentByKey(w, saveReport.key), saveReport.revision, P::DurableStore)
 pure def savePayment(w: Workspace, saveReport: SaveReport, by: WorkspaceActor): Workspace =
   if (w.payment.stage != P::Empty and saveReport.key == w.payment.key)

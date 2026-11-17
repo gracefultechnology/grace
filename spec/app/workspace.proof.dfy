@@ -470,7 +470,7 @@ lemma RegistryFromDistinct(w: Workspace)
   }
 }
 
-lemma RegistryStoredMember(key: app__payment_BillKey, records: seq<app__payment_Payment>)
+lemma RegistryStoredMember(key: app__task_Subject, records: seq<app__payment_Payment>)
   ensures storedPayment(key, records) == app__payment_initial ||
     (storedPayment(key, records) in records && storedPayment(key, records).key == key)
   ensures (forall p :: p in records ==> p.key != key) ==> storedPayment(key, records) == app__payment_initial
@@ -518,9 +518,9 @@ lemma RegistryQuietPayment(p: app__payment_Payment)
   }
 }
 
-lemma RegistryBind(w: Workspace, key: app__payment_BillKey, by_: WorkspaceActor)
+lemma RegistryBind(w: Workspace, key: app__task_Subject, by_: WorkspaceActor)
   requires alwaysPaymentRules(w) && alwaysPaymentRegistryIsCanonical(w)
-  requires app__payment_validKey(key)
+  requires app__task_validKey(key)
   ensures alwaysPaymentRules(bindPayment(w, key, by_))
   ensures alwaysPaymentRegistryIsCanonical(bindPayment(w, key, by_))
   ensures stepPaymentSwitchRetainsRecords(w, "bindPayment", bindPayment(w, key, by_))
@@ -872,7 +872,7 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   }
 }
 
-lemma bindPayment_ensures(w: Workspace, key: app__payment_BillKey, by_: WorkspaceActor)
+lemma bindPayment_ensures(w: Workspace, key: app__task_Subject, by_: WorkspaceActor)
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysOneTask(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPausedTogether(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysRecordingHasPermission(bindPayment(w, key, by_)))

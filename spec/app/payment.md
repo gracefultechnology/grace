@@ -10,58 +10,51 @@ This contract generalizes `BillAttempt`, `MoneyEffect` and `GuideConsent` from t
 
 ### A payment starts without an identity, proposal or submission
 
-Dates are unambiguous local calendar-day references accompanied by the website's date semantics in the UI. Money is integer minor units in one explicit currency. Funding references are non-secret identifiers resolved by the provider, never credentials. The initial empty values are sentinels, not a real bill.
+The identity is a task's subject and the proposal is its terms ([task](./task.md)): a payment's terms for a bill, a booking's for a visit. Dates are unambiguous local calendar-day references accompanied by the website's date semantics in the UI. Money is integer minor units in one explicit currency. Funding references are non-secret identifiers resolved by the provider, never credentials. The initial empty values are sentinels, not a real bill.
 
 ```quint
+import task as T from "./task"
 type PaymentActor = Person | BrowserHost | DurableStore | Executor
 type PaymentStage = Empty | Draft | Reviewed | Guarded | Authorized | Checking | Resolved
 type PaymentOutcome = NotSubmitted | Unknown | Pending | Scheduled | Accepted | Completed | VerifiedFailure | Returned
-type BillKey = { owner: str, origin: str, account: str, bill: str }
-type Proposal = { amount: int, fee: int, currency: str, day: int, funding: str }
-type ReviewReport = { key: BillKey, proposal: Proposal, revision: int, evidence: str }
-type OutcomeReport = { key: BillKey, attempt: int, revision: int, result: PaymentOutcome, evidence: str, reference: str }
-type PriorReport = { key: BillKey, proposal: Proposal, revision: int, result: PaymentOutcome, evidence: str, reference: str }
+type OutcomeReport = { key: T::Subject, attempt: int, revision: int, result: PaymentOutcome, evidence: str, reference: str, place: T::TaskPlace }
+type PriorReport = { key: T::Subject, proposal: T::Terms, revision: int, result: PaymentOutcome, evidence: str, reference: str }
 type StoredOutcome = { result: PaymentOutcome, evidence: str, reference: str }
 type Payment = {
-  key: BillKey, proposal: Proposal, stage: PaymentStage, result: PaymentOutcome,
+  key: T::Subject, proposal: T::Terms, stage: PaymentStage, result: PaymentOutcome,
   revision: int, evidence: str, readBack: bool,
   live: bool, fresh: bool, attempt: int, dispatched: bool, reference: str,
   durable: StoredOutcome, saveError: bool
 }
-type PaymentEffect = SubmitPayment({ attempt: int, revision: int, key: BillKey, proposal: Proposal })
+type PaymentEffect = SubmitPayment({ attempt: int, revision: int, key: T::Subject, proposal: T::Terms })
 type PaymentResult = { state: Payment, out: List[PaymentEffect] }
-pure val emptyKey: BillKey = { owner: "", origin: "", account: "", bill: "" }
-pure val emptyProposal: Proposal = { amount: 0, fee: 0, currency: "", day: 0, funding: "" }
 pure val initial: Payment = {
-  key: emptyKey, proposal: emptyProposal, stage: Empty, result: NotSubmitted,
+  key: T::emptyKey, proposal: T::NoTerms, stage: Empty, result: NotSubmitted,
   revision: 0, evidence: "", readBack: false,
   live: true, fresh: false, attempt: 0, dispatched: false, reference: "",
   durable: { result: NotSubmitted, evidence: "", reference: "" }, saveError: false
 }
-pure def validKey(key: BillKey): bool = key.owner != "" and key.origin != "" and key.account != "" and key.bill != ""
-pure def validProposal(proposal: Proposal): bool = proposal.amount > 0 and proposal.fee >= 0 and proposal.currency != "" and proposal.day > 0 and proposal.funding != ""
+pure val exampleKey: T::Subject = { kind: T::BillPay, owner: "owner", origin: "https://utility.example", account: "account", ref: "bill" }
+pure val exampleProposal: T::Proposal = { amount: 8420, fee: 0, currency: "USD", day: 1, funding: "bank-ref" }
+pure val exampleTerms: T::Terms = T::PayTerms({ pay: exampleProposal })
+pure val bookingKey: T::Subject = { kind: T::AppointmentBooking, owner: "owner", origin: "https://clinic.example", account: "patient", ref: "visit" }
+pure val bookingTerms: T::Terms = T::BookTerms({ book: {
+  service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "",
+  shares: List("name", "phone"), acceptsClash: false } })
 pure val keyValues = Set(
-  { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" },
-  { owner: "owner", origin: "https://credit.example", account: "account", bill: "bill" },
-  emptyKey
-)
-pure val proposalValues = Set(
-  { amount: 8420, fee: 0, currency: "USD", day: 1, funding: "bank-ref" },
-  { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" },
-  emptyProposal
+  exampleKey, { ...exampleKey, origin: "https://credit.example" }, bookingKey, T::emptyKey
 )
 pure val observedRevisionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val observedAttemptValues = Set(0, 1, 2, 3)
-pure val exampleKey: BillKey = { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }
-pure val exampleProposal: Proposal = { amount: 8420, fee: 0, currency: "USD", day: 1, funding: "bank-ref" }
-pure val exampleReview: ReviewReport = { key: exampleKey, proposal: exampleProposal, revision: 0, evidence: "source" }
+pure val exampleReview: T::ReviewReport = { key: exampleKey, proposal: exampleTerms, revision: 0, evidence: "source" }
 pure val reviewReportValues = Set(
   exampleReview, { ...exampleReview, revision: 1 }, { ...exampleReview, revision: 2 },
   { ...exampleReview, revision: 3 }, { ...exampleReview, revision: 4 }, { ...exampleReview, revision: 5 },
   { ...exampleReview, key: { ...exampleKey, origin: "https://credit.example" } },
-  { ...exampleReview, evidence: "" }, { ...exampleReview, proposal: emptyProposal }
+  { ...exampleReview, evidence: "" }, { ...exampleReview, proposal: T::NoTerms },
+  { key: bookingKey, proposal: bookingTerms, revision: 0, evidence: "portal" }, { ...exampleReview, proposal: bookingTerms }
 )
-pure val exampleOutcome: OutcomeReport = { key: exampleKey, attempt: 1, revision: 2, result: Completed, evidence: "result", reference: "receipt" }
+pure val exampleOutcome: OutcomeReport = { key: exampleKey, attempt: 1, revision: 2, result: Completed, evidence: "result", reference: "receipt", place: T::OnWebsite }
 pure val outcomeReportValues = Set(
   exampleOutcome, { ...exampleOutcome, result: Scheduled }, { ...exampleOutcome, result: Accepted },
   { ...exampleOutcome, result: Pending, reference: "" }, { ...exampleOutcome, result: Unknown, reference: "" },
@@ -70,9 +63,12 @@ pure val outcomeReportValues = Set(
   { ...exampleOutcome, result: Returned, revision: 3, reference: "" },
   { ...exampleOutcome, result: Returned, revision: 4, reference: "" },
   { ...exampleOutcome, attempt: 2, revision: 5 }, { ...exampleOutcome, evidence: "" },
-  { ...exampleOutcome, key: emptyKey }, { ...exampleOutcome, reference: "" }
+  { ...exampleOutcome, key: T::emptyKey }, { ...exampleOutcome, reference: "" },
+  { ...exampleOutcome, result: Scheduled, place: T::InEmail },
+  { ...exampleOutcome, key: bookingKey, result: Pending, reference: "", place: T::InEmail },
+  { ...exampleOutcome, key: bookingKey, result: Scheduled, reference: "confirmation", place: T::InEmail }
 )
-pure val examplePrior: PriorReport = { key: exampleKey, proposal: exampleProposal, revision: 0, result: Scheduled, evidence: "prior-result", reference: "receipt" }
+pure val examplePrior: PriorReport = { key: exampleKey, proposal: exampleTerms, revision: 0, result: Scheduled, evidence: "prior-result", reference: "receipt" }
 pure val priorReportValues = Set(
   examplePrior, { ...examplePrior, result: Unknown, reference: "" }, { ...examplePrior, result: Pending, reference: "" },
   { ...examplePrior, result: VerifiedFailure, reference: "" }, { ...examplePrior, result: Returned, reference: "" }, { ...examplePrior, revision: 1 },
@@ -93,25 +89,25 @@ pure val weight_recordOutcome = 2
 Binding requires the person's selected bill, after trusted source resolution. A wrong owner or destination must be corrected before binding or opened as a separate bill aggregate; it cannot rewrite an existing attempt's identity.
 
 ```quint
-pure def canBind(p: Payment, key: BillKey, by: PaymentActor): bool = p.stage == Empty and validKey(key) and by == Person
-pure def bind(p: Payment, key: BillKey, by: PaymentActor): Payment = { ...p, key: key, stage: Draft }
-pure def alwaysIdentity(p: Payment): bool = p.stage == Empty or validKey(p.key)
+pure def canBind(p: Payment, key: T::Subject, by: PaymentActor): bool = p.stage == Empty and T::validKey(key) and by == Person
+pure def bind(p: Payment, key: T::Subject, by: PaymentActor): Payment = { ...p, key: key, stage: Draft }
+pure def alwaysIdentity(p: Payment): bool = p.stage == Empty or T::validKey(p.key)
 pure def stepIdentityNeverChanges(before: Payment, after: Payment): bool = before.stage != Empty implies after.key == before.key
 ```
 
 ### Only a fresh matching review can replace the current proposal
 
-The browser host has checked the selected account, actual fields, fees, date and funding method against the person's choices. A mismatched review does not advance. Every new review invalidates prior read-back and approval. A reviewed proposal is still unsubmitted. An unresolved window cannot be overwritten by editing the form. Discovered by the proof: every reviewed proposal must retain its nonempty evidence reference, even before an attempt is opened; otherwise a journal could contain no basis for the review.
+The browser host has checked the selected account, actual fields, fees, date and funding method against the person's choices. Only terms of the subject's own kind can be reviewed: a booking's terms never land on a bill. A mismatched review does not advance. Every new review invalidates prior read-back and approval. A reviewed proposal is still unsubmitted. An unresolved window cannot be overwritten by editing the form. Discovered by the proof: every reviewed proposal must retain its nonempty evidence reference, even before an attempt is opened; otherwise a journal could contain no basis for the review.
 
 ```quint
-pure def canReview(p: Payment, reviewReport: ReviewReport, by: PaymentActor): bool =
+pure def canReview(p: Payment, reviewReport: T::ReviewReport, by: PaymentActor): bool =
   p.live and (p.stage == Draft or p.stage == Reviewed) and p.result == NotSubmitted and p.durable.result == NotSubmitted and
-  reviewReport.key == p.key and validProposal(reviewReport.proposal) and reviewReport.evidence != "" and reviewReport.revision == p.revision and by == BrowserHost
-pure def review(p: Payment, reviewReport: ReviewReport, by: PaymentActor): Payment =
+  reviewReport.key == p.key and T::validTerms(p.key.kind, reviewReport.proposal) and reviewReport.evidence != "" and reviewReport.revision == p.revision and by == BrowserHost
+pure def review(p: Payment, reviewReport: T::ReviewReport, by: PaymentActor): Payment =
   { ...p, proposal: reviewReport.proposal, stage: Reviewed, revision: p.revision + 1,
     evidence: reviewReport.evidence, fresh: true, readBack: false, reference: "", saveError: false }
 pure def alwaysProposal(p: Payment): bool =
-  (p.stage == Reviewed or p.stage == Guarded or p.stage == Authorized or p.stage == Checking or p.stage == Resolved) implies validProposal(p.proposal)
+  (p.stage == Reviewed or p.stage == Guarded or p.stage == Authorized or p.stage == Checking or p.stage == Resolved) implies T::validTerms(p.key.kind, p.proposal)
 pure def alwaysCounters(p: Payment): bool = p.revision >= 0 and p.attempt >= 0
 pure def alwaysReviewHasEvidence(p: Payment): bool = p.stage == Reviewed implies p.evidence != ""
 ```
@@ -169,7 +165,7 @@ pure def effectIsCurrent(p: Payment, command: PaymentEffect): bool = match comma
 }
 pure def stepEmittedPaymentMatchesCurrentAttempt(before: Payment, after: Payment, out: List[PaymentEffect]): bool =
   out.every(command => effectIsCurrent(after, command))
-pure val commandValues = Set(SubmitPayment({ attempt: 1, revision: 2, key: exampleKey, proposal: exampleProposal }))
+pure val commandValues = Set(SubmitPayment({ attempt: 1, revision: 2, key: exampleKey, proposal: exampleTerms }))
 pure def stepOnlyApprovedSubmission(before: Payment, after: Payment, out: List[PaymentEffect]): bool =
   out.length() > 0 implies before.stage == Authorized and before.live and before.fresh and before.readBack and
     before.result == Unknown and not(before.dispatched) and after.stage == Checking and after.dispatched
@@ -213,13 +209,14 @@ pure def sometimesPausedUncertain(p: Payment): bool = not(p.live) and p.result =
 
 ### Only matching authoritative evidence can resolve an existing attempt
 
-The host verifies the result for this bill, proposal and attempt, not merely a success-looking page. Empty or absent confirmation is Unknown. Pending remains unresolved. Scheduled, Accepted and Completed are different factual results; only Completed represents observed completion. A reference is required for positive outcomes. A verified failure means the provider has established no successful payment for this attempt. A later authoritative return or reversal is Returned, even after Scheduled, Accepted or Completed. It preserves the submission attempt and replaces the current status truthfully; historical success is not proof of current settlement. Reliable proof of no submission may return the aggregate to Draft; a timeout or missing receipt cannot supply that proof.
+The host verifies the result for this bill, proposal and attempt, not merely a success-looking page, read where the task's kind allows an outcome to come from. Empty or absent confirmation is Unknown. Pending remains unresolved. Scheduled, Accepted and Completed are different factual results; only Completed represents observed completion. A reference is required for positive outcomes. A verified failure means the provider has established no successful payment for this attempt. A later authoritative return or reversal is Returned, even after Scheduled, Accepted or Completed. It preserves the submission attempt and replaces the current status truthfully; historical success is not proof of current settlement. Reliable proof of no submission may return the aggregate to Draft; a timeout or missing receipt cannot supply that proof.
 
 ```quint
 pure def positiveOutcome(result: PaymentOutcome): bool = result == Scheduled or result == Accepted or result == Completed
 pure def canRecordOutcome(p: Payment, outcomeReport: OutcomeReport, by: PaymentActor): bool =
   p.attempt > 0 and (p.stage == Guarded or p.stage == Authorized or p.stage == Checking or p.stage == Resolved) and
   outcomeReport.key == p.key and outcomeReport.attempt == p.attempt and outcomeReport.revision == p.revision and outcomeReport.evidence != "" and by == BrowserHost and
+  T::outcomePlaceAllowed(p.key.kind, outcomeReport.place) and
   (positiveOutcome(outcomeReport.result) implies outcomeReport.reference != "") and
   (positiveOutcome(p.result) implies positiveOutcome(outcomeReport.result) or outcomeReport.result == Returned) and
   (p.result == Completed implies outcomeReport.result == Completed or outcomeReport.result == Returned) and
@@ -243,13 +240,31 @@ pure def sometimesFailed(p: Payment): bool = p.result == VerifiedFailure
 pure def sometimesReturned(p: Payment): bool = p.result == Returned
 ```
 
+### An outcome read anywhere its kind does not allow is refused
+
+A bill's outcome is read on the website it was paid on; a booking may also be confirmed by the provider's email. A report of an outcome from any other place cannot record a result.
+
+```quint
+pure def lawOutcomeFromAnotherPlaceIsRejected(p: Payment, outcomeReport: OutcomeReport, by: PaymentActor): bool =
+  not(T::outcomePlaceAllowed(p.key.kind, outcomeReport.place)) implies not(canRecordOutcome(p, outcomeReport, by))
+```
+
+### A commitment that moves no money can be confirmed as scheduled
+
+A booking goes through the same review, durable window and outcome check as a bill, and ends scheduled with the provider's reference.
+
+```quint
+pure def sometimesNonMoneyCommitmentIsScheduled(p: Payment): bool =
+  p.key.kind == T::AppointmentBooking and p.result == Scheduled and p.reference != ""
+```
+
 ### Leaving the review through Edit before any submit tap returns the payment to a draft
 
 The website's review page offers Edit beside Submit payment, and Edit goes back to the payment form (prototype/Grace Prototype.html:1026, 1044). The unresolved window is already saved by then, so the attempt is Unknown. The trusted host's verified observation that the person left this attempt's review page through Edit, with no submit tap seen, is evidence that nothing was submitted: it reports that as a NotSubmitted outcome for the current attempt and revision. That outcome returns the payment to Draft and keeps the attempt count, and the durable store records it before a new review can replace the proposal. Without that observation, for example after a page change with no Edit tap seen, the attempt stays Unknown and is investigated.
 
 ```quint
 pure def editReport(p: Payment, evidence: str): OutcomeReport =
-  { key: p.key, attempt: p.attempt, revision: p.revision, result: NotSubmitted, evidence: evidence, reference: "" }
+  { key: p.key, attempt: p.attempt, revision: p.revision, result: NotSubmitted, evidence: evidence, reference: "", place: T::OnWebsite }
 pure def lawEditBeforeSubmitReturnsToDraft(p: Payment, evidence: str): bool =
   (p.attempt > 0 and (p.stage == Guarded or p.stage == Authorized) and p.result == Unknown and evidence != "") implies
     canRecordOutcome(p, editReport(p, evidence), BrowserHost) and
@@ -267,7 +282,7 @@ Discovered by review of the manual-navigation journey: requiring every observed 
 ```quint
 pure def canReconcilePrior(p: Payment, priorReport: PriorReport, by: PaymentActor): bool =
   (p.stage == Draft or p.stage == Reviewed) and p.live and p.result == NotSubmitted and p.durable.result == NotSubmitted and
-  priorReport.key == p.key and validProposal(priorReport.proposal) and priorReport.revision == p.revision and priorReport.result != NotSubmitted and
+  priorReport.key == p.key and T::validTerms(p.key.kind, priorReport.proposal) and priorReport.revision == p.revision and priorReport.result != NotSubmitted and
   priorReport.evidence != "" and (positiveOutcome(priorReport.result) implies priorReport.reference != "") and by == DurableStore
 pure def reconcilePrior(p: Payment, priorReport: PriorReport, by: PaymentActor): Payment = {
   ...p, proposal: priorReport.proposal, result: priorReport.result, evidence: priorReport.evidence,
@@ -318,7 +333,7 @@ pure def saveOutcome(p: Payment, observedRevision: int, succeeded: bool, by: Pay
 }
 pure def alwaysAttemptHasEvidence(p: Payment): bool = p.attempt > 0 implies p.evidence != ""
 pure def alwaysDurableOutcomeHasAttempt(p: Payment): bool =
-  p.durable.result != NotSubmitted implies p.attempt > 0 and validProposal(p.proposal) and p.durable.evidence != ""
+  p.durable.result != NotSubmitted implies p.attempt > 0 and T::validTerms(p.key.kind, p.proposal) and p.durable.evidence != ""
 pure def alwaysDurableWindow(p: Payment): bool =
   p.attempt > 0 implies p.durable.evidence != ""
 pure def alwaysDurableConfirmation(p: Payment): bool =

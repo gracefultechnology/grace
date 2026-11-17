@@ -26,6 +26,7 @@ import workspace as WS from "./workspace"
 import assistant as A from "./assistant"
 import execution as X from "./execution"
 import payment as P from "./payment"
+import task as T from "./task"
 
 pure def currentOrdinaryEffect(x: X::Execution, operation: X::WebsiteEffect): bool = match operation {
   | Operate(details) => x.phase == X::InFlight and X::alwaysIdentity(x) and X::alwaysPrepared(x) and

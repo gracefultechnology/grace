@@ -32,6 +32,7 @@ import browser as B from "./browser"
 import assistant as A from "./assistant"
 import conversation as C from "./conversation"
 import payment as P from "./payment"
+import task as T from "./task"
 import preferences as R from "./preferences"
 import wake as W from "./wake"
 

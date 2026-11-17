@@ -34,6 +34,7 @@ performed equivalent provider-form/choice verification, not an alternative BP ha
 ```quint
 import billpay as BP from "./billpay"
 import payment as P from "./payment"
+import task as T from "./task"
 import workspace as W from "./workspace"
 import shell as S from "./shell"
 import browser as B from "./browser"
@@ -51,7 +52,7 @@ pure def reportFromHandoff(transfer: ScopedPreparedReview): W::CurrentReview =
       browserRevision: transfer.captured.browserRevision,
       taskVersion: transfer.captured.taskVersion,
       review: {
-        key: details.key, proposal: details.proposal, evidence: details.evidence,
+        key: details.key, proposal: T::PayTerms({ pay: details.proposal }), evidence: details.evidence,
         revision: transfer.captured.revision
       }
     }
@@ -82,7 +83,7 @@ pure def lawConversionKeepsCurrentChoice(
   match converted {
   | ReviewDeclined => true
   | ReviewConverted(value) => preparationMatchesHandoff(preparation, transfer) and
-    value.report.review.key == preparation.key and value.report.review.proposal == preparation.choice and
+    value.report.review.key == preparation.key and value.report.review.proposal == T::PayTerms({ pay: preparation.choice }) and
     value.report.review.evidence == preparation.evidence and
     value.report.review.revision == transfer.captured.revision
 }
