@@ -21,18 +21,30 @@ and traces (SPEC.md, "One spec tree").
 
 ## Android
 
-Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts.
-`pnpm android` (Node 26, JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and
-`JAVA_HOME`, or their usual install paths) writes `artifacts/{launcher,standalone}-debug.apk`.
+Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
+and builds the agent from it. `vendor/eliza` is pinned to elizaOS/eliza's `grace/integration` branch
+(`9bd888f`): the previous pin `ca8823de` with the three Grace branches merged in, each still a draft
+pull request upstream: `grace/eliza-embedded-runtime` (#39795, the cloud-only agent service and its
+bridge), `grace/eliza-google-signin` (#39789) and `grace/eliza-cloud-speech-bridge` (#39784). One
+pushed branch holds all three so anyone can build Grace before they land; the Google sign-in path in
+it has never run with a real Google account.
+
+Bun is used only to build that vendored payload, never for Grace's own packages: with Bun 1.4.2 on
+`PATH`, run `bun install --frozen-lockfile` in `vendor/eliza` once per pin. `pnpm android` (Node 26,
+JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
+usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
+`--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
 `--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
 (absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
 the working directory), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
 otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
-produced with its size, its SHA-256 and the signer the newest installed build-tools' `apksigner`
-verified; a debug build removes release APKs left by an earlier `--release` run. The build fails if
-an APK carries an on-device model or local inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
+produced with its processor type, size, SHA-256 and the signer the newest installed build-tools'
+`apksigner` verified; a debug build removes release APKs left by an earlier `--release` run. The build
+fails unless an APK carries the agent (`assets/agent/agent-bundle.js`, `assets/agent-runtime.inventory`
+and `libeliza_bun.so` for exactly one processor type), and if it carries an on-device model or local
+inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
 `llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
@@ -72,10 +84,16 @@ emulator's, so a tablet on USB is never touched.
 socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
 "<accessible name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two
 minutes; a step with any other key or an empty name is refused before the build, and a tap fails
-when no visible thing or more than one has that name. A failed wait or step names the page's
-address, visibility, current rail item and opening text, and fails at once when Grace's WebView has
-closed its debugging socket. Each feature adds its own file; `home.json` walks `spec/app/shell.md`,
-"Story: Reach everyday tasks from Home".
+when no visible thing or more than one has that name. Three steps check the agent: `{ "agent": {
+"state": "<state>", "failure": "<cause>" } }` waits up to five minutes for the `EmbeddedAgent`
+bridge's status to have that state (and cause); `{ "service": "<class>" }` waits up to two minutes
+for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
+"android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
+background processes (`am kill`), fails unless her process is the same one, and opens her again. A
+failed wait or step names the page's address, visibility, current rail item, opening text and the
+agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
+adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
+and `agent.json` the agent service below.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
@@ -93,7 +111,7 @@ emulator it had started; a plain build has no handler and dies on the signal.
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
-manifests, `MainActivity.java` and `res/`. Both flavors may ask for location and the camera, for a
+manifests, `MainActivity.java`, `GraceAgentService.java`, `agent.json` and `res/`. Both flavors may ask for location and the camera, for a
 website, after the person's Allow.
 
 | Flavor | Is | `BuildConfig.IS_LAUNCHER` |
@@ -104,3 +122,66 @@ website, after the person's Allow.
 The website is ElizaSurfaceManager's `below-host` surface, a WebView under the transparent bridge
 WebView. Android Back is dispatched to the web UI as a cancelable `hardware-back` event; unconsumed,
 the launcher dispatches `launcher-home` and the standalone app leaves.
+
+### The agent
+
+The agent runs on the tablet in upstream's cloud-only `EmbeddedAgentService` (`plugin-native-agent`):
+its text and embeddings go to Eliza Cloud and it registers no local model handler. `host.json`'s
+`embeddedAgent` entry makes the generator compile it as the `eliza-embedded-agent` module and declare
+the service with its `specialUse` foreground type (a `dataSync` service is ended by Android 15 after
+six hours a day) and its permissions. `GraceAgentService` is Grace's subclass, which only gives the
+notification her monochrome G (`res/drawable/notification_icon.xml`; a full-colour icon shows as a
+white square). `MainActivity` starts it in `onCreate`, before the first WebView frame, and registers
+its bridge, `EmbeddedAgent`, which reaches the agent over its loopback socket, so the page keeps
+refusing cleartext and never holds a key. The service needs the signed-in Eliza Cloud credential,
+and nothing binds one yet: until the Google sign-in does (`cloudCredential()`), the agent unpacks its
+payload, then stops at status `failed` with `credential`.
+
+Its data files: `agent/character.json` as it is; `artifacts/agent/host.json`, which is
+`android/agent.json` (the service, the notification's words, Eliza Cloud's production API and the
+five routes the page may call) with `agent/policy.json`'s `model` as both cloud models; and
+`artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
+`ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
+`actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
+yet: no plugin in the payload registers them, and a name the agent does not register fails its boot.
+`--verify` reads the agent bundle out of each APK and fails when an action it declares by a literal
+or constant name is neither allowed (with `GRACE_*`) nor refused, by name or under a
+`refusedSubactionsOf` umbrella; an action named by a factory at run time is not seen.
+
+The payload (Bun for Android with its musl loader, the agent bundle, its database files and the
+inventory) is built by upstream's `buildConsumerAndroidRuntime` with no embedding model and no
+gateway, without the packages `stubPlugins` in `scripts/android.ts` names (`@elizaos` plugins
+`policy.json` refuses, which the build checks, and libraries only they use), into
+`artifacts/agent-runtime/<abi>-<key>`, keyed by the `vendor/eliza` commit, the processor type and that
+list, and reused by every later build. It refuses a `vendor/eliza` with local changes.
+
+### Why the host is as it is
+
+- The web UI is Capacitor's bridge WebView drawn over the website, which ElizaSurfaceManager keeps
+  in a WebView below it (`below-host`). `ElizaBridgeActivity` owns the WebView lifecycle: no mixed
+  content, renderer-death recovery and the stopped-page pause. The bridge WebView and every view up
+  to the content frame are transparent; paper (`color.light.background` in
+  `packages/design-system/tokens.json`, the window background) is painted beneath both WebViews, so
+  the frame between a website resize and the next draw shows no dark window.
+- The keyboard overlays the interface, which keeps its full height so the rail stays whole
+  (`SystemBars` `insetsHandling: "disable"` in `capacitor.config.ts`); the web UI lifts its windows by
+  the height ElizaSurfaceManager reports. Only the bars and a cutout inset the content. The bars stay
+  hidden until a swipe from the edge shows them briefly; Android can restore them when focus returns.
+  On API 29 the window draws under a cutout on a short edge; from API 30 under every cutout, since a
+  tablet in landscape has it on a long edge.
+- The transparent host is blended over the page every frame the page draws, so a website's endless
+  animation redraws the window at the display's full rate: about 1.4 cores at 90 Hz on a 3.9 GB
+  tablet. Where the display has a 60 Hz mode at its current resolution the window asks for it, again
+  after a configuration change; elsewhere it clears its request.
+- `RECORD_AUDIO` is for spoken replies and Talk, asked for at first use. A website's camera and
+  location are asked for after the person's Allow and Android's own prompt
+  (`spec/app/websiteRequests.md`); the launcher's Wi-Fi scan needs location too. Grace opts out of
+  Android's camera compatibility rotation, which turned the display to portrait when a website opened
+  the camera. `CHANGE_NETWORK_STATE`, which `ElizaWiFi`'s library manifest asks for, is removed:
+  nothing in Grace requests a network; the standalone flavor removes its Wi-Fi permissions too, and
+  `android.hardware.wifi` is not required (without it Grace's Wi-Fi settings say Wi-Fi is unavailable).
+- The `<queries>` list the apps `openExternalLink` can resolve on API 30+: mail and text compose, the
+  dial pad, maps, the store and apps with an https link filter; any other app is refused as
+  `EXTERNAL_APP_UNAVAILABLE`.
+- `app_icon.xml` is the logotype's G on a paper tile, 60 of 108 tall so the splash screen's circular
+  crop keeps the whole letter.

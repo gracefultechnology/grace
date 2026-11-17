@@ -23,7 +23,6 @@ public class MainActivity extends ElizaBridgeActivity {
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
  @Override public void onCreate(Bundle state) {
-  startForegroundService(new Intent(this, GraceAgentService.class));
   registerPlugin(EmbeddedAgentPlugin.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
@@ -47,6 +46,7 @@ public class MainActivity extends ElizaBridgeActivity {
     });
    }
   });
+  startForegroundService(new Intent(this, GraceAgentService.class));
  }
 
  private void leave(OnBackPressedCallback callback) {
