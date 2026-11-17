@@ -11,7 +11,7 @@ import type { FileTab } from "../gen/app__files.effect.vibe"
 const Words = Schema.Trimmed.check(Schema.isMinLength(1))
 const Day = Schema.String.check(
   Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/),
-  Schema.makeFilter((day: string) => new Date(`${day}T00:00:00Z`).toISOString().startsWith(day)),
+  Schema.makeFilter((day: string) => String(new Date(`${day}T00:00:00Z`).toJSON()).startsWith(day)),
 )
 const Clock = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
 const of = <T extends string>() => <const L extends readonly [T, ...T[]]>(literals: L) => Schema.Literals(literals)
@@ -63,14 +63,14 @@ const trimmed = (value: unknown) => typeof value === "string" ? value.trim() : v
 const given = (value: unknown) => value !== null && value !== ""
 const list = (value: unknown): readonly unknown[] => Array.isArray(value) ? value : []
 const whole = (value: unknown) => typeof value === "string" && /^-?\d+$/.test(value) ? Number(value) : value
-const normal: Readonly<Record<string, (value: unknown) => unknown>> = {
-  volume: whole,
-  brightness: whole,
-  time: (value) => typeof value === "string" ? value.replace(/^(\d):/, "0$1:") : value,
-}
+const normal: ReadonlyMap<string, (value: unknown) => unknown> = new Map([
+  ["volume", whole],
+  ["brightness", whole],
+  ["time", (value: unknown) => typeof value === "string" ? value.replace(/^(\d):/, "0$1:") : value],
+])
 const isFields = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value)
 const present = (value: unknown) => isFields(value)
-  ? Object.fromEntries(Object.entries(value).map(([key, field]): [string, unknown] => [key, (normal[key] ?? trimmed)(trimmed(field))]).filter(([, field]) => given(field)))
+  ? Object.fromEntries(Object.entries(value).map(([key, field]): [string, unknown] => [key, (normal.get(key) ?? trimmed)(trimmed(field))]).filter(([, field]) => given(field)))
   : value
 
 const fields = (raw: string): Readonly<Record<string, unknown>> => {

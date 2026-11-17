@@ -102,7 +102,7 @@
           "deleteAppointment",
           "dismissReminder"
         ],
-        "becomes": "spec/app/calendarView.md createOccurrence or changeOccurrence, confirmAppointment after her yes, changeOccurrence CancelEditing after her no, requestDeletion, and changeOccurrence DismissReminder"
+        "becomes": "spec/app/calendarView.md createOccurrence or changeOccurrence, confirmAppointment after her yes, changeOccurrence CancelEditing after her no, requestDeletion and approveDeletion with her scope after her yes, and changeOccurrence DismissReminder"
       },
       "GRACE_EMAIL": {
         "returns": [
@@ -133,8 +133,7 @@
       "allow": {
         "REPLY": "Her words back to the person: text, an optional working sentence, whether it is a question and its two or three answers. It changes nothing.",
         "IGNORE": "Ends a turn that needs no answer. It changes nothing.",
-        "NONE": "Ends a turn that needs no action. It changes nothing.",
-        "STOP": "Ends the turn at once. It changes nothing."
+        "NONE": "Ends a turn that needs no action. It changes nothing."
       },
       "refuse": {
         "ASSERT_MEETING_MOCK_LEDGER": "Registered only by @elizaos/plugin-meetings, which this file refuses.",
@@ -288,6 +287,7 @@
         "START_TRANSCRIPTION": "Registered only by @elizaos/plugin-local-inference, which this file refuses.",
         "STOP_TRANSCRIPTION": "Registered only by @elizaos/plugin-local-inference, which this file refuses.",
         "TASKS": "Registered only by @elizaos/plugin-agent-orchestrator, which this file refuses.",
+        "TAU_BENCH_TOOL": "Registered only by @elizaos/plugin-benchmarks, which this file refuses.",
         "TERMINAL_SHELL": "An agent administration tool, not for the person.",
         "TODO": "Registered only by @elizaos/plugin-todos, which this file refuses.",
         "TRADE": "Registered only by @elizaos/plugin-wallet, which this file refuses.",
