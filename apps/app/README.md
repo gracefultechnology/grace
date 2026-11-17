@@ -30,7 +30,9 @@ pushed branch holds all three so anyone can build Grace before they land; the Go
 it has never run with a real Google account.
 
 Bun is used only to build that vendored payload, never for Grace's own packages: with Bun 1.4.2 on
-`PATH`, run `bun install --frozen-lockfile` in `vendor/eliza` once per pin. `pnpm android` (Node 26,
+`PATH`, run `bun install --frozen-lockfile` in `vendor/eliza` once per pin (the `android` workflow
+does both only when its cache holds no payload for the pinned commit and `scripts/android.ts`).
+`pnpm android` (Node 26,
 JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
 usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
@@ -49,8 +51,10 @@ inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
 `llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
-`assets/` outside the web UI's `assets/public/`. Both flavors' `versionCode` is `package.json`'s
-version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
+`assets/` outside the web UI's `assets/public/`. Upstream's payload still carries
+`assets/agent/llama-kernel-diagnostic.mjs`, a 3 KB script that only lists which llama.cpp files and
+kernels a directory holds; it loads no model or library, and the check lets it pass. Both flavors'
+`versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
 ### On the emulator
 
@@ -133,19 +137,30 @@ the service with its `specialUse` foreground type (a `dataSync` service is ended
 six hours a day) and its permissions. `GraceAgentService` is Grace's subclass, which only gives the
 notification her monochrome G (`res/drawable/notification_icon.xml`; a full-colour icon shows as a
 white square), shown once Grace holds `POST_NOTIFICATIONS`; without it the service still runs in the
-foreground and Android lists it only under its active apps. `MainActivity` starts it in `onCreate`, before the first WebView frame, and registers
-its bridge, `EmbeddedAgent`, which reaches the agent over its loopback socket, so the page keeps
+foreground and Android lists it only under its active apps. `MainActivity` starts it in `onCreate`,
+before the first WebView frame, and registers its bridge, `EmbeddedAgent`, which reaches the agent over its loopback socket, so the page keeps
 refusing cleartext and never holds a key. The service needs the signed-in Eliza Cloud credential,
 and nothing binds one yet: until the Google sign-in does (`cloudCredential()`), the agent unpacks its
 payload, then stops at status `failed` with `credential`, and no Google account has yet signed in on
 it.
 
-A run of this branch with `--install` and `--exercise agent` on a fresh API 36 tablet AVD, on a host
+A run of this branch with `--emulator <avd>` and `--exercise agent` on a fresh API 36 tablet AVD, on a host
 with a load average near 290: both debug APKs passed the content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event. "Agent ready" is not measured:
-it needs the credential.
+was left for Android's settings, and Grace raised no `am_anr` event.
+
+The agent has not reached `ready`. Built once with `cloudCredential()` returning a placeholder line
+(never committed), the service unpacked the payload and launched Bun under its musl loader
+(`libeliza_ld_musl_aarch64_real.so`), which loaded the bundle and exited before readiness: status
+`failed` with `agent`, "Native child exited before readiness". `no_backup/embedded-agent/agent.log`
+names the cause, `NATIVE_CLOUD_ROUTING_UNAVAILABLE` from `startNativeManagedGoogleHost`: on Android,
+with `ELIZAOS_CLOUD_USE_INFERENCE`, which `EmbeddedAgentConfig.agentEnvironment` always sets, the
+agent requires an admitted native runtime module (`ELIZA_NATIVE_GOOGLE_HOST_MODULE` under
+`ELIZA_SMTHRS_RUNTIME_DIR`) that neither the payload nor the embedded service provides. Upstream's
+embedded service has to change before any credential can bring it to `ready`. On a warm start Bun
+started 9 seconds after Grace's process and exited 6 seconds later at a peak of 170 MB resident; Grace's
+own process held 270 MB.
 
 Its data files: `agent/character.json` as it is; `artifacts/agent/host.json`, which is
 `android/agent.json` (the service, the notification's words, Eliza Cloud's production API and the
@@ -154,9 +169,12 @@ five routes the page may call) with `agent/policy.json`'s `model` as both cloud 
 `ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
 `actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
 yet: no plugin in the payload registers them, and a name the agent does not register fails its boot.
-`--verify` reads the agent bundle out of each APK and fails when an action it declares by a literal
-or constant name is neither allowed (with `GRACE_*`) nor refused, by name or under a
-`refusedSubactionsOf` umbrella; an action named by a factory at run time is not seen.
+`--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
+literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
+nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
+upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
+computed at run time (a parameter, or a variable also given other values) is not: five such objects
+in the bundle of `9bd888f`, against 68 actions it sees.
 
 The payload (Bun for Android with its musl loader, the agent bundle, its database files and the
 inventory) is built by upstream's `buildConsumerAndroidRuntime` with no embedding model and no
