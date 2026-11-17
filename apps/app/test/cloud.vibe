@@ -137,7 +137,15 @@ const invalid = { status: 400, body: { error: "invalid_request" } }
 const mobileInvalid = { status: 400, body: { success: false, error: "invalid_request", errorDescription: "Invalid mobile authorization request", retryable: false } }
 
 export const unending = "Keep talking until I stop you."
-export const reply = (said: string) => `I heard you say: ${said} What would you like to do next?`
+/** What the agent answers to `said`: a reply the app's decoder must read for the turns the journeys script, else an echo. */
+export const scripted: Readonly<Record<string, string>> = {
+  "Make the text bigger.": JSON.stringify({
+    text: "I made the text larger. Is that easier to read?", isQuestion: true, answers: ["Yes, thanks", "A bit bigger"],
+    actions: [{ kind: "setTextSize", size: "Larger" }, { kind: "searchMail", query: "clinic" }]
+  }),
+  "Say nothing.": JSON.stringify({ actions: [] })
+}
+export const reply = (said: string) => scripted[said] ?? `I heard you say: ${said} What would you like to do next?`
 const heard = "I would like to pay my power bill."
 
 const lifetimes = { credential: 30 * 24 * 60 * 60, code: 5 * 60, consent: 5 * 60, speech: 60 }

@@ -1,0 +1,69 @@
+// spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone"
+import { brightnessChoice, type DisplayPreferences, muteChoice, volumeChoice } from "../gen/app__preferences.effect.vibe"
+import { type Event, Machine as Workspaces, type Workspace, type WorkspaceActor } from "../gen/app__workspace.effect.vibe"
+import { targets } from "./context.vibe"
+import type { Action } from "./reply.schema.ts"
+
+export type GraceAction = typeof Action.Type
+export type Origin = "Typed" | "Spoken" | "Tapped" | "FromDevice"
+export type Request = { readonly generation: number; readonly workVersion: number; readonly origin: Origin }
+export type Outcome = "Applied" | "Refused" | "NotYetAvailable"
+export type Applied = { readonly action: GraceAction; readonly outcome: Outcome }
+
+export service Agent { apply(actions: readonly GraceAction[], request: Request): readonly Applied[]!! }
+
+type Step = { readonly event: Event; readonly by: WorkspaceActor }
+
+const asPerson = (event: Event): Step => ({ event, by: "Person" })
+const preview = (settings: DisplayPreferences) => [asPerson({ type: "changePreferences", settings })]
+
+function steps(action: GraceAction, w: Workspace): readonly Step[] | undefined {
+  const session = w.preferences.session
+  return match (action) {
+    when { kind: "open", let surface }: [asPerson({ type: "visit", destination: surface })];
+    when { kind: "showSetting", let page }: [
+      ...w.device.surface === "DeviceSettings" ? [] : [asPerson({ type: "visit", destination: "DeviceSettings" })],
+      asPerson({ type: "chooseSettingsPage", page })
+    ];
+    when { kind: "setTextSize", let size }: preview({ ...session, textSize: size });
+    when { kind: "setPace", let pace }: preview({ ...session, pace });
+    when { kind: "setVolume", let volume }: preview(volumeChoice(session, volume));
+    when { kind: "setMuted", let muted }: preview(muteChoice(session, muted));
+    when { kind: "setBrightness", let brightness }: preview(brightnessChoice(session, brightness));
+    when { kind: "setVoiceOutput", let on }: preview({ ...session, voiceOutput: on });
+    when { kind: "undoSetting" }: [asPerson({ type: "undoPreferences" })];
+    when { kind: "guide", let target }: [{ by: "Host", event: { type: "publishGuidance", guidanceReport: {
+      target, revision: w.assistant.guidance.revision, workVersion: w.assistant.workVersion, conversationVersion: w.assistant.conversation.generation,
+      deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, verified: targets(w).has(target)
+    } } }];
+    default: undefined;
+  }
+}
+
+const fromPerson = (origin: Origin) => origin === "Typed" || origin === "Spoken" || origin === "Tapped"
+
+/** What Grace may do today, each as the event its owner's guard decides; what has no event yet is reported, not done. */
+export const agent = Layer.effect(Agent, effect {
+  const workspace = try Workspaces
+  effect function run(planned: readonly Step[]) {
+    for (const { event, by } of planned) {
+      const sent = workspace.send(event, by) catch () => undefined
+      if (sent === undefined) return "Refused" as const
+    }
+    return "Applied" as const
+  }
+  return {
+    apply: effect (actions, request) => {
+      const applied: Applied[] = []
+      for (const action of actions) {
+        const w = try workspace.get()
+        const current = fromPerson(request.origin) && w.assistant.conversation.generation === request.generation && w.assistant.workVersion === request.workVersion
+        const planned = steps(action, w)
+        const outcome: Outcome = !current ? "Refused" : planned === undefined ? "NotYetAvailable" : try run(planned)
+        try logInfo("Grace's action", { kind: action.kind, outcome })
+        applied.push({ action, outcome })
+      }
+      return applied
+    }
+  }
+})

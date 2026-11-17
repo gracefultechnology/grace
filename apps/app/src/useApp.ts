@@ -8,11 +8,13 @@ import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/a
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
 import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
+import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
+import { Conversation, type PersonTurn } from "./conversation.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -34,6 +36,8 @@ export function useWorkspace() {
     send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
     current: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())),
+    /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */
+    say: (input: PersonTurn) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.say(input))),
     /** The person's Close browser, which the page host also tells what websites asked. */
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
