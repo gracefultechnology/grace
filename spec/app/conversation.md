@@ -70,12 +70,7 @@ window never activate the microphone. The workspace also invokes this entry
 after an authenticated enabled “Hey Grace” detection, including from sleep;
 that separate wake lifecycle never grants website or payment authority. No
 wake detector ships in the MVP, so the [wake host](./wake.md) reports detection
-unavailable and only Talk starts an exchange. Talk opens one cloud speech
-session for this exchange; it closes when the turn returns to Ready, and her
-audio is sent only while that exchange is listening. Talk is not offered while
-a website is using the microphone, such as a video visit, and Grace's listening
-ends when one starts: the two never share the microphone.
-Talk also deliberately resets the
+unavailable and only Talk starts an exchange. Talk also deliberately resets the
 consecutive unusable-speech limit and invalidates old response callbacks.
 
 ```quint
@@ -449,6 +444,20 @@ cloud voice.
 pure val voiceDisclosure = "When you talk to Grace, your voice goes to Grace's cloud service to be understood."
 ```
 
+### Only Talk opens the microphone, so her voice is sent only in an exchange she started
+
+Talk opens one cloud speech session for its exchange, and the session closes
+when the turn returns to Ready. Her audio is sent only while that exchange is
+open: while Grace listens, and while Grace speaks with the microphone on so
+that she can be interrupted. No reply, finished speech, failure or turn the
+host starts turns the microphone on.
+
+```quint
+pure def sendsHerVoice(c: Conversation): bool = c.voice and (c.turn == Listening or c.turn == Speaking)
+pure def stepOnlyTalkOpensTheMicrophone(before: Conversation, via: str, after: Conversation): bool =
+  (not(before.voice) and after.voice) implies via == "talk"
+```
+
 ### Listening waits eight seconds for her first word
 
 The host reports Silence once no word has been heard for eight seconds after
@@ -474,19 +483,22 @@ pure def showsHeardWords(c: Conversation, token: int, owner: AudioOwner): bool =
 ### Each speech failure has its own written explanation
 
 No internet, signed out, the daily allowance reached, the service busy, a
-microphone problem and sound that cannot play each have their own sentence.
-Only no internet speaks of the connection; a busy service never blames hers.
-A session that expires or is cancelled is a normal end, not a failure, and
-tells her nothing.
+microphone problem, a website using the microphone and sound that cannot play
+each have their own sentence. Only no internet speaks of the connection; a
+busy service never blames hers. A session that expires or is cancelled is a
+normal end, not a failure, and tells her nothing. A website using the
+microphone, such as a video visit, ends Grace's listening, so the two never
+share it and words meant for the call never reach Grace.
 
 ```quint
-type SpeechFailure = NoInternet | SignedOut | NoAllowance | ServiceBusy | MicrophoneProblem | CannotPlay
+type SpeechFailure = NoInternet | SignedOut | NoAllowance | ServiceBusy | MicrophoneProblem | WebsiteMicrophone | CannotPlay
 pure def speechFailureText(failure: SpeechFailure): str = match failure {
   | NoInternet => "I can't talk while the tablet is offline. Open Wi-Fi to connect again."
   | SignedOut => "I can't talk until you sign in to your Grace account again."
   | NoAllowance => "I can't talk any more today. You can still type."
   | ServiceBusy => "My voice service is busy right now. Tap Talk to try again, or type."
   | MicrophoneProblem => "I can't use the microphone. Allow it in Settings, or type."
+  | WebsiteMicrophone => "A website is using the microphone, so I've stopped listening. You can still type."
   | CannotPlay => "I can't play sound right now, so my replies stay written here."
 }
 pure def lawSpeechFailuresAreExplainedDistinctly(failure: SpeechFailure, other: SpeechFailure): bool =
@@ -508,8 +520,8 @@ pure def speechFailure(c: Conversation, token: int, failure: SpeechFailure, by: 
 pure def stepSpeechFailureStopsVoice(before: Conversation, via: str, after: Conversation): bool =
   via == "speechFailure" implies
     not(after.voice) and after.turn == Ready and after.generation > before.generation and after.question == before.question
-pure def sometimesSpeechFailed(c: Conversation): bool =
-  c.messages.some(m => m.text == speechFailureText(NoAllowance))
+pure def sometimesListeningEndedByFailure(c: Conversation): bool =
+  not(c.voice) and c.turn == Ready and c.messages.some(m => m.text == speechFailureText(WebsiteMicrophone))
 ```
 
 ### A streamed reply arrives in order and ends the turn once
@@ -535,12 +547,12 @@ pure def sometimesReplyStreamed(c: Conversation): bool = c.streamed >= 2 and c.t
 ### Grace may take a turn the person did not start, marked with where it came from
 
 A page event, a report of what was done on another surface and Grace's
-opening line (the prototype's greeting by her first name, "What can I help with?", when the
-transcript is empty) start
-a turn that is not hers. Such a turn adds no message in her name, never
-answers Grace's question for her and starts only while Grace is idle with the
-microphone off. Whether the current turn was hers is what the request record
-reads.
+opening line start a turn that is not hers. The opening line is the
+prototype's greeting by her first name, "What can I help with?", and comes
+only when the transcript is empty. Such a turn adds no message in her name,
+retires an open question without answering it, and starts only while Grace is
+idle with the microphone off. Whether the current turn was hers is what the
+request record reads.
 
 ```quint
 pure def canHostTurn(c: Conversation, origin: TurnOrigin, by: ConversationActor): bool =
