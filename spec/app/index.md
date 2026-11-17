@@ -55,7 +55,9 @@ previews describe unavailability. The vault and its summaries are excluded
 from the transcript, memory, cloud and agent tools. The device vault belongs
 to this Android user. A prior hosted account or account-bound vault is not
 opened by the device-only flow; when the app cannot verify ownership it
-leaves those records sealed.
+leaves those records sealed. A show, copy or delete request uses the revision
+the person saw. If the sign-in changed on the device, Passwords refreshes
+the displayed details so the person can review them before trying again.
 
 ~~~quint
 type VaultActor = PasswordsPerson | PasswordsHost

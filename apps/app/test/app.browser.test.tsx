@@ -8,6 +8,7 @@ import { afterAll, beforeAll, expect, it, onTestFinished, vi } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
+import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
@@ -722,7 +723,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
 
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   let locked = true;
-  let edited = false;
+  let saved = { id: "first-login", revision: 4, updatedAt: 1, label: "Utility account", username: "Pat", bindings: [] };
   let shown = false;
   const vault: PasswordVault = {
     status: () => Promise.resolve({
@@ -731,15 +732,20 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     }),
     lock: () => { locked = true; return Promise.resolve(); },
     unlock: () => { locked = false; return Promise.resolve({ unlockRemainingMs: 60_000 }); },
-    list: () => Promise.resolve([{ id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] }]),
+    list: () => Promise.resolve([saved]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
-      edited = true;
+      saved = { ...saved, username: "New account", revision: 5 };
       return Promise.resolve({ status: "saved", id: "first-login", revision: 5 });
     },
     remove: () => Promise.resolve(),
     reveal: () => { shown = true; return Promise.resolve({ hidesAfterMs: 30_000 }); },
-    copy: () => Promise.resolve({ clearsAfterMs: 45_000 }),
+    copy: (_id, revision) => {
+      if (revision === undefined) return Promise.reject(new PasswordsClientError("unavailable", "No displayed revision"));
+      return revision === saved.revision
+        ? Promise.resolve({ clearsAfterMs: 45_000 })
+        : Promise.reject(new PasswordsClientError("conflict", "The record changed"));
+    },
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
   let finishSpeech: ((result: GuideSpeechResult) => void) | undefined;
@@ -771,9 +777,12 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.poll(() => shown).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
   await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
+  saved = { ...saved, username: "Updated on this tablet", revision: 6 };
+  await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
+  await expect.element(page.getByText("Updated on this tablet", { exact: true })).toBeVisible();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await expect.poll(() => locked).toBe(true);
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
   await expect.element(unlock).toBeEnabled();
