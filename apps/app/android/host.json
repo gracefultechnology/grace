@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sdk": { "min": 29, "target": 36, "compile": 36 },
-  "releaseMinify": false,
+  "releaseMinify": true,
   "kotlin": false,
   "nativeLibraries": "extract-16k",
   "embeddedAgent": {

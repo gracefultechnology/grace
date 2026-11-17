@@ -228,8 +228,10 @@ function writeApkManifest() {
     const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
     if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}; delete artifacts/agent-runtime to rebuild a payload staged by an older build`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
-    process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes; its ${actions} actions declared by name are each allowed or refused\n`);
-    return { name, abi: abis[0], bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
+    const debuggable = execFileSync(buildTool("aapt"), ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
+    if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
+    process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; its ${actions} actions declared by name are each allowed or refused\n`);
+    return { name, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
   writeFileSync(path.join(artifacts, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
@@ -399,8 +401,17 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
   await shell(serial, `am start -W -n ${activity}`, 120);
 }
 
-async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>) {
-  await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
+async function install(serial: typeof EmulatorSerial.Type, apk: string) {
+  await adb(["-s", serial, "install", "-r", apk], 300).catch(async (error: unknown) => {
+    if (!(error instanceof Error && String(error.cause).includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE"))) throw error;
+    process.stdout.write(`${serial} holds Grace signed by another key; uninstalling her and her data\n`);
+    await adb(["-s", serial, "uninstall", identity.appId], 120);
+    await adb(["-s", serial, "install", apk], 300);
+  });
+}
+
+async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, release: boolean) {
+  await install(serial, path.join(artifacts, release ? "launcher-release.apk" : "launcher-debug.apk"));
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
@@ -409,6 +420,11 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   const webView = /Current WebView package \(name, version\): \((.*)\)/.exec(await shell(serial, "dumpsys webviewupdate"))?.[1];
   process.stdout.write(`${serial} ${webView ?? "WebView unknown"}\n`);
+  if (release) {
+    const running = (await shell(serial, `for i in $(seq 120); do pidof ${identity.appId} && exit; sleep 1; done`, 180)).trim();
+    if (!/^\d+$/.test(running)) throw new Error(`Expected one process of Grace's release build on ${serial}, found "${running}"`);
+    return;
+  }
   const debuggable = `grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit`;
   const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); case "$pid" in *" "*) echo "$pid"; exit;; "") ;; *) ${debuggable};; esac; sleep 1; done`;
   const pid = (await shell(serial, waitForPid, 180)).trim();
@@ -437,7 +453,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   }
 }
 
-async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>) {
+async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>, release: boolean) {
   const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
   await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
   const installing = (await shell(serial, "date +%s")).trim();
@@ -448,7 +464,7 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     if (graces.length) throw new Error(`Grace was not responding on ${serial}:\n${graces.join("\n")}`, { cause });
     return events.length;
   };
-  await walk(serial, exercise).catch(async (error: unknown) => {
+  await walk(serial, exercise, release).catch(async (error: unknown) => {
     responding(await anrs().catch(() => { throw error; }), error);
     throw error;
   });
@@ -461,6 +477,9 @@ if (import.meta.main) {
   const { verify, release, abi = "arm64-v8a", install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
+  if (exercise && release) throw new Error("--exercise drives Grace's page over its debugging socket, which a release build does not open; walk the debug build");
+  if (release && (install || emulator) && !Object.values(signing).every((name) => process.env[name]?.trim()))
+    throw new Error(`An unsigned release APK cannot be installed; set ${Object.values(signing).join(", ")}`);
   if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
   if (emulator && !avds().includes(emulator)) throw new Error(`No AVD named ${emulator}`);
   const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step), { onExcessProperty: "error" })(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
@@ -471,7 +490,7 @@ if (import.meta.main) {
     if (target) {
       process.once("exit", (code) => { stopping.abort(); if (code) target.stop(); });
       for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
-      await deliver(target, steps);
+      await deliver(target, steps, release === true);
     }
   }
 }
