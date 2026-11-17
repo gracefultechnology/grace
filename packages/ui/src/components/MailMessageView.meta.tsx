@@ -44,7 +44,6 @@ const clinic: Partial<MailMessageViewProps> = {
   photos: undefined,
   files: [{ name: "Visit form.pdf", detail: "2 pages" }],
   onOpenFile: fn(),
-  onPrintFile: fn(),
 };
 
 export const meta: ComponentMeta<MailMessageViewProps> = {
@@ -74,7 +73,6 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     Loading: { status: "loading" },
     "Couldn’t open": { status: "failed", onRetry: retry },
     "Photos saved": { saveAllStatus: "saved" },
-    "Print unknown": { ...clinic, files: [{ name: "Visit form.pdf", detail: "2 pages", printStatus: "unknown" }] },
     Bill: bill,
     "Bill confirmed": { ...bill, bill: { ...waterBill, confirmed: true, status: <PaymentStatusBadge status="unknown" /> } },
   },

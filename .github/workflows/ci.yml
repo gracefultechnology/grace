@@ -5,6 +5,12 @@ name: ci
 # The fixed normal profile is the same locally and in CI. The self-test also
 # installs and checks each standalone example.
 on:
+  workflow_dispatch:
+    inputs:
+      billworld:
+        description: Run the pinned 100-biller browser qualification
+        type: boolean
+        default: true
   pull_request:
     branches: [develop, main]
   push:
@@ -21,6 +27,35 @@ permissions:
   contents: read
 
 jobs:
+  billworld:
+    if: github.event_name == 'workflow_dispatch' && inputs.billworld
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v7
+        with:
+          repository: gracefultechnology/billworld
+          ref: f335b651f9820c3454f447e3d4722b78c5298a0b
+          path: .cache/billworld
+          persist-credentials: false
+      - run: pnpm gen
+      - name: Follow Grace through the Fleet cohort
+        env:
+          GRACE_BILLWORLD_DIR: ${{ github.workspace }}/.cache/billworld
+          GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: billworld-browser-receipts
+          path: ${{ runner.temp }}/grace-fleet
+          if-no-files-found: error
   verify:
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
