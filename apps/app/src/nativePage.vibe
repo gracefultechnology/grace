@@ -5,7 +5,7 @@ import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../ge
 import { type SurfacePlugin, identity } from "./surfacePlugin.ts"
 import {
   DialogRequested, DownloadFinished, DownloadRequested, ExternalLinkRequested, FileChooserRequested, IdentityProviderRequested,
-  NavigationChanged, PageStarted, type PageId, PurgeResult, RequestKey, SitePermissionAnswer, SitePermissionRequested,
+  NavigationChanged, PageStarted, type PageId, PermissionClosed, PurgeResult, RequestKey, SitePermissionAnswer, SitePermissionRequested,
   SitePermissionWithdrawn, SurfaceCrashed, type Url
 } from "./nativePage.schema.ts"
 import { webPage } from "./webPage.vibe"
@@ -137,7 +137,9 @@ function devicePage(plugin: SurfacePlugin) {
     reload: (id) => call((p) => p.reloadSurface(own(id))),
     destroy: (id) => call((p) => p.destroySurface(own(id))),
     reply: (reply) => call((p) => answerPage(p, own(reply.id), reply)),
-    grant: (id, key) => Effect.map(ask(SitePermissionAnswer, (p) => p.answerSitePermission({ ...own(id), requestId: key, grant: true })), (r) => outcomes[r.outcome]),
+    grant: (id, key) => Effect.catch(
+      Effect.map(ask(SitePermissionAnswer, (p) => p.answerSitePermission({ ...own(id), requestId: key, grant: true })), (r) => outcomes[r.outcome]),
+      (failed) => Schema.is(PermissionClosed)(failed.cause) ? Effect.succeed(outcomes.ended) : Effect.fail(failed)),
     purge: () => Effect.map(ask(PurgeResult, (p) => p.purgeProfiles({ ...identity, profileKey })), (r) => r.clean === true),
     events: surfaceEvents(plugin)
   })

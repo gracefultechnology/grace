@@ -59,4 +59,6 @@ export const IdentityProviderRequested = Schema.Struct({ ...surface, requestId: 
 
 export const SitePermissionAnswer = Schema.Struct({ outcome: Schema.Literals(["granted", "denied", "android-refused", "ended"]) })
 
+export const PermissionClosed = Schema.Struct({ code: Schema.Literal("SITE_PERMISSION_CLOSED") })
+
 export const PurgeResult = Schema.Struct({ clean: Schema.optional(Schema.Boolean) })
