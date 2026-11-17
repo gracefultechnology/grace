@@ -16,6 +16,8 @@ import org.json.JSONTokener;
 final class GraceCredentials {
  private static final Object LIFECYCLE = new Object();
  private static final CredentialIntentFence INTENTS = new CredentialIntentFence(LIFECYCLE);
+ private static final String KEY = GraceSignInPlugin.NATIVE.credentialSlot(GraceSignInPlugin.PRODUCTION);
+ private static final String ACTIVATION = GraceSignInPlugin.NATIVE.receiptSlot(GraceSignInPlugin.PRODUCTION);
  private static long lifecycleEpoch, mutationEpoch = -1;
 
  private GraceCredentials() {}
@@ -33,9 +35,9 @@ final class GraceCredentials {
   }
  }
 
- static String agentKey(Context context) throws Exception {
-  String slot = GraceSignInPlugin.REGISTRATION.credentialSlot(GraceSignInPlugin.PRODUCTION);
-  String saved = withRead(() -> read(store(context), slot));
+ static String cloudKey(Context context) throws Exception {
+  JsonCredentialSlots store = store(context);
+  String saved = withRead(() -> read(store, ACTIVATION) == null ? read(store, KEY) : null);
   if (saved == null) return null;
   JSONObject credential = new JSONObject(saved);
   return credential.getLong("expiresAt") > System.currentTimeMillis() ? credential.getString("token") : null;
@@ -67,11 +69,11 @@ final class GraceCredentials {
  }
 
  private static boolean change(Context context, JsonCredentialSlots store, Runnable guard, String slot, boolean compare, String expected, String value) throws Exception {
-  boolean key = slot.startsWith(GraceSignInPlugin.REGISTRATION.credentialSlotPrefix);
+  boolean bound = slot.equals(KEY) || slot.equals(ACTIVATION);
   return CredentialMutationConductor.mutate(host(context), guard, new CredentialMutationConductor.Mutation<Boolean>() {
    @Override public boolean requiresShutdown() throws Exception {
     String before = read(store, slot);
-    return key && (!compare || Objects.equals(before, expected)) && !Objects.equals(before, value);
+    return bound && (!compare || Objects.equals(before, expected)) && !Objects.equals(before, value);
    }
    @Override public Boolean commit() throws Exception {
     if (compare && !Objects.equals(read(store, slot), expected)) return false;
@@ -102,7 +104,7 @@ final class GraceCredentials {
    @Override public void finishMutation(long epoch, long request, boolean attempted, boolean committed) {
     if (mutationEpoch != epoch) return;
     mutationEpoch = -1;
-    if (request >= 0) GraceAgentService.start(context);
+    if (request >= 0 && (!attempted || committed)) GraceAgentService.start(context);
    }
   };
  }

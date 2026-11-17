@@ -11,11 +11,10 @@ public class GraceAgentService extends EmbeddedAgentService {
   return Notification.Builder.recoverBuilder(this, super.runtimeNotification()).setSmallIcon(R.drawable.notification_icon).build();
  }
 
- @Override protected String cloudCredential() throws Exception { return GraceCredentials.agentKey(this); }
+ @Override protected String cloudCredential() throws Exception { return GraceCredentials.cloudKey(this); }
 
  static boolean stopped() throws JSONException {
-  String state = statusFor(GraceAgentService.class, true, "").getString("state");
-  return !state.equals("starting") && !state.equals("running");
+  return statusFor(GraceAgentService.class, true, "").getString("state").equals("stopped");
  }
 
  static void start(Context context) {
