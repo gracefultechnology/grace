@@ -1,11 +1,16 @@
 package technology.graceful.grace;
 
 import ai.eliza.auth.cloud.CloudCredentialSlots;
+import ai.eliza.auth.cloud.CloudPasswordBackup;
 import ai.eliza.auth.cloud.CloudSignInConfig;
 import ai.eliza.auth.cloud.CloudSignInEnvironment;
 import ai.eliza.auth.cloud.CloudSignInPlugin;
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.concurrent.Callable;
 
@@ -47,6 +52,74 @@ public final class GraceSignInPlugin extends CloudSignInPlugin {
  private static boolean googlePlay(Context context) {
   try { return context.getPackageManager().getApplicationInfo("com.google.android.gms", 0).enabled; }
   catch (PackageManager.NameNotFoundException absent) { return false; }
+ }
+
+ private GracePasswordRecovery passwordRecovery;
+
+ @PluginMethod public void passwordBackupStatus(PluginCall call) {
+  getBridge().execute(() -> call.resolve(new JSObject().put("ready", passwordBackupReady())));
+ }
+
+ @PluginMethod public void openBackupRecovery(PluginCall call) {
+  getBridge().execute(() -> {
+   if (!passwordBackupReady()) {
+    call.resolve(new JSObject().put("status", "unavailable"));
+    return;
+   }
+   getActivity().runOnUiThread(() -> {
+    if (getActivity().isFinishing() || getActivity().isDestroyed()) {
+     call.resolve(new JSObject().put("status", "unavailable"));
+     return;
+    }
+    if (passwordRecovery == null) passwordRecovery = new GracePasswordRecovery(getActivity(), this);
+    call.resolve(new JSObject().put("status", passwordRecovery.open() ? "opened" : "unavailable"));
+   });
+  });
+ }
+
+ private boolean passwordBackupReady() {
+  try {
+   KeyguardManager guard = getContext().getSystemService(KeyguardManager.class);
+   String key = GraceCredentials.cloudKey(getContext());
+   return guard != null && guard.isDeviceSecure() && !guard.isDeviceLocked()
+    && googlePlay(getContext()) && key != null && CloudPasswordBackup.available(registration(), PRODUCTION);
+  } catch (Exception unavailable) {
+   return false;
+  }
+ }
+
+ void authorizePasswordBackup(CloudPasswordBackup.Purpose purpose, GracePasswordRecovery recovery) {
+  getBridge().execute(() -> {
+   try {
+    Runnable intent = GraceCredentials.observe();
+    String key = GraceCredentials.cloudKey(getContext());
+    String owner = CloudPasswordBackup.currentAccount(PRODUCTION, key);
+    Runnable guard = () -> {
+     intent.run();
+     try {
+      if (!key.equals(GraceCredentials.cloudKey(getContext()))) throw new IllegalStateException("Grace account changed");
+     } catch (RuntimeException failure) { throw failure; }
+     catch (Exception failure) { throw new IllegalStateException("Grace account unavailable"); }
+    };
+    getActivity().runOnUiThread(() -> {
+     boolean started = startNativePasswordBackup(PRODUCTION, purpose, new NativePasswordBackupCallback() {
+      @Override public void approved(CloudPasswordBackup.Approval approval) {
+       if (!owner.equals(approval.ownerId())) {
+        recovery.failed("Choose the Google account you already use with Grace.");
+        return;
+       }
+       recovery.run(purpose, approval, key, guard);
+      }
+      @Override public void refused(String reason) {
+       recovery.failed("cancelled".equals(reason) ? null : "Grace could not confirm your account.");
+      }
+     });
+     if (!started) recovery.failed("Grace could not start password backup.");
+    });
+   } catch (Exception unavailable) {
+    recovery.failed("Sign in to Grace before using password backup.");
+   }
+  });
  }
 
  @Override protected CloudSignInConfig registration() { return googlePlay(getContext()) ? NATIVE : BROWSER; }

@@ -504,3 +504,28 @@ pure def lawCannotClaimAnotherPasswordOwner(scope: str, other: str, generationId
 pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool =
   not(mayBindPasswords(DevicePasswordCustody, scope, generationId, true, false))
 ```
+
+## Story: Back up and recover my saved passwords
+
+> As a tablet owner, I can choose to save an encrypted copy of my passwords,
+> restore it on a replacement tablet with my recovery key, or remove it
+> from my cloud account.
+
+### A backup belongs to the signed-in owner and has its own approval
+
+Grace offers Backup and recovery when its native account, screen lock and
+backup service are ready. Each operation needs the same signed-in account
+and a new native account confirmation. Verifying ownership, saving and
+restoring require a fresh tablet unlock. A tablet with saved passwords asks
+the owner before linking those passwords to the account. The recovery key stays in a protected native screen,
+and Grace sends only the encrypted snapshot. Restore fills an empty vault
+in one step. Removing a cloud copy leaves local passwords available.
+
+```quint
+pure def canOpenPasswordRecovery(accountReady: bool, screenSecure: bool, serviceReady: bool): bool =
+  accountReady and screenSecure and serviceReady
+pure def canRestorePasswordBackup(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
+pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
+  not(canRestorePasswordBackup(ownerMatches, freshUnlock, recoveryKeyMatches, false))
+```
