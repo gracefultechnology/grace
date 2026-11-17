@@ -1,6 +1,8 @@
-# Payment authorization and durable outcomes
+# Commitment authorization and durable outcomes
 
-One durable aggregate belongs to one owner, provider, account and bill occurrence. Email, Calendar, browser guidance and resumed tasks must retrieve this same aggregate; a new chat is not a new payment. The bill reference identifies a unique provider obligation or invoice cycle. A calendar entry ID is not part of payment identity: two entries referring to the same bill share one payment record. Identity uses stable opaque references, not an account suffix, amount, task ID or website name. No password, verification code, card number or bank credential enters this model.
+A commitment is the consequential act a task ends in: paying a bill, booking a visit. This ledger owns its review, approval, submission and verified outcome for every kind of task; it reads a kind only through the subject's kind and the terms of [task](./task.md), never a field of a kind's own. Bill pay is the kind the rules below are written for, and every rule holds for each kind.
+
+One durable aggregate belongs to one owner, provider, account and subject: a bill occurrence or a visit. Email, Calendar, browser guidance and resumed tasks must retrieve this same aggregate; a new chat is not a new commitment. The subject's reference identifies a unique provider obligation or invoice cycle. A calendar entry ID is not part of the identity: two entries referring to the same bill share one record. Identity uses stable opaque references, not an account suffix, amount, task ID or website name. No password, verification code, card number or bank credential enters this model.
 
 This contract generalizes `BillAttempt`, `MoneyEffect` and `GuideConsent` from the legacy formal models. It implements current INV 01–08, JOURNEY 09–11 and TXN 01–02. Their diagnostic feature switches and fixed attempt bounds are intentionally absent. The shell authenticates `by` independently of event JSON. Browser evidence means evidence obtained and checked by the trusted browser integration, never an assertion by website text or the language model.
 
@@ -358,9 +360,9 @@ pure def stepRestartKeepsRecord(before: Commitment, via: str, after: Commitment)
     after.result == before.durable.result and after.attempt == before.attempt and not(after.fresh) and not(after.readBack)
 ```
 
-### An owner that keeps payments keeps every payment rule
+### An owner that keeps commitments keeps every commitment rule
 
-The workspace keeps the current payment and earlier ones and requires every payment rule of each. `validPayment` is the conjunction of every `always` rule of this spec, kept here beside the rules so that the owner calls one definition instead of a copy of its own; the workspace's copy (spec/app/workspace.md) is to be replaced by a call to this one. Nothing checks the list mechanically: whoever adds an `always` rule here adds it to `validPayment` too.
+The workspace keeps the current commitment and earlier ones and requires `validCommitment` of each ([workspace](./workspace.md)). `validCommitment` is the conjunction of every `always` rule of this spec, kept here beside the rules so that the owner calls this one definition and holds no copy of its own. Whoever adds an `always` rule here adds it to `validCommitment` too.
 
 ```quint
 pure def validCommitment(p: Commitment): bool =
