@@ -19,15 +19,22 @@ export type SettingsVoiceProps = Omit<ComponentProps<"section">, "onChange"> & {
   /** Grace speaks her words aloud. */
   speaks: boolean;
   onSpeaksChange?: (on: boolean) => void;
-  /** The tablet listens for "Hey Grace". */
-  wake: boolean;
+  /** Whether the tablet listens for "Hey Grace": on, off, not available yet, or waiting for the microphone. */
+  wake: WakeState;
   onWakeChange?: (on: boolean) => void;
-  /** Why the tablet cannot listen for "Hey Grace" now, such as no microphone permission: its switch is off and waits. */
-  wakeUnavailable?: string;
-  /** Shows a button under `wakeUnavailable` that fixes it, such as "Allow microphone". */
-  canFixWake?: boolean;
-  /** Called by that button. */
+  /** Called by "Allow microphone", shown while the microphone is not allowed. */
   onFixWake?: () => void;
+};
+
+export type WakeState = "on" | "off" | "unavailable" | "noMicrophone";
+
+const anyTime = "Works any time, even when the screen is asleep. Turn off to use Ask Grace only.";
+
+const wakeReasons: Record<WakeState, string | null> = {
+  on: null,
+  off: null,
+  unavailable: "Not available yet.",
+  noMicrophone: "Grace can’t listen until the tablet lets her use the microphone.",
 };
 
 const speedLabel = "How fast she speaks";
@@ -47,12 +54,11 @@ export function SettingsVoice({
   onSpeaksChange,
   wake,
   onWakeChange,
-  wakeUnavailable,
-  canFixWake = false,
   onFixWake,
   className,
   ...props
 }: SettingsVoiceProps) {
+  const reason = wakeReasons[wake];
   return (
     <section aria-label="Grace’s voice" className={cn("font-sans", className)} {...props}>
       <SettingsPageHeading>Grace’s voice</SettingsPageHeading>
@@ -72,12 +78,12 @@ export function SettingsVoice({
       <SettingsSwitchRow
         className="mt-2.5"
         title="Listen for “Hey Grace”"
-        subtitle={wakeUnavailable ? <span className="text-label-ink">{wakeUnavailable}</span> : "Works any time, even when the screen is asleep. Turn off to use Ask Grace only."}
-        checked={wake && !wakeUnavailable}
+        subtitle={reason ? <span className="text-label-ink">{reason}</span> : anyTime}
+        checked={wake === "on"}
         onCheckedChange={onWakeChange}
-        disabled={!!wakeUnavailable}
+        disabled={reason != null}
       />
-      {wakeUnavailable && canFixWake && (
+      {wake === "noMicrophone" && (
         <Button variant="capsule" size="pill" className="mt-3.5" onClick={onFixWake}>
           Allow microphone
         </Button>

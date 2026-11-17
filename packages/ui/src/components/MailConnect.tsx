@@ -6,8 +6,9 @@ export type MailConnectProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
   Pick<AccountSignInProps, "state" | "onContinue" | "onCancel" | "onCheckAgain">;
 
 /**
- * Email with no mailbox to read: the same Google sign-in, in the Email window. A connection that expired or was revoked
- * shows as ended, and one Google refused as mailDenied, so either reads as allowing email again.
+ * Email with no mailbox to read: the same Google sign-in, in the Email window. A connection that is Expired or Revoked
+ * shows as ended, and one Google refused as mailDenied, so either reads as allowing email again; one that is Unavailable
+ * or ConnectionFailed shows as failed, with Check again.
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens

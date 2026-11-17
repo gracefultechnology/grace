@@ -4,7 +4,7 @@ import { PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SettingsAccountPage } from "./SettingsPageHeading.tsx";
 
-export type AccountSignInState = "ready" | "waiting" | "cancelled" | "offline" | "attention" | "mailDenied" | "ended";
+export type AccountSignInState = "ready" | "waiting" | "cancelled" | "offline" | "attention" | "failed" | "mailDenied" | "ended";
 
 type Wording = { title: string; lead: string | null; notice: string | null };
 
@@ -17,6 +17,7 @@ const wording: Record<AccountSignInState, Wording> = {
   cancelled: { ...signIn, notice: "Google’s page closed before you finished signing in." },
   offline: { ...signIn, notice: "Signing in needs the internet. Connect to Wi-Fi, then try again." },
   attention: { title: "Your Grace account", lead: null, notice: "You’re signed in, but your account needs attention. Ask the person who helps you with Grace." },
+  failed: { title: "Couldn’t connect", lead: null, notice: "Grace couldn’t reach Google or your Grace account just now. Check again in a moment." },
   mailDenied: { ...reconnect, notice: "Google didn’t let Grace read your email." },
   ended: { ...reconnect, notice: "Email access ended. Reconnect to read your email." },
 };
@@ -30,7 +31,7 @@ export type AccountSignInProps = Omit<ComponentProps<"section">, "title"> & {
   onContinue?: () => void;
   /** Stops waiting for Google's page. */
   onCancel?: () => void;
-  /** Asks the account again, once it needed attention. */
+  /** Asks again, once the account needed attention or Google or the account did not answer. */
   onCheckAgain?: () => void;
   /** During set-up only: leaves signing in for later. */
   onLater?: () => void;
@@ -44,6 +45,8 @@ export type AccountSignInProps = Omit<ComponentProps<"section">, "title"> & {
 export function AccountSignIn({ state, onContinue, onCancel, onCheckAgain, onLater, ...props }: AccountSignInProps) {
   const { title, lead, notice } = wording[state];
   const waiting = state === "waiting";
+  const checking = state === "attention" || state === "failed";
+  const later = onLater && !waiting;
   const leadId = useId();
   return (
     <SettingsAccountPage title={title} busy={waiting} {...props}>
@@ -59,17 +62,17 @@ export function AccountSignIn({ state, onContinue, onCancel, onCheckAgain, onLat
       ) : null}
       {waiting ? <PageText tone="secondary">Finish on Google’s page. Grace comes back here by itself.</PageText> : null}
       {notice ? (
-        <RetryNotice role="status" onRetry={state === "attention" ? onCheckAgain : undefined} retryLabel="Check again">
+        <RetryNotice role="status" onRetry={checking ? onCheckAgain : undefined} retryLabel="Check again">
           {notice}
         </RetryNotice>
       ) : null}
-      <div className="flex flex-wrap gap-3">
-        {state === "attention" ? null : (
-          <Button variant="prominent" size="pill" loading={waiting} onClick={onContinue}>Continue with Google</Button>
-        )}
-        {waiting ? <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button> : null}
-        {onLater && !waiting ? <Button variant="capsule" size="pill" onClick={onLater}>Not now</Button> : null}
-      </div>
+      {checking && !later ? null : (
+        <div className="flex flex-wrap gap-3">
+          {checking ? null : <Button variant="prominent" size="pill" loading={waiting} onClick={onContinue}>Continue with Google</Button>}
+          {waiting ? <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button> : null}
+          {later ? <Button variant="capsule" size="pill" onClick={onLater}>Not now</Button> : null}
+        </div>
+      )}
     </SettingsAccountPage>
   );
 }

@@ -9,15 +9,9 @@ const wake = fn();
 const allow = fn();
 
 export const meta: ComponentMeta<SettingsVoiceProps> = {
-  args: { speeds, speed: "1", speaks: true, wake: false, wakeUnavailable: "Not available yet.", onPlaySample: sample, onWakeChange: wake },
+  args: { speeds, speed: "1", speaks: true, wake: "unavailable", onPlaySample: sample, onWakeChange: wake, onFixWake: allow },
   examples: {
     Quiet: { speed: "0.8", speaks: false },
-    "Hey Grace available": { wake: true, wakeUnavailable: undefined },
-    "Microphone not allowed": {
-      wakeUnavailable: "Grace can’t listen until the tablet lets her use the microphone.",
-      canFixWake: true,
-      onFixWake: allow,
-    },
   },
   decorator: settingsPage,
   play: {
@@ -27,11 +21,11 @@ export const meta: ComponentMeta<SettingsVoiceProps> = {
       await expect(sample).toHaveBeenCalled();
       await expect(canvas.getByRole("switch", { name: "Listen for “Hey Grace”" })).toBeDisabled();
     },
-    "Hey Grace available": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    "wake on": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("switch", { name: "Listen for “Hey Grace”" }));
       await expect(wake).toHaveBeenCalledWith(false);
     },
-    "Microphone not allowed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    "wake noMicrophone": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Allow microphone" }));
       await expect(allow).toHaveBeenCalled();
     },

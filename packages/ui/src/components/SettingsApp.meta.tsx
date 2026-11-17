@@ -65,7 +65,7 @@ const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "a
 export const meta: ComponentMeta<SettingsAppProps> = {
   args: { page: "text-size", onPageChange: pick, onClose: fn(), children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} /> },
   examples: {
-    Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake /> },
+    Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake="unavailable" /> },
     "Wi-Fi": { page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
     "Wi-Fi join": {
       page: "wifi",

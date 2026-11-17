@@ -9,7 +9,7 @@ const checkAgain = fn();
 const later = fn();
 
 export const meta: ComponentMeta<AccountSignInProps> = {
-  args: { state: "ready", onContinue: proceed, onCancel: cancel, onCheckAgain: checkAgain },
+  args: { state: "ready", onContinue: proceed, onCancel: cancel, onCheckAgain: checkAgain, onLater: undefined },
   decorator: settingsPage,
   examples: {
     "During set-up": { onLater: later },
@@ -24,6 +24,10 @@ export const meta: ComponentMeta<AccountSignInProps> = {
       await expect(cancel).toHaveBeenCalled();
     },
     "State Attention": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Check again" }));
+      await expect(checkAgain).toHaveBeenCalled();
+    },
+    "State Failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Check again" }));
       await expect(checkAgain).toHaveBeenCalled();
     },
