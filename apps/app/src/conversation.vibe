@@ -43,7 +43,7 @@ effect function ask(link: CloudLink, messages: readonly { role: string; content:
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
   const workspace = try Workspaces
   const agent = try Agent
-  const asked = try Ref.make(new Map<number, Origin>())
+  const asked = try Ref.make<{ readonly generation: number; readonly origin: Origin }>({ generation: -1, origin: "FromDevice" })
   const notDone = try Ref.make<readonly Applied[]>([])
 
   effect function fail(token: number) {
@@ -69,7 +69,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type) {
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, text, isQuestion, answers: [...answers], audible: false } }, "Host") catch () => undefined
     if (responded === undefined) return
-    const origin = (try Ref.get(asked)).get(token) ?? "FromDevice"
+    const last = try Ref.get(asked)
+    const origin = last.generation === token ? last.origin : "FromDevice"
     const applied = try agent.apply(actions, { generation: token, workVersion, origin })
     try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
   }
@@ -86,7 +87,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     say: effect (input) => {
       const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
       if (taken === undefined) return false
-      try Ref.update(asked, (all) => new Map(all).set(taken.state.assistant.conversation.generation, origins[input.tag]))
+      try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, origin: origins[input.tag] })
       return true
     }
   }

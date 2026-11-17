@@ -1,7 +1,7 @@
 // spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone"
 import { brightnessChoice, type DisplayPreferences, muteChoice, volumeChoice } from "../gen/app__preferences.effect.vibe"
 import { type Event, Machine as Workspaces, type Workspace, type WorkspaceActor } from "../gen/app__workspace.effect.vibe"
-import { render } from "./context.vibe"
+import { targets } from "./context.vibe"
 import type { Action } from "./reply.schema.ts"
 
 export type GraceAction = typeof Action.Type
@@ -34,7 +34,7 @@ function steps(action: GraceAction, w: Workspace): readonly Step[] | undefined {
     when { kind: "undoSetting" }: [asPerson({ type: "undoPreferences" })];
     when { kind: "guide", let target }: [{ by: "Host", event: { type: "publishGuidance", guidanceReport: {
       target, revision: w.assistant.guidance.revision, workVersion: w.assistant.workVersion, conversationVersion: w.assistant.conversation.generation,
-      deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, verified: render(w, 0, []).targets.has(target)
+      deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, verified: targets(w).has(target)
     } } }];
     default: undefined;
   }

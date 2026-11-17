@@ -21,5 +21,10 @@ export function render(w: Workspace, now: number, notDone: readonly Applied[]): 
     ...assistant.activity === "NoTask" ? [] : [`You are helping with: ${assistant.goal}.`],
     ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`)
   ]
-  return { text: lines.join("\n"), targets: new Set() }
+  return { text: lines.join("\n"), targets: targets(w) }
+}
+
+/** The controls on the screen Grace may point at: none until a screen names its own. */
+export function targets(_w: Workspace): ReadonlySet<string> {
+  return new Set()
 }
