@@ -36,7 +36,7 @@ export function SideNav({ className, children, ...props }: SideNavProps) {
   return (
     <nav
       className={cn(
-        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-sidebar backdrop-blur-panel backdrop-saturate-160",
+        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-elevation-sidebar backdrop-blur-panel backdrop-saturate-160",
         className,
       )}
       {...props}
