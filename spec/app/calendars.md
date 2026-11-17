@@ -15,7 +15,8 @@ every calendar keeps its own fences (generation, reviews, storage) unchanged.
 
 A `CalendarSource` is one calendar’s key and its view, as the shell keeps
 them: key 0 is "On this tablet", any other key is the number of the email
-account whose calendar it is. A row carries its calendar’s key and the
+account whose calendar it is. The shell keeps one source per key, so a
+calendar is found by its key. A row carries its calendar’s key and the
 appointment as shown; the shell sorts rows by start time and composes every
 sentence the person or Grace reads, including an account’s name in a tag and
 the note "From the clinic’s email · Visit form attached", because the model
@@ -62,13 +63,16 @@ pure def lawTabletCalendarAlwaysShows(registry: A::Accounts): bool = showsCalend
 
 The week or month, the day chosen and moving between them belong to the
 tablet’s calendar alone, so navigation is never repeated in each account’s
-calendar. Each shown calendar gives its saved appointments that fall in the
-days chosen, with the saved details of one being edited; a deleted
-appointment never shows. A row is in the days chosen exactly when it starts
-before their end and ends after their start.
+calendar: Calendar’s days are the tablet calendar’s window, whatever window
+an account’s calendar holds. Each shown calendar gives its saved appointments
+that fall in those days, with the saved details of one being edited; a
+deleted appointment never shows. A row is in the days chosen exactly when it
+starts before their end and ends after their start. What Grace is shown and
+what Home counts from are not Calendar’s days: the shell gives their times.
 
 ```quint
 pure def lead(calendars: List[CalendarSource]): CalendarSource = sourceAt(calendars, tabletKey)
+pure def chosenDays(calendars: List[CalendarSource]): V::ViewWindow = lead(calendars).view.window
 pure def overlaps(details: C::EntryDetails, fromTime: int, untilTime: int): bool =
   fromTime < untilTime and details.startAt < untilTime and details.endAt > fromTime
 pure def sourceRows(registry: A::Accounts, s: CalendarSource, fromTime: int, untilTime: int): List[CalRow] =
@@ -77,8 +81,9 @@ pure def sourceRows(registry: A::Accounts, s: CalendarSource, fromTime: int, unt
   else List()
 pure def calendarContext(registry: A::Accounts, calendars: List[CalendarSource], fromTime: int, untilTime: int): List[CalRow] =
   calendars.foldl(List(), (rows, s) => rows.concat(sourceRows(registry, s, fromTime, untilTime)))
-pure def lawRowsStayInTheChosenDays(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending, fromTime: int, untilTime: int): bool =
-  dayRows(registry, calendars, pending, fromTime, untilTime).every(r => overlaps(r.details, fromTime, untilTime))
+pure def lawRowsUseOneWindow(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending): bool =
+  val days = chosenDays(calendars)
+  dayRows(registry, calendars, pending).every(r => overlaps(r.details, days.fromTime, days.untilTime))
 pure def lawSavedRowsAreSavedAppointments(registry: A::Accounts, calendars: List[CalendarSource], fromTime: int, untilTime: int): bool =
   calendarContext(registry, calendars, fromTime, untilTime).every(r => not(r.draft) and
     calendars.some(s => s.key == r.key and
@@ -89,8 +94,9 @@ pure def lawSavedRowsAreSavedAppointments(registry: A::Accounts, calendars: List
 
 While at least one email brings its calendar, every row carries a tag: "On
 this tablet" for the tablet’s, the account’s name for an email’s. While none
-does, every appointment is the tablet’s and rows carry no tag. A tag is the
-calendar’s key, or -1 for none.
+does, every shown appointment is the tablet’s and rows carry no tag. A tag is
+the calendar’s key, or -1 for none; no negative key names a calendar. The
+draft row of Grace’s question shows "Not added yet" in place of a tag.
 
 ```quint
 pure def tagsShown(registry: A::Accounts): bool = registry.accounts.some(x => x.use.calendar)
@@ -102,9 +108,11 @@ pure def lawTagsNeedACalendarAccount(registry: A::Accounts, key: int): bool =
 
 ### The connect banner shows until an email’s calendar is on or she says Not now
 
-Calendar offers "Connect your email to see its calendar here" while no
-account brings its calendar, until she taps Not now. The banner and the tags
-never show together.
+Calendar, in Week and Month, offers "Connect your email to keep your
+calendar up to date", with the line "Appointments from your email show up
+here automatically." and the button "Connect email", while no account brings
+its calendar, until she taps its X, "Not now". The banner and the tags never
+show together.
 
 ```quint
 pure def connectBanner(registry: A::Accounts): bool = not(tagsShown(registry)) and not(registry.bannerDismissed)
@@ -139,7 +147,7 @@ open with one selected; with none, it belongs to no calendar (-1).
 
 ```quint
 pure def sourceReminders(registry: A::Accounts, s: CalendarSource): List[CalRow] =
-  if (showsCalendar(registry, s.key)) V::shownReminders(s.view).select(c => c.phase != C::Deleted).listMap(c => savedRow(s.key, c))
+  if (showsCalendar(registry, s.key)) V::shownReminders(s.view).select(c => c.hasSaved and c.phase != C::Deleted).listMap(c => savedRow(s.key, c))
   else List()
 pure def shownReminders(registry: A::Accounts, calendars: List[CalendarSource]): List[CalRow] =
   calendars.foldl(List(), (rows, s) => rows.concat(sourceReminders(registry, s)))
@@ -147,7 +155,7 @@ pure def openSelected(registry: A::Accounts, calendars: List[CalendarSource]): i
   calendars.select(s => showsCalendar(registry, s.key) and s.view.opened and s.view.selectedId != "").nthOr(0, noCalendar).key
 pure def lawHiddenCalendarShowsNothing(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending, fromTime: int, untilTime: int, key: int): bool =
   (key != noCalendar.key and not(showsCalendar(registry, key))) implies
-    (dayRows(registry, calendars, pending, fromTime, untilTime).every(r => r.key != key) and
+    (dayRows(registry, calendars, pending).every(r => r.key != key) and
       upcoming(registry, calendars, fromTime, untilTime).every(r => r.key != key) and
       calendarContext(registry, calendars, fromTime, untilTime).every(r => r.key != key) and
       shownReminders(registry, calendars).every(r => r.key != key) and
@@ -159,8 +167,9 @@ pure def lawHiddenCalendarShowsNothing(registry: A::Accounts, calendars: List[Ca
 What Grace is told of a calendar is derived from it before and after one
 event: that an appointment was added, changed or deleted, once the calendar’s
 store saved it, whether Margaret did it or it followed her yes to Grace.
-Nothing changed tells nothing. Being told is a turn of the host, never hers,
-so it asks Grace to do nothing.
+Nothing changed tells nothing. Being told is a turn of the host, never hers:
+what Grace is told is only the news, the calendar and the appointment, with
+no consent in it, so it asks Grace to do nothing.
 
 ```quint
 type CalendarNews = NoCalendarNews | AddedAppointment | ChangedAppointment | DeletedAppointment
@@ -182,8 +191,10 @@ pure def lawCalendarToldIsDerived(key: int, view: V::CalendarView): bool =
   told(key, view, view).news == NoCalendarNews
 pure def lawToldNamesWhatChanged(key: int, before: V::CalendarView, after: V::CalendarView): bool =
   val news = told(key, before, after)
-  (news.news == AddedAppointment or news.news == ChangedAppointment) implies
-    after.entries.some(c => c.identity.occurrenceId == news.id and c.phase == C::Saved and not(before.entries.includes(c)))
+  ((news.news == AddedAppointment or news.news == ChangedAppointment) implies
+    after.entries.some(c => c.identity.occurrenceId == news.id and c.phase == C::Saved and not(before.entries.includes(c)))) and
+  (news.news == DeletedAppointment implies
+    after.entries.some(c => c.identity.occurrenceId == news.id and c.phase == C::Deleted and not(before.entries.includes(c))))
 ```
 
 ## Story: Ask Grace to put an email’s appointment in my calendar
@@ -209,7 +220,9 @@ pure def lawTargetCalendarShows(registry: A::Accounts, account: int): bool =
 ### An appointment from an email names that email, goes to its account’s calendar, and is asked once
 
 Grace may ask to add an appointment from an email only while that email is
-open on screen in a shown account and carries no scam warning. The
+the one open on screen, in the email of the account Email shows open, and
+carries no scam warning; an email left open in an account that is not on
+screen does not count. The
 appointment names that email as its source, goes to the calendar chosen
 above, as that calendar is now, and is exactly one its calendar would take on
 her yes: a new appointment, never marked important. Grace does not ask while
@@ -226,8 +239,11 @@ pure def pendingFrom(pending: P::Pending, ref: str): bool =
     | AddAsk(x) => ref != "" and x.review.entry.identity.sourceRef == ref
     | _ => false
   }
-pure def fromMessageAllowed(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+pure def openMail(registry: A::Accounts, sources: List[M::MailSource]): M::MailSource =
+  M::sourceOf(sources, M::openSource(registry, sources))
+pure def fromMessageAllowed(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
+  val mail = openMail(registry, sources)
   val box = mail.mailbox
   val target = sourceAt(calendars, targetCalendar(registry, mail.account))
   M::showsMail(registry, mail.account) and box.view == E::Message and E::selectedMessageIsCurrent(box) and
@@ -237,32 +253,33 @@ pure def fromMessageAllowed(registry: A::Accounts, calendars: List[CalendarSourc
   review.entry.identity.owner == target.view.owner and review.entry.identity.calendarId == target.view.calendarId and
   V::canConfirmAppointment(target.view, { entry: review.entry, review: review }, V::ViewConsent) and
   not(alreadyFrom(calendars, box.messageRef)) and not(pendingFrom(pending, box.messageRef))
-pure def lawEmailAppointmentNamesItsSource(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+pure def lawEmailAppointmentNamesItsSource(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  fromMessageAllowed(registry, calendars, mail, pending, review) implies
-    (review.entry.identity.sourceRef == mail.mailbox.messageRef and mail.mailbox.messageRef != "")
-pure def lawEmailAppointmentGoesToItsAccountsCalendar(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+  fromMessageAllowed(registry, calendars, sources, pending, review) implies
+    (review.entry.identity.sourceRef == openMail(registry, sources).mailbox.messageRef and openMail(registry, sources).mailbox.messageRef != "" and
+      openMail(registry, sources).account == M::openSource(registry, sources))
+pure def lawEmailAppointmentGoesToItsAccountsCalendar(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  val target = sourceAt(calendars, targetCalendar(registry, mail.account))
-  fromMessageAllowed(registry, calendars, mail, pending, review) implies
+  val target = sourceAt(calendars, targetCalendar(registry, openMail(registry, sources).account))
+  fromMessageAllowed(registry, calendars, sources, pending, review) implies
     (review.entry.identity.calendarId == target.view.calendarId and review.entry.identity.owner == target.view.owner and
       review.calendarGeneration == target.view.generation and showsCalendar(registry, target.key))
-pure def lawSameEmailIsNotAskedTwice(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+pure def lawSameEmailIsNotAskedTwice(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  (alreadyFrom(calendars, mail.mailbox.messageRef) or pendingFrom(pending, mail.mailbox.messageRef) or pending.agreed != 0) implies
-    not(fromMessageAllowed(registry, calendars, mail, pending, review))
-pure def lawScamEmailMakesNoAppointment(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+  (alreadyFrom(calendars, openMail(registry, sources).mailbox.messageRef) or pendingFrom(pending, openMail(registry, sources).mailbox.messageRef) or pending.agreed != 0) implies
+    not(fromMessageAllowed(registry, calendars, sources, pending, review))
+pure def lawScamEmailMakesNoAppointment(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  (mail.mailbox.warning.evidence != "" or not(M::showsMail(registry, mail.account))) implies
-    not(fromMessageAllowed(registry, calendars, mail, pending, review))
-pure def lawEmailAppointmentIsNeverImportant(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+  (openMail(registry, sources).mailbox.warning.evidence != "" or not(M::showsMail(registry, openMail(registry, sources).account))) implies
+    not(fromMessageAllowed(registry, calendars, sources, pending, review))
+pure def lawEmailAppointmentIsNeverImportant(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  review.entry.details.important implies not(fromMessageAllowed(registry, calendars, mail, pending, review))
-pure def lawEmailAppointmentIsOneTheCalendarTakes(registry: A::Accounts, calendars: List[CalendarSource], mail: M::MailSource,
+  review.entry.details.important implies not(fromMessageAllowed(registry, calendars, sources, pending, review))
+pure def lawEmailAppointmentIsOneTheCalendarTakes(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  val target = sourceAt(calendars, targetCalendar(registry, mail.account))
+  val target = sourceAt(calendars, targetCalendar(registry, openMail(registry, sources).account))
   val asked = { ...pending, ask: P::AddAsk({ target: target.key, review: review }) }
-  fromMessageAllowed(registry, calendars, mail, pending, review) implies
+  fromMessageAllowed(registry, calendars, sources, pending, review) implies
     V::canConfirmAppointment(target.view, confirmationOf(asked), V::ViewConsent)
 ```
 
@@ -284,12 +301,13 @@ pure def askedRows(registry: A::Accounts, pending: P::Pending, fromTime: int, un
         else List()
     | _ => List()
   }
-pure def dayRows(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending, fromTime: int, untilTime: int): List[CalRow] =
-  val saved = calendarContext(registry, calendars, fromTime, untilTime)
-  saved.concat(askedRows(registry, pending, fromTime, untilTime, saved))
-pure def lawDraftRowIsTheQuestion(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending, fromTime: int, untilTime: int): bool =
+pure def dayRows(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending): List[CalRow] =
+  val days = chosenDays(calendars)
+  val saved = calendarContext(registry, calendars, days.fromTime, days.untilTime)
+  saved.concat(askedRows(registry, pending, days.fromTime, days.untilTime, saved))
+pure def lawDraftRowIsTheQuestion(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending): bool =
   val ask = pending.ask
-  dayRows(registry, calendars, pending, fromTime, untilTime).every(r => r.draft implies
+  dayRows(registry, calendars, pending).every(r => r.draft implies
     (match ask {
       | AddAsk(x) => r.key == x.target and r.identity == x.review.entry.identity and r.details == x.review.entry.details
       | _ => false
@@ -369,8 +387,11 @@ pure def lawYesAppliesOnlyWhatWasAsked(pending: P::Pending, view: V::CalendarVie
 The tablet’s calendar with lunch saved and its reminder due; Gmail’s calendar
 bound by its store, holding a published garden club, then the clinic
 appointment from the email agreed, stored, changed and deleted, and the
-garden club open on screen; the clinic email open and the same email flagged
-as a scam; and Grace’s questions asked, agreed and of each kind.
+garden club open on screen; the tablet’s calendar moved to a week that holds
+them all while Gmail’s calendar was moved elsewhere; the clinic email open,
+the same email flagged as a scam, and the clinic email left open behind an
+Outlook email being written; and Grace’s questions asked, agreed and of each
+kind.
 
 ```quint
 pure val zone: str = "America/New_York"
@@ -415,6 +436,11 @@ pure val gmailDeleting: V::CalendarView = V::confirmDeletion(gmailStored, garden
 pure val gmailDeleted: V::CalendarView = V::deletionResult(gmailDeleting, 2, true, "storeReceipt", V::ViewStore)
 pure val gmailOpened: V::CalendarView =
   V::openOccurrence(V::openCalendar(gmailStored, "margaret", "gmail", zone, V::ViewUser), "garden", V::ViewUser)
+pure val tabletWeek: V::CalendarView = V::navigate(tabletSaved,
+  { window: { ...V::emptyWindow, anchorDay: 7, selectedDay: 7, fromTime: 0, untilTime: 10 }, kind: V::Later, verified: true }, V::ViewUser)
+pure val gmailElsewhere: V::CalendarView = V::navigate(V::openCalendar(gmailStored, "margaret", "gmail", zone, V::ViewUser),
+  { window: { ...V::emptyWindow, anchorDay: 14, selectedDay: 14, fromTime: 20, untilTime: 30 }, kind: V::Later, verified: true }, V::ViewUser)
+pure val outlookComposing: E::Mailbox = E::startDraft(M::outlookListed, false, E::MailUser)
 pure val gmailFlagged: E::Mailbox =
   E::readResult(E::readMail(M::gmailListed, E::OpenMessage, "clinic", true, E::MailUser),
     { generation: 3, succeeded: true, assets: List(), suspicion: "phishing" }, E::MailConnector)
@@ -441,9 +467,13 @@ pure val calendarsValues = Set(List(),
   List({ key: 0, view: tabletReminder }, { key: 1, view: gmailStored }),
   List({ key: 0, view: tabletSaved }, { key: 1, view: gmailConfirmed }),
   List({ key: 1, view: gmailOpened }, { key: 0, view: tabletSaved }),
-  List({ key: 0, view: tabletDrafted }, { key: 1, view: gmailDeleted }, { key: 2, view: gmailChanged }))
-pure val mailValues = Set({ account: 1, mailbox: M::gmailOpen }, { account: 1, mailbox: gmailFlagged },
-  { account: 1, mailbox: M::gmailListed }, { account: 2, mailbox: M::outlookListed }, { account: 1, mailbox: M::gmailExpired })
+  List({ key: 0, view: tabletDrafted }, { key: 1, view: gmailDeleted }, { key: 2, view: gmailChanged }),
+  List({ key: 0, view: tabletWeek }, { key: 1, view: gmailPublished }),
+  List({ key: 0, view: tabletWeek }, { key: 1, view: gmailElsewhere }))
+pure val sourcesValues = Set(List(), List({ account: 1, mailbox: M::gmailOpen }), List({ account: 1, mailbox: gmailFlagged }),
+  List({ account: 1, mailbox: M::gmailListed }), List({ account: 1, mailbox: M::gmailExpired }),
+  List({ account: 2, mailbox: M::outlookListed }, { account: 1, mailbox: M::gmailOpen }),
+  List({ account: 2, mailbox: outlookComposing }, { account: 1, mailbox: M::gmailOpen }))
 pure val reviewValues = Set(clinicReview, tabletClinicReview,
   { ...clinicReview, entry: { ...clinicReview.entry, details: { ...clinicDetails, important: true } } },
   { ...clinicReview, calendarGeneration: 1 },

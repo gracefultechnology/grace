@@ -8,17 +8,18 @@ lemma lawSavedRowsAreSavedAppointments_ensures(registry: app__accounts_Accounts,
   }
 }
 
-lemma lawRowsStayInTheChosenDays_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, pending: app__proposal_Pending, fromTime: int, untilTime: int)
-  ensures (lawRowsStayInTheChosenDays(registry, calendars, pending, fromTime, untilTime) == true)
+lemma lawRowsUseOneWindow_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, pending: app__proposal_Pending)
+  ensures (lawRowsUseOneWindow(registry, calendars, pending) == true)
 {
-  var saved := calendarContext(registry, calendars, fromTime, untilTime);
-  forall r | r in dayRows(registry, calendars, pending, fromTime, untilTime)
-    ensures overlaps(r.details, fromTime, untilTime)
+  var days := chosenDays(calendars);
+  var saved := calendarContext(registry, calendars, days.fromTime, days.untilTime);
+  forall r | r in dayRows(registry, calendars, pending)
+    ensures overlaps(r.details, days.fromTime, days.untilTime)
   {
     if r in saved {
-      ContextMember(registry, calendars, fromTime, untilTime, r);
+      ContextMember(registry, calendars, days.fromTime, days.untilTime, r);
     } else {
-      assert r in askedRows(registry, pending, fromTime, untilTime, saved);
+      assert r in askedRows(registry, pending, days.fromTime, days.untilTime, saved);
     }
   }
 }
@@ -45,11 +46,15 @@ lemma lawHiddenCalendarShowsNothing_ensures(registry: app__accounts_Accounts, ca
     {
       ContextMember(registry, calendars, fromTime, untilTime, r);
     }
-    forall r | r in dayRows(registry, calendars, pending, fromTime, untilTime)
+    var days := chosenDays(calendars);
+    var shown := calendarContext(registry, calendars, days.fromTime, days.untilTime);
+    forall r | r in dayRows(registry, calendars, pending)
       ensures r.key != key
     {
-      if r !in saved {
-        assert r in askedRows(registry, pending, fromTime, untilTime, saved);
+      if r in shown {
+        ContextMember(registry, calendars, days.fromTime, days.untilTime, r);
+      } else {
+        assert r in askedRows(registry, pending, days.fromTime, days.untilTime, shown);
       }
     }
     forall r | r in upcoming(registry, calendars, fromTime, untilTime)
@@ -77,26 +82,31 @@ lemma lawToldNamesWhatChanged_ensures(key: int, before: app__calendarView_Calend
 {
   var added := ProofLib.Filter((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, false)), after.entries);
   var changed := ProofLib.Filter((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, true)), after.entries);
+  var deleted := ProofLib.Filter((c: app__calendar_Calendar) => ((c.phase.Deleted? && !((c in before.entries))) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries);
   if |added| > 0 {
     assert added[0] in added;
     ProofLib.FilterMember((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, false)), after.entries, added[0]);
   } else if |changed| > 0 {
     assert changed[0] in changed;
     ProofLib.FilterMember((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, true)), after.entries, changed[0]);
+  } else if |deleted| > 0 {
+    assert deleted[0] in deleted;
+    ProofLib.FilterMember((c: app__calendar_Calendar) => ((c.phase.Deleted? && !((c in before.entries))) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries, deleted[0]);
   }
 }
 
-lemma lawDraftRowIsTheQuestion_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, pending: app__proposal_Pending, fromTime: int, untilTime: int)
-  ensures (lawDraftRowIsTheQuestion(registry, calendars, pending, fromTime, untilTime) == true)
+lemma lawDraftRowIsTheQuestion_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, pending: app__proposal_Pending)
+  ensures (lawDraftRowIsTheQuestion(registry, calendars, pending) == true)
 {
-  var saved := calendarContext(registry, calendars, fromTime, untilTime);
-  forall r | r in dayRows(registry, calendars, pending, fromTime, untilTime) && r.draft
+  var days := chosenDays(calendars);
+  var saved := calendarContext(registry, calendars, days.fromTime, days.untilTime);
+  forall r | r in dayRows(registry, calendars, pending) && r.draft
     ensures pending.ask.AddAsk? && r.key == pending.ask.target && r.identity == pending.ask.review_AddAsk.entry.identity && r.details == pending.ask.review_AddAsk.entry.details
   {
     if r in saved {
-      ContextMember(registry, calendars, fromTime, untilTime, r);
+      ContextMember(registry, calendars, days.fromTime, days.untilTime, r);
     }
-    assert r in askedRows(registry, pending, fromTime, untilTime, saved);
+    assert r in askedRows(registry, pending, days.fromTime, days.untilTime, saved);
   }
 }
 
