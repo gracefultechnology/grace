@@ -513,8 +513,11 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 
 ### A backup belongs to the signed-in owner and has its own approval
 
-Grace offers Backup and recovery when its native account, screen lock and
-backup service are ready. Each operation needs the same signed-in account
+Grace offers Backup and recovery when exactly one acknowledged native
+account, its screen lock and that account’s backup service are ready.
+Production is available in every build. Staging is available only in a
+debug build. A credential change closes the recovery screen and ends its
+pending operation. Each operation needs the same signed-in account
 and a new native account confirmation. Verifying ownership, saving and
 restoring require a fresh tablet unlock. A tablet with saved passwords asks
 the owner before linking those passwords to the account. The recovery key stays in a protected native screen,
@@ -522,8 +525,12 @@ and Grace sends only the encrypted snapshot. Restore fills an empty vault
 in one step. Removing a cloud copy leaves local passwords available.
 
 ```quint
-pure def passwordRecoveryOffered(accountReady: bool, screenSecure: bool, serviceReady: bool): bool =
-  accountReady and screenSecure and serviceReady
+pure def passwordRecoveryOffered(acknowledgedAccounts: int, debugBuild: bool, staging: bool, screenSecure: bool, serviceReady: bool): bool =
+  acknowledgedAccounts == 1 and (not(staging) or debugBuild) and screenSecure and serviceReady
+pure def lawAmbiguousAccountCannotOpenPasswordRecovery(debugBuild: bool, staging: bool): bool =
+  not(passwordRecoveryOffered(2, debugBuild, staging, true, true))
+pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
+  not(passwordRecoveryOffered(1, false, true, screenSecure, serviceReady))
 pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
   ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
 pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
