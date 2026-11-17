@@ -2,9 +2,10 @@
 
 One machine instance owns one stable fact key in the durable local fact
 store. The store retains deleted keys as tombstones across restart; it does
-not reconstruct memory from chat. Review lists these authoritative instances;
-Clear all applies the same deletion to every known key, including proposed
-facts, in one storage transaction. Provider records, browser sessions and
+not reconstruct memory from chat. [Saved details](./savedDetails.md) holds
+these authoritative instances as the list she sees in Settings; Clear all
+applies the same deletion to every known key, including proposed facts, in
+one storage transaction. Provider records, browser sessions and
 unresolved payment evidence are different stores and are never parameters or
 effects of this model. Sources: MEM 01–04, INV 01/03/08, CTX 01 and DATA 01.
 
@@ -16,18 +17,20 @@ effects of this model. Sources: MEM 01–04, INV 01/03/08, CTX 01 and DATA 01.
 
 ### A saved fact has a stable key, a supported type and a durable revision
 
-`scope` is the verified origin for a biller association or sign-in identifier;
-other facts are general and have an empty scope. `value` is non-secret content
+`scope` is the verified origin for a provider association (her nickname for
+the clinic, salon or company she uses there) or a sign-in identifier; other
+facts are general and have an empty scope. `value` is non-secret content
 already classified at the private-input boundary. The type gate excludes
-passwords, codes, payment credentials and fresh account evidence; it cannot
+passwords, codes, payment credentials and live provider facts such as a
+balance or a payment status, which are read fresh each time; it cannot
 classify arbitrary text by itself. State mutations are committed atomically
 to storage before the UI reports that a save or deletion succeeded. A failed
 storage transaction retains its old state and can be retried explicitly.
 
 ```quint
 type MemoryActor = MemoryUser | MemoryRuntime
-type FactKind = Name | ContactEmail | Phone | Address | Preference | BillerAssociation | SignInIdentifier |
-  Password | VerificationCode | PaymentSecret | AccountBalance | PaymentStatus
+type FactKind = Name | ContactEmail | Phone | Address | Preference | ProviderAssociation | SignInIdentifier |
+  Password | VerificationCode | PaymentSecret | LiveProviderFact
 type FactStatus = Missing | Stored | Deleted
 type ProposalSource = FreshUserChoice | OldConversation | ObservedWebsite
 type PersonalFact = {
@@ -48,8 +51,8 @@ pure val initial: PersonalFact = {
 }
 pure def allowedKind(kind: FactKind): bool =
   kind == Name or kind == ContactEmail or kind == Phone or kind == Address or
-  kind == Preference or kind == BillerAssociation or kind == SignInIdentifier
-pure def scopedKind(kind: FactKind): bool = kind == BillerAssociation or kind == SignInIdentifier
+  kind == Preference or kind == ProviderAssociation or kind == SignInIdentifier
+pure def scopedKind(kind: FactKind): bool = kind == ProviderAssociation or kind == SignInIdentifier
 ```
 
 ### A fresh user choice proposes a fact without silently saving it
@@ -235,42 +238,41 @@ pure val proposedFactValues = Set(
   { factKey: "phone", kind: Phone, scope: "", value: "contact-reference", source: FreshUserChoice, version: 0 },
   { factKey: "address", kind: Address, scope: "", value: "address-reference", source: FreshUserChoice, version: 0 },
   { factKey: "preference", kind: Preference, scope: "", value: "slower", source: FreshUserChoice, version: 0 },
-  { factKey: "biller", kind: BillerAssociation, scope: "https://biller.example", value: "My biller", source: FreshUserChoice, version: 0 },
-  { factKey: "login", kind: SignInIdentifier, scope: "https://biller.example", value: "login-name", source: FreshUserChoice, version: 0 },
-  { factKey: "login", kind: SignInIdentifier, scope: "https://biller.example", value: "new-login", source: FreshUserChoice, version: 2 },
+  { factKey: "provider", kind: ProviderAssociation, scope: "https://provider.example", value: "My clinic", source: FreshUserChoice, version: 0 },
+  { factKey: "login", kind: SignInIdentifier, scope: "https://provider.example", value: "login-name", source: FreshUserChoice, version: 0 },
+  { factKey: "login", kind: SignInIdentifier, scope: "https://provider.example", value: "new-login", source: FreshUserChoice, version: 2 },
   { factKey: "name", kind: Name, scope: "", value: "stale", source: OldConversation, version: 2 },
   { factKey: "name", kind: Name, scope: "", value: "extracted", source: ObservedWebsite, version: 0 },
   { factKey: "secret", kind: Password, scope: "", value: "redacted", source: FreshUserChoice, version: 0 },
   { factKey: "secret", kind: VerificationCode, scope: "", value: "redacted", source: FreshUserChoice, version: 0 },
   { factKey: "secret", kind: PaymentSecret, scope: "", value: "redacted", source: FreshUserChoice, version: 0 },
-  { factKey: "balance", kind: AccountBalance, scope: "", value: "fresh", source: FreshUserChoice, version: 0 },
-  { factKey: "status", kind: PaymentStatus, scope: "", value: "fresh", source: FreshUserChoice, version: 0 },
+  { factKey: "status", kind: LiveProviderFact, scope: "", value: "fresh", source: FreshUserChoice, version: 0 },
   { factKey: "", kind: Name, scope: "", value: "", source: FreshUserChoice, version: -1 }
 )
 pure val scopeCheckValues = Set(
-  { scope: "https://biller.example", version: 1, evidence: "origin-check" },
-  { scope: "https://biller.example", version: 3, evidence: "origin-check" },
+  { scope: "https://provider.example", version: 1, evidence: "origin-check" },
+  { scope: "https://provider.example", version: 3, evidence: "origin-check" },
   { scope: "https://other.example", version: 1, evidence: "wrong-origin" },
-  { scope: "https://biller.example", version: 0, evidence: "stale" },
-  { scope: "https://biller.example", version: 1, evidence: "" }
+  { scope: "https://provider.example", version: 0, evidence: "stale" },
+  { scope: "https://provider.example", version: 1, evidence: "" }
 )
 pure val fillRequestValues = Set(
-  { version: 2, task: "task", destination: "https://biller.example", requestedKind: Name, verified: true, relevant: true },
+  { version: 2, task: "task", destination: "https://provider.example", requestedKind: Name, verified: true, relevant: true },
   { version: 4, task: "task", destination: "https://other.example", requestedKind: Name, verified: true, relevant: true },
-  { version: 2, task: "task", destination: "https://biller.example", requestedKind: SignInIdentifier, verified: true, relevant: true },
-  { version: 4, task: "task", destination: "https://biller.example", requestedKind: SignInIdentifier, verified: true, relevant: true },
+  { version: 2, task: "task", destination: "https://provider.example", requestedKind: SignInIdentifier, verified: true, relevant: true },
+  { version: 4, task: "task", destination: "https://provider.example", requestedKind: SignInIdentifier, verified: true, relevant: true },
   { version: 2, task: "task", destination: "https://other.example", requestedKind: SignInIdentifier, verified: true, relevant: true },
-  { version: 1, task: "task", destination: "https://biller.example", requestedKind: Name, verified: true, relevant: true },
-  { version: 2, task: "task", destination: "https://biller.example", requestedKind: Name, verified: false, relevant: true },
-  { version: 2, task: "task", destination: "https://biller.example", requestedKind: Name, verified: true, relevant: false },
+  { version: 1, task: "task", destination: "https://provider.example", requestedKind: Name, verified: true, relevant: true },
+  { version: 2, task: "task", destination: "https://provider.example", requestedKind: Name, verified: false, relevant: true },
+  { version: 2, task: "task", destination: "https://provider.example", requestedKind: Name, verified: true, relevant: false },
   { version: 2, task: "", destination: "", requestedKind: Name, verified: true, relevant: true }
 )
 pure val fillTicketValues = Set(
-  { version: 2, task: "task", destination: "https://biller.example" },
-  { version: 4, task: "task", destination: "https://biller.example" },
+  { version: 2, task: "task", destination: "https://provider.example" },
+  { version: 4, task: "task", destination: "https://provider.example" },
   { version: 4, task: "task", destination: "https://other.example" },
-  { version: 1, task: "task", destination: "https://biller.example" },
-  { version: 2, task: "other-task", destination: "https://biller.example" },
+  { version: 1, task: "task", destination: "https://provider.example" },
+  { version: 2, task: "other-task", destination: "https://provider.example" },
   { version: 2, task: "task", destination: "https://other.example" }
 )
 pure val weight_propose = 4
@@ -283,7 +285,7 @@ pure def sometimesScopedFill(f: PersonalFact): bool = f.queued and f.kind == Sig
 pure def sometimesCorrectingSavedFact(f: PersonalFact): bool = f.status == Stored and f.proposed
 pure val exampleSavedFact: PersonalFact = { ...initial, factKey: "name", value: "Ada", status: Stored, revision: 2 }
 pure val exampleProposedFact: PersonalFact = { ...initial, factKey: "email", kind: ContactEmail, proposed: true, proposal: "contact@example.test", revision: 1 }
-pure val exampleQueuedFact: PersonalFact = { ...exampleSavedFact, queued: true, queuedRevision: 2, queuedTask: "task", queuedDestination: "https://biller.example" }
+pure val exampleQueuedFact: PersonalFact = { ...exampleSavedFact, queued: true, queuedRevision: 2, queuedTask: "task", queuedDestination: "https://provider.example" }
 pure val factsValues = Set(List(), List(initial), List(exampleSavedFact, exampleProposedFact,
   forget(exampleSavedFact, 2, MemoryUser), exampleQueuedFact))
 ```
