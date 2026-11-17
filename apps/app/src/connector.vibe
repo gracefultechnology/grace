@@ -25,6 +25,7 @@ export type ServersForm = OtherForm & { readonly incoming: string; readonly outg
 export type MailContent = {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
   readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
+  readonly to: readonly string[]
 }
 export type Listed = { readonly receipt: MetadataReceipt; readonly content: MailContent }
 export type Opened = { readonly receipt: ReadReceipt; readonly content: MailContent }
@@ -95,7 +96,7 @@ function receivedOf(m: WireMessage) {
 }
 
 function content(m: WireMessage, receivedAt: number, body: string): MailContent {
-  return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "" }
+  return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "", to: m.to }
 }
 
 function repliedTo(sent: readonly WireMessage[]): ReadonlySet<string> {

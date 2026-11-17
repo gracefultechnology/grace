@@ -3,13 +3,13 @@ import { type HomeMail, MailApp, type MailFolder, MailMessageView, MailSignInBan
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
 import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
-import { emptyContent, enabled, type Event as MailEvent, messageRecord, readable, replyable, showsScamWarning } from "../gen/app__email.ts";
+import { emptyContent, enabled, type Event as MailEvent, messageRecord, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
 import { type BannerKind, type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, fromChoices, mailContext, openSource, outboxCount, outboxRows, showsMail, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { MailContent } from "./connector.vibe";
 import { EmailCompose, type Picking } from "./EmailCompose.tsx";
-import { recipientsOf } from "./mail.vibe";
+import { answerable, headerFor, recipientsOf } from "./mail.vibe";
 import { type MailInstance, useAccounts, useMail, useMailContent, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
@@ -23,11 +23,18 @@ const close = "Close Email";
 const unlinked = (body: string) => body.replace(/https?:\/\/\S+/g, "(link removed)");
 
 function when(at: number, now: Date) {
+  if (now.getTime() - at < 60_000) return "Just now";
   const day = new Date(at);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   if (day.toDateString() === now.toDateString()) return day.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   if (day.toDateString() === yesterday.toDateString()) return "Yesterday";
   return day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function named(text: string, nameOf: (address: string) => string) {
+  const [, display = "", address = text] = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(text) ?? [];
+  const known = nameOf(address.trim());
+  return known !== address.trim() ? known : display || known;
 }
 
 const newest = (read: Read) => (a: Row, b: Row) =>
@@ -56,9 +63,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const read = useMailContent();
   const mail = useMail();
   const [picking, setPicking] = useState<Picking | null>(null);
-  const [outbox, setOutbox] = useState(false);
+  const [outboxChosen, setOutbox] = useState(false);
   if (!workspace) return null;
   const now = new Date();
+  const online = workspace.device.connectivity === "Online";
   const fire = (event: WorkspaceEvent) => () => { if (can(event)) void send(event); };
   const frame = { onClose: fire({ type: "visit", destination: "Home" }), closeLabel: close, ...props };
   if (mailAccounts(registry).length === 0)
@@ -95,8 +103,8 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         files={ready ? m.assets.filter((a) => a.kind === "Pdf").map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined}
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
         onRetry={() => { if (opening.can(open)) void opening.send(open); }}
-        onReply={mail && ready && replyable(m) ? () => void mail.reply(opening.id) : undefined}
-        onForward={mail && opening.can(forward) ? () => void opening.send(forward).then((sent) => Exit.isSuccess(sent) && setPicking({ field: "to", query: "" })) : undefined}
+        onReply={mail && ready && answerable(m) && (online || headerFor(mail, opening.id, m)) ? () => void mail.reply(opening.id) : undefined}
+        onForward={mail && m.folder !== "DraftsFolder" && opening.can(forward) ? () => void opening.send(forward).then((sent) => Exit.isSuccess(sent) && setPicking({ field: "to", query: "" })) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         onBack={() => { if (opening.can({ type: "showInbox" })) void opening.send({ type: "showInbox" }); }} {...frame} />
     );
@@ -105,14 +113,22 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const lead = (shown.find((b) => readable(b.state)) ?? shown[0])?.state;
   const folder: Folder = lead?.folder ?? "InboxFolder";
   const rows = accountRows(registry, sources);
+  const waitingCount = outboxCount(registry, sources);
+  const outbox = outboxChosen && waitingCount > 0;
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => ({
-    id: `${r.account}/${r.queued.operationId}`, from: { name: recipientsOf(r.queued.snapshot.content.to)[0] ?? "" }, subject: r.queued.snapshot.content.subject, time: "",
+    id: `${r.account}/${r.queued.operationId}`, from: { name: mail?.nameOf(r.queued.snapshot.content.to) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "" }, subject: r.queued.snapshot.content.subject, time: "",
     account: rows.length ? name(r.account) : undefined,
   }));
+  const theirs = folder === "DraftsFolder" || folder === "SentFolder";
+  const party = (c: MailContent | undefined) => {
+    if (!theirs) return c?.from ?? "";
+    const to = c?.to[0] ? named(c.to[0], mail?.nameOf ?? ((a) => a)) : "";
+    return folder === "SentFolder" ? to : to ? `To ${to}` : "No one yet";
+  };
   const listed: MailSummary[] = folderRows(registry, sources, folder).sort(newest(read)).map((r) => {
     const c = read(r.account, r.record.identity.ref);
     return {
-      id: `${r.account}/${r.record.identity.ref}`, from: { name: c?.from ?? "" }, subject: c?.subject ?? "", time: c ? when(c.receivedAt, now) : "",
+      id: `${r.account}/${r.record.identity.ref}`, from: { name: party(c) }, subject: theirs && c?.subject === "" ? "(no subject)" : c?.subject ?? "", time: c ? when(c.receivedAt, now) : "",
       unread: r.record.unread, account: rows.length ? name(r.account) : undefined,
     };
   });
@@ -121,7 +137,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     SignInBanner: (b) => <MailSignInBanner key={`sign-in-${b.account}`} name={name(b.account)} others={b.othersFine} />,
     SyncingRow: (b) => <MailSyncingRow key={`syncing-${b.account}`} name={name(b.account)} />,
   };
-  const shownBanners = banners(registry, sources, workspace.device.connectivity === "Online");
+  const shownBanners = banners(registry, sources, online);
   const notes = shownBanners.filter((b) => b.kind !== "OfflineBanner").map((b) => notices[b.kind](b));
   const failed = shown.filter((b) => b.state.readKind === "Search" && b.state.readStatus === "ReadFailed");
   const search = (query: string): MailEvent => ({ type: "readMail", kind: "Search", ref: query, approved: true });
@@ -141,7 +157,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   });
 
   return (
-    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), outbox: outboxCount(registry, sources) }}
+    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), outbox: waitingCount }}
       accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
       onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
@@ -160,7 +176,6 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         const box = shown.find((b) => b.id === Number(owner));
         const ref = rest.join("/");
         const event: MailEvent = outbox ? { type: "reopenQueued", operationId: ref } : { type: "readMail", kind: "OpenMessage", ref, approved: true };
-        if (!outbox && folder === "DraftsFolder" && mail && box?.can(event)) return void mail.openDraft(box.id, ref);
         if (box?.can(event)) void box.send(event);
       }}
       onFixWifi={fire({ type: "chooseSettingsPage", page: "NetworkSettings" })} {...frame} />

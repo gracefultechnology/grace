@@ -165,7 +165,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(row("All inboxes 5")).toBeVisible();
 
-  // spec/app/email.md, "A reply is addressed to the selected message's verified reply-to": Reply opens addressed, from the account the email came to.
+  // spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"
   await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
   await click(page.getByRole("button", { name: "Reply" }));
   await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
@@ -175,8 +175,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Send" }));
   await expect.poll(() => sentWith("Re: Reminder: your appointment tomorrow at 10 am")).toEqual([gmail]);
 
-  // spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays": a new email to Susan
-  // starts from Gmail, and she sends it from Outlook instead.
+  // spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Susan" }));
   await act(() => userEvent.fill(subject(), "Sunday"));
@@ -194,16 +193,21 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Send" }));
   await expect.poll(async () => (await sent("Sunday")).map((m) => [m.from, m.bcc])).toEqual([[outlook, ["joan@family.test"]]]);
 
-  // spec/app/email.md, "Attachment actions preserve exact asset and message identity": forwarding carries the email's own attachment.
+  // spec/app/email.md, "Attachment actions preserve exact asset and message identity"
   await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
   await click(page.getByRole("button", { name: "Forward" }));
   await click(page.getByRole("button", { name: "David" }));
   await expect.element(subject()).toHaveValue("Fwd: Reminder: your appointment tomorrow at 10 am");
+  await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).toBeVisible();
   await click(page.getByRole("button", { name: "Send" }));
   await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[{ filename: "Visit form.pdf" }]]);
 
-  // spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable": the next email to Susan starts from
-  // Outlook, the account last used with her; Back keeps it in Drafts, and it opens again from there.
+  // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+
+  // spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(page.getByRole("button", { name: outlook })).toBeVisible();
@@ -212,28 +216,28 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week").map((m) => [b.address, m.labels]))).toEqual([[outlook, ["DRAFT"]]]);
   await click(row("Drafts"));
-  await click(email(/Lunch next week/));
-  await expect.element(words()).toHaveValue("Shall we have lunch on Tuesday?");
-  await expect.element(page.getByRole("button", { name: "Remove Susan" })).toBeVisible();
-  await click(page.getByRole("button", { name: "Discard" }));
-  await expect.element(email(/Lunch next week/)).not.toBeInTheDocument();
-  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
+  await opened(/^To Susan.*Lunch next week/, "Lunch next week");
+  await expect.element(page.getByText("Shall we have lunch on Tuesday?")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Reply" })).not.toBeInTheDocument();
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
   await opened(/Ruth/, "Lunch on Sunday?");
+  await host("Offline");
+  await expect.element(page.getByRole("button", { name: "Reply" })).toBeVisible();
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
   await click(page.getByRole("button", { name: "Reply" }));
   await act(() => userEvent.fill(words(), "Yes, noon is perfect."));
-  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
-  await host("Offline");
   const sends = async () => (await company()).changes.filter((c) => c.receipt.kind === "send" && c.receipt.state === "succeeded").map((c) => c.receipt.requestId);
   const before = await sends();
   await click(page.getByRole("button", { name: "Send" }));
   await click(row("Outbox 1"));
-  await expect.element(email(/ruth@family\.test/)).toBeVisible();
+  const waiting = email(/Re: Lunch on Sunday\?/);
+  await expect.element(waiting).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   await host("Online");
-  await expect.element(email(/ruth@family\.test/)).not.toBeInTheDocument();
+  await expect.element(waiting).not.toBeInTheDocument();
   await click(row("All inboxes"));
   await expect.element(row("Outbox")).not.toBeInTheDocument();
   await host("Offline");
@@ -251,7 +255,7 @@ it("Delete a message and recover it safely", async () => {
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(prize).toBeVisible();
 
-  // spec/app/emailItem.md, "Only an authorized current selection can begin a provider mutation": Delete moves it to Trash, and Undo takes it back.
+  // spec/app/emailItem.md, "Only an authorized current selection can begin a provider mutation"
   await opened(/Prize Desk/, "A message for Grace");
   await click(page.getByRole("button", { name: "Delete" }));
   await expect.element(prize).not.toBeInTheDocument();
