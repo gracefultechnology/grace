@@ -15,5 +15,6 @@ export const meta: ComponentMeta<TaskCardProps> = {
     "Resume blocked": { resumeBlocked: true },
     Checking: { pending: true },
     Ended: { ended: true },
+    Booking: { status: "waiting", title: "Book the follow-up with Dr. Patel", line: "Waiting for Main St Clinic to confirm Monday at 2." },
   },
 };

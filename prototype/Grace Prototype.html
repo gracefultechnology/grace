@@ -793,9 +793,69 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #awin.icmode .aphdr .apic{flex:none;width:48px;height:48px;border-radius:14px;background:#EFEBFB;color:#3B2F63;display:flex;align-items:center;justify-content:center}
 #awin.icmode .pg:not(.hassplit){padding-top:104px!important}
 #awin.icmode.splitw .a-split>div:last-child{padding-top:84px!important}
+
+.side[hidden]{display:none!important}
+.top{justify-content:center}
+.layout{grid-template-columns:minmax(0,1fr)!important}
+.pvweb{flex:1;overflow:hidden;background:#F1F3F4;font-family:Arial,Helvetica,sans-serif;color:#202124;display:flex;align-items:flex-start;justify-content:center}
+.pvcard{width:470px;margin-top:44px;padding:36px 40px 32px;background:#fff;border-radius:10px;border:1px solid #DADCE0}
+.pvmark{display:flex;align-items:center;gap:10px;font:700 20px Arial,sans-serif;color:#5F6368}
+.pvmark i{width:32px;height:32px;border-radius:8px;background:#5F6368;color:#fff;display:flex;align-items:center;justify-content:center;font:700 18px Arial;font-style:normal}
+.pvcard h2{margin:22px 0 6px;font:400 28px/36px Arial,sans-serif}
+.pvcard p{margin:0 0 20px;font:16px/24px Arial,sans-serif;color:#3C4043}
+.pvchip{display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border:1px solid #DADCE0;border-radius:999px;font:15px Arial;margin-bottom:20px}
+.pvchip b{width:26px;height:26px;border-radius:50%;background:#8E7CC3;color:#fff;display:flex;align-items:center;justify-content:center;font:700 13px Arial}
+.pvlab{font:14px Arial;color:#5F6368;margin:0 0 6px}
+.pvin{height:54px;box-sizing:border-box;border:1px solid #80868B;border-radius:6px;padding:0 14px;display:flex;align-items:center;font:18px Arial;color:#202124}
+.pvin.err{border:2px solid #C5221F}
+.pverr{display:flex;gap:8px;align-items:center;margin-top:8px;font:14px/20px Arial;color:#C5221F}
+.pvlink{font:700 15px Arial;color:#3C4CA8;margin-top:16px}
+.pvrow{display:flex;justify-content:space-between;align-items:center;margin-top:28px}
+.pvbtn{height:44px;padding:0 26px;border-radius:6px;background:#3C4CA8;color:#fff;font:700 16px Arial;border:0;display:flex;align-items:center}
+.pvghost{font:700 16px Arial;color:#3C4CA8}
+.pvperm{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-top:1px solid #E8EAED;font:16px/22px Arial}
+.pvperm span{flex:none;width:28px;height:28px;border-radius:50%;background:#E8EAED;display:flex;align-items:center;justify-content:center;color:#3C4043}
+.acgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.acgrid .a-row{margin:0!important;min-height:84px}
+.actile{flex:none;width:52px;height:52px;border-radius:14px;background:#EFEBFB;color:#3B2F63;display:flex;align-items:center;justify-content:center;font:800 24px Figtree,Arial,sans-serif}
+.acempty{max-width:640px;margin:56px auto 0;text-align:center;display:flex;flex-direction:column;align-items:center}
+.acempty .big{width:96px;height:96px;border-radius:28px;background:#EFEBFB;color:#3B2F63;display:flex;align-items:center;justify-content:center}
+.acspin{animation:none}
+
+
+.pvcard{margin-top:22px;padding:24px 34px 22px}.pvcard h2{margin:14px 0 6px;font-size:24px;line-height:30px}.pvchip{margin-bottom:14px}.pvperm{padding:10px 0}.pvrow{margin-top:16px}.pvcard p{margin-bottom:14px}
+
+.acban{background:#3B2F63!important;min-height:92px;box-shadow:0 1px 2px rgba(59,47,99,.08),0 4px 14px rgba(59,47,99,.12)!important}
+.acban .a-ttl{color:#fff!important}.acban .a-sub{color:rgba(255,255,255,.8)!important}
+.acbi{flex:none;width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center}
+.acbi.warn{background:#F6C453;color:#3B2F00}
+.acban .a-btn{background:#fff!important;color:#3B2F63!important;box-shadow:none!important}
+.acban .winx{width:52px;height:52px;border-radius:50%!important;display:flex;align-items:center;justify-content:center;border:0;background:rgba(255,255,255,.14)!important;color:#fff!important;box-shadow:none!important}
+
+
+
+.acban .a-btn{height:56px}
+
+.acsub{padding-left:30px!important;font-size:20px!important}
+.acdot{width:14px;height:14px;border-radius:50%;flex:none;margin:0 6px 0 2px}
+.a-time{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.actag{font:600 16px/20px Figtree,Arial,sans-serif;color:#5F5B70}
+.actag2{display:inline-block;margin-left:10px;padding:0 10px;border-radius:999px;background:rgba(59,47,99,.07);font:600 15px/24px Figtree,Arial,sans-serif;color:#4F4B60}
+.acmenu{width:440px;padding:18px 20px!important}
+.acmenu .a-row.sel{background:#fff;box-shadow:0 1px 2px rgba(59,47,99,.08),0 4px 14px rgba(59,47,99,.12)}
+
+#awin .aphdr::before{transition:opacity .2s}
+#awin .aphdr:not(.scd)::before{opacity:0}
+#axScrim .acsheet{width:min(900px,calc(100% - 48px));height:min(700px,calc(100% - 40px))}
+.pvweb{overflow:auto!important}
+.pvin{width:100%;outline:none;background:#fff}
+.pvin:focus{border:2px solid #3C4CA8}
+button.pvlink,button.pvghost{border:0;background:none;padding:0;cursor:pointer;text-align:left}
+button.pvbtn{cursor:pointer}
+.acban .a-btn[data-ax]{cursor:pointer}
 </style>
 
-<div class="top"><h1>Grace · tablet prototype</h1><p>Rail, browser and Grace together. Grace’s replies, and what she points at on the page, come live from Claude, so every run plays out differently.</p></div>
+<div class="top"><h1>Grace · tablet prototype</h1></div>
 <div class="layout">
   <div class="frameWrap" id="frameWrap">
     <div class="device" id="device"><div class="screen chat-white" id="screen"><div class="sbg" aria-hidden="true" style="background:radial-gradient(38% 55% at 12% 18%,color-mix(in srgb,#C9BCFA 50%,#ffffff) 0%,rgba(0,0,0,0) 70%),radial-gradient(40% 55% at 70% 8%,color-mix(in srgb,#B9D5F2 50%,#ffffff) 0%,rgba(0,0,0,0) 70%),radial-gradient(45% 50% at 88% 92%,color-mix(in srgb,#E8F49C 50%,#ffffff) 0%,rgba(0,0,0,0) 70%),linear-gradient(135deg,color-mix(in srgb,#E1DAFA 50%,#ffffff) 0%,color-mix(in srgb,#DAE6F4 50%,#ffffff) 60%,color-mix(in srgb,#F1F6D2 50%,#ffffff) 100%)"></div>
@@ -861,7 +921,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="toast" id="toast" role="status"></div>
     </div></div>
   </div>
-  <div class="side">
+  <div class="side" hidden aria-hidden="true">
     <section class="card">
       <h2>Speak as Margaret</h2>
       <p>The page can’t use your microphone, so type what Margaret says. It plays as speech: her words fill Grace’s answer field, then send when she stops. Speaking while Grace talks interrupts her.</p>
@@ -950,7 +1010,8 @@ const TAILP='M34 0H8V12C8 18 5.4 22.8 0 26C5.5 26.6 10.4 25.4 14 22.6C17 25 20.4
 
 /* ---------- scale ---------- */
 const wrap=$('frameWrap'),dev=$('device');
-function fit(){const s=Math.min(1,wrap.clientWidth/1316);dev.style.transform='scale('+s+')';wrap.style.height=(836*s)+'px';}
+function fit(){const s=Math.min(1,wrap.clientWidth/1316,Math.max(.4,(innerHeight-wrap.getBoundingClientRect().top-scrollY-24)/836));dev.style.transform='scale('+s+')';dev.style.left=Math.max(0,(wrap.clientWidth-1316*s)/2)+'px';wrap.style.height=(836*s)+'px';}
+addEventListener('resize',fit);
 new ResizeObserver(fit).observe(wrap);fit();
 function tick(){const d=new Date();$('clock').textContent=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}).replace(/\s?[AP]M/i,'');$('ampm').textContent=d.getHours()<12?'AM':'PM';$('dateLbl').textContent=d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});{const cd=document.getElementById('calDay'),cn=document.getElementById('calNum');if(cd){cd.textContent=d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase();cn.textContent=d.getDate();}}}
 tick();setInterval(tick,30000);function startPulse(){const o=$('askRing');o.classList.remove('halo');void o.offsetWidth;o.classList.add('halo');clearTimeout(S._pt);S._pt=setTimeout(()=>o.classList.remove('halo'),7300);} /* the start-up welcome: three pulses, then the steady glow */
@@ -1797,10 +1858,11 @@ const monday=d=>addD(d,-((d.getDay()+6)%7));
 let axId=10;
 const X={view:null,ts:'Normal',vol:60,muted:false,bright:100,wake:true,online:true,sleep:false,fix:false,banner:null,listenT:null,wakeFrom:null,
  cal:{mode:'week',anchor:D0,sel:D0,detail:null,form:null,dlg:null,pick:null,
-  events:[{id:1,title:'Doctor’s appointment',day:addD(D0,1),start:600,end:660,where:'Main St clinic · 214 Main Street',who:'Dr. Patel',remind:'Day before',repeat:'Never',red:true,note:'From the clinic’s email · Visit form attached'},
-          {id:2,title:'Lunch with Susan',day:addD(D0,3),start:720,end:810,where:'She’ll pick you up',remind:'1 hour before',repeat:'Never'},
+  events:[{id:1,acct:'gmail',title:'Doctor’s appointment',day:addD(D0,1),start:600,end:660,where:'Main St clinic · 214 Main Street',who:'Dr. Patel',remind:'Day before',repeat:'Never',red:true,note:'From the clinic’s email · Visit form attached'},
+          {id:2,acct:'gmail',title:'Lunch with Susan',day:addD(D0,3),start:720,end:810,where:'She’ll pick you up',remind:'1 hour before',repeat:'Never'},
           {id:3,title:'Hair appointment',day:addD(D0,5),start:900,end:960,where:'Linda’s salon',remind:'1 hour before',repeat:'Never'}],draft:null},
- mail:{folder:'inbox',q:'',read:null,viewer:null,pdf:null,compose:null,undo:null,
+ acc:{list:[{id:'gmail',prov:'Gmail',name:'Gmail',addr:'margaret.h@gmail.com',color:'#8E7CC3',mail:true,cal:true,con:true,ok:true}],page:null,sheet:null,other:{name:'Margaret Hill',email:'',pw:'',in:'',out:'',show:false,err:''},dlg:null,syncing:null,last:{},gone:{},calBanX:false,busy:false},
+ mail:{folder:'inbox',acct:null,q:'',read:null,viewer:null,pdf:null,compose:null,undo:null,
   items:[{id:'susan',from:'Susan',av:'susan',subj:'Photos from Lily’s recital',time:'2:15 PM',unread:true,folder:'inbox',body:'Hi Mom! Here are some photos from Lily’s piano recital. She played so well and was very proud. See you on Sunday. Love, Susan',photos:['stage','flowers','program']},
          {id:'clinic',from:'Main St Clinic',av:'clinic',subj:'Reminder: your appointment tomorrow at 10 am',time:'11:02 AM',unread:true,folder:'inbox',body:'Dear Margaret, this is a reminder of your appointment with Dr. Patel tomorrow at 10:00 am. Please fill in the attached form and bring it with you.',files:[{name:'Visit form.pdf',size:'2 pages'}]},
          {id:'book',from:'Riverside Book Club',av:'R:#5E8C6A',subj:'Our book for December',time:'Yesterday',unread:false,folder:'inbox',body:'Hello everyone! For December we’re reading a cosy winter mystery. Copies are at the library desk. See you on the 10th.'},
@@ -1854,7 +1916,7 @@ function drawPop(){const box=$('axPop');if(!X.pop){box.innerHTML='';document.que
  if(X.pop==='Volume')h=`<div class="a-h">${axi(X.muted?'spk0':'spk',30,2)}Volume<span class="v">${X.muted?'Muted':X.vol+'%'}</span></div>
   <div class="vol"><button class="rb" data-ax="vol-" aria-label="Quieter">${axi('minus',28,2.6)}</button><div class="tr" data-ax="voltrack"><b style="width:${X.vol}%"></b><i style="left:${X.vol}%"></i></div><button class="rb" data-ax="vol+" aria-label="Louder">${axi('plus',28,2.6)}</button></div>
   <div class="a-s" style="margin-top:16px">${X.muted?'Grace will show her words on screen while you’re muted.':'Grace’s voice, videos and sounds all use this volume.'}</div>
-  <div class="a-btns" style="margin-top:18px">${X.muted?`<button class="a-btn prom" data-ax="unmute">${axi('spk',22,2.2)}Unmute</button>`:`<button class="a-btn" data-ax="test" style="background:rgba(255,255,255,.7)">${axi('play',22,2.2)}Test sound</button><button class="a-btn" data-ax="mute" style="background:rgba(255,255,255,.7)">${axi('spk0',22,2.2)}Mute</button>`}</div>`;
+  <div class="a-btns" style="margin-top:18px">${X.muted?`<button class="a-btn prom" data-ax="unmute">${axi('spk',22,2.2)}Unmute</button>`:`<button class="a-btn" data-ax="mute" style="background:rgba(255,255,255,.7)">${axi('spk0',22,2.2)}Mute</button>`}</div>`;
  else h=X.online?`<div class="a-h">${axi('wifi',30,2)}Wi-Fi<span class="v">Connected</span></div><div class="a-row" style="margin-top:18px"><span style="color:#1E7A46;display:flex">${axi('check',30,2.6)}</span><div><div class="a-ttl">${esc(X.wifi.cur)}</div><div class="a-sub">Strong signal</div></div></div><div class="a-btns" style="margin-top:18px"><button class="a-btn" data-ax="otherNet" style="background:rgba(255,255,255,.7)">Choose another network</button></div>`
   :`<div class="a-h">${wifiSlash(30)}Wi-Fi<span class="v">Not connected</span></div><div class="a-s" style="margin-top:12px">Email and the internet need it. Grace can help you reconnect.</div><div class="a-btns" style="margin-top:18px"><button class="a-btn prom" data-ax="fixwifi">${axi('wifi',22,2.2)}Fix Wi-Fi</button></div>`;
  h=h.replace(/<span class="v">([^<]*)<\/span><\/div>/,'<span class="v" style="margin-left:12px">$1</span><span style="flex:1"></span><button class="rpx" data-ax="popclose" aria-label="Close">'+axi('x',22,2)+'</button></div>');
@@ -1872,13 +1934,14 @@ function drawBanner(){const b=$('axBan');const show=S.view==='home'&&!(S.open&&S
 
 /* ---------- Home cards follow the data ---------- */
 function homeCards(){const cc=document.querySelector('.lc[data-app="Calendar"]');if(cc){const box=cc.querySelector('.lpanel')?.parentElement;if(box){
-  const up=X.cal.events.filter(e=>e.day>=D0).sort((a,b)=>a.day-b.day||a.start-b.start).slice(0,3);
+  const up=vEv().filter(e=>e.day>=D0).sort((a,b)=>a.day-b.day||a.start-b.start).slice(0,3);
   box.innerHTML=up.map(e=>`<div class="lpanel" data-ev="${e.id}" style="display:flex;align-items:center;gap:18px;padding:16px 20px"><div style="width:74px;flex:none;text-align:center"><b style="display:block;font-size:18px;line-height:22px;letter-spacing:.06em;color:${e.red?'#E5577A':'#4B5163'}">${sameD(e.day,D0)?'TODAY':WK[e.day.getDay()].toUpperCase()}</b><span style="display:block;font-size:22px;line-height:28px;font-weight:700">${tLab(e.start)}</span></div><div style="width:2px;align-self:stretch;border-radius:1px;background:${e.red?'#E5577A':'#9D8BF0'}"></div><div><b style="display:block;font-size:24px;line-height:30px">${esc(e.title)}</b><span style="display:block;font-size:20px;line-height:26px;color:#4B5163">${esc(e.who?e.who+' · '+e.where.split(' · ')[0]:e.where)}</span></div></div>`).join('');
-  const st=cc.querySelector('.st');if(st)st.textContent=X.cal.events.some(e=>sameD(e.day,D0))?'Today':'Nothing else today';}}
- const ec=document.querySelector('.lc[data-app="Email"]');if(ec){const st=ec.querySelector('.st'),un=X.mail.items.filter(m=>m.folder==='inbox'&&m.unread);
+  const st=cc.querySelector('.st');if(st)st.textContent=vEv().some(e=>sameD(e.day,D0))?'Today':'Nothing else today';}}
+ const ec=document.querySelector('.lc[data-app="Email"]');if(ec){const st=ec.querySelector('.st'),un=vMail().filter(m=>m.folder==='inbox'&&m.unread);
   const box=ec.querySelector('.lpanel')?.parentElement||ec.querySelector('.lwait')?.parentElement;
   if(box){if(!X.online){box.innerHTML=`<div class="lwait"><span style="display:flex">${wifiSlash(26)}</span><span>New email will arrive when you’re back online.</span></div>`;st.textContent='Waiting for the internet';}
-   else{box.innerHTML=(un.length?un:X.mail.items.filter(m=>m.folder==='inbox')).slice(0,2).map(m=>`<div class="lpanel" style="display:flex;align-items:center;gap:16px;padding:14px 18px">${av(m.av,52).replace('class="a-av"','class="a-av hav"')}<div style="min-width:0"><b style="display:block;font-size:22px;line-height:28px">${esc(m.from)}${m.unread?' <span style="display:inline-block;width:10px;height:10px;margin-left:6px;border-radius:50%;background:#7C5BD6;vertical-align:middle"></span>':''}</b><span style="display:block;font-size:20px;line-height:26px;color:#4B5163;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.subj)}</span></div></div>`).join('');st.textContent=un.length?un.length+' new':'No new email';}}}
+   else if(!mailAccs().length){box.innerHTML=`<div class="lwait"><span style="display:flex">${axi('mail',26,2)}</span><span>Connect your email to see it here.</span></div>`;st.textContent='Not connected';}
+   else{box.innerHTML=(un.length?un:vMail().filter(m=>m.folder==='inbox')).slice(0,2).map(m=>`<div class="lpanel" style="display:flex;align-items:center;gap:16px;padding:14px 18px">${av(m.av,52).replace('class="a-av"','class="a-av hav"')}<div style="min-width:0"><b style="display:block;font-size:22px;line-height:28px">${esc(m.from)}${m.unread?' <span style="display:inline-block;width:10px;height:10px;margin-left:6px;border-radius:50%;background:#7C5BD6;vertical-align:middle"></span>':''}</b><span style="display:block;font-size:20px;line-height:26px;color:#4B5163;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.subj)}</span></div></div>`).join('');st.textContent=un.length?un.length+' new':'No new email';}}}
  requestAnimationFrame(()=>{const ic=document.querySelector('.lc[data-app="internet"]');if(ic){const b=$('netBtn');if(b){b.style.background=X.online?'':'rgba(59,47,99,.10)';b.style.color=X.online?'':'rgba(20,20,20,.38)';}if(!X.online)$('netSub').textContent='Needs the internet';}});}
 
 /* ---------- app header ---------- */
@@ -1891,8 +1954,8 @@ function hdr(title,o){o=o||{};const left=o.back?`<button class="pill main" data-
  $('ahdr').innerHTML=`${left?`<div class="hgrp">${left}</div>`:''}${tl}<span style="flex:1"></span>${lg?`<span class="ctitle" aria-hidden="true">${esc(title)}</span>`:''}<div class="hgrp">${right}<button class="winx apx" data-ax="close" aria-label="Close ${esc(title)}">${axi('x',24,1.75)}</button></div>`;}
 
 /* ---------- CALENDAR ---------- */
-function evOn(d){return X.cal.events.filter(e=>sameD(e.day,d)||(e.repeat==='Every week'&&e.day<=d&&e.day.getDay()===d.getDay())||(e.repeat==='Every month'&&e.day<=d&&e.day.getDate()===d.getDate())).sort((a,b)=>a.start-b.start);}
-function calRow(e,d,extra){return `<div class="a-row${extra||''}" data-ax="ev:${e.id}" data-t="ev${e.id}"><div class="a-when"><b>${sameD(d,D0)?'Today':WK[d.getDay()]}</b><span>${tLab(e.start)}</span></div><span class="a-bar${e.red?' red':''}"></span><div><div class="a-ttl">${esc(e.title)}</div><div class="a-sub">${esc(e.draft?'Not added yet · Grace is asking you':[e.who,e.where,e.repeat!=='Never'?e.repeat.charAt(0)+e.repeat.slice(1).toLowerCase():''].filter(Boolean).join(' · '))}</div></div><span class="chev">${axi('chevR',26,2.4)}</span></div>`;}
+function evOn(d){return vEv().filter(e=>sameD(e.day,d)||(e.repeat==='Every week'&&e.day<=d&&e.day.getDay()===d.getDay())||(e.repeat==='Every month'&&e.day<=d&&e.day.getDate()===d.getDate())).sort((a,b)=>a.start-b.start);}
+function calRow(e,d,extra){return `<div class="a-row${extra||''}" data-ax="ev:${e.id}" data-t="ev${e.id}"><div class="a-when"><b>${sameD(d,D0)?'Today':WK[d.getDay()]}</b><span>${tLab(e.start)}</span></div><span class="a-bar${e.red?' red':''}"></span><div><div class="a-ttl">${esc(e.title)}</div><div class="a-sub">${esc(e.draft?'Not added yet · Grace is asking you':[e.who,e.where,e.repeat!=='Never'?e.repeat.charAt(0)+e.repeat.slice(1).toLowerCase():''].filter(Boolean).join(' · '))}${e.draft?'':evTag(e)}</div></div><span class="chev">${axi('chevR',26,2.4)}</span></div>`;}
 function calView(){const C=X.cal;
  if(C.form)return calForm();
  if(C.detail){const e=C.events.find(x=>x.id===C.detail);if(!e){C.detail=null;return calView();}
@@ -1904,11 +1967,11 @@ function calView(){const C=X.cal;
  hdr('Calendar',{icon:'cal',actions:[{t:'Today',k:'caltoday'},{t:'Add',ic:'plus',prom:1,k:'caladd'}]});
  const seg=`<div class="a-seg" style="width:320px;padding:6px"><button class="spdo${C.mode==='week'?' sel':''}" style="height:52px" data-ax="calmode:week">Week</button><button class="spdo${C.mode==='month'?' sel':''}" style="height:52px" data-ax="calmode:month">Month</button></div>`;
  if(C.mode==='month'){const first=new Date(C.anchor.getFullYear(),C.anchor.getMonth(),1),start=monday(first);
-  let h=`<div class="a-mhead"><button class="a-rb" data-ax="calprev" aria-label="Previous month">${axi('chevL',28,2.4)}</button><span class="ttl">${MO[first.getMonth()]} ${first.getFullYear()}</span><button class="a-rb" data-ax="calnext" aria-label="Next month">${axi('chevR',28,2.4)}</button><span style="flex:1"></span>${seg}</div><div class="a-month">`+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="h">${d}</div>`).join('');
+  let h=calBanner()+`<div class="a-mhead"><button class="a-rb" data-ax="calprev" aria-label="Previous month">${axi('chevL',28,2.4)}</button><span class="ttl">${MO[first.getMonth()]} ${first.getFullYear()}</span><button class="a-rb" data-ax="calnext" aria-label="Next month">${axi('chevR',28,2.4)}</button><span style="flex:1"></span>${seg}</div><div class="a-month">`+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="h">${d}</div>`).join('');
   for(let i=0;i<35;i++){const d=addD(start,i),o=d.getMonth()!==first.getMonth(),ev=evOn(d)[0];h+=`<div class="d${o?' o':''}${sameD(d,D0)?' today':''}${sameD(d,C.sel)?' sel':''}" data-ax="calday:${+d}">${d.getDate()}${ev&&!o?`<em class="${ev.red?'red':''}">${esc(ev.title.replace('’s appointment','').replace(' appointment',''))}</em>`:''}</div>`;}
   return h+'</div>';}
  const m=monday(C.anchor),e6=addD(m,6),rng=m.getMonth()===e6.getMonth()?`${MO[m.getMonth()]} ${m.getDate()} – ${e6.getDate()}`:`${MO[m.getMonth()].slice(0,3)} ${m.getDate()} – ${MO[e6.getMonth()].slice(0,3)} ${e6.getDate()}`;
- let h=`<div class="a-mhead"><button class="a-rb" data-ax="calprev" aria-label="Previous week">${axi('chevL',28,2.4)}</button><span class="ttl">${rng}</span><button class="a-rb" data-ax="calnext" aria-label="Next week">${axi('chevR',28,2.4)}</button><span style="flex:1"></span>${seg}</div><div class="a-week">`;
+ let h=calBanner()+`<div class="a-mhead"><button class="a-rb" data-ax="calprev" aria-label="Previous week">${axi('chevL',28,2.4)}</button><span class="ttl">${rng}</span><button class="a-rb" data-ax="calnext" aria-label="Next week">${axi('chevR',28,2.4)}</button><span style="flex:1"></span>${seg}</div><div class="a-week">`;
  for(let i=0;i<7;i++){const d=addD(m,i);h+=`<div class="a-day${sameD(d,D0)?' today':''}${sameD(d,C.sel)?' sel':''}" data-ax="calday:${+d}"><b>${sameD(d,D0)?'Today':WK[d.getDay()]}</b><span>${d.getDate()}</span>${evOn(d).length?'<i></i>':''}</div>`;}
  h+='</div>';
  const selEv=evOn(C.sel),up=[];for(let i=1;i<=14&&up.length<4;i++){const d=addD(C.sel,i);evOn(d).forEach(e=>up.length<4&&up.push([e,d]));}
@@ -1932,7 +1995,7 @@ function calDlg(){const d=X.cal.dlg;if(!d)return '';const e=X.cal.events.find(x=
 
 /* ---------- EMAIL ---------- */
 const mailOf=id=>X.mail.items.find(m=>m.id===id);
-function mrow(m){return `<div class="a-row" data-ax="mopen:${m.id}" data-t="m-${m.id}">${av(m.av)}<div style="min-width:0"><div class="a-ttl" style="display:flex;align-items:center;gap:10px">${esc(m.from)}${m.unread?'<span class="a-dot"></span>':''}</div><div class="a-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.replied?'You replied: “'+esc(m.replied.slice(0,28))+'…”':esc(m.subj)}${(m.files||m.photos)?' · '+axi('clip',18,2.2).replace('<svg','<svg style="vertical-align:-3px"'):''}</div></div><span class="a-time">${esc(m.time)}</span></div>`;}
+function mrow(m){return `<div class="a-row" data-ax="mopen:${m.id}" data-t="m-${m.id}">${av(m.av)}<div style="min-width:0"><div class="a-ttl" style="display:flex;align-items:center;gap:10px">${esc(m.from)}${m.unread?'<span class="a-dot"></span>':''}</div><div class="a-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.replied?'You replied: “'+esc(m.replied.slice(0,28))+'…”':esc(m.subj)}${(m.files||m.photos)?' · '+axi('clip',18,2.2).replace('<svg','<svg style="vertical-align:-3px"'):''}</div></div><span class="a-time">${esc(m.time)}${mailAccs().length>1&&accOf(m.acct||'gmail')?`<span class="actag">${esc(accOf(m.acct||'gmail').name)}</span>`:''}</span></div>`;}
 
 function saveDraft(c){const M=X.mail,d={to:c.to,cc:(c.cc||[]).slice(),bcc:(c.bcc||[]).slice(),subj:c.subj,body:c.body,att:c.att.slice(),replyTo:c.replyTo};
  if(c.draftId){const m=mailOf(c.draftId);if(m){Object.assign(m,{from:c.to?'To '+c.to:'No one yet',subj:c.subj||'(no subject)',body:c.body,draft:d,time:'Just now'});return;}}
@@ -1940,7 +2003,7 @@ function saveDraft(c){const M=X.mail,d={to:c.to,cc:(c.cc||[]).slice(),bcc:(c.bcc
 function mailView(){const M=X.mail;
  if(M.viewer){const m=mailOf(M.viewer.id),i=M.viewer.i,n=m.photos.length;hdr(`Photo ${i+1} of ${n}`,{back:[m.from+'’s email','vback'],actions:[{t:'Save to Files',ic:'down',prom:1,k:'savephoto'},{t:'Forward',ic:'fwd',k:'fwdphoto'}]});
   return `<div class="a-view"><button class="nav" data-ax="vprev" aria-label="Previous photo"${i?'':' style="visibility:hidden"'}>${axi('chevL',30,2.4)}</button><div class="img">${PHOTO[m.photos[i]]}</div><button class="nav" data-ax="vnext" aria-label="Next photo"${i<n-1?'':' style="visibility:hidden"'}>${axi('chevR',30,2.4)}</button></div>`;}
- if(M.pdf){const m=mailOf(M.pdf);hdr(m.files[0].name,{back:['Clinic email','pdfback'],actions:[{t:'Print',ic:'printer',prom:1,k:'print'},{t:'Save to Files',ic:'down',k:'savefile'}]});
+ if(M.pdf){const m=mailOf(M.pdf);hdr(m.files[0].name,{back:['Clinic email','pdfback'],actions:[{t:'Save to Files',ic:'down',k:'savefile'}]});
   return `<div style="background:#F6F4FB;margin:-24px -28px -28px;padding:28px;min-height:100%;box-sizing:border-box"><div class="a-pdf"><div style="font:800 22px/28px Figtree,Arial,sans-serif;color:#2F7FB8">Main St Clinic</div><div style="font:700 20px/26px Figtree,Arial,sans-serif;margin-top:16px">Patient visit form</div><i style="width:80%"></i><i></i><i style="width:60%"></i><i style="width:90%;margin-top:26px"></i><i style="width:70%"></i><i></i><i style="width:50%"></i></div><div class="a-s" style="text-align:center;margin-top:14px">Page 1 of 2</div></div>`;}
  if(M.compose){const c=M.compose;
   if(c.picker){hdr('New email',{back:[c.pickFor?'New email':'Inbox',c.pickFor?'pickback':'cdiscard']});
@@ -1949,7 +2012,8 @@ function mailView(){const M=X.mail;
   hdr(c.replyTo?'Reply':'New email',{back:[c.replyTo?mailOf(c.replyTo).from+'’s email':'Inbox','cback'],actions:[{t:'Discard',ic:'trash',k:'cdiscard'}]});
   const chip=(n,f,i)=>{const w=PEOPLE.find(p=>p[0]===n);return `<span class="a-chipc">${w?av(w[1],46):''}${esc(n)}<button class="rcx" data-ax="rmrcp:${f}:${i}" aria-label="Remove ${esc(n)}">${axi('x',18,2.4)}</button></span>`;};
   const row=(f,lab)=>`<div class="a-frow"><span class="a-flabel">${lab}</span><span style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;flex:1;padding:6px 0">${(f==='to'?[c.to].filter(Boolean):c[f]).map((n,i)=>chip(n,f,i)).join('')}<button class="a-btn rcadd" data-ax="addrcp:${f}" aria-label="Add to ${lab}">${axi('plus',20,2.4)}</button></span></div>`;
-  return row('to','To')+(c.ccOpen||c.cc.length||c.bcc.length?row('cc','Cc')+row('bcc','Bcc'):`<div class="a-frow"><span class="a-flabel">Cc/Bcc</span><button class="a-btn rcadd" data-ax="ccopen" style="width:auto;padding:0 20px">${axi('plus',20,2.4)}Add</button></div>`)+`
+  const fromRow=mailAccs().length>1?(()=>{const fid=c.from||fromFor(c.to),fa=accOf(fid);return `<div class="a-frow" style="position:relative"><span class="a-flabel">From</span><button class="a-btn" data-ax="frommenu" data-t="from" style="height:56px">${esc(fa?fa.addr:'')}${axi('chevR',20,2.2).replace('<svg','<svg style="transform:rotate(90deg)"')}</button>${c.fromMenu?`<div class="rpop acmenu" style="position:absolute;left:150px;top:66px;z-index:5"><div style="display:flex;align-items:center;justify-content:space-between;gap:20px"><div class="a-h2">Send from</div><button class="rpx" data-ax="frommenu" aria-label="Close">${axi('x',22,2)}</button></div>${mailAccs().map(a=>`<div class="a-row${a.id===fid?' sel':''}" data-ax="from:${a.id}" style="margin-top:8px;min-height:76px"><div><div class="a-ttl">${esc(a.addr)}</div><div class="a-sub">${esc(a.name)}</div></div>${a.id===fid?`<span style="margin-left:auto;color:#3B2F63;display:flex">${axi('check',26,2.6)}</span>`:''}</div>`).join('')}</div>`:''}</div>`;})():'';
+  return fromRow+row('to','To')+(c.ccOpen||c.cc.length||c.bcc.length?row('cc','Cc')+row('bcc','Bcc'):`<div class="a-frow"><span class="a-flabel">Cc/Bcc</span><button class="a-btn rcadd" data-ax="ccopen" style="width:auto;padding:0 20px">${axi('plus',20,2.4)}Add</button></div>`)+`
    <div class="a-frow"><span class="a-flabel">Subject</span><input class="axin a-b" data-axin="subj" value="${esc(c.subj)}" placeholder="What it’s about" style="flex:1;border:0;outline:none;background:transparent;font:400 22px/30px Figtree,Arial,sans-serif"></div>
    <textarea class="a-field axin" data-axin="body" data-t="body" placeholder="Write your message, or ask Grace to help" style="margin-top:18px;width:100%;box-sizing:border-box;min-height:150px;box-shadow:none;padding:4px 0;border:0;outline:none;resize:none;font:400 22px/32px Figtree,Arial,sans-serif">${esc(c.body)}</textarea>
    ${c.att.length?`<div class="a-thumbs" style="margin-top:10px">${c.att.map((a,i)=>`<div class="a-thumb">${PHOTO[a]}<button class="rm" data-ax="rmatt:${i}" aria-label="Remove">${axi('x',20,2.4)}</button></div>`).join('')}</div>`:''}
@@ -1961,13 +2025,16 @@ function mailView(){const M=X.mail;
   h+=`<div style="display:flex;align-items:center;gap:18px;margin-top:${m.scam?20:0}px">${av(m.av)}<div><div class="a-ttl">${esc(m.from)}</div><div class="a-sub">${m.addr?esc(m.addr)+' · ':'To you · '}${esc(m.time)}</div></div></div>
    <h3 class="a-h" style="font-size:30px;line-height:38px;margin:20px 0 10px">${esc(m.subj)}</h3><div class="a-b" data-t="mbody" style="max-width:880px">${esc(m.body).replace('@@LINK@@','<span class="a-link" data-t="link">confirm your password here</span>')}</div>`;
   if(m.photos)h+=`<div class="a-attbar">${axi('clip',24,2.2)}<span class="a-ttl" style="font-size:22px">${m.photos.length} photos</span><span style="flex:1"></span><button class="a-btn" data-ax="saveall" data-t="saveall">${axi('down',22,2.2)}Save all to Files</button></div><div class="a-photos">`+m.photos.map((p,i)=>`<div class="a-photo" data-ax="photo:${i}">${PHOTO[p]}</div>`).join('')+'</div>';
-  if(m.files)h+=m.files.map(f=>`<div class="a-att" style="margin-top:22px;max-width:760px" data-t="file"><span class="ft">${axi('file',26,2)}PDF</span><div><div class="a-ttl" style="font-size:22px">${esc(f.name)}</div><div class="a-sub">${esc(f.size)}</div></div><span class="a-btns"><button class="a-btn" style="background:#fff" data-ax="openpdf">Open</button><button class="a-btn" style="background:#fff" data-ax="print">${axi('printer',22,2.2)}Print</button></span></div>`).join('');
+  if(m.files)h+=m.files.map(f=>`<div class="a-att" style="margin-top:22px;max-width:760px" data-t="file"><span class="ft">${axi('file',26,2)}PDF</span><div><div class="a-ttl" style="font-size:22px">${esc(f.name)}</div><div class="a-sub">${esc(f.size)}</div></div><span class="a-btns"><button class="a-btn" style="background:#fff" data-ax="openpdf">Open</button></span></div>`).join('');
   return h;}
+ if(!mailAccs().length)return mailEmpty();
  hdr('Email',{icon:'mail',actions:[{t:'Write',ic:'pencil',prom:1,k:'write'}]});
- const f=M.folder,list=X.mail.items.filter(m=>m.folder===f&&(!M.q||(m.from+' '+m.subj+' '+m.body).toLowerCase().includes(M.q.toLowerCase())));
- const un=X.mail.items.filter(m=>m.folder==='inbox'&&m.unread).length;
- return `<div class="a-split mail"><div class="a-nav">${[['inbox','Inbox',un],['sent','Sent'],['draft','Drafts',X.mail.items.filter(m=>m.folder==='drafts').length],['trash','Trash']].map(([i,t,c])=>`<div class="a-ni${f===i||(f==='drafts'&&i==='draft')?' sel':''}" data-ax="folder:${i}">${axi(i,26,2)}${t}${c?`<span class="a-count">${c}</span>`:''}</div>`).join('')}</div>
-  <div><div class="a-search">${axi('search',26,2.2)}<input class="axin" data-axin="q" value="${esc(M.q)}" placeholder="Search email" style="flex:1;border:0;outline:none;background:transparent;font:inherit;color:#1C2030"></div>
+ const MA=mailAccs(),multi=MA.length>1;if(M.acct&&!MA.some(a=>a.id===M.acct))M.acct=null;
+ const f=M.folder,list=vMail().filter(m=>m.folder===f&&(f!=='inbox'||!M.acct||(m.acct||'gmail')===M.acct)&&(!M.q||(m.from+' '+m.subj+' '+m.body).toLowerCase().includes(M.q.toLowerCase())));
+ const un=vMail().filter(m=>m.folder==='inbox'&&m.unread).length,ob=vMail().filter(m=>m.folder==='outbox').length;
+ const accNav=multi?MA.map(a=>{const n=vMail().filter(m=>m.folder==='inbox'&&m.unread&&(m.acct||'gmail')===a.id).length;return `<div class="a-ni acsub${f==='inbox'&&M.acct===a.id?' sel':''}" data-ax="acctbox:${a.id}"><span class="acdot" style="background:${a.color}"></span>${esc(a.name)}${a.ok?(n?`<span class="a-count">${n}</span>`:''):`<span style="margin-left:auto;display:flex">${axi('alert',22,2.2)}</span>`}</div>`;}).join(''):'';
+ return `<div class="a-split mail"><div class="a-nav">${[['inbox',multi?'All inboxes':'Inbox',un],['sent','Sent'],['draft','Drafts',vMail().filter(m=>m.folder==='drafts').length],['trash','Trash']].concat(ob?[['outbox','Outbox',ob]]:[]).map(([i,t,c])=>`<div class="a-ni${(f===i||(f==='drafts'&&i==='draft'))&&!(i==='inbox'&&M.acct)?' sel':''}" data-ax="folder:${i}">${axi(i==='outbox'?'send':i,26,2)}${t}${c?`<span class="a-count">${c}</span>`:''}</div>${i==='inbox'?accNav:''}`).join('')}</div>
+  <div>${mailBanners()}<div class="a-search">${axi('search',26,2.2)}<input class="axin" data-axin="q" value="${esc(M.q)}" placeholder="Search email" style="flex:1;border:0;outline:none;background:transparent;font:inherit;color:#1C2030"></div>
   <div style="margin-top:18px">${M.q?`<div class="a-s" style="margin-bottom:18px">${list.length} email${list.length===1?'':'s'} found</div>`:''}${f==='trash'&&list.length?'<div class="a-s" style="margin:0 0 14px">Emails in Trash are deleted for good after 30 days.</div>':''}${list.map(mrow).join('')||`<div class="a-s" style="padding:30px 4px">${M.q?'Nothing found. Try another word.':'Nothing here.'}</div>`}</div></div></div>`;}
 
 
@@ -1982,11 +2049,11 @@ function fSave(kind,item){const F=X.files;if(kind==='photo'){if(!F.photos.some(p
 function filesView(){const F=X.files;
  if(F.view!==null){const n=F.photos.length,i=F.view;hdr(`Photo ${i+1} of ${n}`,{back:['Files','fvback'],actions:[{t:'Share',ic:'fwd',k:'fshare'},{t:'Delete',ic:'trash',k:'fpdel'}]});
   return `<div class="a-view"><button class="nav" data-ax="fvprev" aria-label="Previous photo"${i?'':' style="visibility:hidden"'}>${axi('chevL',30,2.4)}</button><div class="img">${PHOTO[F.photos[i].k]}</div><button class="nav" data-ax="fvnext" aria-label="Next photo"${i<n-1?'':' style="visibility:hidden"'}>${axi('chevR',30,2.4)}</button></div>`;}
- if(F.pdf!==null){const d=F.docs[F.pdf];hdr(d.name,{back:['Files','fpback'],actions:[{t:'Print',ic:'printer',prom:1,k:'print'}]});
+ if(F.pdf!==null){const d=F.docs[F.pdf];hdr(d.name,{back:['Files','fpback']});
   return `<div style="background:#F6F4FB;margin:-24px -28px -28px;padding:28px;min-height:100%;box-sizing:border-box"><div class="a-pdf"><div style="font:800 22px/28px Figtree,Arial,sans-serif;color:#2F7FB8">${esc(d.name.replace('.pdf',''))}</div><i style="width:80%"></i><i></i><i style="width:60%"></i><i style="width:90%;margin-top:26px"></i><i style="width:70%"></i><i></i><i style="width:50%"></i></div><div class="a-s" style="text-align:center;margin-top:14px">Page 1 of ${d.pages}</div></div>`;}
  hdr('Files',{icon:'image'});
  const tabs=`<div style="display:flex;align-items:center;gap:16px;margin-bottom:18px"><div class="a-seg" style="width:420px;padding:6px">${['Photos','Documents'].map(t=>`<button class="spdo${F.tab===t?' sel':''}" style="height:52px" data-ax="ftab:${t}">${t}</button>`).join('')}</div><span style="flex:1"></span><span class="a-s">Ask Grace to find anything</span></div>`;
- if(F.tab==='Documents')return tabs+F.docs.map((d,i)=>`<div class="a-att" data-t="fd-${i}" style="margin-top:12px"><span class="ft">${axi('file',26,2)}PDF</span><div><div class="a-ttl" style="font-size:22px">${esc(d.name)}</div><div class="a-sub">${esc(d.sub)}</div></div><span class="a-btns"><button class="a-btn" style="background:#fff" data-ax="fdopen:${i}">Open</button><button class="a-btn" style="background:#fff" data-ax="print">${axi('printer',22,2.2)}Print</button></span></div>`).join('');
+ if(F.tab==='Documents')return tabs+F.docs.map((d,i)=>`<div class="a-att" data-t="fd-${i}" style="margin-top:12px"><span class="ft">${axi('file',26,2)}PDF</span><div><div class="a-ttl" style="font-size:22px">${esc(d.name)}</div><div class="a-sub">${esc(d.sub)}</div></div><span class="a-btns"><button class="a-btn" style="background:#fff" data-ax="fdopen:${i}">Open</button></span></div>`).join('');
  let h=tabs,last=null;F.photos.forEach((p,i)=>{if(p.when!==last){if(last!==null)h+='</div>';h+=`<h3 class="a-h" style="margin:${last===null?0:22}px 0 ${p.from?4:12}px">${esc(p.when)}</h3>${p.from?`<div class="a-s" style="margin:0 0 12px">${esc(p.from)}</div>`:''}<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">`;last=p.when;}
   h+=`<button data-ax="fphoto:${i}" data-t="fp-${i}" style="display:block;position:relative;height:150px;padding:0;border:0;border-radius:18px;overflow:hidden;box-shadow:0 2px 10px rgba(60,70,110,.10);cursor:pointer" aria-label="Photo ${i+1}">${PHOTO[p.k]}</button>`;});
  return h+'</div>';}
@@ -2033,9 +2100,77 @@ function trustDlg(){const n=X.wifi.trust;if(!n)return '';
   <div class="a-s" style="margin-top:14px">Only trust it if you are at ${esc(n)} now. If you’re not sure, ask Grace.</div>
   <div class="a-btns"><button class="a-btn prom" data-ax="wtrust">${axi('check',22,2.4)}Trust and join</button><button class="a-btn" data-ax="wtrustgrace">Ask Grace</button><button class="a-btn" data-ax="wtrustno">Cancel</button></div></div></div>`;}
 function wifiConnect(n){const W=X.wifi;W.busy=n;render();setTimeout(()=>{const nt=W.nets.find(x=>x.n===n);if(nt&&nt.portal&&!nt.signed){W.busy=null;W.portal=n;W.user='';W.pw='';render();return;}W.err=0;W.show=false;W.portal=null;W.busy=null;W.cur=n;W.join=null;W.pw='';const k=W.nets.find(x=>x.n===n);if(k)k.known=true;X.online=true;X.fix=false;render();axToast('Connected to '+esc(n));axTell('Margaret joined the Wi-Fi network “'+n+'”. The tablet is online.','You joined '+n+'.');},1600);}
+/* ---------- EMAIL ACCOUNTS (Settings › Email & calendar) ---------- */
+const PROVS=[['G','Gmail','','gmail.com'],['O','Outlook','Also Hotmail, Live and MSN','outlook.com'],['Y','Yahoo','','yahoo.com'],['i','iCloud','Apple’s email','icloud.com'],['A','AOL','','aol.com'],['@','Other email','','']];
+const PURL={Gmail:'accounts.google.com',Outlook:'login.live.com',Yahoo:'login.yahoo.com',iCloud:'appleid.apple.com',AOL:'login.aol.com'};
+const ACOL=['#8E7CC3','#4F7FB5','#5E8C6A','#B07AA1','#B5643F'];
+function accs(){return X.acc.list;}
+function accOf(id){return X.acc.list.find(a=>a.id===id);}
+function mailAccs(){return X.acc.list.filter(a=>a.mail);}
+function calAccs(){return X.acc.list.filter(a=>a.cal);}
+function vMail(){const on=new Set(mailAccs().map(a=>a.id));return X.mail.items.filter(m=>on.has(m.acct||'gmail'));}
+function vEv(){const on=new Set(calAccs().map(a=>a.id));return X.cal.events.filter(e=>!e.acct||e.acct==='tablet'||on.has(e.acct));}
+function accShort(id){const a=accOf(id);return a?a.name:'';}
+function fromFor(to){const L=mailAccs();if(!L.length)return null;const k=X.acc.last[to];if(k&&accOf(k)&&accOf(k).mail)return k;
+ const cnt={};X.mail.items.filter(m=>m.folder==='sent').forEach(m=>{cnt[m.acct||'gmail']=(cnt[m.acct||'gmail']||0)+1;});return L.slice().sort((a,b)=>(cnt[b.id]||0)-(cnt[a.id]||0))[0].id;}
+function acBan(ic,t,l,btn,x){return `<div class="a-row acban" style="margin:0 0 16px"><span class="acbi">${ic}</span><div><div class="a-ttl">${t}</div><div class="a-sub">${l}</div></div><span style="margin-left:auto;display:flex;gap:10px;align-items:center">${btn||''}${x?`<button class="winx acx" data-ax="${x}" aria-label="Not now">${axi('x',22,2)}</button>`:''}</span></div>`;}
+function mailBanners(){let h='';const bad=X.acc.list.filter(a=>a.mail&&!a.ok);
+ if(!X.online)h+=acBan(wifiSlash(28).replace(/#C9302C/g,'#fff'),'No internet right now','You can still read your emails. What you send waits in Outbox and goes by itself when you’re back online.',`<button class="a-btn" data-ax="fixwifi">Fix Wi-Fi</button>`);
+ bad.forEach(a=>{h+=acBan(axi('alert',26,2.2),esc(a.name)+' needs you to sign in again',`Your ${esc(a.name)} emails are still here. New ones arrive once you sign in.${mailAccs().length>1?' Your other email is fine.':''}`,`<button class="a-btn" data-ax="acresign:${a.id}">Sign in again</button>`);});
+ if(X.acc.syncing&&accOf(X.acc.syncing))h+=`<div class="a-row" style="margin:0 0 16px;min-height:76px"><span style="display:flex"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="#9D8BF0" stroke-opacity=".25" stroke-width="3"/><path d="M12 3a9 9 0 0 1 9 9" stroke="#7A63EE" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></path></svg></span><div><div class="a-ttl">Getting your ${esc(accShort(X.acc.syncing))} email…</div><div class="a-sub">The newest come first. Older ones keep arriving while you read.</div></div></div>`;
+ return h;}
+function mailEmpty(){hdr('Email',{icon:'mail'});
+ return `<div class="acempty"><span class="big">${axi('mail',48,1.9)}</span><h3 class="a-h" style="font-size:32px;line-height:40px;margin-top:26px">Get your email on this tablet</h3><div class="a-s" style="margin-top:10px;font-size:20px;line-height:30px">Sign in to the email you already use, like Gmail or Outlook. Its calendar and contacts can come too.</div><div class="a-btns" style="margin-top:28px;justify-content:center"><button class="a-btn prom" data-ax="acgo">${axi('mail',22,2.2)}Connect your email</button><button class="a-btn" data-ax="acgrace">Ask Grace to help</button></div></div>`;}
+function calBanner(){if(calAccs().length||X.acc.calBanX)return '';return acBan(axi('cal',26,2),'Connect your email to keep your calendar up to date','Appointments from your email show up here automatically.',`<button class="a-btn" data-ax="acgo">Connect email</button>`,'calbanx');}
+function evTag(e){if(!calAccs().length)return '';return `<span class="actag2">${e.acct&&e.acct!=='tablet'&&accOf(e.acct)?esc(accOf(e.acct).name):'On this tablet'}</span>`;}
+function provGrid(bare){return `${bare?'':'<div class="a-h2" style="margin:22px 0 0">Which email do you use?</div>'}<div class="acgrid"${bare?' style="margin-top:16px"':''}>${PROVS.map(([l,n,d])=>`<div class="a-row" data-ax="acprov:${n}" data-t="prov-${n}"><span class="actile">${l==='@'?axi('mail',26,2):l}</span><div><div class="a-ttl">${n}</div>${d?`<div class="a-sub">${d}</div>`:''}</div></div>`).join('')}</div>${bare?'':`
+  <div class="a-panel" style="margin-top:18px;padding:16px 20px;display:flex;align-items:center;gap:16px"><div style="flex:1"><div class="a-ttl" style="font-size:20px">Not sure which?</div><div class="a-s">Look at your email address: the part after the @ tells you. Grace can help.</div></div><button class="a-btn" data-ax="acgrace">Ask Grace</button></div>`}`;}
+function acHdr(){const A=X.acc,p=A.page;if(!p)return {icon:'gear'};
+ if(p==='add')return {title:'Add an email',back:['Email & calendar','acback']};
+ if(p==='other')return {title:'Other email',back:[accs().length?'Add an email':'Email & calendar','acback']};
+ if(p==='servers')return {title:'Mail settings',back:['Other email','acback']};
+ const a=accOf(p);return a?{title:a.name,back:['Email & calendar','acback']}:{icon:'gear'};}
+function accPage(){const A=X.acc,p=A.page,o=A.other;
+ const fld=(lab,k,ph,type)=>`<div class="a-fld" style="margin-top:14px;max-width:620px"><div class="l">${lab}</div>${type==='password'?`<div style="display:flex;gap:10px;align-items:center"><input class="v axin" type="${o.show?'text':'password'}" data-axin="${k}" value="${esc(o[k.slice(2)]||'')}" placeholder="${ph}" style="flex:1;border:0;outline:none" autocomplete="off"><button class="a-btn" data-ax="acshow" style="height:64px">${o.show?'Hide':'Show'}</button></div>`:`<input class="v axin" data-axin="${k}" value="${esc(o[k.slice(2)]||'')}" placeholder="${ph}" style="width:100%;border:0;outline:none" autocomplete="off">`}</div>`;
+ if(p==='other')return `<div class="a-s">For email from your internet company, work, or anywhere else. Grace won’t see what you type.</div>${o.err?`<div class="a-caution" style="margin-top:16px;max-width:620px" role="alert">${axi('alert',26,2.2)}${esc(o.err)}</div>`:''}
+  ${fld('Your name','acname','Your name')}<div class="a-s" style="margin:6px 0 0 6px">This is the name people see on your emails.</div>${fld('Email address','acemail2','For example: margaret@riverview.net')}${fld('Password','acpw2','Your email password','password')}
+  <div class="a-btns" style="margin-top:20px"><button class="a-btn prom" data-ax="acnext"${o.name&&/@.+\./.test(o.email)&&o.pw?'':' aria-disabled="true"'}>${A.busy?'Checking…':'Next'}</button><button class="a-btn" data-ax="acback">Cancel</button></div>`;
+ if(p==='servers'){const d=o.email.split('@')[1]||'';return `<div class="a-s">The tablet couldn’t find the mail settings for ${esc(d)} by itself. Your email company lists them on its help page, or Grace can look them up.</div>
+  ${fld('Incoming mail server','acin','mail.'+d)}${fld('Outgoing mail server','acout','smtp.'+d)}
+  <div class="a-btns" style="margin-top:20px"><button class="a-btn prom" data-ax="acsrv"${o.in&&o.out?'':' aria-disabled="true"'}>${A.busy?'Connecting…':'Connect'}</button><button class="a-btn" data-ax="acback">Cancel</button><button class="a-btn" data-ax="acgracesrv">Ask Grace</button></div>`;}
+ if(p==='add')return provGrid(true);
+ const a=p&&accOf(p);
+ if(a)return `<div class="a-row" style="min-height:96px">${av(a.addr[0].toUpperCase()+':'+a.color)}<div><div class="a-ttl">${esc(a.addr)}</div><div class="a-sub" style="display:flex;align-items:center;gap:6px;color:${a.ok?'#1E7A46':'#4B5163'}">${a.ok?axi('check',20,2.6)+esc(a.prov)+' · Connected':esc(a.prov)+' · Needs you to sign in again'}</div></div>${a.ok?'':`<button class="a-btn" style="margin-left:auto" data-ax="acresign:${a.id}">Sign in again</button>`}</div>
+  <div class="a-h2" style="margin:24px 0 10px">Use on this tablet</div>`+
+  [['mail','Email','mail','Your inbox, sent emails and folders'],['cal','Calendar','cal','Appointments show in Calendar with yours'],['users','Contacts','con','Names and addresses when you write']].map(([i,t,k,d])=>`<div class="a-row" style="margin-top:10px;min-height:84px" data-ax="acsw:${a.id}:${k}"><span style="display:flex;color:#3B2F63">${axi(i,28,2)}</span><div><div class="a-ttl">${t}</div><div class="a-sub">${d}</div></div><span class="a-sw${a[k]?'':' off'}" style="margin-left:auto"></span></div>`).join('')+
+  `<div class="a-btns" style="margin-top:22px"><button class="a-btn warn" data-ax="acrm:${a.id}">${axi('trash',22,2.2)}Remove from this tablet</button></div>`;
+ if(!accs().length)return `<h3 class="a-h" style="font-size:30px;line-height:38px">Email & calendar</h3><div class="a-s" style="margin-top:6px">Sign in to the email you already use. Its emails, calendar and contacts come to the tablet. You sign in on your email company’s own page; Grace never sees your password.</div>`+provGrid();
+ return `<h3 class="a-h" style="font-size:30px;line-height:38px">Email & calendar</h3><div class="a-h2" style="margin:18px 0 0">On this tablet</div>`+
+  accs().map(a=>`<div class="a-row" style="margin-top:10px;min-height:96px" data-ax="acopen:${a.id}" data-t="acc-${a.id}">${av(a.addr[0].toUpperCase()+':'+a.color)}<div style="min-width:0"><div class="a-ttl">${esc(a.addr)}</div><div class="a-sub">${esc(a.prov)} · ${a.ok?esc([a.mail&&'Email',a.cal&&'calendar',a.con&&'contacts'].filter(Boolean).join(', ').replace(/^./,c=>c.toUpperCase())||'Nothing turned on'):'Needs you to sign in again'}</div></div><span class="chev">${a.ok?axi('chevR',26,2.2):axi('alert',24,2.2)}</span></div>`).join('')+
+  `<div class="a-btns" style="margin-top:14px"><button class="a-btn" data-ax="acadd" data-t="acadd">${axi('plus',22,2.4)}Add another email</button></div>`;}
+function acSheet(){const sh=X.acc.sheet;if(!sh)return '';const p=sh.prov,mk=`<div class="pvmark"><i>${p[0]}</i>${esc(p)}</div>`,chip=`<div class="pvchip"><b>${esc((sh.email||'?')[0].toUpperCase())}</b>${esc(sh.email)}</div>`;let b='';
+ if(sh.step==='email')b=`${mk}<h2>Sign in</h2><p>to continue to Grace tablet</p><div class="pvlab">Email</div><input class="pvin axin" data-axin="pvemail" value="${esc(sh.email)}" autocomplete="off" data-t="pvemail">${sh.err?`<div class="pverr">${esc(sh.err)}</div>`:''}<div class="pvrow"><span></span><button class="pvbtn" data-ax="pvnext">Next</button></div>`;
+ if(sh.step==='pw')b=`${mk}<h2>Welcome</h2>${chip}<div class="pvlab">Enter your password</div><input class="pvin axin${sh.err?' err':''}" type="password" data-axin="pvpw" value="${esc(sh.pw)}" autocomplete="off" data-t="pvpw">${sh.err?`<div class="pverr">Wrong password. Try again or click Forgot password to reset it.</div>`:''}<button class="pvlink" data-ax="pvforgot" data-t="pvforgot">Forgot password?</button>${sh.forgot?`<p style="margin:8px 0 0">${esc(p)} would now help you make a new password, usually with a text to your phone.</p>`:''}<div class="pvrow"><span></span><button class="pvbtn" data-ax="pvnext">Next</button></div>`;
+ if(sh.step==='code')b=`${mk}<h2>2-Step Verification</h2><p>A text message with a 6-digit code was just sent to (•••) •••-••42</p><div class="pvlab">Enter code</div><input class="pvin axin${sh.err?' err':''}" inputmode="numeric" data-axin="pvcode" value="${esc(sh.code)}" autocomplete="off" data-t="pvcode">${sh.err?`<div class="pverr">${esc(sh.err)}</div>`:''}<div class="pvrow"><span></span><button class="pvbtn" data-ax="pvnext">Next</button></div>`;
+ if(sh.step==='allow')b=`${mk}<h2>Grace tablet wants to access your account</h2>${chip}${[['mail','Read, write and send your email'],['cal','See and change your calendars'],['users','See your contacts']].map(r=>`<div class="pvperm"><span>${axi(r[0],16,2)}</span>${r[1]}</div>`).join('')}<div class="pvrow"><button class="pvghost" data-ax="pvcancel">Cancel</button><button class="pvbtn" data-ax="pvallow" data-t="pvallow">Allow</button></div>`;
+ return `<div class="a-scrim"><div class="psheet acsheet" role="dialog" aria-label="${esc(p)} sign-in page"><div class="pshdr"><div class="hgrp"><button class="pill main" data-ax="pvcancel">Cancel</button></div><div class="psinfo"><b>${esc(p)}</b><span>${esc(p)}’s own sign-in page · ${PURL[p]||''}</span></div><span style="width:120px"></span></div><div class="pvweb"><div class="pvcard">${b}</div></div></div></div>`;}
+function acDlg(){const id=X.acc.dlg,a=id&&accOf(id);if(!a)return '';
+ return `<div class="a-scrim"><div class="a-dlg" role="dialog"><h3 class="a-h" style="font-size:28px;line-height:34px">Remove ${esc(a.name)} from this tablet?</h3><div class="a-b" style="margin-top:14px">Your emails stay safe with ${esc(a.prov==='Other email'?a.name:a.prov)}. Only the tablet’s copy goes, so its emails, appointments and contacts leave Email and Calendar here.</div><div class="a-s" style="margin-top:12px">You can connect it again any time.</div><div class="a-btns"><button class="a-btn warn" data-ax="acrmyes">${axi('trash',22,2.2)}Remove from tablet</button><button class="a-btn" data-ax="acrmno">Keep it</button></div></div></div>`;}
+const ACMAIL={Gmail:[],Outlook:[{from:'St. Mark’s Church Office',av:'S:#7A6A3F',subj:'Thanksgiving dinner sign-up',body:'Dear Margaret, our Thanksgiving dinner is on Thursday the 26th at 5 pm in the hall. Reply to let us know if you’ll come.'}],
+ Yahoo:[{from:'Garden Club',av:'G:#5E8C6A',subj:'Bulb swap on Saturday',body:'Bring your spare bulbs to the library steps on Saturday at 10. Coffee provided!'}],iCloud:[{from:'David',av:'D:#3F6FB5',subj:'Photos from the weekend',body:'Hi Mom, great to see you on Sunday. Talk soon! David'}],AOL:[{from:'Walgreens',av:'W:#B5643F',subj:'Your prescription is ready',body:'Your prescription is ready for pickup at the Main Street store.'}],
+ Other:[{from:'Riverview Internet',av:'R:#4F7FB5',subj:'Your November bill is ready',body:'Hello Margaret, your November bill of $54.99 is ready. It will be paid automatically on the 28th.'}]};
+function accConnect(prov,addr,name){const A=X.acc;let a=A.list.find(x=>x.addr.toLowerCase()===addr.toLowerCase());
+ if(a){a.ok=true;}else{const id=A.gone[addr.toLowerCase()]||'a'+(++axId);a={id,prov,name:prov==='Other email'?(name||cap(addr.split('@')[1].split('.')[0])):prov,addr,color:ACOL[A.list.length%ACOL.length],mail:true,cal:prov!=='Other email',con:true,ok:true};
+  if(A.list.some(x=>x.name===a.name))a.name=a.name+' ('+addr.split('@')[0]+')';A.list.push(a);
+  if(!A.gone[addr.toLowerCase()])(ACMAIL[prov==='Other email'?'Other':prov]||[]).forEach(m=>X.mail.items.unshift(Object.assign({id:'m'+(++axId),acct:id,time:'9:30 AM',unread:true,folder:'inbox'},m))); }
+ A.sheet=null;A.syncing=a.id;clearTimeout(A._st);A._st=setTimeout(()=>{A.syncing=null;render();},3500);
+ if(S.view==='settings'){X.set.page='Email & calendar';A.page=a.id;}
+ axToast(esc(a.name)+' connected');axTell(`Margaret connected her ${a.name} email (${a.addr}) to the tablet. Its email${a.cal?', calendar':''} and contacts are now on the tablet.`,'You connected '+a.name+'.');return a;}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+
 /* ---------- SETTINGS ---------- */
-function setView(){const P=X.set.page;hdr('Settings',P==='Wi-Fi'&&X.wifi.join?{icon:'gear',back:['Wi-Fi','wcancel']}:{icon:'gear'});
- const nav=`<div class="a-nav">${[['type','Text size'],['sun','Brightness'],['spk','Grace’s voice'],['wifi','Wi-Fi'],['info','About this tablet']].map(([i,t])=>`<div class="a-ni${t===P?' sel':''}" data-ax="spage:${t}" data-t="nav-${t}">${axi(i,26,2)}${t}</div>`).join('')}</div>`;
+function setView(){const P=X.set.page;if(P==='Email & calendar'){const o=acHdr();hdr(o.title||'Settings',o);}else hdr('Settings',P==='Wi-Fi'&&X.wifi.join?{icon:'gear',back:['Wi-Fi','wcancel']}:{icon:'gear'});
+ const nav=`<div class="a-nav">${[['type','Text size'],['sun','Brightness'],['spk','Grace’s voice'],['wifi','Wi-Fi'],['mail','Email & calendar'],['info','About this tablet']].map(([i,t])=>`<div class="a-ni${t===P?' sel':''}" data-ax="spage:${t}" data-t="nav-${t}">${axi(i,26,2)}${t}</div>`).join('')}</div>`;
  let r='';
  if(P==='Text size')r=`<h3 class="a-h" style="font-size:30px;line-height:38px">Text size</h3><div class="a-s" style="margin-top:6px">Changes the size of words everywhere on the tablet: Home, every app, websites, the left side and Grace’s messages.</div>
   <div class="a-panel" style="margin-top:22px;display:flex;flex-direction:column;gap:14px"><div style="font:700 26px/1.25 Figtree,Arial,sans-serif;color:#202124">Good morning, Margaret</div><div style="display:flex;align-items:center;gap:14px;padding:10px 16px;border-radius:18px;background:#fff;font:700 22px/1.25 Figtree,Arial,sans-serif;color:#202124"><span style="color:#D64545">${WK[addD(D0,1).getDay()].toUpperCase()} 10 am</span>Doctor’s appointment</div><div style="display:flex"><div class="gb" style="padding:12px 22px;border-radius:24px;background:#E6DEFF">Your doctor’s appointment is tomorrow at 10 am.</div></div></div>
@@ -2049,11 +2184,13 @@ function setView(){const P=X.set.page;hdr('Settings',P==='Wi-Fi'&&X.wifi.join?{i
   `<div class="a-row" style="margin-top:14px;min-height:76px" data-ax="sound"><div class="a-ttl">Grace speaks out loud</div><span class="a-sw${S.sound?'':' off'}"></span></div>`+
   `<div class="a-row" style="margin-top:10px;min-height:96px" data-ax="wake" data-t="wake"><div><div class="a-ttl">Listen for “Hey Grace”</div><div class="a-sub">Works any time, even when the screen is asleep. Turn off to use Ask Grace only.</div></div><span class="a-sw${X.wake?'':' off'}"></span></div>`;}
  if(P==='Wi-Fi')r=wifiPage();
+ if(P==='Email & calendar')r=accPage();
  if(P==='About this tablet')r=`<h3 class="a-h" style="font-size:30px;line-height:38px">About this tablet</h3><div class="a-panel" style="margin-top:18px"><div class="a-b">Grace tablet · Prototype</div><div class="a-s" style="margin-top:6px">Everything is up to date.</div></div>`;
  return `<div class="a-split">${nav}<div>${r}</div></div>`;}
 
 /* ---------- render hook (called from renderSite) ---------- */
 function axRender(){const on=APPS.includes(S.view);$('awin').hidden=!on;
+ if(X.online){const ob=X.mail.items.filter(m=>m.folder==='outbox');if(ob.length){ob.forEach(m=>m.folder='sent');setTimeout(()=>axToast(ob.length>1?'Your waiting emails were sent':'Your email to '+esc(ob[0].from)+' was sent'),300);}}
  if(on){const pg=$('apg'),st=pg.scrollTop,key=S.view+JSON.stringify([X.cal.mode,X.cal.detail,!!X.cal.form,X.mail.read,X.mail.folder,!!X.mail.compose,X.mail.viewer,X.mail.pdf,X.set.page,X.files.tab,X.files.view,X.files.pdf]);
   const focus=document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.axin,selS=focus?document.activeElement.selectionStart:0;
   pg.innerHTML=S.view==='calendar'?calView():S.view==='email'?mailView():S.view==='files'?filesView():setView();
@@ -2061,7 +2198,7 @@ function axRender(){const on=APPS.includes(S.view);$('awin').hidden=!on;
    const col=pg.querySelector('.a-split>div:last-child');(col||pg).insertAdjacentHTML('afterbegin',`<h1 class="lgt">${esc(t)}</h1>`);}
   pg.classList.toggle('hassplit',!!pg.querySelector('.a-split'));$('awin').classList.toggle('splitw',!!pg.querySelector('.a-split'));$('awin').classList.toggle('lgmode',X.hdrMode==='large');$('awin').classList.toggle('icmode',X.hdrMode==='icon');$('awin').classList.toggle('hasback',!!$('ahdr').querySelector('[aria-label="Back"]'));const sc=pg.querySelector('.a-split>div:last-child');if(sc){sc.addEventListener('scroll',lgtScroll,{passive:true});if(X._key===key&&X._colTop)sc.scrollTop=X._colTop;}
   lgtScroll();$('aov').innerHTML='';
-  $('axScrim').innerHTML=S.view==='calendar'?calDlg():S.view==='settings'?(trustDlg()||portalSheet()):'';
+  $('axScrim').innerHTML=acSheet()||acDlg()||(S.view==='calendar'?calDlg():S.view==='settings'?(trustDlg()||portalSheet()):'');
   pg.scrollTop=X._key===key?st:0;X._key=key;
   if(focus){const el=pg.querySelector(`[data-axin="${focus}"]`);if(el){el.focus();try{el.setSelectionRange(selS,selS);}catch(e){}}}
   axGuide();}
@@ -2081,18 +2218,18 @@ function axGuide(){const g=X.guide;if(!g||!APPS.includes(S.view)||S.expanded)ret
 /* ---------- what Grace sees, and her app rules ---------- */
 function axBrief(){const p=axState().split(' ');return axState.brief;}
 function axState(){const C=X.cal,M=X.mail;let s='';
- const evs=C.events.filter(e=>!e.draft).sort((a,b)=>a.day-b.day||a.start-b.start).map(e=>`${e.title} (${dLong(e.day)} ${tLab(e.start)}${e.where?', '+e.where:''}${e.repeat!=='Never'?', '+e.repeat.toLowerCase():''})`).join('; ');
+ const evs=vEv().filter(e=>!e.draft).sort((a,b)=>a.day-b.day||a.start-b.start).map(e=>`${e.title} (${dLong(e.day)} ${tLab(e.start)}${e.where?', '+e.where:''}${e.repeat!=='Never'?', '+e.repeat.toLowerCase():''})`).join('; ');
  const dev=`Tablet settings now: text size ${X.ts}; volume ${X.muted?'muted':X.vol+'%'}; brightness ${X.bright}%; Grace speaks out loud ${S.sound?'on':'off'}; “Hey Grace” ${X.wake?'on':'off'}; internet ${X.online?'connected ('+X.wifi.cur+')':'NOT connected'}.`;
  const cal=`Margaret’s calendar: ${evs||'nothing planned'}.${C.draft?` A draft you proposed and she hasn’t confirmed yet: ${C.draft.title}, ${dLong(C.draft.day)} ${tLab(C.draft.start)}.`:''}`;
- const inbox=`Email inbox: ${M.items.filter(m=>m.folder==='inbox').map(m=>`${m.from}: “${m.subj}”${m.unread?' (unread)':''}${m.photos?' with '+m.photos.length+' photos':''}${m.files?' with '+m.files[0].name:''}${m.scam?' (looks like a SCAM: asks for a password)':''}`).join('; ')}.`;
+ const inbox=`Email accounts on the tablet: ${accs().map(a=>a.name+' ('+a.addr+(a.ok?'':', needs her to sign in again')+'; '+[a.mail&&'email',a.cal&&'calendar',a.con&&'contacts'].filter(Boolean).join(', ')+')').join('; ')||'none yet'}. Email inbox: ${vMail().filter(m=>m.folder==='inbox').map(m=>`${m.from}: “${m.subj}”${m.unread?' (unread)':''}${m.photos?' with '+m.photos.length+' photos':''}${m.files?' with '+m.files[0].name:''}${m.scam?' (looks like a SCAM: asks for a password)':''}`).join('; ')}.`;
  if(S.view==='calendar'){s=C.form?`Calendar app: the ${C.form.id?'Change':'New'} appointment form is open (What: “${C.form.title}”, ${dLong(C.form.day)} ${tLab(C.form.start)}, repeats ${C.form.repeat}, remind ${C.form.remind}).`
    :C.detail?`Calendar app showing one appointment: ${C.events.find(e=>e.id===C.detail)?.title}. Buttons: Edit, Delete.`
    :`Calendar app, ${C.mode} view, ${dRel(C.sel)} selected. Rows you can point at: ${C.events.map(e=>'ev'+e.id+' = '+e.title).join('; ')}.`;}
  else if(S.view==='email'){if(M.compose)s=M.compose.picker?'Email app: choosing who to write to (faces of her contacts).':`Email app: writing ${M.compose.replyTo?'a reply':'a new email'} to ${M.compose.to}. Subject “${M.compose.subj}”. Message so far: “${M.compose.body||'(empty)'}”.${M.compose.att.length?' '+M.compose.att.length+' photo attached.':''} Targets: body = the message box, send = Send button (Margaret taps it).`;
-   else if(M.read){const m=mailOf(M.read);s=`Email app reading ${m.from}’s email “${m.subj}”: “${m.body.replace('@@LINK@@','[a link: confirm your password here]')}”.${m.photos?' '+m.photos.length+' photos attached (Save all to Files button = saveall).':''}${m.files?' Attached: '+m.files[0].name+' (target file; Open and Print buttons).':''}${m.scam?' The caution strip (target caution) and the link (target link) are on screen.':''} Targets: mbody = the message text.`;}
-   else if(M.viewer)s='Email app: a photo is open full size.';else if(M.pdf)s='Email app: the clinic’s Visit form is open, with Print and Save.';
-   else s=`Email app, ${M.folder} folder${M.q?', searching for “'+M.q+'”':''}. Rows you can point at: ${M.items.filter(m=>m.folder===M.folder).map(m=>'m-'+m.id+' = '+m.from).join('; ')}.`;}
- else if(S.view==='files'){const F=X.files;s=F.view!==null?'Files app: a photo is open full size.':F.pdf!==null?'Files app: '+F.docs[F.pdf].name+' is open, with Print.':`Files app, ${F.tab} tab. ${F.tab==='Photos'?'Photos you can point at: '+F.photos.map((p,i)=>'fp-'+i+' = '+p.k+' ('+p.when+(p.from?', '+p.from:'')+')').join('; '):'Documents you can point at: '+F.docs.map((d,i)=>'fd-'+i+' = '+d.name+' ('+d.sub+')').join('; ')}.`;}
+   else if(M.read){const m=mailOf(M.read);s=`Email app reading ${m.from}’s email “${m.subj}”: “${m.body.replace('@@LINK@@','[a link: confirm your password here]')}”.${m.photos?' '+m.photos.length+' photos attached (Save all to Files button = saveall).':''}${m.files?' Attached: '+m.files[0].name+' (target file; Open button).':''}${m.scam?' The caution strip (target caution) and the link (target link) are on screen.':''} Targets: mbody = the message text.`;}
+   else if(M.viewer)s='Email app: a photo is open full size.';else if(M.pdf)s='Email app: the clinic’s Visit form is open, with Save to Files.';
+   else s=`Email app, ${M.folder} folder${M.q?', searching for “'+M.q+'”':''}. Rows you can point at: ${vMail().filter(m=>m.folder===M.folder).map(m=>'m-'+m.id+' = '+m.from).join('; ')}.`;}
+ else if(S.view==='files'){const F=X.files;s=F.view!==null?'Files app: a photo is open full size.':F.pdf!==null?'Files app: '+F.docs[F.pdf].name+' is open.':`Files app, ${F.tab} tab. ${F.tab==='Photos'?'Photos you can point at: '+F.photos.map((p,i)=>'fp-'+i+' = '+p.k+' ('+p.when+(p.from?', '+p.from:'')+')').join('; '):'Documents you can point at: '+F.docs.map((d,i)=>'fd-'+i+' = '+d.name+' ('+d.sub+')').join('; ')}.`;}
  else if(S.view==='settings')s=`Settings app, ${X.set.page} page. ${X.set.page==='Wi-Fi'?(X.wifi.portal?'The '+X.wifi.portal+' sign-in web page is open in a browser sheet (the library’s own page: library card number and PIN, Connect button). Margaret types; you can point her at it. ':'')+(X.wifi.trust?'A dialog asks Margaret to trust the security certificate of '+X.wifi.trust+' (wifi.sunrisecommunity.org): buttons Trust and join, Cancel. ':'')+(X.wifi.join?'Joining '+X.wifi.join+': password box (target wpw; only Margaret types it, you never see it), Join button. ':'Networks: '+X.wifi.nets.map(x=>x.n+(x.n===X.wifi.cur?' (connected)':x.lock&&!x.known?' (needs a password)':'')).join(', ')+'. '):''}Targets: ${X.set.page==='Text size'?Object.keys(TS).map(t=>'ts-'+t).join(', '):X.set.page==='Grace’s voice'?'wake':'none'}.`;
  const files=`Files (everything Margaret saved): photos ${X.files.photos.map(p=>p.k+' ('+p.when+')').join(', ')}; documents ${X.files.docs.map(d=>d.name).join(', ')}.`;
  axState.brief=`${dev} ${cal} ${inbox} ${files}`;
@@ -2105,8 +2242,9 @@ Margaret’s tablet also has Calendar, Email and Settings apps, a Volume button 
 - Never open an app or move her to another screen on your own. Use "app" only when she asks to open something, says “show me”, or taps a chip that says so.
 - Her calendar and email are hers: DRAFT first, she decides. To add an appointment, send "calendar": {"draft": {...}} and ask (“Bridge club, Saturday at 2 pm. Shall I add it?”, chips ["Yes, add it","Change the time","No"]). Only after she says yes send "calendar": {"add": true}. To answer “what’s on…”, just say it, and point at the row if Calendar is open.
 - Email: when she’s reading an email and wants to reply, send "email": {"reply": "the full reply text in her voice, signed Love, Mom if it’s family"} — the reply opens with your words in it and you point at Send: guide {"target":"send","kind":"instruction","title":"Tap Send when it looks right"}. You never send. To find an email: "email": {"search": "word"}. To read one aloud, say its words. Never tap or follow links in emails. If an email asks for a password or money urgently, say plainly it’s a scam and suggest deleting it.
+- Email accounts: Margaret connects an email herself in Settings › Email & calendar, signing in on the email company’s own page. You never see, type or read passwords or codes. When she asks to put her email (or another email) on the tablet, that counts as asking to open it: send "app":"settings:Email & calendar" and ask which email she uses (chips like ["Gmail","Outlook or Hotmail","Yahoo","I’m not sure"]); then tell her to tap it. If an account needs her to sign in again, say which one. With more than one email, a reply goes from the address the email came to, and a new email from the address she last used with that person; she can change From.
 - Internet not connected: you still work (you run on the tablet). Help her fix it one step at a time: look at the internet box’s lights; unplug it from the wall, count to ten, plug it back in; then send "device": {"wifi_restart": true} when she says it’s done, and say you’re waiting for the internet to come back (about two minutes). Don’t open the website while offline.
-- Files: everything Margaret saves is in the Files app (Photos first, then Documents). To find something, send "files": {"tab":..., "find":...}; the Files app opens on that tab and you ring the item. Then offer the obvious next step (open, print). Opening Files when she asks to find something is fine.
+- Files: everything Margaret saves is in the Files app (Photos first, then Documents). To find something, send "files": {"tab":..., "find":...}; the Files app opens on that tab and you ring the item. Then offer the obvious next step (open it). Opening Files when she asks to find something is fine.
 - Inside apps, "guide" targets come from [Screen now] (for example ev1, m-clinic, send, ts-Larger, link). Use kind "point" to show something, "instruction" (with a title of at most 5 words) when she should tap it.
 
 Extra JSON fields (add them to the object; use null when not needed):
@@ -2144,7 +2282,7 @@ function axApply(out){const acts=[];const d=out.device||{};X.guide=null;
   const di=q?F.docs.findIndex(d=>d.name.toLowerCase().includes(q)||d.sub.toLowerCase().includes(q)||q.split(' ').some(w=>w.length>3&&(d.name+' '+d.sub).toLowerCase().includes(w))):-1;
   const pi=q?F.photos.findIndex(p=>(p.k+' '+(p.from||'')+' '+p.when).toLowerCase().includes(q)||q.split(' ').some(w=>w.length>3&&(p.k+' '+(p.from||'')).toLowerCase().includes(w))):-1;
   F.tab=fo.tab==='Documents'||(di>=0&&pi<0&&fo.tab!=='Photos')?'Documents':(fo.tab||'Photos');hit=F.tab==='Documents'?di:pi;if(hit>=0)X.guide={target:(F.tab==='Documents'?'fd-':'fp-')+hit,kind:'point'};}
- if(out.app){const a=String(out.app);if(a==='home'){S.view='home';}else if(a.startsWith('settings')){S.view='settings';X.set.page=a.split(':')[1]||'Text size';}else if(APPS.includes(a)){S.view=a;}}
+ if(out.app){const a=String(out.app);if(a==='home'){S.view='home';}else if(a.startsWith('settings')){S.view='settings';X.set.page=a.split(':')[1]||'Text size';X.acc.page=null;X.acc.sheet=null;}else if(APPS.includes(a)){S.view=a;}}
  if(out.guide&&out.guide.target&&APPS.includes(S.view))X.guide=Object.assign({},out.guide);
  if(S.view==='settings'&&(out.app||'').startsWith('settings')&&!X.guide){const t=X.set.page==='Text size'?'ts-'+X.ts:X.set.page==='Grace’s voice'?'wake':null;if(t)X.guide={target:t,kind:'point'};}
  return acts;}
@@ -2153,7 +2291,7 @@ function axApply(out){const acts=[];const d=out.device||{};X.guide=null;
 function axClick(e){const t=e.target.closest('[data-ax]');if(!t)return;const [k,v]=(t.dataset.ax+':').split(/:(.*)/);const val=(v||'').replace(/:$/,'');const C=X.cal,M=X.mail;
  if(k!=='gclose')X.guide=null;
  switch(k){
-  case 'close':if(M.compose&&!M.compose.picker&&(M.compose.body.trim()||M.compose.att.length)){saveDraft(M.compose);}M.compose=null;X.files.view=null;X.files.pdf=null;S.view='home';C.detail=null;C.form=null;M.read=null;M.compose=null;M.viewer=null;M.pdf=null;break;
+  case 'close':X.acc.sheet=null;X.acc.dlg=null;if(M.compose&&!M.compose.picker&&(M.compose.body.trim()||M.compose.att.length)){saveDraft(M.compose);}M.compose=null;X.files.view=null;X.files.pdf=null;S.view='home';C.detail=null;C.form=null;M.read=null;M.compose=null;M.viewer=null;M.pdf=null;break;
   case 'caltoday':C.anchor=D0;C.sel=D0;break;
   case 'calmode':C.mode=val;break;
   case 'calprev':C.anchor=C.mode==='week'?addD(C.anchor,-7):new Date(C.anchor.getFullYear(),C.anchor.getMonth()-1,1);if(C.mode==='week')C.sel=addD(C.sel,-7);break;
@@ -2176,7 +2314,7 @@ function axClick(e){const t=e.target.closest('[data-ax]');if(!t)return;const [k,
   case 'delall':case 'delone':{const ev=C.events.find(x=>x.id===+val);if(k==='delone'&&ev.repeat!=='Never'){ev.skip=(ev.skip||[]).concat([+C.sel]);ev.day=addD(ev.day,ev.repeat==='Every week'?7:30);}else C.events=C.events.filter(x=>x.id!==+val);C.dlg=null;C.detail=null;axToast('Deleted '+ev.title);axTell(`Margaret deleted “${ev.title}” from her calendar.`,'You deleted '+ev.title+'.');break;}
   case 'call':axToast('In the full version this calls the clinic');return;
   case 'dir':axToast('In the full version this shows the way on a map');return;
-  case 'folder':M.folder=val==='draft'?'drafts':val;M.q='';break;
+  case 'folder':M.folder=val==='draft'?'drafts':val;M.acct=null;M.q='';break;
   case 'mopen':{const m0=mailOf(val);if(m0.folder==='drafts'){M.compose=Object.assign({cc:[],bcc:[],att:[]},m0.draft,{draftId:m0.id,picker:false});break;}const m=mailOf(val);m.unread=false;M.read=val;axTell(`Margaret opened ${m.from}’s email “${m.subj}”.`,'You opened '+m.from+'’s email.');break;}
   case 'mback':M.read=null;break;
   case 'photo':M.viewer={id:M.read,i:+val};break;
@@ -2184,29 +2322,58 @@ function axClick(e){const t=e.target.closest('[data-ax]');if(!t)return;const [k,
   case 'savephoto':{const m=mailOf(M.viewer.id);fSave('photo',{k:m.photos[M.viewer.i],from:'From '+m.from});axToast('Saved to Files');return;}case 'fwdphoto':{const m=mailOf(M.viewer.id);M.compose={to:'',cc:[],bcc:[],subj:'Fwd: '+m.subj,body:'',att:[m.photos[M.viewer.i]],picker:true};M.viewer=null;break;}
   case 'saveall':{const m=mailOf(M.read);m.photos.forEach(k=>fSave('photo',{k,from:'From '+m.from}));axToast(m.photos.length+' photos saved to Files');return;}
   case 'openpdf':M.pdf=M.read;break;case 'pdfback':M.pdf=null;break;
-  case 'print':axToast('Sent to the printer');return;case 'savefile':{const m=mailOf(M.pdf);fSave('doc',{name:m.files[0].name,sub:'From '+m.from+' · Saved today',pages:2});axToast('Saved to Files');return;}
+  case 'savefile':{const m=mailOf(M.pdf);fSave('doc',{name:m.files[0].name,sub:'From '+m.from+' · Saved today',pages:2});axToast('Saved to Files');return;}
   case 'ftab':X.files.tab=val;break;case 'fphoto':X.files.view=+val;break;case 'fvback':X.files.view=null;break;case 'fvprev':X.files.view--;break;case 'fvnext':X.files.view++;break;
   case 'fdopen':X.files.pdf=+val;break;case 'fpback':X.files.pdf=null;break;case 'fshare':{const p=X.files.photos[X.files.view];X.files.view=null;S.view='email';M.read=null;M.compose={to:'',cc:[],bcc:[],subj:'A photo',body:'',att:[p.k],picker:true};break;}
   case 'fpdel':{const i=X.files.view;X.files.photos.splice(i,1);X.files.view=null;axToast('Photo deleted');break;}
   case 'write':M.compose={to:'',cc:[],bcc:[],subj:'',body:'',att:[],picker:true};break;
-  case 'to':{const c=M.compose,f=c.pickFor||'to';if(f==='to')c.to=val;else if(!c[f].includes(val))c[f].push(val);c.picker=false;c.pickFor=null;c.pickq='';break;}
+  case 'to':{const c=M.compose,f=c.pickFor||'to';if(f==='to'){c.to=val;if(!c.fromSet)c.from=fromFor(val);}else if(!c[f].includes(val))c[f].push(val);c.picker=false;c.pickFor=null;c.pickq='';break;}
   case 'addrcp':M.compose.pickFor=val;M.compose.picker=true;break;
   case 'pickback':M.compose.picker=false;M.compose.pickFor=null;break;
   case 'ccopen':M.compose.ccOpen=true;break;
   case 'rmrcp':{const [f,i]=val.split(':');if(f==='to')M.compose.to='';else M.compose[f].splice(+i,1);break;}
-  case 'reply':{const m=mailOf(M.read);M.compose={to:m.from,cc:[],bcc:[],subj:'Re: '+m.subj,body:'',att:[],replyTo:m.id};break;}
+  case 'reply':{const m=mailOf(M.read);M.compose={to:m.from,cc:[],bcc:[],subj:'Re: '+m.subj,body:'',att:[],replyTo:m.id,from:m.acct||'gmail',fromSet:true};break;}
   case 'forward':{const m=mailOf(M.read);M.compose={to:'',cc:[],bcc:[],subj:'Fwd: '+m.subj,body:m.body.replace('@@LINK@@','(link removed)'),att:(m.photos||[]).slice(),picker:true};break;}
   case 'cback':{const c=M.compose;if(!c.picker&&(c.body.trim()||c.subj.trim()&&!c.replyTo&&!/^(Re|Fwd): /.test(c.subj)||c.att.length)){saveDraft(c);axToast('Saved to Drafts');}M.compose=null;break;}
   case 'cdiscard':{const c=M.compose;if(c&&c.draftId)M.items=M.items.filter(m=>m.id!==c.draftId);M.compose=null;axToast('Email discarded');break;}
   case 'attach':M.compose.menu=!M.compose.menu;break;
   case 'att':M.compose.att.push(val==='file'?'program':'garden');M.compose.menu=false;break;
   case 'rmatt':M.compose.att.splice(+val,1);break;
-  case 'send':{const c=M.compose;if(!c.to)return;if(c.draftId)M.items=M.items.filter(m=>m.id!==c.draftId);M.items.push({id:'s'+(++axId),from:c.to,av:'D:#3F6FB5',subj:c.subj||'(no subject)',time:'Just now',folder:'sent',body:c.body});if(c.replyTo){mailOf(c.replyTo).replied=c.body;M.read=null;}M.compose=null;axToast('Sent to '+esc(c.to));axTell(`Margaret tapped Send: her email to ${c.to} is sent.`,'You sent your email to '+c.to+'.');break;}
+  case 'send':{const c=M.compose;if(!c.to)return;if(c.draftId)M.items=M.items.filter(m=>m.id!==c.draftId);const fid=c.from||fromFor(c.to)||'gmail';X.acc.last[c.to]=fid;M.items.push({id:'s'+(++axId),acct:fid,from:c.to,av:'D:#3F6FB5',subj:c.subj||'(no subject)',time:'Just now',folder:X.online?'sent':'outbox',body:c.body});if(c.replyTo){mailOf(c.replyTo).replied=c.body;M.read=null;}M.compose=null;axToast(X.online?'Sent to '+esc(c.to):'Waiting in Outbox until you’re back online');axTell(`Margaret tapped Send: her email to ${c.to} is sent.`,'You sent your email to '+c.to+'.');break;}
   case 'mrestore':{const m=mailOf(M.read);m.folder=m.prevFolder||'inbox';M.read=null;axToast('Moved back to '+(m.folder==='sent'?'Sent':'Inbox'));break;}
   case 'mkill':{const m=mailOf(M.read);M.items=M.items.filter(x=>x!==m);M.read=null;axToast('Deleted for good');break;}
   case 'mdel':{const m=mailOf(M.read);m.prevFolder=m.folder;M.undo={id:m.id,folder:m.folder};m.folder='trash';M.read=null;axToast('Moved to Trash',true);axTell(`Margaret deleted ${m.from}’s email.`,'You deleted '+m.from+'’s email.');break;}
   case 'undo':if(M.undo){mailOf(M.undo.id).folder=M.undo.folder;M.undo=null;$('axToast').classList.remove('on');}break;
-  case 'spage':X.set.page=val;break;
+  case 'spage':X.set.page=val;X.acc.page=null;break;
+  case 'acgo':S.view='settings';X.set.page='Email & calendar';X.acc.page=null;break;
+  case 'acgrace':{if(!S.open){S.open=true;S.started=true;}S.expanded=false;render();ask('[Event] Margaret tapped Ask Grace for help connecting her email to the tablet. She signs in herself on her email company’s own page; you never see or type passwords or codes. If Settings › Email & calendar isn’t open, open it with "app":"settings:Email & calendar". Ask which email she uses, with chips like ["Gmail","Outlook or Hotmail","Yahoo","I’m not sure"]. If she’s not sure, ask her to read you the part of her address after the @.',true);return;}
+  case 'calbanx':X.acc.calBanX=true;break;
+  case 'acprov':if(val==='Other email'){X.acc.page='other';Object.assign(X.acc.other,{email:'',pw:'',in:'',out:'',err:'',show:false});}else{X.acc.sheet={prov:val,step:'email',email:'',pw:'',code:'',err:''};axTell(`Margaret chose ${val}. ${val}’s own sign-in page is open on the tablet; she types her own email address and password there.`,'You chose '+val+'.');}break;
+  case 'acadd':X.acc.page='add';break;
+  case 'acopen':X.acc.page=val;break;
+  case 'acback':{const A=X.acc;A.page=A.page==='servers'?'other':A.page==='other'?(accs().length?'add':null):null;A.busy=false;break;}
+  case 'acsw':{const [id,k]=val.split(':'),a=accOf(id);if(a)a[k]=!a[k];break;}
+  case 'acrm':X.acc.dlg=val;break;case 'acrmno':X.acc.dlg=null;break;
+  case 'acrmyes':{const A=X.acc,a=accOf(A.dlg);A.dlg=null;if(!a)break;A.gone[a.addr.toLowerCase()]=a.id;A.list=A.list.filter(x=>x!==a);if(X.mail.acct===a.id)X.mail.acct=null;A.page=null;axToast(esc(a.name)+' removed from this tablet');axTell(`Margaret removed her ${a.name} email (${a.addr}) from the tablet. Its emails and appointments no longer show here; they are still safe with ${a.prov}.`,'You removed '+a.name+'.');break;}
+  case 'acresign':{const a=accOf(val);if(!a)return;if(a.prov==='Other email'){S.view='settings';X.set.page='Email & calendar';X.acc.page='other';Object.assign(X.acc.other,{email:a.addr,pw:'',err:''});}else X.acc.sheet={prov:a.prov,step:'pw',email:a.addr,pw:'',code:'',err:'',resign:a.id};break;}
+  case 'pvcancel':X.acc.sheet=null;break;
+  case 'pvforgot':X.acc.sheet.forgot=true;break;
+  case 'pvnext':{const sh=X.acc.sheet;if(!sh)return;sh.err='';
+   if(sh.step==='email'){const e=sh.email.trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){sh.err='Enter your whole email address, like margaret@'+(PROVS.find(p=>p[1]===sh.prov)||[])[3]+'.';break;}if(accs().some(a=>a.addr.toLowerCase()===e.toLowerCase()&&a.ok)){sh.err='This email is already on the tablet.';break;}sh.email=e;sh.step='pw';sh.pw='';}
+   else if(sh.step==='pw'){if(sh.pw.length<6){sh.err=true;sh.pw='';axTell(`Margaret typed a password on ${sh.prov}’s sign-in page and ${sh.prov} said it was wrong. You can’t see it. Help her calmly: it must match exactly, capital letters too; if she’s forgotten it, tap “Forgot password?” and ${sh.prov} will help her make a new one.`,'Your password didn’t work.');}else{sh.step=sh.resign?'allow':'code';sh.code='';}}
+   else if(sh.step==='code'){if(!/^\d{6}$/.test(sh.code.replace(/\D/g,''))){sh.err='Enter the 6 numbers from the text message.';}else sh.step='allow';}
+   break;}
+  case 'pvallow':{const sh=X.acc.sheet;if(!sh)return;accConnect(sh.prov,sh.email);break;}
+  case 'acshow':X.acc.other.show=!X.acc.other.show;break;
+  case 'acnext':{const A=X.acc,o=A.other;if(!(o.name&&/@.+\./.test(o.email)&&o.pw)||A.busy)return;const d=o.email.split('@')[1].toLowerCase();
+   const P=PROVS.find(p=>p[3]&&d===p[3]);if(P){o.err=`This is a ${P[1]} address. Go back and choose ${P[1]}, so you can sign in on ${P[1]}’s own page.`;break;}
+   if(o.pw.length<6){o.err='That password didn’t work. Check it and try again. Some email companies give you a special password for apps; Grace can explain.';o.pw='';break;}
+   o.err='';A.busy=true;render();setTimeout(()=>{A.busy=false;if(['comcast.net','att.net','verizon.net','cox.net','charter.net'].includes(d)){A.page=null;accConnect('Other email',o.email,cap(d.split('.')[0]));}else{A.page='servers';o.in='mail.'+d;o.out='smtp.'+d;}render();},1200);return;}
+  case 'acsrv':{const A=X.acc,o=A.other;if(!(o.in&&o.out)||A.busy)return;A.busy=true;render();setTimeout(()=>{A.busy=false;A.page=null;accConnect('Other email',o.email,cap(o.email.split('@')[1].split('.')[0]));render();},1400);return;}
+  case 'acgracesrv':{const o=X.acc.other;if(!S.open){S.open=true;S.started=true;}S.expanded=false;render();ask('[Event] Margaret is connecting her email '+o.email+' and the tablet couldn’t find the mail server settings. The page shows two fields, Incoming mail server and Outgoing mail server, filled with the usual guesses (mail.'+(o.email.split('@')[1]||'')+' and smtp.'+(o.email.split('@')[1]||'')+'). Explain in plain words what they are, that they aren’t secret, and that her email company lists them on its help page. You can’t look them up in this prototype.',true);return;}
+  case 'acctbox':M.folder='inbox';M.acct=val;M.q='';break;
+  case 'frommenu':M.compose.fromMenu=!M.compose.fromMenu;break;
+  case 'from':M.compose.from=val;M.compose.fromSet=true;M.compose.fromMenu=false;break;
   case 'ts':X.undoDev={ts:X.ts,vol:X.vol,muted:X.muted,bright:X.bright,speed:S.speed,sound:S.sound,wake:X.wake};X.ts=val;break;
   case 'autobr':X.autoBr=X.autoBr===false;break;case 'br-':X.bright=Math.max(20,X.bright-10);applyBright();break;case 'br+':X.bright=Math.min(100,X.bright+10);applyBright();break;
   case 'voice':X.set.voice=val;break;case 'tryvoice':X.set.voice=val;try{const u=new SpeechSynthesisUtterance('Hi Margaret, this is how I sound.');u.rate=S.speed;u.volume=X.vol/100;speechSynthesis.speak(u);}catch(err){}break;
@@ -2235,6 +2402,8 @@ document.addEventListener('click',e=>{if(e.target.closest('#awin,#axPop,#axBan,#
 document.addEventListener('input',e=>{const el=e.target.closest('[data-axin]');if(!el)return;const k=el.dataset.axin,v=el.value,M=X.mail;
  if(k==='title'||k==='where'){X.cal.form[k]=v;const s=$('ahdr').querySelector('[data-ax="formsave"]');if(s)s.setAttribute('aria-disabled',String(!X.cal.form.title.trim()));return;}
  if(k==='wpw'||k==='wuser'){X.wifi[k==='wpw'?'pw':'user']=v;const W=X.wifi,nt=W.nets.find(x=>x.n===W.join)||{},ok=W.portal?(W.user&&W.pw):(W.pw&&(!nt.acct||W.user));const b=document.querySelector('#apg [data-ax="wjoin"],#axScrim [data-ax="wportal"]');if(b){if(ok)b.removeAttribute('aria-disabled');else b.setAttribute('aria-disabled','true');}return;}
+ if(k==='pvemail'||k==='pvpw'||k==='pvcode'){X.acc.sheet[k.slice(2)]=v;return;}
+ if(['acname','acemail2','acpw2','acin','acout'].includes(k)){const o=X.acc.other;o[{acname:'name',acemail2:'email',acpw2:'pw',acin:'in',acout:'out'}[k]]=v;const b=document.querySelector('#apg [data-ax="acnext"]'),c=document.querySelector('#apg [data-ax="acsrv"]');if(b){if(o.name&&/@.+\./.test(o.email)&&o.pw)b.removeAttribute('aria-disabled');else b.setAttribute('aria-disabled','true');}if(c){if(o.in&&o.out)c.removeAttribute('aria-disabled');else c.setAttribute('aria-disabled','true');}return;}
  if(k==='q'){M.q=v;render();return;}if(k==='pickq'){M.compose.pickq=v;render();return;}
  if(k==='subj'||k==='body'){M.compose[k]=v;return;}});
 document.addEventListener('click',e=>{if(!e.target.isConnected)return;if(X.pop&&!e.target.closest('#axPop')&&!e.target.closest('.rail [data-rail="Volume"],.rail [data-rail="Wi-Fi"]')){X.pop=null;drawPop();}if(X.cal.pick&&!e.target.closest('.apop')&&!e.target.closest('[data-ax^="pick"]')){X.cal.pick=null;}});
@@ -2252,7 +2421,7 @@ $('home').addEventListener('click',e=>{const p=e.target.closest('[data-ev]');if(
 
 /* ---------- sleep and "Hey Grace" ---------- */
 function drawSleep(){const el=$('axSleep');el.hidden=!X.sleep;if(!X.sleep)return;const now=new Date(),h=now.getHours(),m=now.getMinutes();
- const nx=X.cal.events.filter(e=>e.day>=D0&&!e.draft).sort((a,b)=>a.day-b.day||a.start-b.start)[0];
+ const nx=vEv().filter(e=>e.day>=D0&&!e.draft).sort((a,b)=>a.day-b.day||a.start-b.start)[0];
  const orb=$('askRing').outerHTML.replace(' id="askRing"','').replace('orb-w','orb-w halo');
  el.innerHTML=`<div class="t">${((h+11)%12)+1}:${String(m).padStart(2,'0')}</div><div class="d">${esc(dLong(now))}</div>${nx?`<div class="n">${axi('cal',28,2)}${esc(dRel(nx.day))}: ${esc(nx.title)}, ${tLab(nx.start)}</div>`:''}<div class="h">${orb}${X.wake?'Say “Hey Grace”, or touch the screen':'Touch the screen to wake it'}</div>`;}
 function axSleep(){X.sleep=true;X.pop=null;drawPop();if(S.open)hideGrace();drawSleep();render();}
@@ -2388,7 +2557,7 @@ function fitTops(){document.querySelectorAll('#home .lc').forEach(c=>{const t=c.
 
 X.hdrMode='icon';
 /* iOS large title: the page title starts large in the content; once it scrolls under the header, a frosted bar appears with the title small and centred */
-function lgtScroll(){const h=$('ahdr'),pg=$('apg'),t=pg.querySelector('.lgt');if(X.hdrMode!=='large'||!t){h.classList.remove('bar');return;}
+function lgtScroll(){const h=$('ahdr'),pg=$('apg'),t=pg.querySelector('.lgt');{const c=pg.classList.contains('hassplit')?pg.querySelector('.a-split>div:last-child'):pg;h.classList.toggle('scd',!!c&&c.scrollTop>2);}if(X.hdrMode!=='large'||!t){h.classList.remove('bar');return;}
  const sc=pg.classList.contains('hassplit')?pg.querySelector('.a-split>div:last-child'):pg,st=sc.scrollTop;if(sc!==pg)X._colTop=st;const lim=sc===pg?t.offsetTop+t.offsetHeight-96:t.offsetHeight;const past=st>lim;h.classList.toggle('bar',past);t.style.opacity=past?'0':String(Math.max(0,1-st/Math.max(1,lim+16)));}
 $('apg').addEventListener('scroll',lgtScroll,{passive:true});
 document.querySelectorAll('[data-hdr]').forEach(b=>b.addEventListener('click',()=>{X.hdrMode=b.dataset.hdr;document.querySelectorAll('[data-hdr]').forEach(x=>x.setAttribute('aria-checked',String(x===b)));X._key=null;render();}));

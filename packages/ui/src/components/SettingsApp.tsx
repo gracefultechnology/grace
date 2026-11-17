@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { CircleUserRound, Info, Shield, Wifi } from "lucide-react";
+import { CircleUserRound, Info, Mail, Shield, Wifi } from "lucide-react";
 import { GearIcon, SpeakerIcon } from "../icons.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SunIcon } from "./SettingsBrightness.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
 
-export type SettingsPage = "text-size" | "brightness" | "voice" | "wifi" | "account" | "privacy" | "about";
+export type SettingsPage = "text-size" | "brightness" | "voice" | "wifi" | "email-calendar" | "account" | "privacy" | "about";
 
 const icons: Record<SettingsPage, ReactNode> = {
   "text-size": (
@@ -19,18 +19,20 @@ const icons: Record<SettingsPage, ReactNode> = {
   brightness: <SunIcon size={26} />,
   voice: <SpeakerIcon className="size-[26px]" strokeWidth={2} />,
   wifi: <Wifi size={26} strokeWidth={2} aria-hidden />,
+  "email-calendar": <Mail size={26} strokeWidth={2} aria-hidden />,
   account: <CircleUserRound size={26} strokeWidth={2} aria-hidden />,
   privacy: <Shield size={26} strokeWidth={2} aria-hidden />,
   about: <Info size={26} strokeWidth={2} aria-hidden />,
 };
 
-const prototypePages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "about"];
+const prototypePages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "email-calendar", "about"];
 
 const defaultLabels: Record<SettingsPage, string> = {
   "text-size": "Text size",
   brightness: "Brightness",
   voice: "Grace’s voice",
   wifi: "Wi-Fi",
+  "email-calendar": "Email & calendar",
   account: "Account",
   privacy: "Privacy",
   about: "About this tablet",
@@ -51,9 +53,11 @@ export type SettingsAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
   onPageChange?: (page: SettingsPage) => void;
   /** The window's title. */
   title?: string;
+  /** A sub-page's title in the header in place of the window's, beside its Back pill: "Add an email", or an email's name. */
+  pageTitle?: string;
   /** The side list's words, by page. */
   labels?: Partial<Record<SettingsPage, string>>;
-  /** The open page: `SettingsTextSize`, `SettingsBrightness`, `SettingsVoice`, `WifiNetworkList` or `WifiJoinForm`, `AccountOverview`, `SettingsPrivacy`, `SettingsAbout`. */
+  /** The open page: `SettingsTextSize`, `SettingsBrightness`, `SettingsVoice`, `WifiNetworkList` or `WifiJoinForm`, `EmailAccountList`, `EmailAccountPage`, `OtherEmailForm` or `MailServersForm`, `AccountOverview`, `SettingsPrivacy`, `SettingsAbout`. */
   children: ReactNode;
 };
 
@@ -71,6 +75,7 @@ export function SettingsApp({
   onRetrySave,
   retryLabel,
   title = "Settings",
+  pageTitle,
   labels,
   children,
   ...props
@@ -78,7 +83,7 @@ export function SettingsApp({
   const words = { ...defaultLabels, ...labels };
   return (
     <AppWindow
-      title={title}
+      title={pageTitle ?? title}
       closeLabel={`Close ${title}`}
       icon={<GearIcon className="size-[26px]" strokeWidth={2} />}
       nav={

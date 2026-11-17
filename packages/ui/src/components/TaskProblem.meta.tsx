@@ -38,6 +38,11 @@ export const meta: ComponentMeta<TaskProblemProps> = {
       question: "You can pay it another way, or open the website to look yourself.",
       actions: answers("Open website"),
     },
+    "Booking needs a deposit": {
+      text: "Main St Clinic asks for a deposit to book online, so I didn’t book it.",
+      question: "You can call the clinic, or open the website to look yourself.",
+      actions: answers("Open website"),
+    },
     "Words only": { actions: undefined, question: "Please sign in again from Settings, or type the code from your email yourself.", text: "You need to sign in to your account again before I can look in Gmail. Gmail itself is fine." },
   },
 };

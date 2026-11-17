@@ -4,6 +4,12 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AccountOverview } from "./AccountOverview.tsx";
 import { AskGraceButton } from "./AskGraceButton.tsx";
+import { EmailAccountList } from "./EmailAccountList.tsx";
+import { twoAccounts } from "./EmailAccountList.meta.tsx";
+import { EmailAccountPage } from "./EmailAccountPage.tsx";
+import { allUses } from "./EmailAccountRow.meta.tsx";
+import { OtherEmailForm } from "./OtherEmailForm.tsx";
+import { ProviderGrid } from "./ProviderGrid.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import { SettingsApp, type SettingsAppProps, type SettingsPage } from "./SettingsApp.tsx";
 import { SettingsBrightness } from "./SettingsBrightness.tsx";
@@ -59,7 +65,8 @@ export const textSizePreview = { greeting: "Good morning, Margaret", eventWhen: 
 
 const pick = fn();
 const retrySave = fn();
-const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "account", "privacy", "about"];
+const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "email-calendar", "account", "privacy", "about"];
+const emailBack = { backLabel: "Email & calendar", onBack: fn() };
 
 export const meta: ComponentMeta<SettingsAppProps> = {
   args: { page: "text-size", onPageChange: pick, onClose: fn(), children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} /> },
@@ -72,6 +79,23 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       onBack: fn(),
       children: <WifiJoinForm network="Sunrise Community Center" account userPlaceholder="For example: margaret" error="That account name or password didn’t work. Check both and try again." askGrace onAskGrace={fn()} />,
     },
+    "Email & calendar": { page: "email-calendar", children: <EmailAccountList onAdd={fn()}>{twoAccounts}</EmailAccountList> },
+    "No email yet": {
+      page: "email-calendar",
+      children: (
+        <EmailAccountList empty>
+          <ProviderGrid onChoose={fn()} onAskGrace={fn()} />
+        </EmailAccountList>
+      ),
+    },
+    "Add an email": { page: "email-calendar", pageTitle: "Add an email", ...emailBack, children: <ProviderGrid bare onChoose={fn()} /> },
+    "Email account": {
+      page: "email-calendar",
+      pageTitle: "Gmail",
+      ...emailBack,
+      children: <EmailAccountPage address="margaret.h@gmail.com" provider="gmail" status="connected" uses={allUses} colour={1} onUseChange={fn()} onRemove={fn()} />,
+    },
+    "Other email": { page: "email-calendar", pageTitle: "Other email", backLabel: "Add an email", onBack: fn(), children: <OtherEmailForm defaultName="Margaret Hill" onNext={fn()} onCancel={fn()} /> },
     "Grace Points At Largest": {
       children: (
         <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} guide={{ targetId: "Largest", kind: "instruction", title: "Tap Largest", onClose: fn() }} />
@@ -97,6 +121,8 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       await expect(list.getByRole("button", { name: "Text size" }).getAttribute("aria-current")).toBe("page");
       await userEvent.click(list.getByRole("button", { name: "Wi-Fi" }));
       await expect(pick).toHaveBeenCalledWith("wifi");
+      await userEvent.click(list.getByRole("button", { name: "Email & calendar" }));
+      await expect(pick).toHaveBeenCalledWith("email-calendar");
     },
     "Not saved": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));
