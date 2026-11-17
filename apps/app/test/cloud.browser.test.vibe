@@ -1,10 +1,14 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
-import { client, parts, reply, signIn, turns } from "./cloud.vibe"
+import { approveSave, beginEdit, create, edit, initial as noEntry } from "../gen/app__calendar.effect.vibe"
+import { initial as noView } from "../gen/app__calendarView.effect.vibe"
+import { Connector, connector, SignInPage } from "../src/connector.vibe"
+import { client, parts, reply, signIn, turns, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
+const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits)))
 
 it.live("Talk or type without losing the conversation, from the app's own page: the fake and the site answer across origins", () => effect {
   provide client {
@@ -18,5 +22,31 @@ it.live("Talk or type without losing the conversation, from the app's own page: 
       recorded: [{ said, outcome: "completed" }],
       paid: []
     }))
+  }
+})
+
+it.live("Connect the email I already use and write from it, from the app's own page: sign-in, a send with its operation key, and a calendar change cross origins", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    const outlook = { provider: "Outlook", address: "margaret@outlook.com" } as const
+    provide connectorAt(secret, [{ choice: "allow", address: outlook.address }]) {
+      const connector = try Connector
+      const page = try connector.signIn({ provider: "Outlook", attempt: 1, renewing: "" })
+      const draft = { id: "", version: 1, content: { to: "susan@family.test", cc: [], bcc: [], subject: "Sunday", body: "See you." }, attachments: [], replyTo: "" }
+      const mail = connector.mail(outlook)
+      const sends = [try mail.send("operation-1", draft), try mail.send("operation-1", draft)]
+      const calendar = connector.calendar(outlook)
+      const identity = { owner: outlook.address, calendarId: "primary", occurrenceId: "dinner", sourceRef: "outlook-welcome", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+      const details = { title: "Thanksgiving dinner", location: "St. Mark’s hall", participant: "", notes: "", startAt: 0, endAt: 60 * 60 * 1000, timezone: "UTC", allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
+      const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
+      const added = try calendar.write(fresh)
+      const view = { ...noView, owner: outlook.address, calendarId: "primary", timezone: "UTC", window: { ...noView.window, fromTime: -1, untilTime: 2 * 60 * 60 * 1000 } }
+      const [saved] = (try Stream.runCollect(calendar.feed(view))).map((p) => p.incoming)
+      const changed = try calendar.write(edit(beginEdit(saved, "CalendarUser"), { ...saved.committed, title: "Thanksgiving dinner at 5" }, "CalendarUser"))
+      const removed = try calendar.remove("dinner", "ThisOccurrence")
+      try Effect.try(() => assert.deepStrictEqual({ page: page.outcome, sends: sends.map((s) => s.resultStatus), same: sends[0].evidence === sends[1].evidence, stored: [added.succeeded, changed.succeeded], removed: removed.succeeded }, {
+        page: "Allowed", sends: ["Sent", "Sent"], same: true, stored: [true, true], removed: true
+      }))
+    }
   }
 })
