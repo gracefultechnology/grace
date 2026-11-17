@@ -785,7 +785,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(unlock).toBeEnabled();
 });
 
-it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Story: Ask Grace to start a private sign-in for my bill")', async () => {
+it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
   const native = fakePlugin();
   const runtime = ManagedRuntime.make(application(native.plugin));
   const element = document.body.appendChild(document.createElement("div"));
@@ -823,6 +823,8 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await expect.poll(() => native.unanswered()).toBeGreaterThan(0);
+  await native.route();
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "sign me in to pay my bill"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
