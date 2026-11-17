@@ -45,10 +45,9 @@ const pickMatch = fn();
 export const meta: ComponentMeta<FilesAppProps> = {
   args: { tab: "photos", onTabChange: tab, onOpenPhoto: open, onClose: fn(), photoGroups, documents },
   examples: {
-    Documents: { tab: "documents", onOpenDocument: fn(), onPrintDocument: fn() },
-    "Print unknown": { tab: "documents", documents: [{ ...documents[0], printStatus: "unknown" }, ...documents.slice(1)], onOpenDocument: fn(), onPrintDocument: fn() },
+    Documents: { tab: "documents", onOpenDocument: fn() },
     "Found one photo": { highlightId: "garden" },
-    "Found one document": { tab: "documents", highlightId: "medicare", onOpenDocument: fn(), onPrintDocument: fn() },
+    "Found one document": { tab: "documents", highlightId: "medicare", onOpenDocument: fn() },
     "Which one": {
       tab: "documents",
       matches: [

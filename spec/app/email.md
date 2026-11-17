@@ -1,7 +1,7 @@
 # Email
 
 Email uses the same account, consent, private-data and interruption rules as
-browser assistance. `prototype/Grace Prototype.html:1933–1971,2179–2208` is
+browser assistance. `prototype/Grace Prototype.html:1996–2038,2317–2346` is
 the source for Inbox, Sent, Drafts and Trash, message and attachment readers,
 recipient selection, composing, replying, forwarding and draft preservation.
 The earlier PRD's ACC-01–06 supply connector/read requirements. Provider
@@ -21,8 +21,11 @@ never enter this state. `generation` fences callbacks after reconnect or revoke.
 The host authenticates `MailUser`, `MailAssistant`, `MailConnector` and
 `MailHost` before supplying `by`; provider results, persistence facts and user
 consent are never accepted from planner-controlled event JSON. `MailAssistant`
-is Grace's own request, relayed by the host: it can search, open and propose a
-reply, never approve, send, delete or follow a link.
+is Grace's own request, relayed by the host. From any screen she may list,
+search and open mail; start a new email to a contact the connector resolved,
+address a draft that has no recipient yet, fill an empty body, forward, and
+save a draft; move a message to Trash, restore it, undo that move, and mark it
+unread. She never approves, sends, deletes for good or follows a link.
 
 ## Story: Connect the mailbox I choose
 
@@ -51,6 +54,8 @@ type Warning = { ref: str, generation: int, evidence: str }
 type LinkStatus = NoLink | LinkHeld | LinkReleased
 type LinkRequest = { ref: str, link: str, status: LinkStatus }
 type ListingScope = { owner: str, provider: str, account: str, folder: I::Folder, query: str, generation: int }
+type OutboxStatus = Waiting | Dispatching | DispatchUnknown | DispatchFailed
+type QueuedSend = { operationId: str, snapshot: DraftSnapshot, status: OutboxStatus, evidence: str }
 type Mailbox = {
   owner: str, provider: str, account: str, generation: int,
   connection: Connection, canRead: bool, canSend: bool,
@@ -61,6 +66,7 @@ type Mailbox = {
   draftAttachments: List[F::SavedFile], draftId: str, draftVersion: int, retiredDrafts: str -> int, composeVisible: bool, draftStorage: DraftStorage, storedRevision: int, draftRequest: int,
   revision: int, approvedRevision: int, sendStatus: SendStatus,
   operationId: str, issuedSends: Set[str], sendEvidence: str, sendResultSaved: bool,
+  outbox: List[QueuedSend], outboxSent: int,
   bill: Bill, warning: Warning, link: LinkRequest
 }
 pure val noRetiredDrafts: str -> int = Map()
@@ -78,6 +84,7 @@ pure val initial: Mailbox = {
   draftAttachments: List(), draftId: "", draftVersion: 0, retiredDrafts: Map(), composeVisible: false, draftStorage: DraftUnstored, storedRevision: -1, draftRequest: 0,
   revision: 0, approvedRevision: -1, sendStatus: NoDraft,
   operationId: "", issuedSends: Set(), sendEvidence: "", sendResultSaved: false,
+  outbox: List(), outboxSent: 0,
   bill: noBill, warning: noWarning, link: noLink
 }
 pure def messageRecord(m: Mailbox, ref: str): I::MessageRecord =
@@ -131,7 +138,7 @@ pure def canEndConnection(m: Mailbox, resultStatus: Connection, by: MailActor): 
 pure def endConnection(m: Mailbox, resultStatus: Connection, by: MailActor): Mailbox =
   { ...m, connection: resultStatus, generation: m.generation + 1,
     canRead: false, canSend: false, readStatus: ReadIdle,
-    approvedRevision: -1, sendStatus: fencedSend(m) }
+    approvedRevision: -1, sendStatus: fencedSend(m), outbox: fenceQueue(m.outbox) }
 pure def alwaysConnectedIdentity(m: Mailbox): bool =
   (m.connection == Connected implies
     (m.owner != "" and m.provider != "" and m.account != "" and m.canRead)) and
@@ -168,29 +175,18 @@ Discovered by the proof: a pending content read retains the validated selection
 that started it. Without that fact, a successful result could open an empty
 message or attachment even though the request guard validated its reference.
 
-Grace can search and open for the person (`prototype/Grace Prototype.html:2107,2117,2140–2141`).
-Her search and open run the same read with the same guards, only while Email is
-on screen and only when the person asked. Both are facts the host supplies with
-her request: `visible`, which the workspace must grant only while Email is the
-page shown beside Grace compact, and `asked`, the person's request; this spec
-refuses her read without them but cannot itself establish them. Her search
-covers Inbox, as the prototype's does: from another folder it first returns to
-Inbox, clearing the selection and query as choosing a folder does.
-
-This departs from the prototype on purpose in three places. The prototype's
-search switches to the Email page when it is not on screen
-(`prototype/Grace Prototype.html:2141`); here Grace never acts on a hidden page,
-so she is refused instead. The prototype's open and search drop an open
-composer (`prototype/Grace Prototype.html:2140–2141`); here she is refused while
-a composer is open, so she never discards what the person is writing. The
-prototype's search always clears the open message; here a search from Inbox
-keeps the selection reference and its success returns to the list, where the
-selection is not shown, and only a search from another folder clears it. She
-never opens an attachment for herself.
+Mail already on the tablet stays readable while the account's sign-in has
+expired or been revoked: "Your Gmail emails are still here. New ones arrive
+once you sign in." (`prototype/Grace Prototype.html:2119`). The connector then
+answers listings, searches and opens from the tablet's copy, and new mail waits
+for the person to sign in again. `readable` is that fact: a live connection
+with read access, or a bound mailbox whose sign-in expired or was revoked.
+Only reading follows it. Every change sent to the provider, Reply, Forward,
+attachment export, a bill and a link still need the live connection.
 
 ```quint
 pure def canReadMail(m: Mailbox, kind: ReadKind, ref: str, approved: bool, by: MailActor): bool =
-  (by == MailUser) and m.connection == Connected and m.canRead and approved and m.readStatus != Reading and
+  (by == MailUser) and readable(m) and approved and m.readStatus != Reading and
   (kind == Search or (ref != "" and
     ((kind == OpenMessage and m.messageRefs.contains(ref) and availableMessage(m, ref)) or
       (kind == OpenAttachment and selectedMessageIsCurrent(m) and m.assets.some(asset => asset.sourceRef == ref)))))
@@ -198,25 +194,16 @@ pure def readMail(m: Mailbox, kind: ReadKind, ref: str, approved: bool, by: Mail
   { ...m, readStatus: Reading, readKind: kind, requestedRef: ref, generation: m.generation + 1,
     query: if (kind == Search) ref else m.query,
     messageRefs: if (kind == Search) Set() else m.messageRefs }
+pure def retainedOnly(m: Mailbox): bool = (m.connection == Expired or m.connection == Revoked) and m.owner != ""
+pure def readable(m: Mailbox): bool = (m.connection == Connected and m.canRead) or retainedOnly(m)
 pure def assistedView(kind: ReadKind, m: Mailbox): Mailbox =
   if (kind == Search and m.folder != I::InboxFolder) { ...clearSelection(true, m), folder: I::InboxFolder, query: "", messageRefs: Set() }
   else m
-pure def canAssistReadMail(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): bool =
-  by == MailAssistant and visible and asked and kind != OpenAttachment and m.readStatus != Reading and
-  not(m.composeVisible) and canReadMail(assistedView(kind, m), kind, ref, true, MailUser)
-pure def assistReadMail(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): Mailbox =
-  readMail(assistedView(kind, m), kind, ref, true, MailUser)
-pure def lawAssistantReadKeepsTheDraft(m: Mailbox, kind: ReadKind, ref: str, visible: bool, asked: bool, by: MailActor): bool =
-  canAssistReadMail(m, kind, ref, visible, asked, by) implies
-    (assistReadMail(m, kind, ref, visible, asked, by).revision == m.revision and
-      assistReadMail(m, kind, ref, visible, asked, by).draftVersion == m.draftVersion and
-      assistReadMail(m, kind, ref, visible, asked, by).sendStatus == m.sendStatus and
-      assistReadMail(m, kind, ref, visible, asked, by).draftId == m.draftId)
 pure def listingScope(m: Mailbox): ListingScope = {
   owner: m.owner, provider: m.provider, account: m.account, folder: m.folder, query: m.query, generation: m.generation
 }
 pure def canReceiveMessage(m: Mailbox, scope: ListingScope, listing: I::MetadataReceipt, by: MailActor): bool =
-  by == MailConnector and m.connection == Connected and m.canRead and m.readStatus == Reading and m.readKind == Search and
+  by == MailConnector and readable(m) and m.readStatus == Reading and m.readKind == Search and
   scope == listingScope(m) and listing.seed.identity == messageIdentity(m, listing.seed.identity.ref) and
   I::validIdentity(listing.seed.identity) and listing.seed.folder == m.folder and listing.seed.folder != I::PurgedFolder and listing.evidence != "" and
   (if (hasMessage(m, listing.seed.identity.ref))
@@ -232,7 +219,7 @@ pure def receiveMessage(m: Mailbox, scope: ListingScope, listing: I::MetadataRec
       else if (I::canRefreshMetadata(record, listing, I::MessageProvider)) putMessage(m.messages, I::refreshMetadata(record, listing, I::MessageProvider))
       else m.messages }
 pure def canReadResult(m: Mailbox, readReceipt: ReadReceipt, by: MailActor): bool =
-  by == MailConnector and m.connection == Connected and m.readStatus == Reading and readReceipt.generation == m.generation and
+  by == MailConnector and readable(m) and m.readStatus == Reading and readReceipt.generation == m.generation and
   (readReceipt.suspicion != "" implies (readReceipt.succeeded and m.readKind == OpenMessage)) and
   (if (readReceipt.succeeded and m.readKind == OpenMessage)
     F::validCatalog(readReceipt.assets) and readReceipt.assets.every(asset => asset.origin == m.provider and
@@ -258,7 +245,7 @@ pure def canShowInbox(m: Mailbox, by: MailActor): bool = (by == MailUser) and (m
 pure def showInbox(m: Mailbox, by: MailActor): Mailbox =
   { ...m, view: Inbox, readStatus: ReadIdle, generation: m.generation + 1 }
 pure def alwaysReadAccess(m: Mailbox): bool =
-  m.readStatus == Reading implies (m.connection == Connected and m.canRead)
+  m.readStatus == Reading implies readable(m)
 pure def alwaysReadSelectionIsBound(m: Mailbox): bool =
   m.readStatus == Reading implies
     ((m.readKind == OpenMessage implies (m.requestedRef != "" and m.messageRefs.contains(m.requestedRef))) and
@@ -269,11 +256,109 @@ pure def alwaysSelectedContent(m: Mailbox): bool =
   (m.view == Attachment implies (m.messageRef != "" and m.attachmentRef != ""))
 pure def sometimesReadAttachment(m: Mailbox): bool = m.view == Attachment
 pure def sometimesReadFailure(m: Mailbox): bool = m.readStatus == ReadFailed
+pure def sometimesReadWhileSignInExpired(m: Mailbox): bool = retainedOnly(m) and m.readStatus == Reading and m.readKind == OpenMessage
+```
+
+### Grace's mail actions run the person's own guards and never approve, send, delete for good or open a link
+
+When the person asks, Grace lists, searches and opens mail from any screen
+(`prototype/Grace Prototype.html:2244,2277–2280`), writes or answers an email
+for the person to check, and tidies it. Each of her actions is one
+`assistMail` event naming what she does, and each runs exactly the guard and
+transition the person's own tap would, so she can do nothing the person could
+not do on that screen. The host supplies `asked`, the person's current request;
+this spec refuses her without it but cannot itself establish it.
+
+- Listing, search and open read like the person's own. Her search covers
+  Inbox, as the prototype's does: from another folder it first returns to
+  Inbox, clearing the selection and query as choosing a folder does.
+- She starts a new email only to a recipient the connector resolved from the
+  person's contacts (`Recipient.verified`), and gives an existing draft a
+  recipient only while it has none and is not a reply. Nothing she writes is
+  ever taken as an address.
+- She fills a body only while it is empty, so she never writes over words the
+  person typed; she forwards the message on screen, with no recipient, and
+  saves a draft as Back would.
+- She moves the message on screen to Trash, restores it, undoes her own move
+  while its Undo is offered, and marks it unread. She acts only on the message
+  that is open, so the person sees what she is about to move.
+- She never approves, sends, deletes for good or opens a link: no arm of
+  `assistMail` reaches those transitions, and `lawGraceNeverRaisesApproval`
+  checks every arm.
+
+This departs from the prototype on purpose in two places. The prototype's open
+and search drop an open composer (`prototype/Grace Prototype.html:2278–2279`);
+here she is refused while a composer is open, so she never discards what the
+person is writing. The prototype's search always clears the open message; here
+a search from Inbox keeps the selection reference and its success returns to
+the list, where the selection is not shown, and only a search from another
+folder clears it. She never opens an attachment for herself.
+
+```quint
+type Recipient = { address: str, verified: bool }
+type MailAssist =
+  AssistSearch({ query: str }) | AssistOpen({ ref: str }) | AssistList |
+  AssistNewEmail({ recipient: Recipient, subject: str, body: str }) | AssistAddress({ recipient: Recipient }) |
+  AssistFill({ body: str }) | AssistForward({ content: DraftContent }) | AssistSaveDraft({ draftId: str }) |
+  AssistTrash({ target: MessageTarget }) | AssistRestore({ target: MessageTarget }) |
+  AssistUndoTrash({ target: MessageTarget }) | AssistMarkUnread({ target: MessageTarget })
+pure def canAssistMail(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): bool =
+  by == MailAssistant and asked and (match assist {
+    | AssistSearch(x) => not(m.composeVisible) and canReadMail(assistedView(Search, m), Search, x.query, true, MailUser)
+    | AssistOpen(x) => not(m.composeVisible) and canReadMail(m, OpenMessage, x.ref, true, MailUser)
+    | AssistList => not(m.composeVisible) and canShowInbox(m, MailUser)
+    | AssistNewEmail(x) => x.recipient.verified and x.recipient.address != "" and canStartDraft(m, false, MailUser)
+    | AssistAddress(x) => x.recipient.verified and x.recipient.address != "" and canEditDraft(m, MailUser) and
+        m.draft.to == "" and m.replyTo == ""
+    | AssistFill(x) => x.body != "" and canEditDraft(m, MailUser) and m.draft.body == ""
+    | AssistForward(x) => canForwardMessage(m, MailUser)
+    | AssistSaveDraft(x) => canPreserveDraft(m, x.draftId, MailUser)
+    | AssistTrash(x) => canChangeSelectedMessage(m, x.target, I::TrashMessage, MailUser)
+    | AssistRestore(x) => canChangeSelectedMessage(m, x.target, I::RestoreMessage, MailUser)
+    | AssistUndoTrash(x) => canUndoMessageTrash(m, x.target, MailUser)
+    | AssistMarkUnread(x) => canChangeSelectedMessage(m, x.target, I::UnreadMessage, MailUser)
+  })
+pure def assistMail(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): Mailbox = match assist {
+  | AssistSearch(x) => readMail(assistedView(Search, m), Search, x.query, true, MailUser)
+  | AssistOpen(x) => readMail(m, OpenMessage, x.ref, true, MailUser)
+  | AssistList => showInbox(m, MailUser)
+  | AssistNewEmail(x) => editDraft(startDraft(m, false, MailUser),
+      { ...emptyContent, to: x.recipient.address, subject: x.subject, body: x.body }, MailUser)
+  | AssistAddress(x) => editDraft(m, { ...m.draft, to: x.recipient.address }, MailUser)
+  | AssistFill(x) => editDraft(m, { ...m.draft, body: x.body }, MailUser)
+  | AssistForward(x) => forwardMessage(m, x.content, MailUser)
+  | AssistSaveDraft(x) => preserveDraft(m, x.draftId, MailUser)
+  | AssistTrash(x) => changeSelectedMessage(m, x.target, I::TrashMessage, MailUser)
+  | AssistRestore(x) => changeSelectedMessage(m, x.target, I::RestoreMessage, MailUser)
+  | AssistUndoTrash(x) => undoMessageTrash(m, x.target, MailUser)
+  | AssistMarkUnread(x) => changeSelectedMessage(m, x.target, I::UnreadMessage, MailUser)
+}
+pure def lawGraceActsOnlyWhenAsked(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): bool =
+  (not(asked) or by != MailAssistant) implies not(canAssistMail(m, assist, asked, by))
+pure def lawGraceNeverRaisesApproval(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): bool =
+  val after = assistMail(m, assist, asked, by)
+  canAssistMail(m, assist, asked, by) implies
+    ((after.approvedRevision == -1 or after.approvedRevision == m.approvedRevision) and
+      after.sendStatus != Sending and
+      after.outbox.listMap(q => q.operationId) == m.outbox.listMap(q => q.operationId) and
+      after.outbox.listMap(q => q.status) == m.outbox.listMap(q => q.status) and
+      after.issuedSends.subseteq(m.issuedSends) and m.issuedSends.subseteq(after.issuedSends) and
+      (after.link == m.link or after.link == noLink) and
+      after.messages.every(r => r.pending != I::PurgeMessage or
+        m.messages.some(o => o.identity == r.identity and o.pending == I::PurgeMessage)))
+pure def lawGraceReadKeepsTheDraft(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): bool =
+  val after = assistMail(m, assist, asked, by)
+  val reading = match assist { | AssistSearch(x) => true | AssistOpen(x) => true | AssistList => true | _ => false }
+  (reading and canAssistMail(m, assist, asked, by)) implies
+    (after.revision == m.revision and after.draftVersion == m.draftVersion and
+      after.sendStatus == m.sendStatus and after.draftId == m.draftId)
 ```
 
 ### Switching folders clears the old query and starts a scoped listing
 
-Inbox, Sent, Drafts and Trash share this mailbox's current folder and query.
+Inbox, Sent, Drafts and Trash share this mailbox's current folder and query,
+and a mailbox whose sign-in expired can still switch between them, listing
+from the tablet's copy.
 The `Inbox` view name means the message list in any of those folders. Choosing
 a different folder cancels the previous content read, clears its selection and
 search, and requests that folder's listing. An empty successful listing is
@@ -290,7 +375,7 @@ mailbox's records in that folder.
 
 ```quint
 pure def canChooseFolder(m: Mailbox, folder: I::Folder, by: MailActor): bool =
-  by == MailUser and m.connection == Connected and m.canRead and
+  by == MailUser and readable(m) and
   folder != I::PurgedFolder and folder != m.folder
 pure def chooseFolder(m: Mailbox, folder: I::Folder, by: MailActor): Mailbox = {
   ...m, folder: folder, query: "", view: Inbox, readStatus: Reading, readKind: Search,
@@ -327,9 +412,10 @@ with the successful body read. The connector dispatches that exact pending
 operation and returns its identity, revision and evidence through
 `completeMessageChange`; rendered content cannot fabricate the receipt.
 
-Delete, Restore and Delete forever use the current selected record and revision.
-They return to the list immediately and remove that row while its provider
-operation is pending. Other messages remain readable. Undo names the original
+Delete, Restore, Delete forever and Mark unread use the current selected record
+and revision. They return to the list immediately. Delete, Restore and Delete
+forever remove that row while its provider operation is pending; Mark unread
+keeps it listed, since the message stays in its folder. Other messages remain readable. Undo names the original
 message and successful Trash revision, so a later toast cannot restore another
 message. Unknown outcomes retain the same pending operation for reconciliation;
 no duplicate mutation is issued. A failed operation can reappear on an explicit
@@ -361,7 +447,7 @@ pure def clearSelection(affected: bool, m: Mailbox): Mailbox =
   else m
 pure def changeSelectedMessage(m: Mailbox, target: MessageTarget, change: I::MessageChange, by: MailActor): Mailbox =
   clearSelection(true, { ...m, messages: putMessage(m.messages, I::changeMessage(messageRecord(m, target.ref), change, I::MessageUser)),
-    messageRefs: m.messageRefs.exclude(Set(target.ref)) })
+    messageRefs: if (change == I::UnreadMessage) m.messageRefs else m.messageRefs.exclude(Set(target.ref)) })
 pure def canUndoMessageTrash(m: Mailbox, target: MessageTarget, by: MailActor): bool =
   by == MailUser and m.connection == Connected and m.canRead and
   messageRecord(m, target.ref).identity == messageIdentity(m, target.ref) and
@@ -400,6 +486,8 @@ pure def sometimesMessageTrashPending(m: Mailbox): bool =
   m.messages.some(record => record.pending == I::TrashMessage)
 pure def sometimesMessagePurged(m: Mailbox): bool =
   m.messages.some(record => record.folder == I::PurgedFolder)
+pure def sometimesMessageMarkedUnread(m: Mailbox): bool =
+  m.messages.some(record => record.pending == I::UnreadMessage and m.messageRefs.contains(record.identity.ref))
 ```
 
 ### A bill handoff retains verified source identity and never starts a payment
@@ -616,41 +704,35 @@ pure def sometimesReplyAddressed(m: Mailbox): bool = m.composeVisible and m.repl
 
 When the person asks Grace to answer the email on screen, Grace writes the body
 in the person's voice and the reply opens with her words in it; she points at
-Send and never sends (`prototype/Grace Prototype.html:2107,2142`). Her request
+Send and never sends (`prototype/Grace Prototype.html:2244,2280`). Her request
 first opens an ordinary reply through `replyToMessage`, so the connector, not
 Grace, supplies its recipient and subject from the verified header; Grace then
-adds only the body to that open, still empty reply (`proposeReplyDraft`). She
-cannot change who it goes to, and she never writes over words the person typed.
-Unlike the prototype, which builds the whole reply from Grace's request in one
-step (`prototype/Grace Prototype.html:2142`), nothing Grace sends can address
-an email. Her draft is visible in the composer, at a new revision and with no
-approval. Only the person's Send tap
+adds only the body to that open, still empty draft (`assistMail` with
+`AssistFill`). She cannot change who it goes to, and she never writes over
+words the person typed. Unlike the prototype, which builds the whole reply from
+Grace's request in one step (`prototype/Grace Prototype.html:2280`), nothing
+Grace sends can address an email. Her draft is visible in the composer, at a
+new revision and with no approval. Only the person's Send tap
 (`confirmVisibleSend`) or explicit approval (`approveDraft`) at that exact
-revision approves a draft, and only an approved current revision is dispatched,
-so a draft Grace wrote reaches Sending only after the person approved exactly
-what she sees.
+revision approves a draft, and only an approved current revision is dispatched
+or queued, so a draft Grace wrote reaches Sending or Outbox only after the
+person approved exactly what she sees.
 
 ```quint
-pure def canProposeReplyDraft(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
-  by == MailAssistant and visible and asked and body != "" and canEditDraft(m, MailUser) and
-  m.replyTo != "" and m.replyTo == m.messageRef and selectedMessageIsCurrent(m) and
-  m.draft.to != "" and m.draft.body == ""
-pure def proposeReplyDraft(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): Mailbox =
-  editDraft(m, { ...m.draft, body: body }, MailUser)
-pure def lawGraceReplyIsUnapproved(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
-  canProposeReplyDraft(m, body, visible, asked, by) implies
-    (proposeReplyDraft(m, body, visible, asked, by).approvedRevision == -1 and
-      proposeReplyDraft(m, body, visible, asked, by).composeVisible and
-      proposeReplyDraft(m, body, visible, asked, by).sendStatus == Composing and
-      proposeReplyDraft(m, body, visible, asked, by).revision > m.revision)
-pure def lawGraceReplyKeepsTheAddress(m: Mailbox, body: str, visible: bool, asked: bool, by: MailActor): bool =
-  canProposeReplyDraft(m, body, visible, asked, by) implies
-    (proposeReplyDraft(m, body, visible, asked, by).draft.to == m.draft.to and
-      proposeReplyDraft(m, body, visible, asked, by).draft.cc.subseteq(m.draft.cc) and
-      proposeReplyDraft(m, body, visible, asked, by).draft.bcc.subseteq(m.draft.bcc) and
-      proposeReplyDraft(m, body, visible, asked, by).draft.subject == m.draft.subject and
-      proposeReplyDraft(m, body, visible, asked, by).draft.body == body and
-      proposeReplyDraft(m, body, visible, asked, by).replyTo == m.replyTo)
+pure def lawGraceReplyIsUnapproved(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): bool =
+  val after = assistMail(m, assist, asked, by)
+  val filling = match assist { | AssistFill(x) => true | _ => false }
+  (filling and canAssistMail(m, assist, asked, by)) implies
+    (after.approvedRevision == -1 and after.composeVisible and after.sendStatus == Composing and after.revision > m.revision)
+pure def lawGraceReplyKeepsTheAddress(m: Mailbox, assist: MailAssist, asked: bool, by: MailActor): bool =
+  val after = assistMail(m, assist, asked, by)
+  match assist {
+    | AssistFill(x) => canAssistMail(m, assist, asked, by) implies
+        (after.draft.to == m.draft.to and after.draft.cc.subseteq(m.draft.cc) and m.draft.cc.subseteq(after.draft.cc) and
+          after.draft.bcc.subseteq(m.draft.bcc) and m.draft.bcc.subseteq(after.draft.bcc) and
+          after.draft.subject == m.draft.subject and after.draft.body == x.body and after.replyTo == m.replyTo)
+    | _ => true
+  }
 pure def stepOnlyThePersonApproves(before: Mailbox, via: str, after: Mailbox): bool =
   (after.approvedRevision != -1 and after.approvedRevision != before.approvedRevision) implies
     (via == "confirmVisibleSend" or via == "approveDraft")
@@ -705,7 +787,8 @@ pure def alwaysResultPersistenceHasTerminal(m: Mailbox): bool =
 pure def sometimesResultSaveFailed(m: Mailbox): bool = terminalUnsaved(m)
 pure def canInterrupt(m: Mailbox, by: MailActor): bool = ((by == MailUser or by == MailHost)) and (m.readStatus == Reading or m.sendStatus == Sending or m.sendStatus == Reviewing)
 pure def interrupt(m: Mailbox, by: MailActor): Mailbox =
-  { ...m, readStatus: ReadIdle, generation: m.generation + 1, approvedRevision: -1, sendStatus: fencedSend(m) }
+  { ...m, readStatus: ReadIdle, generation: m.generation + 1, approvedRevision: -1, sendStatus: fencedSend(m),
+    outbox: fenceQueue(m.outbox) }
 pure def fencedSend(m: Mailbox): SendStatus =
   if (m.sendStatus == Sending) SendUnknown else if (m.sendStatus == Reviewing) Composing else m.sendStatus
 pure def alwaysSendHasRecipient(m: Mailbox): bool =
@@ -726,6 +809,101 @@ pure def stepUnresolvedDraftIsFixed(before: Mailbox, after: Mailbox): bool =
 pure def sometimesSent(m: Mailbox): bool = m.sendStatus == Sent
 pure def sometimesUncertain(m: Mailbox): bool = m.sendStatus == SendUnknown
 pure def sometimesSendFailed(m: Mailbox): bool = m.sendStatus == SendFailed
+```
+
+### An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online
+
+When the person taps Send while the tablet cannot reach her email company, the
+email waits in Outbox and goes by itself when the tablet is back online
+(`prototype/Grace Prototype.html:2118,2342`). The person's Send approves the
+exact draft as always; the host then persists the send intent with a fresh
+operation identifier, as for a direct send, and `queueSend` puts a snapshot of
+that approved draft in Outbox and closes the composer, which is free for
+another email. Queueing needs the same current approval as sending, so a draft
+changed after Send must be approved again, and the queued snapshot is never
+edited. Being offline is not a connection state: the account is still
+connected, and only the host knows whether the provider is reachable.
+
+When the tablet is online again the host dispatches each waiting entry
+(`dispatchQueued`), and only the connector's answer for that same operation
+settles it (`queuedResult`). A durably recorded Sent takes it out of Outbox. A
+failure the provider confirmed keeps it in Outbox as failed, and the person can
+reopen it in the composer to change and send again (`reopenQueued`). An
+unknown outcome, an unsaved result, or a lost connection, interruption or
+restart while it is being dispatched marks it unknown, and an unknown entry is
+never dispatched again: only the provider's answer for that operation settles
+it, so an email in Outbox goes at most once. That waiting entries go by
+themselves is the host's duty, since reachability is not in this state.
+
+The prototype moves Outbox mail to Sent the moment the tablet is online
+(`prototype/Grace Prototype.html:2193`) and tells Grace the email was sent when
+it was only queued (line 2342); here it leaves Outbox only on the provider's
+evidence, and queued is never reported as sent.
+
+```quint
+pure val noSnapshot: DraftSnapshot = { id: "", version: 0, content: emptyContent, attachments: List(), replyTo: "" }
+pure val noQueued: QueuedSend = { operationId: "", snapshot: noSnapshot, status: Waiting, evidence: "" }
+pure def isQueued(outbox: List[QueuedSend], operationId: str): bool = outbox.some(q => q.operationId == operationId)
+pure def queuedIn(outbox: List[QueuedSend], operationId: str): QueuedSend =
+  outbox.select(q => q.operationId == operationId).nthOr(0, noQueued)
+pure def withStatus(outbox: List[QueuedSend], operationId: str, queueStatus: OutboxStatus, evidence: str): List[QueuedSend] =
+  outbox.listMap(q => if (q.operationId == operationId) { ...q, status: queueStatus, evidence: evidence } else q)
+pure def fenceQueue(outbox: List[QueuedSend]): List[QueuedSend] =
+  outbox.listMap(q => if (q.status == Dispatching) { ...q, status: DispatchUnknown } else q)
+pure def withoutQueued(outbox: List[QueuedSend], operationId: str): List[QueuedSend] =
+  outbox.select(q => q.operationId != operationId)
+pure def canQueueSend(m: Mailbox, operationId: str, recipientValid: bool, persisted: bool, reachable: bool, by: MailActor): bool =
+  by == MailHost and not(reachable) and not(draftStoreBusy(m)) and m.sendStatus == Reviewing and
+  m.approvedRevision == m.revision and m.connection == Connected and m.canSend and
+  operationId != "" and not(m.issuedSends.contains(operationId)) and recipientValid and persisted
+pure def queueSend(m: Mailbox, operationId: str, recipientValid: bool, persisted: bool, reachable: bool, by: MailActor): Mailbox =
+  { ...m, outbox: m.outbox.append({ operationId: operationId, snapshot: currentDraft(m), status: Waiting, evidence: "" }),
+    issuedSends: m.issuedSends.union(Set(operationId)), retiredDrafts: retireCurrentDraft(m),
+    draft: emptyContent, autoSubject: "", replyTo: "", draftAttachments: List(), draftId: "", draftVersion: 0,
+    composeVisible: false, sendStatus: NoDraft, approvedRevision: -1, draftStorage: DraftUnstored, storedRevision: -1,
+    operationId: "", sendEvidence: "", sendResultSaved: false }
+pure def canDispatchQueued(m: Mailbox, operationId: str, reachable: bool, by: MailActor): bool =
+  by == MailHost and reachable and m.connection == Connected and m.canSend and
+  isQueued(m.outbox, operationId) and queuedIn(m.outbox, operationId).status == Waiting
+pure def dispatchQueued(m: Mailbox, operationId: str, reachable: bool, by: MailActor): Mailbox =
+  { ...m, outbox: withStatus(m.outbox, operationId, Dispatching, "") }
+pure def canQueuedResult(m: Mailbox, operationId: str, resultStatus: SendStatus, evidence: str, persisted: bool, by: MailActor): bool =
+  by == MailConnector and isQueued(m.outbox, operationId) and
+  (queuedIn(m.outbox, operationId).status == Dispatching or queuedIn(m.outbox, operationId).status == DispatchUnknown) and
+  (resultStatus == SendUnknown or ((resultStatus == Sent or resultStatus == SendFailed) and evidence != ""))
+pure def queuedResult(m: Mailbox, operationId: str, resultStatus: SendStatus, evidence: str, persisted: bool, by: MailActor): Mailbox =
+  if (resultStatus == Sent and persisted) { ...m, outbox: withoutQueued(m.outbox, operationId), outboxSent: m.outboxSent + 1 }
+  else if (resultStatus == SendFailed and persisted) { ...m, outbox: withStatus(m.outbox, operationId, DispatchFailed, evidence) }
+  else { ...m, outbox: withStatus(m.outbox, operationId, DispatchUnknown, "") }
+pure def canReopenQueued(m: Mailbox, operationId: str, by: MailActor): bool =
+  by == MailUser and isQueued(m.outbox, operationId) and queuedIn(m.outbox, operationId).status == DispatchFailed and
+  composerFree(m) and
+  not(draftRetired(m, queuedIn(m.outbox, operationId).snapshot.id, queuedIn(m.outbox, operationId).snapshot.version + 1))
+pure def reopenQueued(m: Mailbox, operationId: str, by: MailActor): Mailbox =
+  val queued = queuedIn(m.outbox, operationId).snapshot
+  { ...m, outbox: withoutQueued(m.outbox, operationId),
+    draftId: queued.id, draftVersion: queued.version + 1, draft: queued.content, autoSubject: "",
+    draftAttachments: queued.attachments, replyTo: queued.replyTo, composeVisible: true,
+    sendStatus: Composing, draftStorage: DraftUnstored, storedRevision: -1, revision: m.revision + 1,
+    approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
+pure def alwaysQueuedSendsAreIssued(m: Mailbox): bool =
+  m.outboxSent >= 0 and
+  m.outbox.every(q => q.operationId != "" and m.issuedSends.contains(q.operationId) and q.snapshot.content.to != "" and
+    q.snapshot.version >= 0 and q.snapshot.attachments.every(a => F::validFile(a)) and
+    (q.status == DispatchFailed implies q.evidence != "") and
+    m.outbox.select(o => o.operationId == q.operationId).length() == 1)
+pure def stepQueueNeedsCurrentApproval(before: Mailbox, via: str, after: Mailbox): bool =
+  after.outbox.length() > before.outbox.length() implies
+    (via == "queueSend" and before.sendStatus == Reviewing and before.approvedRevision == before.revision)
+pure def stepQueuedSendGoesOnce(before: Mailbox, after: Mailbox): bool =
+  after.outbox.every(q =>
+    (queuedIn(after.outbox, q.operationId).status == Waiting or queuedIn(after.outbox, q.operationId).status == Dispatching) implies
+      (not(isQueued(before.outbox, q.operationId)) or queuedIn(before.outbox, q.operationId).status == Waiting or
+        queuedIn(before.outbox, q.operationId).status == queuedIn(after.outbox, q.operationId).status))
+pure def sometimesOutboxWaiting(m: Mailbox): bool = m.outbox.some(q => q.status == Waiting) and m.sendStatus == NoDraft
+pure def sometimesQueuedSent(m: Mailbox): bool = m.outboxSent > 0
+pure def sometimesQueuedUnknown(m: Mailbox): bool = m.outbox.some(q => q.status == DispatchUnknown)
+pure def sometimesQueuedFailed(m: Mailbox): bool = m.outbox.some(q => q.status == DispatchFailed)
 ```
 
 ### The visible Send button approves exactly the composer the user sees
@@ -827,7 +1005,8 @@ typed subject is kept on Close too, where the prototype's Close
 composer worth keeping is preserved (`preserveDraft`); any other closes without
 being stored (`closeEmptyComposer`), as the prototype drops it. A composer worth
 keeping never ends with no draft except through the person's Discard: at once
-for one never stored, or once the store acknowledges deleting a saved one.
+for one never stored, or once the store acknowledges deleting a saved one; or
+through the person's Send, when its approved snapshot goes to Outbox.
 
 ```quint
 pure def worthPreserving(m: Mailbox): bool =
@@ -839,7 +1018,7 @@ pure def closeEmptyComposer(m: Mailbox, by: MailActor): Mailbox =
     composeVisible: false, draftStorage: DraftUnstored, approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
 pure def stepWorthyComposerIsNotDropped(before: Mailbox, via: str, after: Mailbox): bool =
   (before.sendStatus != NoDraft and after.sendStatus == NoDraft and worthPreserving(before)) implies
-    (via == "discardDraft" or (via == "draftStoreResult" and before.draftStorage == DraftDeleting))
+    (via == "discardDraft" or via == "queueSend" or (via == "draftStoreResult" and before.draftStorage == DraftDeleting))
 ```
 
 ### Sending or discarding retires the completed draft revision without hiding newer work
@@ -851,8 +1030,9 @@ provider/store adapters serialize versions for that ID and never reuse a
 version for different content. Saves and deletes compare the exact requested
 draft version; a concurrent newer version produces a conflict/failure, never an
 unconditional overwrite or deletion. The mailbox retains only the highest retired
-version per draft ID. Durably recorded Sent or acknowledged deletion after Discard
-retires that version and all older snapshots. Sending, uncertainty, failure and
+version per draft ID. Durably recorded Sent, acknowledged deletion after Discard,
+or putting the approved draft in Outbox retires that version and all older
+snapshots; a failed Outbox entry reopens at the next version. Sending, uncertainty, failure and
 merely navigating away never retire anything. A later legitimate version with
 the same ID remains eligible to restore. Retirement is persisted with the
 terminal result before the UI reports completion.
@@ -898,10 +1078,11 @@ pure def alwaysDraftVersions(m: Mailbox): bool =
 pure def alwaysEditableDraftIsNotRetired(m: Mailbox): bool =
   (m.draftId != "" and m.sendStatus != NoDraft and (m.sendStatus != Sent or not(m.sendResultSaved))) implies
     not(draftRetired(m, m.draftId, m.draftVersion))
-pure def stepRetirementRequiresCompletion(before: Mailbox, after: Mailbox): bool =
+pure def stepRetirementRequiresCompletion(before: Mailbox, via: str, after: Mailbox): bool =
   before.retiredDrafts != after.retiredDrafts implies
     ((heldSend(before) and after.sendStatus == Sent and after.sendResultSaved) or
-      (before.draftStorage == DraftDeleting and after.sendStatus == NoDraft))
+      (before.draftStorage == DraftDeleting and after.sendStatus == NoDraft) or
+      (via == "queueSend" and after.outbox.length() > before.outbox.length()))
 pure def lawRetiredSnapshotCannotRestore(m: Mailbox, snapshot: DraftSnapshot, generation: int, verified: bool, by: MailActor): bool =
   draftRetired(m, snapshot.id, snapshot.version) implies not(canRestoreDraft(m, snapshot, generation, verified, by))
 pure def lawNewerSnapshotIsEligible(m: Mailbox, snapshot: DraftSnapshot, generation: int, verified: bool, by: MailActor): bool =
@@ -923,8 +1104,8 @@ pure def sometimesDraftRetired(m: Mailbox): bool = m.draftId != "" and retiredVe
 
 The gallery shows the selected photo and moves only within this message's
 ordered photos; after it moves past the first photo, Back still returns to its
-message. PDF Back returns to its message. Save one, Save all, Forward,
-Print and Files sharing carry immutable source/content IDs. File names are
+message. PDF Back returns to its message. Save one, Save all, Forward and
+Files sharing carry immutable source/content IDs. File names are
 labels. The atomic message-read manifest supplies all assets in provider order, with
 unique immutable IDs and sources. Forwarding a whole message always copies this
 complete manifest; individual-attachment forwarding copies only the selection,
@@ -934,12 +1115,10 @@ any picker leaves the draft unchanged. Its result must match the exact composer
 revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
 content and attachments into a new editable draft and never sends it.
 
-Saving and printing are dispatched to [Files](./files.md). `mayExportAttachments`
+Saving is dispatched to [Files](./files.md). `mayExportAttachments`
 is the source authorization check before the host constructs its `FileImport`;
-only Files' durable acknowledgment permits “Saved to Files”. An unsaved PDF
-uses Files' `ExternalPrint` boundary with the same source authorization; printing
-never silently saves it to the library. Print request is
-not printer success. Preview uses actual content, pages and errors, not the
+only Files' durable acknowledgment permits “Saved to Files”. There is no Print:
+the prototype offers none. Preview uses actual content, pages and errors, not the
 prototype's fixed two-page sample. Dangerous links/content cannot authorize an
 action, including when a scam warning is displayed.
 
@@ -1017,7 +1196,7 @@ pure def validMailbox(m: Mailbox): bool =
   alwaysSendHasRecipient(m) and alwaysSendEvidence(m) and alwaysApprovalIsCurrent(m) and
   alwaysDraftHasAccount(m) and alwaysDraftStoreHasRevision(m) and alwaysRetirementHasMailbox(m) and
   alwaysDraftVersions(m) and alwaysEditableDraftIsNotRetired(m) and alwaysDraftAssetsAreValid(m) and
-  alwaysMessageAssetsAreBound(m)
+  alwaysMessageAssetsAreBound(m) and alwaysQueuedSendsAreIssued(m)
 ```
 
 ### Simulation samples cover message and attachment lifecycles
@@ -1028,7 +1207,8 @@ The random walks use one coherent mailbox and current callback combinations
 to reach complete read, mutation, send and recovery paths. Listing and read
 callbacks cover generations up to 12, so walks keep reading after repeated
 reads and reconnects, and a Drafts row separate from the inbox message lets a
-saved draft be reopened. The universal rules
+saved draft be reopened. Grace's actions cover each kind with current and
+stale targets, and queued sends reach Outbox, dispatch and every result. The universal rules
 cover arbitrary identities and collections; separate guarded witness checks
 exercise competing accounts, stale callbacks, rejection and multiple messages.
 
@@ -1110,9 +1290,19 @@ pure val headerValues = sampleGenerations.map(g => { ref: "messageA", generation
   .union(Set({ ref: "messageA", generation: 3, address: "", subject: "Re: Subject", verified: true },
     { ref: "messageA", generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: false },
     { ref: "missing", generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: true }))
-pure val bodyValues = Set("Thank you, I will be there.")
 pure val linkValues = Set("https://acc0unt-help.example/confirm")
 pure val refsValues = Set(Set("attachmentA"), Set("attachmentPdf"), Set("attachmentA", "attachmentPdf"), Set("missing"), Set())
+pure val resolvedRecipient: Recipient = { address: "recipient@example.test", verified: true }
+pure val assistValues = Set(
+  AssistSearch({ query: "" }), AssistSearch({ query: "messageA" }), AssistOpen({ ref: "messageA" }), AssistOpen({ ref: "missing" }),
+  AssistList, AssistNewEmail({ recipient: resolvedRecipient, subject: "Subject", body: "Message" }),
+  AssistNewEmail({ recipient: { ...resolvedRecipient, verified: false }, subject: "Subject", body: "Message" }),
+  AssistAddress({ recipient: resolvedRecipient }), AssistFill({ body: "Thank you, I will be there." }), AssistFill({ body: "" }),
+  AssistForward({ content: { ...emptyContent, subject: "Fwd: Subject", body: "Message" } }), AssistSaveDraft({ draftId: "draftA" }))
+  .union(targetValues.map(t => AssistTrash({ target: t })))
+  .union(targetValues.map(t => AssistRestore({ target: t })))
+  .union(targetValues.map(t => AssistUndoTrash({ target: t })))
+  .union(targetValues.map(t => AssistMarkUnread({ target: t })))
 pure val weight_connect = 20
 pure val weight_completeMessageChange = 30
 pure val weight_changeSelectedMessage = 30
@@ -1136,4 +1326,9 @@ pure val weight_approveDraft = 3
 pure val weight_sendDraft = 30
 pure val weight_sendResult = 30
 pure val weight_startDraft = 6
+pure val weight_assistMail = 20
+pure val weight_queueSend = 30
+pure val weight_dispatchQueued = 30
+pure val weight_queuedResult = 30
+pure val weight_reopenQueued = 10
 ```

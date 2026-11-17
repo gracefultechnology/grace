@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
-import { MailActionStatus, pendingMark, type MailActionStatusLabels, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
+import { MailActionStatus, pendingMark, type MailActionStatusLabels, type MailSaveStatus } from "./MailActionStatus.tsx";
 import { mailIcons } from "./MailMessageRow.tsx";
 import type { MailReadStatus } from "./MailMessageView.tsx";
 import { MailNotice } from "./MailNotice.tsx";
@@ -17,17 +17,13 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
   children?: ReactNode;
   /** Where the page is in the file: "Page 1 of 2". */
   pageLabel?: string;
-  /** Prints the file, the one next step. */
-  onPrint?: () => void;
-  /** It has Save to Files; a file opened from Files has none. */
+  /** It has Save to Files, its one action; a file opened from Files has none. */
   savable?: boolean;
   /** Saves it to Files. */
   onSave?: () => void;
-  /** The Print button's words. */
-  printLabel?: string;
   /** The Save button's words. */
   saveLabel?: string;
-  /** `loading` a blank page; `failed` (unreadable, unsupported or corrupt content) says so with Try again. Print and Save wait for the page. */
+  /** `loading` a blank page; `failed` (unreadable, unsupported or corrupt content) says so with Try again. Save waits for the page. */
   status?: MailReadStatus;
   /** Opens it again after it failed. */
   onRetry?: () => void;
@@ -39,16 +35,14 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
   loadingLabel?: string;
   /** What saving it to Files actually did. */
   saveStatus?: MailSaveStatus;
-  /** What printing it actually did: Print waits while it is sent and while the printer's answer is unknown. */
-  printStatus?: MailPrintStatus;
-  /** Tries the failed save or print again. */
+  /** Tries the failed save again. */
   onRetryAction?: () => void;
   /** The status words, for another language. */
   statusLabels?: Partial<MailActionStatusLabels>;
 };
 
 /**
- * A PDF open to read, from an email or from Files: its page on a tinted desk, with Print as the one next step
+ * A PDF open to read, from an email or from Files: its page on a tinted desk, with Save to Files from an email
  * (prototype `mailView()` and `filesView()`, pdf, `.a-pdf`).
  * @model spec/app/email.md, spec/app/files.md
  * @design packages/design-system/design.md#windows
@@ -57,10 +51,8 @@ export type PdfViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "
 export function PdfViewer({
   children,
   pageLabel,
-  onPrint,
   savable = false,
   onSave,
-  printLabel = "Print",
   saveLabel = "Save to Files",
   status = "ready",
   onRetry,
@@ -68,28 +60,20 @@ export function PdfViewer({
   retryLabel = "Try again",
   loadingLabel = "Opening the file",
   saveStatus,
-  printStatus,
   onRetryAction,
   statusLabels,
   ...props
 }: PdfViewerProps) {
   const held = status !== "ready";
-  const report = printStatus ? ({ action: "print", status: printStatus } as const) : saveStatus ? ({ action: "save", status: saveStatus } as const) : null;
   return (
     <AppWindow
       actions={
-        <>
-          <Button variant="prominent" size="compact" aria-busy={printStatus === "pending" || undefined} disabled={held || printStatus === "pending" || printStatus === "unknown"} onClick={onPrint}>
-            {pendingMark(printStatus === "pending", <mailIcons.printer {...pill} />)}
-            {printLabel}
+        savable && (
+          <Button variant="plain" size="compact" className="text-grace-ink" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
+            {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
+            {saveLabel}
           </Button>
-          {savable && (
-            <Button variant="plain" size="compact" className="text-grace-ink" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
-              {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
-              {saveLabel}
-            </Button>
-          )}
-        </>
+        )
       }
       {...props}
     >
@@ -104,7 +88,7 @@ export function PdfViewer({
           <>
             <div className="mx-auto box-border w-[520px] rounded-sm bg-card px-12 py-11 font-sans shadow-paper">{children}</div>
             {pageLabel && <PageText tone="secondary" className="mt-3.5 text-center">{pageLabel}</PageText>}
-            {report && <MailActionStatus {...report} onRetry={onRetryAction} labels={statusLabels} className="mx-auto mt-3.5 w-max" />}
+            {saveStatus && <MailActionStatus status={saveStatus} onRetry={onRetryAction} labels={statusLabels} className="mx-auto mt-3.5 w-max" />}
           </>
         )}
       </div>
