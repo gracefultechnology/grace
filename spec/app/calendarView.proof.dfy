@@ -1019,11 +1019,11 @@ lemma CalendarChangedEntry(c: app__calendar_Calendar, details: app__calendar_Ent
   ensures changedEntry(c, details).approvedRevision != -1
 {
   assert app__calendar_inv(c);
-  var opened := app__calendar_beginEdit(c, app__calendar_CalendarActor.CalendarUser);
+  var begun := app__calendar_beginEdit(c, app__calendar_CalendarActor.CalendarUser);
   app__calendar_beginEdit_ensures(c, app__calendar_CalendarActor.CalendarUser);
-  assert app__calendar_inv(opened);
-  var editing := app__calendar_edit(opened, details, app__calendar_CalendarActor.CalendarUser);
-  app__calendar_edit_ensures(opened, details, app__calendar_CalendarActor.CalendarUser);
+  assert app__calendar_inv(begun);
+  var editing := app__calendar_edit(begun, details, app__calendar_CalendarActor.CalendarUser);
+  app__calendar_edit_ensures(begun, details, app__calendar_CalendarActor.CalendarUser);
   assert app__calendar_inv(editing);
   app__calendar_approveSave_ensures(editing, editing.revision, app__calendar_CalendarActor.CalendarUser);
 }
@@ -1109,5 +1109,32 @@ lemma confirmDeletion_ensures(v: CalendarView, deletionRequest: ConfirmedDeletio
     CalendarEntryAtView(after, deletionRequest.id);
     assert entryAt(after, deletionRequest.id) == entryAt(v, deletionRequest.id);
     CalendarSameEntries(v, after);
+  }
+}
+
+lemma CalendarEntryFound(v: CalendarView, id: string)
+  requires entryAt(v, id).hasSaved
+  ensures entryAt(v, id) in v.entries
+  ensures entryAt(v, id).identity.occurrenceId == id
+{
+  CalendarEntryAtView(v, id);
+  var matches := ProofLib.Filter((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?)), v.entries);
+  assert |matches| == 1;
+  assert entryAt(v, id) == matches[0];
+  ProofLib.FilterMember((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?)), v.entries, entryAt(v, id));
+}
+
+lemma lawChangeIsConsumedOnce_ensures(v: CalendarView, changeRequest: ConfirmedChange, nextChange: ConfirmedChange, by_: ViewActor)
+  ensures (lawChangeIsConsumedOnce(v, changeRequest, nextChange, by_) == true)
+{
+  if canConfirmChange(v, changeRequest, by_) {
+    var before := entryAt(v, changeRequest.id);
+    CalendarEntryFound(v, changeRequest.id);
+    var k :| 0 <= k < |v.entries| && v.entries[k] == before;
+    var after := confirmChange(v, changeRequest, by_);
+    assert after.entries[k] == changedEntry(before, changeRequest.details);
+    assert after.entries[k].phase.Editing?;
+    assert after.entries[k] in after.entries;
+    assert hasEditing(after);
   }
 }
