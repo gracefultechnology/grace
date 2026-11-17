@@ -25,7 +25,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
   };
 
   return (
-    <SettingsApp page={names[page]} onPageChange={choose} placement="inline" {...props}
+    <SettingsApp page={names[page]} onPageChange={choose} {...props}
       onClose={() => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }}>
       {page === "AboutSettings" ? (
         <>

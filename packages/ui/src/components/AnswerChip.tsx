@@ -37,7 +37,7 @@ export function AnswerChip({ className, children, ...props }: AnswerChipProps) {
           <path
             d={bubbleOutline(...size, size[1] / 2, 1)}
             vectorEffect="non-scaling-stroke"
-            className="fill-none stroke-user-ink/70 stroke-2 [stroke-dasharray:12_7] [stroke-linecap:round] [stroke-linejoin:round] group-active/chip:fill-user-ink group-active/chip:stroke-user-ink group-active/chip:[stroke-dasharray:none] group-data-[surface=frost]/grace:fill-glass/50"
+            className="fill-none stroke-user-ink/70 stroke-2 [stroke-dasharray:12_7] [stroke-linecap:round] [stroke-linejoin:round] group-active/chip:fill-user-ink group-active/chip:stroke-user-ink group-active/chip:[stroke-dasharray:none]"
           />
         </svg>
       )}

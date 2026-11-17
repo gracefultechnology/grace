@@ -1,96 +1,29 @@
-import { useId, useState, type ComponentProps } from "react";
-import { ChevronDown } from "lucide-react";
-import { cn, focusRing } from "../lib/cn.ts";
+import type { ComponentProps } from "react";
+import { cn } from "../lib/cn.ts";
 import { PageText } from "./PageHeading.tsx";
 import { Panel } from "./Panel.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
-
-export interface VoiceCredit {
-  name: string;
-  by: string;
-  part: string;
-  license: string;
-  note?: string;
-  links: string[];
-}
 
 export type SettingsAboutProps = ComponentProps<"section"> & {
   /** The tablet and its version, such as "Grace tablet · 1.4". */
   device: string;
   /** Whether its software is current, such as "Everything is up to date." */
   status: string;
-  title?: string;
-  /** The on-device speech software, credited as its licences require wherever the voice ships. */
-  credits?: VoiceCredit[];
-  /** The name of the section that lists `credits`. */
-  creditsLabel?: string;
-  /** The line over the credits, such as that the software runs on the tablet. */
-  creditsIntro?: string;
-  /** The credits start open. */
-  defaultCreditsOpen?: boolean;
 };
 
 /**
- * Settings' About page: the tablet's name and version, whether it is up to date (prototype `setView()`, "About this
- * tablet"), and the voice software's credits, folded away until asked for.
+ * Settings' About page: the tablet's name and version, and whether it is up to date (prototype `setView()`, "About this
+ * tablet").
  * @design packages/design-system/design.md#windows
  */
-export function SettingsAbout({
-  device,
-  status,
-  title = "About this tablet",
-  credits = [],
-  creditsLabel = "Voice software and licences",
-  creditsIntro,
-  defaultCreditsOpen = false,
-  className,
-  ...props
-}: SettingsAboutProps) {
-  const [open, setOpen] = useState(defaultCreditsOpen);
-  const listId = useId();
+export function SettingsAbout({ device, status, className, ...props }: SettingsAboutProps) {
   return (
-    <section aria-label={title} className={cn("font-sans", className)} {...props}>
-      <SettingsPageHeading>{title}</SettingsPageHeading>
+    <section aria-label="About this tablet" className={cn("font-sans", className)} {...props}>
+      <SettingsPageHeading>About this tablet</SettingsPageHeading>
       <Panel className="mt-[18px]">
         <PageText>{device}</PageText>
         <PageText tone="secondary" className="mt-1.5">{status}</PageText>
       </Panel>
-      {credits.length > 0 && (
-        <div className="mt-3.5 rounded-row bg-panel">
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={listId}
-            onClick={() => setOpen(!open)}
-            className={cn(focusRing, "flex min-h-[76px] w-full cursor-pointer items-center gap-5 rounded-row px-[22px] text-left text-lead leading-[30px] font-bold text-chrome")}
-          >
-            <span className="flex-1">{creditsLabel}</span>
-            <ChevronDown aria-hidden size={26} strokeWidth={2.4} className={cn("flex-none text-chevron transition-transform duration-base motion-reduce:transition-none", open && "rotate-180")} />
-          </button>
-          {open && (
-            <div id={listId} className="px-3.5 pb-3.5">
-              {creditsIntro && <PageText tone="secondary" className="mb-3.5 px-2">{creditsIntro}</PageText>}
-              <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-                {credits.map((credit) => (
-                  <li key={credit.name} className="rounded-tab bg-card px-5 py-4">
-                    <div className="text-body-lg leading-[30px] font-bold text-chrome">{credit.name}</div>
-                    <PageText tone="secondary">{`${credit.part} · ${credit.by}`}</PageText>
-                    <PageText tone="secondary">{credit.license}</PageText>
-                    {credit.note && <PageText tone="secondary">{credit.note}</PageText>}
-                    <div className="mt-1.5 flex flex-wrap gap-x-5">
-                      {credit.links.map((link) => (
-                        <a key={link} href={link} className={cn(focusRing, "rounded-sm text-body leading-[26px] font-semibold break-all text-link underline underline-offset-2")}>
-                          {link.replace(/^https?:\/\//, "")}
-                        </a>
-                      ))}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
     </section>
   );
 }

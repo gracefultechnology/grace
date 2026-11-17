@@ -3,8 +3,8 @@
 Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 product surface, from
 `prototype/Grace Prototype.html`. Color carries meaning; position and weight carry hierarchy.
 
-- **Surfaces.** The `screen` sits under `bg-gradient-frame`. Floating surfaces (rail, windows, Grace) are
-  glass over it; app windows are white (`background`). `panel` is a row or panel on white; `card` a white
+- **Surfaces.** The `screen` sits under `bg-gradient-frame`. The rail and the browser window are glass
+  over it; app windows and Grace's window are white (`background`). `panel` is a row or panel on white; `card` a white
   panel on glass; `sidebar` a side list inside a window.
 - **Text.** `foreground` in apps and on Home, `grace-ink` in Grace's window and on glass buttons, `chrome`
   for the rail and window buttons, `muted-foreground` for what matters less. Each pair meets WCAG AA, except three of the prototype's own pale
@@ -26,8 +26,9 @@ is unavoidable, such as a chart series or third-party markup, say why on the lin
 
 ## Glass
 
-Clear glass: `bg-glass/10` with `backdrop-blur-glass` and `shadow-glass`, a bright rim and no lift. Grace's
-window is frosted: `bg-frost/86` with `backdrop-blur-2xl`. Every floating surface casts `shadow-float`.
+Clear glass: `bg-glass/10` with `backdrop-blur-glass` and `shadow-glass`, a bright rim and no lift. Glass is for
+controls; Grace's window is solid white at both sizes, with glass controls over it. Every floating surface casts
+`shadow-float`.
 
 ## Buttons
 
@@ -42,7 +43,8 @@ rail's buttons, segmented choices and menu options. No outlines.
 
 ## Windows
 
-App windows float 6px from the rail and the screen edges, `rounded-window`, white with `shadow-float`. The
+App windows float 6px from the rail and the screen edges, `rounded-window`, white with `shadow-float`. A window
+fills the place it is given; `ScreenSlot` (`besideRail`) is that place on the screen, for windows and Grace alike. The
 header is two glass capsules over the scrolling content; the title sits on the ✕'s row. Split apps keep
 their side list (`sidebar`) still while the page beside it scrolls. One margin: 24px.
 
@@ -61,28 +63,28 @@ works, `guide` for "your turn", `ok` when done. A target off screen becomes a gl
 
 Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
 the line of the function that draws it. The prototype draws from today's date; the stories hold it at 8:56 or 8:57 PM
-on Friday, November 13, 2026. Open the story and that line side by side. Unless its row maps it, an `Empty`,
-`Header Mode …` or `Placement …` story is the bare component and its props (`hdr()` 1885 follows `X.hdrMode`);
+on Friday, November 13, 2026. Open the story and that line side by side. Unless its row maps it, an `Empty` or
+`Placement …` story is the bare component and its props (`hdr()` 1885 draws the header's icon and title);
 "app only" marks a state the prototype does not draw, built in its look.
 
 | Component | Prototype state | Stories |
 | --- | --- | --- |
 | `TabletScreen` | `.device` and `#screen` (801) | Default: the bare `#screen`; In The Bezel, Device: `.device`'s 18px bezel; Background Frame: `.screen .sbg` |
-| `AppWindow` | `#awin` (1821), `axRender()` 2056, `hdr()` 1885 | Default: Email's inbox, `mailView()` 1940 at 1966–1971; Calendar: the week's Coming up list, `calView()` 1896 at 1916; With Back: an appointment, `C.detail` (1898–1899); Settings: `setView()` 2037 on `X.set.page` Text size (1809); Large Title: Text size with `X.hdrMode` `large` (2060, 2391); Large Title No List: Calendar's week with `X.hdrMode` `large`; Large Title With Back: an appointment with `X.hdrMode` `large`; No Title: `X.hdrMode` `none`, the App header's No title (879, 2394) |
+| `AppWindow` | `#awin` (1821), `axRender()` 2056, `hdr()` 1885 | Default: Email's inbox, `mailView()` 1940 at 1966–1971; Calendar: the week's Coming up list, `calView()` 1896 at 1916; With Back: an appointment, `C.detail` (1898–1899); Settings: `setView()` 2037 on `X.set.page` Text size (1809) |
 | `HomeScreen` | `render()` 1266, `homeCards()` 1874, `hmGeom()` 2297 mode G | Default: Home's first page; Layout Compact: `layout()` 1256 with Grace compact (`.home.cmp`); Page Files, Compact Page Files: `hmGo(1)` 2352; Layout Greeting: `.home.tight`, keyboard up; Reminder: `drawBanner()` 1865, `X.banner = "rem"` (2275); Offline: `X.online = false` |
 | `SleepScreen` | `drawSleep()` 2254 | Default: `X.wake`; Wake Word Off: `X.wake = false`; Nothing Next: no event ahead |
 | `StartupScreen` | app only: `.screen`, `.orb-w`, `.zzsleep` type, `.a-btn.prom` | Default, State Failed |
-| `GraceWindow` | `renderGrace()` 1173 in `.chat-white`, `dock()` 1646 | Default: Ask Grace full screen; Compact, Size Compact: `sizeCompact()` 1287; Conversation; Compact Question; Compact Question Listening: `.sugg.fade`; Compact Thinking; Compact Long Reply: `sizeCompact()`, `focusMsg()` 1290; Frost, Surface Frost: `.gwin`'s frosted glass without `.chat-white` (67–68) |
+| `GraceWindow` | `renderGrace()` 1173 in `.chat-white`, `dock()` 1646 | Default: Ask Grace full screen; Compact, Size Compact: `sizeCompact()` 1287; Conversation; Compact Question; Compact Question Listening: `.sugg.fade`; Compact Thinking; Compact Long Reply: `sizeCompact()`, `focusMsg()` 1290 |
 | `SetupStep` | app only, in Grace's window (`renderGrace()` 1173) | every step |
 | `BrowserWindow` | `#bwin` (819), `renderSite()` 1005 on `PAGES` (973) | Default: `PAGES.newtab`; Empty Go: app only, `PAGES.newtab` with the address bar's notice; Website Sign In: `signin`; Website Sign In Error: `signin` with `S.site.err` (1041); Website Account, Website Pay, Website Review, Website Payment Scheduled: `account`, `pay`, `review`, `done`; Grace Typing: `.addr.typing`; Loading With More Tabs, Page Failed: app only |
 | `NewTabPage` | `renderSite()` 1011, `.newtab` | Default; Recent Websites, Remove And Clear, Confirming Clear, Removable, Clearable: app only |
 | `PracticePage` | app only, `.scard` of `renderSite()` | Default, Guided, Done |
 | `CalendarApp` | `axRender()` 2056, `calView()` 1896 | Default, Week: `X.cal` (1799–1802); Month; Detail; Form, Form Picking A Time: `calForm()` 1918, Save ready once titled (`formsave` 2171); Form Saving: app only, `calForm()` with the Save pill's spinner; Form Save Failed: app only, `.a-caution` as `wifiPage()` 2002 shows a refusal; With A Draft: Grace's unconfirmed row, dashed `.a-new` (471), in `calView()` 1915–1916, as her draft puts it there (2134–2135); Added By Margaret: Margaret's own new appointment, which `formsave` (2172) rings with `axGuide()` 2072–2079 kind `confirm`, where saving an edit (2171) draws no ring |
-| `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Large Title: `X.hdrMode` `large` (2060); Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
+| `MailApp` | `axRender()` 2056, `mailView()` 1940 | Default: `X.mail.items`; Sent, Drafts, Trash: `X.mail.folder`; Search, Nothing Found: `.a-search`; Loading, Load Failed, Offline, Moved To Trash: app only |
 | `FilesApp` | `axRender()` 2056, `filesView()` 1982 | Default: `X.files` photos; Documents: `X.files.tab`; Found One Photo, Found One Document: `axGuide()` 2072–2079 kind `point` on the one match (2146); Which One, Print Unknown, Nothing Matched, Loading, Load Failed: app only |
-| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join: `X.wifi.join` (2004) on a network that needs an account, refused (`W.err`, 2006); Header Mode Large Wi Fi Join: `X.wifi.join` (2004); Header Mode None: `X.wifi.join` (2004) with `X.hdrMode` `none` (2394); Grace Points At Largest: `axGuide()` 2072–2079 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
-| `MailMessageView` | `mailView()` 1940 with `M.read` (1958) | Default: Susan's email from `X.mail.items` (1804) with its photos, `.a-attbar` (1963); Large Title: `X.hdrMode` `large` (2060); Scam: `m.scam`, `.a-caution` (1960); Grace Points At The Warning: `out.guide` (2148) kind `point` on that `caution`; Attachment: `m.files`, `.a-att` (1964); In Trash: Restore and Delete forever (1959); Loading, Couldn T Open, Photos Saved, Print Unknown, Bill, Bill Confirmed: app only |
-| `MailCompose` | `mailView()` 1940 with `M.compose` (1945) | Default: `hdr('New email')` with Discard (1949), a photo in `.a-thumbs` (1955); Large Title: `X.hdrMode` `large` (2060); Blank: nothing filled in; Attach Open: `c.menu`, `.apop` (1957); With Copies: the Cc and Bcc rows (1952); Reply: `c.replyTo` (1949); Sending, Send Failed, Not Sure It Sent, Record Not Saved, Draft Not Saved: app only |
+| `SettingsApp` | `axRender()` 2056, `setView()` 2037 | Default: `X.set.page`; Voice; Wi Fi: `wifiPage()` 2002; Wi Fi Join: `X.wifi.join` (2004) on a network that needs an account, refused (`W.err`, 2006); Grace Points At Largest: `axGuide()` 2072–2079 kind `instruction`; Not Saved, Brightness Not Changed, Account, Saved Details: app only |
+| `MailMessageView` | `mailView()` 1940 with `M.read` (1958) | Default: Susan's email from `X.mail.items` (1804) with its photos, `.a-attbar` (1963); Scam: `m.scam`, `.a-caution` (1960); Grace Points At The Warning: `out.guide` (2148) kind `point` on that `caution`; Attachment: `m.files`, `.a-att` (1964); In Trash: Restore and Delete forever (1959); Loading, Couldn T Open, Photos Saved, Print Unknown, Bill, Bill Confirmed: app only |
+| `MailCompose` | `mailView()` 1940 with `M.compose` (1945) | Default: `hdr('New email')` with Discard (1949), a photo in `.a-thumbs` (1955); Blank: nothing filled in; Attach Open: `c.menu`, `.apop` (1957); With Copies: the Cc and Bcc rows (1952); Reply: `c.replyTo` (1949); Sending, Send Failed, Not Sure It Sent, Record Not Saved, Draft Not Saved: app only |
 | `MailRecipientPicker` | `mailView()` 1940 with `c.picker` (1946–1948) | Default: "Who is it to?" over `PEOPLE`; Searching: `c.pickq` (1948); A Copy: `c.pickFor` `cc` (1947) |
 | `PhotoViewer` | `mailView()` 1940 with `M.viewer` (1941–1942) | Default: the second of Susan's three photos; First, Last: the hidden arrow at either end (1942); Loading, Status Loading, Couldn T Show, Saved, Save Status Saving, Save Failed: app only |
 | `PdfViewer` | `mailView()` 1940 with `M.pdf` (1943–1944); `filesView()` 1982 with `F.pdf` (1985) | Default: the clinic's visit form from its email; From Files: a document in Files, Print only (1985); Savable: the email's form with `savable` off, Print only as 1985 draws it; Loading, Status Loading, Can T Show, Printed, Print Unknown, Print Failed: app only |
@@ -163,7 +165,6 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `device` | oklch(0.201 0.014 298.2) | — |
 | `screen` | oklch(0.91 0.043 295.9) | — |
 | `glass` | oklch(1 0 0) | — |
-| `frost` | oklch(0.926 0.03 296.2) | — |
 | `fade` | oklch(0.951 0.022 297.4) | — |
 | `sidebar` | oklch(0.99 0.005 297.7) | — |
 | `panel` | oklch(0.971 0.009 299.2) | — |
@@ -282,7 +283,6 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px rgb(30 122 70 / 0.15), 0 8px 24px rgb(59 47 99 / 0.14) |
 | `shadow.device` | 0 30px 60px rgb(20 16 32 / 0.25) |
 | `shadow.banner` | inset 0 1.5px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.7), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.frost` | inset 0 0 0 1px rgb(255 255 255 / 0.75), inset 0 1.5px 1px rgb(255 255 255 / 0.95), 0 2px 10px rgb(59 47 99 / 0.08) |
 | `shadow.window` | 0 0 0 1px rgb(59 47 99 / 0.06), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
 | `shadow.popover` | inset 0 0 0 1px rgb(255 255 255 / 0.85), 0 12px 32px rgb(59 47 99 / 0.22) |
 | `shadow.tile` | 0 1px 4px rgb(60 70 110 / 0.12) |
@@ -304,8 +304,6 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.photo-tile` | 0 2px 10px rgb(60 70 110 / 0.1) |
 | `shadow.pane` | inset 0 0 0 1px rgb(255 255 255 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.55), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
 | `shadow.sidebar` | inset 0 0 0 1px #fff, inset 0 1.5px 2px #fff, 0 0 0 1px rgb(59 47 99 / 0.07), 0 2px 6px rgb(59 47 99 / 0.06), 0 12px 36px rgb(59 47 99 / 0.16) |
-| `shadow.print` | 0 0 0 6px #fff, 0 10px 20px rgb(60 70 110 / 0.18) |
-| `shadow.print-top` | 0 0 0 6px #fff, 0 14px 24px rgb(60 70 110 / 0.2) |
 | `shadow.launcher` | inset 0 1px 0 rgb(255 255 255 / 0.95), 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 22px rgb(59 47 99 / 0.1) |
 | `shadow.hairline` | 0 1px 0 rgb(59 47 99 / 0.1) |
 | `shadow.arrow` | -1px 1px 0 rgb(255 255 255 / 0.85) |
@@ -355,7 +353,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `blur.mist` | 14px |
 | `blur.capsule` | 16px |
 | `blur.nav` | 18px |
-| `blur.frost` | 20px |
+| `blur.panel` | 20px |
 | `blur.fade` | 24px |
 | `blur.haze` | 30px |
 | `keyframes.rise` | from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none} |

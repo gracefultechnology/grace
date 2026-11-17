@@ -6,21 +6,19 @@ import { AccountOverview } from "./AccountOverview.tsx";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import { SettingsApp, type SettingsAppProps, type SettingsPage } from "./SettingsApp.tsx";
-import { SettingsAbout } from "./SettingsAbout.tsx";
-import { voiceCredits, voiceCreditsIntro } from "./SettingsAbout.meta.tsx";
 import { SettingsBrightness } from "./SettingsBrightness.tsx";
 import { SettingsPrivacy } from "./SettingsPrivacy.tsx";
 import { savedDetails } from "./SettingsPrivacy.meta.tsx";
 import { SettingsTextSize } from "./SettingsTextSize.tsx";
 import { SettingsVoice } from "./SettingsVoice.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { WifiJoinForm } from "./WifiJoinForm.tsx";
 import { WifiNetworkList } from "./WifiNetworkList.tsx";
 import { current, nearby } from "./WifiNetworkList.meta.tsx";
 
 const icon = { size: 28, strokeWidth: 1.9, "aria-hidden": true } as const;
 
-export const onTablet = (story: () => ReactNode, open?: "Settings") => (
+export const onTablet = (story: () => ReactNode, open?: "Settings", over?: ReactNode) => (
   <TabletScreen>
     <Rail
       battery={75}
@@ -35,21 +33,20 @@ export const onTablet = (story: () => ReactNode, open?: "Settings") => (
       <RailButton icon={<House {...icon} />} label="Home" />
       <RailButton icon={<Volume2 {...icon} />} label="Volume" />
     </Rail>
-    {story()}
+    <ScreenSlot>{story()}</ScreenSlot>
+    {over}
   </TabletScreen>
 );
 
 export const overWifiPage = (story: () => ReactNode) =>
   onTablet(
     () => (
-      <>
-        <SettingsApp page="wifi" onClose={() => {}}>
-          <WifiNetworkList current={current} networks={nearby} />
-        </SettingsApp>
-        {story()}
-      </>
+      <SettingsApp page="wifi" onClose={() => {}}>
+        <WifiNetworkList current={current} networks={nearby} />
+      </SettingsApp>
     ),
     "Settings",
+    story(),
   );
 
 export const textSizes = ["Smaller", "Normal", "Larger", "Largest"];
@@ -67,7 +64,7 @@ const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "a
 export const meta: ComponentMeta<SettingsAppProps> = {
   args: { page: "text-size", onPageChange: pick, onClose: fn(), children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} /> },
   examples: {
-    Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake /> },
+    Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake="unavailable" /> },
     "Wi-Fi": { page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
     "Wi-Fi join": {
       page: "wifi",
@@ -80,9 +77,6 @@ export const meta: ComponentMeta<SettingsAppProps> = {
         <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} guide={{ targetId: "Largest", kind: "instruction", title: "Tap Largest", onClose: fn() }} />
       ),
     },
-    "Header Mode Large": { headerMode: "large" },
-    "Header Mode Large, Wi-Fi join": { headerMode: "large", page: "wifi", pageTitle: "Join Home Network", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
-    "Header Mode None": { headerMode: "none", page: "wifi", backLabel: "Wi-Fi", onBack: fn(), children: <WifiJoinForm network="Home Network" /> },
     "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
     "Brightness not changed": {
       page: "brightness",
@@ -92,14 +86,9 @@ export const meta: ComponentMeta<SettingsAppProps> = {
     Account: {
       page: "account",
       pages: appPages,
-      children: <AccountOverview access="active" account="margaret.s@example.com" subscription={{ plan: "Grace Plus", status: "Active", periodEnd: "Dec 1, 2026" }} onOpen={fn()} onSignOut={fn()} />,
+      children: <AccountOverview access="active" account="margaret.s@example.com" mailConnected support="help@example.com" onSignOut={fn()} />,
     },
     "Saved details": { page: "privacy", pages: appPages, children: <SettingsPrivacy details={savedDetails} /> },
-    "About with voice software": {
-      page: "about",
-      pages: appPages,
-      children: <SettingsAbout device="Grace tablet · Prototype" status="Everything is up to date." credits={voiceCredits} creditsIntro={voiceCreditsIntro} />,
-    },
   },
   decorator: (story) => onTablet(story, "Settings"),
   play: {
@@ -108,11 +97,6 @@ export const meta: ComponentMeta<SettingsAppProps> = {
       await expect(list.getByRole("button", { name: "Text size" }).getAttribute("aria-current")).toBe("page");
       await userEvent.click(list.getByRole("button", { name: "Wi-Fi" }));
       await expect(pick).toHaveBeenCalledWith("wifi");
-    },
-    "Header Mode Large": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
-      await expect(canvas.getAllByRole("heading", { name: "Text size" })).toHaveLength(1);
-      await expect(canvas.getByRole("button", { name: "Close Settings" })).toBeVisible();
     },
     "Not saved": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));

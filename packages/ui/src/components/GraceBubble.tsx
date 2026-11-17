@@ -43,8 +43,8 @@ export function GraceBubble({
   const words = !removed && (children != null || !!rest || !!stopped);
   return (
     <div className={cn("flex", className)} {...props}>
-      <div className="relative isolate ml-2 inline-flex max-w-[940px] items-start gap-3 rounded-window bg-bubble px-8 py-2.5 text-lead leading-8 font-medium [overflow-wrap:anywhere] text-grace-ink group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-bubble">
-        <svg aria-hidden width="34" height="26" viewBox="0 0 34 26" className="absolute bottom-0 -left-2 -z-10 fill-bubble group-data-[surface=frost]/grace:fill-card">
+      <div className="relative isolate ml-2 inline-flex max-w-[940px] items-start gap-3 rounded-window bg-bubble px-8 py-2.5 text-lead leading-8 font-medium [overflow-wrap:anywhere] text-grace-ink">
+        <svg aria-hidden width="34" height="26" viewBox="0 0 34 26" className="absolute bottom-0 -left-2 -z-10 fill-bubble">
           <path d={bubbleTail} />
         </svg>
         {activity === "speaking" && <VoiceBars />}

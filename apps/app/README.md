@@ -21,6 +21,7 @@ and traces (SPEC.md, "One spec tree").
 
 ## Android
 
+Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts.
 `pnpm android` (Node 26, JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and
 `JAVA_HOME`, or their usual install paths) writes `artifacts/{launcher,standalone}-debug.apk`.
 `--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
@@ -28,11 +29,45 @@ and traces (SPEC.md, "One spec tree").
 the working directory), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
-otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build produced
-with its SHA-256 and the signer the newest installed build-tools' `apksigner` verified; a debug
-build removes release APKs left by an earlier `--release` run. `--install` installs the launcher
-debug APK on the device adb picks and starts it. Both flavors' `versionCode` is `package.json`'s
+otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
+produced with its size, its SHA-256 and the signer the newest installed build-tools' `apksigner`
+verified; a debug build removes release APKs left by an earlier `--release` run. The build fails if
+an APK carries an on-device model or local inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
+`.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
+mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
+`llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
+`assets/` outside the web UI's `assets/public/`. Both flavors' `versionCode` is `package.json`'s
 version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
+
+### On the emulator
+
+```sh
+pnpm --filter @repo/app android --emulator <avd> --exercise home
+```
+
+builds, then attaches to the named AVD or boots it without a window and with host graphics
+(`-gpu host`; its log in `artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs
+the launcher debug APK, makes Grace Home (`cmd package set-home-activity`), waits up to 10 minutes for
+the HOME intent to resolve to her (an image's first-boot set-up, such as `google_apis`'s
+`googlesdksetup`, holds Home at a higher priority until it has run), starts Home and fails unless
+Grace is what Home opens, her WebView shows the Home screen (the rail's Home is current) and `dumpsys window` shows no "Application Not
+Responding". It prints the emulator's WebView package and version. Every `adb` call has a time limit
+(the boot 15 minutes, the install 5) and is killed when the command exits, and an emulator that exits
+before it boots fails the command with its log. An emulator the command booted is stopped when the
+command fails or is interrupted, and left running when it succeeds, for the next `--install`; stop it
+with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the same on an emulator that
+is already running and never stops it; it refuses any serial that is not an emulator's, so a tablet on
+USB is never touched.
+
+`--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket:
+an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible
+name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two minutes; a step
+with any other key or an empty name is refused before the build, and a tap fails when no visible thing
+or more than one has that name. A failed wait or step names the page's address, visibility, current
+rail item and opening text. Each feature adds its own file; `home.json` walks
+`spec/app/shell.md`, "Story: Reach everyday tasks from Home".
+
+RUNRECORD
 
 `scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and

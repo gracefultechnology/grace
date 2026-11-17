@@ -22,10 +22,6 @@ export const meta: ComponentMeta<AppHeaderProps> = {
   args: { title: "Calendar", icon: <Calendar size={26} strokeWidth={2} aria-hidden />, actions: calendarActions, onClose: close },
   examples: {
     "With Back": { title: "Doctor’s appointment", backLabel: "Calendar", onBack: back, actions: undefined },
-    "Large title": { mode: "large" },
-    "No title": { mode: "none" },
-    "Large title, collapsed": { mode: "large", collapsed: true },
-    "Split, collapsed": { mode: "large", collapsed: true, split: true, title: "Wi-Fi", actions: undefined, className: "ml-[310px]" },
   },
   decorator: (story) => (
     <div className="bg-gradient-frame-soft p-1.5">
@@ -33,7 +29,7 @@ export const meta: ComponentMeta<AppHeaderProps> = {
     </div>
   ),
   play: {
-    "Large title, collapsed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const button = within(canvasElement).getByRole("button", { name: "Close Calendar" });
       await userEvent.click(button);
       await expect(close).toHaveBeenCalled();

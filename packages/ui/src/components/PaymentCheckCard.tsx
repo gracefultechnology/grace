@@ -56,7 +56,7 @@ export function PaymentCheckCard({ site, title, message, onCheck, onOpenSite, on
       role="group"
       aria-label={heading}
       aria-busy={checking || undefined}
-      className={cn("flex flex-col gap-4 group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-float", className)}
+      className={cn("flex flex-col gap-4", className)}
       {...props}
     >
       <p className="m-0 text-title-sm leading-8 font-bold text-chrome">{heading}</p>

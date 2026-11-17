@@ -4,7 +4,6 @@ import { onTablet } from "./CalendarApp.meta.tsx";
 import { GraceActionLine } from "./GraceActionLine.tsx";
 import { GraceBubble } from "./GraceBubble.tsx";
 import { GraceDock } from "./GraceDock.tsx";
-import { LanguageChoice } from "./LanguageChoice.tsx";
 import { SecretField } from "./SecretField.tsx";
 import type { SetupStepProps } from "./SetupStep.tsx";
 import { UserBubble } from "./UserBubble.tsx";
@@ -17,10 +16,6 @@ const closed = fn();
 const dock = (turn: "margaret" | "listening" | "grace" = "margaret") => (
   <GraceDock value="" setup listening={turn === "listening"} quiet={turn === "grace"} placeholder={turn === "margaret" ? "Talk or tap to type" : ""} />
 );
-const languages = [
-  { value: "English", label: "English", lang: "en" },
-  { value: "Spanish", label: "Español", lang: "es" },
-];
 const networks = [
   { id: "home", value: "Smith Family Wi-Fi", detail: "Strong signal" },
   { id: "guest", value: "Smith Guest", detail: "Good signal" },
@@ -37,7 +32,6 @@ const connected = <GraceActionLine tone="result">Connected to Smith Family Wi-Fi
 export const meta: ComponentMeta<SetupStepProps> = {
   args: {
     progress: at("Saying hello", 1),
-    language: <LanguageChoice languages={languages} value="English" />,
     children: <GraceBubble>Hi, I’m Grace. I’ll help you with everyday things on this tablet. What’s your name?</GraceBubble>,
     dock: dock(),
     onAnswer: answered,
