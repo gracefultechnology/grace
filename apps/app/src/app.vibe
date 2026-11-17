@@ -11,6 +11,7 @@ import { agent } from "./agent.vibe"
 import { connector } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
 import { instances, reading } from "./instances.vibe"
+import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
 import { type SurfacePlugin, type WiFiPlugin, webView } from "./surfacePlugin.ts"
 import { pageHost } from "./page.vibe"
@@ -67,7 +68,7 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
-const mail = (cloud: CloudLink | undefined) => cloud === undefined ? signIns : Layer.provide(Layer.mergeAll(reading, signIns), Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced))
+const mail = (cloud: CloudLink | undefined) => cloud === undefined ? signIns : Layer.provide(Layer.mergeAll(reading, signIns, mailing), Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced))
 
 /** Everything the interface runs on, over `plugin`, the native page's, `wifi`, where the platform has them, and `cloud`, where Grace's agent answers. */
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, cloud?: CloudLink) {
