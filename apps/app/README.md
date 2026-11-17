@@ -51,7 +51,11 @@ inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
 `llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
-`assets/` outside the web UI's `assets/public/`. Upstream's payload still carries
+`assets/` outside the web UI's `assets/public/`. It also lists every class in the APK's dex
+(`dexdump`) and fails on any `ai.eliza.voice` class other than the cloud speech bridge's own
+(`SpeechStreamBridgePlugin`, `CloudSpeechWire` and the playback, audio focus and output classes) and
+on any class of ONNX Runtime, TensorFlow Lite, PyTorch, sherpa-onnx, MediaPipe or Vosk, and fails
+when the cloud speech bridge is missing. Upstream's payload still carries
 `assets/agent/llama-kernel-diagnostic.mjs`, a 3 KB script that only lists which llama.cpp files and
 kernels a directory holds; it loads no model or library, and the check lets it pass. Both flavors'
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
@@ -91,7 +95,12 @@ emulator's, so a tablet on USB is never touched.
 socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
 "<accessible name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two
 minutes; a step with any other key or an empty name is refused before the build, and a tap fails
-when no visible thing or more than one has that name. Three steps check the agent: `{ "agent": {
+when no visible thing or more than one has that name. `{ "call": "<Plugin>.<method>", "with": {
+… }, "returns": { … } }` calls that native plugin's method in the page and fails unless it resolves
+with a value holding everything `returns` names (nested objects compared the same way, other values
+exactly); with `"refuses": "<message>"` in place of `returns` it fails unless the call rejects with
+that message. `{ "key": "VOLUME_UP" }` or `"VOLUME_DOWN"` presses that hardware key (`input
+keyevent`). Three steps check the agent: `{ "agent": {
 "state": "<state>", "failure": "<cause>" } }` waits up to five minutes for the `EmbeddedAgent`
 bridge's status to have that state (and cause), and fails at once when the status is `failed` with
 another cause; the state is one of upstream's `unavailable`, `stopped`, `starting`, `running` and
@@ -103,7 +112,7 @@ background processes (`am kill`), fails unless her process is the same one, and 
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-and `agent.json` the agent service below.
+`agent.json` the agent service and `device-controls.json` speech and the device controls below.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
@@ -121,7 +130,8 @@ emulator it had started; a plain build has no handler and dies on the signal.
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
-manifests, `MainActivity.java`, `GraceAgentService.java`, `agent.json` and `res/`. Both flavors may
+manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceSpeechPlugin.java`,
+`GraceDevicePlugin.java`, `agent.json` and `res/`. Both flavors may
 ask for location and the camera, for a website, after the person's Allow.
 
 | Flavor | Is | `BuildConfig.IS_LAUNCHER` |
@@ -200,6 +210,36 @@ list, and reused by every later build. It refuses a `vendor/eliza` with local ch
 libraries go in as native libraries only: the inventory leaves out the payload's `agent/<abi>/`
 copy, which the generated host drops from the assets.
 
+### Speech and the device
+
+Speech is Cartesia through Eliza Cloud in both directions, with no model on the tablet.
+`GraceSpeech` (`GraceSpeechPlugin`) is Grace's subclass of upstream's `SpeechStreamBridgePlugin`,
+compiled from `plugin-local-inference/native/android/cloud-speech-bridge` (`eliza-cloud-speech` in
+`host.json`): the bridge with its playback, audio focus and output classes and OkHttp, and none of
+the module's inference session, JNI bridge, native library or model asset. Its methods and events are
+upstream's (`startCloudSpeech`, `setCloudSpeechMuted`, `speakCloudSpeech`, `cancelCloudSpeech`,
+`stopCloudSpeech`, `cloudSpeechEvent`; `plugin-local-inference/native/android/README.md`). The Eliza
+Cloud origin is fixed (`https://api.eliza.app`), whatever environment the page names. The microphone
+is Capacitor's `microphone` permission alias of `GraceSpeech`: `checkPermissions` reports it and
+`requestPermissions` shows Android's own prompt. The bridge captures the microphone natively; Grace's
+WebView never opens it, and the manifest leaves out `MODIFY_AUDIO_SETTINGS`, without which
+Capacitor's WebView client refuses any audio capture the page asks for. No credential reaches the
+speech bridge yet: until the Google sign-in stores one, every start is refused with "Cloud account
+unavailable" before anything is sent.
+
+`GraceDevice` (`GraceDevicePlugin`) changes the tablet itself, with no permission:
+
+| Call or event | Does |
+|---|---|
+| `getDevice()` | `{ volume: { step, min, max }, brightness: { percent }, battery: { percent, charging }, screenOn }`; `brightness.percent` is absent until Grace sets it, and `battery.percent` when Android does not report it |
+| `setVolume({ step })` | sets media volume to that step of the device's own (`min` to `max`, typically 0 to 15 or 25), with no Android volume panel, and resolves with the volume read back |
+| `setBrightness({ percent })` | sets the brightness of Grace's window (0 to 100, applied while her window shows), no system setting, and resolves with it read back |
+| `volume` event | the volume read back after a hardware volume key, which `MainActivity` turns into one step with no volume panel, and on every resume |
+| `screen` event | `{ on }` when the screen sleeps or wakes |
+
+Speech plays with the assistant usage, which AOSP maps to the media volume. Mapping the percent the
+Settings show to a device step is the page's work.
+
 ### Why the host is as it is
 
 - The web UI is Capacitor's bridge WebView drawn over the website, which ElizaSurfaceManager keeps
@@ -218,7 +258,7 @@ copy, which the generated host drops from the assets.
   animation redraws the window at the display's full rate: about 1.4 cores at 90 Hz on a 3.9 GB
   tablet. Where the display has a 60 Hz mode at its current resolution the window asks for it, again
   after a configuration change; elsewhere it clears its request.
-- `RECORD_AUDIO` is for spoken replies and Talk, asked for at first use. A website's camera and
+- `RECORD_AUDIO` is for Talk, asked for natively through `GraceSpeech`. A website's camera and
   location are asked for after the person's Allow and Android's own prompt
   (`spec/app/websiteRequests.md`); the launcher's Wi-Fi scan needs location too. Grace opts out of
   Android's camera compatibility rotation, which turned the display to portrait when a website opened

@@ -28,7 +28,7 @@ const forbiddenEntry = new RegExp([
   String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
   String.raw`^assets/(?!public/)([^/]+/)*(tts|asr|models?)/`,
 ].join("|"), "i");
-const cloudSpeechClass = /^Lai\/eliza\/voice\/(SpeechStreamBridgePlugin|CloudSpeechWire|AudioTrackSpeechOutput|SpeechAudioFocus|SpeechAudioFocusPolicy|SpeechPcmQueue|StreamingSpeechPlayback|VoiceLatencyTrials)[;$]/;
+const cloudSpeechClass = /^Lai\/eliza\/voice\/(cloud\/R|SpeechStreamBridgePlugin|CloudSpeechWire|AudioTrackSpeechOutput|SpeechAudioFocus|SpeechAudioFocusPolicy|SpeechPcmQueue|StreamingSpeechPlayback|VoiceLatencyTrials)[;$]/;
 const inferenceClass = /^L(ai\/eliza\/voice\/|ai\/onnxruntime\/|org\/tensorflow\/lite\/|org\/pytorch\/|com\/k2fsa\/|com\/google\/mediapipe\/|org\/vosk\/)/;
 
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, "utf8"));
