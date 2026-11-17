@@ -20,7 +20,6 @@ const cloud = inject("cloud");
 const gmail = "owner@grace.test";
 const outlook = "margaret@outlook.com";
 
-/** Margaret allows the tablet on Outlook's own page, as the fake serves it. */
 async function allowOutlook(key: string) {
   const started = await fetch(`${cloud}/api/v1/eliza/connections/outlook/sessions`, {
     method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
@@ -29,7 +28,6 @@ async function allowOutlook(key: string) {
   await fetch(pageUrl, { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
 }
 
-/** The accounts the tablet already keeps: Gmail and Outlook, each allowed on its company's own page. */
 function kept(): Accounts {
   const connected = (a: Accounts, provider: Provider, address: string, name: string) => {
     const chosen = chooseProvider(a, provider, "AccountPerson");
@@ -50,8 +48,7 @@ it("See all my email in one place", async () => {
     w.send({ type: "setAvailability", availability: { connection: availability, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed } }, "Host")))));
   const person = (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson"))));
 
-  // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes": each account's mailbox fills from its own company,
-  // and Home shows the newest unread of them.
+  // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"
   const card = page.getByRole("button", { name: /^Email/ });
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
   // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"
@@ -78,21 +75,33 @@ it("See all my email in one place", async () => {
   await act(() => userEvent.click(row("All inboxes")));
   await expect.element(clinic).toBeVisible();
 
-  // spec/app/email.md, "Each search or content read needs current access and the user's choice": opening reads the message from its company.
+  await act(() => userEvent.fill(page.getByRole("searchbox", { name: "Search email" }), "clinic"));
+  await expect.element(page.getByRole("searchbox", { name: "Search email" })).toHaveValue("clinic");
+  await expect.element(clinic).toBeVisible();
+  await expect.element(church).not.toBeInTheDocument();
+  await act(() => userEvent.fill(page.getByRole("searchbox", { name: "Search email" }), ""));
+  await expect.element(church).toBeVisible();
+
+  await host("Offline");
+  await expect.element(page.getByText("No internet right now")).toBeVisible();
+  await expect.element(clinic).toBeVisible();
+  await host("Online");
+  await expect.element(page.getByText("No internet right now")).not.toBeInTheDocument();
+
+  // spec/app/email.md, "Each search or content read needs current access and the user's choice"
   await act(() => userEvent.click(clinic));
   await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
   await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
   await act(() => userEvent.click(page.getByRole("button", { name: "Back to Inbox" })));
   await expect.element(row("Gmail 3")).toBeVisible();
 
-  // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account": Outlook's sign-in ends,
-  // its banner says so, and its mail stays on the tablet.
+  // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"
   await Effect.runPromise(Effect.provide(expire(cloud, secret, outlook), client));
   await act(() => userEvent.click(church));
   await expect.element(page.getByText("Outlook needs you to sign in again")).toBeVisible();
   await expect.element(church).toBeVisible();
 
-  // spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere": Outlook's Email switch goes off.
+  // spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
   await person({ type: "setUse", id: 2, use: { mail: false, calendar: true, contacts: true } });
   await expect.element(church).not.toBeInTheDocument();
   await expect.element(page.getByText("Outlook needs you to sign in again")).not.toBeInTheDocument();

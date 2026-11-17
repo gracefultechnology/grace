@@ -135,7 +135,7 @@ function Screen() {
             <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), events: [], ...visit("Calendar") }}
               email={{
-                messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: !accounts || mailAccounts(accounts).length === 0,
+                messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
               }}
               internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}

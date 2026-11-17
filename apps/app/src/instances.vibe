@@ -36,6 +36,9 @@ export const instances = Layer.effect(Instances, effect {
   const mailRuntimes = new Map<number, MailRuntime>()
   const calendarRuntimes = new Map<number, CalendarRuntime>()
   const contents = new Map<string, MailContent>()
+  try Effect.addFinalizer(() => effect {
+    for (const runtime of [...mailRuntimes.values(), ...calendarRuntimes.values()]) try runtime.disposeEffect
+  })
 
   effect function listed(id: number) {
     if (id !== tablet && !(try registry.get()).accounts.some((a) => a.id === id)) throw new NotAnAccount({ id })
@@ -78,7 +81,8 @@ export const instances = Layer.effect(Instances, effect {
       mail(id) catch () => undefined
       calendar(id) catch () => undefined
     }
-    for (const id of (try SynchronizedRef.get(mails)).keys()) if (!ids.has(id)) try forget(id)
+    const opened = new Set([...(try SynchronizedRef.get(mails)).keys(), ...(try SynchronizedRef.get(calendars)).keys()])
+    for (const id of opened) if (id !== tablet && !ids.has(id)) try forget(id)
   }
 
   const stale = (try Effect.orDie(store.keys)).flatMap((key) => {
@@ -164,7 +168,9 @@ export const reading = Layer.effectDiscard(effect {
       if (record.status !== "ChangePending" || record.pending === "NoMessageChange" || (try Ref.get(sent)).has(key)) continue
       try Ref.update(sent, (all) => new Set(all).add(key))
       const op = { identity: record.identity, change: record.pending, revision: record.revision, version: shelf.content(id, record.identity.ref)?.version ?? "" }
-      const receipt: ChangeReceipt | undefined = mail.change(op) catch () => undefined
+      const receipt: ChangeReceipt | undefined = mail.change(op) catch (e) => match (e) {
+        when NeedsSignIn: undefined;
+      }
       if (receipt === undefined) return try expired(box)
       box.send({ type: "completeMessageChange", messageReceipt: receipt }, "MailConnector") catch () => undefined
     }
