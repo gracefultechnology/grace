@@ -63,7 +63,7 @@ pure def openSource(registry: A::Accounts, sources: List[MailSource]): int =
   sources.select(s => showsMail(registry, s.account) and isOpen(s.mailbox)).nthOr(0, noSource).account
 pure def lawStatusFollowsTheMailbox(mailbox: E::Mailbox): bool =
   (accountStatus(mailbox) == MailNeedsSignIn iff needsSignIn(mailbox)) and
-  (accountStatus(mailbox) == MailReady implies E::readable(mailbox)) and
+  (accountStatus(mailbox) == MailReady implies mailbox.connection == E::Connected) and
   (accountStatus(mailbox) == MailSyncing implies mailbox.connection == E::Connected)
 ```
 
