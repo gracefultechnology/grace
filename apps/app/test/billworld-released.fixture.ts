@@ -103,7 +103,7 @@ export async function releasedBillworld(directory: string) {
   const offset = mappings.findIndex(([id]) => id === releasedId);
   if (offset < 0) throw new Error("The read-only Malden task is missing from the upstream release");
   const [, [siteId, taskId]] = mappings[offset];
-  const module = await import(pathToFileURL(join(tree, "billworld/integration/https-episode-host.mjs")).href);
+  const module: unknown = await import(pathToFileURL(join(tree, "billworld/integration/https-episode-host.mjs")).href);
   const { startHttpsEpisode } = Schema.decodeUnknownSync(Schema.Struct({ startHttpsEpisode: Callable }))(module);
 
   return {
