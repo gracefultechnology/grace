@@ -3,14 +3,25 @@
 The replacement `prototype/Grace Prototype.html` is authoritative for these
 application flows. It supersedes the older bill-pay-only file, whose Email and
 Calendar cards were placeholders. Source ranges below refer to the replacement
-file. This phase implements models and specifications, not UI/provider code.
+file.
+
+This mapping dates from the models-only phase (13 November 2026). The email
+and calendar build, not yet merged, rebuilds these flows from the updated
+prototype: one account per provider rather than Google only, a mailbox
+instance per account, Grace's mail and calendar actions through one request
+and consent model, and no Print. Until it merges, this table describes
+`email`, `emailItem`, `calendar` and `calendarView` on develop. The owner's
+decisions in the [acceptance list](implementation-acceptance.md#decisions-and-their-defaults)
+win where they differ: Grace dismisses a reminder but never snoozes one
+(decision 19), and Email and Calendar act from any screen (decisions 17
+and 19).
 The explicit user requirement for Calendar → bill payment remains an extension:
 the replacement Calendar JavaScript has no payment action.
 
 | ID | Requirement and source | Formal home |
 |---|---|---|
 | EMAIL-01 | Official provider/account choice, verified callback, separate read/send grants, revoke/expire/cancel and stale callback fencing. Legacy ACC-01–06 and current INV 01. | `email.md`: `connect`, `authorize`, `endConnection`, account/generation invariants |
-| EMAIL-02 | Home opens Email; Inbox, Sent, Drafts and Trash; unread badges, current-folder search over sender/subject/body, distinct empty-folder/no-match states. HTML 1942–1971, 2179–2180, 2235. | `email.md` mailbox read/view state; `emailItem.md` `visibleMessages`, `unreadCount`, `searchMessages`, identity/query laws |
+| EMAIL-02 | Home opens Email; Inbox, Sent, Drafts and Trash; unread badges, current-folder search over sender/subject/body, distinct empty-folder/no-match states. HTML 1942–1971, 2179–2180, 2235. | `email.md` mailbox read/view state; `emailItem.md` `visibleMessages`, `unreadCount` and the scoped folder and search results; the current search text is the mailbox's `query`, bound into each listing's `ListingScope` |
 | EMAIL-03 | Open only the selected current account's returned message/attachment; read errors retry without invented content. HTML 1945–1951, 1964–1971, 2180–2187. | `readMail`, `receiveMessage`, atomic `ReadReceipt`/`readResult`, source/generation/selection invariants |
 | EMAIL-04 | Photo gallery Back/Previous/Next at actual bounds; PDF Back/Open/Print; Save photo, Save all photos, Save PDF; no fixed page count or filename identity. HTML 1945–1951, 1965–1967, 2182–2187. | `photoAssets`, `photoPosition`, `movePhoto`, `backToMessage`, `selectedAssets`, `mayExportAttachments`; `files.md` content/save/print outcomes |
 | EMAIL-05 | New email starts with recipient choice; To/Cc/Bcc add/remove; subject/body edit; attach via camera/photos/file picker; remove attachment; arbitrary real contacts. HTML 1953–1963, 2191–2204. | `DraftContent`, `startDraft`, `editDraft`, `attachAsset`, `removeAsset`; all changes invalidate revision approval |

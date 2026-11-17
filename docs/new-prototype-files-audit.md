@@ -7,6 +7,11 @@ provider operations. The prototype is authoritative for the described screens
 and interaction count; the PRD's privacy, user-control and evidence rules still
 apply to its simulated shortcuts.
 
+This audit dates from the models-only phase (13 November 2026). Where it
+differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults),
+the decisions win: no wake detector is installed (decision 5), and the email
+and calendar build, not yet merged, removes Print from Files.
+
 ## Files: observed screens, data and transitions
 
 | Surface or action | Actual prototype behavior | Source lines |
@@ -109,9 +114,10 @@ until acknowledged, including Undo and returning to a previous value during
 an in-flight write.
 
 The prototype also introduces “Listen for Hey Grace” while asleep and a
-simulated wake action (2050; 2255–2274). The user's explicit approval supersedes
-the older PRD's VOICE 01 exclusion. Preferences includes the persisted
-wake-enabled choice, defaulting on as in the prototype. The
+simulated wake action (2050; 2255–2274). The user approved it, and the later
+direction of no models on the tablet keeps it out of the MVP: Settings shows
+it as not available. Preferences still holds the persisted wake-enabled
+choice, and the
 [wake model](../spec/app/wake.md) and [workspace](../spec/app/workspace.md)
 coordinate permission checks, capture and cancellation. Wake detection does
 not bypass active conversation controls or turn website audio into user input.
@@ -120,8 +126,7 @@ not bypass active conversation controls or turn website audio into user input.
 
 The formal pipeline checks generation, simulation, proof and replay. Isolated
 proof runs establish individual model obligations during development; the
-combined root check establishes the current spec tree together. Application
-code is not migrated in this phase.
+combined root check establishes the current spec tree together.
 
 The new Ask Grace handler also supersedes the earlier opening-layout rule:
 `openGrace` opens expanded from every surface, a paused mid-task reopening uses
