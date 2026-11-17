@@ -1,0 +1,143 @@
+# Who asked, and what she agreed to
+
+A leaf library with no state of its own. Every surface where Grace can act,
+Email, Calendar, Files, the browser, Settings and a task, takes the same two
+records: a `Request`, which says which turn of the
+[conversation](./conversation.md) asked for an action and where that turn came
+from, and a `Consent`, which says that the person agreed to one revision of one
+owner's proposal. Neither record carries what is being done: a mail draft, an
+appointment or a payment stays with the spec that owns it. Each owner keeps the
+revision rule it already has, and that rule is what makes a changed proposal
+void a consent: Email's `alwaysApprovalIsCurrent`,
+`stepSendingNeedsCurrentApproval` and `stepOnlyThePersonApproves`
+([email](./email.md)), Calendar's `alwaysSaveApprovalIsCurrent`
+([calendar](./calendar.md)) and its whole-entry comparison in
+[calendarView](./calendarView.md), payment's `stepOnlyApprovedSubmission`
+([payment](./payment.md)), memory's `stepFillUsesCurrentApproval`
+([memory](./memory.md)), and the workspace's `lawCorrectedSpeechCannotApprove`
+and `lawLateSpeechCannotApprove` ([workspace](./workspace.md)). No shared
+pending-request, saving or outcome record is built here.
+
+## Story: Only her own words ask Grace to act
+
+> As a person who lets Grace read my mail and websites for me, I want only what
+> I type, say or tap to ask her to do something, so that words in an email, on
+> a page or in a file can tell me things but can never make her act.
+
+### A request records its turn, the work it belongs to and where the turn came from
+
+A turn comes from the person when she typed it, said it or tapped an answer.
+Words heard while a page plays sound are the page's, not hers. Every other
+turn is made by the host: from a page, an email, a file, a device event, or
+Grace's own words, such as her opening line or her report of what she did on
+another surface. A host turn may still be read and answered.
+
+```quint
+type Origin = Typed | Spoken | Tapped | FromPage | FromEmail | FromFile | FromDevice | FromGrace
+type Request = { generation: int, workVersion: int, origin: Origin }
+type Moment = { generation: int, workVersion: int }
+
+pure def fromPerson(origin: Origin): bool = origin == Typed or origin == Spoken or origin == Tapped
+```
+
+### Only a current request from the person's own turn may ask for an action on any surface
+
+An action is admitted only for a request from the person's own turn, in the
+conversation's current generation and for the current work. A turn the host
+made can produce words and guidance, and no action and no consent on any
+surface.
+
+```quint
+pure def mayAct(request: Request, now: Moment): bool =
+  fromPerson(request.origin) and request.generation == now.generation and request.workVersion == now.workVersion
+pure def canConsent(request: Request, now: Moment, stamp: int): bool = mayAct(request, now) and stamp > 0
+
+pure def lawHostTurnNeverAuthorizes(request: Request, now: Moment, stamp: int): bool =
+  not(fromPerson(request.origin)) implies (not(mayAct(request, now)) and not(canConsent(request, now, stamp)))
+
+pure val requestValues = Set(
+  { generation: 1, workVersion: 1, origin: Typed }, { generation: 1, workVersion: 1, origin: Spoken },
+  { generation: 1, workVersion: 1, origin: Tapped }, { generation: 1, workVersion: 1, origin: FromPage },
+  { generation: 1, workVersion: 1, origin: FromEmail }, { generation: 1, workVersion: 1, origin: FromFile },
+  { generation: 1, workVersion: 1, origin: FromDevice }, { generation: 1, workVersion: 1, origin: FromGrace },
+  { generation: 0, workVersion: 1, origin: Typed }, { generation: 1, workVersion: 2, origin: Spoken })
+pure val nowValues = Set({ generation: 1, workVersion: 1 }, { generation: 2, workVersion: 1 })
+pure val stampValues = Set(0, 1, 2)
+```
+
+## Story: Each yes counts once, for what she was shown
+
+> As a person who says yes to something Grace proposes, I want that yes to
+> count once, for exactly the version I was shown, and to keep counting while
+> I look at another app, but not after I say something new.
+
+### A proposal is known by its owner, its item and its revision
+
+The subject names the owner and the item within it; the revision is the
+owner's, and changes whenever what the person would agree to changes. Where
+the proposal is shown is not part of it, so moving between surfaces or
+opening a popover from the rail keeps it. A correction, a cancellation, a new
+proposal, New conversation and Close Grace retire it.
+
+```quint
+type Owner = EmailOwner | CalendarOwner | FilesOwner | BrowserOwner | SettingsOwner | MemoryOwner | TaskOwner
+type Subject = { owner: Owner, item: str }
+type Proposal = { subject: Subject, revision: int }
+type Interruption = SurfaceVisit | RailPopover | Correction | Cancellation | NewProposal | NewConversation | GraceClosed
+
+pure def retires(interruption: Interruption): bool = match interruption {
+  | SurfaceVisit => false
+  | RailPopover => false
+  | _ => true
+}
+
+pure def lawVisitsKeepTheProposal(interruption: Interruption): bool =
+  (interruption == SurfaceVisit or interruption == RailPopover) iff not(retires(interruption))
+```
+
+### A consent names one revision of one proposal and the turn that gave it
+
+It is made only where `canConsent` admits her turn. The stamp numbers her answer: the host gives each answer a new,
+larger stamp. The consent keeps the conversation generation of the turn that
+gave it and the subject and revision she was shown.
+
+```quint
+type Consent = { stamp: int, generation: int, subject: Subject, revision: int }
+
+pure def consent(request: Request, stamp: int, proposal: Proposal): Consent =
+  { stamp: stamp, generation: request.generation, subject: proposal.subject, revision: proposal.revision }
+```
+
+### A consent is used once, and a newer turn voids it
+
+The owner holds the proposal it is waiting on, the conversation generation it
+was asked in and the last stamp it used. A consent is usable only in that
+generation, for that subject and revision, and with a stamp it has not used.
+Using it records the stamp, so the same yes cannot act twice; any newer turn
+of the conversation makes it void.
+
+```quint
+type Held = { generation: int, proposal: Proposal, spent: int }
+
+pure def canUse(given: Consent, held: Held): bool =
+  given.generation == held.generation and given.subject == held.proposal.subject and
+  given.revision == held.proposal.revision and given.stamp > held.spent
+pure def spend(given: Consent, held: Held): Held = { ...held, spent: given.stamp }
+
+pure def lawConsentIsUsedOnce(given: Consent, held: Held): bool =
+  canUse(given, held) implies not(canUse(given, spend(given, held)))
+pure def lawNewerTurnVoidsConsent(given: Consent, held: Held): bool =
+  given.generation < held.generation implies not(canUse(given, held))
+
+pure val letter: Subject = { owner: EmailOwner, item: "reply" }
+pure val visit: Subject = { owner: CalendarOwner, item: "visit" }
+pure val givenValues = Set(
+  { stamp: 1, generation: 1, subject: letter, revision: 1 }, { stamp: 2, generation: 1, subject: letter, revision: 1 },
+  { stamp: 1, generation: 1, subject: letter, revision: 2 }, { stamp: 1, generation: 1, subject: visit, revision: 1 },
+  { stamp: 1, generation: 0, subject: letter, revision: 1 })
+pure val heldValues = Set(
+  { generation: 1, proposal: { subject: letter, revision: 1 }, spent: 0 },
+  { generation: 1, proposal: { subject: letter, revision: 1 }, spent: 1 },
+  { generation: 2, proposal: { subject: letter, revision: 1 }, spent: 0 },
+  { generation: 1, proposal: { subject: visit, revision: 1 }, spent: 0 })
+```
