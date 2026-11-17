@@ -1,96 +1,92 @@
-// spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Story: Save a file a website offers"; spec/app/websiteRequests.md, "Story: Decide what a website may use"
-// What the shown page's website asks, one question at a time, over the top of the page; and the
-// downloads and the apps that did not open, until the person closes them.
-import { Button, Card, CardFooter, CardTitle, Spinner, TextField } from "@repo/ui";
+// spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Story: Save a file a website offers"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
+import {
+  BrowserNoticeDialog, Button, Card, type ExternalAppKind, ExternalAppDialog, RefusedSignInDialog, type SiteDevice, SitePermissionDialog,
+  Spinner, WebsiteDownloadDialog, WebsiteFileRequestDialog, type WebsiteMessageKind, WebsiteMessageDialog,
+} from "@repo/ui";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
-import { useState } from "react";
-import { type Ask, type DownloadRecord, type Kinds, type Opening, type WebsiteRequest, presented } from "../gen/app__websiteRequests.ts";
+import type { ReactNode } from "react";
+import { type Ask, type DownloadStatus, type Kinds, type MessageKind, type WebsiteRequest, presented } from "../gen/app__websiteRequests.ts";
+import { tabUrl } from "../gen/app__browser.ts";
 import { OverPage } from "./PageLayer.tsx";
-import { useWebsiteRequests } from "./useApp.ts";
+import { useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
-/** The site an address names, as a question, a tab or a recent website shows it. */
-export function site(origin: string): string {
-  try { return new URL(origin).hostname; } catch { return origin; }
+export function site(address: string): string {
+  return URL.parse(address)?.hostname || address;
 }
 
-function devices(kinds: Kinds): string {
-  const named = [kinds.camera && "camera", kinds.microphone && "microphone", kinds.location && "location"].filter(Boolean);
-  return named.length > 1 ? `${named.slice(0, -1).join(", ")} and ${named.at(-1)}` : String(named[0]);
-}
+const messageKinds: Record<MessageKind, WebsiteMessageKind> = { AlertMessage: "alert", ConfirmMessage: "confirm", PromptMessage: "prompt", LeavePageMessage: "beforeunload" };
 
-/** The question, and the words of its two answers: decline first, accept last; no accept where it cannot. */
-function wording(ask: Ask, said: string): { title: string; words?: string; no: string; yes?: string } {
-  switch (ask.tag) {
-    case "WebsiteMessage":
-      if (ask.dialog === "LeavePageMessage") return { title: "Leave this page?", words: said, no: "Stay", yes: "Leave" };
-      return { title: "This website says", words: said, no: "Cancel", yes: "OK" };
-    case "DownloadOffer": return { title: `Save ${ask.fileName}?`, no: "Don't save", yes: "Save" };
-    case "FileChoice": return { title: "Choose a file to send?", no: "Cancel", yes: "Choose a file" };
-    case "SitePermission": return { title: `Let ${site(ask.origin)} use your ${devices(ask.kinds)}?`, no: "Don't allow", yes: "Allow" };
-    case "OtherApp":
-      if (ask.handoff === "RefusedLink") return { title: "This link can't open here.", no: "Close" };
-      return { title: ask.handoff === "DialApp" ? "Open the phone to call?" : ask.handoff === "SendToApp" ? "Open an app to send a message?" : "Open another app?", words: said.replace(/^[a-z]+:/i, ""), no: "Cancel", yes: "Open" };
-    case "BlockedSignIn": return { title: `${ask.provider} sign-in opens in your browser.`, no: "Cancel", yes: "Continue" };
-  }
-}
+const devices = (kinds: Kinds): SiteDevice[] => (["camera", "microphone", "location"] as const).filter((kind) => kinds[kind]);
 
-/** What did not open, or what Android did not allow (spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"). */
+const schemes: Record<string, ExternalAppKind> = { tel: "call", mailto: "email", sms: "message", smsto: "message", geo: "map", market: "store" };
+const appKind = (link: string): ExternalAppKind => schemes[link.slice(0, link.indexOf(":")).toLowerCase()] ?? "other";
+
 function failure(ask: Ask): string {
   switch (ask.tag) {
     case "BlockedSignIn": return "Your browser didn't open.";
     case "FileChoice": return "Your files didn't open.";
-    case "SitePermission": return `Android didn't allow your ${devices(ask.kinds)}.`;
+    case "SitePermission": return `Android didn't allow your ${devices(ask.kinds).join(" and ")}.`;
     default: return "That app didn't open.";
   }
 }
 
-const downloadMark = { Saving: <Spinner size="sm" label="Saving" />, Saved: <CircleCheck aria-label="Saved" className="text-primary" />, SaveFailed: <CircleAlert aria-label="Not saved" className="text-destructive" />, NotSaved: <CircleAlert aria-label="Not saved" className="text-muted-foreground" /> };
+const downloadMark: Record<DownloadStatus, ReactNode> = {
+  Saving: <Spinner size="sm" label="Saving" />,
+  Saved: <CircleCheck aria-label="Saved" className="text-primary" />,
+  SaveFailed: <CircleAlert aria-label="Not saved" className="text-destructive" />,
+  NotSaved: <CircleAlert aria-label="Not saved" className="text-muted-foreground" />,
+};
 
-/** The question in front of the person, with the text they type for a prompt; keyed by its request, so a draft never carries over. */
-function Question({ request, said, answer }: { request: WebsiteRequest; said: string; answer: (accept: boolean, text: string) => void }) {
-  const [text, setText] = useState("");
-  const asked = wording(request.ask, said);
-  const prompt = request.ask.tag === "WebsiteMessage" && request.ask.dialog === "PromptMessage";
-  const alert = request.ask.tag === "WebsiteMessage" && request.ask.dialog === "AlertMessage";
-  return (
-    <Card role="alertdialog" aria-label={asked.title}>
-      <CardTitle>{asked.title}</CardTitle>
-      {asked.words && <p className="text-body break-words whitespace-pre-line text-muted-foreground">{asked.words}</p>}
-      {prompt && <TextField label="Your answer" value={text} onChange={(e) => setText(e.target.value)} />}
-      <CardFooter>
-        {!alert && <Button variant="capsule" size="pill" onClick={() => answer(false, "")}>{asked.no}</Button>}
-        {/* spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text": only a prompt takes text. */}
-        {asked.yes && <Button variant="prominent" size="pill" onClick={() => answer(true, prompt ? text : "")}>{asked.yes}</Button>}
-      </CardFooter>
-    </Card>
-  );
+type QuestionProps = { request: WebsiteRequest; website: string; said: string; waiting: boolean; open: boolean; answer: (accept: boolean, text?: string) => void };
+
+function Question({ request: { ask }, website, said, waiting, open, answer }: QuestionProps) {
+  const yes = () => answer(true), no = () => answer(false);
+  switch (ask.tag) {
+    case "WebsiteMessage": return <WebsiteMessageDialog open={open} kind={messageKinds[ask.dialog]} site={website} message={said} onAnswer={answer} />;
+    case "DownloadOffer": return <WebsiteDownloadDialog open={open} offer={{ site: website, name: ask.fileName }} onSave={yes} onDecline={no} />;
+    case "FileChoice": return <WebsiteFileRequestDialog open={open} site={website} onChoose={yes} onCancel={no} />;
+    case "SitePermission": return <SitePermissionDialog open={open} site={site(ask.origin)} devices={devices(ask.kinds)} waiting={waiting} onAllow={yes} onDeny={no} />;
+    case "OtherApp": return <ExternalAppDialog open={open} kind={appKind(said)} target={said.replace(/^[a-z]+:/i, "")} canOpen={ask.handoff !== "RefusedLink"} onContinue={yes} onCancel={no} />;
+    case "BlockedSignIn": return <RefusedSignInDialog open={open} provider={ask.provider} site={website} onContinue={yes} onCancel={no} />;
+  }
 }
 
 /** @model spec/app/websiteRequests.md */
 export function WebsiteRequests() {
   const { requests, can, send, said } = useWebsiteRequests();
-  if (!requests) return null;
+  const { workspace } = useWorkspace();
+  if (!requests || !workspace) return null;
   const request = presented(requests);
-  const notices = [
-    ...requests.downloads.map((d: DownloadRecord) => ({ key: `d${d.id}`, mark: downloadMark[d.status], title: d.fileName, close: d.status === "Saving" ? undefined : { type: "dismissDownload", id: d.id } as const })),
-    ...requests.openings.filter((o: Opening) => o.failed).map((o: Opening) => ({ key: `o${o.id}`, mark: downloadMark.SaveFailed, title: failure(o.ask), close: { type: "dismissOpening", id: o.id } as const })),
-  ];
-  if (request.id === 0 && notices.length === 0) return null;
-  const answer = (accept: boolean, text: string) => {
+  const failed = requests.openings.find((o) => o.failed);
+  const tab = workspace.browser.tabs.find((t) => t.id === request.tab);
+  const answer = (accept: boolean, text = "") => {
     const event = { type: "answer", id: request.id, choice: { accept, text } } as const;
     if (can(event)) void send(event);
   };
-
+  const close = (event: Parameters<typeof send>[0]) => () => { if (can(event)) void send(event); };
   return (
-    <OverPage className="absolute top-6 left-1/2 z-[2] flex w-[560px] -translate-x-1/2 flex-col gap-3">
-      {request.id > 0 && <Question key={request.id} request={request} said={said(request.id)} answer={answer} />}
-      {notices.map(({ key, mark, title, close }) => (
-        <Card key={key} className="flex-row items-center gap-4 py-4">
-          {mark}
-          <span className="min-w-0 flex-1 truncate text-body font-bold">{title}</span>
-          {close && <Button variant="plain" size="compact-icon" aria-label="Close" onClick={() => { if (can(close)) void send(close); }}><X aria-hidden /></Button>}
-        </Card>
-      ))}
-    </OverPage>
+    <>
+      {request.id > 0 && (
+        <OverPage key={request.id} className="fixed inset-0">
+          {(drawn) => <Question open={drawn} request={request} website={site(tab ? tabUrl(tab) : "")} said={said(request.id)} waiting={requests.asking.some((a) => a.id === request.id)} answer={answer} />}
+        </OverPage>
+      )}
+      {request.id === 0 && failed && (
+        <OverPage key={`o${failed.id}`} className="fixed inset-0">
+          {(drawn) => <BrowserNoticeDialog open={drawn} title={failure(failed.ask)} onClose={close({ type: "dismissOpening", id: failed.id })} />}
+        </OverPage>
+      )}
+      {requests.downloads.length > 0 && (
+        <OverPage className="absolute top-6 left-1/2 z-[2] flex w-[560px] -translate-x-1/2 flex-col gap-3">
+          {requests.downloads.map((d) => (
+            <Card key={d.id} className="flex-row items-center gap-4 py-4">
+              {downloadMark[d.status]}
+              <span className="min-w-0 flex-1 truncate text-body font-bold">{d.fileName}</span>
+              {d.status !== "Saving" && <Button variant="plain" size="compact-icon" aria-label="Close" onClick={close({ type: "dismissDownload", id: d.id })}><X aria-hidden /></Button>}
+            </Card>
+          ))}
+        </OverPage>
+      )}
+    </>
   );
 }
