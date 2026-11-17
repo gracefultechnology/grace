@@ -42,8 +42,9 @@ refuses a partial set, and the build fails if they are set and a release comes o
 otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
 produced with its processor type, size, SHA-256 and the signer the newest installed build-tools'
 `apksigner` verified; a debug build removes release APKs left by an earlier `--release` run. The build
-fails unless an APK carries the agent (`assets/agent/agent-bundle.js`, `assets/agent-runtime.inventory`
-and `libeliza_bun.so` for exactly one processor type), and if it carries an on-device model or local
+fails unless an APK carries the agent (`assets/agent/agent-bundle.js`, `libeliza_bun.so` for exactly
+one processor type, `assets/agent-runtime.inventory` and every file that inventory lists, which the
+service unpacks before it starts), and if it carries an on-device model or local
 inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
@@ -111,8 +112,8 @@ emulator it had started; a plain build has no handler and dies on the signal.
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
-manifests, `MainActivity.java`, `GraceAgentService.java`, `agent.json` and `res/`. Both flavors may ask for location and the camera, for a
-website, after the person's Allow.
+manifests, `MainActivity.java`, `GraceAgentService.java`, `agent.json` and `res/`. Both flavors may
+ask for location and the camera, for a website, after the person's Allow.
 
 | Flavor | Is | `BuildConfig.IS_LAUNCHER` |
 |---|---|---|
@@ -131,11 +132,20 @@ its text and embeddings go to Eliza Cloud and it registers no local model handle
 the service with its `specialUse` foreground type (a `dataSync` service is ended by Android 15 after
 six hours a day) and its permissions. `GraceAgentService` is Grace's subclass, which only gives the
 notification her monochrome G (`res/drawable/notification_icon.xml`; a full-colour icon shows as a
-white square). `MainActivity` starts it in `onCreate`, before the first WebView frame, and registers
+white square), shown once Grace holds `POST_NOTIFICATIONS`; without it the service still runs in the
+foreground and Android lists it only under its active apps. `MainActivity` starts it in `onCreate`, before the first WebView frame, and registers
 its bridge, `EmbeddedAgent`, which reaches the agent over its loopback socket, so the page keeps
 refusing cleartext and never holds a key. The service needs the signed-in Eliza Cloud credential,
 and nothing binds one yet: until the Google sign-in does (`cloudCredential()`), the agent unpacks its
-payload, then stops at status `failed` with `credential`.
+payload, then stops at status `failed` with `credential`, and no Google account has yet signed in on
+it.
+
+A run of this branch with `--install` and `--exercise agent` on a fresh API 36 tablet AVD, on a host
+with a load average near 290: both debug APKs passed the content check at 113,487,977 bytes; on a
+fresh install the service was in the foreground 9 seconds after Home showed and the agent had
+unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
+was left for Android's settings, and Grace raised no `am_anr` event. "Agent ready" is not measured:
+it needs the credential.
 
 Its data files: `agent/character.json` as it is; `artifacts/agent/host.json`, which is
 `android/agent.json` (the service, the notification's words, Eliza Cloud's production API and the
@@ -153,7 +163,9 @@ inventory) is built by upstream's `buildConsumerAndroidRuntime` with no embeddin
 gateway, without the packages `stubPlugins` in `scripts/android.ts` names (`@elizaos` plugins
 `policy.json` refuses, which the build checks, and libraries only they use), into
 `artifacts/agent-runtime/<abi>-<key>`, keyed by the `vendor/eliza` commit, the processor type and that
-list, and reused by every later build. It refuses a `vendor/eliza` with local changes.
+list, and reused by every later build. It refuses a `vendor/eliza` with local changes. Bun and its
+libraries go in as native libraries only: the inventory leaves out the payload's `agent/<abi>/`
+copy, which the generated host drops from the assets.
 
 ### Why the host is as it is
 

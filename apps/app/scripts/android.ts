@@ -111,7 +111,7 @@ function agentRuntime(abi: Abi) {
     stageGateway: () => ({}), targetAbi: abi, stubPlugins, embeddingModel: false,
   });
   const main = path.join(output, "android/app/src/main");
-  stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), targetAbi: abi, gateway: false });
+  stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), excludedAgentDirectories: [abi], targetAbi: abi, gateway: false });
   renameSync(output, payload);
   rmSync(building, { recursive: true });
   return payload;
@@ -183,8 +183,11 @@ function writeApkManifest() {
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
     const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_bun\.so$/.exec(entry)?.slice(1) ?? []);
-    const missing = ["assets/agent/agent-bundle.js", "assets/agent-runtime.inventory"].filter((entry) => !entries.includes(entry));
-    if (missing.length || abis.length !== 1) throw new Error(`${name} does not carry one agent runtime: ${[...missing, ...abis.map((abi) => `lib/${abi}`)].join(", ") || "no libeliza_bun.so"}`);
+    if (abis.length !== 1 || !entries.includes("assets/agent-runtime.inventory")) throw new Error(`${name} does not carry one agent runtime: libeliza_bun.so for ${abis.join(", ") || "no processor type"}`);
+    const listed = execFileSync("unzip", ["-p", file, "assets/agent-runtime.inventory"], { encoding: "utf8" }).trim().split("\n").slice(1)
+      .map((line) => line.split("\t")).map(([kind, , , source]) => kind === "native" ? `lib/${abis[0]}/${source}` : `assets/${source}`);
+    const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
+    if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, abi: abis[0], bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
