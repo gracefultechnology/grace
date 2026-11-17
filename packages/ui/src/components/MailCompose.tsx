@@ -1,9 +1,10 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { ArrowUp, Image, Plus, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Image, Plus, X } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
-import { Menu, MenuOption } from "./Menu.tsx";
+import { Menu, MenuLabel, MenuOption } from "./Menu.tsx";
 import { appButton, appProminent, headerPill, pendingMark } from "./MailActionStatus.tsx";
 import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
 import type { MailPhoto } from "./MailMessageView.tsx";
@@ -49,7 +50,68 @@ function Line({ label, htmlFor, children }: { label: string; htmlFor?: string; c
 
 const addButton = cn(appButton, "size-[52px] p-0");
 
+export type MailFromAccount = {
+  id: number;
+  /** The address it sends from. */
+  address: string;
+  /** Its name on the tablet: "Gmail". */
+  name: string;
+};
+
+export type MailFromMenuLabels = { sendFrom: string; close: string };
+
+export type MailFromMenuProps = {
+  /** The email accounts that can send. */
+  accounts: MailFromAccount[];
+  /** The one it goes from. */
+  selected: number;
+  /** Called with the account chosen. */
+  onSelect?: (id: number) => void;
+  /** Whether the menu is open, when the app controls it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Its words, for another language. */
+  labels?: Partial<MailFromMenuLabels>;
+};
+
+/** The address an email goes from, opening "Send from" with each account's address and name (prototype `.rpop.acmenu`). */
+export function MailFromMenu({ accounts, selected, onSelect, open, onOpenChange, labels }: MailFromMenuProps) {
+  const l = { sendFrom: "Send from", close: "Close", ...labels };
+  return (
+    <Menu
+      open={open}
+      onOpenChange={onOpenChange}
+      trigger={
+        <Button variant="capsule" size="compact" className={cn(appButton, "h-14 gap-2.5 px-5 data-[state=open]:text-primary")}>
+          {accounts.find((account) => account.id === selected)?.address}
+          <ChevronDown size={20} strokeWidth={2.2} aria-hidden />
+        </Button>
+      }
+      sideOffset={12}
+      surface="page"
+    >
+      <div className="flex items-center justify-between gap-5 pl-3">
+        <MenuLabel className="m-0 text-body-lg leading-7 tracking-[.01em] normal-case">{l.sendFrom}</MenuLabel>
+        <DropdownMenu.Item asChild>
+          <Button variant="capsule" size="compact-icon" aria-label={l.close} className={cn(focusRing, "size-13 text-chrome outline-none active:scale-96")}>
+            <X size={22} strokeWidth={2} aria-hidden />
+          </Button>
+        </DropdownMenu.Item>
+      </div>
+      {accounts.map((account) => (
+        <MenuOption key={account.id} selected={account.id === selected} className="h-auto min-h-[76px] justify-start rounded-row py-2.5" onSelect={() => onSelect?.(account.id)}>
+          <span className="flex min-w-0 flex-col items-start">
+            <span className="truncate">{account.address}</span>
+            <span className="text-lg leading-6 font-medium text-muted-foreground">{account.name}</span>
+          </span>
+        </MenuOption>
+      ))}
+    </Menu>
+  );
+}
+
 export type MailComposeLabels = {
+  from: string;
   to: string;
   cc: string;
   bcc: string;
@@ -73,6 +135,7 @@ export type MailComposeLabels = {
 };
 
 const composeLabels: MailComposeLabels = {
+  from: "From",
   to: "To",
   cc: "Cc",
   bcc: "Bcc",
@@ -98,6 +161,8 @@ const composeLabels: MailComposeLabels = {
 export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "children" | "title"> & {
   /** The window's title: "New email", "Reply". */
   title?: string;
+  /** Which email it goes from: a From line, shown only when two or more accounts can send. */
+  from?: Omit<MailFromMenuProps, "labels">;
   /** Who it is to. */
   to: MailContact[];
   /** Who gets a copy. */
@@ -142,7 +207,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
 };
 
 /**
- * Writing an email: To, Cc and Bcc as people, the subject and the words, photos attached, with Send as the one
+ * Writing an email: From when there are several accounts, To, Cc and Bcc as people, the subject and the words, photos attached, with Send as the one
  * next step and Attach beside it (prototype `mailView()`, compose).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
@@ -150,6 +215,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  */
 export function MailCompose({
   title = "New email",
+  from,
   to,
   cc = [],
   bcc = [],
@@ -210,6 +276,11 @@ export function MailCompose({
           <MailNotice actionLabel={l.retry} onAction={onRetryDraft} className="mb-3">
             {draftError}
           </MailNotice>
+        )}
+        {from && from.accounts.length > 1 && (
+          <Line label={l.from}>
+            <MailFromMenu {...from} />
+          </Line>
         )}
         {recipients("to", to)}
         {ccOpen || cc.length || bcc.length ? (

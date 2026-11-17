@@ -3,7 +3,6 @@ import { FileDocumentRow } from "./FileDocumentRow.tsx";
 import { FileTile } from "./FileTile.tsx";
 import { GuideRing } from "./GuideRing.tsx";
 import { ListRow } from "./ListRow.tsx";
-import type { MailPrintStatus } from "./MailActionStatus.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
@@ -25,7 +24,6 @@ export interface FilesDocument {
   id: string;
   name: string;
   detail?: string;
-  printStatus?: MailPrintStatus;
 }
 
 export type FilesTab = "photos" | "documents";
@@ -81,15 +79,13 @@ export type FilesAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "chi
   onOpenPhoto?: (id: string) => void;
   /** Called with the document whose Open a person taps. */
   onOpenDocument?: (id: string) => void;
-  /** Called with the document whose Print a person taps. */
-  onPrintDocument?: (id: string) => void;
   title?: string;
   /** The words of Files, for another language. */
   labels?: Partial<FilesAppLabels>;
 };
 
 /**
- * The Files window: saved photos in groups by when they came, or saved documents with Open and Print
+ * The Files window: saved photos in groups by when they came, or saved documents with Open
  * (prototype `filesView()`); a find's answer over them, and Try again when the library could not be read.
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
@@ -102,7 +98,6 @@ export function FilesApp({
   documents,
   onOpenPhoto,
   onOpenDocument,
-  onPrintDocument,
   status = "ready",
   onRetry,
   highlightId,
@@ -182,9 +177,6 @@ export function FilesApp({
                     detail={document.detail}
                     aria-current={document.id === highlightId || undefined}
                     onOpen={() => onOpenDocument?.(document.id)}
-                    onPrint={() => onPrintDocument?.(document.id)}
-                    printStatus={document.printStatus}
-                    onRetryPrint={() => onPrintDocument?.(document.id)}
                   />
                   {ring(document.id, 22)}
                 </div>
