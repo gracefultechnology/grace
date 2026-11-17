@@ -18,6 +18,7 @@ const vaultMessage: Record<VaultIssue, string> = {
 const noticeText: Record<VaultNotice, string> = {
   QuietVault: "",
   CancelledVaultAction: "Passwords is still locked.",
+  BackupUnavailable: "Backup and recovery is unavailable right now.",
   SpokenHelpUnavailable: "Spoken help is unavailable. You can read the instructions here.",
   FailedVaultAction: "Something went wrong. Please try again.",
   SavedLogin: "Password saved.",
@@ -139,9 +140,10 @@ export function PasswordsApp() {
       {vault?.tag === "OpenVault" && <OpenLogins entries={vault.entries} selected={vault.selected} choose={choose} act={act} guide={guide} finishGuide={finishGuide} />}
       {state && state.notice !== "QuietVault" && <p role="status" className="text-body">{noticeText[state.notice]}</p>}
       {vault?.tag === "LockedVault" && <p className="text-body text-muted-foreground">Passwords are saved on this tablet.</p>}
+      {state?.backupReady && <Button className="self-start" variant="capsule" size="pill" onClick={() => act({ kind: "Backup" })}>Backup and recovery</Button>}
       <details className="max-w-prose text-body">
         <summary className="cursor-pointer font-semibold">How to use saved passwords</summary>
-        <p className="my-3">{passwordsHelpText}</p>
+        <p className="my-3">{passwordsHelpText(guide)}</p>
         {(androidHost || typeof window.speechSynthesis !== "undefined") && <Button variant="capsule" size="pill" onClick={speak}><Volume2 aria-hidden /> Read instructions aloud</Button>}
       </details>
     </div>

@@ -2,10 +2,12 @@
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, ManagedRuntime } from "effect";
+import { PasswordsClientError } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/client.ts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, it, onTestFinished } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
+import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
@@ -418,13 +420,20 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   let locked = true;
   let edited = false;
   let shown = false;
+  let recoveryOpened = false;
+  let ownerAvailable = true;
+  let ownerChanged: (() => void) | undefined;
   const vault: PasswordVault = {
     status: () => Promise.resolve({
       available: true, locked, unlockRemainingMs: locked ? 0 : 60_000, unlockSeconds: 60, biometric: false,
       autofill: { supported: true, selected: "this-app" },
     }),
     lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => { locked = false; return Promise.resolve({ unlockRemainingMs: 60_000 }); },
+    unlock: () => {
+      if (!ownerAvailable) return Promise.reject(new PasswordsClientError("not-admitted", "The account changed"));
+      locked = false;
+      return Promise.resolve({ unlockRemainingMs: 60_000 });
+    },
     list: () => Promise.resolve([{ id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] }]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
@@ -436,7 +445,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     copy: () => Promise.resolve({ clearsAfterMs: 45_000 }),
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
-  const runtime = ManagedRuntime.make(application(undefined, undefined, vault));
+  const runtime = ManagedRuntime.make(application(undefined, undefined, vault, {
+    addListener: (_name, notify) => {
+      ownerChanged = notify;
+      return Promise.resolve({ remove: () => Promise.resolve() });
+    },
+    passwordBackupStatus: () => Promise.resolve({ ready: true }),
+    openBackupRecovery: () => { recoveryOpened = true; return Promise.resolve({ status: "opened" }); },
+  }));
   const element = document.body.appendChild(document.createElement("div"));
   const root = createRoot(element);
   onTestFinished(async () => {
@@ -450,7 +466,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
   const unlock = page.getByRole("button", { name: "Unlock Passwords" });
   await expect.element(unlock).toBeEnabled();
+  const guide = () => runtime.runSync(Effect.flatMap(Effect.service(PasswordViews), (machine) => machine.get())).guide;
+  expect(guide()).toBe("ShowPasswordGuide");
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.poll(guide).toBe("NoPasswordGuide");
   await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  await expect.poll(() => recoveryOpened).toBe(true);
+  expect(locked).toBe(true);
   await act(() => userEvent.click(unlock));
   await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
   expect(shown).toBe(false);
@@ -458,12 +481,22 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.poll(() => shown).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
   await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await expect.poll(() => locked).toBe(true);
   await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  ownerAvailable = false;
+  recoveryOpened = false;
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
-  await expect.element(unlock).toBeEnabled();
+  await act(() => userEvent.click(unlock));
+  await expect.element(unlock).not.toBeInTheDocument();
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  await expect.poll(() => recoveryOpened).toBe(true);
+  expect(locked).toBe(true);
 });
 
 it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {

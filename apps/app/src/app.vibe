@@ -8,7 +8,7 @@ import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
 import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces, machine as workspaces } from "../gen/app__workspace.effect.vibe"
 import { nativePage } from "./nativePage.vibe"
-import { type SurfacePlugin, type WiFiPlugin, webView } from "./surfacePlugin.ts"
+import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, webView } from "./surfacePlugin.ts"
 import { pageHost } from "./page.vibe"
 
 // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
@@ -62,6 +62,6 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 })
 
 /** Everything the interface runs on, over `plugin`, the native page's, and `wifi`, where the platform has them. */
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, vault?: PasswordVault) {
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), passwords(vault)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), passwordViews()))
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), passwords(vault, backup)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), passwordViews()))
 }

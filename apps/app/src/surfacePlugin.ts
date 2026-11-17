@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
 // The Capacitor bindings of the plugins MainActivity registers. Their types are the plugins' own
 // (definitions.ts); none of their runtime code is bundled. Beside them, what the WebView itself knows of the network.
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { Effect } from "effect";
 import type { ElizaSurfaceManagerPlugin } from "../../../vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts";
 import { createPasswordsClient } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/client.ts";
@@ -26,6 +26,15 @@ type PrivateViewPlugin = {
 
 export const androidHost = Capacitor.isNativePlatform();
 export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;
+
+export type PasswordBackupPlugin = {
+  addListener(event: "passwordOwnerChanged", listener: () => void): Promise<PluginListenerHandle>;
+  passwordBackupStatus(): Promise<{ ready: boolean }>;
+  openBackupRecovery(): Promise<{ status: "opened" | "unavailable" }>;
+};
+
+export const passwordBackupPlugin = Capacitor.isPluginAvailable("GraceSignIn")
+  ? registerPlugin<PasswordBackupPlugin>("GraceSignIn") : undefined;
 
 /** The Wi-Fi plugin, which only the launcher registers; elsewhere the WebView's own online state is all there is. */
 export const wifiPlugin = Capacitor.isPluginAvailable("ElizaWiFi") ? registerPlugin<WiFiPlugin>("ElizaWiFi") : undefined;
