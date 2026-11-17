@@ -1,17 +1,18 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { inGrace } from "./BillSummaryCard.meta.tsx";
-import type { PaymentCheckCardProps } from "./PaymentCheckCard.tsx";
+import { billCheckLabels, bookingCheckLabels, type OutcomeCheckCardProps } from "./OutcomeCheckCard.tsx";
+import { inGrace } from "./TaskFactsCard.meta.tsx";
 
 const check = fn();
 const openSite = fn();
 const retrySave = fn();
 
-export const meta: ComponentMeta<PaymentCheckCardProps> = {
-  args: { site: "chase.com", onCheck: check, onOpenSite: openSite, onRetrySave: undefined },
+export const meta: ComponentMeta<OutcomeCheckCardProps> = {
+  args: { site: "chase.com", labels: billCheckLabels, onCheck: check, onOpenSite: openSite, onRetrySave: undefined },
   examples: {
     "Save failed": { message: "Chase accepted the payment. Saving the record didn’t work.", onRetrySave: retrySave },
     Resolved: { title: "It went through", message: "Chase has your payment.", result: { status: "scheduled", date: "Nov 12", reference: "4F7K-22Q" } },
+    Booking: { site: "mainstclinic.org", labels: bookingCheckLabels },
   },
   decorator: inGrace,
   play: {
