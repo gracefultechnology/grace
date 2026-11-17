@@ -85,7 +85,7 @@ export function GraceOrb({ glow = "rest", size = 96, className, style, ...props 
 }
 
 const markVariants = cva("flex shrink-0 items-center justify-center rounded-full bg-gradient-ring transition-shadow duration-slow ease-css-default", {
-  variants: { size: { md: "size-[76px]", sm: "size-14" }, halo: { true: "shadow-halo" } },
+  variants: { size: { md: "size-[76px]", sm: "size-14" }, halo: { true: "shadow-elevation-halo" } },
   defaultVariants: { size: "md" },
 });
 const discVariants = { md: "size-16 text-4xl", sm: "size-[46px] text-lead" } as const;

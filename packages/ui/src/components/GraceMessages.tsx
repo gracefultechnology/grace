@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, type ComponentProps, type UIEvent } from "react";
+import { useCallback, type ComponentProps, type UIEvent } from "react";
 import { ArrowDown } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { watch } from "../lib/observe.ts";
 import { Button } from "./Button.tsx";
 
 function latestTop(list: HTMLElement) {
@@ -48,10 +49,15 @@ export function GraceMessages({
   className,
   ...props
 }: GraceMessagesProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (following && ref.current) ref.current.scrollTop = latestTop(ref.current);
-  });
+  const ref = useCallback(
+    (list: HTMLDivElement | null) =>
+      list && following
+        ? watch(list, () => {
+            list.scrollTop = latestTop(list);
+          })
+        : undefined,
+    [following],
+  );
   const scrolled = (event: UIEvent<HTMLDivElement>) => {
     const list = event.currentTarget;
     const atLatest = list.scrollTop >= latestTop(list) - 4;
