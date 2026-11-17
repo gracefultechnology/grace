@@ -522,10 +522,10 @@ and Grace sends only the encrypted snapshot. Restore fills an empty vault
 in one step. Removing a cloud copy leaves local passwords available.
 
 ```quint
-pure def canOpenPasswordRecovery(accountReady: bool, screenSecure: bool, serviceReady: bool): bool =
+pure def passwordRecoveryOffered(accountReady: bool, screenSecure: bool, serviceReady: bool): bool =
   accountReady and screenSecure and serviceReady
-pure def canRestorePasswordBackup(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
   ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
 pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
-  not(canRestorePasswordBackup(ownerMatches, freshUnlock, recoveryKeyMatches, false))
+  not(passwordRestoreAdmitted(ownerMatches, freshUnlock, recoveryKeyMatches, false))
 ```
