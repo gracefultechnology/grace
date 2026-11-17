@@ -12,7 +12,6 @@
   { "expect": "You’re ready to browse the internet." },
   { "tap": "Forward" },
   { "tap": "Forward" },
-  { "tap": "Reload" },
   { "tap": "Open a new tab" },
   { "type": "example.org", "into": "Address" },
   { "tap": "Go" },

@@ -48,16 +48,18 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
   const [address, setAddress] = useDraft(browser?.editingAddress ? browser.addressDraft : active ? tabUrl(active) : "", browser?.editingAddress ?? false);
-  const field = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLInputElement>(null);
   const [listingTabs, setListingTabs] = useState(false);
   if (!workspace || !browser || !active) return null;
+  const overflow = overflowTabs(browser);
+  if (listingTabs && overflow.length === 0) setListingTabs(false);
   const offered = (browserInput: BrowserInput) => can({ type: "changePage", browserInput });
   const edit = (browserInput: BrowserInput) => { if (offered(browserInput)) void send({ type: "changePage", browserInput }); };
   const url = destination(address);
   const going: BrowserInput = url === undefined ? { tag: "ExplainEmptyAddress" } : url === tabUrl(active) ? { tag: "Reload" } : { tag: "Navigate", url };
   const go = () => {
     edit(going);
-    if (url === undefined) return field.current?.focus();
+    if (url === undefined) return fieldRef.current?.focus();
     edit({ tag: "DismissAddress" });
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   };
@@ -68,7 +70,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
       tabStrip={
         <BrowserTabStrip ref={strip} selectedId={browser.selected}
-          tabs={visibleTabs(browser).map(tabItem)} overflow={overflowTabs(browser).map(tabItem)} overflowOpen={listingTabs} onOverflowOpenChange={setListingTabs}
+          tabs={visibleTabs(browser).map(tabItem)} overflow={overflow.map(tabItem)} overflowOpen={listingTabs} onOverflowOpenChange={setListingTabs}
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
@@ -76,7 +78,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
-          <AddressBar ref={field} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : undefined}
+          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : undefined}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>

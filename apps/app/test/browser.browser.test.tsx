@@ -17,17 +17,21 @@ const topmost = (element: Element) => {
 const onTop = (element: Element | null) => element !== null && element.contains(topmost(element));
 const typedAddress = () => document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value;
 
-it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse and return to the page I left")', async () => {
+async function launch(plugin?: SurfacePlugin) {
   await page.viewport(1280, 800);
-  const site = new URL("/browse/", inject("site")).href;
-  const runtime = ManagedRuntime.make(application(undefined));
+  const runtime = ManagedRuntime.make(application(plugin));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   onTestFinished(async () => {
     root.unmount();
     await runtime.dispose();
   });
   root.render(<App runtime={runtime} />);
-  const workspace = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
+  return { runtime, workspace: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())) };
+}
+
+it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse and return to the page I left")', async () => {
+  const site = new URL("/browse/", inject("site")).href;
+  const { runtime, workspace } = await launch();
   const tab = (id = 1) => workspace().browser.tabs.find((t) => t.id === id);
   const placed = () => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (m) => m.get())).page;
   const frames = () => [...document.querySelectorAll<HTMLIFrameElement>('iframe[title="Website"]')];
@@ -132,6 +136,8 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await expect.poll(() => onTop(closing.query())).toBe(true);
   await userEvent.click(closing);
   await expect.poll(() => workspace().browser.tabs.length).toBe(3);
+  await userEvent.click(page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: `Close ${host}` }));
+  await expect.poll(() => ({ tabs: workspace().browser.tabs.length, top: onTop(frames().find((frame) => !frame.hidden) ?? null) })).toEqual({ tabs: 2, top: true });
 
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
@@ -142,9 +148,9 @@ function androidPagePluginAtItsBoundary() {
   const listeners = new Map<string, (event: unknown) => void>();
   const refused = { creates: 0 };
   const plugin = new Proxy({}, {
-    get: (_, method: string) => (options: Record<string, unknown>, listener?: (event: unknown) => void) => {
-      if (method === "addListener") {
-        listeners.set(String(options), listener!);
+    get: (_, method: string) => (options: Record<string, unknown> | string, listener?: (event: unknown) => void) => {
+      if (typeof options === "string") {
+        if (listener !== undefined) listeners.set(options, listener);
         return Promise.resolve({ remove: () => Promise.resolve() });
       }
       calls.push([method, options]);
@@ -156,8 +162,8 @@ function androidPagePluginAtItsBoundary() {
     },
   }) as SurfacePlugin;
   const emit = (event: string, fields: Record<string, unknown>) => {
-    const [, { owner, session, epoch }] = calls.find(([method]) => method === "createSurface")!;
-    listeners.get(event)!({ owner, session, epoch, id: "tab-1", ...fields });
+    const surface = calls.find(([method]) => method === "createSurface")?.[1];
+    listeners.get(event)?.({ owner: surface?.owner, session: surface?.session, epoch: surface?.epoch, id: "tab-1", ...fields });
   };
   return {
     plugin,
@@ -170,16 +176,9 @@ function androidPagePluginAtItsBoundary() {
 }
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
-  await page.viewport(1280, 800);
   const device = androidPagePluginAtItsBoundary();
-  const runtime = ManagedRuntime.make(application(device.plugin));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  onTestFinished(async () => {
-    root.unmount();
-    await runtime.dispose();
-  });
-  root.render(<App runtime={runtime} />);
-  const tab = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0];
+  const { workspace } = await launch(device.plugin);
+  const tab = () => workspace().browser.tabs[0];
   const address = page.getByRole("textbox", { name: "Address" });
   const at = () => ({ url: tab().history[tab().cursor], load: tab().load, address: document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value });
 
@@ -194,6 +193,8 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.finished("https://example.com/");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
 
+  device.started("https://example.com/b");
+  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loading", address: "https://example.com/b" });
   device.started("https://example.com/next");
   await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loading", address: "https://example.com/next" });
   device.finished("https://example.com/next");
@@ -204,8 +205,8 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.started();
   device.finished("https://example.com/next");
   await userEvent.click(page.getByRole("button", { name: "Back" }));
-  await expect.poll(() => ({ navigated: device.called("navigate").map((n) => n.url), back: device.called("goBack") })).toEqual({ navigated: ["https://example.com/"], back: [] });
-  device.started("https://example.com/");
-  device.finished("https://example.com/");
-  await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
+  await expect.poll(() => ({ navigated: device.called("navigate").map((n) => n.url), back: device.called("goBack") })).toEqual({ navigated: ["https://example.com/b"], back: [] });
+  device.started("https://example.com/b");
+  device.finished("https://example.com/b");
+  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
 });
