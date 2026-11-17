@@ -141,24 +141,27 @@ export function MailApp({
   const icon = <mailIcons.mail size={26} strokeWidth={2} aria-hidden />;
   if (noAccount)
     return (
-      <AppWindow title={l.title} icon={icon} {...props}>
-        <div className="mx-auto mt-14 flex max-w-[640px] flex-col items-center text-center">
-          <span aria-hidden className="flex size-24 items-center justify-center rounded-card bg-accent text-primary">
-            <mailIcons.mail size={48} strokeWidth={1.9} />
-          </span>
-          <PageHeading className="mt-[26px] text-display-sm leading-10">{l.connectTitle}</PageHeading>
-          <PageText tone="secondary" className="mt-2.5 leading-[30px]">{l.connectLine}</PageText>
-          <div className="mt-7 flex justify-center gap-3">
-            <Button variant="prominent" size="pill" onClick={onConnect}>
-              <mailIcons.mail size={22} strokeWidth={2.2} aria-hidden />
-              {l.connect}
-            </Button>
-            <Button variant="capsule" size="pill" className={appButton} onClick={onAskGrace}>
-              {l.askGrace}
-            </Button>
+      <>
+        <AppWindow title={l.title} icon={icon} {...props}>
+          <div className="mx-auto mt-14 flex max-w-[640px] flex-col items-center text-center">
+            <span aria-hidden className="flex size-24 items-center justify-center rounded-card bg-accent text-primary">
+              <mailIcons.mail size={48} strokeWidth={1.9} />
+            </span>
+            <PageHeading className="mt-[26px] text-display-sm leading-10">{l.connectTitle}</PageHeading>
+            <PageText tone="secondary" className="mt-2.5 leading-[30px]">{l.connectLine}</PageText>
+            <div className="mt-7 flex justify-center gap-3">
+              <Button variant="prominent" size="pill" onClick={onConnect}>
+                <mailIcons.mail size={22} strokeWidth={2.2} aria-hidden />
+                {l.connect}
+              </Button>
+              <Button variant="capsule" size="pill" className={appButton} onClick={onAskGrace}>
+                {l.askGrace}
+              </Button>
+            </div>
           </div>
-        </div>
-      </AppWindow>
+        </AppWindow>
+        {toast}
+      </>
     );
   const loading = status === "loading";
   const note = !loading && query ? l.found(messages.length) : null;

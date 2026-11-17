@@ -1,5 +1,6 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 import { ArrowUp, ChevronDown, Image, Plus, X } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
@@ -57,7 +58,7 @@ export type MailFromAccount = {
   name: string;
 };
 
-export type MailFromMenuLabels = { sendFrom: string };
+export type MailFromMenuLabels = { sendFrom: string; close: string };
 
 export type MailFromMenuProps = {
   /** The email accounts that can send. */
@@ -75,7 +76,7 @@ export type MailFromMenuProps = {
 
 /** The address an email goes from, opening "Send from" with each account's address and name (prototype `.rpop.acmenu`). */
 export function MailFromMenu({ accounts, selected, onSelect, open, onOpenChange, labels }: MailFromMenuProps) {
-  const l = { sendFrom: "Send from", ...labels };
+  const l = { sendFrom: "Send from", close: "Close", ...labels };
   return (
     <Menu
       open={open}
@@ -89,7 +90,14 @@ export function MailFromMenu({ accounts, selected, onSelect, open, onOpenChange,
       sideOffset={12}
       surface="page"
     >
-      <MenuLabel>{l.sendFrom}</MenuLabel>
+      <div className="flex items-center justify-between gap-5 pl-3">
+        <MenuLabel className="m-0 text-body-lg leading-7 tracking-[.01em] normal-case">{l.sendFrom}</MenuLabel>
+        <DropdownMenu.Item asChild>
+          <Button variant="capsule" size="compact-icon" aria-label={l.close} className={cn(focusRing, "size-13 text-chrome outline-none active:scale-96")}>
+            <X size={22} strokeWidth={2} aria-hidden />
+          </Button>
+        </DropdownMenu.Item>
+      </div>
       {accounts.map((account) => (
         <MenuOption key={account.id} selected={account.id === selected} className="h-auto min-h-[76px] justify-start rounded-row py-2.5" onSelect={() => onSelect?.(account.id)}>
           <span className="flex min-w-0 flex-col items-start">
