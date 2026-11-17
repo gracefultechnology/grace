@@ -5,6 +5,7 @@ The current request includes email, calendar, Files, browser and bill payment la
 The visual direction is the prototype's Figtree typography, soft gradient frame, glass surfaces, lilac conversation and familiar browser. Keep the calendar, email and internet previews, persistent labeled Ask Grace entry, compact bottom assistance, expanded chat, website keyboard state and caption strip. No provider page is restyled. Layout dimensions are responsive to measured usable space and native keyboard insets; prototype canvas dimensions are references, not fixed runtime assumptions. Exact tokens, visual comparison, accessible labels and hardware readability are implementation acceptance criteria.
 
 - [Device readiness, Home and native settings](./shell.md)
+- [Set-up of a new tablet, resumable across restarts](./setup.md)
 - [Wi-Fi selection, private sign-in and connection recovery](./network.md)
 - [Browser tabs, navigation and current-page state](./browser.md)
 - [Browser controls and current host observations](./browserControls.md)
@@ -23,6 +24,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Week and month views, current occurrences and recurring deletion](./calendarView.md)
 - [Saved photos, documents, Email sharing and printing](./files.md)
 - [Generic evidence-grounded website operations](./execution.md)
+- [Task kinds, subjects and terms](./task.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
 - [Payment authorization, durable attempts and provider outcomes](./payment.md)
