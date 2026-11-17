@@ -17,6 +17,8 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Shared conversation controls and service-result routing](./interaction.md)
 - [Approved personal memory and deletion](./memory.md)
 - [Voice output, pace and readable text preferences](./preferences.md)
+- [Turn requests, consent used once and who may act](./request.md)
+- [Email accounts, provider sign-in, uses and removal](./accounts.md)
 - [Email connection, reading, attachments and reviewed sending](./email.md)
 - [Message folders, read status, Trash and restoration](./emailItem.md)
 - [Calendar occurrences, recurrence and reminders](./calendar.md)
