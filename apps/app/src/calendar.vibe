@@ -1,0 +1,290 @@
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
+import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
+import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
+import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
+import { Machine as CalendarMachine, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
+import { Instances, tablet } from "./instances.vibe"
+
+export const day = 24 * 60 * 60 * 1000
+export const hour = 60 * 60 * 1000
+/** How far ahead Home, the sleep screen and each email's calendar feed look. */
+export const horizon = 60 * day
+
+const utc = (n: number) => new Date(n * day)
+
+/** The local calendar date of `at` as a day number: days from 1970-01-01. */
+export function dayOf(at: number) {
+  const d = new Date(at)
+  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / day)
+}
+
+/** The local midnight that starts day number `n`. */
+export function midnight(n: number) {
+  const d = utc(n)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime()
+}
+
+const weekday = (n: number) => (utc(n).getUTCDay() + 6) % 7
+const monday = (n: number) => n - weekday(n)
+
+function monthStart(n: number, months: number) {
+  const d = utc(n)
+  return Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1) / day)
+}
+
+/** The days the week or month of `anchor` shows, Monday first; a month's rows cover every date in it. */
+export function shownDays(mode: ViewMode, anchor: number) {
+  const first = mode === "WeekView" ? monday(anchor) : monday(monthStart(anchor, 0))
+  const weeks = mode === "WeekView" ? 1 : Math.ceil((monthStart(anchor, 1) - first) / 7)
+  return Array.from({ length: weeks * 7 }, (_, i) => first + i)
+}
+
+function windowOf(mode: ViewMode, anchor: number, selected: number): ViewWindow {
+  const days = shownDays(mode, anchor)
+  return { mode, anchorDay: anchor, selectedDay: selected, fromTime: midnight(days[0]), untilTime: midnight(days[days.length - 1] + 1) }
+}
+
+const opened = (w: ViewWindow) => w.untilTime - w.fromTime >= day
+
+/** The window a move leads to, worked out by the tablet's own calendar: `chosen` is the day a person picked, or today. */
+export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
+  const week = w.mode === "WeekView"
+  const step = (n: number) => week ? windowOf(w.mode, w.anchorDay + 7 * n, w.selectedDay + 7 * n) : windowOf(w.mode, monthStart(w.anchorDay, n), w.selectedDay)
+  const windows: Record<Navigation, () => ViewWindow> = {
+    Today: () => windowOf(w.mode, chosen, chosen),
+    Earlier: () => step(-1),
+    Later: () => step(1),
+    SelectDay: () => windowOf("WeekView", chosen, chosen),
+    SwitchMode: () => week ? windowOf("MonthView", w.anchorDay, w.selectedDay) : windowOf("WeekView", w.selectedDay, w.selectedDay)
+  }
+  return { window: windows[kind](), kind, verified: true }
+}
+
+/** What the calendars need at hand at `now`: the days shown, what is coming up after the chosen day, and Home's horizon. */
+function reach(w: ViewWindow, now: number) {
+  const shown = opened(w) ? w : windowOf("WeekView", dayOf(now), dayOf(now))
+  return { fromTime: Math.min(shown.fromTime, midnight(dayOf(now))), untilTime: Math.max(shown.untilTime, midnight(shown.selectedDay + 15), now + horizon) }
+}
+
+type Reach = ReturnType<typeof reach>
+const sameReach = (a: Reach, b: Reach) => a.fromTime === b.fromTime && a.untilTime === b.untilTime
+
+const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+/** The start of the repetition `n` periods after `d`'s, at the same local time; none for a date the month lacks or an appointment that does not repeat. */
+export function repeated(d: EntryDetails, n: number) {
+  const s = new Date(d.startAt)
+  const weekly = d.recurrence === "Weekly"
+  const next = new Date(s.getFullYear(), s.getMonth() + (weekly ? 0 : n), s.getDate() + (weekly ? 7 * n : 0), s.getHours(), s.getMinutes())
+  return d.recurrence === "Once" || (!weekly && next.getDate() !== s.getDate()) ? undefined : next.getTime()
+}
+
+/** A repetition's place in its series: the series is named after its first occurrence, and the n-th after it is `<series>@n`. */
+function placeIn(seriesId: string, id: string) {
+  if (id === seriesId) return 0
+  const n = id.startsWith(`${seriesId}@`) ? Number(id.slice(seriesId.length + 1)) : Number.NaN
+  return Number.isInteger(n) ? n : undefined
+}
+
+const single = (c: Calendar) => c.committed.seriesId === "" && c.draft.seriesId === "" && c.draft.recurrence === "Once"
+
+/** The store's answer for a saved series: every member it touches, each moved with the saved one or left as it is, all in one write. */
+function seriesReceipt(v: CalendarView, c: Calendar, receipt: StoreReceipt): SeriesReceipt {
+  const d = c.draft
+  const at = placeIn(d.seriesId, c.identity.occurrenceId) ?? 0
+  const members = v.entries.filter((m) => m.phase !== "Deleted" && (m.identity.occurrenceId === v.selectedId || (m.hasSaved && m.committed.seriesId === d.seriesId)))
+  const schedules = members.map(({ identity: { occurrenceId: id }, committed }) => {
+    if (id === c.identity.occurrenceId) return { id, include: true, startAt: d.startAt, endAt: d.endAt }
+    const n = placeIn(d.seriesId, id)
+    const start = n === undefined ? (d.recurrence === "Once" ? undefined : committed.startAt) : repeated(d, n - at)
+    return start === undefined ? { id, include: false, startAt: committed.startAt, endAt: committed.endAt } : { id, include: true, startAt: start, endAt: start + d.endAt - d.startAt }
+  })
+  return { occurrenceId: c.identity.occurrenceId, revision: receipt.revision, definitionVersion: seriesAt(v, d.seriesId).version, schedules, verified: true, persisted: receipt.succeeded }
+}
+
+const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(approveSave(create(noEntry, {
+  owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", kind: "Appointment", billRef: "", billOrigin: "", billAccount: ""
+}, details, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
+
+/** The tablet's repeating appointments in `span`: each repetition not yet kept, deleted or cancelled, as its store publishes it. */
+function repetitions(v: CalendarView, span: Reach): Published[] {
+  return v.series.flatMap(({ version, details: d }) => {
+    if (d.recurrence === "Once" || v.deletedSeries.includes(d.seriesId)) return []
+    const anchor = v.entries.find((m) => m.committed.seriesId === d.seriesId && m.committed.startAt === d.startAt)
+    const at = anchor === undefined ? 0 : placeIn(d.seriesId, anchor.identity.occurrenceId) ?? 0
+    const found: Published[] = []
+    for (let n = 0; n < 1000; n++) {
+      const start = repeated(d, n - at)
+      if (start === undefined) continue
+      if (start >= span.untilTime) break
+      const id = n === 0 ? d.seriesId : `${d.seriesId}@${n}`
+      const end = start + d.endAt - d.startAt
+      if (end <= span.fromTime || v.cancelledIds.includes(id) || v.entries.some((m) => m.identity.occurrenceId === id)) continue
+      found.push({ incoming: savedEntry(v, id, { ...d, startAt: start, endAt: end, important: false }), seriesVersion: version, scheduleVerified: true })
+    }
+    return found
+  })
+}
+
+/** Where a calendar's writes are kept: the tablet itself, or the email company's calendar. */
+type Store = {
+  readonly write: (entry: Calendar) => StoreReceipt!!
+  readonly remove: (id: string, scope: DeleteScope) => DeletionReceipt!!
+}
+
+const device: Store = {
+  write: (entry) => Effect.succeed({ revision: entry.revision, succeeded: true }),
+  remove: (id) => Effect.succeed({ succeeded: true, evidence: `tablet:${id}` })
+}
+
+/** What Grace is told of the calendars: what changed in one once its store kept it, and a yes the calendar no longer took. */
+export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
+
+export service CalendarNews {
+  readonly reports: Stream.Stream<CalendarReport>
+  publish(report: CalendarReport): void!!
+}
+
+/** Keeps one calendar's approved saves and deletions in its store, sends the store's answers back, and tells what changed. */
+effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], extra: (v: CalendarView) => readonly Published[]) {
+  const sent = try Ref.make<ReadonlySet<string>>(new Set())
+  const last = try Ref.make<CalendarView | undefined>(undefined)
+  effect function first(mark: string) {
+    return try Ref.modify(sent, (all) => [!all.has(mark), new Set(all).add(mark)] as const)
+  }
+  try Stream.runForEach(box.changes, effect (v) => {
+    const before = try Ref.getAndSet(last, v)
+    if (before !== undefined) {
+      const news = told(key, before, v)
+      if (news.news !== "NoCalendarNews") try publish({ told: news })
+    }
+    for (const c of v.entries) {
+      if (c.phase !== "Editing" || c.approvedRevision !== c.revision || !(try first(`${c.identity.occurrenceId}@${c.revision}`))) continue
+      const receipt = try store.write(c)
+      const event: CalendarEvent = single(c)
+        ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
+        : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
+      box.send(event, "ViewStore") catch () => undefined
+    }
+    if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) {
+      const result = try store.remove(v.selectedId, v.scope)
+      box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
+    }
+    for (const p of extra(try box.get())) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
+  })
+}
+
+const keysOf = (a: Registry) => [tablet, ...a.accounts.map((x) => x.id)]
+
+const consented = (p: Pending): CalendarEvent | undefined => match (p.ask) {
+  when { tag: "AddAsk" }: { type: "confirmAppointment", request: confirmationOf(p) };
+  when { tag: "ChangeAsk" }: { type: "confirmChange", changeRequest: changeOf(p) };
+  when { tag: "DeleteAsk" }: { type: "confirmDeletion", deletionRequest: deletionOf(p) };
+  when { tag: "NoAsk" }: undefined;
+}
+
+/**
+ * The tablet's own calendar and what every calendar needs whatever email is connected: opening and closing them with the
+ * Calendar screen, the tablet's store and repeating appointments, due reminders, and applying her yes to Grace's question.
+ */
+export const calendars = Layer.effect(CalendarNews, effect {
+  const registry = try Accounts
+  const shelf = try Instances
+  const proposals = try Proposal
+  const workspace = try Workspaces
+  const hub = try PubSub.unbounded<CalendarReport>()
+  const publish = (report: CalendarReport) => Effect.asVoid(PubSub.publish(hub, report))
+  const lead = try Effect.orDie(shelf.calendar(tablet))
+
+  if ((try lead.get()).owner === "") lead.send({ type: "bindCalendar", owner: "tablet", calendarId: "tablet", timezone: zone() }, "ViewStore") catch () => undefined
+  try fork.scoped keep(tablet, lead, device, publish, (v) => repetitions(v, reach(v.window, Date.now())))
+
+  effect function each(act: (box: CalendarMachine.Shape, v: CalendarView) => CalendarEvent | undefined, by: "ViewUser" | "ViewClock") {
+    for (const key of keysOf(try registry.get())) {
+      const box = shelf.calendar(key) catch () => undefined
+      if (box === undefined) continue
+      const event = act(box, try box.get())
+      if (event !== undefined) box.send(event, by) catch () => undefined
+    }
+  }
+
+  const shown = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
+  try fork.scoped Stream.runForEach(shown, effect (visible) => {
+    try each((_, v) => v.owner === "" ? undefined : visible ? { type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone } : { type: "closeCalendar" }, "ViewUser")
+    if (visible) lead.send({ type: "navigate", report: navigation((try lead.get()).window, "Today", dayOf(Date.now())) }, "ViewUser") catch () => undefined
+  })
+
+  try fork.scoped Stream.runForEach(Stream.tick("30 seconds"), effect () => {
+    const now = try Clock.currentTimeMillis
+    for (const key of keysOf(try registry.get())) {
+      const box = shelf.calendar(key) catch () => undefined
+      if (box === undefined) continue
+      for (const c of (try box.get()).entries) {
+        if (c.reminder !== "ReminderWaiting" || c.phase === "Deleted" || c.remindAt > now) continue
+        const id = c.identity.occurrenceId
+        box.send({ type: "changeOccurrence", id, command: { tag: "AdvanceClock", now } }, "ViewClock") catch () => undefined
+        box.send({ type: "changeOccurrence", id, command: { tag: "ShowDueReminder" } }, "ViewClock") catch () => undefined
+      }
+    }
+  })
+
+  try fork.scoped Stream.runForEach(proposals.changes, effect () => {
+    const p = try proposals.get()
+    if (p.agreed === 0) return
+    const event = consented(p)
+    const box = shelf.calendar(targetOf(p.ask)) catch () => undefined
+    const applied = box === undefined || event === undefined ? false : Effect.as(box.send(event, "ViewConsent"), true) catch () => false
+    proposals.send({ type: "settleAsk", revision: p.revision }, "Host") catch () => undefined
+    if (!applied) try publish({ refused: p.ask })
+    try logInfo("Her yes to Grace's calendar question", { ask: p.ask.tag, applied })
+  })
+
+  return { reports: Stream.fromPubSub(hub), publish }
+})
+
+/** Each email whose Calendar is on: its calendar bound to the account, filled from the company's feed for the days at hand, and its writes kept there. */
+export const calendarFeeds = Layer.effectDiscard(effect {
+  const registry = try Accounts
+  const shelf = try Instances
+  const connector = try Connector
+  const news = try CalendarNews
+  const lead = try Effect.orDie(shelf.calendar(tablet))
+  const watched = try Ref.make(new Map<number, Fiber.Fiber<void>>())
+
+  effect function watch(account: Account, box: CalendarMachine.Shape) {
+    if ((try box.get()).owner === "") box.send({ type: "bindCalendar", owner: account.address, calendarId: "primary", timezone: zone() }, "ViewStore") catch () => undefined
+    const link = connector.calendar({ provider: account.provider, address: account.address })
+    const store: Store = {
+      write: effect (entry) => link.write(entry) catch () => ({ revision: entry.revision, succeeded: false }),
+      remove: effect (id, scope) => link.remove(id, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
+    }
+    const spans = Stream.changesWith(Stream.map(lead.changes, (v) => reach(v.window, Date.now())), sameReach)
+    const fill = Stream.runForEach(spans, effect (span) => {
+      const v = try box.get()
+      const feed = link.feed({ ...v, window: { ...v.window, ...span } })
+      Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch () => undefined
+    })
+    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, () => []), fill], { concurrency: "unbounded" }))
+  }
+
+  effect function follow(a: Registry) {
+    const wanted = a.accounts.filter((x) => x.use.calendar)
+    for (const account of wanted) {
+      if ((try Ref.get(watched)).has(account.id)) continue
+      const box = shelf.calendar(account.id) catch () => undefined
+      if (box === undefined) continue
+      const fiber = try watch(account, box)
+      try Ref.update(watched, (all) => new Map(all).set(account.id, fiber))
+    }
+    for (const [id, fiber] of try Ref.get(watched)) {
+      if (wanted.some((x) => x.id === id)) continue
+      try Fiber.interrupt(fiber)
+      try Ref.update(watched, (all) => new Map([...all].filter(([k]) => k !== id)))
+    }
+  }
+
+  try fork.scoped Stream.runForEach(registry.changes, follow)
+})

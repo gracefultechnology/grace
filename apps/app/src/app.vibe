@@ -7,6 +7,7 @@ import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.v
 import { Machine as Workspaces, machine as workspaces } from "../gen/app__workspace.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { accounts } from "./accounts.vibe"
+import { calendarFeeds, calendars } from "./calendar.vibe"
 import { agent } from "./agent.vibe"
 import { connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
@@ -75,11 +76,14 @@ const signInPage = Layer.sync(SignInPage, () => {
 
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
+const calendar = (cloud: CloudLink | undefined) =>
+  cloud === undefined ? calendars : Layer.provideMerge(Layer.provide(calendarFeeds, Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced)), calendars)
+
 const mail = (cloud: CloudLink | undefined) => cloud === undefined ? Layer.empty : Layer.provide(reading, Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced))
 
 /** Everything the interface runs on, over `plugin`, the native page's, `wifi`, where the platform has them, and `cloud`, where Grace's agent answers. */
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, cloud?: CloudLink) {
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept)
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), conversation(cloud), mail(cloud)), Layer.provideMerge(agent, machines))
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), conversation(cloud), mail(cloud), calendar(cloud)), Layer.provideMerge(agent, machines))
 }
