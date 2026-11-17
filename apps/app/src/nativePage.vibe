@@ -5,7 +5,7 @@ import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../ge
 import { type SurfacePlugin, identity } from "./surfacePlugin.ts"
 import {
   DialogRequested, DownloadFinished, DownloadRequested, ExternalLinkRequested, FileChooserRequested, IdentityProviderRequested,
-  NavigationChanged, PageStarted, type PageId, PermissionClosed, PurgeResult, RequestKey, SitePermissionAnswer, SitePermissionRequested,
+  LinkObservation, NavigationChanged, PageStarted, type PageId, PermissionClosed, PointResult, PurgeResult, RequestKey, SitePermissionAnswer, SitePermissionRequested,
   SitePermissionWithdrawn, SurfaceCrashed, type Url
 } from "./nativePage.schema.ts"
 import { webPage } from "./webPage.vibe"
@@ -25,7 +25,12 @@ export type Corners = { topLeft: number; topRight: number; bottomRight: number; 
 
 export type Reply = { id: PageId; key: RequestKey; ask: Ask; answer: Answer; text: string }
 
+export type LinkPointer = Extract<NonNullable<Parameters<SurfacePlugin["controlPage"]>[0]["command"]["guidance"]>, { kind: "show" }>
+
 export service NativePage {
+  observeLinks(id: PageId): LinkObservation!PageFailed
+  pointAt(id: PageId, documentId: string, guidance: LinkPointer): boolean!PageFailed
+  clearGuide(id: PageId): void!PageFailed
   claim(): void!PageFailed
   create(id: PageId, url: string): void!PageFailed
   place(id: PageId, page: Rect, corners: Corners): void!PageFailed
@@ -124,6 +129,10 @@ function devicePage(plugin: SurfacePlugin) {
       (answer) => Effect.mapError(Schema.decodeUnknownEffect(schema)(answer), (cause) => new PageFailed({ cause })))
   const own = (id: PageId) => ({ ...identity, id })
   return Layer.succeed(NativePage, {
+    observeLinks: (id) => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } })),
+    pointAt: (id, documentId, guidance) => Effect.map(ask(PointResult, (p) =>
+      p.controlPage({ ...own(id), documentId, command: { subaction: "guide", guidance } })), (reply) => reply.result.accepted === true),
+    clearGuide: (id) => call((p) => p.controlPage({ ...own(id), command: { subaction: "guide", guidance: { kind: "hide" } } })),
     claim: () => call((p) => p.reconcileOwner({ ...identity, desiredIds: [] })),
     create: (id, url) => call((p) => p.createSurface({ ...own(id), url, process: "isolated", storage: "isolated", profileKey, layer: "below-host", answersRequests: true })),
     place: (id, page, corners) => call((p) => p.setBounds({ ...own(id), ...page, outerClip: { ...page, cornerRadii: corners } })),

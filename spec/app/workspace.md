@@ -25,6 +25,11 @@ adapter correctly recognized a website or that an external effect succeeded.
 The two observed versions are evidence references, not alternate page state.
 There is no provider name, domain allowlist or fixed sequence of website steps.
 Caller identities are supplied by the authenticated host, not website content.
+Discovered by the proof: every retained plan step has a named subject and
+nonempty outcome, so the next instruction still exists after a receipt.
+The workspace also retains the component rules for a loaded page's security,
+the assistant's visible work, guidance and conversation offers, and the
+execution's verified observation context.
 
 ```quint
 import shell as S from "./shell"
@@ -39,11 +44,50 @@ import interaction as I from "./interaction"
 import browserControls as BC from "./browserControls"
 
 type WorkspaceActor = Person | Host | Store | Actuator
+type GuidedStep = { surface: S::Surface, subject: str, outcome: str }
+type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
+type GuidedCalendarApproval = {
+  task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
+  title: str, starts: int, ends: int, timezone: str, location: str, notes: str
+}
+type GuidedPlan = {
+  owner: str, steps: List[GuidedStep], receipts: List[str], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
+  mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str
+}
+type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
+type GuidedObservation = {
+  owner: str, task: str, version: int, deviceVersion: int, browserRevision: int,
+  step: GuidedStep, evidence: str
+}
+type GuidedRead = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment | UnsupportedRead
+type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
+type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
+type GuidedReview = { revision: int, generation: int, workVersion: int, request: GuidedRequest }
+type GuidedLink = {
+  task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
+  stepIndex: int, url: str
+}
+type ReviewOffer = { task: str, generation: int, workVersion: int, reads: List[GuidedRead] }
+pure def emptyReview(revision: int): GuidedReview = {
+  revision: revision, generation: -1, workVersion: -1, request: { owner: "", task: "", goal: "", steps: List() }
+}
+pure val noGuidedMail: GuidedMail = { account: 0, owner: "", address: "", ref: "", generation: 0, revision: 0, version: "" }
+pure val noGuidedApproval: GuidedCalendarApproval = {
+  task: "", account: 0, owner: "", calendar: "", sourceRef: "", provisional: "", proposal: -1,
+  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: ""
+}
+pure val emptyPlan: GuidedPlan = {
+  owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
+  mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: ""
+}
+pure val noGuidedStep: GuidedStep = { surface: S::Home, subject: "", outcome: "" }
+pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
+pure def nextOutcome(plan: GuidedPlan): GuidedStep = plan.steps.nthOr(plan.receipts.length(), noGuidedStep)
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
   execution: X::Execution, payment: P::Payment, otherPayments: List[P::Payment],
   preferences: R::Preferences, wake: W::Wake,
-  paymentTask: str, observedDevice: int, observedBrowser: int
+  plan: GuidedPlan, review: GuidedReview, paymentTask: str, observedDevice: int, observedBrowser: int
 }
 type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effect: X::WebsiteEffect })
   | Pay({ deviceVersion: int, browserRevision: int, taskVersion: int, effect: P::PaymentEffect })
@@ -100,7 +144,7 @@ pure val initial: Workspace = {
   device: S::initial, browser: B::initial, assistant: A::initial,
   execution: X::initial, payment: P::initial, otherPayments: List(),
   preferences: R::initial, wake: W::initial,
-  paymentTask: "", observedDevice: 0, observedBrowser: 0
+  plan: emptyPlan, review: emptyReview(0), paymentTask: "", observedDevice: 0, observedBrowser: 0
 }
 pure def mayAssist(w: Workspace): bool =
   w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
@@ -131,14 +175,11 @@ pure def alwaysDeviceRules(w: Workspace): bool =
 pure def alwaysBrowserRules(w: Workspace): bool =
   B::alwaysTabsAreWellFormed(w.browser) and B::alwaysTabIdentifiersAreUnique(w.browser) and
   B::alwaysSelectedTabExists(w.browser) and B::alwaysBrowserCountersAreValid(w.browser) and
-  B::alwaysRecentDestinationsAreDistinct(w.browser)
-pure def alwaysAssistantRules(w: Workspace): bool =
-  A::alwaysConversationRules(w.assistant) and A::alwaysHiddenIsQuiet(w.assistant) and
-  A::alwaysTaskContextExists(w.assistant) and A::alwaysOperationsBelongToWorkingTasks(w.assistant) and
-  A::alwaysOnlyVerifiedEndpointsClaimCompletion(w.assistant) and A::alwaysReplacementIsComplete(w.assistant)
+  B::alwaysOnlyALoadedPageIsSecure(w.browser) and B::alwaysRecentDestinationsAreDistinct(w.browser)
+pure def alwaysAssistantRules(w: Workspace): bool = I::validAssistant(w.assistant)
 pure def alwaysExecutionRules(w: Workspace): bool =
   X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
+  X::alwaysObservedContextExists(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
   X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
   X::alwaysNoExhaustedApproachQueued(w.execution)
 pure def validPayment(p: P::Payment): bool =
@@ -176,10 +217,14 @@ pure def alwaysPausedPaymentCannotSubmit(w: Workspace): bool =
   w.assistant.activity == A::Paused implies not(w.payment.fresh) and
     (w.payment.stage == P::Empty or not(w.payment.live))
 pure def alwaysOneTask(w: Workspace): bool =
-  (A::unfinished(w.assistant) iff w.execution.phase != X::Idle) and
+  (A::unfinished(w.assistant) iff (w.execution.phase != X::Idle or hasNext(w.plan))) and
+  (w.plan.owner != "" implies w.execution.phase == X::Idle and w.paymentTask == "") and
+  ((w.plan.owner == "") iff w.plan.steps.length() == 0) and
+  w.plan.receipts.length() <= w.plan.steps.length() and
+  w.plan.steps.every(s => s.subject != "" and s.outcome != "") and
   (w.execution.phase != X::Idle implies w.execution.task == w.assistant.taskId)
 pure def alwaysPausedTogether(w: Workspace): bool =
-  (w.assistant.activity == A::Paused) iff (w.execution.phase == X::Paused)
+  (w.assistant.activity == A::Paused) iff (w.execution.phase == X::Paused or (hasNext(w.plan) and w.assistant.activity == A::Paused))
 pure def alwaysCurrentBeforeAction(w: Workspace): bool =
   (w.execution.phase == X::Observed or w.execution.phase == X::Queued or w.execution.phase == X::InFlight)
   implies mayAssist(w) and observationIsCurrent(w) and B::activeTab(w.browser).load == B::Loaded
@@ -255,7 +300,7 @@ pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor)
   }
   if (lifecycle == RestartDevice)
     { ...w, device: device, browser: { ...B::closeBrowser(w.browser), clearRequested: false },
-      assistant: restartedAssistant(w.assistant),
+      assistant: restartedAssistant(w.assistant), review: emptyReview(w.review.revision + 1), plan: emptyPlan,
       execution: if (X::canRetire(w.execution, X::BrowserBridge)) X::retire(w.execution, X::BrowserBridge) else w.execution,
       paymentTask: "", preferences: R::restart(w.preferences, R::PreferenceStore),
       wake: W::cancel(w.wake, W::WakeHost),
@@ -349,17 +394,17 @@ pure def openGrace(w: Workspace, by: WorkspaceActor): Workspace =
 pure def canCloseGrace(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canClose(w.assistant, C::ConversationUser)
 pure def closeGrace(w: Workspace, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::close(w.assistant, C::ConversationUser), execution: quietExecution(w.execution),
+  ...w, assistant: A::close(w.assistant, C::ConversationUser), review: emptyReview(w.review.revision + 1), execution: quietExecution(w.execution),
   payment: quietPayment(w.payment), wake: W::cancel(w.wake, W::WakeUser)
 }
 pure def canStop(w: Workspace, by: WorkspaceActor): bool = by == Person and A::unfinished(w.assistant)
 pure def stop(w: Workspace, by: WorkspaceActor): Workspace = interrupted(w.device, w.browser, w)
 pure def canAbandonTask(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canAbandon(w.assistant, C::ConversationUser) and
-  X::canRetire(w.execution, X::User)
+  (hasNext(w.plan) or X::canRetire(w.execution, X::User))
 pure def abandonTask(w: Workspace, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::abandon(w.assistant, C::ConversationUser),
-  execution: X::retire(w.execution, X::User), payment: quietPayment(w.payment),
+  execution: if (hasNext(w.plan)) w.execution else X::retire(w.execution, X::User), plan: emptyPlan, payment: quietPayment(w.payment),
   wake: W::cancel(w.wake, W::WakeUser)
 }
 pure def canTalk(w: Workspace, by: WorkspaceActor): bool =
@@ -429,7 +474,7 @@ pure def canNewConversation(w: Workspace, by: WorkspaceActor): bool =
   by == Person and w.device.readiness == S::Ready and w.execution.phase == X::Idle and
   A::canNewConversation(w.assistant, C::ConversationUser)
 pure def newConversation(w: Workspace, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::newConversation(w.assistant, C::ConversationUser), paymentTask: "",
+  ...w, assistant: A::newConversation(w.assistant, C::ConversationUser), review: emptyReview(w.review.revision + 1), plan: emptyPlan, paymentTask: "",
   wake: W::cancel(w.wake, W::WakeUser)
 }
 pure def canRequestReplacement(w: Workspace, requestedTask: str, requestedGoal: str, by: WorkspaceActor): bool =
@@ -447,10 +492,10 @@ pure def keepTask(w: Workspace, by: WorkspaceActor): Workspace = {
 pure def canReplaceTask(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): bool =
   by == Person and mayAssist(w) and taskRequest.owner != "" and taskRequest.origin != "" and
   taskRequest.task == w.assistant.replacementId and taskRequest.goal == w.assistant.replacementGoal and
-  A::canChooseReplacement(w.assistant, C::ConversationUser) and X::canRetire(w.execution, X::User)
+  A::canChooseReplacement(w.assistant, C::ConversationUser) and (hasNext(w.plan) or X::canRetire(w.execution, X::User))
 pure def replaceTask(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::chooseReplacement(w.assistant, true, C::ConversationUser),
-  execution: X::start(X::retire(w.execution, X::User), taskRequest.owner, taskRequest.task, taskRequest.origin, X::User),
+  plan: emptyPlan, execution: X::start(if (hasNext(w.plan)) w.execution else X::retire(w.execution, X::User), taskRequest.owner, taskRequest.task, taskRequest.origin, X::User),
   browser: B::navigate(w.browser, taskRequest.origin), payment: quietPayment(w.payment), paymentTask: "",
   wake: W::cancel(w.wake, W::WakeUser)
 }
@@ -696,7 +741,7 @@ pure def canBegin(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): b
   X::canStart(w.execution, taskRequest.owner, taskRequest.task, taskRequest.origin, X::User)
 pure def begin(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): Workspace = {
   ...w, browser: B::navigate(w.browser, taskRequest.origin),
-  assistant: A::beginTask(w.assistant, taskRequest.task, taskRequest.goal, C::ConversationUser),
+  plan: emptyPlan, assistant: A::beginTask(w.assistant, taskRequest.task, taskRequest.goal, C::ConversationUser),
   execution: X::start(w.execution, taskRequest.owner, taskRequest.task, taskRequest.origin, X::User),
   payment: quietPayment(w.payment), paymentTask: "", wake: W::cancel(w.wake, W::WakeUser)
 }
@@ -760,11 +805,13 @@ pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: Unex
   (unexpected.id != w.browser.selected or unexpected.revision != w.browser.revision)
   implies not(canUnexpectedPage(w, unexpected, by))
 pure def canResume(w: Workspace, by: WorkspaceActor): bool =
-  by == Person and mayAssist(w) and A::canResume(w.assistant, C::ConversationUser) and
-  X::canResume(w.execution, X::User)
+  by == Person and A::canResume(w.assistant, C::ConversationUser) and
+  (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == ""
+   else mayAssist(w) and X::canResume(w.execution, X::User))
 pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::resume(w.assistant, C::ConversationUser), execution: X::resume(w.execution, X::User),
-  payment: if (P::canResume(w.payment, P::Person)) P::resume(w.payment, P::Person) else w.payment,
+  ...w, assistant: A::resume(w.assistant, C::ConversationUser),
+  execution: if (hasNext(w.plan)) w.execution else X::resume(w.execution, X::User),
+  payment: if (not(hasNext(w.plan)) and P::canResume(w.payment, P::Person)) P::resume(w.payment, P::Person) else w.payment,
   wake: W::cancel(w.wake, W::WakeUser)
 }
 ```
@@ -920,7 +967,212 @@ pure def completeOrdinary(w: Workspace, completion: GoalCompletion, by: Workspac
 pure def lawPaymentCannotUseOrdinaryCompletion(w: Workspace, completion: GoalCompletion, by: WorkspaceActor): bool =
   w.paymentTask != "" implies not(canCompleteOrdinary(w, completion, by))
 pure def sometimesOrdinaryGoalCompletes(w: Workspace): bool =
-  w.paymentTask == "" and w.assistant.activity == A::Finished and w.assistant.outcome == A::Completed and w.execution.phase == X::Idle
+  w.plan.owner == "" and w.paymentTask == "" and w.assistant.activity == A::Finished and w.assistant.outcome == A::Completed and w.execution.phase == X::Idle
+```
+
+## Story: Follow one reviewed plan across apps
+
+> As a person asking Grace to read a message, check the details on a website and put the appointment in my calendar, I want to see what remains and keep my place when I change apps.
+
+### The person starts a sequence of outcomes without opening a website
+
+Each step names an app, a subject and an expected outcome. Its instruction can guide several interactions. A plan records references to observations in order. The next instruction follows the most recent confirmed outcome. The person chooses the plan and the host supplies the authenticated account. Starting or resuming a plan grants no authority to write to an app. A payment continues to use the payment ledger.
+
+```quint
+pure def canBeginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): bool =
+  by == Person and w.device.readiness == S::Ready and w.execution.phase == X::Idle and
+  A::canBeginTask(w.assistant, request.task, request.goal, C::ConversationUser) and
+  request.owner != "" and request.steps.length() > 0 and
+  request.steps.every(s => s.subject != "" and s.outcome != "")
+pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): Workspace =
+  val assistant = A::beginTask(w.assistant, request.task, request.goal, C::ConversationUser)
+  val plan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps,
+    openingBrowser: w.browser.revision, originalAsk: request.goal }
+  { ...w, plan: plan, review: emptyReview(w.review.revision + 1), assistant: { ...assistant, checkpoint: nextOutcome(plan).outcome },
+    paymentTask: "", payment: quietPayment(w.payment), wake: W::cancel(w.wake, W::WakeUser) }
+```
+
+### A read plan offered in chat waits for the person to start it
+
+The conversation host validates the current human request before it offers
+an ordered set of reads of the items the person opens. The workspace
+checks its current conversation and work versions and takes the goal
+directly from the current person’s words, including any restrictions.
+Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
+this plan. Opening the app does not approve an external change. The
+browser’s opening revision identifies a document loaded later in the plan.
+With permission and an active compact Browser step, the person can ask
+Grace to highlight a link on the loaded page. The host binds the
+highlighted destination to this step and its current page context. A
+highlight does not record a read or navigate the page. Visiting a
+different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+
+For a requested statement read, the host reads the current visible document locally. The amount due and due date each need a single distinct labeled value on the same statement. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
+
+```quint
+pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
+  amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
+pure def readStep(read: GuidedRead): GuidedStep = match read {
+  | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
+  | ReadBrowser => { surface: S::Browser, subject: "Open website", outcome: "Open the page you want me to check." }
+  | ReadStatement => { surface: S::Browser, subject: "Current statement", outcome: "Check the statement amount due and its due date." }
+  | ReadChangedBrowser => { surface: S::Browser, subject: "Next website page", outcome: "Open the next page you want me to check." }
+  | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
+  | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
+  | UnsupportedRead => noGuidedStep
+}
+pure def guidedReadKind(guidedStep: GuidedStep): GuidedRead =
+  if (guidedStep == readStep(ReadMail)) ReadMail
+  else if (guidedStep == readStep(ReadBrowser)) ReadBrowser
+  else if (guidedStep == readStep(ReadStatement)) ReadStatement
+  else if (guidedStep == readStep(ReadChangedBrowser)) ReadChangedBrowser
+  else if (guidedStep == readStep(ReadCalendar)) ReadCalendar
+  else if (guidedStep == readStep(SaveMailAppointment)) SaveMailAppointment
+  else UnsupportedRead
+pure def mayGuideReadLink(w: Workspace): bool =
+  val read = guidedReadKind(nextOutcome(w.plan))
+  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser or read == ReadStatement) and
+  w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
+  w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
+  (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
+  w.assistant.replacementId == "" and w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
+  w.execution.phase == X::Idle and w.paymentTask == ""
+pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): bool =
+  by == Host and mayGuideReadLink(w) and link.url != "" and link.task == w.assistant.taskId and
+  link.version == w.assistant.workVersion and link.generation == w.assistant.conversation.generation and
+  link.deviceVersion == w.device.contextVersion and link.browserRevision == w.browser.revision and
+  link.stepIndex == w.plan.receipts.length()
+pure def setGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): Workspace =
+  { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url } }
+pure def guidedLinkObserved(w: Workspace): bool =
+  (w.plan.linkStep == w.plan.receipts.length() and w.plan.linkUrl != "") implies
+    (w.device.surface == S::Browser and B::activeTab(w.browser).load == B::Loaded and
+      B::tabUrl(B::activeTab(w.browser)) == w.plan.linkUrl)
+pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
+  val ask = w.assistant.conversation.messages.foldl("", (latest, message) =>
+    if (message.author == C::HumanMessage) message.text else latest)
+  { owner: "tablet", task: offer.task, goal: ask, steps: offer.reads.listMap(read => readStep(read)) }
+}
+pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
+  by == Host and w.paymentTask == "" and
+  offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
+  offer.reads.length() > 0 and offer.reads.length() <= 4 and canBeginGuided(w, reviewedRequest(w, offer), Person)
+pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): Workspace = {
+  ...w, review: { revision: w.review.revision + 1, generation: offer.generation,
+    workVersion: offer.workVersion, request: reviewedRequest(w, offer) }
+}
+pure def scopedReadRequest(review: GuidedReview): GuidedRequest =
+  { ...review.request, goal: "Check the items I open" }
+pure def canStartReadReview(w: Workspace, reviewRevision: int, by: WorkspaceActor): bool =
+  by == Person and reviewRevision == w.review.revision and w.paymentTask == "" and
+  w.review.generation == w.assistant.conversation.generation and w.review.workVersion == w.assistant.workVersion and
+  w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
+  w.review.request.goal != "" and canBeginGuided(w, scopedReadRequest(w.review), Person)
+pure def startReadReview(w: Workspace, reviewRevision: int, by: WorkspaceActor): Workspace =
+  val started = beginGuided(w, scopedReadRequest(w.review), by)
+  { ...started, plan: { ...started.plan, originalAsk: w.review.request.goal } }
+pure def lawAnOldReadReviewCannotStart(w: Workspace, reviewRevision: int, by: WorkspaceActor): bool =
+  reviewRevision != w.review.revision implies not(canStartReadReview(w, reviewRevision, by))
+pure val offerValues = Set(
+  { task: "read", generation: 1, workVersion: 0, reads: List(ReadMail) },
+  { task: "read", generation: 2, workVersion: 0, reads: List(ReadChangedBrowser) })
+pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
+  stepIndex: 0, url: "https://biller.example/help" })
+pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
+```
+
+### Only a current observation of the next outcome advances the plan
+
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
+
+```quint
+pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  by == Host and hasNext(w.plan) and w.execution.phase == X::Idle and w.paymentTask == "" and
+  A::isVisible(w.assistant) and w.device.readiness == S::Ready and
+  (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
+  w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
+  report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
+  report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and
+  report.step == nextOutcome(w.plan) and report.step.surface == w.device.surface and guidedLinkObserved(w) and
+  report.evidence != "" and not(w.plan.receipts.includes(report.evidence)) and
+  (guidedReadKind(report.step) == SaveMailAppointment implies
+    (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
+pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
+  val plan = { ...w.plan, receipts: w.plan.receipts.append(report.evidence) }
+  val assistant = w.assistant
+  { ...w, plan: plan, assistant:
+    if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: nextOutcome(plan).outcome,
+      workVersion: assistant.workVersion + 1 }
+    else A::finishTask(assistant, report.task, report.version, A::Completed, report.evidence, C::ConversationRuntime) }
+pure def lawOtherOwnersCannotAdvanceAPlan(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  report.owner != w.plan.owner implies not(canConfirmGuided(w, report, by))
+pure def lawOldCallbacksCannotAdvanceAPlan(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  report.version != w.assistant.workVersion implies not(canConfirmGuided(w, report, by))
+pure def lawPausedPlanCannotAdvance(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  w.assistant.activity == A::Paused implies not(canConfirmGuided(w, report, by))
+pure def lawPaymentCannotUsePlanReceipt(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  w.paymentTask != "" implies not(canConfirmGuided(w, report, by))
+pure val sampleStep: GuidedStep = { surface: S::Home, subject: "appointment", outcome: "Read the appointment" }
+pure val requestValues = Set({ owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) })
+pure val sampleReport: GuidedObservation = {
+  owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
+  step: sampleStep, evidence: "appointment-receipt"
+}
+pure val reportValues = Set(sampleReport, { ...sampleReport, deviceVersion: 2 })
+pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
+  w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
+```
+
+### A calendar save must come from the selected email and a separately approved write
+
+Checking a selected open email records its current account, identity and
+version. A later calendar step may recognize a save from that same email
+and account. Starting the plan cannot write. The calendar's separate
+approved proposal is still what authorizes saving the exact appointment.
+The provider must return the saved occurrence and a fresh read must find
+those exact approved details under the same account. The host may retain
+the adopted occurrence during a surface switch. Checking the matching
+saved occurrence can retry the read and advance the resumed plan. A calendar feed item,
+wrong source, or unsaved appointment cannot count as a save.
+
+```quint
+pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
+  guidedReadKind(mailCheck.report.step) == ReadMail and canConfirmGuided(w, mailCheck.report, by) and
+  mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
+  mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0
+pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
+  val after = confirmGuided(w, mailCheck.report, by)
+  { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
+pure def guidedSavePending(w: Workspace): bool =
+  hasNext(w.plan) and guidedReadKind(nextOutcome(w.plan)) == SaveMailAppointment and
+  w.execution.phase == X::Idle and w.paymentTask == ""
+pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
+  by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
+  approval.task == w.assistant.taskId and approval.account == w.plan.mail.account and approval.account > 0 and
+  approval.owner == w.plan.mail.address and approval.sourceRef == w.plan.mail.ref and approval.sourceRef != "" and
+  approval.calendar != "" and approval.provisional != "" and approval.proposal > w.plan.calendarApproval.proposal and
+  approval.title != "" and approval.ends > approval.starts and approval.timezone != ""
+pure def expectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): Workspace =
+  { ...w, plan: { ...w.plan, calendarApproval: approval } }
+pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): bool =
+  by == Host and guidedSavePending(w) and
+  saved.approval == w.plan.calendarApproval and saved.approval.proposal >= 0 and
+  saved.approval.task == w.assistant.taskId and saved.occurrence != "" and
+  ((w.plan.savedOccurrence == "" and saved.evidence == "") or
+    (w.plan.savedOccurrence == saved.occurrence and w.plan.savedEvidence == "" and saved.evidence != ""))
+pure def observeGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): Workspace =
+  { ...w, plan: { ...w.plan, savedOccurrence: saved.occurrence, savedEvidence: saved.evidence } }
+pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
+  (approval.sourceRef != w.plan.mail.ref or approval.account != w.plan.mail.account) implies
+    not(canExpectGuidedCalendar(w, approval, by))
+pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  (guidedReadKind(report.step) == SaveMailAppointment and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
+pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
+pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })
+pure val savedValues = Set({ approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" },
+  occurrence: "saved", evidence: "Saved Visit" })
 ```
 
 ## Story: Preserve payment authorization and uncertainty across surfaces
