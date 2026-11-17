@@ -145,6 +145,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  }
 
  private static String cloudMessage(int status) {
+  if (status == 401) return "Your approval ended. Open Backup and recovery to try again.";
   if (status == 412) return "The cloud backup changed. Open Backup and recovery to try again.";
   if (status == 404) return "There is no cloud backup for this account.";
   if (status == 413) return "This password vault is too large to back up.";
