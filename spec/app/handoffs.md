@@ -308,8 +308,8 @@ pure def lawAnotherBillHasNoReceipt(source: BillSource, commitment: CM::Commitme
 pure def lawCompletedLabelRequiresCompletedEvidence(source: BillSource, commitment: CM::Commitment): bool =
   visibleOutcome(source, commitment) == CM::Completed implies sourceMatchesCommitment(source, commitment) and commitment.result == CM::Completed
 pure val commitmentValues = Set(CM::initial,
-  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleProposal, stage: CM::Resolved, result: CM::Completed, reference: "receipt" },
-  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleProposal, stage: CM::Checking, result: CM::Unknown })
+  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleTerms, stage: CM::Resolved, result: CM::Completed, reference: "receipt" },
+  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleTerms, stage: CM::Checking, result: CM::Unknown })
 ```
 
 ## Story: Share the photo I am viewing through my chosen mailbox
