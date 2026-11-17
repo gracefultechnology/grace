@@ -47,7 +47,11 @@ public class MainActivity extends ElizaBridgeActivity {
     });
    }
   });
-  startForegroundService(new Intent(this, GraceAgentService.class));
+ }
+
+ @Override public void onStart() {
+  super.onStart();
+  GraceAgentService.resume(this);
  }
 
  private void leave(OnBackPressedCallback callback) {

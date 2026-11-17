@@ -11,8 +11,9 @@ import java.util.concurrent.Callable;
 
 @CapacitorPlugin(name = "GraceSignIn")
 public final class GraceSignInPlugin extends CloudSignInPlugin {
- static final CloudSignInEnvironment PRODUCTION = environment("production", "cloud.eliza.app", "elizacloud");
- static final CloudSignInEnvironment STAGING = environment("staging", "cloud-staging.eliza.app", "elizacloud-staging");
+ static final CloudSignInEnvironment ENVIRONMENT = BuildConfig.DEBUG
+  ? environment("staging", "cloud-staging.eliza.app", "elizacloud-staging")
+  : environment("production", "cloud.eliza.app", "elizacloud");
  static final CloudSignInConfig NATIVE = registration("native",
   "email",
   "https://www.googleapis.com/auth/gmail.modify",
@@ -38,9 +39,8 @@ public final class GraceSignInPlugin extends CloudSignInPlugin {
    .receiptSlotPrefix("grace-signin:v1:ack:")
    .retiringSlotPrefix("grace-signin:v1:retire:")
    .credentialSlotPrefix("grace-signin:v1:key:")
-   .environment(PRODUCTION);
+   .environment(ENVIRONMENT);
   for (String scope : scopes) builder.googleScope(scope);
-  if (BuildConfig.DEBUG) builder.environment(STAGING);
   return builder.build();
  }
 
