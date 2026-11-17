@@ -1,13 +1,10 @@
 <resources>
- <!-- Paper: color.light.background in packages/design-system/tokens.json. It is the window under
-      the transparent bridge WebView, so nothing see-through over the website shows a dark window. -->
  <color name="paper">#FFFFFF</color>
  <style name="BaseTheme" parent="Theme.AppCompat.Light.NoActionBar">
   <item name="android:windowBackground">@color/paper</item>
   <item name="android:windowLightStatusBar">true</item>
   <item name="android:windowLightNavigationBar">true</item>
  </style>
- <!-- API 29; values-v30/styles.xml draws under every cutout. -->
  <style name="AppTheme" parent="BaseTheme">
   <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
  </style>

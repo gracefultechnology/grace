@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
+import { parseAst } from "vite";
+import { buildConsumerAndroidRuntime } from "../../../vendor/eliza/packages/app/scripts/lib/consumer-android-runtime.mjs";
+import { stageAndroidRuntimeInventory } from "../../../vendor/eliza/plugins/plugin-native-agent/native-host/android-runtime-inventory.mjs";
 import { buildAndroidConsumer } from "../../../vendor/eliza/packages/app/scripts/mobile/android/build-consumer.mjs";
 import { generateAndroidConsumerHost } from "../../../vendor/eliza/packages/app/scripts/mobile/android/consumer-host.mjs";
 import { readApkSignerDigest } from "../../../vendor/eliza/packages/app/scripts/mobile/artifact-inspection/apk-distribution.mjs";
@@ -12,6 +15,7 @@ import { resolveAndroidSdkRoot, resolveJavaHome } from "../../../vendor/eliza/pa
 import config from "../capacitor.config.ts";
 
 const app = path.resolve(import.meta.dirname, "..");
+const upstream = path.resolve(app, "../../vendor/eliza");
 const artifacts = path.join(app, "artifacts");
 const flavors = ["launcher", "standalone"];
 export const identity = Schema.decodeUnknownSync(
@@ -26,21 +30,55 @@ const forbiddenEntry = new RegExp([
 ].join("|"), "i");
 
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, "utf8"));
+const writeJson = (file: string, value: unknown) => {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+};
 const profile = readJson(path.join(app, "android/host.json"));
 const { signing } = Schema.decodeUnknownSync(Schema.Struct({ signing: Schema.Record(Schema.String, Schema.String) }))(profile);
 const keystore = signing.storeFile;
 
+const Reasons = Schema.Record(Schema.String, Schema.String);
+const Policy = Schema.Struct({
+  model: Schema.NonEmptyString,
+  plugins: Schema.Struct({ refuse: Reasons }),
+  actions: Schema.Struct({
+    grace: Schema.Record(Schema.String, Schema.Unknown),
+    upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
+  }),
+});
+const policy = Schema.decodeUnknownSync(Policy)(readJson(path.join(app, "agent/policy.json")));
+const stubPlugins = [
+  "@elizaos/plugin-browser", "@elizaos/plugin-calendar", "@elizaos/plugin-discord", "@elizaos/plugin-google-workspace",
+  "@elizaos/plugin-inbox", "@elizaos/plugin-knowledge", "@elizaos/plugin-local-inference", "@elizaos/plugin-maps",
+  "@elizaos/plugin-notes", "@elizaos/plugin-personal-assistant", "@elizaos/plugin-vision",
+  "@pixiv/three-vrm", "discord.js", "google-auth-library", "googleapis", "three",
+];
+const unrefused = stubPlugins.filter((name) => name.startsWith("@elizaos/plugin-") && !Object.hasOwn(policy.plugins.refuse, name));
+if (unrefused.length) throw new Error(`The agent payload leaves out ${unrefused.join(", ")}, which agent/policy.json does not refuse`);
+
+const Abi = Schema.Literals(["arm64-v8a", "x86_64"]);
+type Abi = typeof Abi.Type;
 const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
+const AgentStatus = Schema.Struct({
+  state: Schema.Literals(["unavailable", "stopped", "starting", "running", "failed"]),
+  failure: Schema.optional(Schema.Literals(["payload", "storage", "config", "credential", "agent", "crashed", "runtime"])),
+});
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
   Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.NonEmptyString }),
+  Schema.Struct({ agent: AgentStatus }),
+  Schema.Struct({ service: Schema.String.check(Schema.isPattern(/^[A-Z]\w*$/)) }),
+  Schema.Struct({ leaveFor: Schema.String.check(Schema.isPattern(/^android\.settings\.[A-Z_]+$/)) }),
 ]);
 type Step = typeof Step.Type;
+type OnDevice = Extract<Step, { service: string } | { leaveFor: string }>;
 const Arguments = Schema.Struct({
   release: Schema.optional(Schema.Boolean),
   verify: Schema.optional(Schema.Boolean),
+  abi: Schema.optional(Abi),
   install: Schema.optional(EmulatorSerial),
   emulator: Schema.optional(Schema.NonEmptyString),
   exercise: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-z0-9-]+$/))),
@@ -65,15 +103,50 @@ const versionCode = (version: string) => {
   return Number(parts[1]) * 1e6 + Number(parts[2]) * 1e3 + Number(parts[3]);
 };
 
-function buildAndroid({ release = false }) {
+function agentRuntime(abi: Abi) {
+  const commit = execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const key = createHash("sha256").update(JSON.stringify({ commit, abi, stubPlugins })).digest("hex").slice(0, 16);
+  const payload = path.join(artifacts, "agent-runtime", `${abi}-${key}`);
+  if (existsSync(payload)) return payload;
+  const building = `${payload}.building-${process.pid}`;
+  const skills = path.join(building, "skills");
+  mkdirSync(skills, { recursive: true });
+  try {
+    const { output } = buildConsumerAndroidRuntime({
+      source: upstream, expectedCommit: commit, output: path.join(building, "payload"), skillsDirectory: skills,
+      stageGateway: () => ({}), targetAbi: abi, stubPlugins, embeddingModel: false,
+    });
+    const main = path.join(output, "android/app/src/main");
+    stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), excludedAgentDirectories: [abi], targetAbi: abi, gateway: false });
+    renameSync(output, payload);
+    return payload;
+  } finally {
+    rmSync(building, { recursive: true, force: true });
+  }
+}
+
+function writeAgentData() {
+  const host = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(readJson(path.join(app, "android/agent.json")));
+  const { cloud } = Schema.decodeUnknownSync(Schema.Struct({ cloud: Schema.Struct({ baseUrl: Schema.String }) }))(host);
+  writeJson(path.join(artifacts, "agent/host.json"), { ...host, cloud: { ...cloud, smallModel: policy.model, largeModel: policy.model } });
+  writeJson(path.join(artifacts, "agent/policy.json"), {
+    schema: 1,
+    actions: { allowed: policy.actions.upstream.allow, refused: policy.actions.upstream.refuse },
+    plugins: { denied: Object.keys(policy.plugins.refuse) },
+  });
+}
+
+function buildAndroid({ release = false, abi }: { release?: boolean; abi: Abi }) {
   const { version } = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.String }))(readJson(path.join(app, "package.json")));
+  writeAgentData();
   generateAndroidConsumerHost({
     consumerRoot: app,
-    upstreamRoot: path.resolve(app, "../../vendor/eliza"),
+    upstreamRoot: upstream,
     dependencyRoot: realpathSync(path.dirname(createRequire(import.meta.url).resolve("@capacitor/android/package.json"))),
     output: path.join(app, project),
     identity: { appId: identity.appId, appName: identity.appName, version, versionCode: versionCode(version) },
     profile,
+    runtimeDirectory: agentRuntime(abi),
   });
   if (!release) for (const flavor of flavors) for (const suffix of ["", "-unsigned"])
     rmSync(path.join(artifacts, `${flavor}-release${suffix}.apk`), { force: true });
@@ -96,16 +169,67 @@ function buildAndroid({ release = false }) {
   });
 }
 
+type Syntax = { type: string; [key: string]: unknown };
+const isSyntax = (value: unknown): value is Syntax => typeof value === "object" && value !== null && typeof Reflect.get(value, "type") === "string";
+const actionName = (node: unknown) => isSyntax(node) && node.type === "Literal" && typeof node.value === "string" && /^[A-Z][A-Z0-9_]+$/.test(node.value) ? node.value : undefined;
+const identifier = (node: unknown) => isSyntax(node) && node.type === "Identifier" ? String(node.name) : undefined;
+const keyOf = (property: Syntax) => property.type === "Property" ? identifier(property.key) ?? (isSyntax(property.key) && property.key.type === "Literal" ? String(property.key.value) : undefined) : undefined;
+
+function declaredActions(bundle: string) {
+  const objects: Syntax[][] = [];
+  const constants = new Map<string, string[] | null>();
+  const pending: unknown[] = [parseAst(bundle)];
+  while (pending.length) {
+    const node = pending.pop();
+    if (Array.isArray(node)) pending.push(...node);
+    if (!isSyntax(node)) continue;
+    if (node.type === "ObjectExpression") objects.push(Schema.decodeUnknownSync(Schema.Array(Schema.Unknown))(node.properties).filter(isSyntax));
+    const [target, value] = node.type === "VariableDeclarator" ? [node.id, node.init] : node.type === "AssignmentExpression" ? [node.left, node.right] : [];
+    const name = identifier(target);
+    const literal = actionName(value);
+    if (name && value) constants.set(name, literal && constants.get(name) !== null ? [...constants.get(name) ?? [], literal] : null);
+    pending.push(...Object.values(node).filter((child) => typeof child === "object" && child !== null));
+  }
+  return new Set(objects.filter((properties) => properties.some((property) => ["similes", "handler", "validate"].includes(keyOf(property) ?? "")))
+    .flatMap((properties) => {
+      const name = properties.find((property) => keyOf(property) === "name")?.value;
+      const literal = actionName(name);
+      return literal ? [literal] : constants.get(identifier(name) ?? "") ?? [];
+    }));
+}
+
+const checked = new Map<string, number>();
+function checkPolicy(bundle: string) {
+  const digest = createHash("sha256").update(bundle).digest("hex");
+  const known = checked.get(digest);
+  if (known !== undefined) return known;
+  const declared = declaredActions(bundle);
+  const { allow, refuse, refusedSubactionsOf } = policy.actions.upstream;
+  const unlisted = [...declared].filter((name) => !Object.hasOwn(allow, name) && !Object.hasOwn(refuse, name) && !Object.hasOwn(policy.actions.grace, name)
+    && !refusedSubactionsOf.some((umbrella) => name.startsWith(`${umbrella}_`))).sort();
+  if (unlisted.length) throw new Error(`The agent registers actions agent/policy.json neither allows nor refuses: ${unlisted.join(", ")}`);
+  checked.set(digest, declared.size);
+  return declared.size;
+}
+
 function writeApkManifest() {
   const apksigner = buildTool("apksigner");
   const apks = readdirSync(artifacts).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
   const manifest = apks.map((name) => {
     const file = path.join(artifacts, name);
     const contents = readFileSync(file);
-    const forbidden = execFileSync(buildTool("aapt"), ["list", file], { encoding: "utf8" }).split("\n").filter((entry) => forbiddenEntry.test(entry));
+    const entries = execFileSync(buildTool("aapt"), ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
+    const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
-    process.stdout.write(`${name} ${contents.byteLength} bytes\n`);
-    return { name, bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
+    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_bun\.so$/.exec(entry)?.slice(1) ?? []);
+    if (abis.length !== 1 || !entries.includes("assets/agent-runtime.inventory")) throw new Error(`${name} does not carry one agent runtime: libeliza_bun.so for ${abis.join(", ") || "no processor type"}`);
+    const listed = execFileSync("unzip", ["-p", file, "assets/agent-runtime.inventory"], { encoding: "utf8" }).trim().split("\n").slice(1)
+      .map((line) => line.split("\t")).map(([kind, , , source]) => kind === "native" ? `lib/${abis[0]}/${source}` : `assets/${source}`);
+    const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
+    if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}; delete artifacts/agent-runtime to rebuild a payload staged by an older build`);
+    const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
+    process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes; its ${actions} actions declared by name are each allowed or refused\n`);
+    return { name, abi: abis[0], bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
   writeFileSync(path.join(artifacts, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
@@ -224,16 +348,24 @@ async function devTools(url: string, signal: AbortSignal) {
   };
 
   const describe = async () => {
-    const expression = `JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()), text: document.body.innerText.slice(0, 300) })`;
-    const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal: AbortSignal.timeout(30_000) });
+    const expression = `(async () => JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()), text: document.body.innerText.slice(0, 300), agent: await Capacitor.Plugins.EmbeddedAgent.getStatus().catch(String) }))()`;
+    const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal: AbortSignal.timeout(30_000) });
     return String(result.value);
   };
 
   return {
     until,
     describe,
-    async step(step: Step) {
-      const signal = AbortSignal.timeout(120_000);
+    async step(step: Exclude<Step, OnDevice>) {
+      const signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000);
+      if ("agent" in step) {
+        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && Promise.resolve(listening).then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
+        const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const status = Schema.decodeUnknownSync(Schema.Struct({ ...AgentStatus.fields, error: Schema.optional(Schema.String) }))(result.value);
+        if (status.state !== step.agent.state || status.failure !== step.agent.failure)
+          throw new Error(`The agent is ${JSON.stringify(status)}, not ${JSON.stringify(step.agent)}`);
+        return;
+      }
       if ("tap" in step) return await tap(step.tap, signal);
       if ("into" in step) {
         await tap(step.into, signal);
@@ -253,6 +385,19 @@ async function devTools(url: string, signal: AbortSignal) {
 }
 
 const failing = (what: string) => (error: unknown) => { throw new Error(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); };
+
+async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: OnDevice) {
+  if ("service" in step) {
+    const foreground = `dumpsys activity services ${identity.appId}/.${step.service} | grep -c isForeground=true`;
+    await shell(serial, `until [ "$(${foreground})" -gt 0 ]; do sleep 1; done`, 120);
+    return;
+  }
+  await shell(serial, `am start -W -a ${step.leaveFor}`, 120);
+  await shell(serial, `am kill ${identity.appId}`);
+  const survivor = (await shell(serial, `pidof ${identity.appId}`).catch(() => "")).trim();
+  if (survivor !== pid) throw new Error(`Grace's process ${pid} did not survive her activity being left for ${step.leaveFor}: "${survivor}"`);
+  await shell(serial, `am start -W -n ${activity}`, 120);
+}
 
 async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>) {
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
@@ -281,7 +426,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
         failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
       await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
       for (const step of exercise) {
-        await page.step(step).catch(showing(JSON.stringify(step)));
+        await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
       }
     } finally {
@@ -312,8 +457,8 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
 }
 
 if (import.meta.main) {
-  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" } } }).values;
-  const { verify, release, install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
+  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" } } }).values;
+  const { verify, release, abi = "arm64-v8a", install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
@@ -321,7 +466,7 @@ if (import.meta.main) {
   const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step), { onExcessProperty: "error" })(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
   if (verify) writeApkManifest();
   else {
-    buildAndroid({ release });
+    buildAndroid({ release, abi });
     const target = install ? attached(install) : emulator && await emulatorTarget(emulator);
     if (target) {
       process.once("exit", (code) => { stopping.abort(); if (code) target.stop(); });
