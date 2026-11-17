@@ -401,7 +401,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
   await shell(serial, `am start -W -n ${activity}`, 120);
 }
 
-async function install(serial: typeof EmulatorSerial.Type, apk: string) {
+async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
   await adb(["-s", serial, "install", "-r", apk], 300).catch(async (error: unknown) => {
     if (!(error instanceof Error && String(error.cause).includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE"))) throw error;
     process.stdout.write(`${serial} holds Grace signed by another key; uninstalling her and her data\n`);
@@ -411,7 +411,7 @@ async function install(serial: typeof EmulatorSerial.Type, apk: string) {
 }
 
 async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, release: boolean) {
-  await install(serial, path.join(artifacts, release ? "launcher-release.apk" : "launcher-debug.apk"));
+  await installGrace(serial, path.join(artifacts, release ? "launcher-release.apk" : "launcher-debug.apk"));
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
@@ -474,7 +474,7 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
 
 if (import.meta.main) {
   const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" } } }).values;
-  const { verify, release, abi = "arm64-v8a", install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
+  const { verify, release = false, abi = "arm64-v8a", install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if (exercise && release) throw new Error("--exercise drives Grace's page over its debugging socket, which a release build does not open; walk the debug build");
@@ -490,7 +490,7 @@ if (import.meta.main) {
     if (target) {
       process.once("exit", (code) => { stopping.abort(); if (code) target.stop(); });
       for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
-      await deliver(target, steps, release === true);
+      await deliver(target, steps, release);
     }
   }
 }
