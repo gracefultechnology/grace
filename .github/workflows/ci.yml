@@ -11,6 +11,10 @@ on:
         description: Run the pinned 100-biller browser qualification
         type: boolean
         default: true
+      webarena:
+        description: Run official Shopping task 260 with hosted link guidance
+        type: boolean
+        default: false
   pull_request:
     branches: [develop, main]
   push:
@@ -28,6 +32,151 @@ permissions:
   contents: read
 
 jobs:
+  webarena:
+    if: github.event_name == 'workflow_dispatch' && inputs.webarena
+    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHOPPING_IMAGE: docker.io/am1n3e/webarena-verified-shopping@sha256:3e8cb9b945ea9b1c94ab26dba53e8d12dd0406abbf4bf686fd3bb2b6a5908feb
+      SHOPPING_ORIGIN: https://127.0.0.1:7770
+      GRACE_WEBARENA_UPSTREAM: ${{ github.workspace }}/.cache/webarena-upstream
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          verification: "false"
+      - uses: actions/checkout@v7
+        with:
+          repository: web-arena-x/webarena
+          ref: dce04686a56253aefba7b18a4fa0937cf1dc987b
+          path: .cache/webarena-upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - name: Prepare evaluator and Chromium
+        run: |
+          private_dir="$RUNNER_TEMP/grace-webarena-private"
+          results_dir="$RUNNER_TEMP/grace-webarena-results"
+          install -d -m 700 "$private_dir" "$results_dir"
+          python -m venv "$private_dir/venv"
+          "$private_dir/venv/bin/python" -m pip install -r "$GRACE_WEBARENA_UPSTREAM/requirements.txt"
+          {
+            echo "WEBARENA_PRIVATE=$private_dir"
+            echo "WEBARENA_RESULTS=$results_dir"
+            echo "GRACE_WEBARENA_PYTHON=$private_dir/venv/bin/python"
+            echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/task-260-input.json"
+          } >> "$GITHUB_ENV"
+          pnpm --filter @repo/app exec playwright install --with-deps chromium
+          pnpm gen
+      - name: Start the pinned Shopping storefront
+        run: |
+          test "$(uname -m)" = x86_64
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          available=$(sudo df -Pm "$docker_root" | awk 'NR == 2 { print $4 }')
+          if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] && (( available < 24000 )); then
+            sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet
+          fi
+          sudo df -h "$docker_root"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends caddy
+          docker pull --platform linux/amd64 "$SHOPPING_IMAGE"
+          docker image inspect --format '{{json .RepoDigests}}' "$SHOPPING_IMAGE" > "$WEBARENA_RESULTS/shopping-image.json"
+          docker run -d --name grace-webarena-shopping --platform linux/amd64 \
+            -p 127.0.0.1:17771:80 -e WA_ENV_CTRL_EXTERNAL_SITE_URL="$SHOPPING_ORIGIN/" "$SHOPPING_IMAGE"
+          ready=false
+          for _ in {1..40}; do
+            if timeout 10 docker exec grace-webarena-shopping sh -ec '
+              mysqladmin ping -h 127.0.0.1 --silent &&
+              curl --silent --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:9200/ |
+                grep -Eq "^(200|401)$"
+            '; then
+              ready=true
+              break
+            fi
+            sleep 10
+          done
+          test "$ready" = true
+          docker exec grace-webarena-shopping sh -ec '
+            cd /var/www/magento2
+            php bin/magento config:set web/unsecure/base_url https://127.0.0.1:7770/
+            php bin/magento config:set web/secure/base_url https://127.0.0.1:7770/
+            php bin/magento config:set web/secure/use_in_frontend 1
+            php bin/magento cache:flush
+          '
+          cat > "$WEBARENA_PRIVATE/Caddyfile" <<'CADDY'
+          {
+            admin off
+            auto_https disable_redirects
+            skip_install_trust
+          }
+          https://127.0.0.1:7770 {
+            bind 127.0.0.1
+            tls internal
+            reverse_proxy http://127.0.0.1:17771
+          }
+          CADDY
+          XDG_DATA_HOME="$WEBARENA_PRIVATE/caddy-data" XDG_CONFIG_HOME="$WEBARENA_PRIVATE/caddy-config" \
+            caddy start --config "$WEBARENA_PRIVATE/Caddyfile" --adapter caddyfile
+          status=$(curl --insecure --fail --silent --show-error --max-time 90 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
+          test "$status" = 200
+      - name: Verify the published synthetic Shopping sign-in
+        working-directory: apps/app
+        env:
+          WA_SHOPPING_FIXTURE_LOGIN: emma.lopez@gmail.com:Password.123
+        run: |
+          umask 077
+          node --input-type=module <<'JS'
+          import { chromium } from "playwright";
+          const origin = process.env.SHOPPING_ORIGIN;
+          const browser = await chromium.launch();
+          try {
+            const context = await browser.newContext({ ignoreHTTPSErrors: true });
+            await context.route("**/*", (route) => {
+              const request = route.request();
+              if (new URL(request.url()).origin !== origin) return route.abort();
+              return request.isNavigationRequest()
+                ? route.continue({ headers: { ...request.headers(), "x-m2-customer-auto-login": process.env.WA_SHOPPING_FIXTURE_LOGIN } })
+                : route.continue();
+            });
+            const page = await context.newPage();
+            const response = await page.goto(origin + "/customer/account/", { waitUntil: "domcontentloaded", timeout: 120000 });
+            if (!response?.ok()) throw new Error("The seeded Shopping account request failed");
+            await page.getByRole("heading", { name: "My Account", exact: true }).first().waitFor({ timeout: 120000 });
+            await context.storageState({ path: process.env.WEBARENA_PRIVATE + "/shopping-state.json" });
+          } finally {
+            await browser.close();
+          }
+          JS
+      - name: Grade official task 260
+        env:
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: |
+          test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
+          git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
+            jq -e --arg start "$SHOPPING_ORIGIN/" --arg receipt "$WEBARENA_RESULTS/task-260.json" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" \
+              '.[] | select(.task_id == 260) | {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: $receipt, siteStorageState: $state, evaluator: "webarena"}' \
+              > "$GRACE_BROWSER_BENCHMARK_FILE"
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 260' |
+            tee "$WEBARENA_RESULTS/grace-browser.log"
+          jq -e '.webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true' "$WEBARENA_RESULTS/task-260.json"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: webarena-shopping-260
+          path: |
+            ${{ runner.temp }}/grace-webarena-results/shopping-image.json
+            ${{ runner.temp }}/grace-webarena-results/task-260.json
+            ${{ runner.temp }}/grace-webarena-results/grace-browser.log
+          if-no-files-found: warn
   billworld:
     if: github.event_name == 'workflow_dispatch' && inputs.billworld
     runs-on: ubuntu-latest
