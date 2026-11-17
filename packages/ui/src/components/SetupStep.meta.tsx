@@ -1,169 +1,200 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { AccountSignIn } from "./AccountSignIn.tsx";
 import { onTablet } from "./CalendarApp.meta.tsx";
-import { GraceActionLine } from "./GraceActionLine.tsx";
-import { GraceBubble } from "./GraceBubble.tsx";
 import { GraceDock } from "./GraceDock.tsx";
-import { SecretField } from "./SecretField.tsx";
+import { SegmentedControl } from "./SegmentedControl.tsx";
+import { speeds, textSizePreview, textSizes } from "./SettingsApp.meta.tsx";
+import { SettingsTextSize } from "./SettingsTextSize.tsx";
 import type { SetupStepProps } from "./SetupStep.tsx";
-import { UserBubble } from "./UserBubble.tsx";
-import { ValueCards } from "./ValueCards.tsx";
+import { WifiNetworkList } from "./WifiNetworkList.tsx";
+import { nearby } from "./WifiNetworkList.meta.tsx";
 
-const at = (title: string, step: number) => ({ title, step, total: 17 });
+const at = (title: string, step: number) => ({ title, step, total: 10 });
+const joined = fn();
+const signedIn = fn();
+const sent = fn();
+const paced = fn();
+const talked = fn();
+const typed = fn();
 const answered = fn();
+const putOff = fn();
 const closed = fn();
 
-const dock = (turn: "margaret" | "listening" | "grace" = "margaret") => (
-  <GraceDock value="" setup listening={turn === "listening"} quiet={turn === "grace"} placeholder={turn === "margaret" ? "Talk or tap to type" : ""} />
-);
-const networks = [
-  { id: "home", value: "Smith Family Wi-Fi", detail: "Strong signal" },
-  { id: "guest", value: "Smith Guest", detail: "Good signal" },
-  { id: "cafe", value: "Corner Cafe", detail: "Weak signal" },
-];
-const named = (
-  <>
-    <GraceBubble>Hi, I’m Grace. I’ll help you with everyday things on this tablet. What’s your name?</GraceBubble>
-    <UserBubble>Margaret</UserBubble>
-  </>
-);
-const connected = <GraceActionLine tone="result">Connected to Smith Family Wi-Fi.</GraceActionLine>;
+const accountLine = "Connect your email so I can help with it. I send, move to Trash or change an event only when you say so.";
+const notNowAccount = { cost: "Grace can’t help until your email is connected.", onNotNow: putOff };
+const learnLater = { cost: "You can try it later in Grace’s window.", onNotNow: putOff };
+const next = { label: "Next", onAction: answered };
+const practice = (onTalk?: () => void, onType?: () => void) => <GraceDock value="" setup placeholder="Talk or tap to type" onTalk={onTalk} onType={onType} />;
+
+type Play = { canvasElement: HTMLElement };
+const tap = async (canvasElement: HTMLElement, name: string) => userEvent.click(within(canvasElement).getByRole("button", { name }));
 
 export const meta: ComponentMeta<SetupStepProps> = {
   args: {
-    progress: at("Saying hello", 1),
-    children: <GraceBubble>Hi, I’m Grace. I’ll help you with everyday things on this tablet. What’s your name?</GraceBubble>,
-    dock: dock(),
-    onAnswer: answered,
+    progress: at("Wi-Fi", 1),
+    line: "Let’s get on the internet first. Which network is yours?",
+    content: <WifiNetworkList networks={nearby} offlineHint="" onSelect={joined} />,
+    notNow: { cost: "Grace needs the internet to think and speak.", onNotNow: putOff },
     onClose: closed,
   },
   decorator: onTablet,
   examples: {
-    Internet: {
-      progress: at("Internet", 3),
-      language: undefined,
-      children: (
-        <>
-          {named}
-          <GraceBubble>Nice to meet you, Margaret. Let’s connect to your internet so I can help properly.</GraceBubble>
-          <GraceActionLine tone="record">Looking for networks…</GraceActionLine>
-          <GraceBubble>Found them. Which of these is yours?</GraceBubble>
-          <ValueCards label="Networks" options={networks} onPick={fn()} />
-        </>
-      ),
-    },
-    Password: {
-      progress: at("Internet password", 4),
-      language: undefined,
-      children: (
-        <>
-          <UserBubble>Smith Family Wi-Fi</UserBubble>
-          <GraceBubble>What’s the password for Smith Family Wi-Fi? It’s usually on a sticker on your internet box. This tablet will remember it, so you only type it once.</GraceBubble>
-        </>
-      ),
-      dock: <SecretField label="Password for Smith Family Wi-Fi" onSubmit={fn()} />,
-    },
-    "Wrong password": {
-      progress: at("Internet password", 4),
-      language: undefined,
-      children: (
-        <>
-          <GraceActionLine>You typed the password.</GraceActionLine>
-          <GraceActionLine tone="problem">That password didn’t work.</GraceActionLine>
-          <GraceBubble>Passwords are easy to mistype, so it’s not you. Nothing has changed. Shall we try it again, or carry on without internet for now?</GraceBubble>
-        </>
-      ),
-      answers: ["Try again", "Carry on without it"],
+    "No internet": {
+      progress: at("Your email", 2),
+      line: "Connecting your email needs the internet.",
+      content: <AccountSignIn state="offline" />,
+      action: { label: "Connect to Wi-Fi", onAction: answered },
+      notNow: notNowAccount,
     },
     Account: {
-      progress: at("Your account", 6),
-      language: undefined,
-      children: (
-        <>
-          {connected}
-          <GraceBubble>You’re connected. Now I’ll make your account. It’s how I know it’s you, and how I keep your things private. What’s your email address?</GraceBubble>
-        </>
-      ),
-      answers: ["Use my mobile number instead"],
-      dock: dock("listening"),
+      progress: at("Your email", 2),
+      line: accountLine,
+      content: <AccountSignIn state="ready" onContinue={signedIn} />,
+      notNow: notNowAccount,
+    },
+    "Sign-in cancelled": {
+      progress: at("Your email", 2),
+      line: accountLine,
+      content: <AccountSignIn state="cancelled" onContinue={signedIn} />,
+      notNow: notNowAccount,
+    },
+    Name: {
+      progress: at("Your name", 3),
+      line: "What would you like me to call you?",
+      speaking: true,
+      content: undefined,
+      notNow: { cost: "I’ll greet you without a name. You can add it in Settings.", onNotNow: putOff },
+      dock: <GraceDock value="Margaret" setup composerOpen onSend={sent} />,
     },
     Pace: {
-      progress: at("Speaking pace", 7),
-      language: undefined,
-      children: (
-        <>
-          <GraceActionLine tone="result">Email confirmed. Account created.</GraceActionLine>
-          <GraceBubble>How does this speaking pace feel? Say slower, faster, or stay at this speed.</GraceBubble>
-        </>
-      ),
-      answers: ["Slower", "Stay at this speed", "Faster"],
+      progress: at("Speaking pace", 4),
+      line: "How does this pace sound? Choose one to hear it.",
+      speaking: true,
+      content: <SegmentedControl aria-label="How fast Grace speaks" options={speeds} value="1" onValueChange={paced} />,
+      action: next,
+      notNow: { cost: "Your pace stays as it is. You can change it in Settings.", onNotNow: putOff },
     },
     "Text size": {
-      progress: at("Text size", 8),
-      language: undefined,
-      children: (
-        <>
-          <UserBubble>Slower</UserBubble>
-          <GraceBubble>I’ll speak a little slower from now on. Next, text size. Is this easy to read, or would you like it bigger?</GraceBubble>
-        </>
-      ),
-      answers: ["Bigger", "That’s good", "Smaller"],
+      progress: at("Text size", 5),
+      line: "Is this easy to read? Choose a size to see it.",
+      content: <SettingsTextSize sizes={textSizes} value="Larger" {...textSizePreview} />,
+      action: { ...next, saving: true },
+      notNow: { cost: "Your text size stays as it is. You can change it in Settings.", onNotNow: putOff },
     },
-    "Stepping aside": {
-      progress: at("Stepping aside", 11),
-      language: undefined,
-      children: <GraceBubble>Now tap Close. I’ll wait at the edge of the screen until you need me.</GraceBubble>,
-      tasksCount: 1,
-      onTasks: fn(),
-      guide: "close",
-      dock: dock("grace"),
+    "What Grace does": {
+      progress: at("What Grace does", 6),
+      line: "I help with your email, calendar and websites. While the microphone is on, your voice goes over the internet to be understood, and my replies come back to be spoken.",
+      speaking: true,
+      content: undefined,
+      action: next,
+      notNow: undefined,
     },
-    Tasks: {
-      progress: at("Tasks", 13),
-      language: undefined,
-      children: <GraceBubble>Welcome back. You may have noticed Tasks at the top. Anything we work on together is kept there, finished or not. Tap it to have a look.</GraceBubble>,
-      tasksCount: 1,
-      onTasks: fn(),
-      guide: "tasks",
-      dock: dock("grace"),
+    Talk: {
+      progress: at("Talk", 7),
+      line: "Tap Talk and say hello.",
+      speaking: true,
+      content: undefined,
+      ring: "talk",
+      notNow: learnLater,
+      dock: practice(talked),
     },
-    Ready: {
-      progress: at("Ready", 17),
-      language: undefined,
-      children: (
-        <>
-          <GraceActionLine>You tapped Continue.</GraceActionLine>
-          <GraceBubble>That’s everything — you can change any of these at any time, just tell me. Would you like to try something together now, or look around on your own first?</GraceBubble>
-        </>
-      ),
-      answers: ["Try something together", "On my own"],
-      tasksCount: 1,
-      onTasks: fn(),
+    Type: {
+      progress: at("Type", 8),
+      line: "Now tap Type and write hello.",
+      content: undefined,
+      ring: "type",
+      notNow: learnLater,
+      dock: practice(undefined, typed),
+    },
+    Close: {
+      progress: at("Close", 9),
+      line: "Tap Close. Ask Grace brings me back.",
+      content: undefined,
+      ring: "close",
+      notNow: learnLater,
+      dock: practice(),
     },
     "Save failed": {
-      progress: at("Ready", 17),
-      language: undefined,
-      children: (
-        <>
-          <UserBubble>On my own</UserBubble>
-          <GraceActionLine tone="problem">Your choices aren’t saved yet. They’re still in use on this tablet.</GraceActionLine>
-        </>
-      ),
-      answers: ["Retry saving choices", "Continue without saving"],
-      tasksCount: 1,
-      onTasks: fn(),
+      progress: undefined,
+      line: "Your set-up isn’t saved yet.",
+      content: undefined,
+      action: { label: "Retry", onAction: answered },
+      notNow: undefined,
     },
   },
   play: {
-    Pace: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      answered.mockClear();
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Slower" }));
-      await expect(answered).toHaveBeenCalledWith("Slower");
+    Default: async ({ canvasElement }: Play) => {
+      joined.mockClear();
+      putOff.mockClear();
+      await tap(canvasElement, "NETGEAR-4F2");
+      await expect(joined).toHaveBeenCalledWith("NETGEAR-4F2");
+      await tap(canvasElement, "Not now");
+      await expect(putOff).toHaveBeenCalled();
     },
-    "Stepping aside": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    "No internet": async ({ canvasElement }: Play) => {
+      answered.mockClear();
+      await tap(canvasElement, "Connect to Wi-Fi");
+      await expect(answered).toHaveBeenCalled();
+    },
+    Account: async ({ canvasElement }: Play) => {
+      signedIn.mockClear();
+      putOff.mockClear();
+      await tap(canvasElement, "Continue with Google");
+      await expect(signedIn).toHaveBeenCalled();
+      await tap(canvasElement, "Not now");
+      await expect(putOff).toHaveBeenCalled();
+    },
+    "Sign-in cancelled": async ({ canvasElement }: Play) => {
+      signedIn.mockClear();
+      await tap(canvasElement, "Continue with Google");
+      await expect(signedIn).toHaveBeenCalled();
+    },
+    Name: async ({ canvasElement }: Play) => {
+      sent.mockClear();
+      await tap(canvasElement, "Send");
+      await expect(sent).toHaveBeenCalled();
+    },
+    Pace: async ({ canvasElement }: Play) => {
+      paced.mockClear();
+      answered.mockClear();
+      await userEvent.click(within(canvasElement).getByRole("radio", { name: "Slower" }));
+      await expect(paced).toHaveBeenCalledWith("0.8");
+      await tap(canvasElement, "Next");
+      await expect(answered).toHaveBeenCalled();
+    },
+    "Text size": async ({ canvasElement }: Play) => {
+      putOff.mockClear();
+      await expect(within(canvasElement).getByRole("button", { name: "Next" })).toBeDisabled();
+      await tap(canvasElement, "Not now");
+      await expect(putOff).toHaveBeenCalled();
+    },
+    "What Grace does": async ({ canvasElement }: Play) => {
+      answered.mockClear();
+      await expect(within(canvasElement).queryByRole("button", { name: "Not now" })).toBeNull();
+      await tap(canvasElement, "Next");
+      await expect(answered).toHaveBeenCalled();
+    },
+    Talk: async ({ canvasElement }: Play) => {
+      talked.mockClear();
+      await tap(canvasElement, "Talk");
+      await expect(talked).toHaveBeenCalled();
+    },
+    Type: async ({ canvasElement }: Play) => {
+      typed.mockClear();
+      await tap(canvasElement, "Type");
+      await expect(typed).toHaveBeenCalled();
+    },
+    Close: async ({ canvasElement }: Play) => {
       closed.mockClear();
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Close" }));
+      await tap(canvasElement, "Close");
       await expect(closed).toHaveBeenCalled();
+    },
+    "Save failed": async ({ canvasElement }: Play) => {
+      answered.mockClear();
+      await expect(within(canvasElement).queryByRole("button", { name: "Not now" })).toBeNull();
+      await tap(canvasElement, "Retry");
+      await expect(answered).toHaveBeenCalled();
     },
   },
 };
