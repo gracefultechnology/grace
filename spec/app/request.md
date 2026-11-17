@@ -104,6 +104,8 @@ type Consent = { stamp: int, generation: int, subject: Subject, revision: int }
 
 pure def consent(request: Request, stamp: int, proposal: Proposal): Consent =
   { stamp: stamp, generation: request.generation, subject: proposal.subject, revision: proposal.revision }
+
+pure val proposalValues = Set({ subject: { owner: EmailOwner, item: "reply" }, revision: 1 })
 ```
 
 ### A consent is used once, and a newer turn voids it
