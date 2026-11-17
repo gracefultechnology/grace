@@ -48,7 +48,7 @@ export function CalendarEventDetail({ when, where, who, reminder, repeat, note, 
         <ul className="m-0 list-none p-0">
           {lines.map(([glyph, text]) =>
             text ? (
-              <li key={text} className="mt-4 flex items-center gap-4 text-body-lg leading-[30px] text-foreground">
+              <li key={glyph} className="mt-4 flex items-center gap-4 text-body-lg leading-[30px] text-foreground">
                 <span className="flex text-primary">
                   <CalendarGlyph name={glyph} size={28} strokeWidth={2} />
                 </span>
