@@ -40,7 +40,6 @@ jobs:
         with:
           repository: gracefultechnology/billworld
           ref: f335b651f9820c3454f447e3d4722b78c5298a0b
-          token: ${{ secrets.BILLWORLD_READ_TOKEN }}
           path: .cache/billworld
           persist-credentials: false
       - run: pnpm gen

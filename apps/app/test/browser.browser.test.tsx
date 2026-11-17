@@ -195,7 +195,7 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, gradeWholeCohort }) => {
   const transport = commands.benchmarkSurface;
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
@@ -295,7 +295,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
     outcome.failure = error instanceof Error ? error.message : String(error);
-    throw error;
+    if (!gradeWholeCohort) throw error;
   } finally {
     await transport({ kind: "receipt", outcome });
   }

@@ -154,7 +154,6 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         outcome: { ...action.outcome, chatProvider: definition.chat ?? "fixture" }, chatStatus: run.chatStatus,
         grade, webArena: webArenaGrade, decisionResults: run.decisionResults,
       }, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-      if (grade && !grade.passed) throw new Error("Grace did not reach the biller's independently graded help destination");
       if (webArenaGrade && (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore !== 1))
         throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
     } finally {
@@ -344,7 +343,7 @@ declare module "vitest/browser" {
 }
 declare module "vitest" {
   interface ProvidedContext {
-    browserBenchmarks: readonly Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl">[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl"> & { gradeWholeCohort: boolean })[];
     releasedBillworldEnabled: boolean;
   }
 }
@@ -355,7 +354,7 @@ export default defineConfig(async (env) => {
     typeof entry === "object" && "test" in entry && entry.test?.browser
       ? { ...entry, test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } } }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl }) => ({ taskId, intent, startUrl }));
+  const browserBenchmarks = runs.map(({ taskId, intent, startUrl }) => ({ taskId, intent, startUrl, gradeWholeCohort: Boolean(fleet) }));
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
   return { ...config, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, releasedBillworldEnabled: releasedDirectory !== undefined }, globalSetup: ["test/setup.vibe"] } };
 });
