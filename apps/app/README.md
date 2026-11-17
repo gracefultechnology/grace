@@ -61,9 +61,9 @@ minutes after boot. It prints the emulator's WebView package and version. Every 
 time limit (the boot 15 minutes, the install 5) and is killed when the command exits, and an
 emulator that exits before it boots fails the command with its log. An emulator the command booted
 is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
-`--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the same on an emulator that
-is already running and never stops it; it refuses any serial that is not an emulator's, so a tablet on
-USB is never touched.
+`--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the
+same on an emulator that is already running and never stops it; it refuses any serial that is not
+an emulator's, so a tablet on USB is never touched.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket:
 an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible
