@@ -158,6 +158,10 @@ A tap on the microphone starts one local Android recognition request. A
 current complete result is used for guidance only. Unmatched speech is
 discarded. Leaving Grace, typing, opening a protected surface or cancelling
 stops the request. An unavailable local recognizer leaves Type available.
+Password guidance recognizes a short list of spoken or typed phrases, such
+as “Open Passwords,” “Find a saved password,” “Show my password,”
+“Copy my password,” and “Use a saved password.” The person chooses the
+saved sign-in and uses the highlighted control.
 
 ~~~quint
 pure def passwordsHelpText(guide: PasswordGuide): str = "Open Passwords from the second Home page to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."

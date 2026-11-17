@@ -487,7 +487,16 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.poll(() => recoveryOpened).toBe(true);
   expect(locked).toBe(true);
   await act(() => userEvent.click(unlock));
-  await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
+  const search = page.getByRole("searchbox", { name: "Find a saved password" });
+  const login = page.getByRole("button", { name: /Utility account/ });
+  await act(() => search.fill("missing"));
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => search.fill("utility"));
+  await act(() => userEvent.keyboard("{Tab}{Enter}"));
+  await expect.element(page.getByRole("heading", { name: "Utility account" })).toHaveFocus();
+  await act(() => userEvent.click(page.getByRole("button", { name: "All passwords" })));
+  await expect.element(login).toHaveFocus();
+  await act(() => userEvent.keyboard("{Enter}"));
   expect(shown).toBe(false);
   await act(() => userEvent.click(page.getByRole("button", { name: "Show password" })));
   await expect.poll(() => shown).toBe(true);

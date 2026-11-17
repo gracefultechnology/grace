@@ -2,7 +2,7 @@
 import { Button, Dialog, DialogActions, DialogClose, DialogContent, DialogTitle, DialogTrigger, EmptyState, GuideRing, SearchField } from "@repo/ui";
 import { Effect } from "effect";
 import { ChevronRight, KeyRound, LockKeyhole, Plus, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { type LoginSummary, type PasswordGuide, type VaultIssue, type VaultNotice, passwordsHelpText } from "../gen/app.ts";
 import { useMachine } from "../gen/app.react.ts";
 import { Passwords, type PasswordAction } from "./passwords.vibe";
@@ -35,8 +35,11 @@ type OpenLoginsProps = {
   finishGuide(): void;
 };
 
+const focusEntryHeading = (heading: HTMLHeadingElement | null) => { heading?.focus(); };
+
 function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: OpenLoginsProps) {
   const [query, setQuery] = useState("");
+  const returnFocus = useRef<string | undefined>(undefined);
   const entry = entries.find((row) => row.id === selected);
   const search = query.trim().toLocaleLowerCase();
   const matching = entries.filter(({ label, username, bindings }) =>
@@ -45,8 +48,8 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
   if (entry) {
     return (
       <div className="flex flex-col items-start gap-4">
-        <Button variant="capsule" size="pill" onClick={() => choose("")}>All passwords</Button>
-        <h2 className="text-title-lg font-bold">{entry.label}</h2>
+        <Button variant="capsule" size="pill" onClick={() => { returnFocus.current = entry.id; choose(""); }}>All passwords</Button>
+        <h2 ref={focusEntryHeading} tabIndex={-1} className="text-title-lg font-bold">{entry.label}</h2>
         {entry.username && <p className="text-body-lg">{entry.username}</p>}
         <ul aria-label="Websites and apps" className="text-body text-muted-foreground">
           {entry.bindings.map((binding) => <li key={binding.facet}>{binding.display}</li>)}
@@ -88,13 +91,18 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
           </div>
         )}
       </div>
-      {matching.length === 0 && <EmptyState title={entries.length === 0 ? "No saved passwords yet." : "No passwords match your search."} />}
+      {matching.length === 0 && <div role="status"><EmptyState title={entries.length === 0 ? "No saved passwords yet." : "No passwords match your search."} /></div>}
       {matching.length > 0 && (guide === "ShowPasswordGuide" || guide === "CopyPasswordGuide") && <p role="status" className="text-body">Choose a sign-in first.</p>}
       {matching.length > 0 && (
         <ul aria-label="Saved sign-ins" className="flex flex-col gap-3">
           {matching.map(({ id, label, username, bindings }) => (
             <li key={id}>
-              <Button variant="capsule" size="pill" className="w-full justify-start" onClick={() => choose(id)}>
+              <Button ref={(control) => {
+                if (control && returnFocus.current === id) {
+                  returnFocus.current = undefined;
+                  control.focus();
+                }
+              }} variant="capsule" size="pill" className="w-full justify-start" onClick={() => choose(id)}>
                 <KeyRound aria-hidden className="shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-left">{label || bindings[0]?.display || "Saved sign-in"}{username && <span className="ml-3 text-muted-foreground">{username}</span>}</span>
                 <ChevronRight aria-hidden className="shrink-0" />
