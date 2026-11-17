@@ -1,16 +1,18 @@
-// spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"
+// spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/accounts.md, "Story: Connect the email I already use"
 // Settings: its pages beside the list, and on About this tablet, Clear browsing data behind one confirmation.
 import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, SettingsApp, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import type { SettingsPage } from "../gen/app__shell.ts";
+import { EmailAccounts } from "./EmailAccounts.tsx";
 import { useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 
-/** @model spec/app/websiteRequests.md */
+/** @model spec/app/websiteRequests.md
+ * @model spec/app/accounts.md */
 export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
   const { workspace, can, send } = useWorkspace();
   const website = useWebsiteRequests();
@@ -24,9 +26,11 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
+  const frame = { page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
+
   return (
-    <SettingsApp page={names[page]} onPageChange={choose} {...props}
-      onClose={() => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }}>
+    <SettingsApp {...frame}>
       {page === "AboutSettings" ? (
         <>
           <PageHeading>About this tablet</PageHeading>
@@ -51,7 +55,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
             </DialogContent>
           </Dialog>
         </>
-      ) : page === "EmailCalendarSettings" ? <PageHeading>Email & calendar</PageHeading> : <EmptyState title="Nothing here yet." />}
+      ) : <EmptyState title="Nothing here yet." />}
     </SettingsApp>
   );
 }

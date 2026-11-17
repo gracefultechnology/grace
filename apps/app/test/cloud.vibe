@@ -21,7 +21,7 @@ type Mail = {
   triageReason: string
   labels: string[]
   htmlLink: string | null
-  metadata: { historyId: string; messageIdHeader: string; referencesHeader: string | null }
+  metadata: { historyId: string; sizeEstimate: number | null; dateHeader: string | null; messageIdHeader: string; referencesHeader: string | null; listId: string | null; precedence: string | null; autoSubmitted: string | null }
   attachments: Attachment[]
   bodyText: string
 }
@@ -42,7 +42,7 @@ type Appointment = {
   etag: string
   organizer: Record<string, unknown> | null
   attendees: { email: string | null; displayName: string | null; responseStatus: string | null; self: boolean; organizer: boolean; optional: boolean }[]
-  metadata: Extras
+  metadata: { etag: string; iCalUID: string | null; recurringEventId: string | null; createdAt: string | null; updatedAt: string | null }
 }
 
 schema Turn { said: string; outcome: "streaming" | "completed" | "aborted" }
@@ -51,19 +51,17 @@ type Receipt = {
   requestId: string
   kind: Proposal["kind"]
   reviewDigest: string
-  state: "prepared" | "succeeded"
-  providerResult: { messageId: string; labelIds: string[]; historyId: string; unread?: boolean } | null
-  rejectionCode: null
+  state: "prepared" | "dispatched" | "succeeded" | "rejected" | "outcome-unknown"
+  providerResult: Record<string, unknown> | null
+  rejectionCode: string | null
   createdAt: string
   dispatchedAt: string | null
   finishedAt: string | null
 }
 
-/** A company the tablet's email can live at, as the cloud names it in its routes. */
 type Slug = "google" | "outlook" | "yahoo" | "icloud" | "aol" | "other"
 type Contact = { name: string; email: string }
 
-/** One email account connected at its company: its mail, calendar, sends by operation, contacts, and whether its sign-in has run out. */
 type Box = {
   provider: Slug
   address: string
@@ -71,11 +69,9 @@ type Box = {
   expired: boolean
   mail: Mail[]
   calendar: Appointment[]
-  sent: { operationId: string; messageId: string }[]
   contacts: Contact[]
 }
 
-/** A provider's own sign-in page opened for the tablet, and what she did there. */
 type Session = { sessionId: string; provider: Slug; loginHint: string; status: "pending" | "allowed" | "cancelled" | "refused"; address: string }
 
 type Account = {
@@ -116,24 +112,25 @@ schema SignIn { clientId: ClientId; environment: Environment; redirectUri: Url; 
 schema Acknowledgement { clientId: ClientId; environment: Environment; redirectUri: Url; code: Proof; state: State; codeVerifier: Proof; credentialId: Uuid; secret: Secret }
 schema ChatMessage { role: string; content: string }
 schema ChatRequest { messages: ChatMessage[]; stream?: boolean }
-schema Proposal { kind: "trash" | "untrash" | "mark-read" | "mark-unread" | "purge"; messageId: string; expectedHistoryId: string }
+schema Change { kind: "trash" | "untrash" | "mark-read" | "mark-unread" | "purge"; messageId: string; expectedHistoryId: string }
+schema Forwarded { messageId: string; historyId: string; partIds: string[] }
+schema Outgoing { kind: "send"; mode: "compose" | "reply" | "reply-all" | "forward"; to?: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; replyMessageId?: string; forwardAttachments?: Forwarded }
+schema Proposal = Change | Outgoing
 schema Prepare { grantId: Uuid; requestId: Uuid; proposal: Proposal }
 schema Dispatch { grantId: Uuid; reviewDigest: string; proposal: Proposal }
 schema Attendee { email: string; displayName?: string; optional?: boolean }
-schema Extras { sourceRef?: string; participant?: string; recurrence?: "Once" | "Weekly" | "Monthly"; seriesId?: string; reminderMinutes?: number; important?: boolean }
-schema NewAppointment { side?: "owner" | "agent"; grantId?: string; calendarId?: string; eventId?: string; title: string; description?: string; location?: string; startAt: string; endAt: string; timeZone: string; isAllDay?: boolean; attendees?: Attendee[]; metadata?: Extras }
-schema AppointmentChange { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title?: string; description?: string; location?: string; startAt?: string; endAt?: string; timeZone?: string; isAllDay?: boolean; attendees?: Attendee[]; metadata?: Extras }
-schema Selected { grantId?: string }
+schema NewAppointment { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title: string; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: string; attendees?: Attendee[] }
+schema AppointmentChange { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title?: string; description?: string; location?: string; startAt?: Instant; endAt?: Instant; timeZone?: string; attendees?: Attendee[] }
+schema Selected { grantId: Uuid }
 schema FeedQuery { timeMin: Instant; timeMax: Instant; grantId?: string; calendarId?: string; timeZone?: string }
 schema MessageQuery { messageId: string; grantId?: string }
-schema SearchQuery { query: string; grantId?: string }
-schema RemovalQuery { grantId?: string; scope?: "occurrence" | "series" }
+schema SearchQuery { query: string; grantId?: string; maxResults?: string }
+schema ContactQuery { query: string; grantId?: string }
+schema RemovalQuery { side?: "owner" | "agent"; grantId?: string; calendarId?: string }
+schema AccountsQuery { side?: string }
 schema Carried { kind: "Pdf" | "Photo"; name: string; origin: string; account: string; sourceRef: string; contentRef: string; pages: number }
-schema MessageSend { grantId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string }
-schema ReplySend { grantId?: string; to: string[]; cc?: string[]; subject: string; bodyText: string; inReplyTo?: string | null; references?: string | null }
-schema ComposeSend { grantId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; inReplyTo?: string; references?: string; attachments: Carried[] }
 schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; attachments?: Carried[] }
-schema SentMail { subject: string; bcc: string[]; attachments: { filename: string }[] }
+schema SentMail { subject: string; labels: string[]; bcc: string[]; attachments: { filename: string }[] }
 schema SentBox { mail: SentMail[] }
 schema Boxes { boxes: SentBox[] }
 schema SessionStart { loginHint?: string }
@@ -163,8 +160,18 @@ const exact = { onExcessProperty: "error" } as const
 
 error Unauthorized
 error Missing
+error NoConnection
+error NoOperation
 error Stale
 error StaleRevision
+error Rebound
+error SubjectMismatch
+error NoRecipient
+error BadAddress
+error ModeMismatch
+error NoParts
+error ProviderFailed
+error Reconnect
 error ConsentRequired
 error ProofInvalid
 error SessionClosed
@@ -173,13 +180,23 @@ error Unavailable
 
 const refusals: Record<string, { status: number; body: object }> = {
   Unauthorized: { status: 401, body: { error: "unauthorized" } },
-  Missing: { status: 404, body: { error: "Not found", code: "not_found" } },
-  Stale: { status: 412, body: { error: "The event changed", code: "precondition_failed" } },
-  StaleRevision: { status: 409, body: { error: "Review changed", code: "stale_revision" } },
+  Missing: { status: 404, body: { error: "The selected Google account or message is unavailable. Reconnect Google or refresh the selection.", code: "not_found" } },
+  NoConnection: { status: 404, body: { error: "Google connection not found." } },
+  NoOperation: { status: 404, body: { error: "Operation not found" } },
+  Stale: { status: 412, body: { error: "The event changed since it was read. Read it again before changing it.", code: "precondition_failed" } },
+  StaleRevision: { status: 409, body: { error: "Selected message changed; review its current labels", code: "stale_revision" } },
+  Rebound: { status: 409, body: { error: "Request ID is already bound to a different reviewed operation" } },
+  SubjectMismatch: { status: 400, body: { error: "Reply subject must match the selected message", code: "reply_subject_mismatch" } },
+  NoRecipient: { status: 400, body: { error: "At least one recipient is required to send" } },
+  BadAddress: { status: 400, body: { error: "Use an unambiguous email address without a display name" } },
+  ModeMismatch: { status: 400, body: { error: "Reply identity is not valid for this compose mode" } },
+  NoParts: { status: 400, body: { error: "Explicit source attachment parts required" } },
+  ProviderFailed: { status: 502, body: { error: "Google request failed." } },
+  Reconnect: { status: 409, body: { error: "Reconnect Google to keep using Gmail.", code: "reauth_required" } },
   ConsentRequired: { status: 403, body: { error: "speech_consent_required" } },
   ProofInvalid: { status: 401, body: { success: false, error: "credential_proof_invalid", errorDescription: "Mobile credential proof is invalid", retryable: false } },
   SessionClosed: { status: 410, body: { error: "session_closed" } },
-  Expired: { status: 401, body: { error: "Sign in again", code: "reauth_required" } },
+  Expired: { status: 409, body: { error: "Google connection is not active. Reconnect the selected account." } },
   Unavailable: { status: 503, body: { error: "unavailable" } }
 }
 
@@ -187,9 +204,7 @@ const invalid = { status: 400, body: { error: "invalid_request" } }
 const mobileInvalid = { status: 400, body: { success: false, error: "invalid_request", errorDescription: "Invalid mobile authorization request", retryable: false } }
 
 export const unending = "Keep talking until I stop you."
-/** What the agent answers to a turn nothing was scripted for. */
 export const reply = (said: string) => `I heard you say: ${said} What would you like to do next?`
-/** The replies every account's agent starts with: the turns the conversation journeys script, each answered once. */
 const scripted: readonly Scripted[] = [
   { said: "Make the text bigger.", answer: JSON.stringify({
     text: "I made the text larger. Is that easier to read?", isQuestion: true, answers: ["Yes, thanks", "A bit bigger"],
@@ -209,16 +224,12 @@ const streaming = (account: Account) => account.turns.some((t) => t.outcome === 
 const hour = 60 * 60 * 1000
 const day = 24 * hour
 
-/** Each company's own sign-in host, as its page names it. */
 const hosts: Record<Slug, string> = {
   google: "accounts.google.com", outlook: "login.live.com", yahoo: "login.yahoo.com", icloud: "appleid.apple.com", aol: "login.aol.com", other: ""
 }
 const names: Record<Slug, string> = { google: "Google", outlook: "Outlook", yahoo: "Yahoo", icloud: "iCloud", aol: "AOL", other: "Other email" }
-/** Companies whose own page takes the sign-in: an Other email form for one of them is refused. */
 const listed = ["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "icloud.com", "me.com", "mac.com", "aol.com"]
-/** The password every Other email in this fake takes. */
 export const otherPassword = "Riverview-2026"
-/** Mail servers the cloud finds by itself for an Other email, or must be told. */
 const otherServers: Record<string, { incoming: string; outgoing: string } | null> = {
   "comcast.net": null, "att.net": null, "verizon.net": null, "cox.net": null, "charter.net": null,
   "riverview.net": { incoming: "mail.riverview.net", outgoing: "smtp.riverview.net" }
@@ -230,16 +241,17 @@ const people: Contact[] = [
   { name: "Riverside Book Club", email: "club@riverside-books.test" }, { name: "Joan", email: "joan@family.test" }
 ]
 
-function letter(externalId: string, address: string, at: number, from: string, fromEmail: string, subject: string, bodyText: string, extra: Partial<Mail> = {}): Mail {
+type Overrides = Partial<Omit<Mail, "metadata">> & { metadata?: Partial<Mail["metadata"]> }
+
+function letter(externalId: string, address: string, at: number, from: string, fromEmail: string, subject: string, bodyText: string, { metadata, ...extra }: Overrides = {}): Mail {
   return {
     externalId, threadId: externalId, subject, from, fromEmail, replyTo: null, to: [address], cc: [], bcc: [], snippet: bodyText.slice(0, 80),
     receivedAt: new Date(at - day).toISOString(), isUnread: true, isImportant: false, likelyReplyNeeded: false, triageScore: 40,
-    triageReason: "Unread", labels: ["INBOX", "UNREAD"], htmlLink: null, metadata: { historyId: "100", messageIdHeader: `<${externalId}@mail.fake.test>`, referencesHeader: null },
-    attachments: [], bodyText, ...extra
+    triageReason: "Unread", labels: ["INBOX", "UNREAD"], htmlLink: null, attachments: [], bodyText, ...extra,
+    metadata: { historyId: "100", sizeEstimate: null, dateHeader: null, messageIdHeader: `<${externalId}@mail.fake.test>`, referencesHeader: null, listId: null, precedence: null, autoSubmitted: null, ...metadata }
   }
 }
 
-/** The mail each company's account arrives with: the prototype's, and for Google the journeys' own. */
 function seeded(provider: Slug, address: string, at: number, site: string, visit: string): Mail[] {
   const one = (from: string, fromEmail: string, subject: string, body: string) => [letter(`${provider}-welcome`, address, at, from, fromEmail, subject, body)]
   return match (provider) {
@@ -259,15 +271,47 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
   }
 }
 
-function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
-  const appointment = Math.floor(at / day) * day + 17 * day + 10 * hour
+type Stored = Pick<Appointment, "externalId" | "calendarId" | "title" | "description" | "location" | "startAt" | "endAt" | "isAllDay" | "timezone" | "etag" | "attendees">
+
+function appointment(written: Stored): Appointment {
   return {
-    provider, address, grantId, expired: false, sent: [], contacts: people, mail: seeded(provider, address, at, site, visit),
-    calendar: provider !== "google" ? [] : [{
+    ...written, status: "confirmed", htmlLink: null, conferenceLink: null, organizer: null,
+    metadata: { etag: written.etag, iCalUID: `${written.externalId}@google.com`, recurringEventId: null, createdAt: null, updatedAt: null }
+  }
+}
+
+const dateIn = (at: string, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.parse(at))
+
+function offsetAt(at: number, timeZone: string) {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "GMT"
+  const [, sign, hours, minutes] = /^GMT(?:([+-])(\d{1,2})(?::?(\d{2}))?)?$/.exec(name) ?? []
+  return sign === undefined ? 0 : (sign === "+" ? 1 : -1) * (Number(hours) * 60 + Number(minutes ?? 0)) * 60 * 1000
+}
+
+function midnightIn(date: string, timeZone: string) {
+  const base = Date.parse(`${date}T00:00:00Z`)
+  return new Date(base - offsetAt(base - offsetAt(base, timeZone), timeZone)).toISOString()
+}
+
+function shown(e: Appointment, timeZone: string): Appointment {
+  if (!e.isAllDay) return e
+  const zone = e.timezone ?? timeZone
+  return { ...e, startAt: midnightIn(dateIn(e.startAt, zone), timeZone), endAt: midnightIn(dateIn(e.endAt, zone), timeZone), timezone: timeZone }
+}
+
+function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
+  const today = Math.floor(at / day) * day
+  const start = today + 17 * day + 10 * hour
+  return {
+    provider, address, grantId, expired: false, contacts: people, mail: seeded(provider, address, at, site, visit),
+    calendar: provider !== "google" ? [] : [appointment({
       externalId: "eye-check", calendarId: "primary", title: "Eye check with Dr. Patel", description: "", location: "Riverside Clinic",
-      status: "confirmed", startAt: new Date(appointment).toISOString(), endAt: new Date(appointment + hour / 2).toISOString(), isAllDay: false, timezone: "UTC",
-      htmlLink: null, conferenceLink: null, etag: "1", organizer: null, attendees: [], metadata: { participant: "Dr. Patel" }
-    }]
+      startAt: new Date(start).toISOString(), endAt: new Date(start + hour / 2).toISOString(), isAllDay: false, timezone: "UTC", etag: "\"1\"",
+      attendees: [{ email: "patel@riverside-clinic.test", displayName: "Dr. Patel", responseStatus: "accepted", self: false, organizer: false, optional: false }]
+    }), appointment({
+      externalId: "birthday", calendarId: "primary", title: "Joan’s birthday", description: "", location: "",
+      startAt: new Date(today + 3 * day).toISOString(), endAt: new Date(today + 4 * day).toISOString(), isAllDay: true, timezone: "UTC", etag: "\"2\"", attendees: []
+    })]
   }
 }
 
@@ -293,9 +337,16 @@ function matches(m: Mail, query: string) {
   return (label === undefined ? !m.labels.includes("TRASH") : m.labels.includes(label)) && words.every((w) => w.startsWith("in:") || text.includes(w.replace(/^"(.*)"$/, "$1")))
 }
 
+function digestOf(text: string) {
+  return [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => {
+    let h = 0x811c9dc5 ^ seed
+    for (const c of text) h = Math.imul(h ^ (c.codePointAt(0) ?? 0), 0x01000193) >>> 0
+    return h.toString(16).padStart(8, "0")
+  }).join("")
+}
+
 const escaped = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
 
-/** The provider's own page as the fake serves it: what she types there stays there; the tablet hears only how it ended. */
 function page(session: Session) {
   const name = names[session.provider]
   return `<!doctype html><meta charset="utf-8"><title>${name} sign in</title><h1>Sign in to ${name}</h1><p>${hosts[session.provider]}</p>
@@ -356,20 +407,18 @@ effect function store(site: string) {
     try change(key, (a) => ({ ...a, boxes: a.boxes.map((b) => b.grantId === grantId ? update(b) : b) }))
   }
 
-  /** The company a route serves: the one it is fixed to, or its `:provider`. */
   effect function slugOf(fixed: Slug | undefined) {
     if (fixed !== undefined) return fixed
     return Schema.decodeUnknownEffect(Slugs)((try HttpRouter.params).provider) catch effect () => { throw new Missing() }
   }
 
-  /** The caller's account at the route's company that `grantId` names, or its only one, while the cloud is up and its sign-in holds. */
-  effect function connection(fixed: Slug | undefined, grantId: string | undefined) {
+  effect function connection(fixed: Slug | undefined, grantId: string | undefined, inbox = false) {
     const account = try signedIn()
     if (account.outage) throw new Unavailable()
     const provider = try slugOf(fixed)
     const found = account.boxes.find((b) => b.provider === provider && (grantId === undefined || grantId === "" || b.grantId === grantId))
-    if (!found) throw provider === "google" ? new Unauthorized() : new Missing()
-    if (found.expired) throw new Expired()
+    if (!found) throw new NoConnection()
+    if (found.expired) throw inbox ? new Reconnect() : new Expired()
     return { key: account.key, box: found, account }
   }
 
@@ -409,65 +458,99 @@ effect function store(site: string) {
     const account = try signedIn()
     if (account.outage) throw new Unavailable()
     const provider = try slugOf(fixed)
-    const boxes = account.boxes.filter((b) => b.provider === provider)
+    const { side } = try HttpServerRequest.schemaSearchParams(AccountsQuery)
+    if (side !== undefined && !["OWNER", "AGENT", "TEAM"].includes(side.trim().toUpperCase())) return try HttpServerResponse.json({ error: "side must be OWNER, AGENT, or TEAM." }, { status: 400 })
+    const boxes = side === undefined || side.trim().toUpperCase() === "OWNER" ? account.boxes.filter((b) => b.provider === provider) : []
     return try HttpServerResponse.json(boxes.map((b) => ({
-      provider, side: "owner", mode: "cloud_managed", configured: true, connected: !b.expired, reason: b.expired ? "needs_reauth" : "connected",
-      identity: { email: b.address }, grantedCapabilities: b.expired ? [] : capabilities, grantedScopes: b.expired ? [] : scopes, expiresAt: null,
-      hasRefreshToken: !b.expired, connectionId: b.grantId, linkedAt: null, lastUsedAt: null
+      provider, side: "OWNER", mode: "cloud_managed", configured: true, connected: !b.expired, reason: b.expired ? "needs_reauth" : "connected",
+      identity: { id: b.grantId, email: b.address, name: null, avatarUrl: null }, grantedCapabilities: capabilities, grantedScopes: scopes, expiresAt: null,
+      hasRefreshToken: true, connectionId: b.grantId, linkedAt: null, lastUsedAt: null
     })))
   }
 
-  effect function triage(fixed?: Slug) {
-    const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
-    const { box } = try connection(fixed, grantId)
-    return try HttpServerResponse.json({ messages: box.mail.filter((m) => m.labels.includes("INBOX")).map(listedMessage), syncedAt: try now() })
-  }
-
   effect function search(fixed?: Slug) {
-    const { query, grantId } = try HttpServerRequest.schemaSearchParams(SearchQuery)
+    const { query, grantId, maxResults } = try HttpServerRequest.schemaSearchParams(SearchQuery)
     const { box } = try connection(fixed, grantId)
-    return try HttpServerResponse.json({ messages: box.mail.filter((m) => matches(m, query)).map(listedMessage), syncedAt: try now() })
+    if (query.trim() === "") return try HttpServerResponse.json({ error: "query is required." }, { status: 400 })
+    const most = maxResults === undefined ? 12 : /^[1-9]\d*$/.test(maxResults) ? Math.min(Number(maxResults), 50) : 0
+    if (most === 0) return try HttpServerResponse.json({ error: "maxResults must be a positive integer." }, { status: 400 })
+    const found = box.mail.filter((m) => matches(m, query))
+    return try HttpServerResponse.json({
+      messages: found.slice(0, most).map(listedMessage), nextPageToken: null, mailboxHistoryId: String(Math.max(0, ...box.mail.map((m) => Number(m.metadata.historyId)))),
+      syncedAt: try now(), supportsSpamTrash: true
+    })
   }
 
   effect function readMail(fixed?: Slug) {
     const { messageId, grantId } = try HttpServerRequest.schemaSearchParams(MessageQuery)
     const { box } = try connection(fixed, grantId)
-    const found = box.mail.find((m) => m.externalId === messageId)
-    if (!found) throw new Missing()
-    return try HttpServerResponse.json({ message: listedMessage(found), bodyText: found.bodyText, attachments: found.attachments, bodyHtml: null, bodyHtmlStatus: "none" })
+    const found = box.mail.find((m) => m.externalId === messageId.trim())
+    if (!found) throw new ProviderFailed()
+    return try HttpServerResponse.json({
+      message: listedMessage(found), bodyText: found.bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments
+    })
   }
 
-  effect function reviewed(found: Box, grantId: string, proposal: Proposal) {
-    if (grantId !== found.grantId) throw new Missing()
+  effect function reviewedChange(found: Box, proposal: typeof Change.Type) {
     const message = found.mail.find((m) => m.externalId === proposal.messageId)
     if (!message) throw new Missing()
     if (message.metadata.historyId !== proposal.expectedHistoryId) throw new StaleRevision()
-    return message
+    return { review: { ...proposal, from: found.address }, message }
   }
 
-  effect function prepareChange(fixed?: Slug) {
+  effect function reviewedSend(found: Box, proposal: typeof Outgoing.Type) {
+    const to = proposal.to ?? []
+    const cc = proposal.cc ?? []
+    const bcc = proposal.bcc ?? []
+    if ([...to, ...cc, ...bcc].some((a) => !/^[A-Za-z0-9.!#$%&'*+\-/=?^_`{|}~]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$/.test(a))) throw new BadAddress()
+    if (to.length + cc.length + bcc.length === 0) throw new NoRecipient()
+    const replying = proposal.mode === "reply" || proposal.mode === "reply-all"
+    if (!replying && proposal.replyMessageId !== undefined) throw new ModeMismatch()
+    if (proposal.mode !== "forward" && proposal.forwardAttachments !== undefined) throw new ModeMismatch()
+    const parent = replying ? found.mail.find((m) => m.externalId === proposal.replyMessageId) : undefined
+    if (replying && parent === undefined) throw new Missing()
+    if (parent !== undefined && proposal.subject !== (/^re:/i.test(parent.subject) ? parent.subject : `Re: ${parent.subject}`)) throw new SubjectMismatch()
+    const source = proposal.forwardAttachments
+    if (source !== undefined && (source.partIds.length === 0 || new Set(source.partIds).size !== source.partIds.length || source.partIds.some((p) => !/^[0-9.]{1,32}$/.test(p)))) throw new NoParts()
+    const origin = source === undefined ? undefined : found.mail.find((m) => m.externalId === source.messageId)
+    if (source !== undefined && (origin === undefined || origin.metadata.historyId !== source.historyId)) throw new StaleRevision()
+    const parts = source === undefined || origin === undefined ? [] : source.partIds.map((partId) => origin.attachments.find((a) => a.partId === partId))
+    if (parts.some((a) => a === undefined)) throw new StaleRevision()
+    const review = {
+      kind: proposal.kind, mode: proposal.mode, from: found.address, to, cc, bcc, subject: proposal.subject, bodyText: proposal.bodyText,
+      threadId: parent?.threadId ?? null, replyMessageId: proposal.replyMessageId ?? null, attachments: parts.flatMap((a) => a === undefined ? [] : [a])
+    }
+    return { review, parent }
+  }
+
+  effect function prepareOperation(fixed?: Slug) {
     const { grantId, requestId, proposal } = try HttpServerRequest.schemaBodyJson(Prepare, exact)
-    const { key, box: found, account } = try connection(fixed, grantId)
-    const known = account.changes.find((c) => c.receipt.requestId === requestId)
-    if (!known) try reviewed(found, grantId, proposal)
+    const { key, box: found, account } = try connection(fixed, grantId, true)
+    const review = proposal.kind === "send" ? (try reviewedSend(found, proposal)).review : (try reviewedChange(found, proposal)).review
+    const reviewDigest = digestOf(JSON.stringify(review))
+    const known = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
+    if (known && (known.receipt.kind !== proposal.kind || known.receipt.reviewDigest !== reviewDigest)) throw new Rebound()
     const receipt: Receipt = known?.receipt ?? {
-      requestId, kind: proposal.kind, reviewDigest: (try next()).toString(16).padStart(64, "0"), state: "prepared",
-      providerResult: null, rejectionCode: null, createdAt: try now(), dispatchedAt: null, finishedAt: null
+      requestId, kind: proposal.kind, reviewDigest, state: "prepared", providerResult: null, rejectionCode: null, createdAt: try now(), dispatchedAt: null, finishedAt: null
     }
     if (!known) try change(key, (a) => ({ ...a, changes: [...a.changes, { receipt, proposal, grantId }] }))
-    return try HttpServerResponse.json({ version: 1, receipt, review: { ...proposal, from: found.address }, providerExactlyOnce: false })
+    return try HttpServerResponse.json({ version: 1, receipt, review, providerExactlyOnce: false })
   }
 
-  effect function dispatchChange(fixed?: Slug) {
-    const { requestId } = try HttpRouter.params
-    const { grantId, reviewDigest, proposal } = try HttpServerRequest.schemaBodyJson(Dispatch, exact)
-    const { key, box: found, account } = try connection(fixed, grantId)
-    const prepared = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
-    if (!prepared) throw new Missing()
-    if (prepared.receipt.reviewDigest !== reviewDigest) throw new StaleRevision()
-    if (prepared.receipt.state !== "prepared") return try HttpServerResponse.json({ version: 1, receipt: prepared.receipt, providerExactlyOnce: false })
-    const message = try reviewed(found, grantId, proposal)
-    if (proposal.kind !== prepared.proposal.kind || proposal.messageId !== prepared.proposal.messageId) throw new StaleRevision()
+  effect function performed(key: string, found: Box, proposal: Proposal) {
+    const historyId = String(try next())
+    if (proposal.kind === "send") {
+      const { review, parent } = try reviewedSend(found, proposal)
+      const messageId = `sent${try next()}`
+      const threadId = parent?.threadId ?? messageId
+      const sent = letter(messageId, found.address, (try Clock.currentTimeMillis) + day, found.address, found.address, proposal.subject, proposal.bodyText, {
+        threadId, to: review.to, cc: review.cc, bcc: review.bcc, isUnread: false, labels: ["SENT"], attachments: review.attachments,
+        metadata: { historyId, messageIdHeader: `<${messageId}@mail.fake.test>`, referencesHeader: parent?.metadata.messageIdHeader ?? null }
+      })
+      try changeBox(key, found.grantId, (b) => ({ ...b, mail: [...b.mail, sent] }))
+      return { messageId, threadId, mimeDigest: digestOf(JSON.stringify(review)) }
+    }
+    const { message } = try reviewedChange(found, proposal)
     const labelIds = match (proposal.kind) {
       when "trash": [...message.labels.filter((l) => l !== "INBOX"), "TRASH"];
       when "untrash": [...message.labels.filter((l) => l !== "TRASH"), "INBOX"];
@@ -475,60 +558,39 @@ effect function store(site: string) {
       when "mark-unread": [...message.labels.filter((l) => l !== "UNREAD"), "UNREAD"];
       when "purge": [];
     }
-    const historyId = String(try next())
-    const at = try now()
-    const receipt: Receipt = {
-      ...prepared.receipt, state: "succeeded", dispatchedAt: at, finishedAt: at,
-      providerResult: { messageId: message.externalId, labelIds, historyId, ...proposal.kind === "mark-read" || proposal.kind === "mark-unread" ? { unread: labelIds.includes("UNREAD") } : {} }
-    }
-    try change(key, (a) => ({ ...a, changes: a.changes.map((c) => c.receipt.requestId === requestId ? { ...c, receipt } : c) }))
-    try changeBox(key, grantId, (b) => ({
+    try changeBox(key, found.grantId, (b) => ({
       ...b,
       mail: proposal.kind === "purge"
         ? b.mail.filter((m) => m.externalId !== message.externalId)
         : b.mail.map((m) => m.externalId === message.externalId ? { ...m, labels: labelIds, isUnread: labelIds.includes("UNREAD"), metadata: { ...m.metadata, historyId } } : m)
     }))
+    return { messageId: message.externalId, labelIds, historyId, ...proposal.kind === "mark-read" || proposal.kind === "mark-unread" ? { unread: labelIds.includes("UNREAD") } : {} }
+  }
+
+  effect function dispatchOperation(fixed?: Slug) {
+    const { requestId } = try HttpRouter.params
+    const { grantId, reviewDigest, proposal } = try HttpServerRequest.schemaBodyJson(Dispatch, exact)
+    const { key, box: found, account } = try connection(fixed, grantId, true)
+    const prepared = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
+    if (!prepared) throw new NoOperation()
+    if (prepared.receipt.reviewDigest !== reviewDigest) throw new StaleRevision()
+    if (prepared.receipt.state !== "prepared") return try HttpServerResponse.json({ version: 1, receipt: prepared.receipt, providerExactlyOnce: false })
+    const review = proposal.kind === "send" ? (try reviewedSend(found, proposal)).review : (try reviewedChange(found, proposal)).review
+    if (digestOf(JSON.stringify(review)) !== reviewDigest || proposal.kind !== prepared.receipt.kind) throw new StaleRevision()
+    const providerResult = try performed(key, found, proposal)
+    const at = try now()
+    const receipt: Receipt = { ...prepared.receipt, state: "succeeded", dispatchedAt: at, finishedAt: at, providerResult }
+    try change(key, (a) => ({ ...a, changes: a.changes.map((c) => c.receipt.requestId === requestId && c.grantId === grantId ? { ...c, receipt } : c) }))
     return try HttpServerResponse.json({ version: 1, receipt, providerExactlyOnce: false })
   }
 
-  effect function sendOnce(fixed: Slug | undefined, outgoing: typeof ComposeSend.Type) {
-    const request = try HttpServerRequest.HttpServerRequest
-    const operationId = request.headers["idempotency-key"] ?? ""
-    const { key, box: found } = try connection(fixed, outgoing.grantId)
-    if (operationId === "" || outgoing.to.length === 0 || outgoing.to.some((to) => !/^[^@\s]+@[^@\s]+$/.test(to))) return try HttpServerResponse.json(invalid.body, { status: 400 })
-    if (found.sent.some((s) => s.operationId === operationId)) return try HttpServerResponse.json({ ok: true })
-    const messageId = `sent-${try next()}`
-    const at = try Clock.currentTimeMillis
-    const replied = found.mail.find((m) => m.metadata.messageIdHeader === outgoing.inReplyTo)
-    const sent = letter(messageId, found.address, at + day, found.address, found.address, outgoing.subject, outgoing.bodyText, {
-      to: outgoing.to, cc: outgoing.cc ?? [], bcc: outgoing.bcc ?? [], isUnread: false, labels: ["SENT"], attachments: wired(outgoing.attachments),
-      metadata: { historyId: String(try next()), messageIdHeader: `<${messageId}@mail.fake.test>`, referencesHeader: outgoing.references ?? null }
-    })
-    try changeBox(key, found.grantId, (b) => ({
-      ...b, sent: [...b.sent, { operationId, messageId }],
-      mail: [...b.mail.map((m) => m === replied ? { ...m, labels: [...m.labels, "ANSWERED"] } : m), sent]
-    }))
-    return try HttpServerResponse.json({ ok: true })
-  }
-
-  effect function messageSend(fixed?: Slug) {
-    return try sendOnce(fixed, { ...try HttpServerRequest.schemaBodyJson(MessageSend), attachments: [] })
-  }
-
-  effect function replySend(fixed?: Slug) {
-    const { inReplyTo, references, ...rest } = try HttpServerRequest.schemaBodyJson(ReplySend)
-    return try sendOnce(fixed, { ...rest, ...inReplyTo ? { inReplyTo } : {}, ...references ? { references } : {}, attachments: [] })
-  }
-
-  effect function composeSend(fixed?: Slug) {
-    return try sendOnce(fixed, try HttpServerRequest.schemaBodyJson(ComposeSend))
-  }
-
-  effect function sendLookup(fixed?: Slug) {
-    const { operationId } = try HttpRouter.params
+  effect function observeOperation(fixed?: Slug) {
+    const { requestId } = try HttpRouter.params
     const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
-    const { box: found } = try connection(fixed, grantId)
-    return try HttpServerResponse.json({ sent: found.sent.some((s) => s.operationId === operationId) })
+    const { account } = try connection(fixed, grantId, true)
+    const known = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
+    if (!known) throw new NoOperation()
+    return try HttpServerResponse.json({ version: 1, receipt: known.receipt, providerExactlyOnce: false })
   }
 
   effect function saveDraft(fixed?: Slug) {
@@ -553,67 +615,64 @@ effect function store(site: string) {
   }
 
   effect function contacts(fixed?: Slug) {
-    const { query, grantId } = try HttpServerRequest.schemaSearchParams(SearchQuery)
+    const { query, grantId } = try HttpServerRequest.schemaSearchParams(ContactQuery)
     const { box: found } = try connection(fixed, grantId)
     const sought = query.trim().toLowerCase()
     return try HttpServerResponse.json({ contacts: found.contacts.filter((c) => `${c.name} ${c.email}`.toLowerCase().includes(sought)) })
   }
 
   effect function calendarFeed(fixed?: Slug) {
-    const { timeMin, timeMax, grantId } = try HttpServerRequest.schemaSearchParams(FeedQuery)
+    const { timeMin, timeMax, grantId, calendarId, timeZone } = try HttpServerRequest.schemaSearchParams(FeedQuery)
     const { box: found } = try connection(fixed, grantId)
-    const events = found.calendar.filter((e) => Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
-    return try HttpServerResponse.json({ calendarId: "primary", events, syncedAt: try now() })
+    const calendar = calendarId?.trim() || "primary"
+    const zone = timeZone?.trim() || "UTC"
+    const events = found.calendar.map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
+    return try HttpServerResponse.json({ calendarId: calendar, events, syncedAt: try now() })
   }
 
-  /** Adds an appointment, once per `eventId` the tablet chose: the same id again answers with the one already there. */
   effect function addAppointment(fixed?: Slug) {
-    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, eventId, isAllDay, metadata, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
+    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
     const { key, box: found } = try connection(fixed, grantId)
-    const known = found.calendar.find((e) => e.externalId === eventId)
-    if (known) return try HttpServerResponse.json(known)
-    const added: Appointment = {
-      externalId: eventId ?? `appointment-${try next()}`, calendarId: calendarId ?? "primary", title, description: description ?? "", location: location ?? "",
-      status: "confirmed", startAt, endAt, isAllDay: isAllDay ?? false, timezone: timeZone, htmlLink: null, conferenceLink: null, etag: "1", organizer: null,
-      attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false })),
-      metadata: metadata ?? {}
-    }
+    const added = appointment({
+      externalId: `appointment${try next()}`, calendarId: calendarId ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
+      startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: false, timezone: timeZone, etag: `"${try next()}"`,
+      attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false }))
+    })
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
-    return try HttpServerResponse.json(added, { status: 201 })
+    return try HttpServerResponse.json({ event: shown(added, timeZone) }, { status: 201 })
   }
 
-  effect function existing(fixed: Slug | undefined, grantId: string | undefined) {
+  effect function existing(fixed: Slug | undefined, grantId: string | undefined, calendarId: string | undefined) {
     const { key, box: found } = try connection(fixed, grantId)
     const { eventId } = try HttpRouter.params
     const request = try HttpServerRequest.HttpServerRequest
-    const event = found.calendar.find((e) => e.externalId === eventId)
-    if (!event) throw new Missing()
+    const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === (calendarId?.trim() || "primary"))
+    if (!event) throw new ProviderFailed()
     const ifMatch = request.headers["if-match"]
-    if (ifMatch !== undefined && ifMatch !== event.etag) throw new Stale()
+    if (ifMatch !== undefined && ifMatch.trim() !== event.etag) throw new Stale()
     return { key, grantId: found.grantId, found: event }
   }
 
   effect function moveAppointment(fixed?: Slug) {
     const body = try HttpServerRequest.schemaBodyJson(AppointmentChange)
-    const { key, grantId, found } = try existing(fixed, body.grantId)
+    const { key, grantId, found } = try existing(fixed, body.grantId, body.calendarId)
+    const etag = `"${try next()}"`
     const moved: Appointment = {
-      ...found, title: body.title ?? found.title, description: body.description ?? found.description, location: body.location ?? found.location,
-      startAt: body.startAt ?? found.startAt, endAt: body.endAt ?? found.endAt, timezone: body.timeZone ?? found.timezone, isAllDay: body.isAllDay ?? found.isAllDay,
-      metadata: body.metadata ?? found.metadata, etag: String(Number(found.etag) + 1)
+      ...found, title: body.title?.trim() ?? found.title, description: body.description ?? found.description, location: body.location ?? found.location,
+      startAt: body.startAt === undefined ? found.startAt : new Date(body.startAt).toISOString(), endAt: body.endAt === undefined ? found.endAt : new Date(body.endAt).toISOString(),
+      timezone: body.timeZone ?? found.timezone, isAllDay: found.isAllDay && body.startAt === undefined && body.endAt === undefined, etag, metadata: { ...found.metadata, etag }
     }
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === found.externalId ? moved : e) }))
-    return try HttpServerResponse.json({ event: moved }, { headers: { etag: moved.etag } })
+    return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
   }
 
   effect function removeAppointment(fixed?: Slug) {
     const query = try HttpServerRequest.schemaSearchParams(RemovalQuery)
-    const { key, grantId, found } = try existing(fixed, query.grantId)
-    const series = query.scope === "series" ? found.metadata.seriesId : undefined
-    try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.filter((e) => e.externalId !== found.externalId && (series === undefined || e.metadata.seriesId !== series)) }))
+    const { key, grantId, found } = try existing(fixed, query.grantId, query.calendarId)
+    try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.filter((e) => e !== found) }))
     return try HttpServerResponse.json({ ok: true })
   }
 
-  /** Opens a company's own sign-in page for the tablet. */
   effect function startSession() {
     const account = try signedIn()
     if (account.outage) throw new Unavailable()
@@ -634,7 +693,6 @@ effect function store(site: string) {
     return { account: found, session }
   }
 
-  /** How her visit to the page ended, once it has. */
   effect function sessionOutcome() {
     const { key } = try signedIn()
     const { sessionId } = try HttpRouter.schemaPathParams(SessionQuery)
@@ -657,7 +715,6 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ ok: true })
   }
 
-  /** Connects `address` at `provider`, or renews the account already there: a new one arrives with its company's mail. */
   effect function connect(account: Account, provider: Slug, address: string) {
     const known = account.boxes.find((b) => b.provider === provider && b.address.toLowerCase() === address.toLowerCase())
     if (known) return try changeBox(account.key, known.grantId, (b) => ({ ...b, expired: false }))
@@ -685,7 +742,6 @@ effect function store(site: string) {
     return HttpServerResponse.text(`<!doctype html><title>${names[session.provider]}</title><p>You can go back to the tablet.</p>`, { contentType: "text/html" })
   }
 
-  /** Checks an Other email against its servers: a listed company, a wrong password, servers it cannot find, or connected. */
   effect function connectOther() {
     const account = try signedIn()
     if (account.outage) throw new Unavailable()
@@ -826,18 +882,13 @@ effect function store(site: string) {
     return try HttpServerResponse.json(found.value)
   }
 
-  /** One company's mail and calendar routes under `mail` and `calendar`: Google's own, or the provider-neutral ones with `:provider`. */
   const company = (mail: `/${string}`, calendar: `/${string}`, accountsAt: `/${string}`, fixed?: Slug) => [
     HttpRouter.route("GET", accountsAt, answered(connected(fixed))),
-    HttpRouter.route("GET", `${mail}/triage`, answered(triage(fixed))),
     HttpRouter.route("GET", `${mail}/search`, answered(search(fixed))),
     HttpRouter.route("GET", `${mail}/read`, answered(readMail(fixed))),
-    HttpRouter.route("POST", `${mail}/inbox-v1/operations`, answered(prepareChange(fixed))),
-    HttpRouter.route("POST", `${mail}/inbox-v1/operations/:requestId/dispatch`, answered(dispatchChange(fixed))),
-    HttpRouter.route("POST", `${mail}/message-send`, answered(messageSend(fixed))),
-    HttpRouter.route("POST", `${mail}/reply-send`, answered(replySend(fixed))),
-    HttpRouter.route("POST", `${mail}/compose-send`, answered(composeSend(fixed))),
-    HttpRouter.route("GET", `${mail}/message-send/:operationId`, answered(sendLookup(fixed))),
+    HttpRouter.route("POST", `${mail}/inbox-v1/operations`, answered(prepareOperation(fixed))),
+    HttpRouter.route("POST", `${mail}/inbox-v1/operations/:requestId/dispatch`, answered(dispatchOperation(fixed))),
+    HttpRouter.route("GET", `${mail}/inbox-v1/operations/:requestId`, answered(observeOperation(fixed))),
     HttpRouter.route("POST", `${mail}/drafts`, answered(saveDraft(fixed))),
     HttpRouter.route("DELETE", `${mail}/drafts/:draftId`, answered(deleteDraft(fixed))),
     HttpRouter.route("GET", `${mail}/contacts`, answered(contacts(fixed))),
@@ -875,7 +926,19 @@ export function cloud(site: string) {
   const cors = HttpMiddleware.cors({
     allowedOrigins: (origin) => firstParty.test(origin), credentials: true, maxAge: 86400,
     allowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "Idempotency-Key", "If-Match", "X-Request-ID", "Traceparent", "Tracestate"]
+    allowedHeaders: [
+      "Content-Type", "Authorization", "X-API-Key", "X-Eliza-Dedicated-Price", "X-App-Id", "X-Request-ID", "Cookie", "X-Miniapp-Token", "X-Anonymous-Session",
+      "X-Gateway-Secret", "X-Wallet-Address", "X-Timestamp", "X-Wallet-Signature", "X-Service-Key", "Cache-Control", "X-Agent-Client-Id", "X-PAYMENT",
+      "X-PAYMENT-RESPONSE", "X-PAYMENT-STATUS", "X-Steward-Tenant", "X-Eliza-CSRF", "X-Cli-Session-Verifier", "Idempotency-Key", "X-Content-SHA256",
+      "X-Content-Length", "X-Storage-Object-Key", "X-Storage-Prefix", "X-Storage-Recursive", "X-Affiliate-Code", "X-ElizaOS-Client-Id", "X-Eliza-Client-Id",
+      "X-ElizaOS-UI-Language", "X-Eliza-UI-Language", "X-ElizaOS-Turn-Correlation", "X-ElizaOS-Turn-Attempt", "Traceparent", "Tracestate", "X-Eliza-Trace-Id",
+      "X-Eliza-Telemetry"
+    ],
+    exposedHeaders: [
+      "Retry-After", "Server-Timing", "X-Request-ID", "X-Eliza-Trace-Id", "X-Eliza-Preforward-Ms", "X-Eliza-Auth-Trace", "X-Eliza-Inference-Path",
+      "X-Eliza-Provider-Request-Id", "X-Eliza-Stream-Scope-Ms", "X-Eliza-Stream-Body-Ms", "X-Eliza-Stream-Parse-Ms", "X-Eliza-Stream-Bridge-Ms",
+      "X-Eliza-TTS-Provider", "X-Eliza-TTS-Speed", "X-Eliza-TTS-Timing"
+    ]
   })
   return Layer.mergeAll(HttpRouter.addAll(store(site)), HttpRouter.middleware(cors, { global: true }))
 }
@@ -909,17 +972,14 @@ export effect function parts(cloud: string, key: string, said: string) {
   return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)
 }
 
-/** Queues what Grace's agent answers next: each reply answers the next turn that says `said`, or the next turn at all. */
 export effect function script(cloud: string, key: string, replies: readonly Scripted[]) {
   try post(cloud, "/fake/chat/script", { replies }, key)
 }
 
-/** Ends the sign-in of the account at `address`, as its company would. */
 export effect function expire(cloud: string, key: string, address: string) {
   try post(cloud, "/fake/expire", { address }, key)
 }
 
-/** Takes the cloud's mail and calendar down, or brings them back. */
 export effect function outage(cloud: string, key: string, down: boolean) {
   try post(cloud, "/fake/outage", { down }, key)
 }
@@ -939,7 +999,6 @@ export effect function sessions(cloud: string, key: string) {
 
 export type Visit = { readonly choice: "allow" | "cancel" | "unfinished" | "away"; readonly address?: string }
 
-/** Margaret at each company's own sign-in page the tablet opens, in turn: she ends each visit with its `choice`. The tablet hears only the outcome. */
 export effect function visiting(visits: readonly Visit[], opened?: Deferred.Deferred<string>) {
   const left = try Ref.make(visits)
   return {
