@@ -2,6 +2,7 @@ import { useCallback, useId, type ComponentProps } from "react";
 import { CircleCheck, Clock, Pause, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
+import { StatusTag, type TagTone } from "./PaymentStatusBadge.tsx";
 
 export type TaskStatus = "paused" | "waiting" | "done";
 
@@ -32,10 +33,10 @@ export const taskCardLabels: TaskCardLabels = {
   confirmRemove: "Yes, remove it",
 };
 
-const tags: Record<TaskStatus, { icon: LucideIcon; tone: string }> = {
-  paused: { icon: Pause, tone: "text-primary inset-ring-primary/30" },
-  waiting: { icon: Clock, tone: "text-warn inset-ring-warn/30" },
-  done: { icon: CircleCheck, tone: "text-ok inset-ring-ok/30" },
+const tags: Record<TaskStatus, { icon: LucideIcon; tone: TagTone }> = {
+  paused: { icon: Pause, tone: "accent" },
+  waiting: { icon: Clock, tone: "warn" },
+  done: { icon: CircleCheck, tone: "ok" },
 };
 
 export type TaskCardProps = Omit<ComponentProps<"article">, "title"> & {
@@ -79,6 +80,7 @@ export type TaskCardProps = Omit<ComponentProps<"article">, "title"> & {
 /**
  * One task Grace started: its status and date, its name and one line, then Resume or Ask Grace beside Stop this task.
  * Stop asks on the card before anything is stopped; a finished card can leave the list after one question.
+ * @model spec/app/prep.md
  * @design packages/design-system/design.md#windows
  */
 export function TaskCard({
@@ -109,7 +111,6 @@ export function TaskCard({
   const focusQuestion = useCallback((question: HTMLParagraphElement | null) => question?.focus(), []);
   const done = status === "done";
   const ask = asking === "stop" && !done ? "stop" : asking === "remove" && done ? "remove" : undefined;
-  const { icon: Icon, tone } = tags[status];
   const Heading = headingLevel === 2 ? "h2" : "h3";
   return (
     <article
@@ -119,10 +120,7 @@ export function TaskCard({
       {...props}
     >
       <div className="flex items-center gap-3">
-        <span className={cn("inline-flex min-h-9 items-center gap-2 rounded-tag bg-card px-3 py-[7px] text-label leading-[22px] font-semibold inset-ring-[1.5px]", tone)}>
-          <Icon aria-hidden size={20} strokeWidth={2.2} className="flex-none" />
-          {l[status]}
-        </span>
+        <StatusTag {...tags[status]}>{l[status]}</StatusTag>
         <span className="text-body leading-[26px] font-medium text-muted-foreground">{when}</span>
       </div>
       <Heading id={titleId} className="m-0 text-title-sm leading-8 font-bold text-chrome">

@@ -6,88 +6,83 @@ import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 import { PaymentStatusBadge, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
 
-export type BillFact = {
+export type TaskFact = {
   label: string;
   value?: string;
   unknownLabel?: string;
 };
 
-export type BillSummaryCardProps = Omit<PanelProps, "variant" | "children"> & {
-  /** The company the bill is from: "Chase". */
-  company: string;
+export type TaskFactsLabels = {
+  outcome: string;
+  noOutcome: string;
+  unknown: string;
+  open: string;
+  recheck: string;
+};
+
+export const billFactsLabels: TaskFactsLabels = {
+  outcome: "Payment",
+  noOutcome: "No payment scheduled",
+  unknown: "Not shown on the website",
+  open: "Open bill",
+  recheck: "Check website again",
+};
+
+export const bookingFactsLabels: TaskFactsLabels = {
+  outcome: "Booking",
+  noOutcome: "Nothing booked yet",
+  unknown: "Not shown on the website",
+  open: "Open booking",
+  recheck: "Check website again",
+};
+
+export type TaskFactsCardProps = Omit<PanelProps, "variant" | "children"> & {
+  /** Who the task is with: "Chase", "Main St Clinic". */
+  who: string;
   /** The account, by its last digits: "••7731". */
   account?: string;
   /** The facts as last read from the website, in order. */
-  rows: BillFact[];
-  /** A payment the website already shows for this bill; without one, `noPaymentLabel`. */
+  rows: TaskFact[];
+  /** A result the website already shows for this task; without one, the kind's `noOutcome`. */
   existing?: PaymentStatusBadgeProps;
-  /** Opens the bill on its website: the one next step. */
+  /** Opens the task on its website: the one next step. */
   onOpen?: () => void;
   /** Reads the website again, to settle facts that disagree or are missing. */
   onRecheck?: () => void;
   /** Why the facts cannot be trusted yet, such as two different amounts; shown as a caution. */
   conflict?: ReactNode;
-  /** The label of the existing-payment row. */
-  paymentLabel?: string;
-  /** What the existing-payment row says when there is none. */
-  noPaymentLabel?: string;
-  /** What a fact says when the website does not show it, unless the fact has its own. */
-  unknownLabel?: string;
-  /** The words of the open action. */
-  openLabel?: string;
-  /** The words of the check-again action. */
-  recheckLabel?: string;
+  /** The task kind's words, such as `billFactsLabels`. */
+  labels: TaskFactsLabels;
 };
 
 /**
- * Grace's own read-out of a bill's current facts as seen on its website: company and account, then a row for each fact,
- * and whether a payment already exists. It is Grace's summary, not the website restyled.
- * @model spec/app/billpay.md
+ * Grace's own read-out of a task's current facts as seen on its website: who and which account, then a row for each
+ * fact, and whether a result already exists. It is Grace's summary, not the website restyled.
+ * @model spec/app/prep.md
  * @design packages/design-system/design.md#windows
  */
-export function BillSummaryCard({
-  company,
-  account,
-  rows,
-  existing,
-  onOpen,
-  onRecheck,
-  conflict,
-  paymentLabel = "Payment",
-  noPaymentLabel = "No payment scheduled",
-  unknownLabel = "Not shown on the website",
-  openLabel = "Open bill",
-  recheckLabel = "Check website again",
-  className,
-  ...props
-}: BillSummaryCardProps) {
-  const title = [company, account].filter(Boolean).join(" ");
+export function TaskFactsCard({ who, account, rows, existing, onOpen, onRecheck, conflict, labels, className, ...props }: TaskFactsCardProps) {
   return (
-    <Panel
-      role="group"
-      aria-label={title}
-      className={cn("flex flex-col gap-5", className)}
-      {...props}
-    >
+    <Panel role="group" aria-label={[who, account].filter(Boolean).join(" ")} className={cn("flex flex-col gap-5", className)} {...props}>
       <p className="m-0 text-lead leading-[30px] font-bold text-chrome">
-        {company}
+        {who}
         {account && <span className="ml-2.5 font-semibold text-muted-foreground">{account}</span>}
       </p>
       {conflict ? <Alert variant="caution">{conflict}</Alert> : null}
       <dl className={factList}>
         {rows.map((row) => (
           <FactRow key={row.label} label={row.label} className={row.value ? "font-bold text-foreground" : "font-medium text-muted-foreground"}>
-            {row.value ?? row.unknownLabel ?? unknownLabel}
+            {row.value ?? row.unknownLabel ?? labels.unknown}
           </FactRow>
         ))}
         <div className="contents">
-          <dt className={cn(factLabel, "font-medium text-muted-foreground")}>{paymentLabel}</dt>
+          <dt className={cn(factLabel, "font-medium text-muted-foreground")}>{labels.outcome}</dt>
           {existing ? (
             <dd className="col-span-2 m-0 -mt-1 min-w-0">
               <PaymentStatusBadge {...existing} />
             </dd>
           ) : (
-            <dd className={cn(factValue, "font-medium text-muted-foreground")}>{noPaymentLabel}</dd>
+            <dd className={cn(factValue, "font-medium text-muted-foreground")}>{labels.noOutcome}</dd>
           )}
         </div>
       </dl>
@@ -95,12 +90,12 @@ export function BillSummaryCard({
         <div className="flex flex-wrap gap-3">
           {onOpen && (
             <Button variant="prominent" size="pill" onClick={onOpen}>
-              {openLabel}
+              {labels.open}
             </Button>
           )}
           {onRecheck && (
             <Button variant="capsule" size="pill" onClick={onRecheck}>
-              {recheckLabel}
+              {labels.recheck}
             </Button>
           )}
         </div>

@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import type { BillFact, BillSummaryCardProps } from "./BillSummaryCard.tsx";
+import { billFactsLabels, bookingFactsLabels, type TaskFact, type TaskFactsCardProps } from "./TaskFactsCard.tsx";
 
-const chase: BillFact[] = [
+const chase: TaskFact[] = [
   { label: "Statement balance", value: "$84.20" },
   { label: "Minimum payment due", value: "$35.00" },
   { label: "Payment due date", value: "Nov 12, 2026" },
@@ -19,8 +19,8 @@ export const inGrace = (story: () => ReactNode) => (
   </div>
 );
 
-export const meta: ComponentMeta<BillSummaryCardProps> = {
-  args: { company: "Chase", account: "••7731", rows: chase, onOpen: open, onRecheck: undefined },
+export const meta: ComponentMeta<TaskFactsCardProps> = {
+  args: { who: "Chase", account: "••7731", rows: chase, labels: billFactsLabels, onOpen: open, onRecheck: undefined },
   examples: {
     "Fee unknown": { rows: [...chase, { label: "Fee" }] },
     "No payment due": {
@@ -33,6 +33,17 @@ export const meta: ComponentMeta<BillSummaryCardProps> = {
       rows: [{ label: "Statement balance", value: "$84.20" }, { label: "Statement balance on the bill email", value: "$48.20" }],
       onOpen: undefined,
       onRecheck: recheck,
+    },
+    Booking: {
+      who: "Main St Clinic",
+      account: undefined,
+      labels: bookingFactsLabels,
+      rows: [
+        { label: "Visit", value: "Follow-up with Dr. Patel" },
+        { label: "Times offered", value: "Fri, Dec 4, 10:00 AM · Mon, Dec 7, 2:00 PM" },
+        { label: "Your calendar", value: "Lunch with Ruth on Fri at 10:00 AM" },
+        { label: "Price" },
+      ],
     },
   },
   decorator: inGrace,
