@@ -25,7 +25,7 @@ it.live("Talk or type without losing the conversation, from the app's own page: 
   }
 })
 
-it.live("Connect the email I already use and write from it, from the app's own page: sign-in, a send with its operation key, and a calendar change cross origins", () => effect {
+it.live("Connect the email I already use and write from it, from the app's own page: sign-in, a send prepared and dispatched once per operation, and a calendar change and deletion cross origins under the cloud's own CORS lists", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     const outlook = { provider: "Outlook", address: "margaret@outlook.com" } as const
@@ -43,7 +43,7 @@ it.live("Connect the email I already use and write from it, from the app's own p
       const view = { ...noView, owner: outlook.address, calendarId: "primary", timezone: "UTC", window: { ...noView.window, fromTime: -1, untilTime: 2 * 60 * 60 * 1000 } }
       const [saved] = (try Stream.runCollect(calendar.feed(view))).map((p) => p.incoming)
       const changed = try calendar.write(edit(beginEdit(saved, "CalendarUser"), { ...saved.committed, title: "Thanksgiving dinner at 5" }, "CalendarUser"))
-      const removed = try calendar.remove("dinner", "ThisOccurrence")
+      const removed = try calendar.remove(identity, "ThisOccurrence")
       try Effect.try(() => assert.deepStrictEqual({ page: page.outcome, sends: sends.map((s) => s.resultStatus), same: sends[0].evidence === sends[1].evidence, stored: [added.succeeded, changed.succeeded], removed: removed.succeeded }, {
         page: "Allowed", sends: ["Sent", "Sent"], same: true, stored: [true, true], removed: true
       }))

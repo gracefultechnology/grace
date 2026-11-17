@@ -5,7 +5,7 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { ContactList, Created, DraftSaved, Feed, Grants, Listing, OtherCheck, Prepared, ReadResponse, SendRecord, Sent, Session, SessionOutcome, WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
+import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored, WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
 import { providers } from "./providers.vibe"
@@ -62,7 +62,7 @@ export type MailConnection = {
 export type CalendarConnection = {
   readonly feed: (view: CalendarView) => Stream.Stream<Published, ConnectorFailure>
   readonly write: (entry: Calendar) => StoreReceipt!NeedsSignIn
-  readonly remove: (id: string, scope: DeleteScope) => DeletionReceipt!NeedsSignIn
+  readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
 }
 
 export service Connector {
@@ -147,10 +147,9 @@ function midnight(date: string, timeZone: string) {
 const dateIn = (at: number, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at)
 
 function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, timeZone: string) {
-  const at = allDay
-    ? /^\d{4}-\d{2}-\d{2}$/.test(text) && zones.has(timeZone) ? midnight(text, timeZone) : Number.NaN
-    : /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(text) ? Date.parse(text) : Number.NaN
-  return Number.isNaN(at) ? undefined : at
+  const at = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(text) ? Date.parse(text) : Number.NaN
+  if (Number.isNaN(at)) return undefined
+  return allDay && !(zones.has(timeZone) && midnight(dateIn(at, timeZone), timeZone) === at) ? undefined : at
 }
 
 function schedule(zones: ReadonlySet<string>, e: WireEvent, timeZone: string) {
@@ -160,12 +159,16 @@ function schedule(zones: ReadonlySet<string>, e: WireEvent, timeZone: string) {
   return { startAt: startAt ?? Number.NaN, endAt: endAt ?? Number.NaN, verified: exact.every((t) => t !== undefined) }
 }
 
-function details(e: WireEvent, startAt: number, endAt: number, timezone: string): EntryDetails {
-  const { metadata: x } = e
+function participantOf(e: WireEvent) {
+  const other = e.attendees.find((a) => !a.self)
+  return other?.displayName ?? other?.email ?? ""
+}
+
+function details(e: WireEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
+  const kept = known ?? { participant: participantOf(e), seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
   return {
-    title: e.title, location: e.location, participant: x.participant ?? "", notes: e.description, startAt, endAt,
-    timezone, allDay: e.isAllDay, seriesId: x.seriesId ?? "", recurrence: x.recurrence ?? "Once",
-    reminderEnabled: x.reminderMinutes !== undefined, leadTime: (x.reminderMinutes ?? 0) * minute, important: x.important ?? false
+    title: e.title, location: e.location, notes: e.description, startAt, endAt, timezone, allDay: e.isAllDay,
+    participant: kept.participant, seriesId: kept.seriesId, recurrence: kept.recurrence, reminderEnabled: kept.reminderEnabled, leadTime: kept.leadTime, important: kept.important
   }
 }
 
@@ -177,7 +180,7 @@ const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "
 
 function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent, entry: EntryDetails): Calendar | undefined {
   if (known === undefined) {
-    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: e.metadata.sourceRef ?? "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
   }
   if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined
@@ -189,28 +192,21 @@ const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(k
 
 function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly WireEvent[]): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
-  const live = events.filter((e) => e.status !== "cancelled")
-  const changed = live.flatMap((e) => {
+  const changed = events.flatMap((e) => {
+    const known = own.find((c) => c.identity.occurrenceId === e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
-    const entry = details(e, startAt, endAt, timezone)
-    const incoming = validDetails(entry) ? refreshed(own.find((c) => c.identity.occurrenceId === e.externalId), view, e, entry) : undefined
+    const entry = details(e, startAt, endAt, timezone, known?.committed)
+    const incoming = validDetails(entry) ? refreshed(known, view, e, entry) : undefined
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
   })
-  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !live.some((e) => e.externalId === c.identity.occurrenceId))
+  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !events.some((e) => e.externalId === c.identity.occurrenceId))
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 
 function event(entry: Calendar) {
   const d = entry.draft
-  const at = (t: number) => d.allDay ? dateIn(t, d.timezone) : iso(t)
-  return {
-    title: d.title, description: d.notes, location: d.location, startAt: at(d.startAt), endAt: at(d.endAt), timeZone: d.timezone, isAllDay: d.allDay,
-    metadata: {
-      ...entry.identity.sourceRef === "" ? {} : { sourceRef: entry.identity.sourceRef }, participant: d.participant, recurrence: d.recurrence,
-      ...d.seriesId === "" ? {} : { seriesId: d.seriesId }, ...d.reminderEnabled ? { reminderMinutes: Math.round(d.leadTime / minute) } : {}, important: d.important
-    }
-  }
+  return { title: d.title, description: d.notes, location: d.location, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone, isAllDay: d.allDay }
 }
 
 function requestIdOf(text: string) {
@@ -226,15 +222,33 @@ const outcome = (resultStatus: SendOutcome["resultStatus"], evidence: string): S
 
 const certain = (e: ProviderRefused) => e.status >= 400
 
+type Receipt = typeof Operation.Type["receipt"]
+
+function sendOutcome(r: Receipt): SendOutcome {
+  return match (r.state) {
+    when "succeeded": r.providerResult?.messageId === undefined ? outcome("SendUnknown", "") : outcome("Sent", `message:${r.providerResult.messageId}`);
+    when "rejected": outcome("SendFailed", `rejected:${r.rejectionCode ?? ""}`);
+    when "prepared": outcome("SendFailed", "not-sent");
+    when "dispatched": outcome("SendUnknown", "");
+    when "outcome-unknown": outcome("SendUnknown", "");
+  }
+}
+
 export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
   const http = try HttpClient.HttpClient
   const page = try SignInPage
-  const etags = try Ref.make(new Map<string, string>())
   const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
+  effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
+    if (!sent.url.includes("/inbox-v1/")) return true
+    const body = response.json catch effect () => null
+    return Option.getOrUndefined(Schema.decodeUnknownOption(Refusal)(body))?.code === "reauth_required"
+  }
+
   effect function call(request: HttpClientRequest.HttpClientRequest!ConnectorFailure) {
-    const response = http.execute(HttpClientRequest.bearerToken(try request, link.key)) catch effect () => { throw new Unreachable() }
-    if (response.status === 401) throw new NeedsSignIn()
+    const sent = try request
+    const response = http.execute(HttpClientRequest.bearerToken(sent, link.key)) catch effect () => { throw new Unreachable() }
+    if (response.status === 401 || (response.status === 409 && (try reconnects(sent, response)))) throw new NeedsSignIn()
     if (response.status >= 500) throw new Unreachable()
     if (response.status >= 400) throw new ProviderRefused({ status: response.status })
     return response
@@ -251,7 +265,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   effect function grantOf(account: AccountRef) {
     const address = account.address.toLowerCase()
-    const found = (try fetched(get(routes[account.provider].accounts, {}), Grants)).find((g) => g.identity?.email?.toLowerCase() === address)
+    const found = (try fetched(get(routes[account.provider].accounts, { side: "owner" }), Grants)).find((g) => g.identity?.email?.toLowerCase() === address)
     if (found === undefined || !found.connected || found.connectionId === null) throw new NeedsSignIn()
     return found.connectionId
   }
@@ -276,30 +290,47 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
   function mail(account: AccountRef): MailConnection {
     const at = routes[account.provider].mail
     const asked = effect (path: string, params: Record<string, string>) => try get(`${at}${path}`, { ...params, grantId: try grantOf(account) })
-    const posted = effect (path: string, body: object, headers: Record<string, string> = {}) =>
-      HttpClientRequest.setHeaders(try post(`${at}${path}`, { ...body, grantId: try grantOf(account) }), headers)
-    const removed = effect (path: string, params: Record<string, string>) =>
-      HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { ...params, grantId: try grantOf(account) })
+    const posted = effect (path: string, body: object) => try post(`${at}${path}`, { ...body, grantId: try grantOf(account) })
+    const removed = effect (path: string) =>
+      HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { grantId: try grantOf(account) })
+    const requestOf = (purpose: string) => requestIdOf(`${account.provider}:${account.address}:${purpose}`)
 
     effect function read(ref: string) {
       return try fetched(asked("/read", { messageId: ref }), ReadResponse)
-    }
-
-    effect function threading(ref: string) {
-      const { message } = try read(ref)
-      const id = message.metadata.messageIdHeader ?? null
-      if (message.externalId !== ref || id === null) throw new ProviderRefused({ status: 422 })
-      return { inReplyTo: id, references: [message.metadata.referencesHeader ?? "", id].join(" ").trim() }
     }
 
     effect function contacts(query: string) {
       return (try fetched(asked("/contacts", { query }), ContactList)).contacts.map((c): Contact => ({ name: c.name, address: c.email }))
     }
 
-    effect function sent(operationId: string, request: HttpClientRequest.HttpClientRequest!ConnectorFailure) {
-      return Effect.as(fetched(request, Sent), outcome("Sent", `operation:${operationId}`)) catch effect (e) => match (e) {
+    effect function operate(requestId: string, proposal: object) {
+      const { receipt } = try fetched(posted("/inbox-v1/operations", { requestId, proposal }), Operation)
+      return receipt.state !== "prepared" ? receipt : (try fetched(posted(`/inbox-v1/operations/${requestId}/dispatch`, { reviewDigest: receipt.reviewDigest, proposal }), Operation)).receipt
+    }
+
+    effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot) {
+      const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body }
+      const sources = [...new Set(attachments.map((f) => f.sourceRef))]
+      if (attachments.length > 0) {
+        if (sources.length !== 1 || attachments.some((f) => f.origin !== account.provider || f.account !== account.address)) throw new ProviderRefused({ status: 422 })
+        const { message } = try read(sources[0])
+        return { kind: "send", mode: "forward", ...recipients, forwardAttachments: { messageId: sources[0], historyId: message.metadata.historyId ?? "", partIds: attachments.map((f) => f.contentRef) } }
+      }
+      if (replyTo === "") return { kind: "send", mode: "compose", ...recipients }
+      const { message } = try read(replyTo)
+      const threaded = c.subject === (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`)
+      return threaded ? { kind: "send", mode: "reply", replyMessageId: replyTo, ...recipients } : { kind: "send", mode: "compose", ...recipients }
+    }
+
+    effect function looked(operationId: string) {
+      const { receipt } = try fetched(asked(`/inbox-v1/operations/${requestOf(`send:${operationId}`)}`, {}), Operation)
+      return sendOutcome(receipt)
+    }
+
+    effect function lookup(operationId: string) {
+      return looked(operationId) catch effect (e) => match (e) {
         when NeedsSignIn: throw e;
-        when ProviderRefused: certain(e) ? outcome("SendFailed", `refused:${e.status}`) : outcome("SendUnknown", "");
+        when ProviderRefused: e.status === 404 ? outcome("SendFailed", "not-sent") : outcome("SendUnknown", "");
         when Unreachable: outcome("SendUnknown", "");
       }
     }
@@ -308,7 +339,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       list: (scope, revisionOf) => {
         const folder = searched[scope.folder]
         return folder === undefined ? Stream.empty : Stream.unwrap(effect {
-          const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query) }), Listing)
+          const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query), maxResults: "50" }), Listing)
           return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId))))
         })
       },
@@ -329,15 +360,13 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       contacts: () => contacts(""),
       change: effect (op) => {
         const proposal = { kind: operations[op.change], messageId: op.identity.ref, expectedHistoryId: op.version }
-        const requestId = requestIdOf(`${account.provider}:${account.address}:${op.identity.ref}:${op.change}:${op.version}:${op.revision}`)
+        const requestId = requestOf(`${op.identity.ref}:${op.change}:${op.version}:${op.revision}`)
         const answered = { identity: op.identity, revision: op.revision }
-        const dispatched = effect {
-          const { receipt } = try fetched(posted("/inbox-v1/operations", { requestId, proposal }), Prepared)
-          return receipt.state !== "prepared" ? receipt : (try fetched(posted(`/inbox-v1/operations/${requestId}/dispatch`, { reviewDigest: receipt.reviewDigest, proposal }), Prepared)).receipt
-        }
-        return Effect.map(dispatched, (r): ChangeReceipt => r.state === "succeeded" && r.providerResult !== null
-          ? { ...answered, result: "ChangeIdle", evidence: `history:${r.providerResult.historyId}` }
-          : { ...answered, result: "ChangeFailed", evidence: `receipt:${r.state}` }) catch effect (e) => match (e) {
+        return Effect.map(operate(requestId, proposal), (r): ChangeReceipt => match (r.state) {
+          when "succeeded": r.providerResult === null ? { ...answered, result: "ChangeUnknown", evidence: "" } : { ...answered, result: "ChangeIdle", evidence: `history:${r.providerResult.historyId ?? ""}` };
+          when "rejected": { ...answered, result: "ChangeFailed", evidence: `rejected:${r.rejectionCode ?? ""}` };
+          default: { ...answered, result: "ChangeUnknown", evidence: "" };
+        }) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           when ProviderRefused: certain(e) ? { ...answered, result: "ChangeFailed", evidence: `refused:${e.status}` } : { ...answered, result: "ChangeUnknown", evidence: "" };
           when Unreachable: { ...answered, result: "ChangeUnknown", evidence: "" };
@@ -351,73 +380,46 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         }
       },
       deleteDraft: effect (draftId) => {
-        return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`, {})), true) catch effect (e) => match (e) {
+        return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`)), true) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           when ProviderRefused: e.status === 404;
           when Unreachable: false;
         }
       },
-      send: effect (operationId, { content: c, replyTo, attachments }) => {
-        const whole = attachments.length > 0 || (replyTo !== "" && c.bcc.length > 0)
-        const path = whole ? "/compose-send" : replyTo === "" ? "/message-send" : "/reply-send"
-        const request = effect {
-          const thread = replyTo === "" ? {} : try threading(replyTo)
-          const body = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...thread, ...whole ? { attachments: attachments.map(carried) } : {} }
-          return try posted(path, body, { "Idempotency-Key": operationId })
-        }
-        return try sent(operationId, request)
-      },
-      lookup: effect (operationId) => {
-        const found = fetched(asked(`/message-send/${encodeURIComponent(operationId)}`, {}), SendRecord)
-        return Effect.map(found, ({ sent }) => sent ? outcome("Sent", `operation:${operationId}`) : outcome("SendFailed", "not-sent")) catch effect (e) => match (e) {
+      send: effect (operationId, snapshot) => {
+        const sent = effect { return sendOutcome(try operate(requestOf(`send:${operationId}`), try outgoing(snapshot))) }
+        return sent catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          default: outcome("SendUnknown", "");
+          when ProviderRefused: e.status === 409 ? try lookup(operationId) : outcome("SendFailed", `refused:${e.status}`);
+          when Unreachable: outcome("SendUnknown", "");
         }
-      }
+      },
+      lookup
     }
   }
 
   function calendar(account: AccountRef): CalendarConnection {
     const at = routes[account.provider].calendar
     const url = (path: string) => `${link.url}${at}${path}`
-    const tag = (id: string) => `${account.provider}:${account.address.toLowerCase()}:${id}`
-
-    effect function learned(id: string, etag: string | null | undefined) {
-      try Ref.update(etags, (all) => {
-        const next = new Map(all)
-        if (etag === null || etag === undefined) next.delete(tag(id))
-        else next.set(tag(id), etag)
-        return next
-      })
-    }
+    const removal = effect (id: string, calendarId: string) =>
+      HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
 
     effect function stored(entry: Calendar) {
       const { calendarId, occurrenceId: id } = entry.identity
-      if (entry.draft.allDay && !zones.has(entry.draft.timezone)) throw new ProviderRefused({ status: 422 })
       const body = { ...event(entry), calendarId, grantId: try grantOf(account) }
-      if (!entry.hasSaved) {
-        const { etag } = try fetched(post(`${at}/events`, { ...body, eventId: id }), Created)
-        return try learned(id, etag)
-      }
-      const known = (try Ref.get(etags)).get(tag(id))
-      if (known === undefined) throw new ProviderRefused({ status: 428 })
-      const response = try call(Effect.succeed(HttpClientRequest.setHeaders(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body), { "If-Match": known })))
-      try learned(id, response.headers["etag"])
-    }
-
-    effect function removed(id: string, scope: DeleteScope) {
-      const known = (try Ref.get(etags)).get(tag(id))
-      const params = { grantId: try grantOf(account), scope: scope === "EntireSeries" ? "series" : "occurrence" }
-      const request = HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), params)
-      try call(Effect.succeed(known === undefined ? request : HttpClientRequest.setHeaders(request, { "If-Match": known })))
-      try learned(id, null)
+      const request = entry.hasSaved
+        ? HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)
+        : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), { ...body, eventId: id })
+      const { event: saved } = try fetched(Effect.succeed(request), Stored)
+      if (saved.externalId === id) return
+      try Effect.ignore(call(removal(saved.externalId, calendarId)))
+      throw new ProviderRefused({ status: 409 })
     }
 
     return {
       feed: (view) => Stream.unwrap(effect {
         const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(view.window.fromTime), timeMax: iso(view.window.untilTime), grantId: try grantOf(account) }
         const { events } = try fetched(get(`${at}/feed`, params), Feed)
-        for (const e of events) try learned(e.externalId, e.status === "cancelled" ? null : e.etag)
         return Stream.fromIterable(published(zones, view, events))
       }),
       write: effect (entry) => {
@@ -427,8 +429,9 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
           default: { revision, succeeded: false };
         }
       },
-      remove: effect (id, scope) => {
-        return Effect.as(removed(id, scope), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
+      remove: effect ({ calendarId, occurrenceId: id }, scope) => {
+        if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
+        return Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           when ProviderRefused: e.status === 404 ? { succeeded: true, evidence: "absent" } : { succeeded: false, evidence: `refused:${e.status}` };
           when Unreachable: { succeeded: false, evidence: "" };
