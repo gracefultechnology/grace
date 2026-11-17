@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
+import { parseAst } from "vite";
 import { buildConsumerAndroidRuntime } from "../../../vendor/eliza/packages/app/scripts/lib/consumer-android-runtime.mjs";
 import { stageAndroidRuntimeInventory } from "../../../vendor/eliza/plugins/plugin-native-agent/native-host/android-runtime-inventory.mjs";
 import { buildAndroidConsumer } from "../../../vendor/eliza/packages/app/scripts/mobile/android/build-consumer.mjs";
@@ -53,8 +54,8 @@ const stubPlugins = [
   "@elizaos/plugin-notes", "@elizaos/plugin-personal-assistant", "@elizaos/plugin-vision",
   "@pixiv/three-vrm", "discord.js", "google-auth-library", "googleapis", "three",
 ];
-const loaded = stubPlugins.filter((name) => name.startsWith("@elizaos/plugin-") && !Object.hasOwn(policy.plugins.refuse, name));
-if (loaded.length) throw new Error(`The agent payload leaves out ${loaded.join(", ")}, which agent/policy.json does not refuse`);
+const unrefused = stubPlugins.filter((name) => name.startsWith("@elizaos/plugin-") && !Object.hasOwn(policy.plugins.refuse, name));
+if (unrefused.length) throw new Error(`The agent payload leaves out ${unrefused.join(", ")}, which agent/policy.json does not refuse`);
 
 const Abi = Schema.Literals(["arm64-v8a", "x86_64"]);
 type Abi = typeof Abi.Type;
@@ -161,15 +162,46 @@ function buildAndroid({ release = false, abi }: { release?: boolean; abi: Abi })
   });
 }
 
+type Syntax = { type: string; [key: string]: unknown };
+const isSyntax = (value: unknown): value is Syntax => typeof value === "object" && value !== null && typeof Reflect.get(value, "type") === "string";
+const actionName = (node: unknown) => isSyntax(node) && node.type === "Literal" && typeof node.value === "string" && /^[A-Z][A-Z0-9_]+$/.test(node.value) ? node.value : undefined;
+const identifier = (node: unknown) => isSyntax(node) && node.type === "Identifier" ? String(node.name) : undefined;
+const keyOf = (property: Syntax) => property.type === "Property" ? identifier(property.key) ?? (isSyntax(property.key) && property.key.type === "Literal" ? String(property.key.value) : undefined) : undefined;
+
+function declaredActions(bundle: string) {
+  const objects: Syntax[][] = [];
+  const constants = new Map<string, string[] | null>();
+  const pending: unknown[] = [parseAst(bundle)];
+  while (pending.length) {
+    const node = pending.pop();
+    if (Array.isArray(node)) pending.push(...node);
+    if (!isSyntax(node)) continue;
+    if (node.type === "ObjectExpression") objects.push(Schema.decodeUnknownSync(Schema.Array(Schema.Unknown))(node.properties).filter(isSyntax));
+    const [target, value] = node.type === "VariableDeclarator" ? [node.id, node.init] : node.type === "AssignmentExpression" ? [node.left, node.right] : [];
+    const name = identifier(target);
+    const literal = actionName(value);
+    if (name && value) constants.set(name, literal && constants.get(name) !== null ? [...constants.get(name) ?? [], literal] : null);
+    pending.push(...Object.values(node).filter((child) => typeof child === "object" && child !== null));
+  }
+  return new Set(objects.filter((properties) => properties.some((property) => ["similes", "handler", "validate"].includes(keyOf(property) ?? "")))
+    .flatMap((properties) => {
+      const name = properties.find((property) => keyOf(property) === "name")?.value;
+      const literal = actionName(name);
+      return literal ? [literal] : constants.get(identifier(name) ?? "") ?? [];
+    }));
+}
+
+const checked = new Map<string, number>();
 function checkPolicy(bundle: string) {
-  const constants = new Map<string, string[]>();
-  for (const [, name, value] of bundle.matchAll(/(?:var|let|const)\s+([\w$]+)\s*=\s*"([A-Z][A-Z0-9_]+)"/g)) constants.set(name, [...constants.get(name) ?? [], value]);
-  const declared = new Set([...bundle.matchAll(/name:\s*(?:"([A-Z][A-Z0-9_]+)"|([\w$]+)\s*[,}])(?=[^{}]{0,800}?(?:similes|handler|validate)\s*:)/g)]
-    .flatMap(([, literal, constant]) => literal ? [literal] : constants.get(constant) ?? []));
+  const digest = createHash("sha256").update(bundle).digest("hex");
+  const known = checked.get(digest);
+  if (known !== undefined) return known;
+  const declared = declaredActions(bundle);
   const { allow, refuse, refusedSubactionsOf } = policy.actions.upstream;
   const unlisted = [...declared].filter((name) => !Object.hasOwn(allow, name) && !Object.hasOwn(refuse, name) && !Object.hasOwn(policy.actions.grace, name)
     && !refusedSubactionsOf.some((umbrella) => name.startsWith(`${umbrella}_`))).sort();
   if (unlisted.length) throw new Error(`The agent registers actions agent/policy.json neither allows nor refuses: ${unlisted.join(", ")}`);
+  checked.set(digest, declared.size);
   return declared.size;
 }
 
@@ -320,7 +352,7 @@ async function devTools(url: string, signal: AbortSignal) {
     async step(step: Exclude<Step, OnDevice>) {
       const signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000);
       if ("agent" in step) {
-        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const check = (status) => Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value) && done(true); agent.addListener("status", check); agent.getStatus().then(check); })`;
+        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value) && listening.then((listener) => listener.remove()).then(() => done(true)); agent.getStatus().then(check); })`;
         await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
         return;
       }
