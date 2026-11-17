@@ -42,48 +42,52 @@ version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each relea
 ### On the emulator
 
 ```sh
+sdkmanager "system-images;android-36;google_apis;arm64-v8a"
 avdmanager create avd -n <avd> -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_tablet
 sed -i '' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' -e 's/^hw.ramSize=.*/hw.ramSize=4096/' \
   ~/.android/avd/<avd>.avd/config.ini
 pnpm --filter @repo/app android --emulator <avd> --exercise home
 ```
 
-makes a fresh tablet AVD (2560×1600 at 320 dpi, host graphics, 4 GB), then builds, attaches to the
-named AVD or boots it without a window and with host graphics (`-gpu host`; its log in
+makes a fresh tablet AVD (2560×1600 at 320 dpi, host graphics, 4 GB) on an Apple silicon Mac (an
+x86_64 host takes the `x86_64` image, and GNU `sed` takes `-i` without `''`), then builds, attaches
+to the named AVD or boots it without a window and with host graphics (`-gpu host`; its log in
 `artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs the launcher debug APK,
 makes Grace Home (`cmd package set-home-activity`), waits up to 10 minutes for the HOME intent to
-resolve to her (an image's first-boot set-up, such as `google_apis`'s `googlesdksetup`, holds Home at
-a higher priority until it has run), starts Home and fails unless Grace is what Home opens, her
+resolve to her (an image's first-boot set-up, such as `google_apis`'s `googlesdksetup`, holds Home
+at a higher priority until it has run), starts Home and fails unless Grace is what Home opens, her
 WebView shows the Home screen (the rail's Home is current) and no `am_anr` event since the install
-names her, printing those events when one does. Other processes' are counted, not failed: on a busy
-host the image's own (the phone, Google Play services, the launcher, SystemUI) keep timing out for
-minutes after boot. It prints the emulator's WebView package and version. Every `adb` call has a
+began names her or one of her processes. Whatever fails after the boot, her events are named first
+when there are any, with that failure as their cause. Other processes' are counted, not failed: on a
+busy host the image's own (the phone, Google Play services, the launcher, SystemUI) keep timing out
+for minutes after boot. It prints the emulator's WebView package and version. Every `adb` call has a
 time limit (the boot 15 minutes, the install 5) and is killed when the command exits, and an
 emulator that exits before it boots fails the command with its log. An emulator the command booted
 is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
 `--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the
-same on an emulator that is already running and never stops it; it refuses any serial that is not
-an emulator's, so a tablet on USB is never touched.
+same on an emulator that is already running and never stops it; it refuses any serial that is not an
+emulator's, so a tablet on USB is never touched.
 
-`--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging socket:
-an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into": "<accessible
-name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two minutes; a step
-with any other key or an empty name is refused before the build, and a tap fails when no visible thing
-or more than one has that name. A failed wait or step names the page's address, visibility, current
-rail item and opening text. Each feature adds its own file; `home.json` walks
-`spec/app/shell.md`, "Story: Reach everyday tasks from Home".
+`--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging
+socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
+"<accessible name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two
+minutes; a step with any other key or an empty name is refused before the build, and a tap fails
+when no visible thing or more than one has that name. A failed wait or step names the page's
+address, visibility, current rail item and opening text, and fails at once when Grace's WebView has
+closed its debugging socket. Each feature adds its own file; `home.json` walks `spec/app/shell.md`,
+"Story: Reach everyday tasks from Home".
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
 bytes, the cold boot took 5 minutes, the WebView was `com.google.android.webview` 133.0.6943.137,
 all 19 steps of `home.json` passed, and it ended `Grace is Home and responding; other processes
-raised 32 am_anr events since the install` and exited 0 in 14 minutes. Run again with `--install`
-while Grace was stopped (`run-as technology.graceful.grace kill -STOP`) and tapped, it failed naming
-her `Input dispatching timed out` event, with the step that could not finish as its cause. Every
-WebView wait has a time limit that keeps the command alive until it fires, so a debugging socket
-that goes quiet fails its step instead of letting the command exit with Node's code 13.
-Interrupted with SIGTERM while booting, the command exited 143 and stopped the emulator it had
-started; a plain build has no handler and dies on the signal.
+raised 32 am_anr events since the install` and exited 0 in 14 minutes. Booted again with the current
+script, the same AVD passed in 7 minutes with 5 other events. With `--install`, Grace stopped
+(`run-as technology.graceful.grace kill -STOP`) and tapped failed the command in under a minute,
+naming her `Input dispatching timed out` event with the step that could not finish as its cause;
+Grace killed between two steps failed it in 19 seconds, the next step saying her WebView closed its
+debugging socket. Interrupted with SIGTERM while booting, the command exited 143 and stopped the
+emulator it had started; a plain build has no handler and dies on the signal.
 
 `scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
