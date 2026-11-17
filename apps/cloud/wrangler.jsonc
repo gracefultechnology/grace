@@ -47,7 +47,8 @@
         "CHAT_INPUT_MICROS_PER_1K": "450",
         "CHAT_OUTPUT_MICROS_PER_1K": "3200",
         "EMBEDDING_INPUT_MICROS_PER_1K": "67",
-        "MAX_COMPLETION_TOKENS": "2048"
+        "MAX_COMPLETION_TOKENS": "2048",
+        "EMAIL_FROM": "signin@auth.graceforseniors.com"
       },
       "durable_objects": {
         "bindings": [
@@ -70,7 +71,15 @@
       ],
       "ai": {
         "binding": "AI"
-      }
+      },
+      "send_email": [
+        {
+          "name": "SIGN_IN_EMAIL",
+          "allowed_sender_addresses": [
+            "signin@auth.graceforseniors.com"
+          ]
+        }
+      ]
     }
   },
   "durable_objects": {
