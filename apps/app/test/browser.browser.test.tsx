@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
 import { Effect, ManagedRuntime } from "effect";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
@@ -14,6 +14,8 @@ const topmost = (element: Element) => {
   const { left, top, width, height } = element.getBoundingClientRect();
   return document.elementFromPoint(left + width / 2, top + height / 2);
 };
+const onTop = (element: Element | null) => element !== null && element.contains(topmost(element));
+const typedAddress = () => document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value;
 
 it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse and return to the page I left")', async () => {
   await page.viewport(1280, 800);
@@ -59,11 +61,16 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await userEvent.click(page.getByRole("button", { name: "Forward" }));
   await expect.poll(() => ({ src: shown()?.src, cursor: tab()?.cursor, load: tab()?.load })).toEqual({ src: `${site}bill/index.html`, cursor: 2, load: "Loaded" });
   const loaded = tab()?.loadVersion ?? 0;
+  await userEvent.type(address, "wea");
   await userEvent.click(page.getByRole("button", { name: "Reload" }));
-  await expect.poll(() => ({ load: tab()?.load, reloaded: (tab()?.loadVersion ?? 0) > loaded })).toEqual({ load: "Loaded", reloaded: true });
+  await expect.poll(() => ({ load: tab()?.load, reloaded: (tab()?.loadVersion ?? 0) > loaded, address: typedAddress() })).toEqual({ load: "Loaded", reloaded: true, address: `${site}bill/index.html` });
   const reloaded = tab()?.loadVersion ?? 0;
   await userEvent.click(go);
-  await expect.poll(() => ({ history: tab()?.history.length, load: tab()?.load, again: (tab()?.loadVersion ?? 0) > reloaded })).toEqual({ history: 3, load: "Loaded", again: true });
+  await expect.poll(() => ({ history: tab()?.history.length, load: tab()?.load, again: (tab()?.loadVersion ?? 0) > reloaded, address: typedAddress() })).toEqual({ history: 3, load: "Loaded", again: true, address: `${site}bill/index.html` });
+  const notice = page.getByText("Type a website or what you’re looking for.");
+  await userEvent.clear(address);
+  await userEvent.click(go);
+  await expect.poll(() => onTop(notice.query())).toBe(true);
 
   await userEvent.click(page.getByRole("button", { name: "Back" }));
   await userEvent.click(page.getByRole("button", { name: "Back" }));
@@ -71,7 +78,7 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await userEvent.click(page.getByRole("button", { name: "Forward" }));
   await expect.poll(() => ({ src: shown()?.src, load: tab()?.load })).toEqual({ src: `${site}index.html`, load: "Loaded" });
   await userEvent.click(page.getByRole("button", { name: "Forward" }));
-  await expect.poll(() => ({ src: shown()?.src, cursor: tab()?.cursor, load: tab()?.load })).toEqual({ src: `${site}bill/index.html`, cursor: 2, load: "Loaded" });
+  await expect.poll(() => ({ src: shown()?.src, cursor: tab()?.cursor, load: tab()?.load, address: typedAddress() })).toEqual({ src: `${site}bill/index.html`, cursor: 2, load: "Loaded", address: `${site}bill/index.html` });
 
   await userEvent.click(page.getByRole("button", { name: "Open a new tab" }));
   await visit(`${site}booking/index.html`, 2, () => userEvent.click(go));
@@ -85,7 +92,7 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
 
   await userEvent.click(page.getByRole("button", { name: "Open a new tab" }));
   await userEvent.click(go);
-  await expect.poll(() => workspace().browser.emptyAddressNotice).toBe(true);
+  await expect.poll(() => onTop(notice.query())).toBe(true);
   const recent = () => workspace().browser.recent;
   const remembered = recent().length;
   await userEvent.click(page.getByRole("button", { name: `Remove ${host}` }).first());
@@ -98,14 +105,17 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await userEvent.click(page.getByRole("dialog").getByRole("button", { name: "Clear" }));
   await expect.poll(recent).toEqual([]);
   await visit(`${site}index.html`, 3);
-  await expect.poll(tabsDrawn).toBe(3);
+  await userEvent.click(page.getByRole("button", { name: "Open a new tab" }));
+  await visit(`${site}bill/index.html`, 4);
   await page.viewport(800, 800);
   await expect.poll(() => ({ drawn: tabsDrawn(), selected: drawnTabs().filter((t) => t.getAttribute("aria-current") === "page").length })).toEqual({ drawn: 2, selected: 1 });
-  await userEvent.click(page.getByRole("button", { name: "1 more" }));
-  await userEvent.click(page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: host, exact: true }));
+  const listed = page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: host, exact: true });
+  await userEvent.click(page.getByRole("button", { name: "2 more" }));
+  await expect.poll(() => onTop(listed.nth(1).query())).toBe(true);
+  await userEvent.click(listed.nth(1));
   await expect.poll(showing).toEqual([`${site}booking/index.html`]);
   await page.viewport(1280, 800);
-  await expect.poll(() => ({ drawn: tabsDrawn(), tabs: frames().length })).toEqual({ drawn: 3, tabs: 3 });
+  await expect.poll(() => ({ drawn: tabsDrawn(), tabs: frames().length })).toEqual({ drawn: 4, tabs: 4 });
   await userEvent.click(page.getByRole("button", { name: host, exact: true }).first());
   await expect.poll(showing).toEqual([`${site}bill/index.html`]);
 
@@ -117,16 +127,17 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await expect.poll(() => grace.query()?.contains(topmost(grace.element())) ?? false).toBe(true);
 
   await page.viewport(800, 800);
-  await userEvent.click(page.getByRole("button", { name: "1 more" }));
-  await userEvent.click(page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: `Close ${host}` }));
-  await expect.poll(() => workspace().browser.tabs.length).toBe(2);
+  await userEvent.click(page.getByRole("button", { name: "2 more" }));
+  const closing = page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: `Close ${host}` }).nth(1);
+  await expect.poll(() => onTop(closing.query())).toBe(true);
+  await userEvent.click(closing);
+  await expect.poll(() => workspace().browser.tabs.length).toBe(3);
 
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
 });
 
-/** The Android page plugin, which cannot run in a browser, at its boundary: what Grace asked of it, and the events it sends. */
-function devicePlugin() {
+function androidPagePluginAtItsBoundary() {
   const calls: [string, Record<string, unknown>][] = [];
   const listeners = new Map<string, (event: unknown) => void>();
   const refused = { creates: 0 };
@@ -160,7 +171,7 @@ function devicePlugin() {
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
   await page.viewport(1280, 800);
-  const device = devicePlugin();
+  const device = androidPagePluginAtItsBoundary();
   const runtime = ManagedRuntime.make(application(device.plugin));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   onTestFinished(async () => {

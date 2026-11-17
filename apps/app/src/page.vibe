@@ -94,10 +94,12 @@ const sameHistory = (a: Tab, b: Tab) => a.history.length === b.history.length &&
 
 const holds = (held: Held, cursor: number) => cursor >= held.from && cursor <= held.to
 
+const samePast = (before: Tab, after: Tab) => before.history.slice(0, before.cursor + 1).every((url, i) => url === after.history[i])
+
 function track(page: Page, tab: Tab) {
   const { held, tab: before } = page
   page.held = sameHistory(before, tab) && holds(held, tab.cursor) ? held
-    : tab.cursor === before.cursor + 1 ? { from: held.from, to: tab.cursor }
+    : tab.cursor === before.cursor + 1 && samePast(before, tab) ? { from: held.from, to: tab.cursor }
     : { from: tab.cursor, to: tab.cursor }
   page.tab = tab
 }
@@ -323,8 +325,9 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (unmade.get(tab.id) === tab.loadVersion) return
     const made = Effect.as(native.create(id, tabUrl(tab)), true) catch effect (cause) => { try warn("create", id, cause); return false }
     if (!made) {
+      if (tab.load !== "Loading") return
       unmade.set(tab.id, tab.loadVersion)
-      if (tab.load === "Loading") try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed" } })
+      try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed" } })
       return
     }
     unmade.delete(tab.id)
@@ -342,8 +345,9 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (page.load === tab.loadVersion) return track(page, tab)
     const direction = sameHistory(tab, page.tab) ? Math.sign(tab.cursor - page.tab.cursor) : undefined
     if (direction !== undefined && direction !== 0 && page.asked.length > 0) return
-    const to = direction !== undefined && page.tab.cursor + direction !== tab.cursor ? { ...tab, cursor: page.tab.cursor + direction, loadVersion: -1 } : tab
-    const inPage = direction === 0 || (direction !== undefined && holds(page.held, to.cursor))
+    const next = direction !== undefined && page.tab.cursor + direction !== tab.cursor ? { ...tab, cursor: page.tab.cursor + direction, loadVersion: -1 } : tab
+    const inPage = direction === 0 || (direction !== undefined && holds(page.held, next.cursor))
+    const to = inPage ? next : tab
     const command = !inPage ? native.navigate(id, tabUrl(to)) : direction === -1 ? native.back(id) : direction === 1 ? native.forward(id) : native.reload(id)
     page.asked.push({ version: to.loadVersion, url: direction === 0 ? page.url : tabUrl(to) })
     track(page, to)
@@ -354,6 +358,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     const w = try workspace.get()
     const tabs = w.browser.tabs
     for (const { tab } of [...pages.values()]) if (!tabs.some((t) => t.id === tab.id)) try close(tab.id)
+    for (const id of [...unmade.keys()]) if (!tabs.some((t) => t.id === id)) unmade.delete(id)
     const purging = (try requests.get()).clearing === "Purging"
     for (const tab of tabs) {
       const page = pages.get(pageOf(tab.id))
