@@ -23,7 +23,7 @@ export function UserBubble({ rise = false, removed = false, removedLabel = "I re
     <div className={cn("flex justify-end", className)} {...props}>
       <div
         className={cn(
-          "relative isolate mr-2 max-w-[560px] rounded-window bg-user-ink px-8 py-2.5 text-lead leading-8 font-medium [overflow-wrap:anywhere] text-primary-foreground shadow-bubble select-text",
+          "relative isolate mr-2 max-w-[560px] rounded-window bg-user-ink px-8 py-2.5 text-lead leading-8 font-medium [overflow-wrap:anywhere] text-primary-foreground shadow-elevation-bubble select-text",
           removed && "bg-muted",
           rise && "animate-rise motion-reduce:animate-none",
         )}
