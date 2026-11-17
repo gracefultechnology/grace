@@ -9,20 +9,21 @@ import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider,
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
-import { client, expire, outage, signIn } from "./cloud.vibe";
+import { client, expire, outage, script, signIn } from "./cloud.vibe";
 import "../src/main.css";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
 afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
 
-const cloud = inject("cloud");
+const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";
 const outlook = "margaret@outlook.com";
 
 const Kept = Schema.Struct({
   boxes: Schema.Array(Schema.Struct({
     address: Schema.String,
+    calendar: Schema.Array(Schema.Struct({ title: Schema.String, startAt: Schema.String, description: Schema.String })),
     mail: Schema.Array(Schema.Struct({
       externalId: Schema.String, subject: Schema.String, labels: Schema.Array(Schema.String), bcc: Schema.Array(Schema.String),
       attachments: Schema.Array(Schema.Struct({ filename: Schema.String })),
@@ -79,6 +80,35 @@ const opened = async (from: RegExp, title: string) => {
   await click(email(from));
   await expect.element(page.getByRole("heading", { name: title })).toBeVisible();
 };
+
+it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar")', async () => {
+  const { secret, company } = await start();
+  const ask = "Help me add the appointment in this email to my calendar.";
+  const approve = "Yes, add it";
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(10, 0, 0, 0);
+  const day = [tomorrow.getFullYear(), String(tomorrow.getMonth() + 1).padStart(2, "0"), String(tomorrow.getDate()).padStart(2, "0")].join("-");
+  const title = "Visit with Dr. Patel";
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [
+    { said: ask, answer: JSON.stringify({ text: "Add the visit with Dr. Patel tomorrow at 10 am?", isQuestion: true, answers: [approve, "No, thanks"], actions: [{ kind: "proposeFromMessage", title, day, time: "10:00" }] }) },
+    { said: approve, answer: JSON.stringify({ text: "I’ll ask your calendar to save it.", isQuestion: false, answers: [], actions: [{ kind: "confirmProposal" }] }) },
+  ]), client));
+  const visits = async () => (await company()).boxes.flatMap(box => box.calendar.filter(event => event.title === title).map(event => ({ address: box.address, event })));
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
+  await click(page.getByRole("button", { name: "Ask Grace", exact: true }));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), ask + "{Enter}"));
+  const yes = page.getByRole("button", { name: approve, exact: true });
+  await expect.element(yes).toBeVisible();
+  expect(await visits()).toEqual([]);
+  await click(yes);
+  await expect.poll(visits).toHaveLength(1);
+  const [saved] = await visits();
+  expect([saved.address, saved.event.title, saved.event.startAt]).toEqual([gmail, title, tomorrow.toISOString()]);
+  expect(saved.event.description).toContain("Visit form");
+});
 
 it("See all my email in one place", async () => {
   const { secret, host, person } = await start();
