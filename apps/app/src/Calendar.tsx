@@ -23,6 +23,7 @@ export const calendarKeys = (registry: Accounts) => [tabletKey, ...registry.acco
 const sourcesOf = (views: readonly CalendarInstance[]): CalendarSource[] => views.map((v) => ({ key: v.key, view: v.state }));
 const byStart = (a: CalRow, b: CalRow) => a.details.startAt - b.details.startAt;
 const dateOf = (n: number) => new Date(midnight(n));
+const at = (n: number, minutes: number) => dateOf(n).setHours(0, minutes);
 const say = (n: number, options: Intl.DateTimeFormatOptions) => dateOf(n).toLocaleDateString("en-US", options);
 
 export function timeLabel(at: number) {
@@ -138,7 +139,7 @@ function Shown({ registry, pending, views, ...props }: Covered & { registry: Acc
     onAdd: () => {
       const v = lead.state;
       const day = Math.max(selected, today);
-      const startAt = midnight(day) + 10 * hour;
+      const startAt = at(day, 10 * 60);
       act(lead, {
         type: "createOccurrence",
         entry: {
@@ -214,7 +215,6 @@ function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: E
   };
   const start = new Date(fields.startAt);
   const minutes = start.getHours() * 60 + start.getMinutes();
-  const at = (n: number, m: number) => midnight(n) + m * 60 * 1000;
   const days = Array.from({ length: 21 }, (_, i) => today + i);
   const times = Array.from({ length: 25 }, (_, i) => 7 * 60 + 30 * i);
   const saving = entry.approvedRevision !== -1;
