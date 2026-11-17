@@ -62,7 +62,7 @@ export const Action = Schema.Union([
   action("cancelProposal", {}),
   action("findFile", { tab: of<FileTab>()(["Photos", "Documents"]), query: Words }),
   action("beginTask", { task: Schema.Literals(["PayBill", "BookAppointment"]) }),
-  action("proposeReadPlan", { steps: Schema.Array(of<GuidedRead>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadStatement", "ReadCalendar"])).check(Schema.isBetweenLength(1, 4)) }),
+  action("proposeReadPlan", { steps: Schema.Array(of<GuidedRead>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadStatement", "ReadCalendar", "SaveMailAppointment"])).check(Schema.isBetweenLength(1, 4)) }),
   action("fill", {}),
 ])
 

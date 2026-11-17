@@ -10,7 +10,7 @@ import { messageRecord } from "../gen/app__email.effect.vibe"
 import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
-import { guidedReadKind, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, type GuidedRead } from "../gen/app__workspace.effect.vibe"
+import { guidedReadKind, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, type GuidedMail, type GuidedRead } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
@@ -55,7 +55,7 @@ effect function ask(link: CloudLink, messages: readonly { role: string; content:
 }
 
 type GuidedReadSource =
-  | { tag: "CurrentMessage"; account: number; owner: string; ref: string; generation: number; revision: number; version: string }
+  | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; revision: number }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
@@ -75,7 +75,8 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
       const content = scene.content(account, box.messageRef)
       if (!loaded || identity.owner !== box.owner || identity.account !== box.account || identity.provider !== box.provider ||
           identity.ref !== box.messageRef || content === undefined) return undefined
-      return receipt({ tag: "CurrentMessage", account, owner: identity.owner, ref: identity.ref, generation: box.generation, revision, version: content.version },
+      return receipt({ tag: "CurrentMessage", account, owner: identity.owner, address: identity.account,
+        ref: identity.ref, generation: box.generation, revision, version: content.version },
         content.subject === "" ? "The open message has no subject." : "Open message: " + content.subject)
     }
     case "ReadStatement": {
@@ -107,6 +108,20 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
       if (Option.isNone(time)) return undefined
       return receipt({ tag: "CurrentAppointment", key, owner: identity.owner, calendarId: identity.calendarId,
         occurrence: identity.occurrenceId, generation: view.generation, revision }, committed.title + " · " + time.value)
+    }
+    case "SaveMailAppointment": {
+      const { calendarApproval, savedOccurrence } = workspace.plan
+      const account = registry.accounts.find((source) => source.id === calendarApproval.account && source.use.calendar && source.use.mail)
+      if (account === undefined || account.address !== calendarApproval.owner || savedOccurrence === "") return undefined
+      const view = sourceAt(scene.calendars, account.id).view
+      const { committed, identity, revision, hasSaved, phase } = entryAt(view, savedOccurrence)
+      if (!view.opened || !hasSaved || phase !== "Saved" || identity.kind !== "Appointment" || identity.owner !== account.address ||
+          view.owner !== account.address || identity.calendarId !== calendarApproval.calendar || identity.calendarId !== view.calendarId ||
+          identity.occurrenceId !== savedOccurrence || identity.sourceRef !== calendarApproval.sourceRef ||
+          committed.title !== calendarApproval.title || committed.startAt !== calendarApproval.starts || committed.endAt !== calendarApproval.ends ||
+          committed.timezone !== calendarApproval.timezone || committed.location !== calendarApproval.location || committed.notes !== calendarApproval.notes) return undefined
+      return receipt({ tag: "CurrentAppointment", key: account.id, owner: identity.owner, calendarId: identity.calendarId,
+        occurrence: identity.occurrenceId, generation: view.generation, revision }, "Saved appointment: " + committed.title)
     }
     case "UnsupportedRead": return undefined
   }
@@ -197,10 +212,17 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const scene = try look()
       const current = scene.workspace
       const step = nextOutcome(current.plan)
-      if (!hasNext(current.plan) || step.surface !== current.device.surface) return false
+      if (!hasNext(current.plan) || step.surface !== current.device.surface || current.assistant.conversation.turn !== "Ready" ||
+          (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
       const read = guidedReadKind(step)
       const found = try guidedReceipt(scene, read, native)
       if (found === undefined) return false
+      if (read === "SaveMailAppointment") {
+        if (found.source.tag !== "CurrentAppointment") return false
+        const { key, occurrence } = found.source
+        const view = sourceAt(scene.calendars, key).view
+        if (!(try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed))) return false
+      }
       const confirmed = try look()
       const rechecked = try guidedReceipt(confirmed, read, native)
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
@@ -214,6 +236,19 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         browserRevision: current.browser.revision,
         step,
         evidence
+      }
+      if (found.source.tag === "CurrentMessage") {
+        const { account, owner, address, ref, generation, revision, version } = found.source
+        const accepted = workspace.send({ type: "confirmGuidedMail", mailCheck: { report, mail: { account, owner, address, ref, generation, revision, version } } }, "Host") catch () => undefined
+        return accepted !== undefined
+      }
+      if (read === "SaveMailAppointment" && current.plan.savedEvidence === "") {
+        const now = confirmed.workspace
+        if (now.assistant.taskId !== report.task || now.assistant.workVersion !== report.version ||
+            now.device.contextVersion !== report.deviceVersion || now.browser.revision !== report.browserRevision ||
+            now.plan.savedOccurrence !== current.plan.savedOccurrence) return false
+        const saved = { approval: current.plan.calendarApproval, occurrence: current.plan.savedOccurrence, evidence }
+        workspace.send({ type: "observeGuidedCalendar", saved }, "Host") catch () => undefined
       }
       const accepted = workspace.send({ type: "confirmGuided", report }, "Host") catch () => undefined
       return accepted !== undefined

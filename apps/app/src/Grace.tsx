@@ -14,6 +14,7 @@ const checkLabels: Record<GuidedRead, string> = {
   ReadChangedBrowser: "Check page",
   ReadStatement: "Read statement",
   ReadCalendar: "Check appointment",
+  SaveMailAppointment: "Check saved appointment",
   UnsupportedRead: "",
 };
 
@@ -35,12 +36,16 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const next = plan.receipts.length;
   const currentStep = plan.steps[next];
   const hasPlan = plan.steps.length > 0;
-  const status = assistant.activity === "Paused" ? "Paused" : assistant.outcome === "Completed" ? "Read checks complete" : null;
+  const savePlan = plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment");
+  const status = assistant.activity === "Paused" ? "Paused" : assistant.outcome === "Completed"
+    ? savePlan ? "Planned checks complete" : "Read checks complete"
+    : null;
   const stop = { type: "stop" } as const;
   const resume = { type: "resume" } as const;
   const paused = hasPlan && can(resume);
   const pausable = hasPlan && assistant.activity !== "Paused" && can(stop);
-  const label = currentStep ? checkLabels[guidedReadKind(currentStep)] : "";
+  const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
+  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
   const canCheck = label && currentStep?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
@@ -105,7 +110,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                     </li>)}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{currentStep?.outcome ?? plan.receipts.at(-1)}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : currentStep?.outcome ?? plan.receipts.at(-1)}</p>}
             </section>
           )}
           {feedback?.words && <GraceBubble role="status">{feedback.words}</GraceBubble>}
