@@ -49,7 +49,7 @@ export type PaymentStatusBadgeProps = Omit<ComponentProps<"span">, "children"> &
 /**
  * The result of one bill's payment, wherever the bill appears (a calendar occurrence, a bill email, Grace's messages):
  * an icon and a word on a small tag, in `ok`, `warn` or `caution`, its whole meaning in its accessible name.
- * @model spec/app/payment.md
+ * @model spec/app/commitment.md
  * @design packages/design-system/design.md#grace
  */
 export function PaymentStatusBadge({ status, date, company, reference, labels, className, ...props }: PaymentStatusBadgeProps) {

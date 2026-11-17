@@ -1,6 +1,6 @@
 # Handoffs between Files, Email, Calendar and the browser
 
-This registry maps a canonical bill to its one durable [payment](./payment.md) aggregate. It owns references, not a second copy of payment status. Calendar occurrence IDs, email message IDs, chat IDs and browser tabs are source locations; none changes payment identity. The bill reference identifies the provider's unique obligation or invoice cycle, not merely a recurring merchant relationship.
+This registry maps a canonical bill to its one durable [payment](./commitment.md) aggregate. It owns references, not a second copy of payment status. Calendar occurrence IDs, email message IDs, chat IDs and browser tabs are source locations; none changes payment identity. The bill reference identifies the provider's unique obligation or invoice cycle, not merely a recurring merchant relationship.
 
 The shell constructs sources through the projections below from decoded domain state, then authenticates the person's selection separately from planner output. Storage resolves the registry atomically with aggregate creation; a competing creation returns the existing mapping. Selecting a source never sends money. This integrates the previously separate legacy guide and bill stores identified in `MoneyEffect` and `BillAttempt`.
 
@@ -18,7 +18,7 @@ Close is the same kind of operation over the workspace and the app on screen.
 Only a confirmed bill from the selected connected mailbox or a saved bill occurrence is a usable source. The mailbox resolves selection against its current owned message record, so Trash, purge or a stale reference cannot retain source authority. Calendar callers resolve the selected occurrence through the current collection, so a deleted entry or series cannot supply an old cached bill. The calendar must be open and outside its deletion flow; a hidden selection retained for a pending deletion is not an actionable bill. Email text and calendar titles are not destination authority. The browser still verifies origin and account through the preparation model before using personal data.
 
 ```quint
-import payment as P from "./payment"
+import commitment as CM from "./commitment"
 import task as T from "./task"
 import email as E from "./email"
 import files as F from "./files"
@@ -297,19 +297,19 @@ pure def lawCanceledNavigationIsRejected(r: Registry, resolved: HandoffEffect, l
 An unavailable or mismatched aggregate is Unknown, not unpaid, failed or completed. Scheduled and Accepted remain distinct from Completed; a later verified Returned result replaces historical success. Closing the browser or deleting the source entry cannot alter the payment. A positive reference can be retrieved later from the canonical record, even after the originating conversation has ended.
 
 ```quint
-pure def sourceMatchesPayment(source: BillSource, payment: P::Payment): bool =
-  usableSource(source) and source.key == payment.key
-pure def visibleOutcome(source: BillSource, payment: P::Payment): P::PaymentOutcome =
-  if (sourceMatchesPayment(source, payment)) payment.result else P::Unknown
-pure def visibleReceipt(source: BillSource, payment: P::Payment): str =
-  if (sourceMatchesPayment(source, payment) and P::positiveOutcome(payment.result)) payment.reference else ""
-pure def lawAnotherBillHasNoReceipt(source: BillSource, payment: P::Payment): bool =
-  source.key != payment.key implies visibleReceipt(source, payment) == ""
-pure def lawCompletedLabelRequiresCompletedEvidence(source: BillSource, payment: P::Payment): bool =
-  visibleOutcome(source, payment) == P::Completed implies sourceMatchesPayment(source, payment) and payment.result == P::Completed
-pure val paymentValues = Set(P::initial,
-  { ...P::initial, key: P::exampleKey, proposal: P::exampleProposal, stage: P::Resolved, result: P::Completed, reference: "receipt" },
-  { ...P::initial, key: P::exampleKey, proposal: P::exampleProposal, stage: P::Checking, result: P::Unknown })
+pure def sourceMatchesCommitment(source: BillSource, commitment: CM::Commitment): bool =
+  usableSource(source) and source.key == commitment.key
+pure def visibleOutcome(source: BillSource, commitment: CM::Commitment): CM::Outcome =
+  if (sourceMatchesCommitment(source, commitment)) commitment.result else CM::Unknown
+pure def visibleReceipt(source: BillSource, commitment: CM::Commitment): str =
+  if (sourceMatchesCommitment(source, commitment) and CM::positiveOutcome(commitment.result)) commitment.reference else ""
+pure def lawAnotherBillHasNoReceipt(source: BillSource, commitment: CM::Commitment): bool =
+  source.key != commitment.key implies visibleReceipt(source, commitment) == ""
+pure def lawCompletedLabelRequiresCompletedEvidence(source: BillSource, commitment: CM::Commitment): bool =
+  visibleOutcome(source, commitment) == CM::Completed implies sourceMatchesCommitment(source, commitment) and commitment.result == CM::Completed
+pure val commitmentValues = Set(CM::initial,
+  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleProposal, stage: CM::Resolved, result: CM::Completed, reference: "receipt" },
+  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleProposal, stage: CM::Checking, result: CM::Unknown })
 ```
 
 ## Story: Share the photo I am viewing through my chosen mailbox

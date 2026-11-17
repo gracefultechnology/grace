@@ -26,7 +26,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
-- [Payment authorization, durable attempts and provider outcomes](./payment.md)
+- [Commitment authorization, durable attempts and provider outcomes](./commitment.md)
 - [One canonical bill across Email, Calendar and browser entry points](./handoffs.md)
 - [Composed navigation, interruption and execution](./workspace.md)
 - [Actuator checks for emitted browser and payment commands](./actuation.md)

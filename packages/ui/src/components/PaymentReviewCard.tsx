@@ -29,7 +29,7 @@ export type PaymentReviewCardProps = Omit<PanelProps, "variant" | "children" | "
 /**
  * The review shown before Margaret approves a payment by voice or tap: "Pay Chase", then each detail of the proposal,
  * the same that Grace reads aloud. Its answers ("Yes, pay it", "Change something") are `AnswerChip`s after it.
- * @model spec/app/payment.md
+ * @model spec/app/commitment.md
  * @design packages/design-system/design.md#grace
  */
 export function PaymentReviewCard({

@@ -1,4 +1,3 @@
-// spec/app/handoffs.md, "One provider bill resolves to exactly one payment record across all entry points"
 lemma LookupBindings(xs: seq<Binding>, key: app__task_Subject, acc: Binding)
   requires acc == noBinding || (acc.key == key && acc.recordRef != "")
   requires forall row :: row in xs ==> row.recordRef != ""
@@ -66,7 +65,6 @@ lemma resolve_ensures(r: Registry, expectedVersion: int, recordRef: string, by_:
   }
 }
 
-// spec/app/handoffs.md, "A resolved bill is presented only in the still-current source context"
 lemma lawCurrentResolutionCanNavigate_ensures(r: Registry, expectedVersion: int, recordRef: string, by_: RegistryActor)
   ensures (lawCurrentResolutionCanNavigate(r, expectedVersion, recordRef, by_) == true)
 {

@@ -112,7 +112,7 @@ pure def alwaysObservedContextExists(x: Execution): bool =
 
 ### Only classified ordinary operations use the generic dispatch path
 
-Read and navigation may proceed as routine steps of the requested task. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./payment.md) owns final-payment authorization. No site name appears in the policy.
+Read and navigation may proceed as routine steps of the requested task. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./commitment.md) owns final-payment authorization. No site name appears in the policy.
 
 ```quint
 pure def ordinary(kind: OperationKind): bool = kind == ReadPage or kind == Navigate or kind == FillOrdinary or kind == FillSignInIdentifier
