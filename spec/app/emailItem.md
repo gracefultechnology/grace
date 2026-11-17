@@ -1,6 +1,6 @@
 # Email messages and folders
 
-`prototype/Grace Prototype.html:1942–1971,2179–2208` supplies Inbox, Sent, Drafts,
+`prototype/Grace Prototype.html:1996–2038,2317–2346` supplies Inbox, Sent, Drafts,
 Trash, search, unread indicators, delete, undo, restore and Delete forever.
 This child model defines one provider message's metadata and mutation status.
 [Email](./email.md) owns its canonical per-message registry, account access, content
@@ -9,9 +9,9 @@ mailbox owner; no separate mutable child copy can outlive its selected message.
 Rendered text, avatars and sample contacts are not message identity.
 
 A row the person has answered reads "You replied: …" in place of its subject
-(`prototype/Grace Prototype.html:1935`). `answered` is the provider's own
+(`prototype/Grace Prototype.html:1998`). `answered` is the provider's own
 answered flag, carried by each listing and refresh. The prototype marks the row
-the instant Send is tapped (`prototype/Grace Prototype.html:2204`); here it
+the instant Send is tapped (`prototype/Grace Prototype.html:2342`); here it
 appears when the provider reports it, deliberately, so a send that failed or is
 still unknown never shows as a reply.
 
@@ -31,7 +31,7 @@ retention follows the provider's actual policy, never a universal 30-day timer.
 ```quint
 type MessageActor = MessageUser | MessageProvider
 type Folder = InboxFolder | SentFolder | DraftsFolder | TrashFolder | PurgedFolder
-type MessageChange = NoMessageChange | ReadMessage | TrashMessage | RestoreMessage | PurgeMessage
+type MessageChange = NoMessageChange | ReadMessage | UnreadMessage | TrashMessage | RestoreMessage | PurgeMessage
 type ChangeStatus = ChangeIdle | ChangePending | ChangeUnknown | ChangeFailed
 type MessageIdentity = { owner: str, provider: str, account: str, ref: str }
 type MessageRecord = {
@@ -111,7 +111,10 @@ Discovered by the proof: a settled or failed request must clear its pending
 operation. Without that fact, an unloaded record could carry a phantom pending
 restore and loading Inbox metadata could violate the operation's folder binding.
 
-Opening an unread message requests the read flag. Delete records its previous
+Opening an unread message requests the read flag. Mark unread requests the
+unread flag back on a read message outside Trash, as a provider change with its
+own receipt like any other; reading is opening, so there is no separate mark
+read. Delete records its previous
 folder. Restore returns there; imported trash with no previous-folder metadata
 returns to Inbox. The prototype's Delete forever tap is final user intent, not
 an extra invented confirmation dialog. Each request is scoped to a stable
@@ -128,6 +131,7 @@ pure def canChangeMessage(m: MessageRecord, change: MessageChange, by: MessageAc
   by == MessageUser and m.loaded and m.folder != PurgedFolder and
   (m.status == ChangeIdle or m.status == ChangeFailed) and
   ((change == ReadMessage and m.unread) or
+    (change == UnreadMessage and not(m.unread) and m.folder != TrashFolder) or
     (change == TrashMessage and m.folder != TrashFolder) or
     ((change == RestoreMessage or change == PurgeMessage) and m.folder == TrashFolder))
 pure def changeMessage(m: MessageRecord, change: MessageChange, by: MessageActor): MessageRecord =
@@ -151,7 +155,7 @@ pure def completeChange(m: MessageRecord, receipt: ChangeReceipt, by: MessageAct
     folder: if (not(succeeded)) m.folder else if (m.pending == TrashMessage) TrashFolder
       else if (m.pending == RestoreMessage) m.previousFolder else if (m.pending == PurgeMessage) PurgedFolder else m.folder,
     previousFolder: if (succeeded and m.pending == TrashMessage) m.folder else m.previousFolder,
-    unread: if (succeeded and m.pending == ReadMessage) false else m.unread,
+    unread: if (succeeded and m.pending == ReadMessage) false else if (succeeded and m.pending == UnreadMessage) true else m.unread,
     undoRevision: if (succeeded and m.pending == TrashMessage) m.revision else -1,
     pending: if (receipt.result == ChangeUnknown) m.pending else NoMessageChange }
 pure def alwaysSettledHasNoPendingChange(m: MessageRecord): bool =
@@ -172,6 +176,7 @@ pure def sometimesTrash(m: MessageRecord): bool = m.loaded and m.folder == Trash
 pure def sometimesPurged(m: MessageRecord): bool = m.folder == PurgedFolder
 pure def sometimesUncertain(m: MessageRecord): bool = m.status == ChangeUnknown
 pure def sometimesMutationFailed(m: MessageRecord): bool = m.status == ChangeFailed
+pure def sometimesMarkedUnread(m: MessageRecord): bool = m.pending == UnreadMessage and m.status == ChangePending
 ```
 
 ### A message record is valid when it meets every rule above

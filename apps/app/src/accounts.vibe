@@ -1,0 +1,153 @@
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
+import { accountAt, accountWith, freshName, Machine as Accounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type OtherReport, type Provider, type SheetReport } from "../gen/app__accounts.effect.vibe"
+import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Connector, type OtherForm, type SecretPassword } from "./connector.vibe"
+import { Instances } from "./instances.vibe"
+
+const restarted = Layer.effectDiscard(effect {
+  try Effect.orDie((try Accounts).send({ type: "restartAccounts" }, "AccountHost"))
+})
+
+export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, storedAccounts("accounts")), storedProposal("proposal"))
+
+export type OtherDetails = { readonly address: string; readonly password: SecretPassword }
+export type MailServers = { readonly incoming: string; readonly outgoing: string }
+
+export type Note = { readonly id: number; readonly text: string }
+export type Notes = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Note | undefined }
+
+export service SignIns {
+  other(details: OtherDetails): void!!
+  servers(servers: MailServers): void!!
+  readonly notes: Notes
+}
+
+const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook", Yahoo: "Yahoo", ICloud: "iCloud", Aol: "AOL", OtherEmail: "Email" }
+const internetCompanies: Record<string, string> = { "comcast.net": "Comcast", "att.net": "AT&T", "verizon.net": "Verizon", "cox.net": "Cox", "charter.net": "Charter" }
+const noteFor = "2600 millis"
+
+export const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).trim().toLowerCase()
+
+export function nameFor(a: Registry, provider: Provider, address: string): string {
+  const known = accountWith(a, address)
+  if (known.id !== 0) return known.name
+  const domain = domainOf(address)
+  const label = domain.split(".")[0] ?? ""
+  const base = provider !== "OtherEmail" ? companies[provider] : internetCompanies[domain] ?? (label === "" ? companies[provider] : label.charAt(0).toUpperCase() + label.slice(1))
+  const local = address.slice(0, address.lastIndexOf("@"))
+  const numbered = Array.from({ length: a.accounts.length + 1 }, (_, n) => n === 0 ? `${base} (${local})` : `${base} (${local} ${n + 1})`)
+  return [base, ...numbered].find((name) => freshName(a, name)) ?? base
+}
+
+function noteOf(before: Registry, after: Registry): string | undefined {
+  const said = told(before, after)
+  return match (said.kind) {
+    when "TellConnected": `${accountAt(after, said.account).name} connected`;
+    when "TellRenewed": `${accountAt(after, said.account).name} connected`;
+    when "TellRemoved": `${accountAt(before, said.account).name} removed from this tablet`;
+    default: undefined;
+  }
+}
+
+type Held = OtherForm & { readonly domain: string }
+
+const unfinished = (attempt: number): SheetReport => ({ attempt, outcome: "Refused", address: "", granted: { mail: false, calendar: false, contacts: false } })
+const refused = (attempt: number): OtherReport => ({ attempt, outcome: "OtherRefused", address: "" })
+const leaving: readonly Event[] = [{ type: "cancelSignIn" }, { type: "keepAccount" }, { type: "goBack" }, { type: "goBack" }, { type: "goBack" }]
+
+export const signIns = Layer.effect(SignIns, effect {
+  const registry = try Accounts
+  const workspace = try Workspaces
+  const shelf = try Instances
+  const connector = Option.getOrUndefined(try Effect.serviceOption(Connector))
+  const held = try Ref.make<Held | undefined>(undefined)
+  const listeners = new Set<() => void>()
+  const board: { note: Note | undefined; next: number } = { note: undefined, next: 1 }
+
+  effect function show(text: string) {
+    const note = { id: board.next, text }
+    board.next += 1
+    board.note = note
+    listeners.forEach((listener) => listener())
+    try sleep(noteFor)
+    board.note = undefined
+    listeners.forEach((listener) => listener())
+  }
+
+  effect function renew(id: number) {
+    const box = try shelf.mail(id)
+    const { owner, provider, account } = try box.get()
+    const use = accountAt(try registry.get(), id).use
+    try box.send({ type: "connect", owner, provider, account }, "MailUser")
+    const { generation } = try box.get()
+    try box.send({ type: "authorize", generation, verified: true, readGranted: use.mail, sendGranted: use.mail }, "MailConnector")
+    try box.send({ type: "readMail", kind: "Search", ref: "", approved: true }, "MailUser")
+  }
+
+  effect function answer(event: Event, otherwise: Event) {
+    const taken = registry.send(event, "AccountConnector") catch () => undefined
+    if (taken === undefined) registry.send(otherwise, "AccountConnector") catch () => undefined
+  }
+
+  effect function leave() {
+    for (const event of leaving) registry.send(event, "AccountPerson") catch () => undefined
+  }
+
+  const onPage = Stream.changes(Stream.map(workspace.changes, ({ device }) => device.surface === "DeviceSettings" && device.settingsPage === "EmailCalendarSettings"))
+  try fork.scoped Stream.runForEach(Stream.filter(onPage, (open) => !open), () => leave())
+
+  const news = Stream.mapAccum(registry.changes, (): Registry | undefined => undefined, (before, after) => [after, before === undefined ? [] : [{ after, said: told(before, after), note: noteOf(before, after) }]] as const)
+  const notices = Stream.filter(Stream.map(news, ({ note }) => note), (note): note is string => note !== undefined)
+  try fork.scoped Stream.runForEach(news, effect ({ after, said }) => {
+    if (said.kind === "TellRenewed") renew(after.shown) catch () => undefined
+  })
+  try fork.scoped Stream.runDrain(Stream.switchMap(notices, (text) => Stream.fromEffect(show(text))))
+
+  effect function visit(attempt: number) {
+    const a = try registry.get()
+    const { provider, renewing } = a.signIn
+    const sheet = connector === undefined ? unfinished(attempt) : try connector.signIn({ provider, attempt, renewing: accountAt(a, renewing).address })
+    try answer({ type: "sheetResult", sheet, name: nameFor(try registry.get(), provider, sheet.address) }, { type: "sheetResult", sheet: unfinished(attempt), name: "" })
+  }
+
+  effect function report(event: "otherResult" | "serversResult", check: OtherReport) {
+    try answer({ type: event, check, name: nameFor(try registry.get(), "OtherEmail", check.address) }, { type: event, check: refused(check.attempt), name: "" })
+  }
+
+  const attempts = Stream.changes(Stream.map(registry.changes, (a) => a.signIn.stage === "ProviderPage" ? a.signIn.attempt : -1))
+  try fork.scoped Stream.runDrain(Stream.switchMap(attempts, (attempt) => attempt < 0 ? Stream.empty : Stream.fromEffect(visit(attempt))))
+  try fork.scoped Stream.runForEach(registry.changes, (a) => a.page === "OtherEmailPage" || a.page === "MailServersPage" ? Effect.void : Ref.set(held, undefined))
+
+  effect function other({ address, password }: OtherDetails) {
+    const domain = domainOf(address)
+    const asked = registry.send({ type: "submitOther", domain }, "AccountPerson") catch () => undefined
+    if (asked?.signIn.stage !== "CheckingOther") return
+    const form = { attempt: asked.signIn.attempt, address, password }
+    try Ref.set(held, { ...form, domain })
+    const check = connector === undefined ? refused(form.attempt) : (connector.connectOther(form) catch () => refused(form.attempt))
+    try report("otherResult", check)
+  }
+
+  effect function servers({ incoming, outgoing }: MailServers) {
+    const asked = registry.send({ type: "submitServers" }, "AccountPerson") catch () => undefined
+    if (asked?.signIn.stage !== "CheckingServers") return
+    const { attempt, domain } = asked.signIn
+    const form = try Ref.get(held)
+    const check = connector === undefined || form?.domain !== domain ? refused(attempt)
+      : (connector.connectServers({ attempt, address: form.address, password: form.password, incoming, outgoing }) catch () => refused(attempt))
+    try report("serversResult", check)
+  }
+
+  return {
+    other: (details) => Effect.provideService(other(details), HttpClient.TracerPropagationEnabled, false),
+    servers: (typed) => Effect.provideService(servers(typed), HttpClient.TracerPropagationEnabled, false),
+    notes: {
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+      current: () => board.note
+    }
+  }
+})

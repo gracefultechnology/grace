@@ -1,6 +1,7 @@
 import type { ComponentMeta } from "vibestack/stories";
-import { factList, type FactRow } from "./facts.tsx";
+import { factList, type FactRowProps } from "./facts.tsx";
 
-export const meta: ComponentMeta<Parameters<typeof FactRow>[0]> = {
+export const meta: ComponentMeta<FactRowProps> = {
+  args: { label: "Amount", children: "$84.20" },
   decorator: (story) => <dl className={factList}>{story()}</dl>,
 };
