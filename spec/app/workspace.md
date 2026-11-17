@@ -587,7 +587,7 @@ pure def detectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActo
 }
 pure def canWakeNoSpeech(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): bool =
   by == Host and W::canNoSpeech(w.wake, timer, W::WakeHost) and A::isVisible(w.assistant) and
-  C::canSilence(w.assistant.conversation, timer.conversationVersion, C::ConversationRuntime)
+  C::canWakeSilence(w.assistant.conversation, timer.conversationVersion, C::ConversationRuntime)
 pure def wakeNoSpeech(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): WorkspaceResult = {
   state: { ...w, wake: W::noSpeech(w.wake, timer, W::WakeHost).state,
     assistant: { ...w.assistant, conversation: C::wakeSilence(w.assistant.conversation, timer.conversationVersion, C::ConversationRuntime) } },
