@@ -45,6 +45,15 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="capsule" size="pill"
+            onClick={guide.mic === "GuideMicListening" ? guide.stopListening : guide.listen}>
+            {guide.mic === "GuideMicListening" ? "Stop listening for Passwords" : "Say a Passwords command"}
+          </Button>
+          {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
+          {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
+            </div>
           <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
             quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
             micUnavailable={micUnavailable}
@@ -60,15 +69,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                 if (result !== undefined && Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
               });
             }} />
+          </div>
         }>
-        <div className="px-4 py-2">
-          <Button variant="capsule" size="pill"
-            onClick={guide.mic === "GuideMicListening" ? guide.stopListening : guide.listen}>
-            {guide.mic === "GuideMicListening" ? "Stop listening for Passwords" : "Say a Passwords command"}
-          </Button>
-          {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
-          {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
-        </div>
         <GraceMessages>
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end

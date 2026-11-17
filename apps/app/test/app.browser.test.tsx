@@ -823,9 +823,9 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  await expect.poll(() => native.unanswered()).toBeGreaterThan(0);
-  await native.route();
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "sign me in to pay my bill"));
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
+  await act(() => userEvent.type(message, "sign me in to pay my bill"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
