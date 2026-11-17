@@ -16,17 +16,20 @@ User controls and trusted service results have distinct variants and retain
 their original actor checks. Runtime text is never a user choice. A complete
 human utterance keeps its audio provenance and current generation. Open,
 Close, Talk, privacy removal, task replacement and a new conversation have
-their own coordinated workspace routes.
+their own coordinated workspace routes. Pause and Resume act on Grace's
+speech only; stopping the website task is the workspace's Stop.
 
 ```quint
 import assistant as A from "./assistant"
 import conversation as C from "./conversation"
 
-type Interaction = TypeIntoChat | StopVoice | ReadLatest | RepeatReply | ShowChat | DismissKeyboard | FocusWebsite
+type Interaction = TypeIntoChat | StopVoice | ReadLatest | ShowChat | DismissKeyboard | FocusWebsite
+  | PauseSpeech | ResumeSpeech | RepeatReply({ audible: bool })
   | EditDraft({ text: str }) | SendDraft({ revision: int }) | ChooseAnswer({ token: int, text: str })
   | ReadEarlier({ position: int }) | Resize({ expanded: bool })
   | Hear({ token: int, text: str, owner: C::AudioOwner })
-  | Respond({ token: int, text: str, isQuestion: bool }) | FinishSpeech({ token: int })
+  | BargeIn({ token: int, spoken: int, owner: C::AudioOwner })
+  | Respond({ token: int, text: str, isQuestion: bool, answers: List[str], audible: bool }) | FinishSpeech({ token: int })
   | ServiceFailure({ token: int, text: str }) | Silence({ token: int })
   | UnusableSpeech({ token: int, owner: C::AudioOwner })
   | DismissGuidance({ revision: int }) | ShowGuidance({ revision: int })
@@ -41,13 +44,16 @@ pure def canInteract(a: A::Assistant, input: Interaction, by: C::ConversationAct
   | ChooseAnswer(data) => A::canChooseAnswer(a, data.token, data.text, by)
   | ReadEarlier(data) => A::canReadEarlier(a, data.position, by)
   | ReadLatest => A::canReadLatest(a, by)
-  | RepeatReply => A::canRepeatReply(a, by)
+  | RepeatReply(data) => A::canRepeatReply(a, data.audible, by)
+  | PauseSpeech => A::canPauseSpeech(a, by)
+  | ResumeSpeech => A::canResumeSpeech(a, by)
+  | BargeIn(data) => A::canBargeIn(a, data.token, data.spoken, data.owner, by)
   | Resize(data) => A::canResize(a, data.expanded, by)
   | ShowChat => A::canShowChat(a, by)
   | DismissKeyboard => A::canDismissKeyboard(a, by)
   | FocusWebsite => A::canFocusWebsite(a, by)
   | Hear(data) => A::canHear(a, data.token, data.text, data.owner, by)
-  | Respond(data) => A::canRespond(a, data.token, data.text, by)
+  | Respond(data) => A::canRespond(a, data.token, data.text, data.isQuestion, data.answers, by)
   | FinishSpeech(data) => A::canFinishSpeech(a, data.token, by)
   | ServiceFailure(data) => A::canServiceFailure(a, data.token, data.text, by)
   | Silence(data) => A::canSilence(a, data.token, by)
@@ -63,13 +69,16 @@ pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor)
   | ChooseAnswer(data) => A::chooseAnswer(a, data.token, data.text, by)
   | ReadEarlier(data) => A::readEarlier(a, data.position, by)
   | ReadLatest => A::readLatest(a, by)
-  | RepeatReply => A::repeatReply(a, by)
+  | RepeatReply(data) => A::repeatReply(a, data.audible, by)
+  | PauseSpeech => A::pauseSpeech(a, by)
+  | ResumeSpeech => A::resumeSpeech(a, by)
+  | BargeIn(data) => A::bargeIn(a, data.token, data.spoken, data.owner, by)
   | Resize(data) => A::resize(a, data.expanded, by)
   | ShowChat => A::showChat(a, by)
   | DismissKeyboard => A::dismissKeyboard(a, by)
   | FocusWebsite => A::focusWebsite(a, by)
   | Hear(data) => A::hear(a, data.token, data.text, data.owner, by)
-  | Respond(data) => A::respond(a, data.token, data.text, data.isQuestion, by)
+  | Respond(data) => A::respond(a, data.token, data.text, data.isQuestion, data.answers, data.audible, by)
   | FinishSpeech(data) => A::finishSpeech(a, data.token, by)
   | ServiceFailure(data) => A::serviceFailure(a, data.token, data.text, by)
   | Silence(data) => A::silence(a, data.token, by)
@@ -89,7 +98,9 @@ Submitting human content supersedes prior conversational intent. Layout and
 keyboard ownership alter the observed browser geometry. Draft editing and
 reading alone do not submit a new request. Type must preserve an already
 submitted response while muting it; stopping voice is distinct from stopping
-the entire website task.
+the entire website task. Whether a reply is spoken follows the person's voice
+output setting, never the host's word: `withAudible` puts that setting into a
+Respond or Repeat before it is applied.
 
 ```quint
 pure def needsCurrentGuidance(input: Interaction): bool = match input {
@@ -123,25 +134,30 @@ pure def targetsWebsite(input: Interaction): bool = match input {
   | FocusWebsite => true
   | _ => false
 }
-pure val aValues = Set(A::initial, A::open(A::initial, C::ConversationUser),
-  A::talk(A::open(A::initial, C::ConversationUser), C::ConversationUser),
-  A::publishGuidance(
-    A::beginTask(A::open(A::initial, C::ConversationUser), "task", "Choose the control", C::ConversationUser),
-    { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: true },
-    C::ConversationRuntime),
-  A::dismissGuidance(A::publishGuidance(
-    A::beginTask(A::open(A::initial, C::ConversationUser), "task", "Choose the control", C::ConversationUser),
-    { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 0, browserRevision: 0, verified: true },
-    C::ConversationRuntime), 1, C::ConversationUser))
+pure def withAudible(input: Interaction, audible: bool): Interaction = match input {
+  | Respond(data) => Respond({ token: data.token, text: data.text, isQuestion: data.isQuestion, answers: data.answers, audible: audible })
+  | RepeatReply(data) => RepeatReply({ audible: audible })
+  | _ => input
+}
+pure val aValues = {
+  val opened = A::open(A::initial, C::ConversationUser)
+  val guided = A::publishGuidance(A::beginTask(opened, "task", "Choose the control", C::ConversationUser),
+    A::exampleReport, C::ConversationRuntime)
+  Set(A::initial, opened, A::talk(opened, C::ConversationUser), guided, A::dismissGuidance(guided, 1, C::ConversationUser))
+}
 
 pure val inputValues = Set(DismissGuidance({ revision: 1 }), ShowGuidance({ revision: 2 }),
-  DismissGuidance({ revision: 0 }), ShowGuidance({ revision: 0 }), TypeIntoChat, StopVoice, ReadLatest, RepeatReply, ShowChat, DismissKeyboard, FocusWebsite,
+  DismissGuidance({ revision: 0 }), ShowGuidance({ revision: 0 }), TypeIntoChat, StopVoice, ReadLatest, RepeatReply({ audible: true }), RepeatReply({ audible: false }),
+  PauseSpeech, ResumeSpeech, ShowChat, DismissKeyboard, FocusWebsite,
   EditDraft({ text: "Hello" }), EditDraft({ text: "" }), SendDraft({ revision: 1 }), SendDraft({ revision: 0 }),
   ChooseAnswer({ token: 1, text: "Yes" }), ChooseAnswer({ token: 2, text: "Please explain" }),
   ReadEarlier({ position: 0 }), Resize({ expanded: true }), Resize({ expanded: false }),
   Hear({ token: 1, text: "Hello", owner: C::HumanAudio }), Hear({ token: 1, text: "Hello", owner: C::GraceAudio }),
-  Respond({ token: 1, text: "How can I help?", isQuestion: true }),
-  Respond({ token: 2, text: "Here is the explanation.", isQuestion: false }),
+  Respond({ token: 1, text: "How can I help?", isQuestion: true, answers: List(), audible: true }),
+  Respond({ token: 1, text: "Shall I explain?", isQuestion: true, answers: List("Yes", "Please explain"), audible: false }),
+  Respond({ token: 2, text: "Here is the explanation.", isQuestion: false, answers: List(), audible: true }),
+  Respond({ token: 2, text: "Pay it?", isQuestion: true, answers: List("Yes"), audible: true }),
+  BargeIn({ token: 1, spoken: 2, owner: C::HumanAudio }),
   FinishSpeech({ token: 1 }), FinishSpeech({ token: 2 }),
   ServiceFailure({ token: 1, text: "Voice is unavailable." }), Silence({ token: 1 }),
   UnusableSpeech({ token: 1, owner: C::HumanAudio }), UnusableSpeech({ token: 2, owner: C::HumanAudio }))

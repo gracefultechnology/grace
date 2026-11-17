@@ -17,24 +17,36 @@ transcription and actual speech playback remain runtime obligations.
 `voice` means an explicitly active, unmuted voice exchange; it permits human
 barge-in while Grace speaks. `generation` identifies the current response and
 speech work. The runtime authenticates `by`; an event cannot supply its own
-trusted sender. Website audio is never human input.
+trusted sender. Website audio is never human input. `answers` are the reply
+chips Grace offered with her current question, and `interrupted` records how
+much of each cut-off reply was spoken.
+
+Every new message goes at the end of the transcript. A reader at the end
+follows it; a reader of earlier messages keeps their place and sees that
+something new is unread.
 
 ```quint
 type ConversationActor = ConversationUser | ConversationRuntime
-type Turn = Ready | Listening | Thinking | Speaking
+type Turn = Ready | Listening | Thinking | Speaking | Paused
 type AudioOwner = HumanAudio | GraceAudio | WebsiteAudio
 type MessageAuthor = HumanMessage | GraceMessage
 type Message = { author: MessageAuthor, text: str }
+type Interruption = { message: int, spoken: int }
 type Conversation = {
   voice: bool, turn: Turn, generation: int, unusable: int,
   draft: str, draftRevision: int, messages: List[Message],
-  question: bool, atBottom: bool, unread: bool, readingPosition: int
+  question: bool, answers: List[str], interrupted: List[Interruption],
+  atBottom: bool, unread: bool, readingPosition: int
 }
 pure val initial: Conversation = {
   voice: false, turn: Ready, generation: 0, unusable: 0,
   draft: "", draftRevision: 0, messages: List(),
-  question: false, atBottom: true, unread: false, readingPosition: 0
+  question: false, answers: List(), interrupted: List(),
+  atBottom: true, unread: false, readingPosition: 0
 }
+pure def appended(author: MessageAuthor, text: str, c: Conversation): Conversation =
+  { ...c, messages: c.messages.append({ author: author, text: text }), unread: not(c.atBottom),
+    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
 ```
 
 ### Talk or an enabled human wake phrase explicitly starts a voice exchange
@@ -84,20 +96,20 @@ pure def editDraft(c: Conversation, text: str, by: ConversationActor): Conversat
 ### Send consumes one exact draft once and never submits a website form
 
 Send and IME Send carry the same draft revision. The first consumes it;
-repeating that event is refused. Empty input stays a draft and the view gives
-the plain prompt returned by `sendPrompt`. Chat messages are not browser
-effects or payment approvals.
+repeating that event is refused. Empty input stays a draft, and the view asks
+for a message first. Chat messages are not browser effects or payment
+approvals. Every submitted message, typed, spoken or tapped, answers and
+retires the current question and its chips, and supersedes the older
+generation.
 
 ```quint
-pure def sendPrompt(c: Conversation): str = if (c.draft == "") "Type a message first." else ""
+pure def submitted(text: str, c: Conversation): Conversation =
+  { ...appended(HumanMessage, text, c), turn: Thinking, generation: c.generation + 1,
+    unusable: 0, question: false, answers: List() }
 pure def canSendDraft(c: Conversation, revision: int, by: ConversationActor): bool =
   by == ConversationUser and not(c.voice) and c.draft != "" and revision == c.draftRevision
 pure def sendDraft(c: Conversation, revision: int, by: ConversationActor): Conversation =
-  { ...c, draft: "", draftRevision: c.draftRevision + 1,
-    messages: c.messages.append({ author: HumanMessage, text: c.draft }),
-    turn: Thinking, generation: c.generation + 1, question: false,
-    unusable: 0, unread: not(c.atBottom),
-    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+  { ...submitted(c.draft, c), draft: "", draftRevision: c.draftRevision + 1 }
 ```
 
 ### Only a complete human utterance can become a spoken request
@@ -112,42 +124,42 @@ pure def canHear(c: Conversation, token: int, text: str, owner: AudioOwner, by: 
   by == ConversationRuntime and c.voice and token == c.generation and
   (c.turn == Listening or c.turn == Speaking) and owner == HumanAudio and text != ""
 pure def hear(c: Conversation, token: int, text: str, owner: AudioOwner, by: ConversationActor): Conversation =
-  { ...c, messages: c.messages.append({ author: HumanMessage, text: text }),
-    turn: Thinking, generation: c.generation + 1, unusable: 0, question: false,
-    unread: not(c.atBottom),
-    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+  submitted(text, c)
 ```
 
-### A tapped answer preserves whether the microphone was active
+### A tapped answer is one of the offered answers and preserves whether the microphone was active
 
-An answer belongs to the current visible question and current generation.
+An answer belongs to the current visible question and current generation, and
+sends exactly the words of one chip Grace offered with it (prototype 1302–1303).
 The transcript remains authoritative after its transient answer chips vanish.
 
 ```quint
 pure def canChooseAnswer(c: Conversation, token: int, text: str, by: ConversationActor): bool =
-  by == ConversationUser and c.question and token == c.generation and text != ""
+  by == ConversationUser and c.question and token == c.generation and text != "" and c.answers.includes(text)
 pure def chooseAnswer(c: Conversation, token: int, text: str, by: ConversationActor): Conversation =
-  { ...c, messages: c.messages.append({ author: HumanMessage, text: text }),
-    turn: Thinking, generation: c.generation + 1, unusable: 0, question: false,
-    unread: not(c.atBottom),
-    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+  submitted(text, c)
 ```
 
 ### Responses have a written equivalent and only current callbacks change the turn
 
 One `question` slot represents the current meaningful decision, never a queue
 of unanswered questions. The language service must make `isQuestion` truthful
-and ask only that decision. A typed exchange displays the reply with capture
-off; only an active voice exchange plays it aloud.
+and ask only that decision. Every reply is written in the transcript. It is
+also spoken when the person's voice output is on (`audible`), whether they
+spoke or typed (prototype 1325); with voice output off it is only written.
+Speaking never turns the microphone on: only an active voice exchange returns
+to listening after a question, at once when the reply is not spoken.
 
 ```quint
-pure def canRespond(c: Conversation, token: int, text: str, by: ConversationActor): bool =
-  by == ConversationRuntime and token == c.generation and c.turn == Thinking and text != ""
-pure def respond(c: Conversation, token: int, text: str, isQuestion: bool, by: ConversationActor): Conversation =
-  { ...c, messages: c.messages.append({ author: GraceMessage, text: text }),
-    turn: if (c.voice) Speaking else Ready, question: isQuestion,
-    unread: not(c.atBottom),
-    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+pure def canRespond(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], by: ConversationActor): bool =
+  by == ConversationRuntime and token == c.generation and c.turn == Thinking and text != "" and
+  offersAnswers(answers, isQuestion)
+pure def respond(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: ConversationActor): Conversation =
+  { ...appended(GraceMessage, text, c), question: isQuestion, answers: answers,
+    turn: if (audible) Speaking else if (c.voice and isQuestion) Listening else Ready,
+    voice: if (audible) c.voice else c.voice and isQuestion }
+pure def stepSpeakingNeverOpensTheMicrophone(before: Conversation, via: str, after: Conversation): bool =
+  (via == "respond" or via == "repeatReply" or via == "resumeSpeech") implies (after.voice implies before.voice)
 
 pure def canFinishSpeech(c: Conversation, token: int, by: ConversationActor): bool =
   by == ConversationRuntime and c.turn == Speaking and token == c.generation
@@ -155,19 +167,80 @@ pure def finishSpeech(c: Conversation, token: int, by: ConversationActor): Conve
   { ...c, turn: if (c.voice and c.question) Listening else Ready, voice: c.voice and c.question }
 ```
 
+### Answer chips come only with a closed question, two or three at a time
+
+The prototype offers 2 to 3 chips, never 1, and only when the reply ends with
+a closed question (prototype 1531). A chip for a money decision names the whole
+action, such as "Yes, pay $84.20 today", never a bare "Yes"; the language
+service owns that wording. An open question offers no chips.
+
+```quint
+pure def offersAnswers(answers: List[str], isQuestion: bool): bool =
+  answers.length() == 0 or (isQuestion and answers.length() >= 2 and answers.length() <= 3 and answers.every(a => a != ""))
+pure def alwaysAnswersBelongToTheQuestion(c: Conversation): bool =
+  c.answers.length() == 0 or (c.question and offersAnswers(c.answers, true))
+```
+
 ### Repeat reads the latest Grace response without turning on a muted microphone
 
-An explicit Repeat may speak while capture is off. This is different from an
-active voice exchange and never opens listening at its end. The written
-response remains in the same transcript rather than becoming a new answer.
+An explicit Repeat speaks while voice output is on, even with capture off. It
+ends any voice exchange, so it never opens listening at its end. It is offered
+while Grace is ready or already speaking, never while she is listening or a
+submitted message still awaits its reply, so it cannot fence that reply out.
+The written response remains in the same transcript rather than becoming a new
+answer.
 
 ```quint
 pure def latestGraceText(c: Conversation): str =
   c.messages.foldl("", (latest, message) => if (message.author == GraceMessage) message.text else latest)
-pure def canRepeatReply(c: Conversation, by: ConversationActor): bool =
-  by == ConversationUser and latestGraceText(c) != ""
-pure def repeatReply(c: Conversation, by: ConversationActor): Conversation =
-  { ...c, turn: Speaking, generation: c.generation + 1 }
+pure def canRepeatReply(c: Conversation, audible: bool, by: ConversationActor): bool =
+  by == ConversationUser and audible and latestGraceText(c) != "" and (c.turn == Ready or c.turn == Speaking)
+pure def repeatReply(c: Conversation, audible: bool, by: ConversationActor): Conversation =
+  { ...c, voice: false, turn: Speaking, generation: c.generation + 1 }
+pure def stepRepeatNeverOpensListening(before: Conversation, via: str, after: Conversation): bool =
+  via == "repeatReply" implies not(after.voice) and after.turn == Speaking
+```
+
+### Pause stops Grace mid-sentence and Resume carries on from the same place
+
+The header Pause stops Grace's speech and shows that she is paused; Resume
+carries on from the same word (prototype 1213–1215, 1741–1744; PRD VOICE 02,
+which keeps touch Pause available while muted). Both keep the generation, so
+the paused reply stays current and no callback is fenced out. Pausing speech
+does not stop or pause the website task; the workspace's Stop does that.
+
+```quint
+pure def canPauseSpeech(c: Conversation, by: ConversationActor): bool =
+  by == ConversationUser and c.turn == Speaking
+pure def pauseSpeech(c: Conversation, by: ConversationActor): Conversation = { ...c, turn: Paused }
+pure def canResumeSpeech(c: Conversation, by: ConversationActor): bool =
+  by == ConversationUser and c.turn == Paused
+pure def resumeSpeech(c: Conversation, by: ConversationActor): Conversation = { ...c, turn: Speaking }
+pure def stepPauseKeepsTheReply(before: Conversation, via: str, after: Conversation): bool =
+  (via == "pauseSpeech" or via == "resumeSpeech") implies
+    after.generation == before.generation and after.messages == before.messages and after.voice == before.voice
+pure def sometimesSpeechPaused(c: Conversation): bool = c.turn == Paused
+```
+
+### Barge-in records how much of Grace's reply was spoken
+
+When the person starts talking over Grace in a voice exchange, the runtime
+stops her speech and reports how many words of her latest reply were spoken
+(prototype 1341–1344; PRD VOICE 02 preserves delivered text). Grace keeps
+listening for the complete utterance under the same generation. The written
+reply stays whole; the transcript marks where she was cut off, and the
+reasoning context learns which part the person did not hear.
+
+```quint
+pure def canBargeIn(c: Conversation, token: int, spoken: int, owner: AudioOwner, by: ConversationActor): bool =
+  by == ConversationRuntime and c.voice and c.turn == Speaking and token == c.generation and
+  owner == HumanAudio and spoken >= 0 and c.messages.length() > 0 and
+  c.messages.nthOr(c.messages.length() - 1, { author: HumanMessage, text: "" }).author == GraceMessage
+pure def bargeIn(c: Conversation, token: int, spoken: int, owner: AudioOwner, by: ConversationActor): Conversation =
+  { ...c, turn: Listening, interrupted: c.interrupted.append({ message: c.messages.length() - 1, spoken: spoken }) }
+pure def alwaysInterruptionsMarkMessages(c: Conversation): bool =
+  c.interrupted.every(i => i.message >= 0 and i.message < c.messages.length() and i.spoken >= 0)
+pure def sometimesBargedIn(c: Conversation): bool = c.interrupted.length() > 0
 ```
 
 ### A current speech or response failure leaves a usable typed fallback
@@ -181,9 +254,7 @@ pure def canServiceFailure(c: Conversation, token: int, text: str, by: Conversat
   by == ConversationRuntime and token == c.generation and text != "" and
   (c.turn == Thinking or c.turn == Speaking)
 pure def serviceFailure(c: Conversation, token: int, text: str, by: ConversationActor): Conversation =
-  { ...c, voice: false, turn: Ready, generation: c.generation + 1,
-    messages: c.messages.append({ author: GraceMessage, text: text }), unread: not(c.atBottom),
-    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+  { ...appended(GraceMessage, text, c), voice: false, turn: Ready, generation: c.generation + 1 }
 ```
 
 ### Silence ends listening without creating an answer
@@ -211,9 +282,8 @@ play that notice without opening another listening exchange.
 pure def canWakeSilence(c: Conversation, token: int, by: ConversationActor): bool =
   canSilence(c, token, by)
 pure def wakeSilence(c: Conversation, token: int, by: ConversationActor): Conversation =
-  { ...c, voice: false, turn: Ready, generation: c.generation + 1,
-    messages: c.messages.append({ author: GraceMessage, text: "I didn't hear anything. Say Hey Grace whenever you need me." }),
-    unread: not(c.atBottom), readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+  { ...appended(GraceMessage, "I didn't hear anything. Say Hey Grace whenever you need me.", c),
+    voice: false, turn: Ready, generation: c.generation + 1 }
 ```
 
 ### Unusable speech gets one repeat request and then stops listening
@@ -227,13 +297,11 @@ pure def canUnusableSpeech(c: Conversation, token: int, owner: AudioOwner, by: C
   by == ConversationRuntime and c.voice and c.turn == Listening and
   token == c.generation and owner == HumanAudio and c.unusable < 2
 pure def unusableSpeech(c: Conversation, token: int, owner: AudioOwner, by: ConversationActor): Conversation =
-  { ...c, unusable: c.unusable + 1, generation: c.generation + 1,
+  { ...appended(GraceMessage,
+      if (c.unusable == 0) "I didn't catch that. Could you say it again?" else "Use Type, or tap Talk to try again.", c),
+    unusable: c.unusable + 1, generation: c.generation + 1,
     voice: c.unusable == 0, turn: if (c.unusable == 0) Speaking else Ready,
-    question: c.unusable == 0,
-    messages: c.messages.append({ author: GraceMessage,
-      text: if (c.unusable == 0) "I didn't catch that. Could you say it again?" else "Use Type, or tap Talk to try again." }),
-    unread: not(c.atBottom),
-    readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
+    question: c.unusable == 0, answers: List() }
 
 pure def alwaysRecognitionRetriesAreBounded(c: Conversation): bool =
   c.unusable >= 0 and c.unusable <= 2 and (c.unusable == 2 implies not(c.voice))
@@ -297,7 +365,7 @@ pure def canPurgePrivate(c: Conversation, token: int, messageIndex: int, purgeDr
   (messageIndex >= 0 or purgeDraft)
 pure def purgePrivate(c: Conversation, token: int, messageIndex: int, purgeDraft: bool, by: ConversationActor): Conversation =
   val selected = c.messages.nthOr(messageIndex, { author: HumanMessage, text: "" })
-  { ...c, voice: false, turn: Ready, generation: c.generation + 1, question: false,
+  { ...c, voice: false, turn: Ready, generation: c.generation + 1, question: false, answers: List(),
     messages: c.messages.listMap(m => if (selected.text != "" and m.text == selected.text)
       { author: m.author, text: privateNotice } else m),
     draft: if (purgeDraft) "" else c.draft,
@@ -334,4 +402,6 @@ pure def sometimesTypedQuestion(c: Conversation): bool = not(c.voice) and c.ques
 pure def sometimesUnusableFallback(c: Conversation): bool = c.unusable == 2
 pure def sometimesUnreadReply(c: Conversation): bool = c.unread
 pure def sometimesDraftSurvivesTalk(c: Conversation): bool = c.voice and c.draft != ""
+pure def sometimesAnswersOffered(c: Conversation): bool = c.answers.length() >= 2
+pure def sometimesTypedReplySpoken(c: Conversation): bool = not(c.voice) and c.turn == Speaking
 ```

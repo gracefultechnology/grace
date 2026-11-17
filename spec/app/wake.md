@@ -29,6 +29,9 @@ uses device volume/mute. The transcript and unsent draft remain intact. Existing
 website work is paused and old authorization invalidated before listening.
 Touching the sleep screen wakes it without opening Grace or starting capture.
 The native host reports unavailable detection instead of pretending it works.
+When Grace cannot answer, the [workspace](./workspace.md) gives the
+`ExplainUnavailable` signal in place of the chime and starts no wake
+interaction; this module never emits it.
 
 ```quint
 type WakeActor = WakeUser | WakeHost
@@ -111,5 +114,4 @@ pure val timerValues = Set({ generation: 1, conversationVersion: 1, now: 8000 },
   { generation: 1, conversationVersion: 1, now: 16000 },
   { generation: 1, conversationVersion: 2, now: 16000 },
   { generation: 0, conversationVersion: 1, now: 16000 })
-pure val wValues = Set(initial)
 ```

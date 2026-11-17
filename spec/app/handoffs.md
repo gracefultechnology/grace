@@ -7,6 +7,7 @@ The shell constructs sources through the projections below from decoded domain s
 The photo handoff below is a stateless operation over the actual Files and
 chosen mailbox states. An accepted result replaces those two states atomically;
 a declined result supplies no replacement. It is not another Files or Email store.
+Close is the same kind of operation over the workspace and the app on screen.
 
 ## Story: Open the same bill from any surface
 
@@ -25,6 +26,7 @@ import calendar as C from "./calendar"
 import calendarView as V from "./calendarView"
 import shell as S from "./shell"
 import browser as B from "./browser"
+import workspace as WS from "./workspace"
 type SourceKind = EmailSource | CalendarSource | BrowserSource
 type BillSource = { key: P::BillKey, kind: SourceKind, reference: str }
 type Binding = { key: P::BillKey, recordRef: str }
@@ -49,7 +51,7 @@ pure val initial: Registry = {
   owner: "", bindings: List(), pending: noOpening, waiting: false, requestVersion: 0, selected: "", resolutionError: false
 }
 pure def emailSource(mail: E::Mailbox): BillSource = {
-  key: if (E::billReady(mail)) { owner: mail.owner, origin: mail.billOrigin, account: mail.billAccount, bill: mail.billRef } else P::emptyKey,
+  key: if (E::billReady(mail)) { owner: mail.owner, origin: mail.bill.origin, account: mail.bill.account, bill: mail.bill.ref } else P::emptyKey,
   kind: EmailSource, reference: if (E::billReady(mail)) mail.messageRef else ""
 }
 pure def calendarSource(entry: C::Calendar): BillSource = {
@@ -112,9 +114,9 @@ pure val mailValues = Set(E::initial, photoMailbox,
   { ...E::initial, owner: "owner", provider: "mail-provider", account: "mail-account", connection: E::Connected, canRead: true,
     messages: List(I::loadMessage(I::initial,
       { identity: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
-        folder: I::InboxFolder, unread: false }, I::MessageProvider)),
-    view: E::Message, messageRef: "message", messageRefs: Set("message"), billRef: "bill", billOrigin: "https://utility.example",
-    billAccount: "account", billSourceRef: "message", billConfirmed: true })
+        folder: I::InboxFolder, unread: false, answered: false }, I::MessageProvider)),
+    view: E::Message, messageRef: "message", messageRefs: Set("message"),
+    bill: { ref: "bill", origin: "https://utility.example", account: "account", confirmed: true } })
 pure val entryValues = Set(C::initial,
   { ...C::initial, phase: C::Saved, hasSaved: true,
     identity: { owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", sourceRef: "message",
@@ -340,23 +342,6 @@ type PhotoShareRequest = {
   mailGeneration: int, mailRevision: int
 }
 type PhotoHandoff = ShareDeclined | SharedPhoto({ files: F::Files, mail: E::Mailbox })
-pure def validFiles(files: F::Files): bool =
-  F::alwaysLibraryIdentity(files) and F::alwaysCatalogValid(files) and
-  F::alwaysCatalogLoadHasNoStaleView(files) and F::alwaysSelectionExists(files) and
-  F::alwaysPendingFileExists(files) and F::alwaysMatchesExist(files) and F::alwaysPendingImportValid(files)
-pure def validMailbox(mail: E::Mailbox): bool =
-  E::alwaysConnectedIdentity(mail) and E::alwaysAccountIdentityIsBound(mail) and
-  E::alwaysGenerationAndRevision(mail) and E::alwaysReadAccess(mail) and
-  E::alwaysReadSelectionIsBound(mail) and E::alwaysSelectedContent(mail) and
-  E::alwaysMessageRegistry(mail) and E::alwaysListedMessagesAreCurrent(mail) and
-  E::alwaysSelectionUsesCanonicalMessage(mail) and E::alwaysFolderIsVisible(mail) and
-  E::alwaysSearchMatchesQuery(mail) and E::alwaysBillProvenance(mail) and
-  E::alwaysResultPersistenceHasTerminal(mail) and E::alwaysSendHasRecipient(mail) and
-  E::alwaysSendEvidence(mail) and E::alwaysApprovalIsCurrent(mail) and
-  E::alwaysDraftHasAccount(mail) and E::alwaysDraftStoreHasRevision(mail) and
-  E::alwaysRetirementHasMailbox(mail) and E::alwaysDraftVersions(mail) and
-  E::alwaysEditableDraftIsNotRetired(mail) and E::alwaysDraftAssetsAreValid(mail) and
-  E::alwaysMessageAssetsAreBound(mail)
 pure def photoDraft(mail: E::Mailbox): E::Mailbox =
   E::editDraft(E::startDraft(mail, false, E::MailUser), { ...E::emptyContent, subject: "A photo" }, E::MailUser)
 pure def maySharePhoto(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
@@ -386,7 +371,7 @@ pure def lawShareUsesTheSelectedPhoto(files: F::Files, mail: E::Mailbox, photoRe
     | ShareDeclined => false
     | SharedPhoto(result) => result.files.selected == "" and not(result.files.contentReady) and
         result.mail.draftAttachments == List(F::fileAt(files, files.selected)) and
-        result.mail.draftTo == "" and result.mail.draftSubject == "A photo" and
+        result.mail.draft.to == "" and result.mail.draft.subject == "A photo" and
         result.mail.composeVisible and result.mail.sendStatus == E::Composing
   })
 pure def lawStaleShareCannotSwitchDestination(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
@@ -409,9 +394,9 @@ pure def lawShareKeepsSavedFiles(files: F::Files, mail: E::Mailbox, photoRequest
   }
 pure def lawSharePreservesOwnedState(files: F::Files, mail: E::Mailbox, photoRequest: PhotoShareRequest, by: RegistryActor): bool =
   val handoff = trySharePhoto(files, mail, photoRequest, by)
-  validFiles(files) and validMailbox(mail) implies (match handoff {
+  F::validFiles(files) and E::validMailbox(mail) implies (match handoff {
     | ShareDeclined => true
-    | SharedPhoto(result) => validFiles(result.files) and validMailbox(result.mail)
+    | SharedPhoto(result) => F::validFiles(result.files) and E::validMailbox(result.mail)
   })
 pure val filesValues = Set(F::initial,
   { ...F::initial, owner: "owner", opened: true, loaded: true, entries: List(F::samplePhoto),
@@ -423,18 +408,107 @@ pure val photoRequestValues = Set(
   { id: "photo", fileGeneration: 3, owner: "owner", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 1 })
 ```
 
-Native Close also resolves the visible form through its owning application
-before going Home.
+## Story: Close an app without losing what I was doing
 
-Calendar Close first uses Calendar's `closeCalendar` operation to cancel an
-unsubmitted form, then routes the workspace Home. Submitted save/deletion
-targets remain owned while hidden until acknowledgment; ordinary detail
-selection clears. Close does not fabricate a saved occurrence. Email Close first uses
-`preserveDraft` for the current editable draft or the person's explicit
-`discardDraft` choice. A save may finish after the composer hides, but failure
-reopens that same recoverable editor; the host brings the failed save to the
-person's attention. Pending or uncertain sends remain in their original
-mailbox for reconciliation. Only after this owning-state operation does the
-host call workspace `visit(Home)`, which pauses assistance without deleting
-mail or calendar state. Closing the window is never an implicit Send, save
-success, discard confirmation or payment outcome.
+> As a person in Calendar, Email or Files, I can tap Close and go Home knowing
+> that an unfinished form or message is kept or safely put away, and that
+> closing never sends, saves or deletes anything on my behalf.
+
+### Close lets the visible app put its own state away before going Home
+
+The prototype's Close (`prototype/Grace Prototype.html`, line 2156) saves a
+composer that has something in it as a draft, clears the Files preview and the
+Calendar detail and form, and goes Home in one step. Here the app on screen
+puts its state away first, through its own operation, and only then does the
+workspace `visit(Home)`, which pauses assistance without deleting mail or
+calendar state. If the app's own operation is not allowed, Close does nothing.
+
+Calendar Close uses Calendar's `closeCalendar`, which cancels an unsubmitted
+form. Submitted save and deletion targets remain owned while hidden until
+acknowledged; ordinary detail selection clears. Close does not fabricate a
+saved occurrence. Files Close uses `closeFiles`, which clears the preview and
+cancels reads while keeping the tab and the saved library.
+
+Email Close uses `preserveDraft` for an editable composer that holds anything:
+a recipient, subject, text or attachment, or an earlier save. The host supplies
+the draft's ID. An editable composer that holds nothing is put away with
+`discardDraft` and nothing is stored, as the prototype drops an empty composer.
+A save may finish after the composer hides, but failure reopens that same
+recoverable editor and the host brings the failed save to the person's
+attention. Pending or uncertain sends remain in their original mailbox for
+reconciliation. Discarding a draft with something in it stays the person's
+explicit Discard in Email.
+
+Closing the window is never an implicit Send, save success, discard of a draft
+with content, or payment outcome. Close keeps the composer's content and never
+retires a draft.
+
+```quint
+type AppClose = CloseDeclined | ClosedApp({ workspace: WS::Workspace, calendar: V::CalendarView, mail: E::Mailbox, files: F::Files })
+pure def emptyComposer(mailbox: E::Mailbox): bool =
+  mailbox.draftId == "" and mailbox.draft.to == "" and mailbox.draft.cc.size() == 0 and mailbox.draft.bcc.size() == 0 and
+  mailbox.draft.subject == "" and mailbox.draft.body == "" and mailbox.draftAttachments == List()
+pure def mayCloseMailbox(mailbox: E::Mailbox, draftId: str): bool =
+  not(E::canEditDraft(mailbox, E::MailUser)) or
+  (if (emptyComposer(mailbox)) E::canDiscardDraft(mailbox, true, E::MailUser) else E::canPreserveDraft(mailbox, draftId, E::MailUser))
+pure def closeMailbox(mailbox: E::Mailbox, draftId: str): E::Mailbox =
+  if (not(E::canEditDraft(mailbox, E::MailUser))) mailbox
+  else if (emptyComposer(mailbox)) E::discardDraft(mailbox, true, E::MailUser)
+  else E::preserveDraft(mailbox, draftId, E::MailUser)
+pure def mayCloseApp(workspace: WS::Workspace, calendarView: V::CalendarView, mailbox: E::Mailbox, files: F::Files,
+    app: S::Surface, draftId: str, by: RegistryActor): bool =
+  by == RegistryUser and workspace.device.surface == app and WS::canVisit(workspace, S::Home, WS::Person) and
+  (if (app == S::Calendar) V::canCloseCalendar(calendarView, V::ViewUser)
+    else if (app == S::Files) F::canCloseFiles(files, F::FileUser)
+    else if (app == S::Email) mayCloseMailbox(mailbox, draftId)
+    else false)
+pure def closeApp(workspace: WS::Workspace, calendarView: V::CalendarView, mailbox: E::Mailbox, files: F::Files,
+    app: S::Surface, draftId: str, by: RegistryActor): AppClose =
+  if (mayCloseApp(workspace, calendarView, mailbox, files, app, draftId, by)) ClosedApp({
+    workspace: WS::visit(workspace, S::Home, WS::Person),
+    calendar: if (app == S::Calendar) V::closeCalendar(calendarView, V::ViewUser) else calendarView,
+    mail: if (app == S::Email) closeMailbox(mailbox, draftId) else mailbox,
+    files: if (app == S::Files) F::closeFiles(files, F::FileUser) else files
+  }) else CloseDeclined
+pure def lawCloseGoesHomeOnlyAfterTheAppCloses(workspace: WS::Workspace, calendarView: V::CalendarView, mailbox: E::Mailbox,
+    files: F::Files, app: S::Surface, draftId: str, by: RegistryActor): bool =
+  val closed = closeApp(workspace, calendarView, mailbox, files, app, draftId, by)
+  match closed {
+    | CloseDeclined => true
+    | ClosedApp(result) => result.workspace.device.surface == S::Home and
+        (app == S::Calendar implies not(result.calendar.opened)) and
+        (app == S::Files implies not(result.files.opened)) and
+        ((app == S::Email and E::canEditDraft(mailbox, E::MailUser)) implies not(result.mail.composeVisible))
+  }
+pure def lawCloseNeverSendsOrRetiresADraft(workspace: WS::Workspace, calendarView: V::CalendarView, mailbox: E::Mailbox,
+    files: F::Files, app: S::Surface, draftId: str, by: RegistryActor): bool =
+  val closed = closeApp(workspace, calendarView, mailbox, files, app, draftId, by)
+  match closed {
+    | CloseDeclined => true
+    | ClosedApp(result) => result.mail.issuedSends.subseteq(mailbox.issuedSends) and
+        mailbox.issuedSends.subseteq(result.mail.issuedSends) and result.mail.retiredDrafts == mailbox.retiredDrafts and
+        (result.mail.sendStatus == E::Sending implies mailbox.sendStatus == E::Sending)
+  }
+pure def lawCloseKeepsTheComposerContent(workspace: WS::Workspace, calendarView: V::CalendarView, mailbox: E::Mailbox,
+    files: F::Files, app: S::Surface, draftId: str, by: RegistryActor): bool =
+  val closed = closeApp(workspace, calendarView, mailbox, files, app, draftId, by)
+  match closed {
+    | CloseDeclined => true
+    | ClosedApp(result) => result.mail.draft.to == mailbox.draft.to and result.mail.draft.subject == mailbox.draft.subject and
+        result.mail.draft.body == mailbox.draft.body and result.mail.draftAttachments == mailbox.draftAttachments and
+        result.mail.draft.cc.subseteq(mailbox.draft.cc) and mailbox.draft.cc.subseteq(result.mail.draft.cc) and
+        result.mail.draft.bcc.subseteq(mailbox.draft.bcc) and mailbox.draft.bcc.subseteq(result.mail.draft.bcc) and
+        ((app == S::Email and E::canEditDraft(mailbox, E::MailUser) and not(emptyComposer(mailbox))) implies
+          result.mail.draftStorage == E::DraftSaving)
+  }
+pure val workspaceValues = Set(WS::initial,
+  { ...WS::initial, device: { ...S::initial, readiness: S::Ready, surface: S::Calendar, contextVersion: 3 } },
+  { ...WS::initial, device: { ...S::initial, readiness: S::Ready, surface: S::Email, contextVersion: 3 } },
+  { ...WS::initial, device: { ...S::initial, readiness: S::Ready, surface: S::Files, contextVersion: 3 } })
+pure val calendarViewValues = Set(V::initial, { ...V::initial, owner: "owner", calendarId: "calendar", opened: true })
+pure val mailboxValues = Set(photoMailbox,
+  E::startDraft(photoMailbox, false, E::MailUser),
+  E::editDraft(E::startDraft(photoMailbox, false, E::MailUser), { ...E::emptyContent, body: "See you Tuesday" }, E::MailUser),
+  E::preserveDraft(E::startDraft(photoMailbox, false, E::MailUser), "photo-draft", E::MailUser))
+pure val draftIdValues = Set("photo-draft", "")
+```

@@ -127,40 +127,27 @@ lemma answer_ensures(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteAc
   }
 }
 
-lemma selectTab_ensures(s: WebsiteRequests, tab: int, by_: WebsiteActor)
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysPagesAreValid(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysOnlyTheShownTabHoldsRequests(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysRequestsBelongToTheirPage(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysNoMessageWaitsWhilePaused(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysATabHoldsOneOfEach(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysDownloadsAreRecorded(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysDecisionsNameAWebsite(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysAWebsiteIsAskedOnce(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysOpeningsAreRecorded(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> alwaysNoPageIsOpenWhilePurging(selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepAnsweredRequestsNeverReturn(s, selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepOnlyThePersonGrants(s, selectTab(s, tab, by_).state, selectTab(s, tab, by_).out))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepDecisionsStandUntilCleared(s, "selectTab", selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepPagesAreToldTheStoredDecision(s, selectTab(s, tab, by_).state, selectTab(s, tab, by_).out))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepOnlyAndroidStoresAnAllow(s, "selectTab", selectTab(s, tab, by_).state))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepOneAndroidCallPerWebsite(s, selectTab(s, tab, by_).state, selectTab(s, tab, by_).out))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepEveryAndroidWaitHasACall(s, selectTab(s, tab, by_).state, selectTab(s, tab, by_).out))
-  ensures (inv(s) ==> canSelectTab(s, tab, by_) ==> stepSignInsLastUntilCleared(s, "selectTab", selectTab(s, tab, by_).state))
+lemma followView_ensures(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysPagesAreValid(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysOnlyTheShownTabHoldsRequests(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysRequestsBelongToTheirPage(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysNoMessageWaitsWhilePaused(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysATabHoldsOneOfEach(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysDownloadsAreRecorded(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysDecisionsNameAWebsite(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysAWebsiteIsAskedOnce(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysOpeningsAreRecorded(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> alwaysNoPageIsOpenWhilePurging(followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepAnsweredRequestsNeverReturn(s, followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepOnlyThePersonGrants(s, followView(s, view, by_).state, followView(s, view, by_).out))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepDecisionsStandUntilCleared(s, "followView", followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepPagesAreToldTheStoredDecision(s, followView(s, view, by_).state, followView(s, view, by_).out))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepOnlyAndroidStoresAnAllow(s, "followView", followView(s, view, by_).state))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepOneAndroidCallPerWebsite(s, followView(s, view, by_).state, followView(s, view, by_).out))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepEveryAndroidWaitHasACall(s, followView(s, view, by_).state, followView(s, view, by_).out))
+  ensures (inv(s) ==> canFollowView(s, view, by_) ==> stepSignInsLastUntilCleared(s, "followView", followView(s, view, by_).state))
 {
-  if inv(s) && canSelectTab(s, tab, by_) {
-    var gone := ProofLib.Filter((r: WebsiteRequest) => ((r.tab != tab) && !(isBlockedSignIn(r.ask))), s.requests);
-    var kept := ProofLib.Filter((r: WebsiteRequest) => ((r.tab == tab) || isBlockedSignIn(r.ask)), s.requests);
-    var goneA := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.asking);
-    var keptA := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.asking);
-    assert selectTab(s, tab, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s)); WebsiteResult(left.state.(selected := tab), left.out));
-    Members((r: WebsiteRequest) => ((r.tab != tab) && !(isBlockedSignIn(r.ask))), s.requests);
-    Members((r: WebsiteRequest) => ((r.tab == tab) || isBlockedSignIn(r.ask)), s.requests);
-    Members((r: WebsiteRequest) => (r.tab != tab), s.asking);
-    Members((r: WebsiteRequest) => (r.tab == tab), s.asking);
-    Stable((r: WebsiteRequest) => (r.tab == tab), s.asking);
-    Ended(goneA, keptA, gone, kept, s);
-    EndedRules(goneA, keptA, gone, kept, s, selectTab(s, tab, by_).state);
-  }
+  if inv(s) && canFollowView(s, view, by_) { Follows(s, view, by_); }
 }
 
 lemma hideBrowser_ensures(s: WebsiteRequests, by_: WebsiteActor)
@@ -183,47 +170,35 @@ lemma hideBrowser_ensures(s: WebsiteRequests, by_: WebsiteActor)
   ensures (inv(s) ==> canHideBrowser(s, by_) ==> stepEveryAndroidWaitHasACall(s, hideBrowser(s, by_).state, hideBrowser(s, by_).out))
   ensures (inv(s) ==> canHideBrowser(s, by_) ==> stepSignInsLastUntilCleared(s, "hideBrowser", hideBrowser(s, by_).state))
 {
-  if inv(s) && canHideBrowser(s, by_) {
-    var gone := ProofLib.Filter((r: WebsiteRequest) => !(isBlockedSignIn(r.ask)), s.requests);
-    var kept := ProofLib.Filter((r: WebsiteRequest) => isBlockedSignIn(r.ask), s.requests);
-    assert hideBrowser(s, by_) == (var left := stopAsking(s.asking, [], withdraw(gone, kept, s)); WebsiteResult(left.state.(shown := false), left.out));
-    Members((r: WebsiteRequest) => !(isBlockedSignIn(r.ask)), s.requests);
-    Members((r: WebsiteRequest) => isBlockedSignIn(r.ask), s.requests);
-    Ended(s.asking, [], gone, kept, s);
-    EndedRules(s.asking, [], gone, kept, s, hideBrowser(s, by_).state);
-  }
+  if inv(s) && canHideBrowser(s, by_) { Follows(s, viewOf(s).(shown := false), by_); }
 }
 
-lemma pauseBrowser_ensures(s: WebsiteRequests, by_: WebsiteActor)
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysPagesAreValid(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysOnlyTheShownTabHoldsRequests(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysRequestsBelongToTheirPage(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysNoMessageWaitsWhilePaused(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysATabHoldsOneOfEach(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysDownloadsAreRecorded(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysDecisionsNameAWebsite(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysAWebsiteIsAskedOnce(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysOpeningsAreRecorded(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> alwaysNoPageIsOpenWhilePurging(pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepAnsweredRequestsNeverReturn(s, pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepOnlyThePersonGrants(s, pauseBrowser(s, by_).state, pauseBrowser(s, by_).out))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepDecisionsStandUntilCleared(s, "pauseBrowser", pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepPagesAreToldTheStoredDecision(s, pauseBrowser(s, by_).state, pauseBrowser(s, by_).out))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepOnlyAndroidStoresAnAllow(s, "pauseBrowser", pauseBrowser(s, by_).state))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepOneAndroidCallPerWebsite(s, pauseBrowser(s, by_).state, pauseBrowser(s, by_).out))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepEveryAndroidWaitHasACall(s, pauseBrowser(s, by_).state, pauseBrowser(s, by_).out))
-  ensures (inv(s) ==> canPauseBrowser(s, by_) ==> stepSignInsLastUntilCleared(s, "pauseBrowser", pauseBrowser(s, by_).state))
+// A new view ends, in one step, every request it no longer holds, as the transitions that end requests do.
+lemma Follows(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  requires inv(s)
+  ensures inv(followView(s, view, by_).state)
+  ensures stepAnsweredRequestsNeverReturn(s, followView(s, view, by_).state)
+  ensures stepOnlyThePersonGrants(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepPagesAreToldTheStoredDecision(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepOneAndroidCallPerWebsite(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepEveryAndroidWaitHasACall(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures followView(s, view, by_).state.decisions == s.decisions
+  ensures followView(s, view, by_).state.signedIn == s.signedIn
+  ensures followView(s, view, by_).state.clearing == s.clearing
 {
-  if inv(s) && canPauseBrowser(s, by_) {
-    var gone := ProofLib.Filter((r: WebsiteRequest) => isMessage(r.ask), s.requests);
-    var kept := ProofLib.Filter((r: WebsiteRequest) => !(isMessage(r.ask)), s.requests);
-    assert pauseBrowser(s, by_) == (var left := withdraw(gone, kept, s); WebsiteResult(left.state.(paused := true), left.out));
-    Members((r: WebsiteRequest) => isMessage(r.ask), s.requests);
-    Members((r: WebsiteRequest) => !(isMessage(r.ask)), s.requests);
-    WithdrawRecords(gone, kept, s);
-    WithdrawFilter(gone, kept, s);
-    WithdrawCancels(gone, kept, s);
-  }
+  var gone := ProofLib.Filter((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  assert followView(s, view, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s));
+    WebsiteResult(left.state.(shown := view.shown, selected := view.selected, paused := view.paused), left.out));
+  Members((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  Members((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  Members((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  Members((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Stable((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
+  EndedRules(goneA, keptA, gone, kept, s, followView(s, view, by_).state);
 }
 
 lemma pageStarted_ensures(s: WebsiteRequests, tab: int, by_: WebsiteActor)
@@ -677,25 +652,19 @@ lemma lawABlockedSignInIsExplained_ensures(s: WebsiteRequests, report: HostRepor
 lemma lawHidingKeepsASignIn_ensures(s: WebsiteRequests, by_: WebsiteActor)
   ensures (lawHidingKeepsASignIn(s, by_) == true)
 {
-  if canHideBrowser(s, by_) {
-    var gone := ProofLib.Filter((r: WebsiteRequest) => !(isBlockedSignIn(r.ask)), s.requests);
-    var kept := ProofLib.Filter((r: WebsiteRequest) => isBlockedSignIn(r.ask), s.requests);
-    assert hideBrowser(s, by_).state.requests == kept;
-    Members((r: WebsiteRequest) => isBlockedSignIn(r.ask), s.requests);
-  }
+  var view := viewOf(s).(shown := false);
+  assert hideBrowser(s, by_).state.requests == ProofLib.Filter((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  Members((r: WebsiteRequest) => heldInView(view, r), s.requests);
 }
 
-lemma lawSelectingATabKeepsASignIn_ensures(s: WebsiteRequests, tab: int, by_: WebsiteActor)
-  ensures (lawSelectingATabKeepsASignIn(s, tab, by_) == true)
+lemma lawANewViewKeepsASignIn_ensures(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  ensures (lawANewViewKeepsASignIn(s, view, by_) == true)
 {
-  if canSelectTab(s, tab, by_) {
-    var kept := ProofLib.Filter((r: WebsiteRequest) => ((r.tab == tab) || isBlockedSignIn(r.ask)), s.requests);
-    assert selectTab(s, tab, by_).state.requests == kept;
-    Members((r: WebsiteRequest) => ((r.tab == tab) || isBlockedSignIn(r.ask)), s.requests);
-  }
+  var kept := ProofLib.Filter((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  assert followView(s, view, by_).state.requests == kept;
+  Members((r: WebsiteRequest) => heldInView(view, r), s.requests);
 }
 
-// A request the person already allowed, or allowed while Android is asked, joins those waiting for Android.
 lemma RaiseToAndroid(s: WebsiteRequests, report: HostReport, by_: WebsiteActor)
   requires inv(s) && canRaise(s, report, by_) && toAndroid(s, report)
   ensures raise(s, report, by_) == WebsiteResult(s.(nextId := s.nextId + 1, asking := s.asking + [newRequest(s, report)]),

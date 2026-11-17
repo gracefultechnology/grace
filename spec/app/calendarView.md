@@ -32,6 +32,16 @@ Discovered by the proof: publishing a persisted row requires the collection's
 owner, calendar and display timezone to be bound first. An event's own timezone
 cannot establish the collection's independently chosen display timezone.
 
+A new bill occurrence published into a series that already has live saved
+members must pass Calendar's `followingAllowed` against each of them: it comes
+later, keeps the series' settings, carries its own invoice reference and names
+a source reference, so a recurring bill never reuses last month's invoice. Only
+the invoice must differ; two months may cite the same source evidence.
+
+A publish may add a new appointment row or refresh any row already present, but
+it never adds a bill the calendar does not have: a new bill enters only through
+the verified import below, which applies the same publishing checks.
+
 ```quint
 import calendar as C from "./calendar"
 
@@ -47,13 +57,13 @@ type CalendarView = {
   owner: str, calendarId: str, timezone: str, opened: bool, window: ViewWindow,
   entries: List[C::Calendar], selectedId: str, deletedSeries: Set[str], cancelledIds: Set[str],
   series: List[SeriesDefinition],
-  deletion: DeleteStatus, scope: DeleteScope, generation: int, evidence: str
+  deletion: DeleteStatus, scope: DeleteScope, generation: int
 }
 pure val emptyWindow: ViewWindow = { mode: WeekView, anchorDay: 0, selectedDay: 0, fromTime: 0, untilTime: 1 }
 pure val initial: CalendarView = {
   owner: "", calendarId: "", timezone: "", opened: false, window: emptyWindow,
   entries: List(), selectedId: "", deletedSeries: Set(), cancelledIds: Set(), series: List(), deletion: NoDeletion,
-  scope: ThisOccurrence, generation: 0, evidence: ""
+  scope: ThisOccurrence, generation: 0
 }
 pure def validWindow(window: ViewWindow): bool = window.fromTime < window.untilTime
 pure def validStored(c: C::Calendar): bool =
@@ -81,11 +91,14 @@ pure def openCalendar(v: CalendarView, owner: str, calendarId: str, timezone: st
     selectedId: if (hasEditing(v) or v.deletion == DeletionPending or v.deletion == DeletionFailed) v.selectedId else "",
     deletion: if (v.deletion == DeletionPending or v.deletion == DeletionFailed) v.deletion else NoDeletion }
 pure def canPublishOccurrence(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): bool =
+  publishAllowed(v, incoming, seriesVersion, scheduleVerified, by) and
+  (incoming.identity.kind != C::Bill or v.entries.some(c => C::sameOccurrence(c, incoming)))
+pure def publishAllowed(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): bool =
   by == ViewStore and v.owner != "" and v.calendarId != "" and v.timezone != "" and
   v.deletion != DeletionPending and not(hasEditing(v)) and validStored(incoming) and
   incoming.identity.owner == v.owner and incoming.identity.calendarId == v.calendarId and
   not(v.cancelledIds.contains(incoming.identity.occurrenceId)) and
-  C::admissibleOccurrence(v.entries, incoming) and scheduleVerified and
+  C::admissibleOccurrence(v.entries, incoming) and scheduleVerified and followsSeries(v, incoming) and
   (incoming.committed.seriesId == "" or
     (if (seriesAt(v, incoming.committed.seriesId).version == -1) seriesVersion == 0
      else seriesVersion == seriesAt(v, incoming.committed.seriesId).version and
@@ -95,6 +108,11 @@ pure def canPublishOccurrence(v: CalendarView, incoming: C::Calendar, seriesVers
           v.entries.every(c => c.phase == C::Deleted or c.committed.seriesId != incoming.committed.seriesId or
             c.identity.occurrenceId == incoming.identity.occurrenceId))))) and
   (incoming.phase == C::Deleted or not(v.deletedSeries.contains(incoming.committed.seriesId)))
+pure def followsSeries(v: CalendarView, incoming: C::Calendar): bool =
+  incoming.identity.kind != C::Bill or incoming.phase == C::Deleted or incoming.committed.seriesId == "" or
+  v.entries.some(c => C::sameOccurrence(c, incoming)) or
+  v.entries.every(c => not(c.hasSaved) or c.phase == C::Deleted or c.committed.seriesId != incoming.committed.seriesId or
+    C::followingAllowed(c, incoming.identity.occurrenceId, incoming.identity.billRef, incoming.identity.sourceRef, incoming.committed))
 pure def publishOccurrence(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): CalendarView =
   val targetChanged = v.selectedId == incoming.identity.occurrenceId and entryAt(v, v.selectedId) != incoming
   { ...v, entries: C::upsertOccurrence(v.entries, incoming),
@@ -125,6 +143,9 @@ pure def stepOccurrenceIdentityIsFixed(before: CalendarView, after: CalendarView
   before.entries.every(prior => after.entries.every(laterEntry =>
     C::sameOccurrence(prior, laterEntry) implies prior.identity == laterEntry.identity))
 pure def sometimesCalendarOpen(v: CalendarView): bool = v.opened
+pure def lawPublishAddsNoBill(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): bool =
+  (incoming.identity.kind == C::Bill and not(v.entries.some(c => C::sameOccurrence(c, incoming)))) implies
+    not(canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by))
 pure def lawUnrelatedImportKeepsSelection(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): bool =
   incoming.identity.occurrenceId != v.selectedId implies
     (publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by).selectedId == v.selectedId and
@@ -171,6 +192,23 @@ pure def sometimesMonth(v: CalendarView): bool = v.window.mode == MonthView
 pure def sometimesDetail(v: CalendarView): bool = v.selectedId != ""
 ```
 
+### Coming up lists saved events after the selected day
+
+Below the selected day, Week shows Coming up (`Grace Prototype.html:1914–1916`):
+the events of the following days, across the week boundary. The adapter gives
+the interval from the end of the selected day to 14 days later; the UI shows
+the first four by start time. Those 14 days and four rows are the prototype's
+presentation choices. Like the week, it shows only saved, undeleted events of
+this calendar, with the committed fields of an event being edited.
+
+```quint
+pure def upcomingOccurrences(v: CalendarView, fromTime: int, untilTime: int): List[C::Calendar] =
+  C::visibleEntries(v.entries, v.owner, v.calendarId, fromTime, untilTime)
+pure def lawComingUpShowsSavedEvents(v: CalendarView, query: C::ViewQuery): bool =
+  upcomingOccurrences(v, query.fromTime, query.untilTime).every(c =>
+    c.hasSaved and c.phase != C::Deleted and c.identity.owner == v.owner and c.identity.calendarId == v.calendarId)
+```
+
 ## Story: Edit the selected occurrence and receive its reminders
 
 > As a user, I want the event I edit, save, snooze or dismiss to be the same
@@ -192,6 +230,24 @@ New unsaved entries disappear on Cancel and retire their occurrence IDs, so an
 old save callback cannot target a new draft with the same ID. Store acknowledgments name the current
 approved revision, and clock events target the canonical occurrence ID rather
 than a captured state. Reminder changes need no artificial content revision.
+The Add form makes a New appointment only (`Grace Prototype.html:1918`); the
+person cannot make up a bill's identity. A bill occurrence enters only by a
+verified import. A new entry, from Add or from Grace's confirmed proposal, is
+never marked important, since nothing but its source can mark it, and has a
+positive length, the prototype's one hour by default (`Grace Prototype.html:2172`),
+which edits then keep. A form change applies through Calendar's `formDetails`.
+Editing a repeating event starts from its series' settings but keeps the
+occurrence's own important mark, and a series save writes each member's own
+mark back, so one occurrence's mark never spreads to the others.
+
+Dismiss on the Home banner or the reminder toast reaches the row whether or not
+Calendar is open or that event is selected, and even while a Save of that event
+awaits its storage result: dismissing changes only the reminder, and that save
+then schedules the reminder afresh from what it commits. Like every change to a
+row, Dismiss waits while a deletion question is open, a deletion is being
+stored or a failed deletion is still showing. Every other change by the person
+needs the event's own open form or detail, with no approved Save awaiting its
+result.
 
 ```quint
 type EntrySeed = { identity: C::EntryIdentity, details: C::EntryDetails }
@@ -213,7 +269,7 @@ pure def mayChangeEntry(c: C::Calendar, command: OccurrenceAction, by: ViewActor
 }
 pure def changeEntry(c: C::Calendar, command: OccurrenceAction): C::Calendar = match command {
   | BeginEditing => C::beginEdit(c, C::CalendarUser)
-  | ChangeDetails(request) => C::edit(c, request.details, C::CalendarUser)
+  | ChangeDetails(request) => C::edit(c, C::formDetails(c.draft, request.details), C::CalendarUser)
   | CancelEditing => C::cancelEdit(c, C::CalendarUser)
   | ApproveEntry(request) => C::approveSave(c, request.revision, C::CalendarUser)
   | EntryStored(report) => if (report.succeeded) C::save(c, report.revision, true, C::CalendarStore)
@@ -226,27 +282,36 @@ pure def changeEntry(c: C::Calendar, command: OccurrenceAction): C::Calendar = m
 pure def ownedEntryResult(v: CalendarView, c: C::Calendar, command: OccurrenceAction): C::Calendar =
   match command {
     | BeginEditing => if (c.committed.seriesId != "")
-        { ...C::beginEdit(c, C::CalendarUser), draft: seriesAt(v, c.committed.seriesId).details }
+        { ...C::beginEdit(c, C::CalendarUser),
+          draft: { ...seriesAt(v, c.committed.seriesId).details, important: c.committed.important } }
       else C::beginEdit(c, C::CalendarUser)
     | _ => changeEntry(c, command)
   }
+pure def lawEditingKeepsOwnMark(v: CalendarView, c: C::Calendar): bool =
+  ownedEntryResult(v, c, BeginEditing).draft.important == c.committed.important
 pure def freshEntryAllowed(v: CalendarView, entry: EntrySeed): bool =
   v.deletion == NoDeletion and not(hasEditing(v)) and
   C::canCreate(C::initial, entry.identity, C::CalendarUser) and
+  not(entry.details.important) and entry.details.endAt > entry.details.startAt and
   entry.identity.owner == v.owner and entry.identity.calendarId == v.calendarId and
   not(v.cancelledIds.contains(entry.identity.occurrenceId)) and
   v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
   (entry.details.seriesId == "" or seriesAt(v, entry.details.seriesId).version == -1) and
   not(v.deletedSeries.contains(entry.details.seriesId))
 pure def canCreateOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): bool =
-  by == ViewUser and v.opened and freshEntryAllowed(v, entry)
+  by == ViewUser and v.opened and entry.identity.kind == C::Appointment and freshEntryAllowed(v, entry)
 pure def createOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): CalendarView =
   { ...v, entries: v.entries.append(C::create(C::initial, entry.identity, entry.details, C::CalendarUser)),
     selectedId: entry.identity.occurrenceId }
+pure def dismisses(command: OccurrenceAction): bool = match command {
+  | DismissReminder => true
+  | _ => false
+}
 pure def canChangeOccurrence(v: CalendarView, id: str, command: OccurrenceAction, by: ViewActor): bool =
   val c = entryAt(v, id)
   c.phase != C::Empty and v.deletion == NoDeletion and
-  (by != ViewUser or (v.opened and v.selectedId == id and c.approvedRevision == -1)) and mayChangeEntry(c, command, by) and
+  (by != ViewUser or dismisses(command) or (v.opened and v.selectedId == id and c.approvedRevision == -1)) and
+  mayChangeEntry(c, command, by) and
   (match command {
     | ChangeDetails(request) => not(v.deletedSeries.contains(request.details.seriesId)) and
         (if (c.hasSaved and c.committed.seriesId != "") request.details.seriesId == c.committed.seriesId
@@ -340,6 +405,42 @@ pure val requestValues = Set(
 pure val againValues = requestValues
 ```
 
+### A bill occurrence enters only from verified bill evidence
+
+Calendar Add makes appointments only. A bill reaches the calendar when the
+store imports it from a verified provider bill or a confirmed email bill. The
+host derives `verified`; email text and calendar titles never supply it. The
+occurrence's owner, provider origin, provider account and invoice reference
+equal the evidence's bill key, the payment aggregate's key, and its source
+reference names that evidence. The evidence carries the payment aggregate's
+key fields (owner, origin, account and bill) with its source reference. The
+import is a publish of the saved row, so every publishing check applies to it,
+including the store's verification of the occurrence's local time and a
+following bill's distinct invoice; it is the only way a new bill
+row is added, since an ordinary publish refuses one. It neither opens Calendar nor changes the selection.
+
+```quint
+type BillEvidence = { owner: str, origin: str, account: str, bill: str, sourceRef: str, verified: bool }
+pure def provesBill(identity: C::EntryIdentity, billEvidence: BillEvidence): bool =
+  identity.kind == C::Bill and identity.owner == billEvidence.owner and identity.billOrigin == billEvidence.origin and
+  identity.billAccount == billEvidence.account and identity.billRef == billEvidence.bill and
+  identity.sourceRef == billEvidence.sourceRef
+pure def importedBill(entry: EntrySeed): C::Calendar =
+  val created = C::create(C::initial, entry.identity, entry.details, C::CalendarUser)
+  C::save(C::approveSave(created, created.revision, C::CalendarUser), created.revision, true, C::CalendarStore)
+pure def importVersion(v: CalendarView, entry: EntrySeed): int =
+  if (seriesAt(v, entry.details.seriesId).version == -1) 0 else seriesAt(v, entry.details.seriesId).version
+pure def canImportBillOccurrence(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by: ViewActor): bool =
+  by == ViewStore and billEvidence.verified and provesBill(entry.identity, billEvidence) and
+  v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
+  publishAllowed(v, importedBill(entry), importVersion(v, entry), scheduleVerified, by)
+pure def importBillOccurrence(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by: ViewActor): CalendarView =
+  publishOccurrence(v, importedBill(entry), importVersion(v, entry), scheduleVerified, by)
+pure def lawImportedBillHasVerifiedKey(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by: ViewActor): bool =
+  canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by) implies
+    (billEvidence.verified and C::billAvailable(importedBill(entry)) and provesBill(importedBill(entry).identity, billEvidence))
+```
+
 ### Saving a repeating event updates its whole series through the same form
 
 The prototype edits the recurring event, not an isolated repetition
@@ -349,7 +450,8 @@ definition. Opening Edit uses that definition's original anchor date and
 settings, as the prototype does, rather than silently moving the anchor to
 the clicked repetition. Its title, location, notes, participant, timezone, repeat and
 reminder settings project into every live occurrence. Each occurrence retains
-its own immutable identity, invoice source and deletion tombstone. Saving an
+its own immutable identity, invoice source, important mark and deletion
+tombstone. Saving an
 updated occurrence resets its reminder from the newly committed schedule.
 
 The calendar adapter expands the changed definition into a complete schedule
@@ -393,7 +495,8 @@ pure def validSeriesSchedule(v: CalendarView, receipt: SeriesReceipt): bool =
   scheduleFor(receipt.schedules, v.selectedId).endAt == selectedOccurrence(v).draft.endAt
 pure def seriesMemberResult(v: CalendarView, c: C::Calendar, receipt: SeriesReceipt): C::Calendar =
   val schedule = scheduleFor(receipt.schedules, c.identity.occurrenceId)
-  val details = { ...selectedOccurrence(v).draft, startAt: schedule.startAt, endAt: schedule.endAt }
+  val details = { ...selectedOccurrence(v).draft, startAt: schedule.startAt, endAt: schedule.endAt,
+    important: c.committed.important }
   val editing = C::edit(C::beginEdit(c, C::CalendarUser), details, C::CalendarUser)
   if (not(seriesMemberAffected(v, c))) c
   else if (not(receipt.persisted))
@@ -419,6 +522,9 @@ pure def lawStaleSeriesReceiptCannotSave(v: CalendarView, receipt: SeriesReceipt
     not(canSaveSeries(v, receipt, by))
 pure def lawPartialSeriesReceiptCannotSave(v: CalendarView, receipt: SeriesReceipt, by: ViewActor): bool =
   receipt.persisted and not(validSeriesSchedule(v, receipt)) implies not(canSaveSeries(v, receipt, by))
+pure def lawSeriesSaveKeepsOtherMarks(v: CalendarView, c: C::Calendar, receipt: SeriesReceipt): bool =
+  c.identity.occurrenceId != v.selectedId implies
+    seriesMemberResult(v, c, receipt).committed.important == c.committed.important
 pure def sometimesSeriesEdited(v: CalendarView): bool = v.series.some(s => s.version > 0)
 pure def sometimesSeriesStopped(v: CalendarView): bool = v.series.some(s => s.details.recurrence == C::Once)
 ```
@@ -455,6 +561,69 @@ pure def sometimesHiddenSave(v: CalendarView): bool =
 pure def sometimesCalendarClosed(v: CalendarView): bool = not(v.opened) and v.owner != ""
 ```
 
+## Story: See a due reminder and open its event
+
+> As a user, I want a due reminder to tell me what is coming wherever I am, and
+> See details to take me straight to that event without dismissing it.
+
+### A shown reminder appears on Home or as a toast and See details opens its event
+
+On Home, a shown reminder is the banner with the bell, the event's title, its
+day, time and place, See details and Dismiss
+(`Grace Prototype.html:1865–1871`). The banner is hidden while Grace is
+expanded or the tablet sleeps. On any other screen it arrives as the toast
+"Reminder: " followed by the title, the day in lower case, "at" and the time,
+with no comma (`Grace Prototype.html:2275`). See details opens
+Calendar on that exact occurrence's detail (`Grace Prototype.html:2228`). It is
+refused while a form is being edited or a deletion is being stored, so it never
+discards an edit. It leaves the reminder shown; Dismiss on the banner, toast or
+detail dismisses it. This deliberately departs from the prototype, whose See
+details also clears the banner (`X.banner=null`, `Grace Prototype.html:2228`):
+the story asks that opening the event not dismiss its reminder, so the banner is
+back on Home until the person dismisses it. The detail is the ordinary one, so
+Back returns to the calendar.
+
+```quint
+pure def shownReminders(v: CalendarView): List[C::Calendar] = v.entries.select(c => c.reminder == C::ReminderShown)
+pure def canOpenReminder(v: CalendarView, id: str, owner: str, calendarId: str, timezone: str, by: ViewActor): bool =
+  canOpenCalendar(v, owner, calendarId, timezone, by) and not(hasEditing(v)) and v.deletion != DeletionPending and
+  entryAt(v, id).reminder == C::ReminderShown and canOpenOccurrence(openCalendar(v, owner, calendarId, timezone, by), id, by)
+pure def openReminder(v: CalendarView, id: str, owner: str, calendarId: str, timezone: str, by: ViewActor): CalendarView =
+  openOccurrence(openCalendar(v, owner, calendarId, timezone, by), id, by)
+pure def lawSeeDetailsKeepsReminder(v: CalendarView, id: str, owner: str, calendarId: str, timezone: str, by: ViewActor): bool =
+  canOpenReminder(v, id, owner, calendarId, timezone, by) implies
+    (openReminder(v, id, owner, calendarId, timezone, by).entries == v.entries and
+      openReminder(v, id, owner, calendarId, timezone, by).selectedId == id and
+      openReminder(v, id, owner, calendarId, timezone, by).opened)
+pure def sometimesReminderOpened(v: CalendarView): bool =
+  v.opened and selectedOccurrence(v).reminder == C::ReminderShown
+```
+
+## Story: Open the bill behind a calendar entry
+
+> As a user, I want a bill's calendar entry to take me to that bill and show
+> whether it is paid, without paying it.
+
+### A saved bill's detail offers Open bill with its payment status
+
+The prototype has no bill in Calendar, so this follows its event detail: Open
+bill sits in the detail's action row beside Edit and Delete
+(`Grace Prototype.html:1903`), and the status line shows the payment
+aggregate's visible outcome from the handoff registry, Unknown when that record
+is unavailable. Open bill asks the handoff registry to open the bill; it never
+pays, schedules or approves anything. It is offered only for the open, selected,
+saved and undeleted bill while no form is being edited and no deletion question
+is open. The handoff registry accepts the selection as a source whenever
+Calendar is open with no deletion question, form or not; offering Open bill
+only without a form is this view's stricter choice, so opening the bill never
+leaves an edit behind.
+
+```quint
+pure def openBillOffered(v: CalendarView): bool =
+  v.opened and v.deletion == NoDeletion and not(hasEditing(v)) and C::billAvailable(selectedOccurrence(v))
+pure def sometimesOpenBillOffered(v: CalendarView): bool = openBillOffered(v)
+```
+
 ## Story: Delete this occurrence or the whole repeating event
 
 > As a user, I want Keep it to do nothing, Delete only this one to preserve the
@@ -466,7 +635,8 @@ The first Delete opens the prototype's question. Choosing one or all is the
 single final approval. Nonrepeating entries offer only this occurrence. The
 store persists the exact request generation before success is displayed; failed
 storage retains the selected entry and lets the user choose again. Navigating
-or publishing another row cannot change a pending target.
+or publishing another row cannot change a pending target. The store's result
+names its receipt evidence; the view keeps only the result, not the receipt.
 Discovered by the proof: a pending or failed whole-series deletion retains a
 recurring selected event. Without that fact an arbitrary pending state could
 treat a nonrepeating event's empty series ID as a deleted series.
@@ -475,7 +645,7 @@ treat a nonrepeating event's empty series ID as a deleted series.
 pure def canRequestDeletion(v: CalendarView, by: ViewActor): bool =
   by == ViewUser and v.opened and v.selectedId != "" and v.deletion == NoDeletion and not(hasEditing(v))
 pure def requestDeletion(v: CalendarView, by: ViewActor): CalendarView =
-  { ...v, deletion: DeletionQuestion, scope: ThisOccurrence, evidence: "" }
+  { ...v, deletion: DeletionQuestion, scope: ThisOccurrence }
 pure def canKeepOccurrence(v: CalendarView, by: ViewActor): bool =
   by == ViewUser and v.opened and (v.deletion == DeletionQuestion or v.deletion == DeletionFailed)
 pure def keepOccurrence(v: CalendarView, by: ViewActor): CalendarView = { ...v, deletion: NoDeletion }
@@ -483,7 +653,7 @@ pure def canApproveDeletion(v: CalendarView, scope: DeleteScope, by: ViewActor):
   by == ViewUser and v.opened and (v.deletion == DeletionQuestion or v.deletion == DeletionFailed) and
   (scope == ThisOccurrence or selectedOccurrence(v).committed.recurrence != C::Once)
 pure def approveDeletion(v: CalendarView, scope: DeleteScope, by: ViewActor): CalendarView =
-  { ...v, deletion: DeletionPending, scope: scope, generation: v.generation + 1, evidence: "" }
+  { ...v, deletion: DeletionPending, scope: scope, generation: v.generation + 1 }
 pure def deleteMatches(v: CalendarView, c: C::Calendar): bool =
   c.identity.occurrenceId == v.selectedId or
     (v.scope == EntireSeries and c.committed.seriesId == selectedOccurrence(v).committed.seriesId)
@@ -497,7 +667,7 @@ pure def deletionResult(v: CalendarView, generation: int, succeeded: bool, evide
     deletedSeries: if (succeeded and v.scope == EntireSeries)
       v.deletedSeries.union(Set(selectedOccurrence(v).committed.seriesId)) else v.deletedSeries,
     selectedId: if (succeeded) "" else v.selectedId,
-    deletion: if (succeeded) NoDeletion else DeletionFailed, evidence: evidence }
+    deletion: if (succeeded) NoDeletion else DeletionFailed }
 pure def alwaysDeletionHasSelection(v: CalendarView): bool =
   v.deletion != NoDeletion implies v.selectedId != ""
 pure def alwaysSeriesDeletionIsRecurring(v: CalendarView): bool =
@@ -520,7 +690,7 @@ pure val ownerValues = Set("", "ownerA", "ownerB")
 pure val calendarIdValues = Set("", "calendarA")
 pure val timezoneValues = Set("", "America/New_York")
 pure val idValues = Set("", "visitA", "periodA", "seriesA", "missing")
-pure val incomingValues = C::cValues
+pure val incomingValues = C::incomingValues
 pure val reportValues = Set(
   { window: { ...emptyWindow, anchorDay: 7, selectedDay: 7, fromTime: 0, untilTime: 10 }, kind: Later, verified: true },
   { window: { ...emptyWindow, anchorDay: -7, selectedDay: -7, fromTime: -10, untilTime: 0 }, kind: Earlier, verified: true },
@@ -529,8 +699,11 @@ pure val reportValues = Set(
   { window: { ...emptyWindow, anchorDay: 3, selectedDay: 3 }, kind: SelectDay, verified: true },
   { window: emptyWindow, kind: Today, verified: false })
 pure val evidenceValues = Set("", "storeReceipt")
-pure val vValues = Set(initial)
-pure val cValues = C::cValues
+pure val cValues = C::incomingValues
+pure val billEvidenceValues = Set(
+  { owner: "ownerA", origin: "https://biller.example", account: "billerAccount", bill: "billA", sourceRef: "messageA", verified: true },
+  { owner: "ownerA", origin: "https://biller.example", account: "billerAccount", bill: "billA", sourceRef: "messageA", verified: false },
+  { owner: "ownerA", origin: "https://biller.example", account: "billerAccount", bill: "billB", sourceRef: "messageA", verified: true })
 pure val entryValues = Set(
   { identity: C::appointmentIdentity, details: C::timedDetails },
   { identity: C::billIdentity, details: C::repeatingDetails })

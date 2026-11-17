@@ -57,8 +57,8 @@ export service NativePage {
 const messages: Record<string, MessageKind> = { alert: "AlertMessage", confirm: "ConfirmMessage", prompt: "PromptMessage", beforeunload: "LeavePageMessage" }
 const handoffs: Record<string, AppHandoff> = { "send-to": "SendToApp", dial: "DialApp", view: "ViewInApp", refuse: "RefusedLink" }
 const providers: Record<string, string> = { google: "Google", facebook: "Facebook" }
-// spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too": the call's `outcome`.
-const outcomes: Record<string, AndroidOutcome> = { granted: "AndroidGranted", denied: "AndroidDenied", "android-refused": "AndroidRefused", ended: "AndroidEnded" }
+// spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"
+const outcomes: Record<string, AndroidOutcome> = { granted: "AndroidGranted", denied: "AndroidEnded", "android-refused": "AndroidRefused", ended: "AndroidEnded" }
 
 type Surface = { owner: string; session: string; epoch: number; id: string }
 

@@ -102,7 +102,7 @@ lemma CalendarChanged(c: app__calendar_Calendar, command: OccurrenceAction, by_:
   assert app__calendar_inv(c);
   match command {
     case BeginEditing => app__calendar_beginEdit_ensures(c, app__calendar_CalendarActor.CalendarUser);
-    case ChangeDetails(details) => app__calendar_edit_ensures(c, details, app__calendar_CalendarActor.CalendarUser);
+    case ChangeDetails(details) => app__calendar_edit_ensures(c, app__calendar_formDetails(c.draft, details), app__calendar_CalendarActor.CalendarUser);
     case CancelEditing => app__calendar_cancelEdit_ensures(c, app__calendar_CalendarActor.CalendarUser);
     case ApproveEntry(revision) => app__calendar_approveSave_ensures(c, revision, app__calendar_CalendarActor.CalendarUser);
     case EntryStored(revision, succeeded) =>
@@ -333,7 +333,7 @@ lemma CalendarDistinctUnique(v: CalendarView)
 }
 
 lemma CalendarPublishedView(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
-  requires canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)
+  requires publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_)
   ensures publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_).entries ==
     ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries) + [incoming]
 {
@@ -347,23 +347,23 @@ lemma CalendarDeletedSeriesView(v: CalendarView, generation: int, succeeded: boo
 {
 }
 
-lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEditingIsSelected(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDefinitions(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewIdentity(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewWindow(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+lemma PublishAllowedEnsures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewIdentity(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewWindow(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEditingIsSelected(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDefinitions(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
 {
-  if inv(v) && canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) {
+  if inv(v) && publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) {
     CalendarUniqueDistinct(v);
     CalendarPublishedView(v, incoming, seriesVersion, scheduleVerified, by_);
     var remaining := ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries);
@@ -418,14 +418,33 @@ lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calenda
   }
 }
 
+lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewIdentity(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysViewWindow(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEditingIsSelected(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDefinitions(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+{
+  PublishAllowedEnsures(v, incoming, seriesVersion, scheduleVerified, by_);
+}
+
 lemma deletionResult_ensures(v: CalendarView, generation: int, succeeded: bool, evidence: string, by_: ViewActor)
+  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysViewIdentity(deletionResult(v, generation, succeeded, evidence, by_)))
+  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysViewWindow(deletionResult(v, generation, succeeded, evidence, by_)))
+  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysEntriesBelongToCalendar(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysOccurrenceIsUnique(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysEditingIsSelected(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysCancelledIdsAreAbsent(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysSeriesDefinitions(deletionResult(v, generation, succeeded, evidence, by_)))
-  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysViewIdentity(deletionResult(v, generation, succeeded, evidence, by_)))
-  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysViewWindow(deletionResult(v, generation, succeeded, evidence, by_)))
-  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysEntriesBelongToCalendar(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysEntriesUseSeries(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysSelectionIsCurrent(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysDeletionHasSelection(deletionResult(v, generation, succeeded, evidence, by_)))
@@ -477,13 +496,13 @@ lemma deletionResult_ensures(v: CalendarView, generation: int, succeeded: bool, 
 }
 
 lemma openCalendar_ensures(v: CalendarView, owner: string, calendarId: string, timezone: string, by_: ViewActor)
+  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysViewIdentity(openCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysViewWindow(openCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesBelongToCalendar(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysOccurrenceIsUnique(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEditingIsSelected(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysCancelledIdsAreAbsent(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDefinitions(openCalendar(v, owner, calendarId, timezone, by_)))
-  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysViewIdentity(openCalendar(v, owner, calendarId, timezone, by_)))
-  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysViewWindow(openCalendar(v, owner, calendarId, timezone, by_)))
-  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesBelongToCalendar(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesUseSeries(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSelectionIsCurrent(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletionHasSelection(openCalendar(v, owner, calendarId, timezone, by_)))
@@ -498,13 +517,13 @@ lemma openCalendar_ensures(v: CalendarView, owner: string, calendarId: string, t
 }
 
 lemma navigate_ensures(v: CalendarView, report: NavigationReport, by_: ViewActor)
+  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysViewIdentity(navigate(v, report, by_)))
+  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysViewWindow(navigate(v, report, by_)))
+  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysEntriesBelongToCalendar(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysOccurrenceIsUnique(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysEditingIsSelected(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysCancelledIdsAreAbsent(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysSeriesDefinitions(navigate(v, report, by_)))
-  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysViewIdentity(navigate(v, report, by_)))
-  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysViewWindow(navigate(v, report, by_)))
-  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysEntriesBelongToCalendar(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysEntriesUseSeries(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysSelectionIsCurrent(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysDeletionHasSelection(navigate(v, report, by_)))
@@ -519,13 +538,13 @@ lemma navigate_ensures(v: CalendarView, report: NavigationReport, by_: ViewActor
 }
 
 lemma openOccurrence_ensures(v: CalendarView, id: string, by_: ViewActor)
+  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysViewIdentity(openOccurrence(v, id, by_)))
+  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysViewWindow(openOccurrence(v, id, by_)))
+  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysEntriesBelongToCalendar(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysOccurrenceIsUnique(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysEditingIsSelected(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysCancelledIdsAreAbsent(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysSeriesDefinitions(openOccurrence(v, id, by_)))
-  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysViewIdentity(openOccurrence(v, id, by_)))
-  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysViewWindow(openOccurrence(v, id, by_)))
-  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysEntriesBelongToCalendar(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysEntriesUseSeries(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysSelectionIsCurrent(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysDeletionHasSelection(openOccurrence(v, id, by_)))
@@ -542,13 +561,13 @@ lemma openOccurrence_ensures(v: CalendarView, id: string, by_: ViewActor)
 }
 
 lemma backToCalendar_ensures(v: CalendarView, by_: ViewActor)
+  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysViewIdentity(backToCalendar(v, by_)))
+  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysViewWindow(backToCalendar(v, by_)))
+  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysEntriesBelongToCalendar(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysOccurrenceIsUnique(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysEditingIsSelected(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysCancelledIdsAreAbsent(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysSeriesDefinitions(backToCalendar(v, by_)))
-  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysViewIdentity(backToCalendar(v, by_)))
-  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysViewWindow(backToCalendar(v, by_)))
-  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysEntriesBelongToCalendar(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysEntriesUseSeries(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysSelectionIsCurrent(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysDeletionHasSelection(backToCalendar(v, by_)))
@@ -563,13 +582,13 @@ lemma backToCalendar_ensures(v: CalendarView, by_: ViewActor)
 }
 
 lemma requestDeletion_ensures(v: CalendarView, by_: ViewActor)
+  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysViewIdentity(requestDeletion(v, by_)))
+  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysViewWindow(requestDeletion(v, by_)))
+  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysEntriesBelongToCalendar(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysOccurrenceIsUnique(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysEditingIsSelected(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysCancelledIdsAreAbsent(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysSeriesDefinitions(requestDeletion(v, by_)))
-  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysViewIdentity(requestDeletion(v, by_)))
-  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysViewWindow(requestDeletion(v, by_)))
-  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysEntriesBelongToCalendar(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysEntriesUseSeries(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysSelectionIsCurrent(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysDeletionHasSelection(requestDeletion(v, by_)))
@@ -584,13 +603,13 @@ lemma requestDeletion_ensures(v: CalendarView, by_: ViewActor)
 }
 
 lemma keepOccurrence_ensures(v: CalendarView, by_: ViewActor)
+  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysViewIdentity(keepOccurrence(v, by_)))
+  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysViewWindow(keepOccurrence(v, by_)))
+  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysEntriesBelongToCalendar(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysOccurrenceIsUnique(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysEditingIsSelected(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysCancelledIdsAreAbsent(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysSeriesDefinitions(keepOccurrence(v, by_)))
-  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysViewIdentity(keepOccurrence(v, by_)))
-  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysViewWindow(keepOccurrence(v, by_)))
-  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysEntriesBelongToCalendar(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysEntriesUseSeries(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysSelectionIsCurrent(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysDeletionHasSelection(keepOccurrence(v, by_)))
@@ -605,13 +624,13 @@ lemma keepOccurrence_ensures(v: CalendarView, by_: ViewActor)
 }
 
 lemma approveDeletion_ensures(v: CalendarView, scope: DeleteScope, by_: ViewActor)
+  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysViewIdentity(approveDeletion(v, scope, by_)))
+  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysViewWindow(approveDeletion(v, scope, by_)))
+  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysEntriesBelongToCalendar(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysOccurrenceIsUnique(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysEditingIsSelected(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysCancelledIdsAreAbsent(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysSeriesDefinitions(approveDeletion(v, scope, by_)))
-  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysViewIdentity(approveDeletion(v, scope, by_)))
-  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysViewWindow(approveDeletion(v, scope, by_)))
-  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysEntriesBelongToCalendar(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysEntriesUseSeries(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysSelectionIsCurrent(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysDeletionHasSelection(approveDeletion(v, scope, by_)))
@@ -626,13 +645,13 @@ lemma approveDeletion_ensures(v: CalendarView, scope: DeleteScope, by_: ViewActo
 }
 
 lemma createOccurrence_ensures(v: CalendarView, entry: EntrySeed, by_: ViewActor)
+  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysViewIdentity(createOccurrence(v, entry, by_)))
+  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysViewWindow(createOccurrence(v, entry, by_)))
+  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysEntriesBelongToCalendar(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysOccurrenceIsUnique(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysEditingIsSelected(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysCancelledIdsAreAbsent(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysSeriesDefinitions(createOccurrence(v, entry, by_)))
-  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysViewIdentity(createOccurrence(v, entry, by_)))
-  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysViewWindow(createOccurrence(v, entry, by_)))
-  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysEntriesBelongToCalendar(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysEntriesUseSeries(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysSelectionIsCurrent(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysDeletionHasSelection(createOccurrence(v, entry, by_)))
@@ -662,13 +681,13 @@ lemma createOccurrence_ensures(v: CalendarView, entry: EntrySeed, by_: ViewActor
 }
 
 lemma changeOccurrence_ensures(v: CalendarView, id: string, command: OccurrenceAction, by_: ViewActor)
+  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysViewIdentity(changeOccurrence(v, id, command, by_)))
+  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysViewWindow(changeOccurrence(v, id, command, by_)))
+  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysEntriesBelongToCalendar(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysOccurrenceIsUnique(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysEditingIsSelected(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysCancelledIdsAreAbsent(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysSeriesDefinitions(changeOccurrence(v, id, command, by_)))
-  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysViewIdentity(changeOccurrence(v, id, command, by_)))
-  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysViewWindow(changeOccurrence(v, id, command, by_)))
-  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysEntriesBelongToCalendar(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysEntriesUseSeries(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysSelectionIsCurrent(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysDeletionHasSelection(changeOccurrence(v, id, command, by_)))
@@ -744,13 +763,13 @@ lemma changeOccurrence_ensures(v: CalendarView, id: string, command: OccurrenceA
 }
 
 lemma saveSeries_ensures(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor)
+  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysViewIdentity(saveSeries(v, receipt, by_)))
+  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysViewWindow(saveSeries(v, receipt, by_)))
+  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysEntriesBelongToCalendar(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysOccurrenceIsUnique(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysEditingIsSelected(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysCancelledIdsAreAbsent(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysSeriesDefinitions(saveSeries(v, receipt, by_)))
-  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysViewIdentity(saveSeries(v, receipt, by_)))
-  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysViewWindow(saveSeries(v, receipt, by_)))
-  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysEntriesBelongToCalendar(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysEntriesUseSeries(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysSelectionIsCurrent(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysDeletionHasSelection(saveSeries(v, receipt, by_)))
@@ -817,13 +836,13 @@ lemma saveSeries_ensures(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor
 }
 
 lemma closeCalendar_ensures(v: CalendarView, by_: ViewActor)
+  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysViewIdentity(closeCalendar(v, by_)))
+  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysViewWindow(closeCalendar(v, by_)))
+  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysEntriesBelongToCalendar(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysOccurrenceIsUnique(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysEditingIsSelected(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysCancelledIdsAreAbsent(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysSeriesDefinitions(closeCalendar(v, by_)))
-  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysViewIdentity(closeCalendar(v, by_)))
-  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysViewWindow(closeCalendar(v, by_)))
-  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysEntriesBelongToCalendar(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysEntriesUseSeries(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysSelectionIsCurrent(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysDeletionHasSelection(closeCalendar(v, by_)))
@@ -856,13 +875,13 @@ lemma closeCalendar_ensures(v: CalendarView, by_: ViewActor)
 }
 
 lemma confirmAppointment_ensures(v: CalendarView, request: ConfirmedAppointment, by_: ViewActor)
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysViewIdentity(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysViewWindow(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEntriesBelongToCalendar(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysOccurrenceIsUnique(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEditingIsSelected(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysCancelledIdsAreAbsent(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSeriesDefinitions(confirmAppointment(v, request, by_)))
-  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysViewIdentity(confirmAppointment(v, request, by_)))
-  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysViewWindow(confirmAppointment(v, request, by_)))
-  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEntriesBelongToCalendar(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEntriesUseSeries(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSelectionIsCurrent(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletionHasSelection(confirmAppointment(v, request, by_)))
@@ -890,5 +909,61 @@ lemma confirmAppointment_ensures(v: CalendarView, request: ConfirmedAppointment,
       assert laterEntry in v.entries;
       CalendarSameKey(v, prior, laterEntry);
     }
+  }
+}
+
+lemma importBillOccurrence_ensures(v: CalendarView, entry: EntrySeed, billEvidence: BillEvidence, scheduleVerified: bool, by_: ViewActor)
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysViewIdentity(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysViewWindow(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEntriesBelongToCalendar(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysOccurrenceIsUnique(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEditingIsSelected(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysCancelledIdsAreAbsent(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSeriesDefinitions(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEntriesUseSeries(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletionHasSelection(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+{
+  if inv(v) && canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) {
+    PublishAllowedEnsures(v, importedBill(entry), importVersion(v, entry), scheduleVerified, by_);
+  }
+}
+
+lemma openReminder_ensures(v: CalendarView, id: string, owner: string, calendarId: string, timezone: string, by_: ViewActor)
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysViewIdentity(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysViewWindow(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysEntriesBelongToCalendar(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysOccurrenceIsUnique(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysEditingIsSelected(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysCancelledIdsAreAbsent(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysSeriesDefinitions(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysEntriesUseSeries(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysSelectionIsCurrent(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysDeletionHasSelection(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesStayDeleted(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesIdsAreNonempty(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> stepOccurrenceIdentityIsFixed(v, openReminder(v, id, owner, calendarId, timezone, by_)))
+{
+  if inv(v) && canOpenReminder(v, id, owner, calendarId, timezone, by_) {
+    var shown := openCalendar(v, owner, calendarId, timezone, by_);
+    openCalendar_ensures(v, owner, calendarId, timezone, by_);
+    assert inv(shown);
+    openOccurrence_ensures(shown, id, by_);
+    CalendarSameEntries(v, openReminder(v, id, owner, calendarId, timezone, by_));
+  }
+}
+
+lemma lawComingUpShowsSavedEvents_ensures(v: CalendarView, query: app__calendar_ViewQuery)
+  ensures (lawComingUpShowsSavedEvents(v, query) == true)
+{
+  forall c | c in upcomingOccurrences(v, query.fromTime, query.untilTime)
+    ensures c.hasSaved && !c.phase.Deleted? && c.identity.owner == v.owner && c.identity.calendarId == v.calendarId
+  {
+    ProofLib.FilterMember((c: app__calendar_Calendar) => app__calendar_inView(c, v.owner, v.calendarId, query.fromTime, query.untilTime), v.entries, c);
   }
 }
