@@ -245,7 +245,8 @@ function wordBefore(text: string, start: number): string {
 
 function cueAt(text: string, start: number, end: number): number {
   const word = wordBetween(text, start, end);
-  const before = word === "code" || word === "codes" || word === "number" ? wordBefore(text, start) : "";
+  const before = word === "code" || word === "codes" || word === "number" || word === "key" ? wordBefore(text, start) : "";
+  if (word === "key") return before === "product" || before === "license" || before === "licence" || before === "activation" || before === "recovery" ? 4 : 6;
   if (word === "number") return before === "time" || before === "account" || before === "routing" || before === "security" || (before === "in" && wordBefore(text, start - 3) === "sign") ? 4 : 0;
   if (word === "codigo" || word === "c\u00f3digo") return isPlaceWord(wordAfter(text, end)) || (wordAfter(text, end) === "de" && isPlaceWord(wordAfter(text, end + 3))) ? 0 : 4;
   if (word !== "code" && word !== "codes") return codeCue(word);
