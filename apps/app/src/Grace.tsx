@@ -6,6 +6,7 @@ import { Effect, Exit } from "effect";
 import { useRef } from "react";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
+import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
@@ -45,7 +46,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         }
         dock={
           <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
-            quiet={!device.reasoningAvailable || conversation.turn === "Thinking"}
+            quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
             micUnavailable={micUnavailable}
             onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
             onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}

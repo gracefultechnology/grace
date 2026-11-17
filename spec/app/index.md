@@ -143,7 +143,7 @@ prompt and choose a saved login. The same action can speak these instructions
 when voice is available. It receives no vault state, account text or website
 form values and has no authority over the editor or browser. Recognized
 requests from the current typed draft or a current complete human utterance
-select only the general Passwords screen or Browser and a cue for the
+work while Cloud reasoning is unavailable. Guidance selects only the general Passwords screen or Browser and a cue for the
 named control. Guidance never chooses or reveals an entry, copies a
 password or presses a website button. A direct sign-in command follows the [browser admission rule](./browserControls.md).
 
