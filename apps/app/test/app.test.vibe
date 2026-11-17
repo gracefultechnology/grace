@@ -259,7 +259,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
   }
 })
 
-it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone, and a deletion the company cannot confirm twice", () => effect {
+it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email under the company's own id, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, and a deletion the company cannot confirm twice", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
@@ -267,50 +267,61 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const now = try Clock.currentTimeMillis
       const hour = 60 * 60 * 1000
       const day = 24 * hour
-      const view = (entries: Calendar[], timezone: string) => ({ ...noView, owner: gmail.address, calendarId: "primary", timezone, window: { ...noView.window, fromTime: now - day, untilTime: now + 30 * day }, entries })
+      const view = (entries: Calendar[], timezone = "UTC") => ({ ...noView, owner: gmail.address, calendarId: "primary", timezone, window: { ...noView.window, fromTime: now - day, untilTime: now + 30 * day }, entries })
       const feed = effect (entries: Calendar[], timezone = "UTC") => Array.from(try Stream.runCollect(calendar.feed(view(entries, timezone))))
-      const [{ incoming: eyeCheck, scheduleVerified }] = try feed([])
+      const imported = try feed([])
+      const found = (id: string) => imported.find((p) => p.incoming.identity.occurrenceId === id)
+      const eyeCheck = found("eye-check")?.incoming ?? noEntry
       const start = now + day
       const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
       const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + hour, reminderEnabled: true, leadTime: day }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
-      const added = [try calendar.write(fresh), try calendar.write(fresh)]
-      const visit = save(fresh, 1, true, "CalendarStore")
-      const unchanged = try feed([eyeCheck, visit])
+      const added = try calendar.write(fresh, view([eyeCheck]))
+      const visit = added.published.find((p) => p.incoming.phase === "Saved")?.incoming ?? noEntry
+      const unchanged = (try feed([eyeCheck, visit])).map((p) => p.incoming.identity.occurrenceId)
       const elsewhere = effect {
         provide connectorAt(secret) {
-          return try (try Connector).calendar(gmail).write(edit(beginEdit(visit, "CalendarUser"), { ...visit.committed, title: "Check-up at 11" }, "CalendarUser"))
+          return try (try Connector).calendar(gmail).write(edit(beginEdit(visit, "CalendarUser"), { ...visit.committed, title: "Check-up at 11" }, "CalendarUser"), view([eyeCheck, visit]))
         }
       }
       const otherTablet = try elsewhere
-      const [{ incoming: refreshed }] = try feed([eyeCheck, visit])
+      const refreshed = (try feed([eyeCheck, visit])).find((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId)?.incoming ?? noEntry
       const moved = edit(beginEdit(refreshed, "CalendarUser"), { ...refreshed.committed, title: "Check-up with Dr. Patel" }, "CalendarUser")
-      const changed = try calendar.write(moved)
-      const tokyoMidnight = Math.floor(now / day) * day + 3 * day - 9 * hour
-      const birthday = approveSave(create(noEntry, { ...identity, occurrenceId: "birthday", sourceRef: "" }, { ...details, title: "Joan’s birthday", participant: "", notes: "", startAt: tokyoMidnight, endAt: tokyoMidnight + day, timezone: "Asia/Tokyo", allDay: true, reminderEnabled: false, leadTime: 0 }, "CalendarUser"), 1, "CalendarUser")
-      const allDay = try calendar.write(birthday)
-      const birthdayIn = effect (timezone: string) => (try feed([eyeCheck, visit], timezone)).find((p) => p.incoming.identity.occurrenceId === "birthday")
+      const changed = try calendar.write(moved, view([eyeCheck, refreshed]))
+      const birthdayIn = effect (timezone: string, entries: Calendar[] = []) => (try feed(entries, timezone)).find((p) => p.incoming.identity.occurrenceId === "birthday")
       const seen = try birthdayIn("Asia/Tokyo")
       const elsewhereSeen = try birthdayIn("UTC")
+      const birthday = seen?.incoming ?? noEntry
+      const renamed = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, title: "Joan’s 80th birthday" }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
+      const shifted = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, startAt: birthday.committed.startAt + day, endAt: birthday.committed.endAt + day }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
+      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "" }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
+      const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
       const removed = [try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(eyeCheck.identity, "EntireSeries")]
-      const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === "clinic-visit").map((p) => p.incoming.phase)
+      const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
       const r = refreshed.committed
+      const tokyoMidnight = Date.parse(`${new Date(Math.floor(now / day) * day + 3 * day).toISOString().slice(0, 10)}T00:00:00+09:00`)
       try Effect.try(() => assert.deepStrictEqual({
-        eyeCheck: [eyeCheck.phase, eyeCheck.identity.occurrenceId, eyeCheck.committed.participant, scheduleVerified], added, unchanged, elsewhere: otherTablet.succeeded,
+        eyeCheck: [eyeCheck.phase, eyeCheck.committed.participant, found("eye-check")?.scheduleVerified],
+        added: [added.revision, added.succeeded, added.published.map((p) => [p.incoming.identity.occurrenceId === "clinic-visit", p.incoming.phase])],
+        visit: [visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled],
+        unchanged, elsewhere: otherTablet.succeeded,
         refreshed: [r.title, r.participant, r.reminderEnabled, r.leadTime, refreshed.identity.sourceRef, refreshed.revision > visit.revision], changed,
-        allDay: [allDay.succeeded, seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
+        allDay: [seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
         floating: [elsewhereSeen?.incoming.committed.startAt === tokyoMidnight + 9 * hour, elsewhereSeen?.incoming.committed.timezone, elsewhereSeen?.scheduleVerified],
+        stored: [renamed.succeeded, shifted.succeeded, newAllDay.succeeded, afterRename?.title, afterRename?.allDay, afterRename?.startAt === tokyoMidnight],
         removed, gone
       }, {
-        eyeCheck: ["Saved", "eye-check", "Dr. Patel", true],
-        added: [{ revision: 1, succeeded: true }, { revision: 1, succeeded: true }],
-        unchanged: [],
+        eyeCheck: ["Saved", "Dr. Patel", true],
+        added: [1, true, [[true, "Deleted"], [false, "Saved"]]],
+        visit: ["clinic", "Dr. Patel", true],
+        unchanged: ["birthday"],
         elsewhere: true,
         refreshed: ["Check-up at 11", "Dr. Patel", true, day, "clinic", true],
-        changed: { revision: moved.revision, succeeded: true },
-        allDay: [true, true, true, "Asia/Tokyo", true],
+        changed: { revision: moved.revision, succeeded: true, published: [] },
+        allDay: [true, true, "Asia/Tokyo", true],
         floating: [true, "UTC", true],
-        removed: [{ succeeded: true, evidence: "deleted:clinic-visit" }, { succeeded: false, evidence: "" }, { succeeded: false, evidence: "series-unsupported" }],
+        stored: [true, false, false, "Joan’s 80th birthday", true, true],
+        removed: [{ succeeded: true, evidence: `deleted:${visit.identity.occurrenceId}` }, { succeeded: false, evidence: "" }, { succeeded: false, evidence: "series-unsupported" }],
         gone: ["Deleted"]
       }))
     }

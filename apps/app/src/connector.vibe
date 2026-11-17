@@ -33,7 +33,7 @@ export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Ex
 export type DraftStored = { readonly draftId: string; readonly persisted: boolean }
 export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
 export type Published = { readonly incoming: Calendar; readonly seriesVersion: number; readonly scheduleVerified: boolean }
-export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean }
+export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly published: readonly Published[] }
 export type DeletionReceipt = { readonly succeeded: boolean; readonly evidence: string }
 
 export error NeedsSignIn
@@ -61,7 +61,7 @@ export type MailConnection = {
 
 export type CalendarConnection = {
   readonly feed: (view: CalendarView) => Stream.Stream<Published, ConnectorFailure>
-  readonly write: (entry: Calendar) => StoreReceipt!NeedsSignIn
+  readonly write: (entry: Calendar, view: CalendarView) => StoreReceipt!NeedsSignIn
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
 }
 
@@ -204,9 +204,22 @@ function published(zones: ReadonlySet<string>, view: CalendarView, events: reado
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 
-function event(entry: Calendar) {
-  const d = entry.draft
-  return { title: d.title, description: d.notes, location: d.location, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone, isAllDay: d.allDay }
+function event({ draft: d, committed: c, hasSaved }: Calendar) {
+  const moved = !hasSaved || d.startAt !== c.startAt || d.endAt !== c.endAt || d.timezone !== c.timezone || d.allDay !== c.allDay
+  const fields = { title: d.title, description: d.notes, location: d.location }
+  if (!moved) return fields
+  return d.allDay || (hasSaved && c.allDay) ? undefined : { ...fields, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone }
+}
+
+function adopted(view: CalendarView, entry: Calendar, externalId: string): Published[] {
+  const identity = { ...entry.identity, occurrenceId: externalId }
+  if (externalId === entry.identity.occurrenceId || !validIdentity(identity)) return []
+  const seriesVersion = seriesVersionOf(view, entry.draft.seriesId)
+  const placed = save(approveSave(create(noEntry, identity, entry.draft, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
+  return [
+    { incoming: deleted(save(entry, entry.revision, true, "CalendarStore")), seriesVersion, scheduleVerified: true },
+    { incoming: placed, seriesVersion, scheduleVerified: true }
+  ]
 }
 
 function requestIdOf(text: string) {
@@ -265,8 +278,8 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   effect function grantOf(account: AccountRef) {
     const address = account.address.toLowerCase()
-    const found = (try fetched(get(routes[account.provider].accounts, { side: "owner" }), Grants)).find((g) => g.identity?.email?.toLowerCase() === address)
-    if (found === undefined || !found.connected || found.connectionId === null) throw new NeedsSignIn()
+    const found = (try fetched(get(routes[account.provider].accounts, { side: "owner" }), Grants)).find((g) => g.connected && g.identity?.email?.toLowerCase() === address)
+    if (found === undefined || found.connectionId === null) throw new NeedsSignIn()
     return found.connectionId
   }
 
@@ -382,15 +395,14 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       deleteDraft: effect (draftId) => {
         return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`)), true) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          when ProviderRefused: e.status === 404;
-          when Unreachable: false;
+          default: false;
         }
       },
       send: effect (operationId, snapshot) => {
         const sent = effect { return sendOutcome(try operate(requestOf(`send:${operationId}`), try outgoing(snapshot))) }
         return sent catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          when ProviderRefused: e.status === 409 ? try lookup(operationId) : outcome("SendFailed", `refused:${e.status}`);
+          when ProviderRefused: e.status === 409 || !certain(e) ? try lookup(operationId) : outcome("SendFailed", `refused:${e.status}`);
           when Unreachable: outcome("SendUnknown", "");
         }
       },
@@ -404,16 +416,16 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     const removal = effect (id: string, calendarId: string) =>
       HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
 
-    effect function stored(entry: Calendar) {
+    effect function stored(entry: Calendar, view: CalendarView) {
       const { calendarId, occurrenceId: id } = entry.identity
-      const body = { ...event(entry), calendarId, grantId: try grantOf(account) }
+      const fields = event(entry)
+      if (fields === undefined) throw new ProviderRefused({ status: 422 })
+      const body = { ...fields, calendarId, grantId: try grantOf(account) }
       const request = entry.hasSaved
         ? HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)
-        : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), { ...body, eventId: id })
+        : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body)
       const { event: saved } = try fetched(Effect.succeed(request), Stored)
-      if (saved.externalId === id) return
-      try Effect.ignore(call(removal(saved.externalId, calendarId)))
-      throw new ProviderRefused({ status: 409 })
+      return entry.hasSaved ? [] : adopted(view, entry, saved.externalId)
     }
 
     return {
@@ -422,11 +434,11 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         const { events } = try fetched(get(`${at}/feed`, params), Feed)
         return Stream.fromIterable(published(zones, view, events))
       }),
-      write: effect (entry) => {
+      write: effect (entry, view) => {
         const revision = entry.revision
-        return Effect.as(stored(entry), { revision, succeeded: true }) catch effect (e) => match (e) {
+        return Effect.map(stored(entry, view), (published): StoreReceipt => ({ revision, succeeded: true, published })) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          default: { revision, succeeded: false };
+          default: { revision, succeeded: false, published: [] };
         }
       },
       remove: effect ({ calendarId, occurrenceId: id }, scope) => {

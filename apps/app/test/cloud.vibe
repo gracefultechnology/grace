@@ -119,8 +119,8 @@ schema Proposal = Change | Outgoing
 schema Prepare { grantId: Uuid; requestId: Uuid; proposal: Proposal }
 schema Dispatch { grantId: Uuid; reviewDigest: string; proposal: Proposal }
 schema Attendee { email: string; displayName?: string; optional?: boolean }
-schema NewAppointment { side?: "owner" | "agent"; grantId?: string; calendarId?: string; eventId?: string; title: string; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: string; isAllDay?: boolean; attendees?: Attendee[] }
-schema AppointmentChange { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title?: string; description?: string; location?: string; startAt?: Instant; endAt?: Instant; timeZone?: string; isAllDay?: boolean; attendees?: Attendee[] }
+schema NewAppointment { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title: string; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: string; attendees?: Attendee[] }
+schema AppointmentChange { side?: "owner" | "agent"; grantId?: string; calendarId?: string; title?: string; description?: string; location?: string; startAt?: Instant; endAt?: Instant; timeZone?: string; attendees?: Attendee[] }
 schema Selected { grantId: Uuid }
 schema FeedQuery { timeMin: Instant; timeMax: Instant; grantId?: string; calendarId?: string; timeZone?: string }
 schema MessageQuery { messageId: string; grantId?: string }
@@ -300,13 +300,17 @@ function shown(e: Appointment, timeZone: string): Appointment {
 }
 
 function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
-  const start = Math.floor(at / day) * day + 17 * day + 10 * hour
+  const today = Math.floor(at / day) * day
+  const start = today + 17 * day + 10 * hour
   return {
     provider, address, grantId, expired: false, contacts: people, mail: seeded(provider, address, at, site, visit),
     calendar: provider !== "google" ? [] : [appointment({
       externalId: "eye-check", calendarId: "primary", title: "Eye check with Dr. Patel", description: "", location: "Riverside Clinic",
       startAt: new Date(start).toISOString(), endAt: new Date(start + hour / 2).toISOString(), isAllDay: false, timezone: "UTC", etag: "\"1\"",
       attendees: [{ email: "patel@riverside-clinic.test", displayName: "Dr. Patel", responseStatus: "accepted", self: false, organizer: false, optional: false }]
+    }), appointment({
+      externalId: "birthday", calendarId: "primary", title: "Joan’s birthday", description: "", location: "",
+      startAt: new Date(today + 3 * day).toISOString(), endAt: new Date(today + 4 * day).toISOString(), isAllDay: true, timezone: "UTC", etag: "\"2\"", attendees: []
     })]
   }
 }
@@ -627,13 +631,11 @@ effect function store(site: string) {
   }
 
   effect function addAppointment(fixed?: Slug) {
-    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, eventId, isAllDay, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
+    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
     const { key, box: found } = try connection(fixed, grantId)
-    const known = found.calendar.find((e) => e.externalId === eventId)
-    if (known) return try HttpServerResponse.json({ event: shown(known, timeZone) }, { status: 201 })
     const added = appointment({
-      externalId: eventId ?? `appointment${try next()}`, calendarId: calendarId ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
-      startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: isAllDay ?? false, timezone: timeZone, etag: `"${try next()}"`,
+      externalId: `appointment${try next()}`, calendarId: calendarId ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
+      startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: false, timezone: timeZone, etag: `"${try next()}"`,
       attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false }))
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
@@ -658,7 +660,7 @@ effect function store(site: string) {
     const moved: Appointment = {
       ...found, title: body.title?.trim() ?? found.title, description: body.description ?? found.description, location: body.location ?? found.location,
       startAt: body.startAt === undefined ? found.startAt : new Date(body.startAt).toISOString(), endAt: body.endAt === undefined ? found.endAt : new Date(body.endAt).toISOString(),
-      timezone: body.timeZone ?? found.timezone, isAllDay: body.isAllDay ?? found.isAllDay, etag, metadata: { ...found.metadata, etag }
+      timezone: body.timeZone ?? found.timezone, isAllDay: found.isAllDay && body.startAt === undefined && body.endAt === undefined, etag, metadata: { ...found.metadata, etag }
     }
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === found.externalId ? moved : e) }))
     return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
