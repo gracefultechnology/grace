@@ -3,6 +3,12 @@
   "sdk": { "min": 29, "target": 36, "compile": 36 },
   "releaseMinify": false,
   "kotlin": false,
+  "nativeLibraries": "extract-16k",
+  "embeddedAgent": {
+    "host": { "root": "consumer", "path": "artifacts/agent/host.json" },
+    "character": { "root": "consumer", "path": "agent/character.json" },
+    "policy": { "root": "consumer", "path": "artifacts/agent/policy.json" }
+  },
   "modules": [
     { "name": "capacitor-android", "source": { "root": "dependencies", "path": "capacitor" } },
     { "name": "eliza-browser-surface", "source": { "root": "upstream", "path": "plugins/plugin-native-browser-surface/android" } },
