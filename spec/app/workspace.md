@@ -25,7 +25,8 @@ adapter correctly recognized a website or that an external effect succeeded.
 The two observed versions are evidence references, not alternate page state.
 There is no provider name, domain allowlist or fixed sequence of website steps.
 Caller identities are supplied by the authenticated host, not website content.
-Each part keeps every `always` rule of its own spec, named once by that spec.
+Each part keeps every `always` rule of its own spec. Each spec names its
+rules once, except the shell, whose two rules are listed here by name.
 
 ```quint
 import shell as S from "./shell"
@@ -1143,8 +1144,6 @@ pure def sometimesInterruptedPaymentIsUncertain(w: Workspace): bool =
 pure def sometimesPaymentResultFinishesTask(w: Workspace): bool =
   w.assistant.activity == A::Finished and P::positiveOutcome(w.payment.result) and w.execution.phase == X::Idle
 ```
-
-### Finite exploration samples do not cap runtime identities or website values
 
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept

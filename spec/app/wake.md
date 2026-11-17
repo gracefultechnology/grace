@@ -99,8 +99,6 @@ pure def sometimesSilenceNotice(w: Wake): bool = w.phase == SilenceNotice
 pure def sometimesWakeFinished(w: Wake): bool = w.phase == Dormant and w.generation > 1
 ```
 
-### Examples cover enabled, disabled, playback and expired callbacks
-
 ```quint
 pure val availableContext: WakeContext = { enabled: true, permitted: true, available: true, ready: true, source: HumanWake }
 pure val contextValues = Set(availableContext, { ...availableContext, enabled: false },

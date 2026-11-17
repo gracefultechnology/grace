@@ -146,8 +146,6 @@ pure def lawClearAllRevokesReceipts(facts: List[M::PersonalFact], authorization:
   M::clearAll(facts).every(f => not(currentFactAuthorization(f, authorization)))
 ```
 
-### Finite examples retain the original receipt after correction and deletion
-
 The examples are simulation values only. They use the existing guarded Memory
 and Workspace routes, then leave the emitted command unchanged while its fact
 is corrected or deleted. Runtime identities, revisions and values are unbounded
