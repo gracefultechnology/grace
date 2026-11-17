@@ -1,13 +1,14 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Schema } from "effect";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { commands, page, userEvent } from "vitest/browser";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
+import { client, script, signIn } from "./cloud.vibe";
 import "../src/main.css";
 
 const topmost = (element: Element) => {
@@ -17,12 +18,14 @@ const topmost = (element: Element) => {
 const onTop = (element: Element | null) => element !== null && element.contains(topmost(element));
 const typedAddress = () => document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value;
 
-async function launch(plugin?: SurfacePlugin) {
+async function launch(plugin?: SurfacePlugin, cloud?: Parameters<typeof application>[2]) {
   await page.viewport(1280, 800);
-  const runtime = ManagedRuntime.make(application(plugin));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const runtime = ManagedRuntime.make(application(plugin, undefined, cloud));
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
   onTestFinished(async () => {
     root.unmount();
+    container.remove();
     await runtime.dispose();
   });
   root.render(<App runtime={runtime} />);
@@ -143,11 +146,11 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await expect.poll(frames).toEqual([]);
 });
 
-function androidPagePluginAtItsBoundary() {
+function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) {
   const calls: [string, Record<string, unknown>][] = [];
   const listeners = new Map<string, (event: unknown) => void>();
   const refused = { creates: 0 };
-  const plugin = new Proxy({}, {
+  const plugin = new Proxy(overrides, {
     get: (_, method: string) => (options: Record<string, unknown> | string, listener?: (event: unknown) => void) => {
       if (typeof options === "string") {
         if (listener !== undefined) listeners.set(options, listener);
@@ -158,6 +161,8 @@ function androidPagePluginAtItsBoundary() {
         refused.creates -= 1;
         return Promise.reject(new Error("This WebView cannot isolate the page"));
       }
+      const override = Reflect.get(overrides, method);
+      if (typeof override === "function") return Reflect.apply(override, overrides, [options]);
       return Promise.resolve({});
     },
   }) as SurfacePlugin;
@@ -174,6 +179,123 @@ function androidPagePluginAtItsBoundary() {
     crashed: () => emit("surfaceCrashed", {}),
   };
 }
+
+const BrowserDocument = Schema.Struct({
+  url: Schema.NonEmptyString,
+  documentId: Schema.NonEmptyString,
+  title: Schema.String,
+  text: Schema.String,
+  truncated: Schema.Boolean,
+});
+const BrowserControl = Schema.Struct({
+  documentId: Schema.NonEmptyString,
+  frameScope: Schema.Literal("main"),
+  result: Schema.Record(Schema.String, Schema.Unknown),
+});
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, gradeWholeCohort }) => {
+  const transport = commands.benchmarkSurface;
+  await transport({ kind: "begin", taskId });
+  const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
+  let selected: string | null | undefined;
+  const outcome: Record<string, unknown> = {
+    chatProvider: "fixture", observationPermission: "synthetic test-device grant",
+    operator: "trusted Chromium mouse input at visible guide ring",
+  };
+  const native = androidPagePluginAtItsBoundary({
+    async createSurface(request) {
+      if (!request.url) throw new Error("A benchmark surface needs a start URL");
+      try {
+        await transport({ kind: "open", url: request.url });
+        const actual = await read();
+        native.started(actual.url);
+        native.finished(actual.url);
+      } catch (error) {
+        outcome.browserBoundaryFailure = { operation: "createSurface", url: request.url, detail: error instanceof Error ? error.message : String(error) };
+        throw error;
+      }
+    },
+    async presentSurface(request) {
+      selected = request.id;
+    },
+    async readPage(request) {
+      if (request.id !== selected) throw new Error("The benchmark site is not the selected Grace surface");
+      const { url, title, text, truncated } = await read();
+      return { url, title, text, truncated };
+    },
+    async controlPage(request) {
+      if (request.id !== selected && request.command.guidance?.kind !== "hide")
+        throw new Error("The benchmark site is not the selected Grace surface");
+      return Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+    },
+  });
+  try {
+    localStorage.clear();
+    const cloud = inject("cloud");
+    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+      said: intent,
+      answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
+    }]), client));
+    await transport({ kind: "decisionRoute", cloud });
+    const { runtime, workspace } = await launch(native.plugin, { url: cloud, key: secret });
+    await runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (machine) =>
+      Effect.flatMap(machine.get(), ({ device }) => machine.send({
+        type: "setAvailability",
+        availability: { connection: navigator.onLine ? "Online" : "Offline", reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true },
+      }, "Host"))));
+    await userEvent.click(page.getByRole("button", { name: "Internet" }));
+    const address = page.getByRole("textbox", { name: "Address" });
+    await userEvent.fill(address, startUrl);
+    await userEvent.click(page.getByRole("button", { name: "Go", exact: true }));
+    await expect.poll(() => outcome.browserBoundaryFailure ?? workspace().browser.tabs[0]?.load, { timeout: 30_000 }).toBe("Loaded");
+    const initial = await read();
+    outcome.start = { url: initial.url, documentId: initial.documentId };
+    expect(initial.url).toBe(new URL(startUrl).href);
+    await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
+    await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
+    const showLink = page.getByRole("button", { name: "Show me the link" });
+    try {
+      await userEvent.click(showLink);
+    } catch (error) {
+      const { device, assistant, browser } = workspace();
+      outcome.guideBoundary = {
+        connection: device.connectivity, observationAllowed: device.observationAllowed, reasoningAvailable: device.reasoningAvailable,
+        surface: device.surface, presentation: assistant.presentation, activity: assistant.activity, load: browser.tabs[0]?.load,
+      };
+      throw error;
+    }
+    await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
+    outcome.ringTap = true;
+    await expect.poll(async () => (await read()).documentId, { timeout: 15_000 }).not.toBe(initial.documentId);
+    const landed = await read();
+    outcome.destination = { url: landed.url, documentId: landed.documentId };
+    expect(landed.url).not.toBe(initial.url);
+    const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
+    native.started(landed.url);
+    native.finished(landed.url);
+    await expect.poll(() => {
+      const tab = workspace().browser.tabs[0];
+      return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
+    }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
+    const resume = page.getByRole("button", { name: "Resume Grace" });
+    const check = page.getByRole("button", { name: "Check page", exact: true });
+    await expect.poll(() => resume.query() !== null || check.query() !== null).toBe(true);
+    if (resume.query() !== null) await userEvent.click(resume);
+    await userEvent.click(check);
+    const plan = page.getByRole("region", { name: "Task plan" });
+    await expect.element(plan.getByText("Read checks complete", { exact: true })).toBeVisible();
+    outcome.graceTerminal = plan.element().textContent;
+  } catch (error) {
+    outcome.failure = error instanceof Error ? error.message : String(error);
+    if (!gradeWholeCohort) throw error;
+  } finally {
+    await transport({ kind: "receipt", outcome });
+  }
+}, 120_000);
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
   const device = androidPagePluginAtItsBoundary();
