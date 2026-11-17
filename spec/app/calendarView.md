@@ -482,9 +482,7 @@ pure def lawStaleChangeCannotConfirm(v: CalendarView, changeRequest: ConfirmedCh
     changeRequest.review.committedRevision != entryAt(v, changeRequest.id).revision) implies
     not(canConfirmChange(v, changeRequest, by))
 pure def lawChangeIsConsumedOnce(v: CalendarView, changeRequest: ConfirmedChange, nextChange: ConfirmedChange, by: ViewActor): bool =
-  (canConfirmChange(v, changeRequest, by) and
-    nextChange.review.calendarGeneration == changeRequest.review.calendarGeneration) implies
-    not(canConfirmChange(confirmChange(v, changeRequest, by), nextChange, by))
+  canConfirmChange(v, changeRequest, by) implies not(canConfirmChange(confirmChange(v, changeRequest, by), nextChange, by))
 pure def lawConfirmedChangeKeepsCalendarView(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
   confirmChange(v, changeRequest, by).opened == v.opened and confirmChange(v, changeRequest, by).window == v.window
 pure def lawConfirmedChangeStillNeedsStorage(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
