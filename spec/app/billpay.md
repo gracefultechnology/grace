@@ -87,7 +87,7 @@ The source link is evidence of the requested bill, not authority for website act
 pure def canBegin(b: BillPreparation, key: P::BillKey, evidence: str, by: P::PaymentActor): bool =
   b.phase == NoBill and P::validKey(key) and evidence != "" and by == P::Person
 pure def begin(b: BillPreparation, key: P::BillKey, evidence: str, by: P::PaymentActor): BillPreparation =
-  { ...b, key: key, phase: NeedsLogin, evidence: evidence, version: b.version + 1 }
+  { ...initial, key: key, phase: NeedsLogin, evidence: evidence, version: b.version + 1 }
 pure def canInspectAccess(b: BillPreparation, accessReport: AccessReport, by: P::PaymentActor): bool =
   b.phase != NoBill and b.phase != HandedOff and b.live and accessReport.key == b.key and accessReport.version == b.version and by == P::BrowserHost
 pure def inspectAccess(b: BillPreparation, accessReport: AccessReport, by: P::PaymentActor): BillPreparation = {
@@ -98,6 +98,16 @@ pure def inspectAccess(b: BillPreparation, accessReport: AccessReport, by: P::Pa
 pure def alwaysBoundBill(b: BillPreparation): bool = b.phase == NoBill or P::validKey(b.key)
 pure def alwaysVersion(b: BillPreparation): bool = b.version >= 0
 pure def sometimesPrivateSignIn(b: BillPreparation): bool = b.phase == NeedsLogin
+```
+
+### Private sign-in never supplies payment consent
+
+While sign-in is required, the bill preparation has no bill facts, confirmed amount, selected payment or permission to fill a payment form. Selecting a saved login in Passwords leaves the preparation at this step until the trusted account-access report arrives. The BillWorld login exercise checks the corresponding site behavior by verifying that opening the account leaves its payment history and funding unchanged.
+
+```quint
+pure def alwaysPrivateLoginHasNoPaymentAuthority(b: BillPreparation): bool =
+  b.phase == NeedsLogin implies
+    (not(b.factsConfirmed) and b.fillBy == NotAsked and b.choice == P::emptyProposal and b.facts == noFacts)
 ```
 
 ### Current bill facts distinguish payment choices, no payment due and an existing payment
