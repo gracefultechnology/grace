@@ -71,7 +71,7 @@ pure val stampValues = Set(0, 1, 2)
 > count once, for exactly the version I was shown, and to keep counting while
 > I look at another app, but not after I say something new.
 
-### A proposal is known by its owner, its item and its revision
+### A proposal is known by its owner, its item and its revision, not by where it is shown
 
 The subject names the owner and the item within it; the revision is the
 owner's, and changes whenever what the person would agree to changes. Where
@@ -90,16 +90,14 @@ pure def retires(interruption: Interruption): bool = match interruption {
   | RailPopover => false
   | _ => true
 }
-
-pure def lawVisitsKeepTheProposal(interruption: Interruption): bool =
-  (interruption == SurfaceVisit or interruption == RailPopover) iff not(retires(interruption))
 ```
 
 ### A consent names one revision of one proposal and the turn that gave it
 
-It is made only where `canConsent` admits her turn. The stamp numbers her answer: the host gives each answer a new,
-larger stamp. The consent keeps the conversation generation of the turn that
-gave it and the subject and revision she was shown.
+It is made only where `canConsent` admits her turn. The stamp numbers her
+answer: the host gives each answer a new, larger stamp. The consent keeps the
+conversation generation of the turn that gave it and the subject and revision
+she was shown.
 
 ```quint
 type Consent = { stamp: int, generation: int, subject: Subject, revision: int }
@@ -110,24 +108,27 @@ pure def consent(request: Request, stamp: int, proposal: Proposal): Consent =
 
 ### A consent is used once, and a newer turn voids it
 
-The owner holds the proposal it is waiting on, the conversation generation it
-was asked in and the last stamp it used. A consent is usable only in that
-generation, for that subject and revision, and with a stamp it has not used.
-Using it records the stamp, so the same yes cannot act twice; any newer turn
-of the conversation makes it void.
+The owner holds the proposal it is waiting on and the last stamp it used. A
+consent is usable only while the conversation is still in the generation of
+the turn that gave it, for the subject and revision the owner holds, and with
+a stamp the owner has not used. Using it records the stamp, so the same yes
+cannot act twice; any newer turn of the conversation makes it void, and so
+does any change to the revision the owner holds.
 
 ```quint
-type Held = { generation: int, proposal: Proposal, spent: int }
+type Held = { proposal: Proposal, spent: int }
 
-pure def canUse(given: Consent, held: Held): bool =
-  given.generation == held.generation and given.subject == held.proposal.subject and
+pure def canUse(given: Consent, held: Held, now: Moment): bool =
+  given.generation == now.generation and given.subject == held.proposal.subject and
   given.revision == held.proposal.revision and given.stamp > held.spent
 pure def spend(given: Consent, held: Held): Held = { ...held, spent: given.stamp }
 
-pure def lawConsentIsUsedOnce(given: Consent, held: Held): bool =
-  canUse(given, held) implies not(canUse(given, spend(given, held)))
-pure def lawNewerTurnVoidsConsent(given: Consent, held: Held): bool =
-  given.generation < held.generation implies not(canUse(given, held))
+pure def lawConsentIsUsedOnce(given: Consent, held: Held, now: Moment): bool =
+  canUse(given, held, now) implies not(canUse(given, spend(given, held), now))
+pure def lawNewerTurnVoidsConsent(given: Consent, held: Held, now: Moment): bool =
+  given.generation < now.generation implies not(canUse(given, held, now))
+pure def lawChangedProposalVoidsConsent(given: Consent, held: Held, now: Moment): bool =
+  given.revision != held.proposal.revision implies not(canUse(given, held, now))
 
 pure val letter: Subject = { owner: EmailOwner, item: "reply" }
 pure val visit: Subject = { owner: CalendarOwner, item: "visit" }
@@ -136,8 +137,8 @@ pure val givenValues = Set(
   { stamp: 1, generation: 1, subject: letter, revision: 2 }, { stamp: 1, generation: 1, subject: visit, revision: 1 },
   { stamp: 1, generation: 0, subject: letter, revision: 1 })
 pure val heldValues = Set(
-  { generation: 1, proposal: { subject: letter, revision: 1 }, spent: 0 },
-  { generation: 1, proposal: { subject: letter, revision: 1 }, spent: 1 },
-  { generation: 2, proposal: { subject: letter, revision: 1 }, spent: 0 },
-  { generation: 1, proposal: { subject: visit, revision: 1 }, spent: 0 })
+  { proposal: { subject: letter, revision: 1 }, spent: 0 },
+  { proposal: { subject: letter, revision: 1 }, spent: 1 },
+  { proposal: { subject: letter, revision: 2 }, spent: 0 },
+  { proposal: { subject: visit, revision: 1 }, spent: 0 })
 ```
