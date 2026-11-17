@@ -16,6 +16,7 @@ const riverview = "margaret@riverview.net";
 const wrongPassword = "Not-the-password-7";
 
 const chatBodies: string[] = [];
+const otherChecks: string[] = [];
 const providerPages: string[] = [];
 const fetched = globalThis.fetch;
 const opened = window.open.bind(window);
@@ -29,6 +30,7 @@ beforeAll(async () => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
+    if (url.includes("/connections/other")) otherChecks.push(url);
     return fetched(input, init);
   };
   window.open = (url, ...rest) => {
@@ -94,8 +96,8 @@ it("Connect the email I already use", async () => {
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
 
+  // spec/app/accounts.md, "The settings pages go back one step at a time"
   await openEmailSettings();
-  await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
   await expect.element(page.getByRole("button", { name: new RegExp(outlook) })).toBeVisible();
 
   await tap(page.getByRole("button", { name: "Add another email" }));
@@ -124,6 +126,7 @@ it("Connect the email I already use", async () => {
   await act(() => form.getByLabelText("Password").fill(wrongPassword));
   await tap(form.getByRole("button", { name: "Next" }));
   await expect.element(caution()).toHaveTextContent("This is a Yahoo address. Go back and choose Yahoo, so you can sign in on Yahoo’s own page.");
+  expect(otherChecks).toEqual([]);
 
   // spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"
   await act(() => form.getByLabelText("Email address").fill(riverview));
@@ -182,6 +185,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Sign in again" }));
   await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
+  await expect.element(page.getByText("Outlook connected", { exact: true })).toBeVisible();
 
   // spec/app/accounts.md, "Turning a use off hides it and keeps the account"
   await tap(page.getByRole("switch", { name: "Calendar" }));

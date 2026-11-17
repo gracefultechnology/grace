@@ -76,7 +76,6 @@ export function useAccounts() {
   return { accounts, can: (event: AccountEvent) => can(event, "AccountPerson"), send: (event: AccountEvent) => send(event, "AccountPerson") };
 }
 
-/** The sign-in flows the tablet runs itself, and the short note of what just happened to an account. */
 export function useSignIns() {
   const runtime = useRuntime();
   const flows = runtime.runSync(Effect.service(SignIns));
