@@ -55,7 +55,7 @@ effect function finalReply(plugin: EmbeddedAgent, conversation: typeof Creation.
     return Result.failVoid
   })
   const finished = Stream.takeUntil(relevant, (event) => event.kind === "end")
-  const final = try timeout(Stream.runFoldEffect(finished, () => "", effect (said, event) => {
+  const collect = Stream.runFoldEffect(finished, () => "", effect (said, event) => {
     if (event.kind === "end") {
       if (event.value.aborted || event.value.error || event.value.status === undefined || event.value.status < 200 || event.value.status >= 300) throw new TurnUnavailable()
       return said
@@ -65,7 +65,9 @@ effect function finalReply(plugin: EmbeddedAgent, conversation: typeof Creation.
     if (payload?.type !== "done") return said
     if (payload.fullText === undefined || payload.fullText.trim() === "" || payload.fullText.length > 32768) throw new TurnUnavailable()
     return payload.fullText
-  }), "60 seconds")
+  })
+  const cancelTurn = () => Effect.ignore(timeout(tryPromise(() => plugin.request({ method: "POST", path: `/api/turns/${conversation.roomId}/abort` })), "2 seconds"))
+  const final = try timeout(onInterrupt(collect, cancelTurn), "60 seconds")
   if (final === "") throw new TurnUnavailable()
   return final
 }

@@ -2,15 +2,18 @@
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
 import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
+import { Exit } from "effect";
+import { useRef } from "react";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
 import { useDraft, useKeyboardHeight, useWorkspace } from "./useApp.ts";
 
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
-  const { workspace, can, send } = useWorkspace();
+  const { workspace, can, send, current } = useWorkspace();
   const { assistant, device } = workspace!;
   const conversation = assistant.conversation;
+  const field = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
@@ -39,9 +42,14 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               if (!on) interact({ tag: "StopVoice" });
               else if (can({ type: "talk" })) void send({ type: "talk" });
             }}
-            onFieldFocus={() => interact({ tag: "TypeIntoChat" })}
+            onFieldFocus={(event) => { field.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
-            onSend={() => interact({ tag: "SendDraft", revision: conversation.draftRevision })} />
+            onSend={() => {
+              const revision = current().assistant.conversation.draftRevision;
+              void send({ type: "interact", input: { tag: "SendDraft", revision } }).then((result) => {
+                if (Exit.isSuccess(result) && current().assistant.keyboard === "NoKeyboard") field.current?.blur();
+              });
+            }} />
         }>
         <GraceMessages>
           {conversation.messages.map((message, index) =>

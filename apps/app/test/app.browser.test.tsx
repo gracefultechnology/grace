@@ -417,9 +417,14 @@ it("Use the website under Grace's controls", async () => {
 it('Send a typed turn through the native agent (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
   const listeners = new Map<string, (input: unknown) => void>();
   const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
+  const stopped: string[] = [];
   const agent: EmbeddedAgent = {
     getStatus: () => Promise.resolve({ state: "running" }),
     request: ({ path }) => {
+      if (path.startsWith("/api/turns/")) {
+        stopped.push(path);
+        return Promise.resolve({ status: 200, data: {} });
+      }
       expect(path).toBe("/api/conversations");
       return Promise.resolve({ status: 201, data: { conversation: { id: "conversation", roomId: "room" } } });
     },
@@ -463,9 +468,16 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await expect.element(page.getByText("I can talk with you.", { exact: true })).toBeVisible();
 
     await act(() => userEvent.type(input, "My password is c0mputer{Enter}"));
+    await expect.poll(() => state().messages.at(-1)?.text).toBe("[Private information removed]");
     await expect.poll(() => state().turn).toBe("Ready");
+    await expect.element(input).toHaveValue("");
     expect(requests).toHaveLength(2);
     expect(state().messages.some((message) => message.text.includes("c0mputer"))).toBe(false);
+
+    await act(() => userEvent.type(input, "One more question{Enter}"));
+    await expect.poll(() => requests[2]?.body).toEqual({ text: "One more question" });
+    await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
+    await expect.poll(() => stopped).toEqual(["/api/turns/room/abort"]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
