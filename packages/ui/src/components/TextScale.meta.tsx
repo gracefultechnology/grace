@@ -23,8 +23,8 @@ export const meta: ComponentMeta<TextScaleProps> = {
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const greeting = within(canvasElement).getByRole("heading", { name: /Good evening/ });
-      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-      await expect(parseFloat(getComputedStyle(greeting).fontSize)).toBeCloseTo(parseFloat(tokens.text["display-sm"]) * rem * 1.3, 1);
+      const scaled = greeting.closest<HTMLElement>('[style*="--text-display-sm"]');
+      await expect(scaled && getComputedStyle(scaled).getPropertyValue("--text-display-sm")).toBe(`calc(${tokens.text["display-sm"]} * 1.3)`);
     },
   },
 };
