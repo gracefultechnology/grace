@@ -143,7 +143,7 @@ export function PasswordsApp() {
       {vault?.tag === "LockedVault" && <p className="text-body text-muted-foreground">Passwords are saved on this tablet.</p>}
       <details className="max-w-prose text-body">
         <summary className="cursor-pointer font-semibold">How to use saved passwords</summary>
-        <p className="my-3">{passwordsHelpText}</p>
+        <p className="my-3">{passwordsHelpText(guide)}</p>
         {(androidHost || typeof window.speechSynthesis !== "undefined") && <Button variant="capsule" size="pill" onClick={speak}><Volume2 aria-hidden /> Read instructions aloud</Button>}
       </details>
     </div>

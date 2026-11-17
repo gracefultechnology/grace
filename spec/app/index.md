@@ -71,23 +71,23 @@ type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, gu
 
 pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide, backupReady: false, guideMic: GuideMicIdle, guideMicEpoch: 0 }
 pure def canOpenPasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsHost and v.vault == ClosedPasswords
+  by == PasswordsHost and isClosedVault(v.vault)
 pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
 pure def canClosePasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsHost and v.vault != ClosedPasswords
+  by == PasswordsHost and not(isClosedVault(v.vault))
 pure def closePasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: ClosedPasswords, generation: v.generation + 1, notice: QuietVault, guide: NoPasswordGuide, backupReady: false }
 pure def canLockPasswords(v: PasswordView, by: VaultActor): bool =
-  v.vault != ClosedPasswords and v.vault != LockedVault
+  not(isClosedVault(v.vault)) and not(isLockedVault(v.vault))
 pure def lockPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: LockedVault, generation: v.generation + 1, notice: QuietVault }
 pure def canReportUnavailable(v: PasswordView, generation: int, by: VaultActor): bool =
-  by == PasswordsHost and generation == v.generation and v.vault != ClosedPasswords
+  by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault))
 pure def reportUnavailable(v: PasswordView, generation: int, reason: VaultIssue, by: VaultActor): PasswordView =
   { ...v, vault: UnavailableVault({ reason: reason }), notice: QuietVault }
 pure def canUnlockPasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsPerson and v.vault == LockedVault
+  by == PasswordsPerson and isLockedVault(v.vault)
 pure def unlockPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
 pure def validSelection(entries: List[LoginSummary], selected: str): bool =
@@ -96,11 +96,17 @@ pure def selectedLogin(mode: VaultMode): str =
   match mode { | OpenVault(opened) => opened.selected | _ => "" }
 pure def canReportLogins(v: PasswordView, generation: int, by: VaultActor): bool =
   by == PasswordsHost and generation == v.generation and
-    (v.vault == CheckingVault or isOpenVault(v.vault))
+    (isCheckingVault(v.vault) or isOpenVault(v.vault))
 pure def reportLogins(v: PasswordView, generation: int, entries: List[LoginSummary], notice: VaultNotice, by: VaultActor): PasswordView =
   val selected = selectedLogin(v.vault)
   { ...v, vault: OpenVault({ entries: entries, selected:
       if (notice != DeletedLogin and validSelection(entries, selected)) selected else "" }), notice: notice }
+pure def isClosedVault(mode: VaultMode): bool =
+  match mode { | ClosedPasswords => true | _ => false }
+pure def isLockedVault(mode: VaultMode): bool =
+  match mode { | LockedVault => true | _ => false }
+pure def isCheckingVault(mode: VaultMode): bool =
+  match mode { | CheckingVault => true | _ => false }
 pure def isOpenVault(mode: VaultMode): bool =
   match mode { | OpenVault(_) => true | _ => false }
 pure def canSelectLogin(v: PasswordView, id: str, by: VaultActor): bool =
@@ -116,7 +122,7 @@ pure def selectLogin(v: PasswordView, id: str, by: VaultActor): PasswordView =
     | _ => v
   }
 pure def canReportVaultNotice(v: PasswordView, generation: int, by: VaultActor): bool =
-  by == PasswordsHost and generation == v.generation and v.vault != ClosedPasswords
+  by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault))
 pure def reportVaultNotice(v: PasswordView, generation: int, notice: VaultNotice, by: VaultActor): PasswordView =
   { ...v, notice: notice }
 pure def alwaysSelectionIsVisible(v: PasswordView): bool =
@@ -150,10 +156,10 @@ password or presses a website button. A direct sign-in command follows the [brow
 A separate Passwords microphone button starts one recognition request on the Android device. The current complete result can guide the person. Leaving Grace, typing, opening a protected surface or cancelling stops recognition.
 
 ~~~quint
-pure val passwordsHelpText = "Open Passwords from the second Home page to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
+pure def passwordsHelpText(guide: PasswordGuide): str = "Open Passwords from the second Home page to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
 pure def lawHelpDoesNotReadTheVault(v: PasswordView, other: PasswordView): bool =
   helpForPasswords(v) == helpForPasswords(other)
-pure def helpForPasswords(v: PasswordView): str = passwordsHelpText
+pure def helpForPasswords(v: PasswordView): str = passwordsHelpText(v.guide)
 pure def passwordGuide(words: str): PasswordGuide =
   if (words == "open passwords" or words == "open saved passwords") OpenPasswordGuide
   else if (words == "find a password" or words == "find a saved password" or words == "where are my passwords") FindPasswordGuide
@@ -195,13 +201,10 @@ pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost
 pure def passwordOwnerChanged(v: PasswordView, by: VaultActor): PasswordView =
   { ...v,
-    vault: if (v.vault == ClosedPasswords) ClosedPasswords else CheckingVault,
+    vault: if (isClosedVault(v.vault)) ClosedPasswords else CheckingVault,
     generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle, backupReady: false }
-pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool = {
-  val mode = after.vault
-  val hasOpenVault = match mode { | OpenVault(_) => true | _ => false }
-  via == "passwordOwnerChanged" implies not(hasOpenVault) and after.guide == NoPasswordGuide and not(after.backupReady)
-}
+pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool =
+  via == "passwordOwnerChanged" implies not(isOpenVault(after.vault)) and after.guide == NoPasswordGuide and not(after.backupReady)
 ```
 
 
@@ -216,9 +219,9 @@ tablet's passwords in place.
 
 ```quint
 pure def canReportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): bool =
-  by == PasswordsHost and generation == v.generation and v.vault != ClosedPasswords and ready != v.backupReady
+  by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault)) and ready != v.backupReady
 pure def reportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): PasswordView =
   { ...v, backupReady: ready }
 pure def alwaysClosedVaultHasNoBackupAction(v: PasswordView): bool =
-  v.vault == ClosedPasswords implies not(v.backupReady)
+  isClosedVault(v.vault) implies not(v.backupReady)
 ```
