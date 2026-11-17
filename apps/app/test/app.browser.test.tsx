@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -410,4 +411,64 @@ it("Use the website under Grace's controls", async () => {
 
   await act(() => Promise.resolve(root.unmount()));
   await runtime.dispose();
+});
+
+
+it('Send a typed turn through the native agent (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+  const listeners = new Map<string, (input: unknown) => void>();
+  const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
+  const agent: EmbeddedAgent = {
+    getStatus: () => Promise.resolve({ state: "running" }),
+    request: ({ path }) => {
+      expect(path).toBe("/api/conversations");
+      return Promise.resolve({ status: 201, data: { conversation: { id: "conversation", roomId: "room" } } });
+    },
+    requestStream: (input) => { requests.push(input); return Promise.resolve({ id: input.id }); },
+    abort: () => Promise.resolve({ aborted: true }),
+    addListener: (event, listener) => {
+      listeners.set(event, listener);
+      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
+    },
+  };
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  try {
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await expect.poll(() => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.reasoningAvailable).toBe(true);
+    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+    const input = page.getByRole("textbox", { name: "Message to Grace" });
+    await act(() => userEvent.type(input, "What can you do?"));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Send" })));
+    await expect.poll(() => requests[0]?.body).toEqual({ text: "What can you do?" });
+    const id = requests[0]!.id;
+    const data = (eventId: string, payload: Record<string, unknown>) => listeners.get("streamData")?.({ id: eventId, data: JSON.stringify(payload) });
+    await act(() => {
+      data("previous", { type: "done", fullText: "Stale reply" });
+      data(id, { type: "token", text: "A provisional reply." });
+      data(id, { type: "done", fullText: JSON.stringify({ text: "Would you like a quick introduction?", isQuestion: true, answers: ["Tell me more", "Not now"] }) });
+      listeners.get("streamEnd")?.({ id, status: 200 });
+      return Promise.resolve();
+    });
+    const state = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).assistant.conversation;
+    await expect.poll(() => state().messages.map((message) => message.text)).toEqual(["What can you do?", "Would you like a quick introduction?"]);
+    await act(() => userEvent.click(page.getByRole("button", { name: "Tell me more" })));
+    await expect.poll(() => requests[1]?.body).toEqual({ text: "Tell me more" });
+    await act(() => {
+      const next = requests[1]!.id;
+      data(next, { type: "done", fullText: "I can talk with you." });
+      listeners.get("streamEnd")?.({ id: next, status: 200 });
+      return Promise.resolve();
+    });
+    await expect.element(page.getByText("I can talk with you.", { exact: true })).toBeVisible();
+
+    await act(() => userEvent.type(input, "My password is c0mputer{Enter}"));
+    await expect.poll(() => state().turn).toBe("Ready");
+    expect(requests).toHaveLength(2);
+    expect(state().messages.some((message) => message.text.includes("c0mputer"))).toBe(false);
+  } finally {
+    await act(() => Promise.resolve(root.unmount()));
+    await runtime.dispose();
+    host.remove();
+  }
 });

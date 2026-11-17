@@ -4,6 +4,8 @@
 import type { Connectivity } from "../gen/app__shell.effect.vibe"
 import { machine as setup } from "../gen/app__setup.effect.vibe"
 import { graceAccount } from "./graceAccount.vibe"
+import { graceTurns } from "./graceTurns.vibe"
+import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
 import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces, machine as workspaces } from "../gen/app__workspace.effect.vibe"
@@ -62,6 +64,6 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 })
 
 /** Everything the interface runs on, over `plugin`, the native page's, and `wifi`, where the platform has them. */
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, native = false) {
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), graceAccount(native)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), setup()))
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, platform: { native: boolean; agent?: EmbeddedAgent } = { native: false }) {
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), graceAccount(platform.native), graceTurns(platform.agent)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), setup()))
 }
