@@ -3,11 +3,11 @@
 // (definitions.ts); none of their runtime code is bundled. Beside them, what the WebView itself knows of the network.
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Effect } from "effect";
-import type { ElizaSurfaceManagerPlugin } from "../../../vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts";
-import type { WiFiPlugin } from "../../../vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts";
+import type { ElizaSurfaceManagerPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/browser-surface.ts";
+import type { WiFiPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/wifi.ts";
 
-export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "../../../vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts";
-export type { WiFiPlugin } from "../../../vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts";
+export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/browser-surface.ts";
+export type { WiFiPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/wifi.ts";
 
 /** The plugin on Android; elsewhere (Vite in a browser) there is no native page under the interface. */
 export const devicePlugin = Capacitor.isNativePlatform() ? registerPlugin<ElizaSurfaceManagerPlugin>("ElizaSurfaceManager") : undefined;

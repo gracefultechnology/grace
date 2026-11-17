@@ -4,7 +4,7 @@ import {createHash} from "node:crypto";
 import os from "node:os";
 import {parseArgs} from "node:util";
 import {Schema} from "effect";
-import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "../../../vendor/eliza/packages/os/scripts/android/stage-launcher-overlay.ts";
+import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "../../../vendor/eliza/packages/os/aosp/stage-launcher-overlay.ts";
 import {buildTool as tool, identity as capacitor} from "./android.ts";
 
 const {appId, appName} = capacitor;

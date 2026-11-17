@@ -21,17 +21,15 @@ and traces (SPEC.md, "One spec tree").
 
 ## Android
 
-Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
-and builds the agent from it. `vendor/eliza` is pinned to elizaOS/eliza's `grace/integration` branch
-(`9bd888f`): the previous pin `ca8823de` with the three Grace branches merged in, each still a draft
-pull request upstream: `grace/eliza-embedded-runtime` (#39795, the cloud-only agent service and its
-bridge), `grace/eliza-google-signin` (#39789) and `grace/eliza-cloud-speech-bridge` (#39784). One
-pushed branch holds all three so anyone can build Grace before they land; the Google sign-in path in
-it has never run with a real Google account.
+Run `git submodule update --init vendor/eliza` from the repository root. Grace uses the Android
+consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
+The agent payload must be staged at
+`vendor/eliza/packages/agent/dist/android/<pinned-commit>/<abi>` before starting the Android build.
+Eliza OS stages a bundled agent entry point and the Android Node 26 executable with
+`stageRuntimePayload` in `packages/os/android/android-runtime-inventory.mjs`. The staging step checks
+the ELF ABI and Android executable interpreter and binds the bundle and executable bytes into the
+APK inventory. The bundler's migrated PGlite snapshot and WASM assets are listed too.
 
-Bun is used only to build that vendored payload, never for Grace's own packages: with Bun 1.4.2 on
-`PATH`, run `bun install --frozen-lockfile` in `vendor/eliza` once per pin (the `android` workflow
-does both only when its cache holds no payload for the pinned commit and `scripts/android.ts`).
 `pnpm android` (Node 26,
 JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
 usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
@@ -44,8 +42,8 @@ refuses a partial set, and the build fails if they are set and a release comes o
 otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
 produced with its processor type, size, SHA-256 and the signer the newest installed build-tools'
 `apksigner` verified; a debug build removes release APKs left by an earlier `--release` run. The build
-fails unless an APK carries the agent (`assets/agent/agent-bundle.js`, `libeliza_bun.so` for exactly
-one processor type, `assets/agent-runtime.inventory` and every file that inventory lists, which the
+fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
+one processor type, `assets/agent/inventory.json` and every file that inventory lists, which the
 service unpacks before it starts), and if it carries an on-device model or local
 inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
@@ -135,70 +133,26 @@ the launcher dispatches `launcher-home` and the standalone app leaves.
 
 ### The agent
 
-The agent runs on the tablet in upstream's cloud-only `EmbeddedAgentService` (`plugin-native-agent`):
-its text and embeddings go to Eliza Cloud and it registers no local model handler. `host.json`'s
-`embeddedAgent` entry makes the generator compile it as the `eliza-embedded-agent` module and declare
-the service with its `specialUse` foreground type (a `dataSync` service is ended by Android 15 after
-six hours a day) and its permissions. `GraceAgentService` is Grace's subclass, which only gives the
-notification her monochrome G (`res/drawable/notification_icon.xml`; a full-colour icon shows as a
-white square), shown once Grace holds `POST_NOTIFICATIONS`; without it the service still runs in the
-foreground and Android lists it only under its active apps. `MainActivity` starts it in `onCreate`,
-before the first WebView frame, and registers its bridge, `EmbeddedAgent`, which reaches the agent over its loopback socket, so the page keeps
-refusing cleartext and never holds a key. The service needs the signed-in Eliza Cloud credential,
-and nothing binds one yet: until the Google sign-in does (`cloudCredential()`), the agent unpacks its
-payload, then stops at status `failed` with `credential`, and no Google account has yet signed in on
-it.
+The Android host starts Eliza OS's `EmbeddedAgentService` as a `specialUse` foreground service.
+`GraceAgentService` supplies the product notification and the signed-in device credential.
+`EmbeddedAgent` admits only the method and path combinations in `android/agent.json` and reaches the
+agent over an authenticated private Unix socket. The native service publishes a private launch document and writes
+the child credential and loopback token on stdin. Startup waits for an authenticated health response
+with the current launch epoch.
 
-A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fresh API 36 tablet AVD, on a host
-with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
-fresh install the service was in the foreground 9 seconds after Home showed and the agent had
-unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event. A run of `0f2a9c3` with
-`DISCOVER_ACTIONS` let past the action check by hand, at a load average near 320, built both APKs at
-113,483,881 bytes and passed the same walk.
+Grace opens the hosted account page in the system browser. After explicit device approval, the
+Android App Link returns to `https://app.graceforseniors.com/android/auth/callback`. Android uses
+the stored PKCE verifier to exchange the one-time code with
+`https://api.graceforseniors.com/api/auth/device/exchange`. The device token and account IDs stay in
+Android's encrypted, no-backup store. A Cloud acknowledgement activates the token before
+Grace puts it into use. The app bridge reports only whether the device is signed in.
+Signing out stops the device agent, removes the credential and requests revocation. The hosted app
+must publish Android Digital Asset Links for the release signer to validate the callback.
 
-The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
-(never committed), the service unpacked the payload and launched Bun under its musl loader
-(`libeliza_ld_musl_aarch64_real.so`), which loaded the bundle and exited before readiness: status
-`failed` with `agent`, "Native child exited before readiness". `no_backup/embedded-agent/agent.log`
-names the cause, `NATIVE_CLOUD_ROUTING_UNAVAILABLE` from `startNativeManagedGoogleHost`: on Android,
-with `ELIZAOS_CLOUD_USE_INFERENCE`, which `EmbeddedAgentConfig.agentEnvironment` always sets, the
-agent requires an admitted native runtime module (`ELIZA_NATIVE_GOOGLE_HOST_MODULE` under
-`ELIZA_SMTHRS_RUNTIME_DIR`) that neither the payload nor the embedded service provides. Upstream's
-embedded service has to change before any credential can bring it to `running`. On a warm start Bun
-started 9 seconds after Grace's process and exited 6 seconds later at a peak of 170 MB resident; Grace's
-own process held 270 MB.
-
-Its data files: `agent/character.json` as it is; `artifacts/agent/host.json`, which is
-`android/agent.json` (the service, the notification's words, Eliza Cloud's production API and the
-five routes the page may call: the agent's own `/api` routes, the streamed turn as one `stream: true`
-route the bridge relays, since the payload carries no gateway) with `agent/policy.json`'s `model` as
-both cloud models; and
-`artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
-`ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
-`actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
-yet: no plugin in the payload registers them, and a name the agent does not register fails its boot. The
-route allowlist the APK ships is `android/agent.json`'s; nothing reads `agent/routes.json`, whose
-`stream/start`, `stream/pull` and `stream/cancel` routes are upstream's gateway's, not the embedded
-bridge's.
-`--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
-literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
-nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
-upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
-computed at run time (a parameter, a member, a call, or a variable also given other values) is not,
-nor is an action object with no `name` of its own, such as one a factory fills in, the `DEVICE_*`
-names spread onto one action, and promoted `<UMBRELLA>_<SUB>` subactions: in the bundle of `9bd888f`
-it sees 68 actions and many more go unseen. The agent's `ELIZA_ACTION_ALLOWLIST` gate is what refuses
-those at run time.
-
-The payload (Bun for Android with its musl loader, the agent bundle, its database files and the
-inventory) is built by upstream's `buildConsumerAndroidRuntime` with no embedding model and no
-gateway, without the packages `stubPlugins` in `scripts/android.ts` names (`@elizaos` plugins
-`policy.json` refuses, which the build checks, and libraries only they use), into
-`artifacts/agent-runtime/<abi>-<key>`, keyed by the `vendor/eliza` commit, the processor type and that
-list, and reused by every later build. It refuses a `vendor/eliza` with local changes. Bun and its
-libraries go in as native libraries only: the inventory leaves out the payload's `agent/<abi>/`
-copy, which the generated host drops from the assets.
+`android/agent.json` names the Grace Cloud origin and admitted agent routes, `agent/character.json`
+supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent
+provides storage, Cloud models and the message service. The APK check rejects
+declared actions outside the allowed or refused list and rejects bundled on-device inference models.
 
 ### Why the host is as it is
 

@@ -1,7 +1,7 @@
 # Grace on AOSP Cuttlefish
 
 `scripts/aosp.ts` stages a launcher APK as `vendor/grace` with the upstream
-stager in `vendor/eliza/packages/os/scripts/android`: Grace installed in
+stager in `vendor/eliza/packages/os/aosp`: Grace installed in
 `/product/app/Grace`, `RECORD_AUDIO` granted on first boot (revocable), Grace as
 default HOME on first boot, and the product makefiles in this directory.
 

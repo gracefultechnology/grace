@@ -1,17 +1,15 @@
 import { createHash } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
-import { buildConsumerAndroidRuntime } from "../../../vendor/eliza/packages/app/scripts/lib/consumer-android-runtime.mjs";
-import { stageAndroidRuntimeInventory } from "../../../vendor/eliza/plugins/plugin-native-agent/native-host/android-runtime-inventory.mjs";
-import { buildAndroidConsumer } from "../../../vendor/eliza/packages/app/scripts/mobile/android/build-consumer.mjs";
-import { generateAndroidConsumerHost } from "../../../vendor/eliza/packages/app/scripts/mobile/android/consumer-host.mjs";
-import { readApkSignerDigest } from "../../../vendor/eliza/packages/app/scripts/mobile/artifact-inspection/apk-distribution.mjs";
-import { resolveAndroidSdkRoot, resolveJavaHome } from "../../../vendor/eliza/packages/app/scripts/mobile/toolchain.ts";
+import { buildAndroidConsumer } from "../../../vendor/eliza/packages/os/android/build-consumer.mjs";
+import { generateAndroidConsumerHost } from "../../../vendor/eliza/packages/os/android/consumer-host.mjs";
+import { readApkSignerDigest } from "../../../vendor/eliza/packages/os/android/apk-distribution.mjs";
+import { resolveAndroidSdkRoot, resolveJavaHome } from "../../../vendor/eliza/packages/os/android/toolchain.ts";
 import config from "../capacitor.config.ts";
 
 const app = path.resolve(import.meta.dirname, "..");
@@ -41,22 +39,16 @@ const keystore = signing.storeFile;
 const Reasons = Schema.Record(Schema.String, Schema.String);
 const Policy = Schema.Struct({
   model: Schema.NonEmptyString,
-  plugins: Schema.Struct({ refuse: Reasons }),
+  plugins: Schema.Struct({ load: Reasons, refuse: Reasons }),
   actions: Schema.Struct({
     grace: Schema.Record(Schema.String, Schema.Unknown),
     upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
   }),
 });
 const policy = Schema.decodeUnknownSync(Policy)(readJson(path.join(app, "agent/policy.json")));
-const stubPlugins = [
-  "@elizaos/plugin-browser", "@elizaos/plugin-calendar", "@elizaos/plugin-discord", "@elizaos/plugin-google-workspace",
-  "@elizaos/plugin-inbox", "@elizaos/plugin-knowledge", "@elizaos/plugin-local-inference", "@elizaos/plugin-maps",
-  "@elizaos/plugin-notes", "@elizaos/plugin-personal-assistant", "@elizaos/plugin-vision",
-  "@pixiv/three-vrm", "discord.js", "google-auth-library", "googleapis", "three",
-];
-const unrefused = stubPlugins.filter((name) => name.startsWith("@elizaos/plugin-") && !Object.hasOwn(policy.plugins.refuse, name));
-if (unrefused.length) throw new Error(`The agent payload leaves out ${unrefused.join(", ")}, which agent/policy.json does not refuse`);
-
+const pluginLoad = Object.keys(policy.plugins.load);
+if (pluginLoad.some((name) => Object.hasOwn(policy.plugins.refuse, name)))
+  throw new Error("Grace's device policy cannot load a plugin it refuses");
 const Abi = Schema.Literals(["arm64-v8a", "x86_64"]);
 type Abi = typeof Abi.Type;
 const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
@@ -105,24 +97,10 @@ const versionCode = (version: string) => {
 
 function agentRuntime(abi: Abi) {
   const commit = execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const key = createHash("sha256").update(JSON.stringify({ commit, abi, stubPlugins })).digest("hex").slice(0, 16);
-  const payload = path.join(artifacts, "agent-runtime", `${abi}-${key}`);
-  if (existsSync(payload)) return payload;
-  const building = `${payload}.building-${process.pid}`;
-  const skills = path.join(building, "skills");
-  mkdirSync(skills, { recursive: true });
-  try {
-    const { output } = buildConsumerAndroidRuntime({
-      source: upstream, expectedCommit: commit, output: path.join(building, "payload"), skillsDirectory: skills,
-      stageGateway: () => ({}), targetAbi: abi, stubPlugins, embeddingModel: false,
-    });
-    const main = path.join(output, "android/app/src/main");
-    stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), excludedAgentDirectories: [abi], targetAbi: abi, gateway: false });
-    renameSync(output, payload);
-    return payload;
-  } finally {
-    rmSync(building, { recursive: true, force: true });
-  }
+  const payload = path.join(upstream, "packages/agent/dist/android", commit, abi);
+  if (!existsSync(path.join(payload, "android/app/src/main/assets/agent/inventory.json")))
+    throw new Error(`The pinned Eliza agent ${commit} has no staged Android runtime for ${abi} at ${payload}`);
+  return payload;
 }
 
 function writeAgentData() {
@@ -132,7 +110,7 @@ function writeAgentData() {
   writeJson(path.join(artifacts, "agent/policy.json"), {
     schema: 1,
     actions: { allowed: policy.actions.upstream.allow, refused: policy.actions.upstream.refuse },
-    plugins: { denied: Object.keys(policy.plugins.refuse) },
+    plugins: { load: pluginLoad },
   });
 }
 
@@ -221,13 +199,31 @@ function writeApkManifest() {
     const entries = execFileSync(buildTool("aapt"), ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
-    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_bun\.so$/.exec(entry)?.slice(1) ?? []);
-    if (abis.length !== 1 || !entries.includes("assets/agent-runtime.inventory")) throw new Error(`${name} does not carry one agent runtime: libeliza_bun.so for ${abis.join(", ") || "no processor type"}`);
-    const listed = execFileSync("unzip", ["-p", file, "assets/agent-runtime.inventory"], { encoding: "utf8" }).trim().split("\n").slice(1)
-      .map((line) => line.split("\t")).map(([kind, , , source]) => kind === "native" ? `lib/${abis[0]}/${source}` : `assets/${source}`);
-    const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
-    if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}; delete artifacts/agent-runtime to rebuild a payload staged by an older build`);
-    const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
+    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
+    if (abis.length !== 1 || !entries.includes("assets/agent/inventory.json")) throw new Error(`${name} does not carry one agent runtime: libeliza_node.so for ${abis.join(", ") || "no processor type"}`);
+    const inventory = Schema.decodeUnknownSync(Schema.Struct({
+      schema: Schema.Literal(1),
+      files: Schema.Array(Schema.Struct({
+        path: Schema.String.check(Schema.isPattern(/^(assets\/agent\/|lib\/(arm64-v8a|x86_64)\/)[A-Za-z0-9_+./-]+$/)),
+        size: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(512 * 1024 * 1024)),
+        sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+      })),
+    }))(JSON.parse(execFileSync("unzip", ["-p", file, "assets/agent/inventory.json"], { encoding: "utf8" })));
+    const listed = new Set(inventory.files.map((entry) => entry.path));
+    if (listed.size !== inventory.files.length || !listed.has("assets/agent/agent.mjs")
+        || !listed.has(`lib/${abis[0]}/libeliza_node.so`))
+      throw new Error(`${name} does not list exactly its runtime files`);
+    const unexpected = entries.filter((entry) => entry.startsWith("assets/agent/") && !entry.endsWith("/")
+      && entry !== "assets/agent/inventory.json" && !listed.has(entry));
+    if (unexpected.length) throw new Error(`${name} contains unlisted runtime files: ${unexpected.join(", ")}`);
+    for (const entry of inventory.files) {
+      if (entry.path.split("/").some((part) => part === "." || part === "..") || !entries.includes(entry.path))
+        throw new Error(`${name} lacks its inventoried runtime file ${entry.path}`);
+      const bytes = execFileSync("unzip", ["-p", file, entry.path], { maxBuffer: entry.size + 1 });
+      if (bytes.length !== entry.size || createHash("sha256").update(bytes).digest("hex") !== entry.sha256)
+        throw new Error(`${name} has a runtime file that differs from its inventory: ${entry.path}`);
+    }
+    const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent.mjs"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, abi: abis[0], bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };

@@ -3,7 +3,7 @@ import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserW
 import { type ComponentProps, useRef, useState } from "react";
 import type { BrowserInput } from "../gen/app__browserControls.ts";
 import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, tabUrl, visibleTabs } from "../gen/app__browser.ts";
-import { parseBrowserAddressInput } from "../../../vendor/eliza/packages/contracts/src/browser-address-input.ts";
+import { parseBrowserAddressInput } from "../../../vendor/eliza/packages/os/src/browser/address.ts";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { Part } from "./page.vibe";
 import { useDraft, useWorkspace } from "./useApp.ts";
