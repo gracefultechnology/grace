@@ -74,7 +74,7 @@ export function BrowserPageState({ kind, site = "", message, onRetry, onBack, on
     >
       <span
         aria-hidden
-        className={cn("flex size-[72px] items-center justify-center rounded-row", kind === "blocked" ? "bg-caution text-destructive inset-ring-[1.5px] inset-ring-destructive/22" : "bg-card text-primary shadow-panel")}
+        className={cn("flex size-[72px] items-center justify-center rounded-row", kind === "blocked" ? "bg-caution text-destructive inset-ring-[1.5px] inset-ring-destructive/22" : "bg-card text-primary shadow-elevation-panel")}
       >
         {mark[kind]}
       </span>

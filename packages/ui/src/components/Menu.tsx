@@ -10,7 +10,7 @@ export const menuPanel = cva("z-50 flex flex-col gap-2 rounded-menu p-2 outline-
   variants: {
     surface: {
       glass: "min-w-[286px] bg-glass/86 shadow-menu backdrop-blur-panel backdrop-saturate-160",
-      page: "min-w-[336px] bg-glass/95 shadow-popover",
+      page: "min-w-[336px] bg-glass/95 shadow-elevation-popover",
     },
   },
   defaultVariants: { surface: "glass" },
