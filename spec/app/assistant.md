@@ -511,6 +511,10 @@ pure def stepWindowChangesKeepConversation(before: Assistant, via: str, after: A
 
 ### Pausing, reconciliation, replacement and verified outcomes are reachable
 
+A green check needs a completed task and then a report of exactly its
+versions before any Tap takes the guidance revision, so the simulator tries
+finishing a task and publishing a named kind more often than other events.
+
 ```quint
 pure def sometimesPaused(a: Assistant): bool = a.activity == Paused
 pure def sometimesRechecking(a: Assistant): bool = a.activity == Rechecking
@@ -527,6 +531,8 @@ pure def sometimesReopenedOverInterruptedWork(a: Assistant): bool =
 pure val weight_publishGuidance = 10
 pure val weight_dismissGuidance = 10
 pure val weight_showGuidance = 10
+pure val weight_finishTask = 10
+pure val weight_publishGuidanceAs = 30
 ```
 
 ### An assistant is valid when it meets every rule above
