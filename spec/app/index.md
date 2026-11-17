@@ -26,6 +26,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [The calendar question Grace is waiting on and her yes](./proposal.md)
 - [All inboxes, Outbox, account banners and the From address](./mailboxes.md)
 - [Calendars together, tags, the connect banner and an appointment from an email](./calendars.md)
+- [What Grace may do with email and the calendar, each action routed to its guarded event](./agentActions.md)
 - [Saved photos, documents and Email sharing](./files.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
