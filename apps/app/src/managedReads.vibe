@@ -75,8 +75,12 @@ export type ManagedSnapshot =
 
 type Command = { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "dismissProposal" } | { kind: "open"; id: string }
 
+export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[]; events: readonly EventRow[] }
+
 export service ManagedReads {
   readonly state: Stream.Stream<ManagedSnapshot>
+  readonly home: Stream.Stream<HomeCards | undefined>
+  homeCards(): (HomeCards | undefined)!!
   get(): ManagedSnapshot!!
   send(command: Command): boolean!!
   stage(proposal: ProposedWork): boolean!!
@@ -151,6 +155,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   const authorization = try AccountActions
   const pending = try Ref.make(native ? undefined : (try intentOfPage()))
   const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
+  const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
   const gate = try Semaphore.make(1)
   const proposedNumber = try Ref.make(0)
 
@@ -390,6 +395,30 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       }
     })
   }
+  if (!native) {
+    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes),
+      effect ([workspace, account]) => {
+        if (workspace.device.surface !== "Home" || workspace.device.readiness !== "Ready") return undefined
+        const intent = try Ref.get(pending)
+        return [try scopeOf("Email", account, intent), try scopeOf("Calendar", account, intent)]
+          .filter((scope): scope is ReadyScope => scope.kind === "ready")
+      }), (a, b) => JSON.stringify(a) === JSON.stringify(b))
+    try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
+      try SubscriptionRef.set(cards, undefined)
+      const one = selected?.[0]
+      if (!one || !selected) return
+      const loaded = try Effect.forEach(selected, effect (scope) => {
+        return fetchPage(scope) catch () => undefined
+      }, { concurrency: 2 })
+      const account = try setup.get()
+      if (account.graceAccount.tag !== "GraceSignedIn" || account.graceAccount.accountId !== one.accountId ||
+        account.googleLink.tag !== "GoogleLinkConnected" || account.googleLink.grant !== one.grant ||
+        (try desk.get()).device.surface !== "Home") return
+      try SubscriptionRef.set(cards, { accountId: one.accountId, grant: one.grant,
+        mail: loaded.find((page) => page?.kind === "mail")?.rows ?? [],
+        events: loaded.find((page) => page?.kind === "calendar")?.rows ?? [] })
+    })))
+  }
   const scopes = Stream.changesWith(
     Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes), () => activeScope()),
     (left, right) => JSON.stringify(left) === JSON.stringify(right),
@@ -397,6 +426,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   try fork.scoped Stream.runDrain(Stream.switchMap(scopes, (scope) => Stream.fromEffect(refresh(scope))))
   return {
     state: SubscriptionRef.changes(latest),
+    home: SubscriptionRef.changes(cards),
+    homeCards: () => SubscriptionRef.get(cards),
     get: () => SubscriptionRef.get(latest),
     send: effect (command) => gate.withPermit(send(command)) catch () => false,
     stage: effect (proposal) => gate.withPermit(stage(proposal)) catch () => false,

@@ -1,19 +1,22 @@
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
+import { Effect, Stream } from "effect";
 import { CalendarDays, Folder, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import { canChangeLifecycle, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { ManagedReads } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { Settings } from "./Settings.tsx";
-import { RuntimeContext, type Runtime, useKeyboardHeight, useWebsiteRequests, useWorkspace } from "./useApp.ts";
+import { RuntimeContext, type Runtime, useKeyboardHeight, useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 /** The surfaces that open in an app window, with nothing in them yet. */
 const apps: Partial<Record<Surface, { name: string; icon: ReactNode }>> = {
@@ -41,6 +44,22 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | keyof typeof website
 /** A window right of the rail, 6px from the screen's edges (design.md, "Windows"); its bottom follows Grace's compact window and the keyboard (prototype `layout()`). */
 const lifted = "absolute top-1.5 right-1.5 transition-[bottom] duration-window ease-standard motion-reduce:transition-none";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
+const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
+const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+
+function useHomeCards() {
+  const runtime = useRuntime();
+  const account = useSetup(runtime).state;
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards())));
+  return snapshot && account?.graceAccount.tag === "GraceSignedIn" && snapshot.accountId === account.graceAccount.accountId &&
+    account.googleLink.tag === "GoogleLinkConnected" && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+}
+
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
 
 /** The time now, to the minute. */
@@ -60,6 +79,7 @@ const wifiWords: Record<Connectivity, string> = {
 };
 
 function Screen() {
+  const cards = useHomeCards();
   const { workspace, can, send, current } = useWorkspace();
   const website = useWebsiteRequests();
   const now = useMinute();
@@ -135,8 +155,14 @@ function Screen() {
         <OverPage className={cn(lifted, "left-1.5")} style={{ bottom }}>
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-            calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), events: [], ...visit("Calendar") }}
-            email={{ messages: [], ...visit("Email") }} internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
+            calendar={{ weekday: appointmentDay.format(now).toUpperCase(), day: now.getDate(), events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
+              return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
+                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0 };
+            }), ...visit("Calendar") }}
+            email={{ messages: (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
+              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })),
+              ...visit("Email") }} internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
             page={device.homePage === "FilesCard" ? "files" : "main"}
             onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
         </OverPage>

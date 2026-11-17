@@ -558,6 +558,10 @@ A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. A
 tablet's hosted handoff retains the selected view through sign-in, and
 uses the browser account matching that tablet when there is a bound owner.
+On Home the signed-in web account can see the first two recently loaded Inbox
+messages and the next three appointments for its current grant. The cards
+open their named surfaces. If the account or grant changes, old summaries
+disappear.
 
 ```quint
 type ManagedReadView = ManagedEmail | ManagedCalendar

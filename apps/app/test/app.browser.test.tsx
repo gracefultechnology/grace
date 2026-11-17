@@ -846,6 +846,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Confirm removal");
     await expect.element(page.getByText("Appointment removed.")).toBeVisible();
     expect(changed).toEqual(["update", "delete", "create", "update", "delete"]);
+    await tap("Close Calendar");
+    await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
