@@ -29,7 +29,8 @@ aloud only when the person asks her to.
 
 A notice is raised by its source with what it is about (a message, an event,
 a file) and at most one action: Undo, from Email or Settings, or See details,
-on a reminder. A toast that arrives while another is showing waits, and
+on a reminder. The calendar raises only reminders, through the reminder rule
+below. A toast that arrives while another is showing waits, and
 toasts show first come, first shown. The toast sits 24 pixels above compact
 Grace, or above the bottom edge when she is closed or expanded
 (`Grace Prototype.html:1826`).
@@ -37,9 +38,9 @@ Grace, or above the bottom edge when she is closed or expanded
 ```quint
 type NoticeActor = Person | App | Host
 type Source = Calendar | Email | Files | Connectivity | Settings
-type NoticeAction = NoAction | Undo | SeeDetails
+type Offer = NoOffer | Undo | SeeDetails
 type Place = Home | OtherScreen | Background
-type Notice = { id: int, source: Source, action: NoticeAction, subject: str }
+type Notice = { id: int, source: Source, offer: Offer, subject: str }
 type Notices = {
   shown: List[Notice], waiting: List[Notice], nextId: int,
   place: Place, expanded: bool, blocked: bool, online: bool,
@@ -50,34 +51,36 @@ pure val initial: Notices = {
   place: Home, expanded: false, blocked: false, online: true,
   reminders: List(), androidNotifications: List(), spoken: 0
 }
-pure def actionFits(source: Source, action: NoticeAction): bool =
-  action == NoAction or (action == Undo and (source == Email or source == Settings))
-pure def showNext(n: Notices): Notices =
-  if (n.shown.length() == 0 and not(n.blocked) and n.place != Background and n.waiting.length() > 0)
+pure def offerFits(source: Source, offer: Offer): bool =
+  offer == NoOffer or (offer == Undo and (source == Email or source == Settings)) or
+    (offer == SeeDetails and source == Calendar)
+pure def withShown(shown: List[Notice], n: Notices): Notices =
+  if (shown.length() == 0 and not(n.blocked) and n.place != Background and n.waiting.length() > 0)
     { ...n, shown: List(n.waiting.head()), waiting: n.waiting.tail() }
-  else n
-pure def enqueue(n: Notices, source: Source, action: NoticeAction, subject: str): Notices =
+  else { ...n, shown: shown }
+pure def withNotice(source: Source, offer: Offer, subject: str, n: Notices): Notices =
   if (n.place == Background) n
-  else showNext({ ...n,
-    waiting: n.waiting.append({ id: n.nextId, source: source, action: action, subject: subject }),
+  else withShown(n.shown, { ...n,
+    waiting: n.waiting.append({ id: n.nextId, source: source, offer: offer, subject: subject }),
     nextId: n.nextId + 1 })
-pure def canRaise(n: Notices, source: Source, action: NoticeAction, subject: str, by: NoticeActor): bool =
-  by == App and subject != "" and actionFits(source, action)
-pure def raise(n: Notices, source: Source, action: NoticeAction, subject: str, by: NoticeActor): Notices =
-  enqueue(n, source, action, subject)
-pure def inOrder(notices: List[Notice]): bool =
-  notices.foldl({ last: -1, ordered: true }, (acc, x) => { last: x.id, ordered: acc.ordered and x.id > acc.last }).ordered
+pure def canRaise(n: Notices, source: Source, offer: Offer, subject: str, by: NoticeActor): bool =
+  by == App and subject != "" and source != Calendar and offerFits(source, offer)
+pure def raise(n: Notices, source: Source, offer: Offer, subject: str, by: NoticeActor): Notices =
+  withNotice(source, offer, subject, n)
 pure def queued(n: Notices): List[Notice] = n.shown.concat(n.waiting)
 pure def alwaysOneToastAtATime(n: Notices): bool = n.shown.length() <= 1
-pure def alwaysFirstComeFirstShown(n: Notices): bool =
-  inOrder(queued(n)) and queued(n).every(x => x.id < n.nextId)
+pure def lawANewNoticeJoinsTheEndOfTheLine(source: Source, offer: Offer, subject: str, n: Notices): bool =
+  n.place != Background implies
+    queued(withNotice(source, offer, subject, n)) ==
+      queued(n).append({ id: n.nextId, source: source, offer: offer, subject: subject })
+pure def lawClosingLeavesTheRestInOrder(n: Notices): bool = queued(withShown(List(), n)) == n.waiting
 pure def alwaysAWaitingToastShowsWhenItCan(n: Notices): bool =
   (n.waiting.length() > 0 and not(n.blocked) and n.place != Background) implies n.shown.length() == 1
 pure def alwaysEachActionFitsItsSource(n: Notices): bool =
-  queued(n).every(x => actionFits(x.source, x.action) or (x.source == Calendar and x.action == SeeDetails))
+  queued(n).every(x => offerFits(x.source, x.offer))
 pure def sometimesASecondToastWaitsForTheFirst(n: Notices): bool =
   n.shown.length() == 1 and n.waiting.length() > 0
-pure def sometimesUndoShown(n: Notices): bool = n.shown.some(x => x.action == Undo)
+pure def sometimesUndoShown(n: Notices): bool = n.shown.some(x => x.offer == Undo)
 pure val subjectValues = Set("message", "event")
 ```
 
@@ -93,17 +96,16 @@ calendar view's reminder. Every closed Undo toast is reported to its source,
 which then withdraws that Undo.
 
 ```quint
-pure def lifetimeMs(x: Notice): int = if (x.action == NoAction) 2600 else 6000
+pure def lifetimeMs(offer: Offer): int = if (offer == NoOffer) 2600 else 6000
 pure def isShown(n: Notices, id: int): bool = n.shown.some(x => x.id == id)
-pure def close(n: Notices): Notices = showNext({ ...n, shown: List() })
 pure def canExpire(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
-  by == Host and isShown(n, id) and n.shown.every(x => elapsed >= lifetimeMs(x))
-pure def expire(n: Notices, id: int, elapsed: int, by: NoticeActor): Notices = close(n)
+  by == Host and isShown(n, id) and n.shown.every(x => elapsed >= lifetimeMs(x.offer))
+pure def expire(n: Notices, id: int, elapsed: int, by: NoticeActor): Notices = withShown(List(), n)
 pure def canAct(n: Notices, id: int, by: NoticeActor): bool =
-  by == Person and n.shown.some(x => x.id == id and x.action != NoAction)
-pure def act(n: Notices, id: int, by: NoticeActor): Notices = close(n)
-pure def lawActionsStayLonger(x: Notice): bool =
-  x.action != NoAction implies lifetimeMs(x) > lifetimeMs({ ...x, action: NoAction })
+  by == Person and n.shown.some(x => x.id == id and x.offer != NoOffer)
+pure def act(n: Notices, id: int, by: NoticeActor): Notices = withShown(List(), n)
+pure def lawActionsStayLonger(offer: Offer): bool =
+  offer != NoOffer implies lifetimeMs(offer) > lifetimeMs(NoOffer)
 pure def lawOnlyTheShownToastCloses(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
   not(isShown(n, id)) implies not(canExpire(n, id, elapsed, by))
 pure def lawNoToastClosesEarly(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
@@ -121,15 +123,17 @@ out dismisses nothing, so the banner is back on Home until the person
 dismisses it.
 
 ```quint
-pure def withoutReminder(n: Notices, subject: str): Notices = {
+pure def withoutReminder(subject: str, n: Notices): Notices = {
   ...n,
   reminders: n.reminders.select(r => r != subject),
   androidNotifications: n.androidNotifications.select(r => r != subject),
   waiting: n.waiting.select(x => not(x.source == Calendar and x.subject == subject))
 }
-pure def canDismiss(n: Notices, id: int, by: NoticeActor): bool = by == Person and isShown(n, id)
-pure def dismiss(n: Notices, id: int, by: NoticeActor): Notices =
-  close(n.shown.foldl(n, (acc, x) => if (x.source == Calendar) withoutReminder(acc, x.subject) else acc))
+pure def canCloseToast(n: Notices, id: int, by: NoticeActor): bool = by == Person and isShown(n, id)
+pure def closeToast(n: Notices, id: int, by: NoticeActor): Notices =
+  if (n.shown.length() > 0 and n.shown.head().source == Calendar)
+    withShown(List(), withoutReminder(n.shown.head().subject, n))
+  else withShown(List(), n)
 pure def lawExpiringKeepsTheReminder(n: Notices, id: int, elapsed: int, by: NoticeActor): bool =
   canExpire(n, id, elapsed, by) implies expire(n, id, elapsed, by).reminders == n.reminders
 ```
@@ -150,7 +154,7 @@ once the decision is closed; the others keep waiting behind it.
 pure def canCover(n: Notices, blocked: bool, by: NoticeActor): bool = by == App
 pure def cover(n: Notices, blocked: bool, by: NoticeActor): Notices =
   if (blocked) { ...n, blocked: true, shown: List(), waiting: n.shown.concat(n.waiting) }
-  else showNext({ ...n, blocked: false })
+  else withShown(n.shown, { ...n, blocked: false })
 pure def alwaysNothingCoversADecision(n: Notices): bool =
   n.blocked implies (n.shown.length() == 0 and bannerOf(n).kind == NoBanner)
 pure def sometimesAToastWaitsForADecision(n: Notices): bool = n.blocked and n.waiting.length() > 0
@@ -182,7 +186,7 @@ pure def bannerOf(n: Notices): Banner =
 pure def canMove(n: Notices, place: Place, by: NoticeActor): bool = by == Host
 pure def move(n: Notices, place: Place, by: NoticeActor): Notices =
   if (place == Background) { ...n, place: Background, shown: List(), waiting: List() }
-  else showNext({ ...n, place: place })
+  else withShown(n.shown, { ...n, place: place })
 pure def canExpand(n: Notices, expanded: bool, by: NoticeActor): bool = by == Host
 pure def expand(n: Notices, expanded: bool, by: NoticeActor): Notices = { ...n, expanded: expanded }
 pure def alwaysOfflineComesFirst(n: Notices): bool =
@@ -201,12 +205,13 @@ it where they need it.
 ```quint
 pure def canObserveConnection(n: Notices, online: bool, by: NoticeActor): bool = by == Host
 pure def observeConnection(n: Notices, online: bool, by: NoticeActor): Notices =
-  if (online and not(n.online)) enqueue({ ...n, online: true }, Connectivity, NoAction, "online")
+  if (online and not(n.online)) withNotice(Connectivity, NoOffer, "online", { ...n, online: true })
   else { ...n, online: online }
 pure def sometimesBackOnline(n: Notices): bool =
   n.online and queued(n).some(x => x.source == Connectivity)
 pure def stepBackOnlineIsToldOnce(before: Notices, via: str, after: Notices): bool =
-  (via == "observeConnection" and before.online) implies after.waiting == before.waiting
+  (via == "observeConnection" and not(after.online and not(before.online))) implies
+    queued(after) == queued(before)
 ```
 
 ## Story: Hear about a reminder wherever I am
@@ -231,14 +236,14 @@ pure def canRemind(n: Notices, subject: str, by: NoticeActor): bool =
 pure def remind(n: Notices, subject: str, by: NoticeActor): Notices = {
   val due = { ...n, reminders: n.reminders.append(subject) }
   if (n.place == Background) { ...due, androidNotifications: n.androidNotifications.append(subject) }
-  else if (n.place == OtherScreen) enqueue(due, Calendar, SeeDetails, subject)
+  else if (n.place == OtherScreen) withNotice(Calendar, SeeDetails, subject, due)
   else due
 }
 pure def canDismissReminder(n: Notices, subject: str, by: NoticeActor): bool =
   by != Host and n.reminders.includes(subject)
 pure def dismissReminder(n: Notices, subject: str, by: NoticeActor): Notices =
-  if (n.shown.some(x => x.source == Calendar and x.subject == subject)) close(withoutReminder(n, subject))
-  else withoutReminder(n, subject)
+  if (n.shown.some(x => x.source == Calendar and x.subject == subject)) withShown(List(), withoutReminder(subject, n))
+  else withoutReminder(subject, n)
 pure def canOpenAndroidNotification(n: Notices, subject: str, by: NoticeActor): bool =
   by == Person and n.androidNotifications.includes(subject)
 pure def openAndroidNotification(n: Notices, subject: str, by: NoticeActor): Notices =
