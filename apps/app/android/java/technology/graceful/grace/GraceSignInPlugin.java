@@ -100,47 +100,68 @@ public final class GraceSignInPlugin extends CloudSignInPlugin {
   });
  }
 
+ private record BackupConnection(GraceCredentials.BackupAccount account, CloudSignInEnvironment environment) {}
+
+ private BackupConnection passwordBackupConnection() throws Exception {
+  GraceCredentials.BackupAccount account = GraceCredentials.backupAccount(getContext());
+  if (account == null) return null;
+  CloudSignInEnvironment environment = switch (account.environment()) {
+   case "production" -> PRODUCTION;
+   case "staging" -> BuildConfig.DEBUG ? STAGING : null;
+   default -> null;
+  };
+  return environment == null ? null : new BackupConnection(account, environment);
+ }
+
  private boolean passwordBackupReady() {
   try {
    KeyguardManager guard = getContext().getSystemService(KeyguardManager.class);
-   String key = GraceCredentials.cloudKey(getContext());
-   return guard != null && guard.isDeviceSecure() && !guard.isDeviceLocked()
-    && googlePlay(getContext()) && key != null && CloudPasswordBackup.available(registration(), PRODUCTION);
+   BackupConnection owner = passwordBackupConnection();
+   return guard != null && guard.isDeviceSecure() && !guard.isDeviceLocked() && googlePlay(getContext())
+    && owner != null && CloudPasswordBackup.available(registration(), owner.environment());
   } catch (Exception unavailable) {
    return false;
   }
  }
 
- void authorizePasswordBackup(CloudPasswordBackup.Purpose purpose, GracePasswordRecovery recovery) {
+ void cancelPasswordBackup() {
+  cancelNativePasswordBackup();
+ }
+
+ void authorizePasswordBackup(GracePasswordRecovery recovery, GracePasswordRecovery.Operation operation) {
   getBridge().execute(() -> {
    try {
     Runnable intent = GraceCredentials.observe();
-    String key = GraceCredentials.cloudKey(getContext());
-    String owner = CloudPasswordBackup.currentAccount(PRODUCTION, key);
+    BackupConnection selected = passwordBackupConnection();
+    if (selected == null) { recovery.failed(operation, "Sign in to one Grace account before using password backup."); return; }
+    String key = selected.account().key();
+    String owner = CloudPasswordBackup.currentAccount(selected.environment(), key);
     Runnable guard = () -> {
      intent.run();
      try {
-      if (!key.equals(GraceCredentials.cloudKey(getContext()))) throw new IllegalStateException("Grace account changed");
+      if (!recovery.isCurrent(operation) || !selected.equals(passwordBackupConnection()))
+       throw new IllegalStateException("Grace account changed");
      } catch (RuntimeException failure) { throw failure; }
      catch (Exception failure) { throw new IllegalStateException("Grace account unavailable"); }
     };
     getActivity().runOnUiThread(() -> {
-     boolean started = startNativePasswordBackup(PRODUCTION, purpose, new NativePasswordBackupCallback() {
+     if (!recovery.isCurrent(operation)) return;
+     boolean started = startNativePasswordBackup(selected.environment(), operation.purpose, new NativePasswordBackupCallback() {
       @Override public void approved(CloudPasswordBackup.Approval approval) {
        if (!owner.equals(approval.ownerId())) {
-        recovery.failed("Choose the Google account you already use with Grace.");
+        recovery.failed(operation, "Choose the Google account you already use with Grace.");
         return;
        }
-       recovery.run(purpose, approval, key, guard);
+       recovery.run(operation, approval, key, guard);
       }
       @Override public void refused(String reason) {
-       recovery.failed("cancelled".equals(reason) ? null : "Grace could not confirm your account.");
+       recovery.failed(operation, "cancelled".equals(reason) ? null : "Grace could not confirm your account.");
       }
      });
-     if (!started) recovery.failed("Grace could not start password backup.");
+     if (!started) recovery.failed(operation, "Grace could not start password backup.");
     });
    } catch (Exception unavailable) {
-    recovery.failed("Sign in to Grace before using password backup.");
+    recovery.failed(operation, "Sign in to Grace before using password backup.");
    }
   });
  }

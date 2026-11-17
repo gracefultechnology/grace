@@ -26,8 +26,14 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  private final Activity activity;
  private final GraceSignInPlugin signIn;
  private AlertDialog active;
- private boolean running;
- private boolean destroyed;
+ private volatile Operation operation;
+ private volatile boolean destroyed;
+
+ static final class Operation {
+  final CloudPasswordBackup.Purpose purpose;
+  volatile CompletableFuture<?> pending;
+  Operation(CloudPasswordBackup.Purpose purpose) { this.purpose = purpose; }
+ }
 
  GracePasswordRecovery(Activity activity, GraceSignInPlugin signIn) {
   this.activity = activity;
@@ -36,7 +42,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  }
 
  boolean open() {
-  if (destroyed || running || active != null) return false;
+  if (destroyed || operation != null || active != null) return false;
   show(new AlertDialog.Builder(activity)
    .setTitle("Backup and recovery")
    .setItems(new String[]{"Back up passwords", "Restore passwords", "Remove cloud backup", "Verify this tablet"},
@@ -51,53 +57,57 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  }
 
  private void begin(CloudPasswordBackup.Purpose purpose) {
-  running = true;
-  signIn.authorizePasswordBackup(purpose, this);
+  Operation started = new Operation(purpose);
+  operation = started;
+  signIn.authorizePasswordBackup(this, started);
  }
 
- void run(CloudPasswordBackup.Purpose purpose, CloudPasswordBackup.Approval approval, String expectedCloudKey, Runnable account) {
+ boolean isCurrent(Operation expected) { return !destroyed && operation == expected; }
+
+ void run(Operation expected, CloudPasswordBackup.Approval approval, String expectedCloudKey, Runnable account) {
+  CloudPasswordBackup.Purpose purpose = expected.purpose;
   byte[] recoveryKey = null;
   try {
    account.run();
    if ((purpose == CloudPasswordBackup.Purpose.READ || purpose == CloudPasswordBackup.Purpose.DELETE) && !approval.present()) {
-    failed("There is no cloud backup for this account.");
+    failed(expected, "There is no cloud backup for this account.");
     return;
    }
    if (purpose == CloudPasswordBackup.Purpose.DELETE) {
     CloudPasswordBackup.Response removed = approval.run(approval.revision(), null);
     account.run();
-    failed(removed.status() == 204 ? "Cloud backup removed. Your passwords are still on this tablet." : cloudMessage(removed.status()));
+    failed(expected, removed.status() == 204 ? "Cloud backup removed. Your passwords are still on this tablet." : cloudMessage(removed.status()));
     return;
    }
    recoveryKey = switch (purpose) {
-    case SAVE -> showNewRecoveryKey(approval.present());
-    case READ -> askForRecoveryKey();
+    case SAVE -> showNewRecoveryKey(expected, approval.present());
+    case READ -> askForRecoveryKey(expected);
     default -> null;
    };
-   if (recoveryKey == null && purpose != CloudPasswordBackup.Purpose.VERIFY) { failed(null); return; }
+   if (recoveryKey == null && purpose != CloudPasswordBackup.Purpose.VERIFY) { failed(expected, null); return; }
    final byte[] key = recoveryKey;
-   Long ticket = unlock();
-   if (ticket == null) { failed(null); return; }
+   Long ticket = unlock(expected);
+   if (ticket == null) { failed(expected, null); return; }
    PasswordVaultAccess vault = PasswordVaultAccess.get(activity);
    try {
     account.run();
     boolean linkExisting = false;
     if (!GracePasswordsOwner.admitted(activity) && vault.exists()) {
-     linkExisting = confirmLinkExisting();
-     if (!linkExisting) { failed(null); return; }
+     linkExisting = confirmLinkExisting(expected);
+     if (!linkExisting) { failed(expected, null); return; }
     }
     if (!vault.unlocked(ticket)) {
-     failed("Your unlock ended. Open Backup and recovery to try again.");
+     failed(expected, "Your unlock ended. Open Backup and recovery to try again.");
      return;
     }
     account.run();
     GracePasswordsOwner.bindVerified(activity, approval.scope(), expectedCloudKey, linkExisting);
     if (!GracePasswordsOwner.admitted(activity)) {
-     failed("These saved passwords belong to another Grace account.");
+     failed(expected, "These saved passwords belong to another Grace account.");
      return;
     }
     if (purpose == CloudPasswordBackup.Purpose.VERIFY) {
-     failed("This tablet’s passwords are ready to use.");
+     failed(expected, "This tablet’s passwords are ready to use.");
      return;
     }
     if (purpose == CloudPasswordBackup.Purpose.SAVE) {
@@ -109,16 +119,16 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
       account.run();
       CloudPasswordBackup.Response saved = approval.run(approval.revision(), encrypted);
       account.run();
-      failed(saved.status() == 204 ? "Backup saved. Keep your recovery key somewhere safe." : cloudMessage(saved.status()));
+      failed(expected, saved.status() == 204 ? "Backup saved. Keep your recovery key somewhere safe." : cloudMessage(saved.status()));
      } finally {
       Arrays.fill(encrypted, (byte) 0);
      }
     } else {
      CloudPasswordBackup.Response backup = approval.run(null, null);
-     if (backup.status() != 200) { failed(cloudMessage(backup.status())); return; }
+     if (backup.status() != 200) { failed(expected, cloudMessage(backup.status())); return; }
      byte[] encrypted = backup.ciphertext();
      try {
-      if (!approval.revision().equals(backup.revision())) { failed(cloudMessage(412)); return; }
+      if (!approval.revision().equals(backup.revision())) { failed(expected, cloudMessage(412)); return; }
       boolean restored = GraceCredentials.withRead(() -> {
        account.run();
        return vault.use(ticket, store -> {
@@ -127,7 +137,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
         return true;
        });
       });
-      failed(restored ? "Passwords restored." : "Restore needs an empty password vault. Your saved passwords are still here.");
+      failed(expected, restored ? "Passwords restored." : "Restore needs an empty password vault. Your saved passwords are still here.");
      } finally {
       Arrays.fill(encrypted, (byte) 0);
      }
@@ -136,9 +146,9 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
     vault.lock(ticket);
    }
   } catch (AEADBadTagException wrongKey) {
-   failed("This recovery key could not open the backup. Check the key and try again.");
+   failed(expected, "This recovery key could not open the backup. Check the key and try again.");
   } catch (Exception unavailable) {
-   failed("Grace could not finish. Check your account and connection, then try again.");
+   failed(expected, "Grace could not finish. Check your account and connection, then try again.");
   } finally {
    if (recoveryKey != null) Arrays.fill(recoveryKey, (byte) 0);
   }
@@ -152,13 +162,13 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   return "Grace could not finish. Check your connection and try again.";
  }
 
- private byte[] showNewRecoveryKey(boolean replacesBackup) throws Exception {
+ private byte[] showNewRecoveryKey(Operation expected, boolean replacesBackup) throws Exception {
   byte[] key = PasswordVaultStore.newBackupRecoveryKey();
   boolean confirmed = false;
   try {
    CompletableFuture<Boolean> answer = new CompletableFuture<>();
    activity.runOnUiThread(() -> {
-    if (destroyed) { answer.complete(false); return; }
+    if (!isCurrent(expected)) { answer.complete(false); return; }
     TextView recovery = new TextView(activity);
     recovery.setSaveEnabled(false);
     recovery.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
@@ -175,17 +185,17 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
       .setNegativeButton("Cancel", null),
      () -> { recovery.setText(""); answer.complete(false); });
    });
-   confirmed = await(answer);
+   confirmed = await(expected, answer);
    return confirmed ? key : null;
   } finally {
    if (!confirmed) Arrays.fill(key, (byte) 0);
   }
  }
 
- private byte[] askForRecoveryKey() throws Exception {
+ private byte[] askForRecoveryKey(Operation expected) throws Exception {
   CompletableFuture<byte[]> answer = new CompletableFuture<>();
   activity.runOnUiThread(() -> {
-   if (destroyed) { answer.complete(null); return; }
+   if (!isCurrent(expected)) { answer.complete(null); return; }
    EditText recovery = new EditText(activity);
    recovery.setSaveEnabled(false);
    recovery.setLongClickable(false);
@@ -205,7 +215,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
     prompt.dismiss();
    });
   });
-  return await(answer);
+  return await(expected, answer);
  }
 
  private static byte[] parseRecoveryKey(String input) {
@@ -221,39 +231,65 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   return null;
  }
 
- private boolean confirmLinkExisting() throws Exception {
+ private boolean confirmLinkExisting(Operation expected) throws Exception {
   CompletableFuture<Boolean> answer = new CompletableFuture<>();
   activity.runOnUiThread(() -> {
-   if (destroyed) { answer.complete(false); return; }
+   if (!isCurrent(expected)) { answer.complete(false); return; }
    show(new AlertDialog.Builder(activity).setTitle("Link saved passwords to your account?")
     .setMessage("This tablet already has saved passwords. Link them to the Grace account you just confirmed.")
     .setPositiveButton("Link saved passwords", (dialog, which) -> answer.complete(true))
     .setNegativeButton("Cancel", null), () -> answer.complete(false));
   });
-  return await(answer);
+  return await(expected, answer);
  }
 
- private Long unlock() throws Exception {
+ private Long unlock(Operation expected) throws Exception {
   CompletableFuture<Long> ticket = new CompletableFuture<>();
-  activity.runOnUiThread(() -> PasswordUnlock.prompt(activity, new PasswordUnlock.Result() {
-   @Override public void unlocked(long value) { ticket.complete(value); }
-   @Override public void failed(String reason) { ticket.complete(null); }
-  }));
-  return await(ticket);
- }
-
- private <T> T await(CompletableFuture<T> result) throws Exception {
-  try { return result.get(2, TimeUnit.MINUTES); }
-  finally { if (!result.isDone()) { result.cancel(false); activity.runOnUiThread(this::dismiss); } }
- }
-
- void failed(String message) {
   activity.runOnUiThread(() -> {
-   running = false;
-   if (destroyed || activity.isFinishing() || message == null) return;
+   if (!isCurrent(expected)) { ticket.complete(null); return; }
+   PasswordUnlock.prompt(activity, new PasswordUnlock.Result() {
+    @Override public void unlocked(long value) {
+     if (isCurrent(expected) && ticket.complete(value)) return;
+     try { PasswordVaultAccess.get(activity).lock(value); }
+     catch (Exception unavailable) { ticket.complete(null); }
+    }
+    @Override public void failed(String reason) { ticket.complete(null); }
+   });
+  });
+  return await(expected, ticket);
+ }
+
+ private <T> T await(Operation expected, CompletableFuture<T> result) throws Exception {
+  expected.pending = result;
+  if (!isCurrent(expected)) result.cancel(false);
+  try { return result.get(2, TimeUnit.MINUTES); }
+  finally {
+   expected.pending = null;
+   if (!result.isDone()) {
+    result.cancel(false);
+    activity.runOnUiThread(() -> { if (isCurrent(expected)) dismiss(); });
+   }
+  }
+ }
+
+ void failed(Operation expected, String message) {
+  activity.runOnUiThread(() -> {
+   if (!isCurrent(expected)) return;
+   operation = null;
+   if (activity.isFinishing() || message == null) return;
    dismiss();
    show(new AlertDialog.Builder(activity).setTitle("Backup and recovery")
     .setMessage(message).setPositiveButton("Done", null), null);
+  });
+ }
+
+ void accountChanged() {
+  activity.runOnUiThread(() -> {
+   Operation pending = operation;
+   operation = null;
+   if (pending != null && pending.pending != null) pending.pending.cancel(false);
+   signIn.cancelPasswordBackup();
+   dismiss();
   });
  }
 
@@ -290,7 +326,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  @Override public void onActivityDestroyed(Activity owner) {
   if (owner != activity) return;
   destroyed = true;
-  dismiss();
+  accountChanged();
   activity.getApplication().unregisterActivityLifecycleCallbacks(this);
  }
  @Override public void onActivityCreated(Activity owner, Bundle state) {}
