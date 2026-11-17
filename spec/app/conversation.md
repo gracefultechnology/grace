@@ -604,5 +604,5 @@ returns to Ready.
 ```quint
 pure def sometimesReplyOnlyWritten(c: Conversation): bool =
   not(c.voice) and c.turn == Ready and c.messages.some(m => m.author == HumanMessage) and
-  c.messages.nthOr(c.messages.length() - 1, { author: HumanMessage, text: "" }).author == GraceMessage
+  c.messages.nthOr(c.messages.length() - 1, emptyHumanMessage).author == GraceMessage
 ```
