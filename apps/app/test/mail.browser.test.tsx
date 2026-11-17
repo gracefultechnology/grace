@@ -125,6 +125,11 @@ it("See all my email in one place", async () => {
   await click(clinic);
   await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
   await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
+  // spec/app/email.md, "Attachment actions preserve exact asset and message identity"
+  await click(page.getByRole("button", { name: "Open" }));
+  await expect.element(page.getByRole("heading", { name: "Visit form.pdf" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Back to Main St Clinic’s email" }));
+  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(row("Gmail 3")).toBeVisible();
 

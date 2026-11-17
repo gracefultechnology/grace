@@ -238,7 +238,8 @@ export const reading = Layer.effectDiscard(effect {
   effect function answer(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
     const receipt = retainedOnly(m) ? try fromTablet(id, box, m) : try fromProvider(id, mail, box, m)
     if (receipt === undefined) return try signedOut(box, m)
-    box.send({ type: "readResult", readReceipt: receipt }, "MailConnector") catch () => undefined
+    const taken = Effect.as(box.send({ type: "readResult", readReceipt: receipt }, "MailConnector"), true) catch () => false
+    if (!taken && receipt.succeeded) box.send({ type: "readResult", readReceipt: unread(receipt.generation) }, "MailConnector") catch () => undefined
     try shelf.keep(id, new Set((try box.get()).messages.map((r) => r.identity.ref)))
   }
 

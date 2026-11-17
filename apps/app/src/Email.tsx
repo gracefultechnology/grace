@@ -1,21 +1,24 @@
 // spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"
-import { type HomeMail, MailApp, type MailFolder, MailMessageView, MailSignInBanner, type MailSummary, MailSyncingRow, Toast } from "@repo/ui";
+import { type HomeMail, MailApp, type MailFolder, MailMessageView, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
 import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
-import { emptyContent, enabled, type Event as MailEvent, messageRecord, readable, showsScamWarning } from "../gen/app__email.ts";
+import { emptyContent, enabled, type Event as MailEvent, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
+import type { SavedFile } from "../gen/app__files.ts";
 import { type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, fromChoices, mailContext, openSource, outboxCount, outboxRows, showsMail, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { MailContent } from "./connector.vibe";
-import { EmailCompose, type Picking } from "./EmailCompose.tsx";
+import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
 import { answerable, headerFor, recipientsOf } from "./mail.vibe";
 import { type MailInstance, useAccounts, useMail, useMailContent, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 type Read = (id: number, ref: string) => MailContent | undefined;
+type Frame = Covered & { onClose: () => void; closeLabel: string };
 
 const folders: Record<Exclude<MailFolder, "outbox">, Folder> = { inbox: "InboxFolder", sent: "SentFolder", drafts: "DraftsFolder", trash: "TrashFolder" };
+const backTo: Record<Folder, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Inbox", TrashFolder: "Trash", PurgedFolder: "Inbox" };
 const folderOf = (folder: Folder) => (Object.keys(folders) as (keyof typeof folders)[]).find((f) => folders[f] === folder) ?? "inbox";
 const sourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
@@ -87,26 +90,34 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
       </Suspense>
     );
 
-  const opening = shown.find((b) => b.id === openSource(registry, sources)) ?? shown.find((b) => b.state.readKind === "OpenMessage" && b.state.readStatus !== "ReadIdle");
+  const opening = shown.find((b) => b.id === openSource(registry, sources)) ?? shown.find((b) => b.state.readKind !== "Search" && b.state.readStatus !== "ReadIdle");
   if (opening) {
     const m = opening.state;
     const ready = m.view !== "Inbox";
     const ref = ready ? m.messageRef : m.requestedRef;
     const c = read(opening.id, ref);
+    const forwarded = (sent: ReturnType<MailInstance["send"]>) => void sent.then((exit) => Exit.isSuccess(exit) && setPicking({ field: "to", query: "" }));
+    if (ready && m.readKind === "OpenAttachment" && (m.view === "Attachment" || m.readStatus !== "ReadIdle"))
+      return <Attachment box={opening} sender={c?.from ?? ""} subject={c?.subject ?? ""} onForward={forwarded} frame={frame} />;
     const open: MailEvent = { type: "readMail", kind: "OpenMessage", ref, approved: true };
     const target = { ref, revision: messageRecord(m, ref).revision };
     const change = (kind: MessageChange) => offer(opening, { type: "changeSelectedMessage", target, change: kind });
     const forward: MailEvent = { type: "forwardMessage", content: { ...emptyContent, subject: `Fwd: ${c?.subject ?? ""}`, body: unlinked(c?.body ?? "") } };
+    const photos = photoAssets(m);
+    const pdfs = m.assets.filter((a) => a.kind === "Pdf");
+    const attachment = (file: SavedFile): MailEvent => ({ type: "readMail", kind: "OpenAttachment", ref: file.sourceRef, approved: true });
+    const opener = (files: readonly SavedFile[]) => files.some((f) => opening.can(attachment(f))) ? (i: number) => { const f = files[i]; if (f) offer(opening, attachment(f))?.(); } : undefined;
     return (
       <MailMessageView from={{ name: c?.from ?? "" }} address={showsScamWarning(m) ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={c?.body ?? ""}
         scam={showsScamWarning(m)} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
-        files={ready ? m.assets.filter((a) => a.kind === "Pdf").map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined}
+        photos={ready ? photos.map(thumbnail) : undefined} onOpenPhoto={opener(photos)}
+        files={ready ? pdfs.map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined} onOpenFile={opener(pdfs)}
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
-        onRetry={() => { if (opening.can(open)) void opening.send(open); }}
+        onRetry={offer(opening, open)}
         onReply={mail && ready && answerable(m) && (online || headerFor(mail, opening.id, m)) ? () => void mail.reply(opening.id) : undefined}
-        onForward={mail && m.folder !== "DraftsFolder" && opening.can(forward) ? () => void opening.send(forward).then((sent) => Exit.isSuccess(sent) && setPicking({ field: "to", query: "" })) : undefined}
+        onForward={mail && m.folder !== "DraftsFolder" && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
-        onBack={() => { if (opening.can({ type: "showInbox" })) void opening.send({ type: "showInbox" }); }} {...frame} />
+        backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
     );
   }
 
@@ -185,5 +196,25 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         if (box?.can(event)) void box.send(event);
       }}
       onFixWifi={fire({ type: "chooseSettingsPage", page: "NetworkSettings" })} {...frame} />
+  );
+}
+
+function Attachment({ box, sender, subject, onForward, frame }: { box: MailInstance; sender: string; subject: string; onForward: (sent: ReturnType<MailInstance["send"]>) => void; frame: Frame }) {
+  const m = box.state;
+  const ref = m.view === "Attachment" ? m.attachmentRef : m.requestedRef;
+  const file = m.assets.find((a) => a.sourceRef === ref);
+  if (!file) return null;
+  const offer = (event: MailEvent) => (box.can(event) ? () => void box.send(event) : undefined);
+  const status = m.readStatus === "Reading" ? "loading" : m.readStatus === "ReadFailed" ? "failed" : "ready";
+  const back = offer(m.view === "Attachment" ? { type: "backToMessage" } : { type: "readMail", kind: "OpenMessage", ref: m.messageRef, approved: true });
+  const leave = { backLabel: back && `${sender}’s email`, onBack: back, onRetry: offer({ type: "readMail", kind: "OpenAttachment", ref: m.requestedRef, approved: true }), status, ...frame } as const;
+  if (file.kind === "Pdf") return <PdfViewer title={file.name} pageLabel={`Page 1 of ${file.pages}`} {...leave} />;
+  const photos = photoAssets(m);
+  const at = photos.findIndex((p) => p.sourceRef === file.sourceRef);
+  const forward: MailEvent = { type: "forwardAttachment", content: { ...emptyContent, subject: `Fwd: ${subject}` } };
+  return (
+    <PhotoViewer title={`Photo ${at + 1} of ${photos.length}`} {...thumbnail(file)} first={at === 0} last={at === photos.length - 1}
+      onPrevious={offer({ type: "movePhoto", direction: -1 })} onNext={offer({ type: "movePhoto", direction: 1 })}
+      onForward={box.can(forward) ? () => onForward(box.send(forward)) : undefined} {...leave} />
   );
 }
