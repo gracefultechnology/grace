@@ -12,8 +12,9 @@ Grace joins what Android lets an app join: open networks and networks with
 one shared password, in her own screen, through Android's "Save this
 network?" dialog. Company-style networks, which ask for an account, and a
 hotel or café's sign-in page are handed to Android's own internet panel.
-Every join outcome is one the Wi-Fi plugin reports
-(`vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts`). Network
+Six of the seven join outcomes are the Wi-Fi plugin's six statuses, one for
+one (`vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts`);
+the certificate challenge is the one outcome no plugin status sends. Network
 names, credentials and fixed delays in
 `prototype/Grace Prototype.html:1994–2036,2217–2227` are demo data, not
 policy. No password, account password, library-card number or PIN enters
