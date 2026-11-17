@@ -152,6 +152,33 @@ pure def lawUnrelatedImportKeepsSelection(v: CalendarView, incoming: C::Calendar
       publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by).deletion == v.deletion)
 ```
 
+### An account's calendar is bound by its store before Calendar opens
+
+Each connected email account has its own calendar collection, beside the one
+kept on the tablet. When the account is connected, its store binds the
+collection to that account's owner, calendar and display timezone, so its
+appointments are published, reach Home and Grace, and can receive an
+appointment she agreed to before she ever opens Calendar. Binding opens
+nothing and changes no row, selection or question. A collection is bound
+once and never moves to another owner, calendar or timezone; after a restart
+the store may bind it again with the same values, which changes nothing.
+
+```quint
+pure def canBindCalendar(v: CalendarView, owner: str, calendarId: str, timezone: str, by: ViewActor): bool =
+  by == ViewStore and owner != "" and calendarId != "" and timezone != "" and
+  (v.owner == "" or (v.owner == owner and v.calendarId == calendarId and v.timezone == timezone))
+pure def bindCalendar(v: CalendarView, owner: str, calendarId: str, timezone: str, by: ViewActor): CalendarView =
+  { ...v, owner: owner, calendarId: calendarId, timezone: timezone }
+pure def lawBindingLeavesCalendarAsItWas(v: CalendarView, owner: str, calendarId: str, timezone: str, by: ViewActor): bool =
+  val after = bindCalendar(v, owner, calendarId, timezone, by)
+  after.opened == v.opened and after.window == v.window and after.entries == v.entries and
+    after.selectedId == v.selectedId and after.deletion == v.deletion and after.generation == v.generation
+pure def lawBoundCalendarStaysBound(v: CalendarView, owner: str, calendarId: str, timezone: str, by: ViewActor): bool =
+  (v.owner != "" and canBindCalendar(v, owner, calendarId, timezone, by)) implies
+    (owner == v.owner and calendarId == v.calendarId and timezone == v.timezone)
+pure def sometimesSavedWhileClosed(v: CalendarView): bool = not(v.opened) and v.entries.some(c => c.hasSaved)
+```
+
 ### Navigation clears detail and only accepts a validated calendar interval
 
 Selecting a day from Month opens its Week, as in the prototype. Today selects
@@ -403,6 +430,84 @@ pure val requestValues = Set(
   { ...reviewedAppointment, entry: { ...reviewedAppointment.entry,
     identity: { ...C::appointmentIdentity, occurrenceId: "different-visit" } } })
 pure val againValues = requestValues
+```
+
+### Grace's change takes effect only for the exact change the person agreed to
+
+Grace may suggest changing a saved appointment, from any screen. As with a new
+appointment, the trusted adapter supplies `ViewConsent` only for the person's
+yes to that exact question. The review names the occurrence, its complete new
+details, the revision of the saved appointment she was shown and the calendar
+generation. The change applies only while that occurrence is still a saved
+appointment of this calendar at that revision, with the reviewed details,
+valid, keeping its own important mark and the series rules of the person's
+own form; while no form is being edited and no deletion question is open; and
+while an open Calendar shows the week or that same event, never another. A
+refresh from the store or a form she opened and closed moves the revision and
+voids the yes.
+
+The agreed change enters as the approved edit of that occurrence, selected,
+without opening Calendar. The store's acknowledgment commits it as for the
+person's own Save, and a repeating appointment's change is committed by the
+series save; failure keeps the draft and needs a new approval. The calendar
+generation moves on, so one yes changes the calendar once.
+
+```quint
+type ChangeReview = { id: str, details: C::EntryDetails, committedRevision: int, calendarGeneration: int }
+type ConfirmedChange = { id: str, details: C::EntryDetails, review: ChangeReview }
+pure def canConfirmChange(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
+  val c = entryAt(v, changeRequest.id)
+  val details = changeRequest.details
+  by == ViewConsent and changeRequest.review.id == changeRequest.id and changeRequest.review.details == details and
+  changeRequest.review.calendarGeneration == v.generation and changeRequest.review.committedRevision == c.revision and
+  c.hasSaved and c.identity.kind == C::Appointment and C::canBeginEdit(c, C::CalendarUser) and
+  v.deletion == NoDeletion and not(hasEditing(v)) and
+  (not(v.opened) or v.selectedId == "" or v.selectedId == changeRequest.id) and
+  C::validDetails(details) and details.important == c.committed.important and
+  not(v.deletedSeries.contains(details.seriesId)) and
+  (if (c.committed.seriesId != "") details.seriesId == c.committed.seriesId
+   else details.seriesId == "" or seriesAt(v, details.seriesId).version == -1)
+pure def changedEntry(c: C::Calendar, details: C::EntryDetails): C::Calendar =
+  val editing = C::edit(C::beginEdit(c, C::CalendarUser), details, C::CalendarUser)
+  C::approveSave(editing, editing.revision, C::CalendarUser)
+pure def confirmChange(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): CalendarView =
+  val approved = changedEntry(entryAt(v, changeRequest.id), changeRequest.details)
+  { ...v, generation: v.generation + 1, selectedId: changeRequest.id,
+    entries: v.entries.listMap(c => if (c.identity.occurrenceId == changeRequest.id) approved else c) }
+pure def lawChangedChangeCannotConfirm(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
+  (changeRequest.details != changeRequest.review.details or changeRequest.id != changeRequest.review.id) implies
+    not(canConfirmChange(v, changeRequest, by))
+pure def lawStaleChangeCannotConfirm(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
+  (changeRequest.review.calendarGeneration != v.generation or
+    changeRequest.review.committedRevision != entryAt(v, changeRequest.id).revision) implies
+    not(canConfirmChange(v, changeRequest, by))
+pure def lawChangeIsConsumedOnce(v: CalendarView, changeRequest: ConfirmedChange, nextChange: ConfirmedChange, by: ViewActor): bool =
+  (canConfirmChange(v, changeRequest, by) and
+    nextChange.review.calendarGeneration == changeRequest.review.calendarGeneration) implies
+    not(canConfirmChange(confirmChange(v, changeRequest, by), nextChange, by))
+pure def lawConfirmedChangeKeepsCalendarView(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
+  confirmChange(v, changeRequest, by).opened == v.opened and confirmChange(v, changeRequest, by).window == v.window
+pure def lawConfirmedChangeStillNeedsStorage(v: CalendarView, changeRequest: ConfirmedChange, by: ViewActor): bool =
+  val before = entryAt(v, changeRequest.id)
+  canConfirmChange(v, changeRequest, by) implies
+    confirmChange(v, changeRequest, by).entries.every(c => c.identity.occurrenceId == changeRequest.id implies
+      (c.phase == C::Editing and c.committed == before.committed and c.draft == changeRequest.review.details and
+        c.approvedRevision == c.revision and c.identity == before.identity))
+pure def sometimesAgreedChangeAwaitsStorage(v: CalendarView): bool =
+  not(v.opened) and v.entries.some(c => c.phase == C::Editing and c.hasSaved and c.approvedRevision != -1)
+pure val movedDetails: C::EntryDetails = { ...C::timedDetails, title: "Moved appointment", startAt: 5, endAt: 6 }
+pure val agreedChange: ConfirmedChange = {
+  id: "visitA", details: movedDetails,
+  review: { id: "visitA", details: movedDetails, committedRevision: 1, calendarGeneration: 0 }
+}
+pure val changeRequestValues = Set(
+  agreedChange,
+  { ...agreedChange, review: { ...agreedChange.review, calendarGeneration: 1 } },
+  { ...agreedChange, review: { ...agreedChange.review, committedRevision: 3 } },
+  { ...agreedChange, details: { ...movedDetails, important: true },
+    review: { ...agreedChange.review, details: { ...movedDetails, important: true } } },
+  { ...agreedChange, review: { ...agreedChange.review, details: C::timedDetails } })
+pure val nextChangeValues = changeRequestValues
 ```
 
 ### A bill occurrence enters only from verified bill evidence
@@ -683,6 +788,68 @@ pure def sometimesSeriesDeleted(v: CalendarView): bool = v.deletedSeries.size() 
 pure def sometimesDeletionFailed(v: CalendarView): bool = v.deletion == DeletionFailed
 ```
 
+### Grace's deletion takes effect only for the occurrence and scope the person agreed to
+
+Grace may suggest removing a saved appointment, this one or every one of a
+repeating appointment, from any screen. The trusted adapter supplies
+`ViewConsent` only for the person's yes to that exact question, whose review
+names the occurrence, the scope, the revision of the saved appointment she was
+shown and the calendar generation. Her yes is the deletion's single final
+approval, as choosing one or all is in the person's own question, and it is
+taken only while that occurrence is still a saved appointment of this calendar
+at that revision; while the scope is the reviewed one and every one is chosen
+only for a repeating appointment; while no form is being edited and no
+deletion question is open; and while an open Calendar shows the week or that
+same event, never another. The deletion then waits for the store's result
+exactly as the person's own does, without opening Calendar, and nothing is
+removed before that result. The calendar generation moves on, so one yes
+deletes once.
+
+```quint
+type DeletionReview = { id: str, scope: DeleteScope, committedRevision: int, calendarGeneration: int }
+type ConfirmedDeletion = { id: str, scope: DeleteScope, review: DeletionReview }
+pure def canConfirmDeletion(v: CalendarView, deletionRequest: ConfirmedDeletion, by: ViewActor): bool =
+  val c = entryAt(v, deletionRequest.id)
+  by == ViewConsent and deletionRequest.review.id == deletionRequest.id and
+  deletionRequest.review.scope == deletionRequest.scope and
+  deletionRequest.review.calendarGeneration == v.generation and deletionRequest.review.committedRevision == c.revision and
+  c.hasSaved and c.phase == C::Saved and c.identity.kind == C::Appointment and
+  v.deletion == NoDeletion and not(hasEditing(v)) and
+  (not(v.opened) or v.selectedId == "" or v.selectedId == deletionRequest.id) and
+  (deletionRequest.scope == ThisOccurrence or c.committed.recurrence != C::Once)
+pure def confirmDeletion(v: CalendarView, deletionRequest: ConfirmedDeletion, by: ViewActor): CalendarView =
+  { ...v, selectedId: deletionRequest.id, deletion: DeletionPending, scope: deletionRequest.scope,
+    generation: v.generation + 1 }
+pure def lawChangedDeletionCannotConfirm(v: CalendarView, deletionRequest: ConfirmedDeletion, by: ViewActor): bool =
+  (deletionRequest.scope != deletionRequest.review.scope or deletionRequest.id != deletionRequest.review.id) implies
+    not(canConfirmDeletion(v, deletionRequest, by))
+pure def lawStaleDeletionCannotConfirm(v: CalendarView, deletionRequest: ConfirmedDeletion, by: ViewActor): bool =
+  (deletionRequest.review.calendarGeneration != v.generation or
+    deletionRequest.review.committedRevision != entryAt(v, deletionRequest.id).revision) implies
+    not(canConfirmDeletion(v, deletionRequest, by))
+pure def lawDeletionIsConsumedOnce(v: CalendarView, deletionRequest: ConfirmedDeletion, nextDeletion: ConfirmedDeletion, by: ViewActor): bool =
+  canConfirmDeletion(v, deletionRequest, by) implies not(canConfirmDeletion(confirmDeletion(v, deletionRequest, by), nextDeletion, by))
+pure def lawConfirmedDeletionWaitsForTheStore(v: CalendarView, deletionRequest: ConfirmedDeletion, by: ViewActor): bool =
+  val after = confirmDeletion(v, deletionRequest, by)
+  after.entries == v.entries and after.opened == v.opened and after.window == v.window and
+    after.deletion == DeletionPending and after.scope == deletionRequest.scope
+pure def sometimesAgreedDeletionWhileClosed(v: CalendarView): bool = not(v.opened) and v.deletion == DeletionPending
+pure val agreedDeletion: ConfirmedDeletion = {
+  id: "visitA", scope: ThisOccurrence,
+  review: { id: "visitA", scope: ThisOccurrence, committedRevision: 1, calendarGeneration: 0 }
+}
+pure val deletionRequestValues = Set(
+  agreedDeletion,
+  { ...agreedDeletion, review: { ...agreedDeletion.review, calendarGeneration: 1 } },
+  { ...agreedDeletion, scope: EntireSeries, review: { ...agreedDeletion.review, scope: EntireSeries } },
+  { ...agreedDeletion, scope: EntireSeries },
+  { id: "seriesA", scope: EntireSeries,
+    review: { id: "seriesA", scope: EntireSeries, committedRevision: 1, calendarGeneration: 0 } },
+  { id: "seriesA", scope: EntireSeries,
+    review: { id: "seriesA", scope: EntireSeries, committedRevision: 1, calendarGeneration: 1 } })
+pure val nextDeletionValues = deletionRequestValues
+```
+
 ### Samples exercise ordinary and recurring entries without limiting real dates
 
 ```quint
@@ -690,7 +857,11 @@ pure val ownerValues = Set("", "ownerA", "ownerB")
 pure val calendarIdValues = Set("", "calendarA")
 pure val timezoneValues = Set("", "America/New_York")
 pure val idValues = Set("", "visitA", "periodA", "seriesA", "missing")
-pure val incomingValues = C::incomingValues
+pure val weeklyVisit: C::Calendar = C::save(C::approveSave(
+  C::create(C::initial, { ...C::appointmentIdentity, occurrenceId: "seriesA" },
+    { ...C::timedDetails, recurrence: C::Weekly, seriesId: "weeklySeries" }, C::CalendarUser),
+  1, C::CalendarUser), 1, true, C::CalendarStore)
+pure val incomingValues = C::incomingValues.union(Set(weeklyVisit))
 pure val reportValues = Set(
   { window: { ...emptyWindow, anchorDay: 7, selectedDay: 7, fromTime: 0, untilTime: 10 }, kind: Later, verified: true },
   { window: { ...emptyWindow, anchorDay: -7, selectedDay: -7, fromTime: -10, untilTime: 0 }, kind: Earlier, verified: true },
