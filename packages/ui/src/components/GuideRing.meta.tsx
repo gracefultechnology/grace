@@ -6,7 +6,7 @@ import { BrowserToolbar } from "./BrowserToolbar.tsx";
 import { BrowserWindow } from "./BrowserWindow.tsx";
 import { Rail } from "./Rail.tsx";
 import { homeRail } from "./Rail.meta.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import type { GuideRingProps } from "./GuideRing.tsx";
 
 const card = "absolute rounded-sm bg-card px-6 py-5 text-grace-ink shadow-sm";
@@ -50,24 +50,25 @@ export const onChase = ({ title, address, page, short = false }: { title: string
     return (
       <TabletScreen>
         <Rail {...homeRail(null)} />
-        <BrowserWindow
-          aria-label="Browser"
-          className={short ? "bottom-[272px]" : undefined}
-          tabStrip={<BrowserTabStrip tabs={[{ id: 1, title, initial: "C" }]} selectedId={1} />}
-          toolbar={(
-            <BrowserToolbar canGoBack canGo>
-              <AddressBar value={address} />
-            </BrowserToolbar>
-          )}
-        >
-          <div className="absolute inset-0 font-[Arial,sans-serif] leading-[normal] text-grace-ink">
-            <div className="flex h-16 items-center justify-between bg-site-brand px-10 text-[22px] font-bold text-primary-foreground">
-              Credit card ••7731<span className="text-[15px] font-normal opacity-85">Website mock · not a real page</span>
+        <ScreenSlot className={short ? "bottom-[272px]" : undefined}>
+          <BrowserWindow
+            aria-label="Browser"
+            tabStrip={<BrowserTabStrip tabs={[{ id: 1, title, initial: "C" }]} selectedId={1} />}
+            toolbar={(
+              <BrowserToolbar canGoBack canGo>
+                <AddressBar value={address} />
+              </BrowserToolbar>
+            )}
+          >
+            <div className="absolute inset-0 font-[Arial,sans-serif] leading-[normal] text-grace-ink">
+              <div className="flex h-16 items-center justify-between bg-site-brand px-10 text-[22px] font-bold text-primary-foreground">
+                Credit card ••7731<span className="text-[15px] font-normal opacity-85">Website mock · not a real page</span>
+              </div>
+              {page}
             </div>
-            {page}
-          </div>
-          {overlay()}
-        </BrowserWindow>
+            {overlay()}
+          </BrowserWindow>
+        </ScreenSlot>
         {screen?.()}
       </TabletScreen>
     );

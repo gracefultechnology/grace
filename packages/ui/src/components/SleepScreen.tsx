@@ -12,7 +12,7 @@ export type SleepScreenProps = ComponentProps<"div"> & {
   next?: string;
   /** The icon before the next event. */
   nextIcon?: ReactNode;
-  /** How to wake the tablet: "Say “Hey Grace”, or touch the screen". */
+  /** How to wake the tablet: "Touch the screen to wake it". */
   hint: string;
 };
 

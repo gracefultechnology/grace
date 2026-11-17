@@ -6,7 +6,7 @@ const show = fn();
 const showGuide = fn();
 
 export const meta: ComponentMeta<CaptionStripProps> = {
-  args: { placement: "inline", who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show, onShowGuide: showGuide },
+  args: { who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show, onShowGuide: showGuide },
   examples: {
     Margaret: { who: "you", activity: "listening", text: "Can you help me pay my Chase bill?" },
     "Margaret, Grace thinking": { who: "you", activity: undefined, text: "Can you help me pay my Chase bill?" },
@@ -17,7 +17,7 @@ export const meta: ComponentMeta<CaptionStripProps> = {
     "Long line": { text: "Chase's sign-in page is open. I'll take you through it step by step. Tap the password box, then type your password." },
   },
   decorator: (story) => (
-    <div className="group/grace w-[1170px] bg-gradient-frame-soft p-5" data-surface="white">
+    <div className="group/grace w-[1170px] bg-gradient-frame-soft p-5">
       {story()}
     </div>
   ),

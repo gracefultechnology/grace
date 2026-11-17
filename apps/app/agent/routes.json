@@ -1,0 +1,42 @@
+{
+  "params": {
+    "uuid": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+  },
+  "allow": [
+    {
+      "method": "GET",
+      "pattern": "/health",
+      "for": "Whether the agent is ready, so Ask Grace is offered only then."
+    },
+    {
+      "method": "POST",
+      "pattern": "/conversations",
+      "for": "Opens the conversation a turn belongs to."
+    },
+    {
+      "method": "POST",
+      "pattern": "/conversations/{uuid}/messages",
+      "for": "One whole turn, when a streamed one cannot start."
+    },
+    {
+      "method": "POST",
+      "pattern": "/conversations/{uuid}/messages/stream/start",
+      "for": "Starts a streamed turn."
+    },
+    {
+      "method": "POST",
+      "pattern": "/conversations/{uuid}/messages/stream/pull",
+      "for": "Reads the next part of a streamed turn."
+    },
+    {
+      "method": "POST",
+      "pattern": "/conversations/{uuid}/messages/stream/cancel",
+      "for": "Releases a streamed turn she stopped or replaced."
+    },
+    {
+      "method": "POST",
+      "pattern": "/turns/{uuid}/abort",
+      "for": "Stops the agent's work on a turn she stopped or replaced."
+    }
+  ]
+}

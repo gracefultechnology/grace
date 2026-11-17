@@ -8,12 +8,12 @@ import type { CalendarMonthDay } from "./CalendarMonth.tsx";
 import type { CalendarWeekDay } from "./CalendarWeekStrip.tsx";
 import { Rail } from "./Rail.tsx";
 import { homeRail } from "./Rail.meta.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 
 export const onTablet = (story: () => ReactNode) => (
   <TabletScreen>
     <Rail {...homeRail(null)} />
-    {story()}
+    <ScreenSlot>{story()}</ScreenSlot>
   </TabletScreen>
 );
 
@@ -179,8 +179,6 @@ export const meta: ComponentMeta<CalendarAppProps> = {
   },
   examples: {
     Week: {},
-    "Header Mode Large": { headerMode: "large" },
-    "Header Mode None": { headerMode: "none" },
     Month: { view: "month", nav: { period: "November 2026" } },
     Detail: { view: "detail" },
     Form: { view: "form" },

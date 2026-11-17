@@ -50,7 +50,7 @@ export function PaymentReviewCard({
       aria-label={heading}
       aria-busy={stale || undefined}
       className={cn(
-        "flex flex-col gap-5 transition-[background-color,box-shadow] duration-base group-data-[surface=frost]/grace:bg-card group-data-[surface=frost]/grace:shadow-float",
+        "flex flex-col gap-5 transition-[background-color,box-shadow] duration-base",
         reading && !stale && "bg-card shadow-raised inset-ring-2 inset-ring-lavender",
         className,
       )}

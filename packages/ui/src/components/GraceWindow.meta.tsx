@@ -8,7 +8,7 @@ import { GraceMessages } from "./GraceMessages.tsx";
 import { conversation, greeting, thinking } from "./GraceMessages.meta.tsx";
 import { GraceVoiceMenu } from "./GraceVoiceMenu.tsx";
 import type { GraceWindowProps } from "./GraceWindow.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { UserBubble } from "./UserBubble.tsx";
 
 const header = (expanded: boolean, pause: "idle" | "live" = "live") => (
@@ -58,7 +58,10 @@ export const meta: ComponentMeta<GraceWindowProps> = {
         </GraceMessages>
       ),
     },
-    Frost: { surface: "frost", size: "compact", header: header(false), dock: dock(false, "grace") },
   },
-  decorator: (story) => <TabletScreen>{story()}</TabletScreen>,
+  decorator: (story) => (
+    <TabletScreen>
+      <ScreenSlot className="z-[3] flex flex-col justify-end">{story()}</ScreenSlot>
+    </TabletScreen>
+  ),
 };

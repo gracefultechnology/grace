@@ -19,7 +19,7 @@ export const meta: ComponentMeta<SuggestionOfferProps> = {
     onPick: fn(),
     answers: answers("I’ll type it"),
   },
-  decorator: (story) => <div className="group/grace w-[1130px] bg-background p-6" data-surface="white">{story()}</div>,
+  decorator: (story) => <div className="group/grace w-[1130px] bg-background p-6">{story()}</div>,
   examples: {
     Choice: {
       title: "Which phone number?",

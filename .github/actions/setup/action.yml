@@ -9,7 +9,7 @@ outputs:
     description: What the spec cache holds, for the step that saves it at the end of a job.
     value: ${{ steps.spec-cache.outputs.path }}
   spec-cache-key:
-    description: The key to save the spec cache under, unique to this run attempt.
+    description: The key to save the spec cache under, unique to this run attempt; empty without verification.
     value: ${{ steps.spec-cache.outputs.key }}
 runs:
   using: composite

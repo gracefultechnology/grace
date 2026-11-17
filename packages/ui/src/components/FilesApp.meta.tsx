@@ -47,8 +47,6 @@ export const meta: ComponentMeta<FilesAppProps> = {
   examples: {
     Documents: { tab: "documents", onOpenDocument: fn(), onPrintDocument: fn() },
     "Print unknown": { tab: "documents", documents: [{ ...documents[0], printStatus: "unknown" }, ...documents.slice(1)], onOpenDocument: fn(), onPrintDocument: fn() },
-    "Header Mode Large": { headerMode: "large" },
-    "Header Mode None": { headerMode: "none" },
     "Found one photo": { highlightId: "garden" },
     "Found one document": { tab: "documents", highlightId: "medicare", onOpenDocument: fn(), onPrintDocument: fn() },
     "Which one": {

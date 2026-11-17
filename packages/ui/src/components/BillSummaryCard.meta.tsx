@@ -14,7 +14,7 @@ const open = fn();
 const recheck = fn();
 
 export const inGrace = (story: () => ReactNode) => (
-  <div className="group/grace w-[720px] bg-background p-6" data-surface="white">
+  <div className="group/grace w-[720px] bg-background p-6">
     {story()}
   </div>
 );

@@ -5,7 +5,6 @@ import { cn } from "../lib/cn.ts";
 const headingVariants = cva("m-0 font-sans", {
   variants: {
     level: {
-      large: "pr-[84px] text-display leading-[56px] font-extrabold tracking-[-.01em] text-foreground",
       page: "text-title-lg leading-[38px] font-bold text-chrome",
       title: "text-title-sm leading-8 font-bold text-chrome",
       section: "text-body-lg leading-7 font-bold tracking-[.01em] text-muted-foreground",
@@ -14,15 +13,15 @@ const headingVariants = cva("m-0 font-sans", {
   defaultVariants: { level: "page" },
 });
 
-const tags = { large: "h1", page: "h2", title: "h2", section: "h3" } as const;
+const tags = { page: "h2", title: "h2", section: "h3" } as const;
 
 export type PageHeadingProps = ComponentProps<"h2"> & {
-  /** `large` the page's large title, `page` a page's title, `title` a heading in a page, `section` the label over a group. */
-  level?: "large" | "page" | "title" | "section";
+  /** `page` a page's title, `title` a heading in a page, `section` the label over a group. */
+  level?: "page" | "title" | "section";
 };
 
 /**
- * A heading in an app window's page, at one of the prototype's four sizes.
+ * A heading in an app window's page, at one of three sizes.
  * @design packages/design-system/design.md#windows
  */
 export function PageHeading({ level = "page", className, children, ...props }: PageHeadingProps) {
