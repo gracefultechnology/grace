@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "service": "technology.graceful.grace.GraceAgentService",
+  "notification": { "channel": "Grace", "title": "Grace", "text": "Grace is here when you need her" },
+  "cloud": { "baseUrl": "https://api.eliza.app/api/v1" },
+  "routes": [
+    { "method": "GET", "path": "/api/status" },
+    { "method": "POST", "path": "/api/conversations" },
+    { "method": "POST", "path": "/api/conversations/{id}/messages" },
+    { "method": "POST", "path": "/api/conversations/{id}/messages/stream", "stream": true },
+    { "method": "POST", "path": "/api/turns/{room}/abort" }
+  ]
+}

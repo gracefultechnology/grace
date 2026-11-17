@@ -1,0 +1,7 @@
+[
+  { "service": "GraceAgentService" },
+  { "agent": { "state": "failed", "failure": "credential" } },
+  { "leaveFor": "android.settings.SETTINGS" },
+  { "service": "GraceAgentService" },
+  { "agent": { "state": "failed", "failure": "credential" } }
+]
