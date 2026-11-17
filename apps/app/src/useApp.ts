@@ -123,7 +123,7 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map() };
 const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 
@@ -138,10 +138,12 @@ export function useMail() {
     reply: (id: number) => runtime.runPromise(mail.reply(id)),
     confirmSend: (id: number, revision: number) => runtime.runPromise(mail.confirmSend(id, revision)),
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
+    discarded: () => runtime.runPromise(mail.discarded()),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);
       const known = lists.get(sources) ?? runtime.runPromise(mail.contacts());
+      if (!lists.has(sources)) lists.clear();
       lists.set(sources, known);
       return known;
     },

@@ -47,8 +47,11 @@ async function closing(box: MailInstance, event: MailEvent) {
   if (box.state.replyTo === "") await box.send({ type: "showInbox" });
 }
 
+const keeping = (box: MailInstance, draftId = box.state.draftId || "draft"): MailEvent => ({ type: "preserveDraft", draftId });
+const leavable = (box: MailInstance) => box.can(keeping(box)) || box.can({ type: "closeEmptyComposer" });
+
 function leave(box: MailInstance, hush?: (id: number) => void) {
-  const keep: MailEvent = { type: "preserveDraft", draftId: box.state.draftId || `draft-${crypto.randomUUID()}` };
+  const keep = keeping(box, box.state.draftId || `draft-${crypto.randomUUID()}`);
   if (!box.can(keep)) return closing(box, { type: "closeEmptyComposer" });
   hush?.(box.id);
   return closing(box, keep);
@@ -101,7 +104,11 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
         onQueryChange={(query) => onPicking({ ...picking, query })}
         onPick={(person) => { const chosen = shown[tiles.indexOf(person)]; if (chosen) pick(picking.field, chosen.address); }}
         backLabel={first ? "Inbox" : box.state.replyTo === "" ? "New email" : "Reply"}
-        onBack={() => { onPicking(null); if (box && picking.field === "to" && box.state.draft.to === "") void discard(box); }} {...frame} />
+        onBack={() => {
+          onPicking(null);
+          if (!box) void mail.discarded();
+          else if (picking.field === "to" && box.state.draft.to === "") void discard(box);
+        }} {...frame} />
     );
   }
   if (!box) return null;
@@ -111,26 +118,31 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
   const write = (field: Field, value: string) => edit(box, { ...m.draft, subject: text("subject"), body: text("body"), [field]: value }, field, value);
   const choices = fromChoices(registry, sources).filter((a) => a.id === box.id || canMoveDraft(m, sourceOf(sources, a.id).mailbox));
   const keep: MailEvent = { type: "preserveDraft", draftId: m.draftId };
+  const throwAway: MailEvent = { type: "discardDraft", confirmed: true };
   const undeleted = mail.undeleted.has(box.id);
   const removal = (index: number): MailEvent => ({ type: "removeAsset", assetId: m.draftAttachments[index]?.id ?? "" });
+  const editable = box.can({ type: "editDraft", content: m.draft });
+  const settling = Object.values(typed).some((t) => t !== undefined);
+  const sendable = !settling && recipientsValid(m.draft) && box.can({ type: "confirmVisibleSend", revision: m.revision });
+  const retry = undeleted ? throwAway : keep;
 
   return (
     <MailCompose title={m.replyTo === "" ? "New email" : "Reply"} backLabel={m.replyTo === "" ? "Inbox" : `${sender(box)}’s email`}
       from={{ accounts: choices.map((a) => ({ id: a.id, address: a.address, name: a.name })), selected: box.id, onSelect: (id) => { if (id !== box.id) void mail.moveDraft(box.id, id); } }}
       to={recipientsOf(m.draft.to).map(contactOf)} cc={m.draft.cc.map(contactOf)} bcc={m.draft.bcc.map(contactOf)}
-      ccOpen={ccOpen} onOpenCc={() => setCcOpen(true)}
-      onAddRecipient={(field) => onPicking({ field, query: "" })}
-      onRemoveRecipient={(field, index) => edit(box, without(m.draft, field, index))}
-      subject={text("subject")} onSubjectChange={(value) => write("subject", value)}
-      body={text("body")} onBodyChange={(value) => write("body", value)}
+      ccOpen={ccOpen} onOpenCc={editable ? () => setCcOpen(true) : undefined}
+      onAddRecipient={editable ? (field) => onPicking({ field, query: "" }) : undefined}
+      onRemoveRecipient={editable ? (field, index) => edit(box, without(m.draft, field, index)) : undefined}
+      subject={text("subject")} onSubjectChange={editable ? (value) => write("subject", value) : undefined}
+      body={text("body")} onBodyChange={editable ? (value) => write("body", value) : undefined}
       attachments={m.draftAttachments.map(thumbnail)}
-      onRemoveAttachment={(index) => { if (box.can(removal(index))) void box.send(removal(index)); }}
+      onRemoveAttachment={editable ? (index) => { if (box.can(removal(index))) void box.send(removal(index)); } : undefined}
       sendStatus={statusOf(m)}
-      onSend={() => { if (box.can({ type: "confirmVisibleSend", revision: m.revision }) && recipientsValid(m.draft)) void mail.confirmSend(box.id, m.revision); }}
-      onDiscard={() => void discard(box)}
+      onSend={sendable ? () => void mail.confirmSend(box.id, m.revision) : undefined}
+      onDiscard={box.can(throwAway) ? () => void discard(box) : undefined}
       draftError={m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
-      onRetryDraft={() => { if (undeleted) void discard(box); else if (box.can(keep)) void box.send(keep); }}
-      onBack={() => void leave(box)}
+      onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
+      onBack={leavable(box) ? () => void leave(box) : undefined}
       {...frame}
       onClose={() => { void leave(box, mail.hush); frame.onClose(); }} />
   );

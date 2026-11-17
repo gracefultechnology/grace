@@ -193,7 +193,7 @@ export function MailMessageView({
   const { targetId, ...pointing } = guide ?? {};
   const l = { ...viewLabels, ...labels };
   const held = status !== "ready";
-  const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (
+  const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (onClick || disabled) && (
     <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "disabled:text-primary-foreground disabled:opacity-100" : headerPill} disabled={disabled} onClick={onClick}>
       {icon}
       {label}

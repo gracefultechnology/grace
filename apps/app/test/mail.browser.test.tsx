@@ -176,6 +176,11 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Send" }));
   await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[{ filename: "Visit form.pdf" }]]);
 
+  // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+
   // spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Susan" }));
@@ -185,17 +190,19 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week").map((m) => [b.address, m.labels]))).toEqual([[outlook, ["DRAFT"]]]);
   await click(row("Drafts"));
-  await opened(/Lunch next week/, "Lunch next week");
+  await opened(/^To Susan.*Lunch next week/, "Lunch next week");
   await expect.element(page.getByText("Shall we have lunch on Tuesday?")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Reply" })).not.toBeInTheDocument();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
   await opened(/Ruth/, "Lunch on Sunday?");
+  await host("Offline");
+  await expect.element(page.getByRole("button", { name: "Reply" })).toBeVisible();
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
   await click(page.getByRole("button", { name: "Reply" }));
   await act(() => userEvent.fill(words(), "Yes, noon is perfect."));
-  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
-  await host("Offline");
   const before = (await company()).boxes.flatMap((b) => b.sent.map((s) => s.operationId));
   await click(page.getByRole("button", { name: "Send" }));
   await click(row("Outbox 1"));
