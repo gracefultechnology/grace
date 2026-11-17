@@ -137,7 +137,6 @@ function useInstances() {
   return use(found);
 }
 
-/** What the connector last read of each account's emails: who, what about, when and the body, which no machine holds. */
 export function useMailContent() {
   return useInstances().content;
 }
