@@ -1,5 +1,6 @@
 // spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"
 import { type HomeMail, MailApp, type MailFolder, MailMessageView, MailSignInBanner, type MailSummary, MailSyncingRow, Toast } from "@repo/ui";
+import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
 import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
 import { emptyContent, type Event as MailEvent, messageRecord, replyable, showsScamWarning } from "../gen/app__email.ts";
@@ -97,7 +98,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
         onRetry={() => { if (opening.can(open)) void opening.send(open); }}
         onReply={mail && ready && replyable(m) ? () => void mail.reply(opening.id) : undefined}
-        onForward={mail && opening.can(forward) ? () => void opening.send(forward).then(() => setPicking({ field: "to", query: "" })) : undefined}
+        onForward={mail && opening.can(forward) ? () => void opening.send(forward).then((sent) => Exit.isSuccess(sent) && setPicking({ field: "to", query: "" })) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         onBack={() => { if (opening.can({ type: "showInbox" })) void opening.send({ type: "showInbox" }); }} {...frame} />
     );
