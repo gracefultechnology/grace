@@ -40,7 +40,14 @@
         "WEB_ORIGIN": "https://app.graceforseniors.com",
         "NATIVE_AUTH_CALLBACK": "https://app.graceforseniors.com/android/auth/callback",
         "CLOUD_ENVIRONMENT": "production",
-        "CLOUD_IDENTITY_DIGEST": "54d302ab7acb27c0a3b326e5bc4301d8963d5eac4e181da58598d4968f95c3ec"
+        "CLOUD_IDENTITY_DIGEST": "54d302ab7acb27c0a3b326e5bc4301d8963d5eac4e181da58598d4968f95c3ec",
+        "CHAT_MODEL": "qwen-3.8-27b",
+        "CHAT_UPSTREAM_MODEL": "@cf/qwen/qwen3.8-27b",
+        "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
+        "CHAT_INPUT_MICROS_PER_1K": "450",
+        "CHAT_OUTPUT_MICROS_PER_1K": "3200",
+        "EMBEDDING_INPUT_MICROS_PER_1K": "67",
+        "MAX_COMPLETION_TOKENS": "2048"
       },
       "durable_objects": {
         "bindings": [
@@ -54,6 +61,15 @@
         "crons": [
           "*/5 * * * *"
         ]
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ac2a7441e8a34d368262ac2891356834"
+        }
+      ],
+      "ai": {
+        "binding": "AI"
       }
     }
   },

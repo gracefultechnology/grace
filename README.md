@@ -33,20 +33,20 @@ configuration. The migration refuses an occupied database on first install.
 
 | Capability | Deployment bindings and registration |
 | --- | --- |
-| Database | Set a dedicated Grace PostgreSQL connection as the Worker secret `DATABASE_URL`, or bind a dedicated Hyperdrive to `HYPERDRIVE`. Require TLS for a remote connection. Run the migration against the same direct PostgreSQL URL with `CLOUD_ENVIRONMENT=production`. |
+| Database | The production `HYPERDRIVE` binding points to a dedicated PostgreSQL service in [Grace’s Railway project](https://railway.com/project/9ef3865f-1538-44d7-aa1f-6734e2c2caac). The runtime uses its own non-admin role. Hyperdrive checks the database’s private CA and has query caching disabled. Run migrations with the Railway owner connection and `CLOUD_ENVIRONMENT=production`. |
 | Google sign-in | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Register the exact API callback `/api/auth/google/callback` on the chosen Google OAuth web client. |
 | Email and SMS | `RESEND_API_KEY`, a verified `EMAIL_FROM`, a random `EMAIL_CODE_SECRET` of at least 32 characters, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`, permitted country calling codes in `SMS_ALLOWED_COUNTRY_CODES`, and the deployment’s `SMS_HOURLY_BUDGET`. |
-| Gmail and Calendar | A new 32-byte hex `GOOGLE_CONNECT_TOKEN_KEY` for this deployment. Register `/api/v1/eliza/google/connect/callback`. Optional `GOOGLE_CONNECT_CLIENT_ID` and `GOOGLE_CONNECT_CLIENT_SECRET` select a separate OAuth client. Users choose read access explicitly. |
+| Gmail and Calendar | A new 32-byte hex `GOOGLE_CONNECT_TOKEN_KEY` for this deployment. Register `/api/v1/eliza/google/connect/callback`. Set `GOOGLE_CONNECT_CLIENT_ID` and `GOOGLE_CONNECT_CLIENT_SECRET` to Grace’s managed-data OAuth client when using Eliza’s basic sign-in client. Users choose Gmail read, send and Trash permissions and Calendar read and owned-event edits separately. |
 | Subscriptions | Grace-owned Stripe secret and webhook signing secret, a recurring `STRIPE_PRICE_ID`, matching `STRIPE_PRODUCT_ID` and `STRIPE_PLAN` from the upstream catalog. Enable the hosted customer portal. Register the webhook at `https://api.graceforseniors.com/api/v1/billing/webhook` for checkout completion, subscription changes, paid invoices, refunds and dispute changes. The Worker verifies the event signature, retrieves the customer's current subscription and applies each paid invoice once. |
-| Inference | `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `CHAT_MODEL`, `EMBEDDING_MODEL`, `MAX_COMPLETION_TOKENS`, and actual provider rates in microdollars per 1,000 tokens (`CHAT_INPUT_MICROS_PER_1K`, `CHAT_OUTPUT_MICROS_PER_1K`, `EMBEDDING_INPUT_MICROS_PER_1K`). |
+| Inference | The production Worker uses its own `AI` binding in Grace’s Cloudflare account. The profile maps Grace’s `qwen-3.8-27b` to `@cf/qwen/qwen3.8-27b` and selects BGE Base English for embeddings. Model identifiers, response limits and prices in microdollars per 1,000 tokens are in `apps/cloud/wrangler.jsonc`. [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) |
 | Speech | `CARTESIA_API_KEY`, `CARTESIA_VOICE_ID`, `SPEECH_DAILY_SESSION_LIMIT`, `SPEECH_STT_MICROS_PER_SECOND` and `SPEECH_TTS_MICROS_PER_CHARACTER`. Set these rates from the Grace provider contract. The deployment binds its own `SPEECH_RELAY_SESSIONS` Durable Objects. |
 | Android | Register the Grace app package, release signer SHA-256 fingerprint, HTTPS return URLs and credential lifetime in `NATIVE_CLIENT_REGISTRY`, and select its `NATIVE_CLIENT_ID`. The app host serves the resulting Digital Asset Links document. Only the native app receives the inference credential. |
 
-Google identity sign-in requests basic identity scopes. Managed Gmail asks for
-separate read-only mailbox access. In Google’s testing mode, the designated
+Google identity sign-in requests basic identity scopes. The Gmail and Calendar
+consent screen lists the permissions the person chose. In Google’s testing mode, the designated
 test users can consent to those scopes, with authorizations expiring after
-seven days. Production use of Gmail’s restricted read scope through the
-Worker requires Google verification and a security assessment.
+seven days. Production use of restricted Gmail data through the Worker requires Google
+verification and a security assessment.
 [Google sign-in](https://developers.google.com/identity/verification/authentication-policy-compliance)
 · [Testing limits](https://support.google.com/cloud/answer/15549945)
 · [Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes).

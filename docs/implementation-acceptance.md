@@ -32,10 +32,32 @@ establish that an agent can start or complete a turn.
 | Voice | Legacy speech bridge and cloud relay | OS audio and cloud speech with account-bound admission | Renew or revoke a real speech session and hear a reply |
 | Grace screens | Grace React app, design system and UI library | Grace | Build the production Vite entry without an Eliza UI import |
 
-The agent policy in `apps/app/agent/policy.json` lists the previously loaded
-assistant, cloud inference and SQL plugins. The remaining names in its
-refusal list describe capabilities outside the tablet’s authority. Their
-presence in that list does not add them to the migration.
+The old pin loaded three runtime plugins. Each has a replacement in the
+four shared packages.
+
+| Previously loaded plugin | Current implementation | Grace integration |
+| --- | --- | --- |
+| `@elizaos/plugin-assistant` | `packages/agent/src/conversation` dispatches owner messages through Core. | The tablet submits turns over the native socket. Grace decodes proposed actions and applies its own rules. |
+| `@elizaos/plugin-elizacloud` | `packages/agent/src/host/cloud-model.vibe` uses the native device credential. The `@elizaos/cloud/worker` entry point authenticates the caller, reserves funding and settles usage. | `apps/app/android/agent.json` selects the Grace API. The device keeps its bearer in Android-protected storage. |
+| `@elizaos/plugin-sql` | `packages/agent/src/storage` supplies Core's database adapter with an owner-bound PGlite store. | The device host initializes its own store. The hosted accounts and billing ledger use a separate Grace PostgreSQL database. |
+
+The APK build previously called scripts in Eliza's app and native-agent
+plugin. It now uses the tools and native browser and Wi-Fi modules in
+`packages/os/android`. The AOSP overlay uses `packages/os/aosp`. The
+browser address parser and TypeScript bridge declarations come from
+`packages/os/src`. Grace renders the browser controls, account settings,
+managed data and voice controls from its own React app. The old policy's
+refusal list records disallowed capabilities. The current plugin load list
+is empty.
+
+The compiled Node 26 device CLI completed a turn through the private socket,
+Eliza Core, an owner-bound PGlite database and the Grace Worker with a real
+Cloudflare Qwen response. A local Cloudflare Worker with the remote Workers
+AI binding also answered a metered chat and returned a 768-value embedding.
+The normal production bundle built from fresh tracked sources and frozen
+installs. Stripe, Google and speech used network fixtures. Android
+installation, live Google consent, paid checkout and a real microphone
+session still require separate launch evidence.
 
 ## Decisions and their defaults
 
