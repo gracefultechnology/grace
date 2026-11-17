@@ -6,7 +6,7 @@ const panelVariants = cva("box-border min-w-0 text-foreground", {
   variants: {
     variant: {
       tinted: "rounded-window bg-panel px-7 py-[26px]",
-      white: "rounded-row bg-card/88 px-5 py-4 shadow-panel",
+      white: "rounded-row bg-card/88 px-5 py-4 shadow-elevation-panel",
     },
   },
   defaultVariants: { variant: "tinted" },

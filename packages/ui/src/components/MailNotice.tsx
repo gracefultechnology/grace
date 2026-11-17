@@ -39,7 +39,7 @@ export function MailNotice({ tone = "caution", children, actionLabel, onAction, 
       </Alert>
     );
   return (
-    <div role="status" className={cn("flex items-center gap-3.5 rounded-row bg-card/88 px-5 text-body-lg leading-7 font-medium text-foreground shadow-panel", action ? "py-3" : "py-[18px]", className)} {...props}>
+    <div role="status" className={cn("flex items-center gap-3.5 rounded-row bg-card/88 px-5 text-body-lg leading-7 font-medium text-foreground shadow-elevation-panel", action ? "py-3" : "py-[18px]", className)} {...props}>
       <WifiSlash size={26} className="flex-none" />
       <span className="min-w-0">{children}</span>
       {action}

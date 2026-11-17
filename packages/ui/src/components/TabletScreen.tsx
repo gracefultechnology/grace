@@ -40,7 +40,7 @@ export function TabletScreen({ background = "soft", device = false, className, c
   );
   if (!device) return screen;
   return (
-    <div className={cn("box-content w-[1280px] shrink-0 rounded-device bg-device p-[18px] shadow-device", className)} {...props}>
+    <div className={cn("box-content w-[1280px] shrink-0 rounded-device bg-device p-[18px] shadow-elevation-device", className)} {...props}>
       {screen}
     </div>
   );
