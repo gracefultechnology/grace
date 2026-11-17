@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-export type Size = { width: number; height: number };
+type Size = { width: number; height: number };
 
 export function useSize<T extends Element>() {
   const [size, setSize] = useState<Size>();
