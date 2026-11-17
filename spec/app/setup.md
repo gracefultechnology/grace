@@ -50,7 +50,7 @@ type SetupStage = WifiStep | AccountStep | NameStep | PaceStep | TextSizeStep | 
 type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
 type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
 type StepOutcome = Pending | Done | PutOff
-type SetupProgress = { step: SetupStage, outcomes: SetupStage -> StepOutcome }
+type SetupProgress = { step: SetupStage, outcomes: int -> StepOutcome }
 type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int }
 type SetupEffect = | AskWhatToDo
 type SetupResult = { state: Setup, out: List[SetupEffect] }
@@ -65,7 +65,8 @@ pure def nextStep(st: SetupStage): SetupStage =
   else if (st == TalkStep) TypeStep else if (st == TypeStep) CloseStep else if (st == CloseStep) ReopenStep else HandOverStep
 pure val noFacts: SetupFacts = { ownsWifi: false, online: false, accountConnected: false, cloudUsable: false, named: false, speechAvailable: false }
 pure def graceThinks(f: SetupFacts): bool = f.accountConnected and f.cloudUsable and f.online
-pure def outcomeOf(p: SetupProgress, st: SetupStage): StepOutcome = p.outcomes.getOr(st, Pending)
+pure def outcomeOf(p: SetupProgress, st: SetupStage): StepOutcome = p.outcomes.getOr(orderOf(st), Pending)
+pure def withOutcome(p: SetupProgress, st: SetupStage, answered: bool): int -> StepOutcome = p.outcomes.put(orderOf(st), outcomeFor(answered))
 pure def outcomeFor(answered: bool): StepOutcome = if (answered) Done else PutOff
 ```
 
@@ -101,7 +102,7 @@ pure def passes(st: SetupStage, f: SetupFacts): bool =
   else false
 pure def passOne(p: SetupProgress, st: SetupStage, f: SetupFacts): SetupProgress =
   if (passes(st, f) and (p.step == st or outcomeOf(p, st) == PutOff))
-    { step: if (p.step == st) nextStep(st) else p.step, outcomes: p.outcomes.put(st, outcomeFor(true)) }
+    { step: if (p.step == st) nextStep(st) else p.step, outcomes: withOutcome(p, st, true) }
   else p
 pure def settledProgress(p: SetupProgress, f: SetupFacts): SetupProgress =
   passOne(passOne(passOne(p, WifiStep, f), AccountStep, f), NameStep, f)
@@ -129,11 +130,13 @@ pure def lawFlavorsDifferOnlyInWifi(st: SetupStage, online: bool, connected: boo
     passes(st, { ...noFacts, ownsWifi: false, online: online, accountConnected: connected, named: named })
 ```
 
-### The progress count follows the steps actually shown
+### The progress count fits the steps of this build
 
 Set-up shows "Step n of m", where m counts every step but the hand-over,
-less Wi-Fi on a build that does not own it. A step passed because it was
-already true still counts, so the number only goes up within a run.
+less Wi-Fi on a build that does not own it, since that build never has a
+Wi-Fi step. On a build that has the step, a step passed because it was
+already true still counts, so the number only goes up within a run: a
+launcher tablet already online opens on "Step 2 of 10".
 
 ```quint
 pure def shownStepCount(f: SetupFacts): int = if (f.ownsWifi) 10 else 9
@@ -161,9 +164,9 @@ pure def withFacts(f: SetupFacts, s: Setup): Setup =
     phase: if (stops) Away else s.phase, wentAway: s.wentAway or stops }
 pure def hostStarted(s: Setup, ownsWifi: bool, online: bool, connected: bool, named: bool): Setup =
   val t = withFacts({ ownsWifi: ownsWifi, online: online, accountConnected: connected, cloudUsable: false, named: named, speechAvailable: false }, s)
-  { ...t, endToken: s.endToken + 1, phase: if (s.phase == Unstarted) Answering else t.phase }
+  { ...t, phase: if (s.phase == Unstarted) Answering else t.phase }
 pure def stepRestartKeepsTheStep(before: Setup, via: str, after: Setup): bool =
-  (via == "hostStarted" and before.phase != Unstarted) implies
+  via == "hostStarted" implies
     (after.progress.step == before.progress.step or passes(before.progress.step, after.facts))
 ```
 
@@ -217,7 +220,7 @@ pure def reachHandOver(q: SetupProgress, s: Setup): Setup =
   if (graceThinks(s.facts)) { ...s, progress: q, phase: Ending, endToken: s.endToken + 1 }
   else { ...s, progress: q, phase: Away, wentAway: true }
 pure def moveOn(st: SetupStage, s: Setup, answered: bool): Setup =
-  val onward = { step: nextStep(st), outcomes: s.progress.outcomes.put(st, outcomeFor(answered)) }
+  val onward = { step: nextStep(st), outcomes: withOutcome(s.progress, st, answered) }
   val q = settledProgress(onward, s.facts)
   if (q.step == HandOverStep) reachHandOver(q, s) else { ...s, progress: q }
 pure def canAnswer(s: Setup, st: SetupStage): bool =
@@ -230,7 +233,7 @@ pure def stepNeverGoesBack(before: Setup, after: Setup): bool =
   before.phase != Ended implies orderOf(after.progress.step) >= orderOf(before.progress.step)
 ```
 
-### Each practice step rings exactly one control
+### Each practice step rings at most one control
 
 The practice steps point at the control they teach with a ring: Talk at
 the dock's Talk button while Grace speaks, Type at the Type button, Close at
@@ -281,7 +284,7 @@ pure def offeredAgain(st: SetupStage): OfferedAgain =
 pure def canSkip(s: Setup, st: SetupStage): bool = s.phase == Answering and st == s.progress.step and skipCost(st) != NotSkippable
 pure def skip(s: Setup, st: SetupStage): Setup =
   if (st == AccountStep)
-    { ...s, phase: Away, wentAway: true, progress: { ...s.progress, outcomes: s.progress.outcomes.put(st, outcomeFor(false)) } }
+    { ...s, phase: Away, wentAway: true, progress: { ...s.progress, outcomes: withOutcome(s.progress, st, false) } }
   else moveOn(st, s, false)
 pure def accountPutOff(s: Setup): bool = outcomeOf(s.progress, AccountStep) == PutOff
 pure def lawEveryPutOffStepIsOfferedAgain(st: SetupStage): bool =
@@ -351,7 +354,8 @@ pure def alwaysEarlierStepsAreSettled(s: Setup): bool =
 ### Leaving mid-way resumes at the same step
 
 While set-up shows, it fills the screen: the rail, Home's cards and
-Settings are out of reach, Grace's window opens only for the practice steps,
+Settings are out of reach, except Ask Grace in the rail while the Reopen
+step asks for it, Grace's window opens only for the practice steps,
 and only the system's volume keys work beside set-up's own page. Close,
 Back or launcher Home take her to Home, where Carry on setting up brings her
 back to the step she left. The screen sleeping and waking tells set-up
@@ -364,10 +368,8 @@ Home is kept for the run.
 pure def canLeave(s: Setup): bool = showsSetUp(s)
 pure def leave(s: Setup): Setup = { ...s, phase: Away, wentAway: true }
 pure def canResume(s: Setup): bool = s.phase == Away and (s.progress.step != HandOverStep or graceThinks(s.facts))
-pure def offersCarryOn(s: Setup): bool = canResume(s)
 pure def resume(s: Setup): Setup =
-  val q = settledProgress(s.progress, s.facts)
-  if (q.step == HandOverStep) reachHandOver(q, s) else { ...s, progress: q, phase: Answering }
+  if (s.progress.step == HandOverStep) reachHandOver(s.progress, s) else { ...s, phase: Answering }
 pure def alwaysAwayMeansSetUpWentAway(s: Setup): bool = s.phase == Away implies s.wentAway
 ```
 
