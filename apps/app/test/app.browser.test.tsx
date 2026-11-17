@@ -414,7 +414,7 @@ it("Use the website under Grace's controls", async () => {
 });
 
 
-it(`Send a typed turn through the native agent and use a control (spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
+it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   const listeners = new Map<string, (input: unknown) => void>();
   const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
   const stopped: string[] = [];

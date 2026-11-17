@@ -1,6 +1,6 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import { audible } from "../gen/app__preferences.effect.vibe"
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, enabled, replyControlContext, step, type Event, type ReplyControlContext } from "../gen/app__workspace.effect.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { withhold } from "./private.ts"
 import { ReplyControls } from "./replyControls.vibe"
@@ -20,6 +20,10 @@ type BridgeEvent = { kind: "data" | "end"; payload: unknown }
 type DecodedEvent = { kind: "data"; value: typeof StreamData.Type } | { kind: "end"; value: typeof StreamEnd.Type }
 
 error TurnUnavailable
+
+function sameContext(a: ReplyControlContext, b: ReplyControlContext) {
+  return a.generation === b.generation && a.device === b.device && a.browser === b.browser && a.preferences === b.preferences
+}
 
 effect function createConversation(plugin: EmbeddedAgent) {
   const raw = try tryPromise(() => plugin.request({ method: "POST", path: "/api/conversations", body: {} }))
@@ -127,11 +131,16 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       const choicesSafe = try Effect.orDie(Effect.try(() => reply.answers.every((answer) => withhold({ text: answer, passwords: [] }) === answer)))
       const shouldSpeak = audible((try workspace.get()).preferences.session)
       try Effect.uninterruptible(effect {
-        try workspace.send({
-          type: "interact",
-          input: { tag: "Respond", token, text: safe, isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak },
-        }, "Host")
-        if (safe === reply.text) try controls.offer(request, reply.actions)
+        const before = try workspace.get()
+        const response: Event = { type: "interact", input: { tag: "Respond", token, text: safe,
+          isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak } }
+        const expected = sameContext(replyControlContext(before), request.context) && enabled(before, response, "Host")
+          ? replyControlContext(step(before, response, "Host").state) : undefined
+        const shown = try workspace.send(response, "Host")
+        const context = replyControlContext(shown.state)
+        if (expected && sameContext(expected, context) && safe === reply.text) {
+          try controls.offer({ ...request, context }, reply.actions)
+        }
       })
     } catch effect () => {
       workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: "Grace couldn’t answer just now. Please try again." } }, "Host") catch () => undefined

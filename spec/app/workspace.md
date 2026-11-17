@@ -1330,7 +1330,9 @@ retires the offer. Navigation, browser controls, preference previews and
 owned reads use the same rules as their visible controls. Opening a draft or
 appointment review never authorizes delivery, saving, removal, or a website
 submission. An action without a current supported path is not shown as
-completed.
+completed. The response itself changes the available page geometry. After an
+unchanged request is accepted, the offer takes the revision from that exact
+response transition.
 
 ```quint
 type ReplyControlContext = { generation: int, device: int, browser: int, preferences: int }
