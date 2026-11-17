@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -21,8 +21,8 @@ const activity = `${identity.appId}/.MainActivity`;
 const project = identity.android.path;
 const forbiddenEntry = new RegExp([
   String.raw`\.(gguf|onnx|ort|tflite|safetensors|pte|task)$`,
-  String.raw`(^|/)lib/[^/]+/[^/]*(llama|ggml|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so$`,
-  String.raw`(^|/)(tts|asr|models?)/`,
+  String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
+  String.raw`^assets/(?!public/)([^/]+/)*(tts|asr|models?)/`,
 ].join("|"), "i");
 
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, "utf8"));
@@ -32,10 +32,10 @@ const keystore = signing.storeFile;
 
 const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
 const Step = Schema.Union([
-  Schema.Struct({ tap: Schema.String }),
-  Schema.Struct({ type: Schema.String, into: Schema.String }),
+  Schema.Struct({ tap: Schema.NonEmptyString }),
+  Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
-  Schema.Struct({ expect: Schema.String }),
+  Schema.Struct({ expect: Schema.NonEmptyString }),
 ]);
 type Step = typeof Step.Type;
 const Arguments = Schema.Struct({
@@ -114,12 +114,10 @@ function writeApkManifest() {
 const sdk = (tool: string) => path.join(resolveAndroidSdkRoot(), tool);
 const run = promisify(execFile);
 const stopping = new AbortController();
-process.once("exit", () => stopping.abort());
-for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
 const adb = async (args: string[], seconds = 60) => {
   const signal = AbortSignal.any([stopping.signal, AbortSignal.timeout(seconds * 1000)]);
   const { stdout } = await run(sdk("platform-tools/adb"), args, { encoding: "utf8", signal, killSignal: "SIGKILL" })
-    .catch((error: Error) => { throw new Error(`adb ${args.join(" ")} failed or ran past ${seconds} s`, { cause: error }); });
+    .catch((error: unknown) => { throw new Error(`adb ${args.join(" ")} failed or ran past ${seconds} s`, { cause: error }); });
   return stdout;
 };
 const shell = (serial: string, command: string, seconds?: number) => adb(["-s", serial, "shell", command], seconds);
@@ -127,8 +125,9 @@ const forever = new Promise<never>(() => {});
 const emulators = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
 const avds = () => execFileSync(sdk("emulator/emulator"), ["-list-avds"], { encoding: "utf8", timeout: 60_000 }).split("\n");
 
-type Target = { serial: typeof EmulatorSerial.Type; exited: Promise<never> };
+type Target = { serial: typeof EmulatorSerial.Type; exited: Promise<never>; stop: () => void };
 
+const attached = (serial: typeof EmulatorSerial.Type): Target => ({ serial, exited: forever, stop: () => {} });
 const exit = (child: ChildProcess, log: string) => new Promise<never>((_, reject) =>
   child.once("exit", (code) => reject(new Error(`The emulator exited with ${code} before it booted; see ${log}`))));
 
@@ -136,7 +135,7 @@ async function emulatorTarget(avd: string): Promise<Target> {
   const serials = await emulators();
   const names = await Promise.all(serials.map((serial) => adb(["-s", serial, "emu", "avd", "name"], 30).then((out) => out.split(/\r?\n/)[0], () => undefined)));
   const running = serials[names.indexOf(avd)];
-  if (running) return { serial: running, exited: forever };
+  if (running) return attached(running);
   const port = Array.from({ length: 64 }, (_, i) => 5554 + 2 * i).find((p) => !serials.includes(`emulator-${p}`));
   if (port === undefined) throw new Error("Every emulator port from 5554 to 5680 is taken");
   const log = path.join(artifacts, `emulator-${avd}.log`);
@@ -144,7 +143,7 @@ async function emulatorTarget(avd: string): Promise<Target> {
   const flags = ["-gpu", "host", "-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot-save"];
   const child = spawn(sdk("emulator/emulator"), ["-avd", avd, "-port", String(port), ...flags], { detached: true, stdio: ["ignore", output, output] });
   child.unref();
-  return { serial: `emulator-${port}`, exited: exit(child, log) };
+  return { serial: `emulator-${port}`, exited: exit(child, log), stop: () => spawnSync("kill", ["-TERM", "--", `-${child.pid}`], { stdio: "ignore" }) };
 }
 
 const Reply = Schema.Struct({ id: Schema.optional(Schema.Number), result: Schema.optional(Schema.Unknown), error: Schema.optional(Schema.Struct({ message: Schema.String })) });
@@ -182,12 +181,12 @@ async function devTools(url: string, signal: AbortSignal) {
   const send = async <S extends Schema.ConstraintDecoder<unknown>>({ method, params, schema, signal }: Call<S>): Promise<S["Type"]> => {
     signal.throwIfAborted();
     const id = next++;
+    const abort = () => pending.get(id)?.reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
     const result = await new Promise<unknown>((resolve, reject) => {
-      const abort = () => reject(signal.reason);
-      signal.addEventListener("abort", abort, { once: true });
       pending.set(id, { resolve, reject });
       socket.send(JSON.stringify({ id, method, params }));
-    }).finally(() => pending.delete(id));
+    }).finally(() => { pending.delete(id); signal.removeEventListener("abort", abort); });
     return Schema.decodeUnknownSync(schema)(result);
   };
 
@@ -222,8 +221,15 @@ async function devTools(url: string, signal: AbortSignal) {
       await send({ method: "Input.dispatchMouseEvent", params: { type, x, y, button: "left", clickCount: 1 }, schema: Nothing, signal });
   };
 
+  const describe = async () => {
+    const expression = `JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()) })`;
+    const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal: AbortSignal.timeout(30_000) });
+    return String(result.value);
+  };
+
   return {
     until,
+    describe,
     async step(step: Step) {
       const signal = AbortSignal.timeout(120_000);
       if ("tap" in step) return tap(step.tap, signal);
@@ -269,7 +275,8 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
       const home = `[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`;
-      await page.until(home, AbortSignal.timeout(180_000)).catch(failing("Waiting for Home"));
+      await page.until(home, AbortSignal.timeout(180_000))
+        .catch(async (error: unknown) => failing(`Waiting for Home (${await page.describe().catch(String)})`)(error));
       for (const step of exercise) {
         await page.step(step).catch(failing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
@@ -296,7 +303,11 @@ if (import.meta.main) {
   if (verify) writeApkManifest();
   else {
     buildAndroid({ release });
-    const target = install ? { serial: install, exited: forever } : emulator && await emulatorTarget(emulator);
-    if (target) await deliver(target, steps);
+    const target = install ? attached(install) : emulator && await emulatorTarget(emulator);
+    if (target) {
+      process.once("exit", (code) => { stopping.abort(); if (code) target.stop(); });
+      for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
+      await deliver(target, steps);
+    }
   }
 }
