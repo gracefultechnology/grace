@@ -511,11 +511,14 @@ pure def lawSpeechFailuresAreExplainedDistinctly(failure: SpeechFailure, other: 
 The failure ends capture and any spoken reply, and writes its explanation in
 the transcript. The written reply, the draft and the current question stay.
 Nothing reopens the microphone by itself. A failure while Grace is thinking is
-a response failure, not a speech failure.
+a response failure, not a speech failure. A website using the microphone is
+reported only while Grace's microphone is on; with it off there is nothing to
+stop.
 
 ```quint
 pure def canSpeechFailure(c: Conversation, token: int, failure: SpeechFailure, by: ConversationActor): bool =
-  by == ConversationRuntime and token == c.generation and c.turn != Thinking
+  by == ConversationRuntime and token == c.generation and c.turn != Thinking and
+  (failure == WebsiteMicrophone implies c.voice)
 pure def speechFailure(c: Conversation, token: int, failure: SpeechFailure, by: ConversationActor): Conversation =
   { ...appended(GraceMessage, speechFailureText(failure), c), voice: false, turn: Ready, generation: c.generation + 1 }
 pure def stepSpeechFailureStopsVoice(before: Conversation, via: str, after: Conversation): bool =
@@ -529,9 +532,10 @@ pure def sometimesListeningEndedByFailure(c: Conversation): bool =
 
 The parts of Grace's reply arrive one after another while she is thinking, so
 the host can show them and start speaking the first sentence early. A part out
-of order, or from a turn that Talk, Type, a new message or a failure has since
-superseded, is refused. The transcript receives the whole reply once, with
-Respond, which ends the turn; no part arrives after it.
+of order, or from a turn that Talk, Stop, a new message or a failure has since
+superseded, is refused; choosing Type keeps the turn and its parts. The
+transcript receives the whole reply once, with Respond, which ends the turn;
+no part arrives after it.
 
 ```quint
 pure def canReplyPart(c: Conversation, token: int, part: int, by: ConversationActor): bool =
@@ -541,7 +545,6 @@ pure def replyPart(c: Conversation, token: int, part: int, by: ConversationActor
 pure def stepReplyPartsWaitForTheWholeReply(before: Conversation, via: str, after: Conversation): bool =
   via == "replyPart" implies
     after.messages == before.messages and after.turn == Thinking and after.generation == before.generation
-pure def alwaysStreamedPartsAreCounted(c: Conversation): bool = c.streamed >= 0
 pure def sometimesReplyStreamed(c: Conversation): bool = c.streamed >= 2 and c.turn != Thinking
 ```
 
@@ -592,7 +595,7 @@ its last 24 messages to the agent, which keeps no copy of its own.
 pure val historyMessages = 24
 pure def historyStart(c: Conversation): int =
   if (c.messages.length() > historyMessages) c.messages.length() - historyMessages else 0
-pure def alwaysHistoryWindowIsBounded(c: Conversation): bool =
+pure def lawHistoryWindowIsBounded(c: Conversation): bool =
   historyStart(c) >= 0 and c.messages.length() - historyStart(c) <= historyMessages
 ```
 
