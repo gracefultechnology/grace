@@ -120,6 +120,7 @@ function useCalendar(key: number) {
   return state && {
     key, state, can: (event: CalendarEvent) => can(event, "ViewUser"), send: (event: CalendarEvent) => send(event, "ViewUser"),
     settled: (id: string) => runtime.runPromise(Effect.flatMap(Effect.service(CalendarMachine), (box) => settled(box, id))),
+    current: () => runtime.runPromise(Effect.flatMap(Effect.service(CalendarMachine), (box) => box.get())),
   };
 }
 

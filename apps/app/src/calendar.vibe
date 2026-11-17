@@ -3,6 +3,7 @@ import { Machine as Accounts, type Account, type Accounts as Registry } from "..
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
 import { Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
@@ -19,61 +20,49 @@ export function dayOf(at: number) {
   return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / day)
 }
 
-export function midnight(n: number) {
+export function instant(n: number, minutes: number) {
   const d = utc(n)
-  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime()
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, minutes).getTime()
 }
 
-const weekday = (n: number) => (utc(n).getUTCDay() + 6) % 7
-const monday = (n: number) => n - weekday(n)
+export const midnight = (n: number) => instant(n, 0)
 
-function monthStart(n: number, months: number) {
-  const d = utc(n)
-  return Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1) / day)
+const minutesOf = (at: number) => {
+  const d = new Date(at)
+  return d.getHours() * 60 + d.getMinutes()
 }
 
 export function shownDays(mode: ViewMode, anchor: number) {
-  const first = mode === "WeekView" ? monday(anchor) : monday(monthStart(anchor, 0))
-  const weeks = mode === "WeekView" ? 1 : Math.ceil((monthStart(anchor, 1) - first) / 7)
-  return Array.from({ length: weeks * 7 }, (_, i) => first + i)
+  const { first, until } = shown(mode, anchor)
+  return Array.from({ length: until - first }, (_, i) => first + i)
 }
 
-function windowOf(mode: ViewMode, anchor: number, selected: number): ViewWindow {
-  const days = shownDays(mode, anchor)
-  return { mode, anchorDay: anchor, selectedDay: selected, fromTime: midnight(days[0]), untilTime: midnight(days[days.length - 1] + 1) }
+function windowOf(days: Days): ViewWindow {
+  const { first, until } = shown(days.mode, days.anchorDay)
+  return { ...days, fromTime: midnight(first), untilTime: midnight(until) }
+}
+
+function exact(w: ViewWindow) {
+  const { first, until } = shown(w.mode, w.anchorDay)
+  return w.fromTime < w.untilTime && dayOf(w.fromTime) === first && dayOf(w.untilTime) === until
+}
+
+export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
+  const window = windowOf(moved(w, kind, chosen))
+  return { window, kind, verified: exact(window) }
 }
 
 const opened = (w: ViewWindow) => w.untilTime - w.fromTime >= day
 
-export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
-  const week = w.mode === "WeekView"
-  const step = (n: number) => week ? windowOf(w.mode, w.anchorDay + 7 * n, w.selectedDay + 7 * n) : windowOf(w.mode, monthStart(w.anchorDay, n), w.selectedDay)
-  const windows: Record<Navigation, () => ViewWindow> = {
-    Today: () => windowOf(w.mode, chosen, chosen),
-    Earlier: () => step(-1),
-    Later: () => step(1),
-    SelectDay: () => windowOf("WeekView", chosen, chosen),
-    SwitchMode: () => week ? windowOf("MonthView", w.anchorDay, w.selectedDay) : windowOf("WeekView", w.selectedDay, w.selectedDay)
-  }
-  return { window: windows[kind](), kind, verified: true }
-}
-
 function reach(w: ViewWindow, today: number) {
-  const shown = opened(w) ? w : windowOf("WeekView", today, today)
-  return { fromTime: Math.min(shown.fromTime, midnight(today)), untilTime: Math.max(shown.untilTime, midnight(shown.selectedDay + 15), midnight(today + horizon / day)) }
+  const shownNow = opened(w) ? w : windowOf({ mode: "WeekView", anchorDay: today, selectedDay: today })
+  return { fromTime: Math.min(shownNow.fromTime, midnight(today)), untilTime: Math.max(shownNow.untilTime, midnight(shownNow.selectedDay + 15), midnight(today + horizon / day)) }
 }
 
 type Reach = ReturnType<typeof reach>
 const within = (next: Reach, fetched: Reach) => next.fromTime >= fetched.fromTime && next.untilTime <= fetched.untilTime
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
-
-export function repeated(d: EntryDetails, n: number) {
-  const s = new Date(d.startAt)
-  const weekly = d.recurrence === "Weekly"
-  const next = new Date(s.getFullYear(), s.getMonth() + (weekly ? 0 : n), s.getDate() + (weekly ? 7 * n : 0), s.getHours(), s.getMinutes())
-  return d.recurrence === "Once" || (!weekly && next.getDate() !== s.getDate()) ? undefined : next.getTime()
-}
 
 function placeIn(seriesId: string, id: string) {
   if (id === seriesId) return 0
@@ -83,46 +72,60 @@ function placeIn(seriesId: string, id: string) {
 
 const generated = (seriesId: string, id: string) => seriesId !== "" && id.startsWith(`${seriesId}@`)
 
-const rootOf = (v: CalendarView, seriesId: string) =>
-  v.entries.find((m) => m.hasSaved && m.phase !== "Deleted" && m.committed.seriesId === seriesId && !generated(seriesId, m.identity.occurrenceId))
-
 const provided = (v: CalendarView): CalendarView => ({ ...v, entries: v.entries.filter((m) => !generated(m.committed.seriesId, m.identity.occurrenceId)) })
+
+export const anchorOf = (v: CalendarView, seriesId: string) =>
+  v.entries.find((m) => m.hasSaved && m.phase === "Saved" && m.committed.seriesId === seriesId && m.committed.startAt === seriesAt(v, seriesId).details.startAt)
 
 function placeOf(v: CalendarView, definition: EntryDetails) {
   const member = v.entries.find((m) => m.hasSaved && m.committed.seriesId === definition.seriesId && m.committed.startAt === definition.startAt)
   return member === undefined ? undefined : placeIn(definition.seriesId, member.identity.occurrenceId)
 }
 
+const draftPlace = (v: CalendarView, c: Calendar) => placeOf(v, seriesAt(v, c.draft.seriesId).details) ?? placeIn(c.draft.seriesId, c.identity.occurrenceId) ?? 0
+
 const single = (c: Calendar) => c.committed.seriesId === "" && c.draft.seriesId === "" && c.draft.recurrence === "Once"
+
+const repeatedOn = (d: EntryDetails, n: number) => {
+  const startAt = instant(n, minutesOf(d.startAt))
+  return { startAt, endAt: startAt + d.endAt - d.startAt }
+}
 
 function schedulesOf(v: CalendarView, c: Calendar) {
   const d = c.draft
-  const at = placeOf(v, seriesAt(v, d.seriesId).details) ?? placeIn(d.seriesId, c.identity.occurrenceId) ?? 0
   const members = v.entries.filter((m) => m.phase !== "Deleted" && (m.identity.occurrenceId === v.selectedId || (m.hasSaved && m.committed.seriesId === d.seriesId)))
-  return members.map(({ identity: { occurrenceId: id }, committed }) => {
-    if (id === c.identity.occurrenceId) return { id, include: true, startAt: d.startAt, endAt: d.endAt }
-    const n = placeIn(d.seriesId, id)
-    const start = n === undefined ? (d.recurrence === "Once" ? undefined : committed.startAt) : repeated(d, n - at)
-    return start === undefined ? { id, include: false, startAt: committed.startAt, endAt: committed.endAt } : { id, include: true, startAt: start, endAt: start + d.endAt - d.startAt }
+  const plan = planned(members.map(({ identity: { occurrenceId: id } }) => {
+    const place = placeIn(d.seriesId, id)
+    return { id, placed: place !== undefined, place: place ?? 0 }
+  }), c.identity.occurrenceId, draftPlace(v, c), d.recurrence, dayOf(d.startAt))
+  const schedules = plan.map(({ id, include, moved: placed, day: n }, i) => {
+    const { committed } = members[i]
+    if (id === c.identity.occurrenceId) return { id, include, startAt: d.startAt, endAt: d.endAt }
+    if (!include) return { id, include, startAt: committed.startAt, endAt: committed.endAt }
+    return { id, include, ...placed ? repeatedOn(d, n) : { startAt: committed.startAt, endAt: committed.startAt + d.endAt - d.startAt } }
   })
+  const verified = schedules.every((s, i) => !s.include || (s.endAt > s.startAt && (!plan[i].moved || dayOf(s.startAt) === plan[i].day)))
+  return { schedules, verified }
 }
 
 const seriesReceipt = (v: CalendarView, c: Calendar, receipt: StoreReceipt): SeriesReceipt => ({
   occurrenceId: c.identity.occurrenceId, revision: receipt.revision, definitionVersion: seriesAt(v, c.draft.seriesId).version,
-  schedules: schedulesOf(v, c), verified: true, persisted: receipt.succeeded
+  ...schedulesOf(v, c), persisted: receipt.succeeded
 })
+
+const rootOf = (v: CalendarView, seriesId: string) =>
+  v.entries.find((m) => m.hasSaved && m.committed.seriesId === seriesId && !generated(seriesId, m.identity.occurrenceId))?.identity.occurrenceId ?? seriesId
 
 function written(v: CalendarView, c: Calendar): Calendar {
   const d = c.draft
-  const root = generated(d.seriesId, c.identity.occurrenceId) ? rootOf(v, d.seriesId) : undefined
-  const at = root === undefined ? undefined : schedulesOf(v, c).find((s) => s.include && s.id === root.identity.occurrenceId)
-  return root === undefined || at === undefined ? c : { ...root, draft: { ...d, startAt: at.startAt, endAt: at.endAt }, revision: c.revision }
+  if (!generated(d.seriesId, c.identity.occurrenceId)) return c
+  const first = shifted(d.recurrence, dayOf(d.startAt), -draftPlace(v, c))
+  return { ...c, identity: { ...c.identity, occurrenceId: rootOf(v, d.seriesId) }, hasSaved: true, draft: { ...d, ...first < 0 ? {} : repeatedOn(d, first) } }
 }
 
 function removed(v: CalendarView) {
-  const seriesId = entryAt(v, v.selectedId).committed.seriesId
-  const whole = v.scope === "EntireSeries" && generated(seriesId, v.selectedId)
-  return (whole ? rootOf(v, seriesId)?.identity.occurrenceId : undefined) ?? v.selectedId
+  const { seriesId, recurrence } = entryAt(v, v.selectedId).committed
+  return !generated(seriesId, v.selectedId) ? v.selectedId : v.scope === "EntireSeries" || recurrence === "Once" ? rootOf(v, seriesId) : undefined
 }
 
 const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(approveSave(create(noEntry, {
@@ -132,18 +135,12 @@ const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(
 function repetitions(v: CalendarView, span: Reach): Published[] {
   return v.series.flatMap(({ version, details: d }) => {
     if (d.recurrence === "Once" || v.deletedSeries.includes(d.seriesId)) return []
-    const at = placeOf(v, d) ?? 0
-    const found: Published[] = []
-    for (let n = 0; n < 1000; n++) {
-      const start = repeated(d, n - at)
-      if (start === undefined) continue
-      if (start >= span.untilTime) break
-      const id = n === 0 ? d.seriesId : `${d.seriesId}@${n}`
-      const end = start + d.endAt - d.startAt
-      if (end <= span.fromTime || v.cancelledIds.includes(id) || v.entries.some((m) => m.identity.occurrenceId === id)) continue
-      found.push({ incoming: savedEntry(v, id, { ...d, startAt: start, endAt: end, important: false }), seriesVersion: version, scheduleVerified: true })
-    }
-    return found
+    return repeatsOf(d.recurrence, dayOf(d.startAt), placeOf(v, d) ?? 0, dayOf(span.untilTime) + 1).flatMap(({ place, day: n }) => {
+      const id = place === 0 ? d.seriesId : `${d.seriesId}@${place}`
+      const { startAt, endAt } = repeatedOn(d, n)
+      if (startAt >= span.untilTime || endAt <= span.fromTime || v.cancelledIds.includes(id) || v.entries.some((m) => m.identity.occurrenceId === id)) return []
+      return [{ incoming: savedEntry(v, id, { ...d, startAt, endAt, important: false }), seriesVersion: version, scheduleVerified: dayOf(startAt) === n && endAt > startAt }]
+    })
   })
 }
 
@@ -170,6 +167,18 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   effect function first(mark: string) {
     return try Ref.modify(sent, (all) => [!all.has(mark), new Set(all).add(mark)] as const)
   }
+  effect function stored(c: Calendar) {
+    const receipt = try store.write(written(try box.get(), c))
+    const event: CalendarEvent = single(c)
+      ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
+      : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
+    box.send(event, "ViewStore") catch () => undefined
+  }
+  effect function erased(v: CalendarView) {
+    const target = removed(v)
+    const result = target === undefined ? { succeeded: true, evidence: `tablet:${v.selectedId}` } : try store.remove(target, v.scope)
+    box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
+  }
   try Stream.runForEach(box.changes, effect (v) => {
     const before = try Ref.getAndSet(last, v)
     if (before !== undefined) {
@@ -178,16 +187,9 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     }
     for (const c of v.entries) {
       if (c.phase !== "Editing" || c.approvedRevision !== c.revision || !(try first(`${c.identity.occurrenceId}@${c.revision}`))) continue
-      const receipt = try store.write(written(v, c))
-      const event: CalendarEvent = single(c)
-        ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
-        : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
-      box.send(event, "ViewStore") catch () => undefined
+      try Effect.uninterruptible(stored(c))
     }
-    if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) {
-      const result = try store.remove(removed(v), v.scope)
-      box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
-    }
+    if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) try Effect.uninterruptible(erased(v))
     try repeat(box, try span)
   })
 }
@@ -235,10 +237,11 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     }
   }
 
-  const shown = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
-  try fork.scoped Stream.runForEach(shown, effect (visible) => {
-    try each((_, v) => v.owner === "" ? undefined : visible ? { type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone } : { type: "closeCalendar" }, "ViewUser")
-    if (visible) lead.send({ type: "navigate", report: navigation((try lead.get()).window, "Today", dayOf(Date.now())) }, "ViewUser") catch () => undefined
+  const visibility = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
+  try fork.scoped Stream.runForEach(visibility, effect (visible) => {
+    const arrived = (try lead.get()).opened
+    try each((_, v) => v.owner === "" || (visible && v.opened) ? undefined : visible ? { type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone } : { type: "closeCalendar" }, "ViewUser")
+    if (visible && !arrived) lead.send({ type: "navigate", report: navigation((try lead.get()).window, "Today", dayOf(try Clock.currentTimeMillis)) }, "ViewUser") catch () => undefined
   })
 
   try fork.scoped Stream.runForEach(Stream.tick("30 seconds"), effect () => {
@@ -289,8 +292,10 @@ export const calendarFeeds = Layer.effectDiscard(effect {
       write: effect (entry) => link.write(entry) catch () => ({ revision: entry.revision, succeeded: false }),
       remove: effect (id, scope) => link.remove(id, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
-    const spans = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
-    const fill = Stream.runForEach(spans, effect (span) => {
+    const grown = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
+    const signedIn = Stream.filter(Stream.drop(Stream.changes(Stream.map(registry.changes, (a) => a.signIn.stage)), 1), (stage) => stage === "NotSigningIn")
+    const again = Stream.mapEffect(Stream.merge(Stream.drop(Stream.tick("5 minutes"), 1), signedIn), () => spanOf(lead))
+    const fill = Stream.runForEach(Stream.merge(grown, again), effect (span) => {
       const v = provided(try box.get())
       const feed = link.feed({ ...v, window: { ...v.window, ...span } })
       Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch () => undefined

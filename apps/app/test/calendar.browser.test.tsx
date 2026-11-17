@@ -34,6 +34,8 @@ async function company(key: string) {
   return boxes[0].calendar;
 }
 
+const held = async (key: string) => (await company(key)).map((e) => ({ title: e.title, startAt: Date.parse(e.startAt) }));
+
 function kept(): Accounts {
   const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
   return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: gmail, granted: allowedUse }, "Gmail", "AccountConnector");
@@ -42,7 +44,8 @@ function kept(): Accounts {
 async function start() {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const [eye] = await company(secret);
-  const eyeDay = dayOf(Date.parse(eye.startAt));
+  const eyeAt = Date.parse(eye.startAt);
+  const eyeDay = dayOf(eyeAt);
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(kept()));
   const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
@@ -51,7 +54,7 @@ async function start() {
   const run = <A,>(effect: Effect.Effect<A, unknown, Workspaces | AccountsMachine | Proposal | Instances>) => act(() => runtime.runPromise(effect));
   const card = page.getByRole("button", { name: /^Calendar/ });
   return {
-    secret, eyeDay, card, run,
+    secret, eyeAt, eyeDay, card, run,
     toEyeWeek: async () => {
       await act(() => userEvent.click(card));
       await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
@@ -72,15 +75,18 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
   const ask = (event: ProposalEvent, by: "Grace" | "Person") => run(Effect.flatMap(Effect.service(Proposal), (p) => p.send(event, by)));
 
-  // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments": Gmail's calendar fills from its company before Calendar opens.
+  // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
   await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
+  await act(() => userEvent.click(card.getByText("Eye check with Dr. Patel")));
+  await expect.element(page.getByText("Riverside Clinic")).toBeVisible();
+  await click("Back to Calendar");
+  await click("Close Calendar");
   await lifecycle("SleepDevice");
   await expect.element(page.getByText(/Eye check with Dr\. Patel,/)).toBeVisible();
   await act(() => userEvent.click(page.getByText("Touch the screen to wake it")));
   await expect.element(page.getByText(/Eye check with Dr\. Patel,/)).not.toBeInTheDocument();
 
-  // spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval": the week of today, then the week and the month of the eye check.
-  // spec/app/calendars.md, "Tags show only when an email’s calendar is on"
+  // spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"
   await toEyeWeek();
   await expect.element(row("Eye check with Dr\\. Patel", "Gmail")).toBeVisible();
   await act(() => userEvent.click(page.getByRole("radio", { name: "Month" })));
@@ -89,7 +95,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("Riverside Clinic")).toBeVisible();
   await click("Back to Calendar");
 
-  // spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace", and the banner comes back until Not now.
+  // spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"
   await person({ type: "setUse", id: 1, use: { mail: true, calendar: false, contacts: true } });
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).toBeVisible();
   await expect.element(row("Eye check with Dr\\. Patel")).not.toBeInTheDocument();
@@ -100,8 +106,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await person({ type: "setUse", id: 1, use: allowedUse });
   await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
 
-  // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet", and
-  // spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers": her yes adds it to Gmail's calendar.
+  // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
   await toEyeWeek();
   const gmailView = await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get()));
   const startAt = midnight(eyeDay) + 15 * hour;
@@ -126,11 +131,22 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 });
 
 it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
-  const { secret, eyeDay, toEyeWeek, stop } = await start();
+  const { secret, eyeAt, eyeDay, toEyeWeek, stop } = await start();
   const titles = async () => (await company(secret)).map((e) => e.title);
+  const edit = async (title: string, repeats: string) => {
+    await click("Edit");
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), title));
+    await act(() => userEvent.click(page.getByRole("radio", { name: repeats })));
+    await click("Save");
+  };
+  const opensOn = async (title: string, n: number) => {
+    await act(() => userEvent.click(row(title).first()));
+    await expect.element(page.getByText(`${new Date(midnight(n)).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · 10 am to 11 am`)).toBeVisible();
+    await click("Back to Calendar");
+  };
   await toEyeWeek();
 
-  // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form": a new appointment is kept on the tablet, and Save shows its day.
+  // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"
   await click("Add");
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Bridge club"));
   await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
@@ -139,28 +155,34 @@ it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurr
   await click("Next week");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "\\s*has plans") })).toBeVisible();
 
-  // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope": one repetition, then every one.
   await act(() => userEvent.click(row("Bridge club").first()));
+  await edit("Bridge night", "Every week");
+  await click("Back to Calendar");
+  await click("Previous week");
+  await opensOn("Bridge night", eyeDay);
+
+  // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope"
+  await click("Next week");
+  await act(() => userEvent.click(row("Bridge night").first()));
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
+  await click("Next week");
+  await act(() => userEvent.click(row("Bridge night").first()));
+  await edit("Bridge night", "Never");
+  await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
+  await click("Back to Calendar");
   await click("Previous week");
-  await act(() => userEvent.click(row("Bridge club").first()));
+  await click("Previous week");
+  await expect.poll(() => row("Bridge night").elements().length).toBe(1);
+  await act(() => userEvent.click(row("Bridge night").first()));
   await click("Delete");
-  await click("Delete every one");
-  await expect.element(row("Bridge club")).not.toBeInTheDocument();
-  await click("Next week");
-  await click("Next week");
-  await expect.element(row("Bridge club")).not.toBeInTheDocument();
-  await click("Previous week");
-  await click("Previous week");
+  await click("Delete it");
+  await expect.element(row("Bridge night")).not.toBeInTheDocument();
 
-  // spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle": Gmail's company keeps the change, and its appointment repeats here.
+  // spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"
   await act(() => userEvent.click(row("Eye check with Dr\\. Patel")));
-  await click("Edit");
-  await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Eye check at Riverside"));
-  await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
-  await click("Save");
+  await edit("Eye check at Riverside", "Every week");
   await expect.element(page.getByText("Repeats every week")).toBeVisible();
   await expect.poll(titles).toEqual(["Eye check at Riverside"]);
   await click("Back to Calendar");
@@ -169,10 +191,9 @@ it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurr
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
-  expect(await titles()).toEqual(["Eye check at Riverside"]);
+  expect(await held(secret)).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
   await click("Next week");
-  await expect.element(row("Eye check at Riverside", "Gmail").first()).toBeVisible();
-  await act(() => userEvent.click(row("Eye check at Riverside").first()));
+  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await click("Delete");
   await click("Delete every one");
   await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
