@@ -1,5 +1,8 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 
+import { Base64Url } from "effect/encoding"
+import policy from "../agent/policy.json" with { type: "json" }
+
 type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number }
 
 type Mail = {
@@ -72,6 +75,7 @@ type Box = {
   contacts: Contact[]
 }
 
+type GoogleConsent = { state: string; address: string; token: string; expiresAt: number; used: boolean }
 type Session = { sessionId: string; provider: Slug; loginHint: string; status: "pending" | "allowed" | "cancelled" | "refused"; address: string }
 
 type Account = {
@@ -87,6 +91,7 @@ type Account = {
   turns: (Turn & { id: number })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
   consents: string[]
+  googleRequests: string[]
   speech: { sessionId: string; token: string; expiresAt: string; opened: boolean }[]
 }
 
@@ -114,7 +119,7 @@ schema Steward { clientId: ClientId; challengeId: ChallengeId; idToken: IdToken;
 schema SignIn { clientId: ClientId; environment: Environment; redirectUri: Url; state: State; codeVerifier: Verifier; deviceName?: DeviceName; steward: Steward; serverAuthCode?: ServerAuthCode }
 schema Acknowledgement { clientId: ClientId; environment: Environment; redirectUri: Url; code: Proof; state: State; codeVerifier: Proof; credentialId: Uuid; secret: Secret }
 schema ChatMessage { role: string; content: string }
-schema ChatRequest { messages: ChatMessage[]; stream?: boolean }
+schema ChatRequest { model: Filled; messages: ChatMessage[]; stream?: boolean }
 schema Change { kind: "trash" | "untrash" | "mark-read" | "mark-unread" | "purge"; messageId: string; expectedHistoryId: string }
 schema Forwarded { messageId: string; historyId: string; partIds: string[] }
 schema Outgoing { kind: "send"; mode: "compose" | "reply" | "reply-all" | "forward"; to?: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; replyMessageId?: string; forwardAttachments?: Forwarded }
@@ -144,6 +149,20 @@ schema Outage { down: boolean }
 schema Scripted { said?: string; answer: string }
 schema Script { replies: Scripted[] }
 schema SessionQuery { sessionId: string }
+schema GoogleAuthorization { state: Uuid; response_type: "code"; client_id: "grace-browser-fixture"; redirect_uri: Url; scope: Filled }
+schema GoogleCallback { state: Uuid; code: Uuid }
+schema GoogleTokenForm { code: Uuid; grant_type: "authorization_code"; client_id: "grace-browser-fixture"; redirect_uri: Url }
+schema GoogleIdentity { email: Mailbox; email_verified: true }
+schema GoogleToken { access_token: Filled }
+schema GmailList { messages: { id: string; threadId: string }[] }
+schema GmailQuery { q?: string; maxResults?: string }
+schema GmailMessage { id: string; snippet: string; payload: { body: { data: string } } }
+schema GoogleEventReferences { items: { id: string }[] }
+schema GoogleEventReference { id: string }
+schema GoogleEventTime { dateTime: Instant; timeZone: string }
+schema GoogleEventBody { summary: Filled; description?: string; location?: string; start: GoogleEventTime; end: GoogleEventTime; attendees?: Attendee[] }
+schema GoogleCalendarPath { calendar: Filled }
+schema GoogleMailPath { message: Filled }
 schema SpeechSession { consentNonce: Uuid }
 schema Recorded { turns: Turn[] }
 schema Credential { credentialId: string; secret: string; code: string }
@@ -230,6 +249,13 @@ const lifetimes = { credential: 30 * 24 * 60 * 60, code: 5 * 60, consent: 5 * 60
 const firstParty = /^(https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?|(capacitor|capacitor-electron|app|tauri|file|electrobun):\/\/.*)$/i
 const owner = "owner@grace.test"
 const scopes = ["gmail.readonly", "gmail.send", "gmail.modify", "calendar.events"]
+const googleClient = "grace-browser-fixture"
+const googleTokenLifetime = 3600
+const googleScopes = ["openid", "email", ...scopes.map((scope) => `https://www.googleapis.com/auth/${scope}`)].join(" ")
+const googleGmail = "/gmail/v1/users/me/messages"
+const googleCalendar = "/calendar/v3/calendars"
+const googleConsentPath = "/o/oauth2/v2/auth"
+const googleCallbackPath = "/fake/google/callback"
 const capabilities = ["google.basic_identity", "google.gmail.triage", "google.gmail.send", "google.gmail.manage", "google.calendar.read", "google.calendar.write"]
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`
 const streaming = (account: Account) => account.turns.some((t) => t.outcome === "streaming")
@@ -311,6 +337,12 @@ function shown(e: Appointment, timeZone: string): Appointment {
   return { ...e, startAt: midnightIn(dateIn(e.startAt, zone), timeZone), endAt: midnightIn(dateIn(e.endAt, zone), timeZone), timezone: timeZone }
 }
 
+function googleEvent(e: Appointment) {
+  const at = (dateTime: string) => e.isAllDay ? { date: dateTime.slice(0, 10) } : { dateTime, timeZone: e.timezone }
+  return { kind: "calendar#event", id: e.externalId, summary: e.title, description: e.description, location: e.location, etag: e.etag,
+    status: e.status, start: at(e.startAt), end: at(e.endAt) }
+}
+
 function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
   const today = Math.floor(at / day) * day
   const start = today + 17 * day + 10 * hour
@@ -331,7 +363,7 @@ function seed(n: number, grantId: string | null, at: number, site: string): Acco
   return {
     key: `fake-key-${uuid(n)}`, credentialId: uuid(n), code: `code-${n}`, expiresAt: new Date(at + lifetimes.credential * 1000).toISOString(), acknowledged: false,
     boxes: grantId === null ? [] : [box("google", owner, grantId, at, site, uuid(n))], sessions: [], outage: false, script: [...scripted],
-    turns: [], changes: [], consents: [], speech: []
+    turns: [], changes: [], consents: [], googleRequests: [], speech: []
   }
 }
 
@@ -389,6 +421,19 @@ effect function now(afterSeconds = 0) {
 effect function store(site: string) {
   const accounts = try SubscriptionRef.make(new Map<string, Account>())
   const issued = try Ref.make(0)
+  const googleCodes = try Ref.make(new Map<string, GoogleConsent>())
+  const googleLinks = try Ref.make(new Map<string, string>())
+  const origin = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return `http://${request.headers["host"]}`
+  }
+  const googleHttp = effect (request: HttpClientRequest.HttpClientRequest) => {
+    provide client {
+      const response = try HttpClient.execute(request)
+      if (response.status < 200 || response.status >= 300) throw new ProviderFailed()
+      return try response.json
+    }
+  }
 
   effect function next() {
     return try Ref.updateAndGet(issued, (n) => n + 1)
@@ -480,15 +525,59 @@ effect function store(site: string) {
     })))
   }
 
+  effect function googleRequest(method: "GET" | "POST", path: string, token: string, body?: object) {
+    const base = try origin
+    const request = HttpClientRequest.bearerToken(HttpClientRequest.make(method)(`${base}${path}`), token)
+    return try googleHttp(body === undefined ? request : HttpClientRequest.bodyJsonUnsafe(request, body))
+  }
+
+  const googleBearer = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const token = request.headers["authorization"]?.replace(/^Bearer /, "") ?? ""
+    const now = try Clock.currentTimeMillis
+    const issued = [...(try Ref.get(googleCodes)).values()].find((grant) => grant.used && grant.token === token && grant.expiresAt > now)
+    if (issued === undefined) throw new Unauthorized()
+    return issued
+  }
+
+  effect function googleAuthorized(route: string) {
+    const { token } = try googleBearer
+    const link = [...(try Ref.get(googleLinks))].find(([, bearer]) => bearer === token)
+    const account = link === undefined ? undefined : [...(try SubscriptionRef.get(accounts)).values()].find((a) => a.boxes.some((b) => b.grantId === link[0]))
+    const box = account?.boxes.find((b) => b.grantId === link?.[0])
+    if (account === undefined || box === undefined || box.expired) throw new Unauthorized()
+    try change(account.key, (a) => ({ ...a, googleRequests: [...a.googleRequests, route] }))
+    return { key: account.key, box }
+  }
+
+  effect function gmailList() {
+    const { box } = try googleAuthorized(`GET ${googleGmail}`)
+    const { q, maxResults } = try HttpServerRequest.schemaSearchParams(GmailQuery)
+    const messages = box.mail.filter((m) => q === undefined || matches(m, q)).slice(0, Number(maxResults ?? 12))
+    return try HttpServerResponse.json({ messages: messages.map((m) => ({ id: m.externalId, threadId: m.threadId })), resultSizeEstimate: messages.length })
+  }
+
+  effect function gmailRead() {
+    const { message } = try HttpRouter.schemaPathParams(GoogleMailPath)
+    const { box } = try googleAuthorized(`GET ${googleGmail}/${message}`)
+    const found = box.mail.find((m) => m.externalId === message)
+    if (!found) throw new Missing()
+    return try HttpServerResponse.json({
+      id: found.externalId, threadId: found.threadId, labelIds: found.labels, snippet: found.snippet, historyId: found.metadata.historyId,
+      payload: { mimeType: "text/plain", headers: [{ name: "Subject", value: found.subject }], body: { data: Base64Url.encode(found.bodyText) } }
+    })
+  }
+
   effect function search(fixed?: Slug) {
     const { query, grantId, maxResults } = try HttpServerRequest.schemaSearchParams(SearchQuery)
     const { box } = try connection(fixed, grantId)
     if (query.trim() === "") return try HttpServerResponse.json({ error: "query is required." }, { status: 400 })
     const most = maxResults === undefined ? 12 : /^[1-9]\d*$/.test(maxResults) ? Math.min(Number(maxResults), 50) : 0
     if (most === 0) return try HttpServerResponse.json({ error: "maxResults must be a positive integer." }, { status: 400 })
-    const found = box.mail.filter((m) => matches(m, query))
+    const token = (try Ref.get(googleLinks)).get(box.grantId)
+    const found = token === undefined ? box.mail.filter((m) => matches(m, query)).slice(0, most) : (try Schema.decodeUnknownEffect(GmailList)(try googleRequest("GET", `${googleGmail}?q=${encodeURIComponent(query)}&maxResults=${most}`, token))).messages.flatMap(({ id }) => box.mail.filter((m) => m.externalId === id))
     return try HttpServerResponse.json({
-      messages: found.slice(0, most).map(listedMessage), nextPageToken: null, mailboxHistoryId: String(Math.max(0, ...box.mail.map((m) => Number(m.metadata.historyId)))),
+      messages: found.map(listedMessage), nextPageToken: null, mailboxHistoryId: String(Math.max(0, ...box.mail.map((m) => Number(m.metadata.historyId)))),
       syncedAt: try now(), supportsSpamTrash: true
     })
   }
@@ -498,8 +587,11 @@ effect function store(site: string) {
     const { box } = try connection(fixed, grantId)
     const found = box.mail.find((m) => m.externalId === messageId.trim())
     if (!found) throw new ProviderFailed()
+    const token = (try Ref.get(googleLinks)).get(box.grantId)
+    const wire = token === undefined ? undefined : try Schema.decodeUnknownEffect(GmailMessage)(try googleRequest("GET", `${googleGmail}/${encodeURIComponent(found.externalId)}?format=full`, token))
+    const bodyText = wire === undefined ? found.bodyText : try Effect.fromResult(Base64Url.decodeString(wire.payload.body.data))
     return try HttpServerResponse.json({
-      message: listedMessage(found), bodyText: found.bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments
+      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments
     })
   }
 
@@ -638,20 +730,53 @@ effect function store(site: string) {
     const { box: found } = try connection(fixed, grantId)
     const calendar = calendarId?.trim() || "primary"
     const zone = timeZone?.trim() || "UTC"
-    const events = found.calendar.map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
+    const token = (try Ref.get(googleLinks)).get(found.grantId)
+    const raw = token === undefined ? undefined : try Schema.decodeUnknownEffect(GoogleEventReferences)(try googleRequest("GET", `${googleCalendar}/${encodeURIComponent(calendar)}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`, token))
+    const events = found.calendar.filter((e) => raw === undefined || raw.items.some(({ id }) => id === e.externalId)).map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
     return try HttpServerResponse.json({ calendarId: calendar, events, syncedAt: try now() })
   }
 
   effect function addAppointment(fixed?: Slug) {
     const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
     const { key, box: found } = try connection(fixed, grantId)
+    const token = (try Ref.get(googleLinks)).get(found.grantId)
+    if (token !== undefined) {
+      const raw = try Schema.decodeUnknownEffect(GoogleEventReference)(try googleRequest("POST", `${googleCalendar}/${encodeURIComponent(calendarId ?? "primary")}/events`, token, {
+        summary: title, description, location, start: { dateTime: startAt, timeZone }, end: { dateTime: endAt, timeZone }, attendees
+      }))
+      const current = try connection(fixed, grantId)
+      const added = current.box.calendar.find((event) => event.externalId === raw.id)
+      if (!added) throw new Missing()
+      return try HttpServerResponse.json({ event: shown(added, timeZone) }, { status: 201 })
+    }
+    const added = try recordAppointment(key, found, { calendarId, title, description, location, startAt, endAt, timeZone, attendees })
+    return try HttpServerResponse.json({ event: shown(added, timeZone.trim()) }, { status: 201 })
+  }
+
+  effect function recordAppointment(key: string, found: Box, { title, description, location, startAt, endAt, timeZone, calendarId, attendees }: typeof NewAppointment.Type) {
     const added = appointment({
       externalId: `appointment${try next()}`, calendarId: calendarId?.trim() ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
       startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: false, timezone: timeZone.trim(), etag: `"${try next()}"`,
       attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false }))
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
-    return try HttpServerResponse.json({ event: shown(added, timeZone.trim()) }, { status: 201 })
+    return added
+  }
+
+  effect function googleCalendarList() {
+    const { calendar } = try HttpRouter.schemaPathParams(GoogleCalendarPath)
+    const { timeMin, timeMax } = try HttpServerRequest.schemaSearchParams(FeedQuery)
+    const { box } = try googleAuthorized(`GET ${googleCalendar}/${calendar}/events`)
+    const items = box.calendar.filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
+    return try HttpServerResponse.json({ kind: "calendar#events", items: items.map(googleEvent) })
+  }
+
+  effect function googleCalendarInsert() {
+    const { calendar } = try HttpRouter.schemaPathParams(GoogleCalendarPath)
+    const { key, box } = try googleAuthorized(`POST ${googleCalendar}/${calendar}/events`)
+    const { summary, description, location, start, end, attendees } = try HttpServerRequest.schemaBodyJson(GoogleEventBody)
+    const saved = try recordAppointment(key, box, { calendarId: calendar, title: summary, description, location, startAt: start.dateTime, endAt: end.dateTime, timeZone: start.timeZone, attendees })
+    return try HttpServerResponse.json(googleEvent(saved), { status: 201 })
   }
 
   effect function existing(fixed: Slug | undefined, grantId: string | undefined, calendarId: string | undefined) {
@@ -694,7 +819,12 @@ effect function store(site: string) {
     const sessionId = uuid(try next())
     const request = try HttpServerRequest.HttpServerRequest
     try change(account.key, (a) => ({ ...a, sessions: [...a.sessions, { sessionId, provider, loginHint: loginHint ?? "", status: "pending", address: "" }] }))
-    return try HttpServerResponse.json({ sessionId, pageUrl: `http://${request.headers["host"]}/fake/signin/${sessionId}` })
+    const host = `http://${request.headers["host"]}`
+    const callback = encodeURIComponent(`${host}${googleCallbackPath}`)
+    const page = provider === "google"
+      ? `${googleConsentPath}?response_type=code&client_id=${googleClient}&redirect_uri=${callback}&scope=${encodeURIComponent(googleScopes)}&state=${sessionId}`
+      : `/fake/signin/${sessionId}`
+    return try HttpServerResponse.json({ sessionId, pageUrl: `${host}${page}` })
   }
 
   effect function holder(sessionId: string) {
@@ -729,20 +859,95 @@ effect function store(site: string) {
 
   effect function connect(account: Account, provider: Slug, address: string) {
     const known = account.boxes.find((b) => b.provider === provider && b.address.toLowerCase() === address.toLowerCase())
-    if (known) return try changeBox(account.key, known.grantId, (b) => ({ ...b, expired: false }))
+    if (known) {
+      try changeBox(account.key, known.grantId, (b) => ({ ...b, expired: false }))
+      return known.grantId
+    }
     const added = box(provider, address, uuid(try next()), try Clock.currentTimeMillis, site, account.credentialId)
     try change(account.key, (a) => ({ ...a, boxes: [...a.boxes, added] }))
+    return added.grantId
+  }
+
+  const googleSession = effect {
+    const { state, redirect_uri, scope } = try HttpServerRequest.schemaSearchParams(GoogleAuthorization)
+    const host = try origin
+    if (redirect_uri !== `${host}${googleCallbackPath}` || scope !== googleScopes) throw new ProofInvalid()
+    const { account, session } = try holder(state)
+    if (session.provider !== "google" || session.status !== "pending") throw new Missing()
+    return { account, session, state }
+  }
+
+  effect function googlePage() {
+    const { account, session } = try googleSession
+    try change(account.key, (a) => ({ ...a, googleRequests: [...a.googleRequests, `GET ${googleConsentPath}`] }))
+    return HttpServerResponse.text(page(session), { contentType: "text/html" })
+  }
+
+  effect function googleAuthorize() {
+    const { account, state } = try googleSession
+    const { address, choice } = try HttpServerRequest.schemaBodyUrlParams(PageChoice)
+    if (choice !== "allow" || !address.endsWith("@grace.test")) {
+      try settle(account.key, state, choice === "cancel" ? "cancelled" : "refused")
+      return HttpServerResponse.text("Google consent was not granted.")
+    }
+    const code = uuid(try next())
+    const token = `fixture-google-${uuid(try next())}`
+    const expiresAt = (try Clock.currentTimeMillis) + lifetimes.code * 1000
+    try Ref.update(googleCodes, (all) => new Map(all).set(code, { state, address, token, expiresAt, used: false }))
+    try change(account.key, (a) => ({ ...a, googleRequests: [...a.googleRequests, `POST ${googleConsentPath}`] }))
+    return HttpServerResponse.redirect(`${googleCallbackPath}?code=${code}&state=${state}`, { status: 303 })
+  }
+
+  effect function googleToken() {
+    const { code, redirect_uri } = try HttpServerRequest.schemaBodyUrlParams(GoogleTokenForm)
+    const host = try origin
+    if (redirect_uri !== `${host}${googleCallbackPath}`) throw new ProofInvalid()
+    const now = try Clock.currentTimeMillis
+    const issued = try Ref.modify(googleCodes, (all) => {
+      const codeGrant = all.get(code)
+      if (codeGrant === undefined || codeGrant.used || codeGrant.expiresAt <= now) return [undefined, all] as const
+      return [codeGrant, new Map(all).set(code, { ...codeGrant, expiresAt: now + googleTokenLifetime * 1000, used: true })] as const
+    })
+    if (issued === undefined) throw new ProofInvalid()
+    const { account } = try holder(issued.state)
+    try change(account.key, (a) => ({ ...a, googleRequests: [...a.googleRequests, "POST /token"] }))
+    return try HttpServerResponse.json({ access_token: issued.token, expires_in: googleTokenLifetime, token_type: "Bearer", scope: googleScopes })
+  }
+
+  effect function googleIdentity() {
+    const issued = try googleBearer
+    const { account } = try holder(issued.state)
+    try change(account.key, (a) => ({ ...a, googleRequests: [...a.googleRequests, "GET /oauth2/v3/userinfo"] }))
+    return try HttpServerResponse.json({ sub: issued.address, email: issued.address, email_verified: true })
+  }
+
+  effect function googleCallback() {
+    const { state, code } = try HttpServerRequest.schemaSearchParams(GoogleCallback)
+    const { account, session } = try holder(state)
+    if (session.provider !== "google" || session.status !== "pending" || (try Ref.get(googleCodes)).get(code)?.state !== state) throw new ProofInvalid()
+    const host = try origin
+    const request = HttpClientRequest.bodyUrlParams(HttpClientRequest.post(`${host}/token`), {
+      code, grant_type: "authorization_code", client_id: googleClient, redirect_uri: `${host}${googleCallbackPath}`
+    })
+    const { access_token } = try Schema.decodeUnknownEffect(GoogleToken)(try googleHttp(request))
+    const identity = try Schema.decodeUnknownEffect(GoogleIdentity)(try googleRequest("GET", "/oauth2/v3/userinfo", access_token))
+    const grantId = try connect(account, "google", identity.email)
+    try Ref.update(googleLinks, (all) => new Map(all).set(grantId, access_token))
+    try settle(account.key, state, "allowed", identity.email)
+    return HttpServerResponse.text("You can go back to the tablet.")
   }
 
   effect function signInPage() {
     const { sessionId } = try HttpRouter.schemaPathParams(SessionQuery)
     const { session } = try holder(sessionId)
+    if (session.provider === "google") throw new Missing()
     return HttpServerResponse.text(page(session), { contentType: "text/html" })
   }
 
   effect function choose() {
     const { sessionId } = try HttpRouter.schemaPathParams(SessionQuery)
     const { account, session } = try holder(sessionId)
+    if (session.provider === "google") throw new Missing()
     const { address, choice } = try HttpServerRequest.schemaBodyUrlParams(PageChoice)
     if (session.status === "pending" && choice === "allow" && address !== "") try connect(account, session.provider, address)
     const status = match (choice) {
@@ -769,9 +974,12 @@ effect function store(site: string) {
   }
 
   effect function expire() {
-    const { key } = try signedIn()
+    const { key, sessions } = try signedIn()
     const { address } = try HttpServerRequest.schemaBodyJson(Expiry)
     try change(key, (a) => ({ ...a, boxes: a.boxes.map((b) => b.address === address ? { ...b, expired: true } : b) }))
+    try Ref.update(googleCodes, (all) => new Map([...all].map(([code, grant]) => [
+      code, grant.address === address && sessions.some((session) => session.sessionId === grant.state) ? { ...grant, expiresAt: 0 } : grant,
+    ])))
     return try HttpServerResponse.json({ ok: true })
   }
 
@@ -938,6 +1146,15 @@ effect function store(site: string) {
     HttpRouter.route("POST", "/api/v1/voice/speech/session", answered(speechSession())),
     HttpRouter.route("POST", "/api/v1/voice/speech/session/:sessionId/revoke", answered(speechRevoke())),
     HttpRouter.route("GET", "/api/v1/voice/speech/ws", answered(speechRelay())),
+    HttpRouter.route("GET", googleConsentPath, answered(googlePage())),
+    HttpRouter.route("POST", googleConsentPath, answered(googleAuthorize())),
+    HttpRouter.route("POST", "/token", answered(googleToken())),
+    HttpRouter.route("GET", "/oauth2/v3/userinfo", answered(googleIdentity())),
+    HttpRouter.route("GET", googleCallbackPath, answered(googleCallback())),
+    HttpRouter.route("GET", googleGmail, answered(gmailList())),
+    HttpRouter.route("GET", `${googleGmail}/:message`, answered(gmailRead())),
+    HttpRouter.route("GET", `${googleCalendar}/:calendar/events`, answered(googleCalendarList())),
+    HttpRouter.route("POST", `${googleCalendar}/:calendar/events`, answered(googleCalendarInsert())),
     HttpRouter.route("GET", "/fake/signin/:sessionId", answered(signInPage())),
     HttpRouter.route("POST", "/fake/signin/:sessionId", answered(choose())),
     HttpRouter.route("POST", "/fake/expire", answered(expire())),
@@ -975,12 +1192,12 @@ effect function post(cloud: string, path: string, body: object, key?: string) {
   return try HttpClient.execute(key === undefined ? request : HttpClientRequest.bearerToken(request, key))
 }
 
-export effect function signIn(cloud: string) {
+export effect function signIn(cloud: string, linkGoogle = true) {
   const binding = { clientId: "grace-test", environment: "test", redirectUri: "grace://auth" }
   const state = "state"
   const codeVerifier = "v".repeat(43)
   const steward = { clientId: "steward-test", challengeId: "c".repeat(43), idToken: "t".repeat(20), codeVerifier }
-  const signedIn = try Schema.decodeUnknownEffect(Credential)(try (try post(cloud, "/api/v1/app-auth/mobile/google", { ...binding, state, codeVerifier, steward, serverAuthCode: "server-auth-code" })).json)
+  const signedIn = try Schema.decodeUnknownEffect(Credential)(try (try post(cloud, "/api/v1/app-auth/mobile/google", { ...binding, state, codeVerifier, steward, ...linkGoogle ? { serverAuthCode: "server-auth-code" } : {} })).json)
   try Schema.decodeUnknownEffect(Acknowledged)(try (try post(cloud, "/api/v1/app-auth/mobile/ack", { ...binding, state, codeVerifier, ...signedIn })).json)
   return signedIn
 }
@@ -991,7 +1208,7 @@ export effect function turns(cloud: string, key: string) {
 }
 
 export effect function parts(cloud: string, key: string, said: string) {
-  const response = try post(cloud, "/api/v1/chat/completions", { messages: [{ role: "user", content: said }], stream: true }, key)
+  const response = try post(cloud, "/api/v1/chat/completions", { model: policy.model, messages: [{ role: "user", content: said }], stream: true }, key)
   const lines = Stream.splitLines(Stream.decodeText(response.stream))
   const data = Stream.filter(Stream.map(lines, (line) => line.replace(/^data: /, "")), (line) => line !== "" && line !== "[DONE]")
   return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)

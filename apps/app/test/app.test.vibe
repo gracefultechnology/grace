@@ -60,12 +60,17 @@ it.live("Talk or type without losing the conversation: a turn streams to its end
   provide client {
     const key = (try signIn(cloud)).secret
     const said = "Hello Grace."
+    const request = HttpClientRequest.post(`${cloud}/api/v1/chat/completions`).pipe(
+      HttpClientRequest.bearerToken(key), HttpClientRequest.bodyJsonUnsafe({ messages: [{ role: "user", content: said }] })
+    )
+    const missingModel = (try HttpClient.execute(request)).status
     const whole = (try Stream.runCollect(try parts(cloud, key, said))).join("")
     try scoped(effect { try Stream.runHead(try parts(cloud, key, unending)) })
     try script(cloud, key, [{ answer: "Scripted." }])
     const scripted = (try Stream.runCollect(try parts(cloud, key, said))).join("")
     const recorded = try turns(cloud, key)
-    try Effect.try(() => assert.deepStrictEqual({ whole, scripted, recorded }, {
+    try Effect.try(() => assert.deepStrictEqual({ missingModel, whole, scripted, recorded }, {
+      missingModel: 400,
       whole: reply(said),
       scripted: "Scripted.",
       recorded: [{ said, outcome: "completed" }, { said: unending, outcome: "aborted" }, { said, outcome: "completed" }]
@@ -126,6 +131,82 @@ it.live("Connect the email I already use: each company's own page answers with i
         inboxes: { outlook: ["Thanksgiving dinner sign-up"], riverview: ["Your November bill is ready"], yahoo: "NeedsSignIn" }
       }))
     }
+  }
+})
+
+schema GoogleAccountSession { sessionId: string; pageUrl: string }
+schema GoogleAccountGrant { connectionId: string; connected: boolean; identity: { email: string } }
+schema GoogleAccess { access_token: string; token_type: "Bearer"; scope: string }
+schema GoogleOwner { email: string; email_verified: true }
+
+effect function googleSession(key: string) {
+  const request = HttpClientRequest.post(`${cloud}/api/v1/eliza/connections/google/sessions`).pipe(
+    HttpClientRequest.bearerToken(key), HttpClientRequest.bodyJsonUnsafe({ loginHint: "" })
+  )
+  return try Schema.decodeUnknownEffect(GoogleAccountSession)(try (try HttpClient.execute(request)).json)
+}
+
+effect function googleOwnerGrants(key: string) {
+  const request = HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/api/v1/eliza/google/accounts?side=owner`), key)
+  return try Schema.decodeUnknownEffect(Schema.Array(GoogleAccountGrant))(try (try HttpClient.execute(request)).json)
+}
+
+effect function googleCallback(pageUrl: string, address: string) {
+  const request = HttpClientRequest.bodyUrlParams(HttpClientRequest.post(pageUrl), { address, choice: "allow" })
+  provide FetchHttpClient.RequestInit = { redirect: "manual" } {
+    const response = try HttpClient.execute(request)
+    try Effect.try(() => assert.equal(response.status, 303))
+    return try Effect.try(() => new URL(response.headers.location, cloud))
+  }
+}
+
+effect function exchangeGoogle(code: string) {
+  return try HttpClient.execute(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(`${cloud}/token`), {
+    code, client_id: "grace-browser-fixture", grant_type: "authorization_code", redirect_uri: `${cloud}/fake/google/callback`
+  }))
+}
+
+it.live("Connect the email I already use: Google denies missing consent, reused codes, wrong owners and expired tokens", () => effect {
+  provide client {
+    const first = (try signIn(cloud, false)).secret
+    const other = (try signIn(cloud, false)).secret
+    const address = "owner@grace.test"
+    const denied = try googleSession(first)
+    const cancelled = try submit(denied.pageUrl, { address, choice: "cancel" })
+    const deniedSession = try sessions(cloud, first)
+    const beforeConsent = try googleOwnerGrants(first)
+    const pending = try googleSession(first)
+    const different = try googleSession(other)
+    const callback = try googleCallback(pending.pageUrl, address)
+    const code = callback.searchParams.get("code") ?? ""
+    const foreignState = `${callback.origin}${callback.pathname}?code=${code}&state=${different.sessionId}`
+    const wrongState = try status(foreignState)
+    const afterWrongState = try googleOwnerGrants(first)
+    const consented = try status(callback.href)
+    const replayedCallback = try status(callback.href)
+    const replayedCode = (try exchangeGoogle(code)).status
+
+    const [grant] = try googleOwnerGrants(first)
+    const mail = `${cloud}/api/v1/eliza/google/gmail/search?query=clinic&grantId=${grant.connectionId}`
+    const withKey = (url: string, key: string) => HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(url), key))
+    const ownerRead = (try withKey(mail, first)).status
+    const foreignRead = (try withKey(mail, other)).status
+
+    const rawPage = try googleSession(first)
+    const rawCallback = try googleCallback(rawPage.pageUrl, address)
+    const given = try exchangeGoogle(rawCallback.searchParams.get("code") ?? "")
+    const access = try Schema.decodeUnknownEffect(GoogleAccess)(try given.json)
+    const userinfo = `${cloud}/oauth2/v3/userinfo`
+    const identity = try Schema.decodeUnknownEffect(GoogleOwner)(try (try withKey(userinfo, access.access_token)).json)
+    try expire(cloud, first, address)
+    const expiredToken = (try withKey(userinfo, access.access_token)).status
+    const expiredConnection = (try withKey(mail, first)).status
+
+    try Effect.try(() => assert.deepStrictEqual(
+      { cancelled, deniedSession, beforeConsent, wrongState, afterWrongState, consented, replayedCallback, replayedCode, ownerRead, foreignRead, identity, expiredToken, expiredConnection },
+      { cancelled: 200, deniedSession: ["cancelled"], beforeConsent: [], wrongState: 401, afterWrongState: [], consented: 200, replayedCallback: 401, replayedCode: 401,
+        ownerRead: 200, foreignRead: 404, identity: { email: address, email_verified: true }, expiredToken: 401, expiredConnection: 409 }
+    ))
   }
 })
 
