@@ -106,6 +106,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   };
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const failure = failures[active.load];
+  const privateFailure = active.manualSignIn && active.load === "LoadFailed";
   const privateInput = { tag: "OpenPrivateSignIn", url: secureOrigin(tabUrl(active)) } as const;
 
   return (
@@ -144,7 +145,8 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
       )}
       {failure !== undefined && (
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
-          <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"} labels={{ failed: () => failure }}
+          <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"} labels={{ failed: () => privateFailure ? "Private sign-in couldn’t open" : failure }}
+            message={privateFailure ? "Check your internet connection. If it still won’t open, update Android System WebView in the Play Store." : undefined}
             onRetry={() => edit({ tag: "Reload" })} onFixWifi={() => { if (can(fixWifi)) void send(fixWifi); }} />
         </OverPage>
       )}
