@@ -41,8 +41,7 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   const go = page.getByRole("button", { name: "Go", exact: true });
   const enter = () => userEvent.keyboard("{Enter}");
   const visit = async (url: string, id = 1, submit = enter) => {
-    await userEvent.clear(address);
-    await userEvent.type(address, url);
+    await address.fill(url);
     await submit();
     await expect.poll(() => ({ src: shown(id)?.src, load: tab(id)?.load })).toEqual({ src: url, load: "Loaded" });
   };
