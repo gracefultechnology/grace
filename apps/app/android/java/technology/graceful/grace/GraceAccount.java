@@ -26,12 +26,12 @@ public final class GraceAccount extends Plugin {
  }
 
  @PluginMethod public void passwordRecoveryStatus(PluginCall call) {
-  RECOVERY.execute(() -> call.resolve(new JSObject().put("ready", passwordBackup.available())));
+  RECOVERY.execute(() -> call.resolve(new JSObject().put("ready", !BuildConfig.IS_LAUNCHER && passwordBackup.available())));
  }
 
  @PluginMethod public void showPasswordRecovery(PluginCall call) {
   getActivity().runOnUiThread(() -> {
-   if (getActivity().isFinishing() || getActivity().isDestroyed() || !recovery.open()) {
+   if (BuildConfig.IS_LAUNCHER || getActivity().isFinishing() || getActivity().isDestroyed() || !recovery.open()) {
     call.reject("Password recovery is unavailable");
    } else call.resolve();
   });

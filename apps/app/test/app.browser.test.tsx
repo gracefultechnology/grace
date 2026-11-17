@@ -11,7 +11,7 @@ import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
-import type { SurfacePlugin } from "../src/surfacePlugin.ts";
+import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -741,7 +741,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     copy: () => Promise.resolve({ clearsAfterMs: 45_000 }),
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, vault }));
+  let finishSpeech: ((result: GuideSpeechResult) => void) | undefined;
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: false, vault,
+    guideSpeech: {
+      listen: () => new Promise<GuideSpeechResult>((resolve) => { finishSpeech = resolve; }),
+      cancel: () => { finishSpeech?.({ status: "cancelled" }); return Promise.resolve(); },
+    },
+  }));
   const element = document.body.appendChild(document.createElement("div"));
   const root = createRoot(element);
   onTestFinished(async () => {
@@ -768,6 +775,12 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
+  await expect.element(unlock).toBeEnabled();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Say a Passwords command" })));
+  await expect.poll(() => typeof finishSpeech).toBe("function");
+  await act(async () => { finishSpeech?.({ status: "complete", text: "Open passwords" }); });
   await expect.element(unlock).toBeEnabled();
 });
 
