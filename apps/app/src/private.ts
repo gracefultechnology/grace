@@ -233,6 +233,10 @@ function meets(cue: number, length: number): boolean {
   return cue > 0 && length >= cue;
 }
 
+function fits(cue: number, length: number, dialled: boolean): boolean {
+  return meets(cue, length) && (cue <= 4 || !dialled);
+}
+
 function wordBefore(text: string, start: number): string {
   const end = isSpaceAt(text, start - 1) || charAt(text, start - 1) === 45 ? start - 1 : 0;
   return end > 0 && isLetterAt(text, end - 1) ? wordBetween(text, wordStart(text, end, 12), end) : "";
@@ -264,7 +268,7 @@ function cueBefore(text: string, j: number, words: number, numbers: boolean, lin
   const cue = numbers && word === "texted" ? 4 : cueAt(text, start, j + 1);
   if (cue > 4 && numbers) {
     const behind = words > 0 ? cueBefore(text, start - 1, words - 1, numbers, lines, sentences, steps - 1) : 0;
-    return behind;
+    return behind > 0 || sentences ? behind : cue;
   }
   if (cue > 0) return cue;
   if (isFiller(word)) return cueBefore(text, start - 1, words, numbers, lines, sentences, steps - 1);
@@ -354,20 +358,21 @@ function codeFrom(text: string, i: number, s: number): boolean {
   if (i >= e || isDigitAt(text, e) || attachedAfter(text, e) || length < 3 || length > 12 || runsOn(text, s, e, pair ? q - s : length)) return false;
   const said = wordBefore(text, s);
   const tight = cueBefore(text, s - 1, 0, false, true, false, 40);
-  const dialable = tight > 4 && (length === 10 || (length === 11 && digitValue(text, s) === 1));
+  const dialled = length === 10 || (length === 11 && digitValue(text, s) === 1);
   const next = wordAfter(text, e);
-  if (!dialable && (meets(tight, length) || (tight === 4 && length === 3 && next === "" && (said === "is" || said === "was")))) return true;
+  if (fits(tight, length, dialled) || (tight === 4 && length === 3 && next === "" && (said === "is" || said === "was"))) return true;
   if (charAt(text, s - 1) === 35 || dialledAt(text, s)) return false;
   const alone = blankBack(text, s - 1, 24) && blankAhead(text, e, 24);
   const year = length === 4 && ((digitValue(text, s) === 1 && digitValue(text, s + 1) === 9) || (digitValue(text, s) === 2 && digitValue(text, s + 1) === 0));
-  if (length >= 4 && !year && alone && meets(cueBefore(text, s - 1, 120, true, true, true, 900), length)) return true;
+  if (length >= 4 && alone && meets(cueBefore(text, s - 1, 120, true, true, true, 900), length)) return true;
   const owned = next === "is" && (wordAfter(text, e + 3) === "your" || wordAfter(text, e + 3) === "my");
   if ((!year || owned) && meets(cueAfter(text, e, 2, alone, 40), length)) return true;
   const after = cueAfter(text, e, 12, alone, 160);
   if (meets(after, length) && length !== 4) return true;
   return length >= 4 && !year && ((after > 0 && length === 4)
     || ((followsColon(text, s - 1, 40) || endsLine(text, e)) && meets(cueBefore(text, s - 1, 12, true, false, true, 160), length))
-    || ((said === "is" || said === "was" || said === "are") && meets(cueBefore(text, s - 1, 40, true, false, false, 300), length))
+    || (followsColon(text, s - 1, 40) && fits(cueBefore(text, s - 1, 12, true, false, false, 160), length, dialled))
+    || ((said === "is" || said === "was" || said === "are") && fits(cueBefore(text, s - 1, 40, true, false, false, 300), length, dialled))
     || ((next === "is" || next === "was") && meets(cueBefore(text, s - 1, 40, true, true, true, 300), length)));
 }
 
@@ -416,7 +421,7 @@ function evenFrom(text: string, p: number, e: number, width: number, steps: numb
   //@ decreases steps
   const q = runEnd(text, p, 9);
   const join = charAt(text, q);
-  return q - p === width && (q >= e || (steps > 0 && (width >= 4 || (join !== 44 && join !== 46)) && evenFrom(text, joinEnd(text, q, 3), e, width, steps - 1)));
+  return q - p === width && (q >= e || (steps > 0 && (width >= 4 || join !== 44) && evenFrom(text, joinEnd(text, q, 3), e, width, steps - 1)));
 }
 
 function isChainCodeDigit(text: string, i: number): boolean {
@@ -426,7 +431,8 @@ function isChainCodeDigit(text: string, i: number): boolean {
   if (isDigitAt(text, s - 1) || i >= e || e === runEnd(text, s, 9) || attachedBefore(text, s) || isLetterAt(text, e)) return false;
   const width = runEnd(text, s, 9) - s;
   const digits = digitsBetween(text, s, e, 48);
-  return (width === 1 || digits >= 6) && evenFrom(text, s, e, width, 8) && meets(cueBefore(text, s - 1, 0, false, true, false, 40), digits);
+  const cue = cueBefore(text, s - 1, 0, false, true, false, 40);
+  return (width === 1 || digits >= 6) && evenFrom(text, s, e, width, 8) && cue <= 4 && meets(cue, digits);
 }
 
 function isCodeCharAt(text: string, i: number): boolean {
