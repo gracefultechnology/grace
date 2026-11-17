@@ -122,6 +122,11 @@ const adb = async (args: string[], seconds = 60) => {
 };
 const shell = (serial: string, command: string, seconds?: number) => adb(["-s", serial, "shell", command], seconds);
 const forever = new Promise<never>(() => {});
+const deadline = (seconds: number) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`ran past ${seconds} s`)), seconds * 1000);
+  return { signal: controller.signal, [Symbol.dispose]: () => clearTimeout(timer) };
+};
 const emulators = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
 const avds = () => execFileSync(sdk("emulator/emulator"), ["-list-avds"], { encoding: "utf8", timeout: 60_000 }).split("\n");
 
@@ -223,7 +228,8 @@ async function devTools(url: string, signal: AbortSignal) {
 
   const describe = async () => {
     const expression = `JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()), text: document.body.innerText.slice(0, 300) })`;
-    const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal: AbortSignal.timeout(30_000) });
+    using limit = deadline(30);
+    const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal: limit.signal });
     return String(result.value);
   };
 
@@ -231,8 +237,9 @@ async function devTools(url: string, signal: AbortSignal) {
     until,
     describe,
     async step(step: Step) {
-      const signal = AbortSignal.timeout(120_000);
-      if ("tap" in step) return tap(step.tap, signal);
+      using limit = deadline(120);
+      const { signal } = limit;
+      if ("tap" in step) return await tap(step.tap, signal);
       if ("into" in step) {
         await tap(step.into, signal);
         await send({ method: "Input.insertText", params: { text: step.type }, schema: Nothing, signal });
@@ -244,7 +251,7 @@ async function devTools(url: string, signal: AbortSignal) {
         await send({ method: "Input.dispatchKeyEvent", params: { type: "keyUp", ...key }, schema: Nothing, signal });
         return;
       }
-      return until(`document.body.innerText.includes(${JSON.stringify(step.expect)})`, signal);
+      return await until(`document.body.innerText.includes(${JSON.stringify(step.expect)})`, signal);
     },
     close: () => socket.close(),
   };
@@ -256,6 +263,13 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
   await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
   const installed = (await shell(serial, "date +%s")).trim();
+  const responding = async (cause?: unknown) => {
+    const anrs = (await shell(serial, `logcat -d -b events -s am_anr -T ${installed}.000`).catch(failing("Reading the am_anr events")))
+      .split("\n").filter((line) => line.includes("am_anr"));
+    const graces = anrs.filter((line) => line.includes(`,${identity.appId},`));
+    if (graces.length) throw new Error(`Grace was not responding on ${serial}:\n${graces.join("\n")}`, { cause });
+    return anrs.length;
+  };
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
@@ -271,15 +285,17 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
   try {
-    const targets = Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(120_000) })
+    using opening = deadline(120);
+    const targets = Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: opening.signal })
       .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
     const host = targets.find((target) => target.type === "page" && target.url.startsWith("https://localhost"))?.webSocketDebuggerUrl;
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
-    const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
+    const page = await devTools(host, opening.signal).catch(failing("Opening Grace's WebView debugging socket"));
     try {
       const home = `[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`;
       const showing = (what: string) => async (error: unknown) => failing(`${what} (the page shows ${await page.describe().catch(String)})`)(error);
-      await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
+      using reaching = deadline(180);
+      await page.until(home, reaching.signal).catch(showing("Waiting for Home"));
       for (const step of exercise) {
         await page.step(step).catch(showing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
@@ -287,14 +303,13 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     } finally {
       page.close();
     }
+  } catch (error) {
+    await responding(error);
+    throw error;
   } finally {
     await adb(["-s", serial, "forward", "--remove", `tcp:${port}`]).catch((error: unknown) => process.stderr.write(`${String(error)}\n`));
   }
-  const anrs = (await shell(serial, `logcat -d -b events -s am_anr -T ${installed}.000`).catch(failing("Reading the am_anr events")))
-    .split("\n").filter((line) => line.includes("am_anr"));
-  const graces = anrs.filter((line) => line.includes(`,${identity.appId},`));
-  if (graces.length) throw new Error(`Grace was not responding on ${serial}:\n${graces.join("\n")}`);
-  process.stdout.write(`${serial} Grace is Home and responding; other processes raised ${anrs.length} am_anr events since the install\n`);
+  process.stdout.write(`${serial} Grace is Home and responding; other processes raised ${await responding()} am_anr events since the install\n`);
 }
 
 if (import.meta.main) {

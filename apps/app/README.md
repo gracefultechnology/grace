@@ -73,12 +73,15 @@ or more than one has that name. A failed wait or step names the page's address, 
 rail item and opening text. Each feature adds its own file; `home.json` walks
 `spec/app/shell.md`, "Story: Reach everyday tasks from Home".
 
-A run of `develop` at `c8849b1` with this check, on a new `pixel_tablet` AVD of
-`android-35-ext15;google_apis;arm64-v8a` (2560×1600, 4 GB) on a host with a load average near 300:
-both debug APKs passed the content check at 11,203,659 and 11,203,523 bytes, the cold boot took
-7 minutes, the WebView was `com.google.android.webview` 124.0.6367.219, all 19 steps of `home.json`
-passed, it ended `Grace is Home and responding` and exited 0 in 14 minutes. SystemUI's "not
-responding" dialog held focus during the run, and the exercise's input still reached Grace's WebView.
+A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
+average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
+bytes, the cold boot took 5 minutes, the WebView was `com.google.android.webview` 133.0.6943.137,
+all 19 steps of `home.json` passed, and it ended `Grace is Home and responding; other processes
+raised 32 am_anr events since the install` and exited 0 in 14 minutes. Run again with `--install`
+while Grace was stopped (`run-as technology.graceful.grace kill -STOP`) and tapped, it failed naming
+her `Input dispatching timed out` event, with the step that could not finish as its cause. Every
+WebView wait has a time limit that keeps the command alive until it fires, so a debugging socket
+that goes quiet fails its step instead of letting the command exit with Node's code 13.
 Interrupted with SIGTERM while booting, the command exited 143 and stopped the emulator it had
 started; a plain build has no handler and dies on the signal.
 
