@@ -1,8 +1,9 @@
 // spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"
 import { type HomeMail, MailApp, type MailFolder, MailMessageView, MailSignInBanner, type MailSummary, MailSyncingRow } from "@repo/ui";
+import { Exit } from "effect";
 import type { ReactNode } from "react";
 import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
-import { type Event as MailEvent, messageRecord, readable, showsScamWarning } from "../gen/app__email.ts";
+import { enabled, type Event as MailEvent, messageRecord, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder } from "../gen/app__emailItem.ts";
 import { type BannerKind, type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, mailContext, openSource, outboxCount, showsMail, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
@@ -60,7 +61,6 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const sources = sourcesOf(boxes);
   const shown = boxes.filter((b) => showsMail(registry, b.id));
   const name = (id: number) => registry.accounts.find((a) => a.id === id)?.name ?? "";
-  const each = (event: MailEvent) => shown.forEach((b) => { if (b.can(event)) void b.send(event); });
   const filter = (id: number) => { if (account.can({ type: "filterInbox", id })) void account.send({ type: "filterInbox", id }); };
 
   const opening = shown.find((b) => b.id === openSource(registry, sources)) ?? shown.find((b) => b.state.readKind === "OpenMessage" && b.state.readStatus !== "ReadIdle");
@@ -71,7 +71,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const c = read(opening.id, ref);
     const open: MailEvent = { type: "readMail", kind: "OpenMessage", ref, approved: true };
     return (
-      <MailMessageView from={{ name: c?.from ?? "" }} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={c?.body ?? ""}
+      <MailMessageView from={{ name: c?.from ?? "" }} address={showsScamWarning(m) ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={c?.body ?? ""}
         scam={showsScamWarning(m)} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
         files={ready ? m.assets.filter((a) => a.kind === "Pdf").map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined}
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
@@ -99,20 +99,30 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const notes = shownBanners.filter((b) => b.kind !== "OfflineBanner").map((b) => notices[b.kind](b));
   const failed = shown.filter((b) => b.state.readKind === "Search" && b.state.readStatus === "ReadFailed");
   const search = (query: string): MailEvent => ({ type: "readMail", kind: "Search", ref: query, approved: true });
+  const replace = (b: MailInstance, event: MailEvent) => {
+    const stop: MailEvent = { type: "showInbox" };
+    if (b.can(event)) void b.send(event);
+    else if (b.state.readStatus === "Reading" && b.state.readKind === "Search" && b.can(stop))
+      void b.send(stop).then((exit) => { if (Exit.isSuccess(exit) && enabled(exit.value, event, "MailUser")) void b.send(event); });
+  };
+  const show = (chosen: Folder) => shown.forEach((b) => {
+    if (b.state.folder !== chosen) replace(b, { type: "chooseFolder", folder: chosen });
+    else if (b.state.query !== "") replace(b, search(""));
+  });
 
   return (
     <MailApp folder={folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), outbox: outboxCount(registry, sources) }}
       accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={messages}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
       query={lead?.query ?? ""}
-      onQueryChange={(query) => { if (!shown.some((b) => b.state.readStatus === "Reading")) each(search(query)); }}
+      onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
       onRetry={() => failed.forEach((b) => { const again = search(b.state.query); if (b.can(again)) void b.send(again); })}
       onSelectFolder={(chosen) => {
         if (chosen === "outbox") return;
         if (registry.inboxFilter !== 0) filter(0);
-        each({ type: "chooseFolder", folder: folders[chosen] });
+        show(folders[chosen]);
       }}
-      onAccount={(id) => { filter(id); each({ type: "chooseFolder", folder: "InboxFolder" }); }}
+      onAccount={(id) => { filter(id); show("InboxFolder"); }}
       onOpen={(id) => {
         const [owner, ...ref] = id.split("/");
         const box = shown.find((b) => b.id === Number(owner));

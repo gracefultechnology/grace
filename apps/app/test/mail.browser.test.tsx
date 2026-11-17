@@ -95,11 +95,24 @@ it("See all my email in one place", async () => {
   await act(() => userEvent.click(page.getByRole("button", { name: "Back to Inbox" })));
   await expect.element(row("Gmail 3")).toBeVisible();
 
-  // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"
-  await Effect.runPromise(Effect.provide(expire(cloud, secret, outlook), client));
+  const dinner = page.getByText(/Thanksgiving dinner is on Thursday the 26th/);
   await act(() => userEvent.click(church));
+  await expect.element(dinner).toBeVisible();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Back to Inbox" })));
+
+  // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/email.md, "Each search or content read needs current access and the user's choice"
+  await Effect.runPromise(Effect.provide(expire(cloud, secret, outlook), client));
+  await act(() => userEvent.type(page.getByRole("searchbox", { name: "Search email" }), "dinner"));
+  await expect.element(page.getByRole("searchbox", { name: "Search email" })).toHaveValue("dinner");
   await expect.element(page.getByText("Outlook needs you to sign in again")).toBeVisible();
   await expect.element(church).toBeVisible();
+  await expect.element(clinic).not.toBeInTheDocument();
+  await act(() => userEvent.click(church));
+  await expect.element(dinner).toBeVisible();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Back to Inbox" })));
+  await act(() => userEvent.click(row("All inboxes")));
+  await expect.element(page.getByRole("searchbox", { name: "Search email" })).toHaveValue("");
+  await expect.element(clinic).toBeVisible();
 
   // spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
   await person({ type: "setUse", id: 2, use: { mail: false, calendar: true, contacts: true } });
