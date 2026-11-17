@@ -24,7 +24,6 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Week and month views, current occurrences and recurring deletion](./calendarView.md)
 - [Saved photos, documents, Email sharing and printing](./files.md)
 - [Generic evidence-grounded website operations](./execution.md)
-- [Task kinds, subjects and terms](./task.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
 - [Payment authorization, durable attempts and provider outcomes](./payment.md)

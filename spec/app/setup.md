@@ -7,19 +7,19 @@ of what Grace does, trying Talk, trying Type, closing Grace, bringing her
 back with Ask Grace, then Grace's own question, "What would you like to
 do?". English, one voice, no language picker and no wake word.
 
-This follows PRD ONB-01 to ONB-03 (`prototype/prd.md:923–927`). The owner
-changed three things since: Wi-Fi comes first on the launcher tablet,
-because thinking and speech run in the cloud; the account step comes before
-anything spoken, because the one Google sign-in that connects her inbox also
-signs in the cloud account behind speech and reasoning, so Not now there
-leaves Grace unable to answer; and the closing question hands over to the
-ordinary conversation, where her answer starts a task, instead of being a
-step of set-up.
+This follows PRD ONB-01 to ONB-03 (`prototype/prd.md:923–927`), with three
+changes. Wi-Fi comes first on the launcher tablet, because thinking and
+speech run in the cloud. The account step comes before anything spoken,
+because Grace can think only once an email account is connected and the
+cloud account behind speech and reasoning is usable, so Not now there
+leaves Grace unable to answer. ONB-01 lets only the sign-in be skipped;
+here every step but the explanation can be put off, each at a stated cost.
 
 Set-up is its own record, not a conversation. Until Grace can think, every
 step is fixed written text answered by a tap or by typing, and no step
-needs Grace to reason. Speech is used only where cloud speech reports it is
-available: Grace reads the lines aloud, and the Talk step can be tried. The
+needs Grace to reason. Speech is Cartesia through the cloud, used only
+where it reports it is available: Grace reads the lines aloud, and the
+Talk step can be tried. The
 record survives a restart, unlike the conversation. Which email accounts
 exist, and how one is connected, is the accounts model's; whether the cloud
 account is signed in and usable is the cloud connection's; her name is the
@@ -206,7 +206,7 @@ when she has closed Grace's window, and Reopen when she has brought it back
 with Ask Grace. The explanation says in one sentence what Grace does, and
 that while the microphone is on her voice goes to the cloud to be
 understood and Grace's replies come back from it to be spoken. In the Close
-step the Close button is her answer, not leaving. A tap anywhere else, or an
+step, closing Grace's window is her answer; it does not leave set-up. A tap anywhere else, or an
 answer meant for another step, is refused. The name step is answered by the
 memory model saving her name. Answering the last step reaches the hand-over
 and, while Grace can think, asks the store to keep that set-up has ended;
@@ -325,16 +325,16 @@ pure def stepSetUpEndsOnlyWhileGraceCanThink(before: Setup, after: Setup): bool 
 
 ### Set-up is written, and spoken only while cloud speech is available
 
-Every step up to the account is silent text. From the name step on, Grace
-reads each line aloud and Talk is the dock's main button only while Grace
-can think and cloud speech reports it is available; otherwise the line
+Every step up to the account is silent text. From the name step on, while
+set-up shows, Grace reads each line aloud and Talk is the dock's main
+button only while Grace can think and cloud speech reports it is available; otherwise the line
 stays written and Type is the main button. The Talk step is answered only
 while Grace speaks, and only once she has been heard, which also needs the
 microphone permission the system asks for; otherwise Not now is the way on.
 
 ```quint
 pure def readsAloud(s: Setup): bool =
-  graceThinks(s.facts) and s.facts.speechAvailable and orderOf(s.progress.step) > orderOf(AccountStep)
+  showsSetUp(s) and graceThinks(s.facts) and s.facts.speechAvailable and orderOf(s.progress.step) > orderOf(AccountStep)
 pure def stepTalkIsTriedOnlyWhileGraceSpeaks(before: Setup, via: str, after: Setup): bool =
   (via == "answer" and before.progress.step == TalkStep and after.progress.step != TalkStep) implies readsAloud(before)
 ```
@@ -356,8 +356,8 @@ pure def alwaysEarlierStepsAreSettled(s: Setup): bool =
 While set-up shows, it fills the screen: the rail, Home's cards and
 Settings are out of reach, except Ask Grace in the rail while the Reopen
 step asks for it, Grace's window opens only for the practice steps,
-and only the system's volume keys work beside set-up's own page. Close,
-Back or launcher Home take her to Home, where Carry on setting up brings her
+and only the system's volume keys work beside set-up's own page. Set-up's
+own Close, Back or launcher Home take her to Home, where Carry on setting up brings her
 back to the step she left. The screen sleeping and waking tells set-up
 nothing, so the step is kept. An end being saved, or one whose save failed,
 can be left the same way, and carrying on saves it again; at the hand-over
@@ -376,8 +376,8 @@ pure def alwaysAwayMeansSetUpWentAway(s: Setup): bool = s.phase == Away implies 
 ### Set-up ends while Grace can think and she keeps going
 
 From any started state where Grace can think, set-up ends, as long as she
-answers, puts off or carries on whenever she can and the store
-acknowledges a request it is given, unless Grace stops being able to think
+answers, puts off, carries on or retries a failed save whenever she can
+and the store acknowledges a request it is given, unless Grace stops being able to think
 on the way. Nothing promises the internet, the account or the cloud, so
 this is the only end set-up can promise.
 
