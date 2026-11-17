@@ -251,9 +251,10 @@ What the page sees, for the account connector to call (the plugin's methods are 
 | `credentialIdentity({ environment })` | `{ environment, credentialId }`, an opaque id or `null` when signed out |
 | events | `signInCompleted`, `signInIncomplete`, `signInRenewed`, `signInReadinessChanged` |
 
-No answer or event carries the key. For a provider sheet the account's address is `google.email`, and
-mail, calendar and contacts are granted when `google.scopes` holds a `gmail.`, `calendar.` or
-`contacts.` scope.
+No answer or event carries the key. For the connector's sheet report, `startGoogle` resolving is
+allowed, a rejection with code `cancelled` is cancelled and any other code refused; the account's
+address is `google.email`, and mail, calendar and contacts are granted when `google.scopes` holds a
+`gmail.`, `calendar.` or `contacts.` scope.
 
 Sign-in works only once these match this build. They are the owner's or an operator's to make, and
 none can be checked from the repository:
@@ -272,7 +273,10 @@ none can be checked from the repository:
 
 Three reads check them: `GET /api/v1/app-auth/mobile/config` on the Cloud host lists the client,
 `GET /steward/auth/providers` shows `googleNative`, and `GET /api/v1/app-auth/mobile/google` answers
-`configured: true` with a `serverClientId` and the scopes.
+`configured: true` with a `serverClientId` and the scopes. On 17 November 2026 all three answered so
+for production and staging, but Cloud's scopes held `gmail.readonly` and `calendar.readonly` rather
+than `gmail.modify`, which moving mail to Trash needs, and neither host's `assetlinks.json` listed the
+debug key above, so the browser route cannot verify on a debug build yet.
 
 ### Why the host is as it is
 
