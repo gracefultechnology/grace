@@ -229,7 +229,7 @@ lemma finishLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load)
   ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysRecentDestinationsAreDistinct(finishLoad(b, id, loadVersion, result)))
   ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> stepRevisionNeverMovesBack(b, finishLoad(b, id, loadVersion, result)))
 {
-  if inv(b) && canFinishLoad(b, id, loadVersion, result) { FinishedLoadKeepsRules(b, id, loadVersion, result, false, tabUrl(tabById(b, id))); }
+  if inv(b) && canFinishLoad(b, id, loadVersion, result) { FinishedLoadKeepsRules(b, id, loadVersion, result, false, ""); }
 }
 
 lemma FinishedLoadKeepsRules(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
@@ -239,13 +239,14 @@ lemma FinishedLoadKeepsRules(b: Browser, id: int, loadVersion: int, result: Load
 {
   var after := finishPageLoad(b, id, loadVersion, result, secure, endedAt);
   forall t | t in b.tabs ensures |endedAtCursor(t, endedAt).history| == |t.history|
-  { EndedAtFold(t.history, t.cursor, endedAt); }
+  { if endedAt != "" { EndedAtFold(t.history, t.cursor, endedAt); } }
   MappedTabKeys(b, after); RecentBridge(b); RecentBridge(after); FinishRecentFilter(b, id, loadVersion, result, secure, endedAt);
-  if result.Loaded? && endedAt != "" {
-    var kept := ProofLib.Filter((visit: string) => (visit != endedAt), b.recent);
-    ProofLib.FilterKeepsDistinctBy((visit: string) => (visit != endedAt), b.recent, (url: string) => url);
-    forall visit | visit in kept ensures visit != "" && visit != endedAt
-    { ProofLib.FilterMember((visit: string) => (visit != endedAt), b.recent, visit); }
+  var url := if endedAt == "" then tabUrl(tabById(b, id)) else endedAt;
+  if result.Loaded? && url != "" {
+    var kept := ProofLib.Filter((visit: string) => (visit != url), b.recent);
+    ProofLib.FilterKeepsDistinctBy((visit: string) => (visit != url), b.recent, (url: string) => url);
+    forall visit | visit in kept ensures visit != "" && visit != url
+    { ProofLib.FilterMember((visit: string) => (visit != url), b.recent, visit); }
   }
 }
 
@@ -406,7 +407,8 @@ lemma RemoveRecentFilter(b: Browser, url: string)
 }
 
 lemma FinishRecentFilter(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
-  ensures finishPageLoad(b, id, loadVersion, result, secure, endedAt).recent == (if result.Loaded? && endedAt != "" then [endedAt] + ProofLib.Filter((visit: string) => (visit != endedAt), b.recent) else b.recent)
+  ensures finishPageLoad(b, id, loadVersion, result, secure, endedAt).recent == (var url := if endedAt == "" then tabUrl(tabById(b, id)) else endedAt;
+    if result.Loaded? && url != "" then [url] + ProofLib.Filter((visit: string) => (visit != url), b.recent) else b.recent)
 {
 }
 

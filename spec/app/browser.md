@@ -342,16 +342,19 @@ pure def canFinishLoad(b: Browser, id: int, loadVersion: int, result: Load): boo
   hasTab(b, id) and loadVersion == tabById(b, id).loadVersion and tabById(b, id).load == Loading
   and (result == Loaded or result == LoadFailed or result == SecurityBlocked)
 pure def finishLoad(b: Browser, id: int, loadVersion: int, result: Load): Browser =
-  finishPageLoad(b, id, loadVersion, result, false, tabUrl(tabById(b, id)))
+  finishPageLoad(b, id, loadVersion, result, false, "")
 pure def canFinishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, endedAt: str): bool =
   canFinishLoad(b, id, loadVersion, result) and endedAt != ""
 pure def finishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: str): Browser = {
-  ...b, tabs: b.tabs.listMap(t => if (t.id == id)
-    { ...endedAtCursor(t, endedAt), load: result, secure: secure and result == Loaded } else t),
-  recent: if (result == Loaded and endedAt != "")
-    List(endedAt).concat(b.recent.select(visit => visit != endedAt)) else b.recent,
-  clearRequested: if (result == Loaded and endedAt != "") false else b.clearRequested,
-  revision: if (id == b.selected) b.revision + 1 else b.revision
+  val url = if (endedAt == "") tabUrl(tabById(b, id)) else endedAt
+  {
+    ...b, tabs: b.tabs.listMap(t => if (t.id == id)
+      { ...endedAtCursor(t, endedAt), load: result, secure: secure and result == Loaded } else t),
+    recent: if (result == Loaded and url != "")
+      List(url).concat(b.recent.select(visit => visit != url)) else b.recent,
+    clearRequested: if (result == Loaded and url != "") false else b.clearRequested,
+    revision: if (id == b.selected) b.revision + 1 else b.revision
+  }
 }
 pure def sometimesWebsiteLoads(b: Browser): bool = activeTab(b).load == Loaded
 pure def sometimesWebsiteFails(b: Browser): bool = activeTab(b).load == LoadFailed
@@ -365,18 +368,20 @@ pure val loadVersionValues = Set(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
 A website often sends a page on while it loads, such as from its bare name
 to `www` or to its sign-in page, and the person can tap a link before a load
 has finished. The adapter reports the address the page is at when its load
-ends, and the tab records it in the same history entry the load started:
+ends, and the tab records it in the same history entry the load started
+(an empty address is a report that names none, which changes no entry):
 the address bar, the tab's label and the recent websites then name where the
 page is, no history entry is added, and Back still returns to the page
 before. A tab's other entries are kept as they were.
 
 ```quint
-pure def endedAtCursor(t: Tab, endedAt: str): Tab = {
-  ...t, history: t.history.foldl(List(), (kept, visit) =>
-    kept.append(if (kept.length() == t.cursor) endedAt else visit))
-}
+pure def endedAtCursor(t: Tab, endedAt: str): Tab =
+  if (endedAt == "") t else {
+    ...t, history: t.history.foldl(List(), (kept, visit) =>
+      kept.append(if (kept.length() == t.cursor) endedAt else visit))
+  }
 pure def lawALoadRecordsWhereItEnded(t: Tab, endedAt: str): bool =
-  t.cursor >= 0 and t.cursor < t.history.length() implies
+  endedAt != "" and t.cursor >= 0 and t.cursor < t.history.length() implies
     (endedAtCursor(t, endedAt).history.length() == t.history.length() and tabUrl(endedAtCursor(t, endedAt)) == endedAt)
 pure val redirectedTo: str = "https://www.utility.example/home"
 pure def sometimesARedirectIsFollowed(b: Browser): bool =
