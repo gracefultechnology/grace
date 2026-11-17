@@ -25,6 +25,7 @@ adapter correctly recognized a website or that an external effect succeeded.
 The two observed versions are evidence references, not alternate page state.
 There is no provider name, domain allowlist or fixed sequence of website steps.
 Caller identities are supplied by the authenticated host, not website content.
+Each part keeps every `always` rule of its own spec, named once by that spec.
 
 ```quint
 import shell as S from "./shell"
@@ -932,8 +933,8 @@ its owning machine; event input cannot assign an arbitrary payment state.
 ```quint
 pure def canBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
   by == Person and mayAssist(w) and observationIsCurrent(w) and w.execution.phase == X::Observed and
-  not(w.execution.privateInput) and key.owner == w.execution.owner and key.origin == w.execution.origin and key.account == w.execution.matchedAccount and
-  w.paymentTask == "" and P::validKey(key)
+  not(w.execution.privateInput) and key.owner == w.execution.owner and key.origin == w.execution.origin and
+  key.account == w.execution.matchedAccount and w.paymentTask == "" and P::validKey(key)
 pure def lawMismatchedAccountCannotBindPayment(w: Workspace, key: P::BillKey, by: WorkspaceActor): bool =
   key.account != w.execution.matchedAccount implies not(canBindPayment(w, key, by))
 pure def lawMismatchedAccountCannotAdvancePayment(w: Workspace): bool =
