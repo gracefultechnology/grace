@@ -148,13 +148,13 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
 }
 
 type Store = {
-  readonly write: (entry: Calendar) => StoreReceipt!!
-  readonly remove: (id: string, scope: DeleteScope) => DeletionReceipt!!
+  readonly write: (entry: Calendar, view: CalendarView) => StoreReceipt!!
+  readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!!
 }
 
 const device: Store = {
-  write: (entry) => Effect.succeed({ revision: entry.revision, succeeded: true }),
-  remove: (id) => Effect.succeed({ succeeded: true, evidence: `tablet:${id}` })
+  write: (entry) => Effect.succeed({ revision: entry.revision, succeeded: true, published: [] }),
+  remove: (identity) => Effect.succeed({ succeeded: true, evidence: `tablet:${identity.occurrenceId}` })
 }
 
 export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
@@ -178,14 +178,16 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     }
     for (const c of v.entries) {
       if (c.phase !== "Editing" || c.approvedRevision !== c.revision || !(try first(`${c.identity.occurrenceId}@${c.revision}`))) continue
-      const receipt = try store.write(written(v, c))
+      const receipt = try store.write(written(v, c), v)
       const event: CalendarEvent = single(c)
         ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
         : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
       box.send(event, "ViewStore") catch () => undefined
+      for (const p of receipt.published) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
     }
     if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) {
-      const result = try store.remove(removed(v), v.scope)
+      const gone = entryAt(v, removed(v))
+      const result = try (generated(gone.committed.seriesId, gone.identity.occurrenceId) ? device : store).remove(gone.identity, "ThisOccurrence")
       box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
     }
     try repeat(box, try span)
@@ -286,8 +288,8 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     if ((try workspace.get()).device.surface === "Calendar" && !bound.opened) box.send({ type: "openCalendar", owner: bound.owner, calendarId: bound.calendarId, timezone: bound.timezone }, "ViewUser") catch () => undefined
     const link = connector.calendar({ provider: account.provider, address: account.address })
     const store: Store = {
-      write: effect (entry) => link.write(entry) catch () => ({ revision: entry.revision, succeeded: false }),
-      remove: effect (id, scope) => link.remove(id, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
+      write: effect (entry, view) => link.write(entry, view) catch () => ({ revision: entry.revision, succeeded: false, published: [] }),
+      remove: effect (identity, scope) => link.remove(identity, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
     const spans = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
     const fill = Stream.runForEach(spans, effect (span) => {

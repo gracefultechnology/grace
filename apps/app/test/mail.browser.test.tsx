@@ -23,12 +23,12 @@ const outlook = "margaret@outlook.com";
 const Kept = Schema.Struct({
   boxes: Schema.Array(Schema.Struct({
     address: Schema.String,
-    sent: Schema.Array(Schema.Struct({ operationId: Schema.String })),
     mail: Schema.Array(Schema.Struct({
       externalId: Schema.String, subject: Schema.String, labels: Schema.Array(Schema.String), bcc: Schema.Array(Schema.String),
       attachments: Schema.Array(Schema.Struct({ filename: Schema.String })),
     })),
   })),
+  changes: Schema.Array(Schema.Struct({ receipt: Schema.Struct({ requestId: Schema.String, kind: Schema.String, state: Schema.String }) })),
 });
 
 /** Margaret allows the tablet on Outlook's own page, as the fake serves it. */
@@ -204,7 +204,8 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Yes, noon is perfect."));
   await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
   await host("Offline");
-  const before = (await company()).boxes.flatMap((b) => b.sent.map((s) => s.operationId));
+  const sends = async () => (await company()).changes.filter((c) => c.receipt.kind === "send" && c.receipt.state === "succeeded").map((c) => c.receipt.requestId);
+  const before = await sends();
   await click(page.getByRole("button", { name: "Send" }));
   await click(row("Outbox 1"));
   await expect.element(email(/ruth@family\.test/)).toBeVisible();
@@ -215,7 +216,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(row("Outbox")).not.toBeInTheDocument();
   await host("Offline");
   await host("Online");
-  const after = (await company()).boxes.flatMap((b) => b.sent.map((s) => s.operationId)).filter((id) => !before.includes(id));
+  const after = (await sends()).filter((id) => !before.includes(id));
   expect(after).toHaveLength(1);
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
 });

@@ -75,9 +75,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments": Gmail's calendar fills from its company before Calendar opens.
   await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
   await lifecycle("SleepDevice");
-  await expect.element(page.getByText(/Eye check with Dr\. Patel,/)).toBeVisible();
+  await expect.element(page.getByText(/Joan’s birthday,/)).toBeVisible();
   await act(() => userEvent.click(page.getByText("Touch the screen to wake it")));
-  await expect.element(page.getByText(/Eye check with Dr\. Patel,/)).not.toBeInTheDocument();
+  await expect.element(page.getByText(/Joan’s birthday,/)).not.toBeInTheDocument();
 
   // spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval": the week of today, then the week and the month of the eye check.
   // spec/app/calendars.md, "Tags show only when an email’s calendar is on"
@@ -118,16 +118,16 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const asked = await run(Effect.flatMap(Effect.service(Proposal), (p) => p.get()));
   const tapped: Request = { generation: 2, workVersion: 1, origin: "Tapped" };
   await ask({ type: "agree", given: consent(tapped, 1, proposalOf(asked)), now: tapped }, "Person");
+  await expect.poll(async () => (await company(secret)).map((e) => e.title)).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
+  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
-  await expect.poll(async () => (await company(secret)).map((e) => e.title)).toEqual(["Eye check with Dr. Patel", "Doctor’s appointment"]);
   await click("Back to Calendar");
-  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
   await stop();
 });
 
 it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eyeDay, toEyeWeek, stop } = await start();
-  const titles = async () => (await company(secret)).map((e) => e.title);
+  const titles = async () => (await company(secret)).map((e) => e.title).filter((t) => t !== "Joan’s birthday");
   await toEyeWeek();
 
   // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form": a new appointment is kept on the tablet, and Save shows its day.
