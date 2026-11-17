@@ -225,13 +225,17 @@ function checkPolicy(bundle: string) {
   return declared.size;
 }
 
-function writeApkManifest(directory = artifacts) {
+function writeApkManifest(directory = artifacts, episodeCertificate = false) {
   const apksigner = buildTool("apksigner");
   const apks = readdirSync(directory).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
+  if (!apks.length) throw new Error("No Grace APK was produced for verification");
   const manifest = apks.map((name) => {
     const file = path.join(directory, name);
     const contents = readFileSync(file);
     const entries = execFileSync(buildTool("aapt"), ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
+    if (entries.includes("res/raw/billworld_episode_ca.pem") !== episodeCertificate) {
+      throw new Error(`${name} has the wrong certificate resources for this build`);
+    }
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
     const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_bun\.so$/.exec(entry)?.slice(1) ?? []);
@@ -694,7 +698,7 @@ if (import.meta.main) {
       await Promise.race([adb(["-s", target.serial, "wait-for-device", "shell", 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'], 600), target.exited]);
       await billworldPasswords(target.serial, billworld, abi);
     } finally { target.stop(); }
-  } else if (fixtureRun) writeApkManifest(path.join(artifacts, "billworld-passwords", fixtureRun));
+  } else if (fixtureRun) writeApkManifest(path.join(artifacts, "billworld-passwords", fixtureRun), true);
   else if (verify) writeApkManifest();
   else {
     buildAndroid({ release, abi });
