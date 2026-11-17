@@ -130,6 +130,24 @@ pure def stepDetailFillUsesCurrentApproval(before: SavedDetails, after: SavedDet
   })
 ```
 
+### A changed, deleted or cleared detail has no current saved value
+
+Right after she changes a detail, its fact waits for her yes; right after she
+deletes it, or clears the list, no fact under its key is a valid saved value.
+So nothing queued or sent with the old value can pass the saved-value check.
+
+```quint
+pure def lawChangedDetailWaitsForHerYes(d: SavedDetails, proposedFact: M::FactProposal): bool =
+  canProposeDetail(d, proposedFact, M::MemoryUser) implies
+    detailAt(proposeDetail(d, proposedFact, M::MemoryUser), proposedFact.factKey).proposed
+pure def lawDeletedDetailIsNotSaved(d: SavedDetails, factKey: str, version: int): bool =
+  canForgetDetail(d, factKey, version, M::MemoryUser) implies
+    detailAt(forgetDetail(d, factKey, version, M::MemoryUser), factKey).status != M::Stored
+pure def lawClearedDetailIsNotSaved(d: SavedDetails, factKey: str): bool =
+  not(M::validFact(detailAt(forgetAll(d, M::MemoryUser), factKey)) and
+    detailAt(forgetAll(d, M::MemoryUser), factKey).status == M::Stored)
+```
+
 ### Home and Grace greet her by her saved name and by nothing else
 
 The greeting's name is the saved value of the Name fact, or nothing while she

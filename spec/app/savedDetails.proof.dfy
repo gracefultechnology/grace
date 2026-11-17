@@ -214,21 +214,58 @@ lemma lawGreetingNameIsSaved_ensures(d: SavedDetails)
   DetailAtIsMember(d, nameKey);
 }
 
+lemma DetailAfterChange(xs: seq<app__memory_PersonalFact>, fact: app__memory_PersonalFact)
+  ensures detailAt(SavedDetails(withDetail(xs, fact)), fact.factKey) == fact
+{
+  var after := SavedDetails(withDetail(xs, fact));
+  WithDetailShape(xs, fact);
+  if exists f :: f in xs && f.factKey == fact.factKey {
+    var i :| 0 <= i < |xs| && xs[i].factKey == fact.factKey;
+    assert after.facts[i] == fact;
+  } else {
+    assert after.facts[|xs|] == fact;
+  }
+  assert fact in after.facts;
+  forall h | h in after.facts && h.factKey == fact.factKey
+    ensures h == fact
+  {
+    var i :| 0 <= i < |after.facts| && after.facts[i] == h;
+  }
+  DetailAtIsMember(after, fact.factKey);
+}
+
 lemma lawForgottenNameIsNotGreeted_ensures(d: SavedDetails, version: int)
   ensures (lawForgottenNameIsNotGreeted(d, version) == true)
 {
   if canForgetDetail(d, nameKey, version, app__memory_MemoryActor.MemoryUser) {
     DetailAtIsMember(d, nameKey);
-    var f := detailAt(d, nameKey);
-    var g := app__memory_forget(f, version, app__memory_MemoryActor.MemoryUser);
-    var after := forgetDetail(d, nameKey, version, app__memory_MemoryActor.MemoryUser);
-    assert f in d.facts && g.factKey == nameKey;
-    WithDetailShape(d.facts, g);
-    forall h | h in after.facts && h.factKey == nameKey
-      ensures h == g
-    {
-      var i :| 0 <= i < |after.facts| && after.facts[i] == h;
-    }
-    DetailAtIsMember(after, nameKey);
+    DetailAfterChange(d.facts, app__memory_forget(detailAt(d, nameKey), version, app__memory_MemoryActor.MemoryUser));
   }
+}
+
+lemma lawChangedDetailWaitsForHerYes_ensures(d: SavedDetails, proposedFact: app__memory_FactProposal)
+  ensures (lawChangedDetailWaitsForHerYes(d, proposedFact) == true)
+{
+  DetailAfterChange(d.facts, app__memory_propose(detailAt(d, proposedFact.factKey), proposedFact, app__memory_MemoryActor.MemoryUser));
+}
+
+lemma lawDeletedDetailIsNotSaved_ensures(d: SavedDetails, factKey: string, version: int)
+  ensures (lawDeletedDetailIsNotSaved(d, factKey, version) == true)
+{
+  if canForgetDetail(d, factKey, version, app__memory_MemoryActor.MemoryUser) {
+    DetailAtIsMember(d, factKey);
+    DetailAfterChange(d.facts, app__memory_forget(detailAt(d, factKey), version, app__memory_MemoryActor.MemoryUser));
+  }
+}
+
+lemma lawClearedDetailIsNotSaved_ensures(d: SavedDetails, factKey: string)
+  ensures (lawClearedDetailIsNotSaved(d, factKey) == true)
+{
+  var after := forgetAll(d, app__memory_MemoryActor.MemoryUser);
+  forall h | h in after.facts
+    ensures h.factKey == "" || h.status.Deleted?
+  {
+    var i :| 0 <= i < |after.facts| && after.facts[i] == h;
+  }
+  DetailAtIsMember(after, factKey);
 }
