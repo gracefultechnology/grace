@@ -3,7 +3,7 @@ import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "nod
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { parseArgs, promisify } from "node:util";
+import { isDeepStrictEqual, parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
 import { buildConsumerAndroidRuntime } from "../../../vendor/eliza/packages/app/scripts/lib/consumer-android-runtime.mjs";
@@ -72,9 +72,16 @@ const Step = Schema.Union([
   Schema.Struct({ agent: AgentStatus }),
   Schema.Struct({ service: Schema.String.check(Schema.isPattern(/^[A-Z]\w*$/)) }),
   Schema.Struct({ leaveFor: Schema.String.check(Schema.isPattern(/^android\.settings\.[A-Z_]+$/)) }),
+  Schema.Struct({ evaluate: Schema.NonEmptyString, returns: Schema.Unknown }),
+  Schema.Struct({ evaluate: Schema.NonEmptyString, rejects: Schema.NonEmptyString }),
+  Schema.Struct({ grant: Schema.String.check(Schema.isPattern(/^android\.permission\.[A-Z_]+$/)) }),
+  Schema.Struct({ notification: Schema.String.check(Schema.isPattern(/^[\w ,.-]+$/)) }),
+  Schema.Struct({ restart: Schema.Literal("force-stop") }),
 ]);
 type Step = typeof Step.Type;
-type OnDevice = Extract<Step, { service: string } | { leaveFor: string }>;
+type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { grant: string } | { notification: string }>;
+type InSession = Exclude<Step, { restart: string }>;
+const isOnDevice = (step: InSession): step is OnDevice => "service" in step || "leaveFor" in step || "grant" in step || "notification" in step;
 const Arguments = Schema.Struct({
   release: Schema.optional(Schema.Boolean),
   verify: Schema.optional(Schema.Boolean),
@@ -356,7 +363,7 @@ async function devTools(url: string, signal: AbortSignal) {
   return {
     until,
     describe,
-    async step(step: Exclude<Step, OnDevice>) {
+    async step(step: Exclude<InSession, OnDevice>) {
       const signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000);
       if ("agent" in step) {
         const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && Promise.resolve(listening).then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
@@ -364,6 +371,14 @@ async function devTools(url: string, signal: AbortSignal) {
         const status = Schema.decodeUnknownSync(Schema.Struct({ ...AgentStatus.fields, error: Schema.optional(Schema.String) }))(result.value);
         if (status.state !== step.agent.state || status.failure !== step.agent.failure)
           throw new Error(`The agent is ${JSON.stringify(status)}, not ${JSON.stringify(step.agent)}`);
+        return;
+      }
+      if ("evaluate" in step) {
+        const expression = `Promise.resolve().then(() => (${step.evaluate})).then((value) => JSON.stringify({ returns: value ?? null }), (error) => JSON.stringify({ rejects: String(error?.code ?? error) }))`;
+        const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const outcome: unknown = JSON.parse(String(result.value));
+        const expected = "returns" in step ? { returns: step.returns } : { rejects: step.rejects };
+        if (!isDeepStrictEqual(outcome, expected)) throw new Error(`${step.evaluate} gave ${JSON.stringify(outcome)}`);
         return;
       }
       if ("tap" in step) return await tap(step.tap, signal);
@@ -392,6 +407,17 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
     await shell(serial, `until [ "$(${foreground})" -gt 0 ]; do sleep 1; done`, 120);
     return;
   }
+  if ("grant" in step) {
+    await shell(serial, `pm grant ${identity.appId} ${step.grant}`);
+    return;
+  }
+  if ("notification" in step) {
+    await shell(serial, "am start -W -a android.settings.SETTINGS", 120);
+    const posted = `dumpsys notification --noredact | grep -A60 "pkg=${identity.appId}" | grep -qF "android.title=String (${step.notification})"`;
+    await shell(serial, `until ${posted}; do sleep 1; done`, 300);
+    await shell(serial, `am start -W -n ${activity}`, 120);
+    return;
+  }
   await shell(serial, `am start -W -a ${step.leaveFor}`, 120);
   await shell(serial, `am kill ${identity.appId}`);
   const survivor = (await shell(serial, `pidof ${identity.appId}`).catch(() => "")).trim();
@@ -405,10 +431,26 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
     .catch(async (error: unknown) => failing(`Waiting for Home to resolve to Grace rather than ${(await shell(serial, resolveHome).catch(String)).trim()}`)(error));
-  const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
-  if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   const webView = /Current WebView package \(name, version\): \((.*)\)/.exec(await shell(serial, "dumpsys webviewupdate"))?.[1];
   process.stdout.write(`${serial} ${webView ?? "WebView unknown"}\n`);
+  let segment: InSession[] = [];
+  const segments = [segment];
+  for (const step of exercise) {
+    if ("restart" in step) segments.push(segment = []);
+    else segment.push(step);
+  }
+  for (const [index, steps] of segments.entries()) {
+    if (index > 0) {
+      await shell(serial, `am force-stop ${identity.appId}`);
+      process.stdout.write(`${JSON.stringify({ restart: "force-stop" })} ok\n`);
+    }
+    await visit(serial, steps);
+  }
+}
+
+async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<InSession>) {
+  const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
+  if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   const debuggable = `grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit`;
   const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); case "$pid" in *" "*) echo "$pid"; exit;; "") ;; *) ${debuggable};; esac; sleep 1; done`;
   const pid = (await shell(serial, waitForPid, 180)).trim();
@@ -426,7 +468,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
         failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
       await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
       for (const step of exercise) {
-        await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
+        await (isOnDevice(step) ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
       }
     } finally {
