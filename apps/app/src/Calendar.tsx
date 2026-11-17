@@ -5,10 +5,10 @@ import { useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, rowTag, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type Event as CalendarEvent, enabled, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
+import { type CalendarView, type Event as CalendarEvent, enabled, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
-import { dayOf, horizon, hour, midnight, navigation, shownDays } from "./calendar.vibe";
+import { anchorOf, dayOf, horizon, hour, instant, midnight, navigation, shownDays } from "./calendar.vibe";
 import { type CalendarInstance, useAccounts, useProposal, useWorkspace, WithCalendars } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
@@ -23,7 +23,6 @@ export const calendarKeys = (registry: Accounts) => [tabletKey, ...registry.acco
 const sourcesOf = (views: readonly CalendarInstance[]): CalendarSource[] => views.map((v) => ({ key: v.key, view: v.state }));
 const byStart = (a: CalRow, b: CalRow) => a.details.startAt - b.details.startAt;
 const dateOf = (n: number) => new Date(midnight(n));
-const at = (n: number, minutes: number) => dateOf(n).setHours(0, minutes);
 const say = (n: number, options: Intl.DateTimeFormatOptions) => dateOf(n).toLocaleDateString("en-US", options);
 
 export function timeLabel(at: number) {
@@ -54,12 +53,39 @@ function period(mode: "WeekView" | "MonthView", anchor: number) {
     : `${say(days[0], { month: "short", day: "numeric" })} – ${say(days[6], { month: "short", day: "numeric" })}`;
 }
 
-export function homeCalendar(registry: Accounts, views: readonly CalendarInstance[], now: number): { events: HomeEvent[]; status: string } {
+const opening = (v: CalendarView): CalendarEvent => ({ type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone });
+
+async function openFrom(views: readonly CalendarInstance[], r: CalRow, visit: () => void) {
+  const lead = views.find((v) => v.key === tabletKey);
+  const box = views.find((v) => v.key === r.key);
+  if (!lead || !box) return;
+  for (const b of new Set([lead, box])) {
+    const v = await b.current();
+    if (!v.opened && enabled(v, opening(v), "ViewUser")) await b.send(opening(v));
+  }
+  const day = { type: "navigate", report: navigation((await lead.current()).window, "SelectDay", dayOf(r.details.startAt)) } as const;
+  if (enabled(await lead.current(), day, "ViewUser")) await lead.send(day);
+  const open = { type: "openOccurrence", id: r.identity.occurrenceId } as const;
+  if (enabled(await box.current(), open, "ViewUser")) await box.send(open);
+  visit();
+}
+
+async function editSeries(box: CalendarInstance, id: string) {
+  const v = await box.current();
+  const target = anchorOf(v, entryAt(v, id).committed.seriesId)?.identity.occurrenceId ?? id;
+  const open = { type: "openOccurrence", id: target } as const;
+  if (target !== id && enabled(v, open, "ViewUser")) await box.send(open);
+  const begin: CalendarEvent = { type: "changeOccurrence", id: target, command: { tag: "BeginEditing" } };
+  if (enabled(await box.current(), begin, "ViewUser")) await box.send(begin);
+}
+
+export function homeCalendar(registry: Accounts, views: readonly CalendarInstance[], now: number, visit: (() => void) | undefined): { events: HomeEvent[]; status: string } {
   const today = dayOf(now);
   const sources = sourcesOf(views);
   const events = upcoming(registry, sources, now, now + horizon).sort(byStart).slice(0, 3).map((r) => ({
     id: `${r.key}/${r.identity.occurrenceId}`, weekday: short(dayOf(r.details.startAt), today).toUpperCase(), time: timeLabel(r.details.startAt),
     title: r.details.title, detail: whoWhere(r.details) || undefined, next: r.details.important,
+    onClick: visit && ((e: { stopPropagation: () => void }) => { e.stopPropagation(); void openFrom(views, r, visit); }),
   }));
   return { events, status: upcoming(registry, sources, midnight(today), midnight(today + 1)).length > 0 ? "Today" : "Nothing else today" };
 }
@@ -70,24 +96,23 @@ export function nextAppointment(registry: Accounts, views: readonly CalendarInst
 }
 
 /** @model spec/app/calendars.md */
-export function Calendar(props: Covered) {
+export function Calendar({ now, ...props }: Covered & { now: number }) {
   const { accounts } = useAccounts();
   const { proposal } = useProposal();
   if (!accounts || !proposal) return null;
   return (
     <WithCalendars keys={calendarKeys(accounts)}>
-      {(views) => <Shown registry={accounts} pending={proposal} views={views} {...props} />}
+      {(views) => <Shown registry={accounts} pending={proposal} views={views} now={now} {...props} />}
     </WithCalendars>
   );
 }
 
-function Shown({ registry, pending, views, ...props }: Covered & { registry: Accounts; pending: Pending; views: readonly CalendarInstance[] }) {
+function Shown({ registry, pending, views, now, ...props }: Covered & { registry: Accounts; pending: Pending; views: readonly CalendarInstance[]; now: number }) {
   const { can, send } = useWorkspace();
   const accounts = useAccounts();
   const lead = views.find((v) => v.key === tabletKey);
   if (!lead) return null;
   const sources = sourcesOf(views);
-  const now = Date.now();
   const today = dayOf(now);
   const w = lead.state.window;
   const fire = (event: WorkspaceEvent) => () => { if (can(event)) void send(event); };
@@ -142,7 +167,7 @@ function Shown({ registry, pending, views, ...props }: Covered & { registry: Acc
     onAdd: () => {
       const v = lead.state;
       const day = Math.max(selected, today);
-      const startAt = at(day, 10 * 60);
+      const startAt = instant(day, 10 * 60);
       act(lead, {
         type: "createOccurrence",
         entry: {
@@ -172,7 +197,7 @@ function Shown({ registry, pending, views, ...props }: Covered & { registry: Acc
         event={{
           title: d.title, when: `${longDate(dayOf(d.startAt))} · ${span(d)}`, where: d.location || undefined, who: d.participant || undefined,
           reminder: reminderLine(d), repeat: repeatLines[d.recurrence], note: d.notes || undefined,
-          onEdit: act(open, { type: "changeOccurrence", id, command: { tag: "BeginEditing" } }), onDelete: act(open, { type: "requestDeletion" }),
+          onEdit: () => void editSeries(open, id), onDelete: act(open, { type: "requestDeletion" }),
         }} />
       <CalendarDeleteDialog open={deletion !== "NoDeletion"} title={`Delete ${d.title}?`}
         description={d.recurrence === "Once" ? `${longDate(dayOf(d.startAt))} at ${timeLabel(d.startAt)}.` : `It repeats ${repeats[d.recurrence].toLowerCase()}.`}
@@ -192,6 +217,7 @@ function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: E
   const d = entry.draft;
   const [texts, setTexts] = useState<Texts>({ title: d.title, where: d.location });
   const [pick, setPick] = useState<"day" | "time" | null>(null);
+  const startingAt = (startAt: number) => ({ startAt, endAt: startAt + d.endAt - d.startAt });
   const change = (next: Partial<EntryDetails>, typed: Texts = texts) => {
     const details = { ...d, ...next, title: typed.title.trim(), location: typed.where.trim() };
     const recurring = details.recurrence !== "Once";
@@ -232,12 +258,12 @@ function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: E
           value: longDate(dayOf(d.startAt)), selected: String(dayOf(d.startAt)), open: pick === "day",
           onOpenChange: (o) => setPick(o ? "day" : null),
           choices: days.map((n) => ({ value: String(n), label: n - today < 7 ? `${relative(n, today)} · ${say(n, { month: "short", day: "numeric" })}` : longDate(n) })),
-          onPick: (n) => { setPick(null); change({ startAt: at(Number(n), minutes) }); },
+          onPick: (n) => { setPick(null); change(startingAt(instant(Number(n), minutes))); },
         },
         time: {
           value: span(d), selected: String(minutes), open: pick === "time", onOpenChange: (o) => setPick(o ? "time" : null),
-          choices: times.map((m) => ({ value: String(m), label: timeLabel(at(today, m)) })),
-          onPick: (m) => { setPick(null); change({ startAt: at(dayOf(d.startAt), Number(m)) }); },
+          choices: times.map((m) => ({ value: String(m), label: timeLabel(instant(today, m)) })),
+          onPick: (m) => { setPick(null); change(startingAt(instant(dayOf(d.startAt), Number(m)))); },
         },
         repeat: { options: Object.values(repeats), value: repeats[d.recurrence], onChange: (v) => change({ recurrence: (Object.keys(repeats) as Recurrence[]).find((r) => repeats[r] === v) ?? "Once" }) },
         remind: {

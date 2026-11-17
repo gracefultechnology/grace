@@ -134,7 +134,7 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime()) : { events: [] }, ...visit("Calendar") }}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: [] }, ...visit("Calendar") }}
               email={{
                 messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
@@ -147,7 +147,7 @@ function Screen() {
         </OverPage>
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
-      {surface === "Calendar" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar {...under(covered)} /></OverPage>}
+      {surface === "Calendar" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
       {surface === "Email" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {app && (
