@@ -580,6 +580,8 @@ pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: s
 ### A managed draft can be sent only through the current owner grant
 
 The person reviews the exact address, subject and draft text before sending.
+A reply attaches to the selected message's thread. Its address and subject
+come from the selected message and stay fixed through review.
 Send requires a separate opt-in. Grace submits the confirmed draft only for the
 current account and grant. A stale or uncertain attempt cannot be submitted again
 as a new draft automatically.
@@ -603,7 +605,9 @@ The owner may separately enable Trash and Undo, and appointment changes. Undo
 is available only once the provider confirms moving the selected message to
 Trash. Appointments are read back to the person before confirmation. Edits and
 removals apply to the selected version of an appointment in the primary
-calendar. Grace checks provider evidence before showing success.
+calendar. For a repeating appointment, the person chooses a single occurrence
+or reviews and confirms the entire series separately. Grace checks provider
+evidence before showing success.
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
