@@ -22,7 +22,7 @@ const escaped = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt
 
 export function thumbnail(file: Mailbox["draftAttachments"][number]): MailPhoto {
   const label = file.kind === "Pdf" ? "PDF" : "Photo";
-  const drawn = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 110"><rect width="150" height="110" fill="white"/><text x="75" y="50" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="700">${label}</text><text x="75" y="78" text-anchor="middle" font-family="sans-serif" font-size="13">${escaped(file.name)}</text></svg>`;
+  const drawn = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 110"><desc>${escaped(file.id)}</desc><rect width="150" height="110" fill="white"/><text x="75" y="50" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="700">${label}</text><text x="75" y="78" text-anchor="middle" font-family="sans-serif" font-size="13">${escaped(file.name)}</text></svg>`;
   return { src: `data:image/svg+xml,${encodeURIComponent(drawn)}`, alt: file.name };
 }
 
