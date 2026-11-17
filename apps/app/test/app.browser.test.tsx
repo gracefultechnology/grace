@@ -547,14 +547,10 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
 
 it('Use only the current local speech for Passwords guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   type Heard = { status: "complete"; text: string };
-  const requests: ReturnType<typeof Promise.withResolvers<Heard>>[] = [];
+  const requests: ((result: Heard) => void)[] = [];
   const cancellations: string[] = [];
   const runtime = ManagedRuntime.make(application(undefined, undefined, undefined, undefined, {
-    listen: () => {
-      const request = Promise.withResolvers<Heard>();
-      requests.push(request);
-      return request.promise;
-    },
+    listen: () => new Promise<Heard>((resolve) => requests.push(resolve)),
     cancel: ({ id }) => { cancellations.push(id); return Promise.resolve(); },
   }));
   const element = document.body.appendChild(document.createElement("div"));
@@ -573,15 +569,15 @@ it('Use only the current local speech for Passwords guidance (spec/app/index.md,
   await expect.poll(() => requests.length).toBe(1);
   await act(() => userEvent.click(page.getByRole("textbox", { name: "Message to Grace" })));
   await expect.poll(() => cancellations.length).toBe(1);
-  await act(() => { requests[0]?.resolve({ status: "complete", text: "open passwords" }); return Promise.resolve(); });
+  await act(() => { requests[0]?.({ status: "complete", text: "open passwords" }); return Promise.resolve(); });
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).not.toBeInTheDocument();
   await act(() => userEvent.click(mic()));
   await expect.poll(() => requests.length).toBe(2);
-  await act(() => { requests[1]?.resolve({ status: "complete", text: "sample secret words" }); return Promise.resolve(); });
+  await act(() => { requests[1]?.({ status: "complete", text: "sample secret words" }); return Promise.resolve(); });
   await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).toHaveAttribute("placeholder", /Open Passwords/);
   await expect.element(page.getByText("sample secret words")).not.toBeInTheDocument();
   await act(() => userEvent.click(mic()));
   await expect.poll(() => requests.length).toBe(3);
-  await act(() => { requests[2]?.resolve({ status: "complete", text: "Open passwords." }); return Promise.resolve(); });
+  await act(() => { requests[2]?.({ status: "complete", text: "Open passwords." }); return Promise.resolve(); });
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
 });
