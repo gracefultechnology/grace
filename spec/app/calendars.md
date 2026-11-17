@@ -368,9 +368,9 @@ pure def lawYesAppliesOnlyWhatWasAsked(pending: P::Pending, view: V::CalendarVie
 
 The tablet’s calendar with lunch saved and its reminder due; Gmail’s calendar
 bound by its store, holding a published garden club, then the clinic
-appointment from the email agreed, stored, changed and deleted; the clinic
-email open and the same email flagged as a scam; and Grace’s questions asked,
-agreed and of each kind.
+appointment from the email agreed, stored, changed and deleted, and the
+garden club open on screen; the clinic email open and the same email flagged
+as a scam; and Grace’s questions asked, agreed and of each kind.
 
 ```quint
 pure val zone: str = "America/New_York"
@@ -413,6 +413,8 @@ pure val gardenDeletion: V::ConfirmedDeletion =
   { id: "garden", scope: V::ThisOccurrence, review: { id: "garden", scope: V::ThisOccurrence, committedRevision: 1, calendarGeneration: 1 } }
 pure val gmailDeleting: V::CalendarView = V::confirmDeletion(gmailStored, gardenDeletion, V::ViewConsent)
 pure val gmailDeleted: V::CalendarView = V::deletionResult(gmailDeleting, 2, true, "storeReceipt", V::ViewStore)
+pure val gmailOpened: V::CalendarView =
+  V::openOccurrence(V::openCalendar(gmailStored, "margaret", "gmail", zone, V::ViewUser), "garden", V::ViewUser)
 pure val gmailFlagged: E::Mailbox =
   E::readResult(E::readMail(M::gmailListed, E::OpenMessage, "clinic", true, E::MailUser),
     { generation: 3, succeeded: true, assets: List(), suspicion: "phishing" }, E::MailConnector)
@@ -438,6 +440,7 @@ pure val calendarsValues = Set(List(),
   List({ key: 0, view: tabletSaved }, { key: 1, view: gmailPublished }),
   List({ key: 0, view: tabletReminder }, { key: 1, view: gmailStored }),
   List({ key: 0, view: tabletSaved }, { key: 1, view: gmailConfirmed }),
+  List({ key: 1, view: gmailOpened }, { key: 0, view: tabletSaved }),
   List({ key: 0, view: tabletDrafted }, { key: 1, view: gmailDeleted }, { key: 2, view: gmailChanged }))
 pure val mailValues = Set({ account: 1, mailbox: M::gmailOpen }, { account: 1, mailbox: gmailFlagged },
   { account: 1, mailbox: M::gmailListed }, { account: 2, mailbox: M::outlookListed }, { account: 1, mailbox: M::gmailExpired })
