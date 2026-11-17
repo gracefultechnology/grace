@@ -4,8 +4,10 @@ This is the inventory of the models-only phase (13 to 15 November 2026), and it
 is not kept in step: the specs that own these routes are where to read them.
 Where a row differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults),
 the decisions win: the browser has no zoom control (decision 21), no wake
-detector is installed (decision 5), and Print is being removed from Files by
-the email and calendar build.
+detector is installed (decision 5), and Files has no Print. Email accounts,
+mailboxes across accounts, the calendars together and Grace's calendar
+question came after this inventory; their routes are in `accounts`,
+`mailboxes`, `calendars`, `proposal` and `agentActions`.
 
 `Workspace` owns the actual Shell, Browser, Assistant/Conversation, Preferences,
 Wake, Execution and payment states. A component must dispatch through that
@@ -39,7 +41,7 @@ its returned pair replaces those owners' values and is not another store.
 | Enabled wake detection, silence notice, return to prior window, cancellation | `detectWake`, `wakeNoSpeech`, `wakeReturn`, `cancelWake`; no detector is installed in the MVP (acceptance list, decision 5), so only touch wakes the tablet |
 | Share the current readable Files photo into a chosen mailbox | `Handoffs.trySharePhoto`; preflight the current file and mailbox before clearing preview, then create an unsent draft with that exact photo |
 | Close Calendar or Email | Calendar `closeCalendar`, or Email `preserveDraft` / explicit `discardDraft`, precedes workspace `visit(Home)`; pending operations remain owned and recoverable |
-| Close Files | Files `closeFiles` precedes workspace `visit(Home)`; previews and reads close, while the catalog, chosen tab and dispatched storage/print operations remain owned |
+| Close Files | Files `closeFiles` precedes workspace `visit(Home)`; previews and reads close, while the catalog, chosen tab and dispatched storage operations remain owned |
 | Close Settings | Workspace `visit(Home)` follows the prototype's app-header Close; `returnToApplication` is the separate return from native settings to the prior application, not this Close action |
 
 Address-keyboard changes, text-size changes and native/browser geometry use the
