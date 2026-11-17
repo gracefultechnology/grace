@@ -81,7 +81,8 @@ pure def lawRowsStayInTheChosenDays(registry: A::Accounts, calendars: List[Calen
   dayRows(registry, calendars, pending, fromTime, untilTime).every(r => overlaps(r.details, fromTime, untilTime))
 pure def lawSavedRowsAreSavedAppointments(registry: A::Accounts, calendars: List[CalendarSource], fromTime: int, untilTime: int): bool =
   calendarContext(registry, calendars, fromTime, untilTime).every(r => not(r.draft) and
-    sourceAt(calendars, r.key).view.entries.some(c => c.identity == r.identity and c.hasSaved and c.phase != C::Deleted))
+    calendars.some(s => s.key == r.key and
+      s.view.entries.some(c => c.identity == r.identity and c.hasSaved and c.phase != C::Deleted)))
 ```
 
 ### Tags show only when an email’s calendar is on
@@ -124,7 +125,8 @@ pure def upcoming(registry: A::Accounts, calendars: List[CalendarSource], fromTi
 pure def lawNextAppointmentsAreSavedAndFuture(registry: A::Accounts, calendars: List[CalendarSource], fromTime: int, untilTime: int): bool =
   upcoming(registry, calendars, fromTime, untilTime).every(r => not(r.draft) and r.details.startAt >= fromTime and
     showsCalendar(registry, r.key) and
-    sourceAt(calendars, r.key).view.entries.some(c => c.identity == r.identity and c.hasSaved and c.phase != C::Deleted))
+    calendars.some(s => s.key == r.key and
+      s.view.entries.some(c => c.identity == r.identity and c.hasSaved and c.phase != C::Deleted)))
 ```
 
 ### A switched-off account’s appointments and reminders show nowhere, to her or to Grace
