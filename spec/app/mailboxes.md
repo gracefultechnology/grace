@@ -45,6 +45,8 @@ type AccountStatus = MailConnecting | MailReady | MailSyncing | MailNeedsSignIn 
 pure val noSource: MailSource = { account: 0, mailbox: E::initial }
 pure def showsMail(registry: A::Accounts, account: int): bool =
   registry.accounts.some(x => x.id == account and x.use.mail)
+pure def shown(registry: A::Accounts, sources: List[MailSource]): List[MailSource] =
+  sources.select(s => showsMail(registry, s.account))
 pure def sourceOf(sources: List[MailSource], account: int): MailSource =
   sources.select(s => s.account == account).nthOr(0, noSource)
 pure def needsSignIn(mailbox: E::Mailbox): bool =
@@ -60,7 +62,7 @@ pure def accountStatus(mailbox: E::Mailbox): AccountStatus =
   else MailConnecting
 pure def isOpen(mailbox: E::Mailbox): bool = mailbox.view != E::Inbox or mailbox.composeVisible
 pure def openSource(registry: A::Accounts, sources: List[MailSource]): int =
-  sources.select(s => showsMail(registry, s.account) and isOpen(s.mailbox)).nthOr(0, noSource).account
+  shown(registry, sources).select(s => isOpen(s.mailbox)).nthOr(0, noSource).account
 pure def lawStatusFollowsTheMailbox(mailbox: E::Mailbox): bool =
   (accountStatus(mailbox) == MailNeedsSignIn iff needsSignIn(mailbox)) and
   (accountStatus(mailbox) == MailReady implies mailbox.connection == E::Connected) and
