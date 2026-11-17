@@ -27,11 +27,11 @@ import assistant as A from "./assistant"
 import execution as X from "./execution"
 import payment as P from "./payment"
 
-pure def currentOrdinaryEffect(x: X::Execution, operation: X::WebsiteEffect): bool = match operation {
-  | Operate(details) => x.phase == X::InFlight and X::alwaysIdentity(x) and X::alwaysPrepared(x) and
-    details.owner == x.owner and details.task == x.task and details.origin == x.origin and
-    details.generation == x.generation and details.observation == x.observation and
-    details.target == x.target and details.valueRef == x.valueRef and details.kind == x.kind
+pure def currentOrdinaryEffect(execution: X::Execution, operation: X::WebsiteEffect): bool = match operation {
+  | Operate(details) => execution.phase == X::InFlight and X::alwaysIdentity(execution) and X::alwaysPrepared(execution) and
+    details.owner == execution.owner and details.task == execution.task and details.origin == execution.origin and
+    details.generation == execution.generation and details.observation == execution.observation and
+    details.target == execution.target and details.valueRef == execution.valueRef and details.kind == execution.kind
 }
 
 pure def currentEffect(workspace: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
@@ -65,8 +65,6 @@ pure def lawPaymentConsumptionUsesDurableAttempt(workspace: WS::Workspace, pendi
   | _ => true
 }
 ```
-
-### Finite examples include current commands and requests fenced by Stop
 
 Examples derive effects through each owning Workspace transition. They include
 both browser routes and Stop after emission. Grace is made compact before the
@@ -117,7 +115,7 @@ pure val pendingEffectValues = {
 }
 pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin: P::exampleKey.origin,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage }))
-pure val xValues = Set(X::initial, ordinarySample(observedSample(WS::initial)).state.execution)
+pure val executionValues = Set(X::initial, ordinarySample(observedSample(WS::initial)).state.execution)
 pure val observedValues = Set(observedSample(WS::initial))
 pure val startingValues = Set(WS::initial)
 pure val workspaceValues = {
