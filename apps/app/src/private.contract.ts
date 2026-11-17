@@ -9,7 +9,7 @@ const digit = (value: number) => Math.abs(Math.trunc(value)) % 10;
 const pick = (values: number[], k: number, size: number) => digit(values[k] ?? k) * 11 % size;
 const two = (value: number) => String(value).padStart(2, "0");
 
-const cardNumber = (body: number[], gaps: string[]) => {
+const cardNumber = (body: number[], gaps: string[], grouping: number[]) => {
   const sum = body.reduceRight((total, value, k) => {
     const twice = value * 2 > 9 ? value * 2 - 9 : value * 2;
     return total + ((body.length - 1 - k) % 2 === 0 ? twice : value);
@@ -17,7 +17,8 @@ const cardNumber = (body: number[], gaps: string[]) => {
   const digits = [...body, (10 - (sum % 10)) % 10].join("");
   const first = gaps[0] ?? " ";
   const gapAt = (k: number) => (first === "" || first === "\n" || gaps[k] === "" || gaps[k] === "\n" ? first : gaps[k] ?? first);
-  return [4, 8, 12].reduce((card, at, k) => `${card}${gapAt(k)}${digits.slice(at, at + 4)}`, digits.slice(0, 4));
+  const cuts = grouping.map((_, k) => grouping.slice(0, k).reduce((sum, size) => sum + size, 0));
+  return cuts.slice(1).reduce((card, at, k) => `${card}${gapAt(k)}${digits.slice(at, cuts[k + 2] ?? digits.length)}`, digits.slice(0, grouping[0]));
 };
 
 const dayGrid = (values: number[], separator: string) => {
@@ -56,7 +57,12 @@ const placements = {
   bold: (cue: string) => `ok your ${cue} is **#**`,
   list: (cue: string) => `ok your backup ${cue}\n1. #\n2. #\n`,
   row: (cue: string) => `ok backup ${cue}: # # #`,
+  spaced: (cue: string) => `ok your ${cue} is #.`,
+  far: (cue: string) => `ok the ${cue} they sent to my phone this morning is #.`,
+  next: (cue: string) => `ok I asked for a ${cue}.\n# is the one.`,
 };
+
+const groupings = { "4-4-4-4": [4, 4, 4, 4], "8-8": [8, 8], "8-4-4": [8, 4, 4], "5-5-6": [5, 5, 6], "3-4-4-5": [3, 4, 4, 5] };
 
 const outgoing = Arbitrary.schema(
   Schema.Struct({
@@ -68,16 +74,17 @@ const outgoing = Arbitrary.schema(
     named: Schema.Literals(["", "card ", "Visa "]),
     extra: Schema.Literals(["", " 12 27", " 12 2027 123", ",123", "/12/27", " 415 555 0123", " next"]),
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
-    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row"]),
+    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next"]),
+    grouping: Schema.Literals(["4-4-4-4", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
     code: Schema.Array(Schema.Int),
     kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction", "call", "texted", "meeting"]),
     gap: Schema.Literals([" ", "\t", "\n", "  "]),
     numbers: Schema.Array(Schema.Int),
   }),
 ).pipe(
-  Arbitrary.map(({ before, passwords, after, body, gaps, named, extra, cue, placement, code, kind, gap, numbers }): Outgoing => {
-    const card = cardNumber(Array.from({ length: 15 }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), [...gaps]);
-    const secret = Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)).join("");
+  Arbitrary.map(({ before, passwords, after, body, gaps, named, extra, cue, placement, grouping, code, kind, gap, numbers }): Outgoing => {
+    const card = cardNumber(Array.from({ length: 15 }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), [...gaps], groupings[named === "" || extra === " next" ? "4-4-4-4" : grouping]);
+    const secret = Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)).join(placement === "spaced" ? " " : "");
     const plain = plainKinds[kind]([...numbers], gap);
     const head = [`${plain}.`, "ok", before, ...passwords, "ok", named].join(" ");
     const parts = [card, ...(extra === " next" ? [" ", card] : [extra]), " ", ...placements[placement](cue).split("#").flatMap((part, k) => (k === 0 ? [part] : [secret, part])), ` ${after}`];
@@ -100,6 +107,6 @@ export const withheld = contract({
     && secrets.every(([from, to]) => !/[0-9]/.test(out.slice(from, to)))
     && Array.from({ length: text.length }, (_, k) => !isPrivateAt(text, passwords, k) || out[k] === "*").every(Boolean)
     && passwords.every((word) => word.length < 4 || word.includes("*") || !out.includes(word))
-    && (passwords.some((word) => word.length >= 4 && text.slice(0, plain.length + word.length).includes(word)) || out.startsWith(plain))
+    && (passwords.some((word) => word.length >= 4 && text.slice(0, plain.length + word.length).toLowerCase().includes(word.toLowerCase())) || out.startsWith(plain))
     && withhold({ text: out, passwords }) === out,
 });

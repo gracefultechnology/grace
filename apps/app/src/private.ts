@@ -363,7 +363,7 @@ function isCodeDigit(text: string, i: number): boolean {
 
 function isJoinAt(text: string, i: number): boolean {
   const c = charAt(text, i);
-  return c === 32 || c === 44 || c === 45 || c === 46 || c === 160 || c === 8209 || c === 8211;
+  return c === 32 || c === 44 || c === 45 || (c === 46 && !isSpaceAt(text, i + 1)) || c === 160 || c === 8209 || c === 8211;
 }
 
 function joinStart(text: string, j: number, steps: number): number {
