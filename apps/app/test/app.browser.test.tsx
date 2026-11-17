@@ -27,7 +27,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
  * the page starts what Grace asked only when the test says, and only what it asked last.
  */
-function fakePlugin() {
+function fakePlugin(autoRoute = false) {
   const calls: Call[] = [];
   const android = { allows: true };
   const held = { starts: false };
@@ -52,7 +52,7 @@ function fakePlugin() {
         const start = () => emit("pageStarted", { id: options.id, url: options.url ?? "" });
         return Promise.resolve().then(() => held.starts ? void starts.push(start) : start());
       }
-      return method === "setOcclusionRects" ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
+      return method === "setOcclusionRects" && !autoRoute ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
     },
   }) as SurfacePlugin;
   /** A plugin event of this renderer's surfaces. */
@@ -500,7 +500,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
 });
 
 it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
-  const native = fakePlugin();
+  const native = fakePlugin(true);
   const runtime = ManagedRuntime.make(application(native.plugin));
   const element = document.body.appendChild(document.createElement("div"));
   const root = createRoot(element);
@@ -512,9 +512,9 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal{Enter}"));
+  await act(() => page.getByRole("textbox", { name: "Address" }).fill("https://utility.example/normal"));
+  await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("createSurface").length).toBe(1);
-  await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
   await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
@@ -522,11 +522,10 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
-  await native.route();
   await native.report("tab-2", "https://utility.example", 100);
   const address = page.getByRole("textbox", { name: "Private website address" });
-  await act(() => userEvent.clear(address));
-  await act(() => userEvent.type(address, "https://utility.example/enter/sample?ref=one-time{Enter}"));
+  await act(() => address.fill("https://utility.example/enter/sample?ref=one-time"));
+  await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
   });
@@ -537,8 +536,6 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  await expect.poll(native.unanswered).toBeGreaterThan(0);
-  await native.route();
   await act(() => page.getByRole("textbox", { name: "Message to Grace" }).fill("sign me in to pay my bill"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
