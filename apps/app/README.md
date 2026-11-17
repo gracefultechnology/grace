@@ -276,7 +276,18 @@ Three reads check them: `GET /api/v1/app-auth/mobile/config` on the Cloud host l
 `configured: true` with a `serverClientId` and the scopes. On 17 November 2026 all three answered so
 for production and staging, but Cloud's scopes held `gmail.readonly` and `calendar.readonly` rather
 than `gmail.modify`, which moving mail to Trash needs, and neither host's `assetlinks.json` listed the
-debug key above, so the browser route cannot verify on a debug build yet.
+debug key above, so the browser route cannot verify on a debug build yet. A fourth read, `POST
+/steward/auth/oauth/google/native/challenge` with `{ tenantId, clientId: "grace", codeChallenge,
+codeChallengeMethod: "S256" }`, answered "App client not found or disabled" in both tenants, so the
+native route stops before the account picker until item 2 is made.
+
+The same day, on a fresh `android-36` `google_apis` tablet AVD with Google Play services and its
+Credential Manager provider, the launcher debug APK signed with the debug key above loaded
+`GraceSignIn`, which answered signed out (`credentialId: null`, no attempt active, the five scopes
+above), and the agent stopped at `failed` with `credential`. The emulator found no network at a host
+load above 200, so readiness measured nothing (`methodsKnown: false`, `google: false`) and neither
+the account picker nor a sign-in has run: `signin-status.json` still waits for a run with a network
+and the Steward client.
 
 ### Why the host is as it is
 
