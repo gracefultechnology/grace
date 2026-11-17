@@ -21,7 +21,6 @@ const answered = fn();
 const putOff = fn();
 const closed = fn();
 
-const accountLine = "Connect your email so I can read your email and calendar to help you. I send an email, move one to Trash or change an event only when you say so.";
 const notNowAccount = { cost: "Grace can’t help until your email is connected.", onNotNow: putOff };
 const learnLater = { cost: "You can try it later in Grace’s window.", onNotNow: putOff };
 const next = { label: "Next", onAction: answered };
@@ -58,14 +57,8 @@ export const meta: ComponentMeta<SetupStepProps> = {
     },
     Account: {
       progress: at("Your email", 2),
-      line: accountLine,
+      line: "Connect your email so I can read your email and calendar to help you. I send an email, move one to Trash or change an event only when you say so.",
       content: <AccountSignIn state="ready" onContinue={signedIn} />,
-      notNow: notNowAccount,
-    },
-    "Sign-in cancelled": {
-      progress: at("Your email", 2),
-      line: accountLine,
-      content: <AccountSignIn state="cancelled" onContinue={signedIn} />,
       notNow: notNowAccount,
     },
     Name: {
@@ -107,6 +100,13 @@ export const meta: ComponentMeta<SetupStepProps> = {
       ring: "talk",
       notNow: learnLater,
       dock: practice(talked),
+    },
+    "Talk without speech": {
+      progress: at("Talk", 7),
+      line: "My voice isn’t available right now, so you can try Talk later.",
+      content: undefined,
+      notNow: learnLater,
+      dock: <GraceDock value="" setup offline placeholder="Tap to type" onTalk={talked} onType={typed} />,
     },
     Type: {
       progress: at("Type", 8),
@@ -151,12 +151,6 @@ export const meta: ComponentMeta<SetupStepProps> = {
       await expect(signedIn).toHaveBeenCalled();
       await putOffInView(canvasElement);
     },
-    "Sign-in cancelled": async ({ canvasElement }: Play) => {
-      signedIn.mockClear();
-      await tap(canvasElement, "Continue with Google");
-      await expect(signedIn).toHaveBeenCalled();
-      await putOffInView(canvasElement);
-    },
     Name: async ({ canvasElement }: Play) => {
       sent.mockClear();
       await tap(canvasElement, "Send");
@@ -186,6 +180,10 @@ export const meta: ComponentMeta<SetupStepProps> = {
       talked.mockClear();
       await tap(canvasElement, "Talk");
       await expect(talked).toHaveBeenCalled();
+    },
+    "Talk without speech": async ({ canvasElement }: Play) => {
+      await expect(within(canvasElement).queryByRole("button", { name: "Talk" })).toBeNull();
+      await putOffInView(canvasElement);
     },
     Type: async ({ canvasElement }: Play) => {
       typed.mockClear();
