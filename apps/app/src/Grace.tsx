@@ -1,7 +1,7 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { useRef } from "react";
 import type { Interaction } from "../gen/app__interaction.ts";
@@ -23,7 +23,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
   const canTalk = mayOfferTalk(workspace!);
-  const talk = () => { void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
+  const talk = () => { guide.stopListening(); void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
   const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
     : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
@@ -49,7 +49,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             micUnavailable={micUnavailable}
             onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
             onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}
-            onFieldFocus={(event) => { fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
+            onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
               const revision = current().assistant.conversation.draftRevision;
@@ -61,10 +61,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             }} />
         }>
         <div className="px-4 py-2">
-          <button type="button" className="min-h-11 rounded-lg border px-3"
+          <Button variant="capsule" size="pill"
             onClick={guide.mic === "GuideMicListening" ? guide.stopListening : guide.listen}>
             {guide.mic === "GuideMicListening" ? "Stop listening for Passwords" : "Say a Passwords command"}
-          </button>
+          </Button>
           {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
           {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
         </div>
