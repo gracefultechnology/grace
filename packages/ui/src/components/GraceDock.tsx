@@ -1,6 +1,7 @@
-import { useId, useLayoutEffect, useRef, type ComponentProps, type FocusEvent, type ReactNode } from "react";
+import { useId, type ComponentProps, type FocusEvent, type ReactNode } from "react";
 import { ArrowUp, Keyboard } from "lucide-react";
 import { cn } from "../lib/cn.ts";
+import { useSize } from "../lib/observe.ts";
 import { Button, GracePill, press } from "./Button.tsx";
 import { GraceCapsule } from "./GraceHeader.tsx";
 import { SwitchTrack } from "./Switch.tsx";
@@ -112,22 +113,14 @@ export function GraceDock({
   className,
   ...props
 }: GraceDockProps) {
-  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const [fieldRef, field] = useSize<HTMLTextAreaElement>();
   const reasonId = useId();
   const draft = value.trim().length > 0;
   const hears = mic && !micUnavailable;
-  useLayoutEffect(() => {
-    const el = fieldRef.current;
-    if (!el) return;
-    el.style.height = `${LINE}px`;
-    const height = Math.min(maxLines * LINE, el.scrollHeight);
-    el.style.height = `${height}px`;
-    el.scrollTop = el.scrollHeight;
-    el.parentElement?.toggleAttribute("data-multi", height > LINE);
-  }, [value, maxLines]);
   return (
     <div className={cn("flex items-end gap-2", className)} {...props}>
       <label
+        data-multi={(field?.height ?? LINE) > LINE || undefined}
         className={cn(
           "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 data-multi:items-end data-multi:rounded-window",
           quiet && "opacity-70",
@@ -142,13 +135,14 @@ export function GraceDock({
           placeholder={micUnavailable ?? placeholder}
           onChange={(event) => onValueChange?.(event.target.value)}
           onFocus={onFieldFocus}
+          style={{ maxHeight: maxLines * LINE }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               onSend?.();
             }
           }}
-          className="m-0 h-8 min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent p-0 font-sans text-lead leading-8 font-medium text-grace-ink caret-primary outline-none placeholder:text-placeholder placeholder:opacity-100"
+          className="m-0 min-h-8 min-w-0 flex-1 resize-none field-sizing-content overflow-y-auto border-0 bg-transparent p-0 font-sans text-lead leading-8 font-medium text-grace-ink caret-primary outline-none placeholder:text-placeholder placeholder:opacity-100"
         />
       </label>
       {!quiet && draft && !listening && (

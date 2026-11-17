@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import tokens from "@repo/design-system/tokens.json" with { type: "json" };
 import { expect, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { CalendarApp, type CalendarAppProps } from "./CalendarApp.tsx";
@@ -22,8 +23,8 @@ export const meta: ComponentMeta<TextScaleProps> = {
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const greeting = within(canvasElement).getByRole("heading", { name: /Good evening/ });
-      const sized = greeting.closest<HTMLElement>("[data-bfs]");
-      await expect(parseFloat(getComputedStyle(greeting).fontSize)).toBeCloseTo(Number(sized?.dataset.bfs) * 1.3, 1);
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      await expect(parseFloat(getComputedStyle(greeting).fontSize)).toBeCloseTo(parseFloat(tokens.text["display-sm"]) * rem * 1.3, 1);
     },
   },
 };

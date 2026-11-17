@@ -15,12 +15,16 @@ Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 pro
   `destructive` a warning about safety. `input`, a control's edge, stands 3:1 on what it sits on.
 - **Shape.** `radius` is 12px (`rounded-sm` 8 … `rounded-xl` 16); named radii by role: `rounded-row` 22,
   `rounded-window` 26, `rounded-card` 30, `rounded-menu` 38, `rounded-full` for every button.
-- **Type.** Figtree. Sizes are tokens in rem so the Text size setting scales every word: `text-body` 20,
-  `text-body-lg` 22, `text-lead` 24 (Grace's words), `text-title` 28, `text-display` 40.
+- **Type.** Figtree. Every size is a `text-*` token: `text-body` 20, `text-body-lg` 22, `text-lead` 24 (Grace's
+  words), `text-title` 28, `text-display` 40. The Text size setting is one style on the screen's root, `TextScale`,
+  which sets each `--text-*` to its token times the chosen percent, so every word that names a token follows and no
+  box changes size. A size or line height written in pixels (`text-[19px]`, `leading-[26px]`) stays put, so a word
+  that must scale names a token and a line height that must follow it is unitless.
 - **Motion.** `press` with `ease-spring` for a tap (scale 1.05), `window` for a window changing size.
 - **Dark.** The tablet keeps its light look; `.dark` changes only the semantic colors, for tools around it.
 
-Name a value by its token (`bg-primary`, `var(--primary)`), never by its value. Where a literal color
+Name a value by its token (`bg-primary`, `var(--primary)`), never by its value; a shadow, gradient or keyframe
+mixes its colour from one (`color-mix(in srgb, var(--primary) 12%, transparent)`). Where a literal color
 is unavoidable, such as a chart series or third-party markup, say why on the line above:
 `// eslint-disable-next-line design-system/no-literal-colors -- chart series`.
 
@@ -260,59 +264,59 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `font.sans` | "Figtree", Arial, sans-serif |
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
 | `font.site` | Arial, Helvetica, sans-serif |
-| `shadow.sm` | 0 1px 2px oklch(0 0 0 / 0.08) |
-| `shadow.md` | 0 4px 12px oklch(0 0 0 / 0.12) |
-| `shadow.lg` | 0 12px 32px oklch(0 0 0 / 0.18) |
-| `shadow.float` | 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.glass` | inset 0 0 0 1px rgb(255 255 255 / 0.75), inset 0 1.5px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.35) |
-| `shadow.glass-pressed` | inset 0 0 0 1px rgb(255 255 255 / 0.75), inset 0 1.5px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.35), inset 0 0 0 1.5px rgb(255 255 255 / 0.7), 0 6px 18px rgb(59 47 99 / 0.14) |
-| `shadow.capsule` | inset 0 0 0 1px rgb(255 255 255 / 0.9), inset 0 1.5px 1px #fff, 0 0 0 1px rgb(59 47 99 / 0.1), 0 4px 14px rgb(59 47 99 / 0.12) |
-| `shadow.raised` | 0 1px 2px rgb(59 47 99 / 0.08), 0 4px 14px rgb(59 47 99 / 0.12) |
-| `shadow.prominent` | 0 1px 2px rgb(59 47 99 / 0.1), 0 4px 14px rgb(59 47 99 / 0.18) |
-| `shadow.panel` | 0 2px 10px rgb(60 70 110 / 0.08) |
-| `shadow.badge` | 0 1px 4px rgb(60 70 110 / 0.14) |
-| `shadow.photo` | 0 8px 30px rgb(60 70 110 / 0.18) |
-| `shadow.menu` | inset 0 0 0 1px rgb(255 255 255 / 0.85), 0 12px 32px rgb(59 47 99 / 0.18) |
-| `shadow.dialog` | 0 24px 60px rgb(28 24 44 / 0.3) |
-| `shadow.field` | inset 0 0 0 1.5px rgb(59 47 99 / 0.16) |
-| `shadow.field-focus` | inset 0 0 0 1px rgb(255 255 255 / 0.9), 0 0 0 2.5px var(--primary), 0 4px 14px rgb(59 47 99 / 0.12) |
+| `shadow.sm` | 0 1px 2px color-mix(in srgb, var(--dim) 8%, transparent) |
+| `shadow.md` | 0 4px 12px color-mix(in srgb, var(--dim) 12%, transparent) |
+| `shadow.lg` | 0 12px 32px color-mix(in srgb, var(--dim) 18%, transparent) |
+| `shadow.float` | 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
+| `shadow.glass` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent) |
+| `shadow.glass-pressed` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent), inset 0 0 0 1.5px color-mix(in srgb, var(--glass) 70%, transparent), 0 6px 18px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `shadow.capsule` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 90%, transparent), inset 0 1.5px 1px var(--glass), 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
+| `shadow.raised` | 0 1px 2px color-mix(in srgb, var(--primary) 8%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
+| `shadow.prominent` | 0 1px 2px color-mix(in srgb, var(--primary) 10%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 18%, transparent) |
+| `shadow.panel` | 0 2px 10px color-mix(in srgb, var(--shade) 8%, transparent) |
+| `shadow.badge` | 0 1px 4px color-mix(in srgb, var(--shade) 14%, transparent) |
+| `shadow.photo` | 0 8px 30px color-mix(in srgb, var(--shade) 18%, transparent) |
+| `shadow.menu` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 85%, transparent), 0 12px 32px color-mix(in srgb, var(--primary) 18%, transparent) |
+| `shadow.dialog` | 0 24px 60px color-mix(in srgb, var(--scrim) 30%, transparent) |
+| `shadow.field` | inset 0 0 0 1.5px color-mix(in srgb, var(--primary) 16%, transparent) |
+| `shadow.field-focus` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 90%, transparent), 0 0 0 2.5px var(--primary), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
 | `shadow.selected` | inset 0 0 0 2.5px var(--primary) |
-| `shadow.key` | 0 1px 0 rgb(0 0 0 / 0.25) |
-| `shadow.halo` | 0 0 0 8px rgb(201 188 250 / 0.8), 0 0 22px 14px rgb(185 168 242 / 0.6) |
-| `shadow.guide` | 0 0 0 4px var(--guide), 0 0 0 10px rgb(122 99 238 / 0.22), 0 8px 24px rgb(59 47 99 / 0.14) |
-| `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px rgb(30 122 70 / 0.15), 0 8px 24px rgb(59 47 99 / 0.14) |
+| `shadow.key` | 0 1px 0 color-mix(in srgb, var(--dim) 25%, transparent) |
+| `shadow.halo` | 0 0 0 8px color-mix(in srgb, var(--frame-lilac) 80%, transparent), 0 0 22px 14px color-mix(in srgb, var(--halo) 60%, transparent) |
+| `shadow.guide` | 0 0 0 4px var(--guide), 0 0 0 10px color-mix(in srgb, var(--guide) 22%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `shadow.guide-ok` | 0 0 0 4px var(--ok), 0 0 0 10px rgb(30 122 70 / 0.15), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
 | `shadow.device` | 0 30px 60px rgb(20 16 32 / 0.25) |
-| `shadow.banner` | inset 0 1.5px 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(255 255 255 / 0.7), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.window` | 0 0 0 1px rgb(59 47 99 / 0.06), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.popover` | inset 0 0 0 1px rgb(255 255 255 / 0.85), 0 12px 32px rgb(59 47 99 / 0.22) |
-| `shadow.tile` | 0 1px 4px rgb(60 70 110 / 0.12) |
-| `shadow.picture` | 0 2px 10px rgb(60 70 110 / 0.12) |
-| `shadow.paper` | 0 2px 14px rgb(60 70 110 / 0.16) |
-| `shadow.preview` | 0 8px 14px rgb(60 70 110 / 0.16) |
-| `shadow.thumb` | inset 0 0 0 1px rgb(59 47 99 / 0.08), 0 2px 8px rgb(59 47 99 / 0.25) |
-| `shadow.tag` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 24px rgb(59 47 99 / 0.16) |
-| `shadow.cursor` | 0 0 0 6px rgb(122 99 238 / 0.35), 0 0 22px 8px rgb(122 99 238 / 0.35) |
-| `shadow.tile-pressed` | inset 0 0 0 1px rgb(255 255 255 / 0.95), 0 4px 12px rgb(59 47 99 / 0.12) |
-| `shadow.bubble` | 0 1px 2px rgb(59 47 99 / 0.06), 0 4px 14px rgb(59 47 99 / 0.08) |
-| `shadow.strip` | inset 0 0 0 1px rgb(255 255 255 / 0.75), 0 6px 20px rgb(59 47 99 / 0.14) |
-| `shadow.cursor-tag` | 0 8px 24px rgb(59 47 99 / 0.22) |
-| `shadow.cursor-tag-paused` | inset 0 0 0 2px var(--primary), 0 8px 24px rgb(59 47 99 / 0.18) |
+| `shadow.banner` | inset 0 1.5px 0 color-mix(in srgb, var(--glass) 95%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--glass) 70%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
+| `shadow.window` | 0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
+| `shadow.popover` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 85%, transparent), 0 12px 32px color-mix(in srgb, var(--primary) 22%, transparent) |
+| `shadow.tile` | 0 1px 4px color-mix(in srgb, var(--shade) 12%, transparent) |
+| `shadow.picture` | 0 2px 10px color-mix(in srgb, var(--shade) 12%, transparent) |
+| `shadow.paper` | 0 2px 14px color-mix(in srgb, var(--shade) 16%, transparent) |
+| `shadow.preview` | 0 8px 14px color-mix(in srgb, var(--shade) 16%, transparent) |
+| `shadow.thumb` | inset 0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent), 0 2px 8px color-mix(in srgb, var(--primary) 25%, transparent) |
+| `shadow.tag` | 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 16%, transparent) |
+| `shadow.cursor` | 0 0 0 6px color-mix(in srgb, var(--guide) 35%, transparent), 0 0 22px 8px color-mix(in srgb, var(--guide) 35%, transparent) |
+| `shadow.tile-pressed` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 95%, transparent), 0 4px 12px color-mix(in srgb, var(--primary) 12%, transparent) |
+| `shadow.bubble` | 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 8%, transparent) |
+| `shadow.strip` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), 0 6px 20px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `shadow.cursor-tag` | 0 8px 24px color-mix(in srgb, var(--primary) 22%, transparent) |
+| `shadow.cursor-tag-paused` | inset 0 0 0 2px var(--primary), 0 8px 24px color-mix(in srgb, var(--primary) 18%, transparent) |
 | `shadow.guide-tight` | 0 0 0 4px var(--guide) |
 | `shadow.guide-tight-ok` | 0 0 0 4px var(--ok) |
-| `shadow.guide-nudge` | 0 0 0 4px var(--guide), 0 0 0 10px rgb(122 99 238 / 0.24) |
-| `shadow.attachment` | 0 2px 8px rgb(60 70 110 / 0.12) |
-| `shadow.photo-tile` | 0 2px 10px rgb(60 70 110 / 0.1) |
-| `shadow.pane` | inset 0 0 0 1px rgb(255 255 255 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.55), 0 1px 2px rgb(59 47 99 / 0.05), 0 4px 14px rgb(59 47 99 / 0.06) |
-| `shadow.sidebar` | inset 0 0 0 1px #fff, inset 0 1.5px 2px #fff, 0 0 0 1px rgb(59 47 99 / 0.07), 0 2px 6px rgb(59 47 99 / 0.06), 0 12px 36px rgb(59 47 99 / 0.16) |
-| `shadow.launcher` | inset 0 1px 0 rgb(255 255 255 / 0.95), 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 22px rgb(59 47 99 / 0.1) |
-| `shadow.hairline` | 0 1px 0 rgb(59 47 99 / 0.1) |
-| `shadow.arrow` | -1px 1px 0 rgb(255 255 255 / 0.85) |
-| `shadow.field-error` | 0 0 0 2.5px var(--destructive), 0 4px 14px rgb(59 47 99 / 0.12) |
-| `shadow.strip-pill` | inset 0 0 0 1px rgb(59 47 99 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.8) |
-| `shadow.site-card` | 0 1px 3px rgb(0 0 0 / 0.12) |
-| `shadow.site-focus` | 0 0 0 2px rgb(31 58 95 / 0.25) |
-| `dropShadow.label` | 0 1px 2px rgb(59 47 99 / 0.06), 0 8px 18px rgb(59 47 99 / 0.14) |
-| `dropShadow.calendar` | 0 14px 18px color-mix(in srgb, var(--calendar-shadow) 28%, transparent), 0 3px 4px rgb(59 47 99 / 0.12) |
+| `shadow.guide-nudge` | 0 0 0 4px var(--guide), 0 0 0 10px color-mix(in srgb, var(--guide) 24%, transparent) |
+| `shadow.attachment` | 0 2px 8px color-mix(in srgb, var(--shade) 12%, transparent) |
+| `shadow.photo-tile` | 0 2px 10px color-mix(in srgb, var(--shade) 10%, transparent) |
+| `shadow.pane` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 65%, transparent), inset 0 1px 0 color-mix(in srgb, var(--glass) 95%, transparent), 0 0 0 1px color-mix(in srgb, var(--glass) 55%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
+| `shadow.sidebar` | inset 0 0 0 1px var(--glass), inset 0 1.5px 2px var(--glass), 0 0 0 1px color-mix(in srgb, var(--primary) 7%, transparent), 0 2px 6px color-mix(in srgb, var(--primary) 6%, transparent), 0 12px 36px color-mix(in srgb, var(--primary) 16%, transparent) |
+| `shadow.launcher` | inset 0 1px 0 color-mix(in srgb, var(--glass) 95%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 8px 22px color-mix(in srgb, var(--primary) 10%, transparent) |
+| `shadow.hairline` | 0 1px 0 color-mix(in srgb, var(--primary) 10%, transparent) |
+| `shadow.arrow` | -1px 1px 0 color-mix(in srgb, var(--glass) 85%, transparent) |
+| `shadow.field-error` | 0 0 0 2.5px var(--destructive), 0 4px 14px color-mix(in srgb, var(--primary) 12%, transparent) |
+| `shadow.strip-pill` | inset 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent), inset 0 1px 0 color-mix(in srgb, var(--glass) 80%, transparent) |
+| `shadow.site-card` | 0 1px 3px color-mix(in srgb, var(--dim) 12%, transparent) |
+| `shadow.site-focus` | 0 0 0 2px color-mix(in srgb, var(--site-brand) 25%, transparent) |
+| `dropShadow.label` | 0 1px 2px color-mix(in srgb, var(--primary) 6%, transparent), 0 8px 18px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `dropShadow.calendar` | 0 14px 18px color-mix(in srgb, var(--calendar-shadow) 28%, transparent), 0 3px 4px color-mix(in srgb, var(--primary) 12%, transparent) |
 | `breakpoint.sm` | 40rem |
 | `breakpoint.md` | 48rem |
 | `breakpoint.lg` | 64rem |
@@ -332,11 +336,11 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `rounded.segment` | 40px |
 | `rounded.device` | 48px |
 | `gradient.frame` | radial-gradient(38% 55% at 12% 18%, var(--frame-lilac) 0%, transparent 70%), radial-gradient(40% 55% at 70% 8%, var(--frame-sky) 0%, transparent 70%), radial-gradient(45% 50% at 88% 92%, var(--frame-lime) 0%, transparent 70%), radial-gradient(40% 50% at 30% 95%, var(--frame-mauve) 0%, transparent 70%), linear-gradient(135deg, var(--frame-from) 0%, var(--frame-via) 60%, var(--frame-to) 100%) |
-| `gradient.frame-soft` | radial-gradient(38% 55% at 12% 18%, color-mix(in srgb, var(--frame-lilac) 50%, #fff) 0%, transparent 70%), radial-gradient(40% 55% at 70% 8%, color-mix(in srgb, var(--frame-sky) 50%, #fff) 0%, transparent 70%), radial-gradient(45% 50% at 88% 92%, color-mix(in srgb, var(--frame-lime) 50%, #fff) 0%, transparent 70%), linear-gradient(135deg, color-mix(in srgb, var(--frame-from) 50%, #fff) 0%, color-mix(in srgb, var(--frame-via) 50%, #fff) 60%, color-mix(in srgb, var(--frame-to) 50%, #fff) 100%) |
+| `gradient.frame-soft` | radial-gradient(38% 55% at 12% 18%, color-mix(in srgb, var(--frame-lilac) 50%, var(--glass)) 0%, transparent 70%), radial-gradient(40% 55% at 70% 8%, color-mix(in srgb, var(--frame-sky) 50%, var(--glass)) 0%, transparent 70%), radial-gradient(45% 50% at 88% 92%, color-mix(in srgb, var(--frame-lime) 50%, var(--glass)) 0%, transparent 70%), linear-gradient(135deg, color-mix(in srgb, var(--frame-from) 50%, var(--glass)) 0%, color-mix(in srgb, var(--frame-via) 50%, var(--glass)) 60%, color-mix(in srgb, var(--frame-to) 50%, var(--glass)) 100%) |
 | `gradient.ring` | linear-gradient(135deg, var(--ring-from) 0%, var(--ring-via) 55%, var(--ring-to) 100%) |
 | `gradient.calendar` | linear-gradient(135deg, var(--calendar-from) 0%, var(--rose) 100%) |
 | `gradient.sleep` | radial-gradient(60% 70% at 20% 10%, var(--sleep-glow) 0%, transparent 70%), linear-gradient(var(--sleep), var(--sleep)) |
-| `gradient.sheen` | linear-gradient(108deg, rgb(255 255 255 / 0) 47%, rgb(255 255 255 / 0.35) 50%, rgb(255 255 255 / 0) 53%) |
+| `gradient.sheen` | linear-gradient(108deg, color-mix(in srgb, var(--glass) 0%, transparent) 47%, color-mix(in srgb, var(--glass) 35%, transparent) 50%, color-mix(in srgb, var(--glass) 0%, transparent) 53%) |
 | `gradient.orb` | radial-gradient(circle at 40% 38%, var(--orb-light), var(--orb-deep)) |
 | `text.caption` | 0.9375rem |
 | `text.label` | 1.0625rem |
@@ -361,9 +365,9 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `keyframes.breathe` | 0%,100%{transform:scaleY(.55);opacity:.7}50%{transform:scaleY(1);opacity:1} |
 | `keyframes.bob` | 0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1} |
 | `keyframes.blink` | 50%{opacity:0} |
-| `keyframes.guide-pulse` | 50%{box-shadow:0 0 0 6px var(--guide),0 0 0 16px rgb(122 99 238 / .18),0 8px 24px rgb(59 47 99 / .14)} |
-| `keyframes.guide-pulse-ok` | 50%{box-shadow:0 0 0 6px var(--ok),0 0 0 16px rgb(30 122 70 / .12),0 8px 24px rgb(59 47 99 / .14)} |
-| `keyframes.guide-pulse-tight` | 50%{box-shadow:0 0 0 4px rgb(157 139 240 / .2)} |
+| `keyframes.guide-pulse` | 50%{box-shadow:0 0 0 6px var(--guide),0 0 0 16px color-mix(in srgb, var(--guide) 18%, transparent),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
+| `keyframes.guide-pulse-ok` | 50%{box-shadow:0 0 0 6px var(--ok),0 0 0 16px rgb(30 122 70 / .12),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
+| `keyframes.guide-pulse-tight` | 50%{box-shadow:0 0 0 4px color-mix(in srgb, var(--lavender) 20%, transparent)} |
 | `keyframes.guide-pulse-tight-ok` | 50%{box-shadow:0 0 0 4px rgb(30 122 70 / .2)} |
 | `keyframes.label-in` | from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none} |
 | `keyframes.orb-in` | from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none} |

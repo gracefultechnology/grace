@@ -1,6 +1,7 @@
-import { type ComponentProps, type RefObject, useId, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentProps, useId } from "react";
 import { X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { useSize } from "../lib/observe.ts";
 import { Spinner } from "./Spinner.tsx";
 
 export type BrowserTabProps = Omit<ComponentProps<"div">, "title"> & {
@@ -31,8 +32,7 @@ export type BrowserTabProps = Omit<ComponentProps<"div">, "title"> & {
  * @design packages/design-system/design.md#selected
  */
 export function BrowserTab({ title, favicon, initial, pageLoading = false, loadingLabel = "Loading", selected = false, onSelect, onClose, closeLabel = `Close ${title}`, className, ...props }: BrowserTabProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const width = useWidth(ref);
+  const [ref, size] = useSize<HTMLDivElement>();
   return (
     <div
       ref={ref}
@@ -45,7 +45,7 @@ export function BrowserTab({ title, favicon, initial, pageLoading = false, loadi
     >
       {selected && (
         <>
-          <TabShadow width={width} />
+          <TabShadow width={size?.width ?? 240} />
           <span aria-hidden className="absolute bottom-0 -left-3 size-3 bg-[radial-gradient(circle_at_0_0,transparent_11.5px,var(--glass)_12px)] opacity-78" />
           <span aria-hidden className="absolute -right-3 bottom-0 size-3 bg-[radial-gradient(circle_at_100%_0,transparent_11.5px,var(--glass)_12px)] opacity-78" />
         </>
@@ -82,19 +82,6 @@ export function TabFavicon({ favicon, initial, pageLoading = false, loadingLabel
       {initial ?? "·"}
     </span>
   );
-}
-
-function useWidth(ref: RefObject<HTMLElement | null>) {
-  const [width, setWidth] = useState(240);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => setWidth(el.offsetWidth));
-    observer.observe(el);
-    setWidth(el.offsetWidth);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width;
 }
 
 function TabShadow({ width }: { width: number }) {

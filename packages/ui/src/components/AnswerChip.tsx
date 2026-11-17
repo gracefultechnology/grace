@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { bubbleOutline } from "../lib/outline.ts";
 import { cn, focusRing } from "../lib/cn.ts";
+import { useSize } from "../lib/observe.ts";
 
 export type AnswerChipProps = Omit<ComponentProps<"button">, "ref" | "type">;
 
@@ -12,15 +13,7 @@ export type AnswerChipProps = Omit<ComponentProps<"button">, "ref" | "type">;
  * @design packages/design-system/design.md#grace
  */
 export function AnswerChip({ className, children, ...props }: AnswerChipProps) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const [size, setSize] = useState<[number, number]>();
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setSize([el.offsetWidth, el.offsetHeight]));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const [ref, size] = useSize<HTMLButtonElement>();
   return (
     <button
       type="button"
@@ -33,9 +26,9 @@ export function AnswerChip({ className, children, ...props }: AnswerChipProps) {
       ref={ref}
     >
       {size && (
-        <svg aria-hidden viewBox={`0 0 ${size[0] + 10} ${size[1] + 2}`} className="pointer-events-none absolute top-0 left-0 z-0 h-[calc(100%+2px)] w-[calc(100%+10px)] overflow-visible">
+        <svg aria-hidden viewBox={`0 0 ${size.width + 10} ${size.height + 2}`} className="pointer-events-none absolute top-0 left-0 z-0 h-[calc(100%+2px)] w-[calc(100%+10px)] overflow-visible">
           <path
-            d={bubbleOutline(...size, size[1] / 2, 1)}
+            d={bubbleOutline(size.width, size.height, size.height / 2, 1)}
             vectorEffect="non-scaling-stroke"
             className="fill-none stroke-user-ink/70 stroke-2 [stroke-dasharray:12_7] [stroke-linecap:round] [stroke-linejoin:round] group-active/chip:fill-user-ink group-active/chip:stroke-user-ink group-active/chip:[stroke-dasharray:none]"
           />
