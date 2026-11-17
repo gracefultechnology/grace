@@ -1,6 +1,8 @@
 package technology.graceful.grace;
 
 import ai.eliza.auth.cloud.CloudCredentialSlots;
+import ai.eliza.auth.cloud.CloudSignInFlow;
+import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.CredentialIntentFence;
 import ai.eliza.plugins.securestore.nativeonly.CredentialMutationConductor;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
@@ -18,6 +20,9 @@ final class GraceCredentials {
  private static final CredentialIntentFence INTENTS = new CredentialIntentFence(LIFECYCLE);
  private static final String KEY = GraceSignInPlugin.NATIVE.credentialSlot(GraceSignInPlugin.PRODUCTION);
  private static final String ACTIVATION = GraceSignInPlugin.NATIVE.receiptSlot(GraceSignInPlugin.PRODUCTION);
+ private static final String STAGING_KEY = GraceSignInPlugin.NATIVE.credentialSlot(GraceSignInPlugin.STAGING);
+ private static final String STAGING_ACTIVATION = GraceSignInPlugin.NATIVE.receiptSlot(GraceSignInPlugin.STAGING);
+ private static final String PENDING = GraceSignInPlugin.NATIVE.pendingSlot;
  private static long lifecycleEpoch, mutationEpoch = -1;
 
  private GraceCredentials() {}
@@ -41,6 +46,21 @@ final class GraceCredentials {
   if (saved == null) return null;
   JSONObject credential = new JSONObject(saved);
   return credential.getLong("expiresAt") > System.currentTimeMillis() ? credential.getString("token") : null;
+ }
+
+ static String passwordCredentialId(Context context) throws Exception {
+  JsonCredentialSlots store = store(context);
+  if (read(store, ACTIVATION) != null || read(store, PENDING) != null) throw new IllegalStateException("Account change in progress");
+  if (BuildConfig.DEBUG && (read(store, STAGING_KEY) != null
+    || read(store, STAGING_ACTIVATION) != null)) {
+   throw new IllegalStateException("Use the matching password environment");
+  }
+  String saved = read(store, KEY);
+  if (saved == null) return null;
+  JSONObject credential = new JSONObject(saved);
+  String id = credential.getString("credentialId");
+  if (!CloudSignInFlow.validUuid(id) || credential.getLong("expiresAt") <= System.currentTimeMillis()) throw new IllegalStateException("Verify the account again");
+  return id;
  }
 
  static CloudCredentialSlots slots(Context context, Runnable guard) {
@@ -69,7 +89,8 @@ final class GraceCredentials {
  }
 
  private static boolean change(Context context, JsonCredentialSlots store, Runnable guard, String slot, boolean compare, String expected, String value) throws Exception {
-  boolean bound = slot.equals(KEY) || slot.equals(ACTIVATION);
+  boolean bound = slot.equals(KEY) || slot.equals(ACTIVATION) || slot.equals(PENDING)
+    || (BuildConfig.DEBUG && (slot.equals(STAGING_KEY) || slot.equals(STAGING_ACTIVATION)));
   return CredentialMutationConductor.mutate(host(context), guard, new CredentialMutationConductor.Mutation<Boolean>() {
    @Override public boolean requiresShutdown() throws Exception {
     String before = read(store, slot);
@@ -95,7 +116,10 @@ final class GraceCredentials {
     if (epoch != lifecycleEpoch || mutationEpoch != epoch) throw new IllegalStateException("Credential change superseded");
    }
    @Override public long reserveStop() { return lifecycleEpoch; }
-   @Override public void requestStop(long request) { context.stopService(new Intent(context, GraceAgentService.class)); }
+   @Override public void requestStop(long request) throws Exception {
+    PasswordVaultAccess.get(context).lockAndClose();
+    context.stopService(new Intent(context, GraceAgentService.class));
+   }
    @Override public boolean stopped() throws Exception { return GraceAgentService.stopped(); }
    @Override public boolean stopAcknowledged(long request) { return true; }
    @Override public long elapsedRealtime() { return SystemClock.elapsedRealtime(); }

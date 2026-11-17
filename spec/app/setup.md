@@ -464,3 +464,43 @@ pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) an
 pure def sometimesTalkTriedAloud(s: Setup): bool = outcomeOf(s.progress, TalkStep) == Done
 pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away and s.progress.step == HandOverStep and not(graceThinks(s.facts))
 ```
+
+## Story: Keep my passwords private when the tablet account changes
+
+> I can keep passwords on my own tablet, and I can choose to link them to my verified Grace account. Signing out closes private controls. Another account on this tablet cannot read or adopt the passwords I linked.
+
+### Only the device-only profile or the current verified owner can open the vault
+
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+
+```quint
+type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })
+type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ credentialId: str })
+pure def passwordAdmission(custody: PasswordCustody, account: PasswordAccount): bool =
+  match custody {
+    | DevicePasswordCustody => account == DevicePasswordAccount
+    | BoundPasswordCustody(owner) => match account {
+        | ActivePasswordAccount(active) => owner.scope != "" and owner.generationId != "" and owner.generationId == active.credentialId
+        | _ => false
+      }
+  }
+pure def lawSignedOutCannotOpenBoundPasswords(scope: str, generationId: str): bool =
+  not(passwordAdmission(BoundPasswordCustody({ scope: scope, generationId: generationId }), DevicePasswordAccount))
+```
+
+### Linking local passwords requires account verification and the person's approval
+
+The host verifies the current account and product scope before binding the current credential generation. Linking existing device-only entries additionally requires confirmation from the person after device authentication. The same owner may verify a renewed credential. A different owner cannot take over this vault.
+
+```quint
+pure def mayBindPasswords(custody: PasswordCustody, verifiedScope: str, activeId: str, hasEntries: bool, confirmedLink: bool): bool =
+  verifiedScope != "" and activeId != "" and
+  (match custody {
+    | DevicePasswordCustody => not(hasEntries) or confirmedLink
+    | BoundPasswordCustody(owner) => owner.scope == verifiedScope
+  })
+pure def lawCannotClaimAnotherPasswordOwner(scope: str, other: str, generationId: str): bool =
+  scope != other implies not(mayBindPasswords(BoundPasswordCustody({ scope: scope, generationId: generationId }), other, generationId, true, true))
+pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool =
+  not(mayBindPasswords(DevicePasswordCustody, scope, generationId, true, false))
+```
