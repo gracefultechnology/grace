@@ -8,7 +8,6 @@ const retry = fn();
 export const meta: ComponentMeta<MailNoticeProps> = {
   args: { children: "Your email couldn’t be loaded. Try again.", actionLabel: "Try again", onAction: retry },
   examples: {
-    Offline: { tone: "offline", children: "Email needs the internet to check for new mail.", actionLabel: "Fix Wi-Fi" },
     "No action": { children: "I’m not sure this email was sent. I’m checking before it can be sent again.", actionLabel: undefined },
   },
   decorator: (story) => <div className="w-[1000px] bg-background p-6">{story()}</div>,

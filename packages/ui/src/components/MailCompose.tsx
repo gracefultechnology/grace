@@ -1,9 +1,10 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { ArrowUp, Image, Plus, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Image, Plus, X } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
-import { Menu, MenuOption } from "./Menu.tsx";
+import { Menu, MenuLabel, MenuOption } from "./Menu.tsx";
 import { appButton, appProminent, headerPill, pendingMark } from "./MailActionStatus.tsx";
 import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
 import type { MailPhoto } from "./MailMessageView.tsx";
@@ -30,9 +31,11 @@ export function MailRecipientChip({ contact, onRemove, removeLabel = `Remove ${c
     <span className={cn("inline-flex h-[60px] items-center gap-3 rounded-full bg-panel pr-5 pl-2 text-body-lg leading-none font-bold text-chrome", className)} {...props}>
       <MailContactAvatar contact={contact} size={46} style={{ fontSize: 18 }} aria-hidden data-prototype-ink />
       {contact.name}
-      <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-2 ml-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
-        <X size={18} strokeWidth={2.4} aria-hidden />
-      </button>
+      {onRemove && (
+        <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-2 ml-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
+          <X size={18} strokeWidth={2.4} aria-hidden />
+        </button>
+      )}
     </span>
   );
 }
@@ -49,7 +52,68 @@ function Line({ label, htmlFor, children }: { label: string; htmlFor?: string; c
 
 const addButton = cn(appButton, "size-[52px] p-0");
 
+export type MailFromAccount = {
+  id: number;
+  /** The address it sends from. */
+  address: string;
+  /** Its name on the tablet: "Gmail". */
+  name: string;
+};
+
+export type MailFromMenuLabels = { sendFrom: string; close: string };
+
+export type MailFromMenuProps = {
+  /** The email accounts that can send. */
+  accounts: MailFromAccount[];
+  /** The one it goes from. */
+  selected: number;
+  /** Called with the account chosen. */
+  onSelect?: (id: number) => void;
+  /** Whether the menu is open, when the app controls it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Its words, for another language. */
+  labels?: Partial<MailFromMenuLabels>;
+};
+
+/** The address an email goes from, opening "Send from" with each account's address and name (prototype `.rpop.acmenu`). */
+export function MailFromMenu({ accounts, selected, onSelect, open, onOpenChange, labels }: MailFromMenuProps) {
+  const l = { sendFrom: "Send from", close: "Close", ...labels };
+  return (
+    <Menu
+      open={open}
+      onOpenChange={onOpenChange}
+      trigger={
+        <Button variant="capsule" size="compact" className={cn(appButton, "h-14 gap-2.5 px-5 data-[state=open]:text-primary")}>
+          {accounts.find((account) => account.id === selected)?.address}
+          <ChevronDown size={20} strokeWidth={2.2} aria-hidden />
+        </Button>
+      }
+      sideOffset={12}
+      surface="page"
+    >
+      <div className="flex items-center justify-between gap-5 pl-3">
+        <MenuLabel className="m-0 text-body-lg leading-7 tracking-[.01em] normal-case">{l.sendFrom}</MenuLabel>
+        <DropdownMenu.Item asChild>
+          <Button variant="capsule" size="compact-icon" aria-label={l.close} className={cn(focusRing, "size-13 text-chrome outline-none active:scale-96")}>
+            <X size={22} strokeWidth={2} aria-hidden />
+          </Button>
+        </DropdownMenu.Item>
+      </div>
+      {accounts.map((account) => (
+        <MenuOption key={account.id} selected={account.id === selected} className="h-auto min-h-[76px] justify-start rounded-row py-2.5" onSelect={() => onSelect?.(account.id)}>
+          <span className="flex min-w-0 flex-col items-start">
+            <span className="truncate">{account.address}</span>
+            <span className="text-lg leading-6 font-medium text-muted-foreground">{account.name}</span>
+          </span>
+        </MenuOption>
+      ))}
+    </Menu>
+  );
+}
+
 export type MailComposeLabels = {
+  from: string;
   to: string;
   cc: string;
   bcc: string;
@@ -73,6 +137,7 @@ export type MailComposeLabels = {
 };
 
 const composeLabels: MailComposeLabels = {
+  from: "From",
   to: "To",
   cc: "Cc",
   bcc: "Bcc",
@@ -98,6 +163,8 @@ const composeLabels: MailComposeLabels = {
 export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" | "children" | "title"> & {
   /** The window's title: "New email", "Reply". */
   title?: string;
+  /** Which email it goes from: a From line, shown only when two or more accounts can send. */
+  from?: Omit<MailFromMenuProps, "labels">;
   /** Who it is to. */
   to: MailContact[];
   /** Who gets a copy. */
@@ -120,7 +187,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
   attachments?: MailPhoto[];
   /** Called with the index of the attachment to take off. */
   onRemoveAttachment?: (index: number) => void;
-  /** Sends it. */
+  /** Sends it; without it Send is shown but cannot be pressed. */
   onSend?: () => void;
   /** Called with where to attach from: the camera, Photos or a file. */
   onAttach?: (source: MailAttachSource) => void;
@@ -142,7 +209,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
 };
 
 /**
- * Writing an email: To, Cc and Bcc as people, the subject and the words, photos attached, with Send as the one
+ * Writing an email: From when there are several accounts, To, Cc and Bcc as people, the subject and the words, photos attached, with Send as the one
  * next step and Attach beside it (prototype `mailView()`, compose).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
@@ -150,6 +217,7 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
  */
 export function MailCompose({
   title = "New email",
+  from,
   to,
   cc = [],
   bcc = [],
@@ -174,6 +242,7 @@ export function MailCompose({
   onRetryDraft,
   labels,
   backLabel = "Inbox",
+  onBack,
   ...props
 }: MailComposeProps) {
   const l = { ...composeLabels, ...labels };
@@ -185,31 +254,41 @@ export function MailCompose({
     <Line label={l[field]}>
       <span className="flex flex-1 flex-wrap items-center gap-2.5 py-1.5">
         {people.map((person, i) => (
-          <MailRecipientChip key={person.name} contact={person} onRemove={() => onRemoveRecipient?.(field, i)} />
+          <MailRecipientChip key={person.name} contact={person} onRemove={onRemoveRecipient && (() => onRemoveRecipient(field, i))} />
         ))}
-        <Button variant="capsule" size="compact-icon" className={addButton} aria-label={l.addTo(l[field])} onClick={() => onAddRecipient?.(field)}>
-          <Plus size={20} strokeWidth={2.4} aria-hidden />
-        </Button>
+        {onAddRecipient && (
+          <Button variant="capsule" size="compact-icon" className={addButton} aria-label={l.addTo(l[field])} onClick={() => onAddRecipient(field)}>
+            <Plus size={20} strokeWidth={2.4} aria-hidden />
+          </Button>
+        )}
       </span>
     </Line>
   );
   return (
     <AppWindow
       title={title}
-      backLabel={backLabel}
+      backLabel={onBack && backLabel}
+      onBack={onBack}
       actions={
-        <Button variant="plain" size="compact" className={headerPill} onClick={onDiscard}>
-          <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
-          {l.discard}
-        </Button>
+        onDiscard && (
+          <Button variant="plain" size="compact" className={headerPill} onClick={onDiscard}>
+            <mailIcons.trash size={22} strokeWidth={2.2} aria-hidden />
+            {l.discard}
+          </Button>
+        )
       }
       {...props}
     >
       <form className="font-sans" onSubmit={(event) => { event.preventDefault(); onSend?.(); }}>
         {draftError != null && (
-          <MailNotice actionLabel={l.retry} onAction={onRetryDraft} className="mb-3">
+          <MailNotice actionLabel={onRetryDraft && l.retry} onAction={onRetryDraft} className="mb-3">
             {draftError}
           </MailNotice>
+        )}
+        {from && from.accounts.length > 1 && (
+          <Line label={l.from}>
+            <MailFromMenu {...from} />
+          </Line>
         )}
         {recipients("to", to)}
         {ccOpen || cc.length || bcc.length ? (
@@ -217,7 +296,7 @@ export function MailCompose({
             {recipients("cc", cc)}
             {recipients("bcc", bcc)}
           </>
-        ) : (
+        ) : onOpenCc && (
           <Line label={l.ccBcc}>
             <Button variant="capsule" size="compact" className={cn(appButton, "h-[52px] gap-2.5 px-5")} onClick={onOpenCc}>
               <Plus size={20} strokeWidth={2.4} aria-hidden />
@@ -230,6 +309,7 @@ export function MailCompose({
             id={subjectId}
             value={subject}
             placeholder={l.subjectPlaceholder}
+            readOnly={!onSubjectChange}
             onChange={(event) => onSubjectChange?.(event.target.value)}
             className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-field-placeholder"
           />
@@ -238,6 +318,7 @@ export function MailCompose({
           aria-label={l.bodyPlaceholder}
           value={body}
           placeholder={l.bodyPlaceholder}
+          readOnly={!onBodyChange}
           onChange={(event) => onBodyChange?.(event.target.value)}
           className={cn("mt-[18px] box-border block w-full", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-field-placeholder")}
         />
@@ -246,40 +327,44 @@ export function MailCompose({
             {attachments.map((photo, i) => (
               <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
                 <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
-                <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome transition-none active:scale-96" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment?.(i)}>
-                  <X size={20} strokeWidth={2.4} aria-hidden />
-                </Button>
+                {onRemoveAttachment && (
+                  <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome transition-none active:scale-96" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment(i)}>
+                    <X size={20} strokeWidth={2.4} aria-hidden />
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
         )}
         {notice && (
-          <MailNotice actionLabel={sendStatus === "saveFailed" ? l.retry : undefined} onAction={onRetrySave} className="mt-[18px]">
+          <MailNotice actionLabel={sendStatus === "saveFailed" && onRetrySave ? l.retry : undefined} onAction={onRetrySave} className="mt-[18px]">
             {notice}
           </MailNotice>
         )}
         <div className="mt-[18px] flex gap-3">
-          <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
+          <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={!onSend || sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
             {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
             {l.send}
           </Button>
-          <Menu
-            open={attachOpen}
-            onOpenChange={onAttachOpenChange}
-            trigger={
-              <Button variant="capsule" size="pill" className={cn(appButton, "data-[state=open]:text-primary")}>
-                <mailIcons.clip size={22} strokeWidth={2.2} aria-hidden />
-                {l.attach}
-              </Button>
-            }
-            alignOffset={11}
-            sideOffset={12}
-            surface="page"
-          >
-            <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach?.("camera")}>{l.camera}</MenuOption>
-            <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach?.("photos")}>{l.photos}</MenuOption>
-            <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach?.("file")}>{l.file}</MenuOption>
-          </Menu>
+          {onAttach && (
+            <Menu
+              open={attachOpen}
+              onOpenChange={onAttachOpenChange}
+              trigger={
+                <Button variant="capsule" size="pill" className={cn(appButton, "data-[state=open]:text-primary")}>
+                  <mailIcons.clip size={22} strokeWidth={2.2} aria-hidden />
+                  {l.attach}
+                </Button>
+              }
+              alignOffset={11}
+              sideOffset={12}
+              surface="page"
+            >
+              <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach("camera")}>{l.camera}</MenuOption>
+              <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach("photos")}>{l.photos}</MenuOption>
+              <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach("file")}>{l.file}</MenuOption>
+            </Menu>
+          )}
         </div>
       </form>
     </AppWindow>

@@ -1,0 +1,9 @@
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; upstream follow-up, served today only by the test fake: provider sign-in sessions, drafts kept under the tablet's own id, contacts, If-Match in the CORS allow-list so a calendar change is not last write wins, an In-Reply-To header or answered flag on listed messages, the purge operation, PDF page counts in the read manifest, attachments other than PDFs and images, an idempotent event create, all-day events on create and change, and a distinct answer for deleting an event that is already gone
+import type { Routes } from "./connector.vibe"
+
+export const google: Routes = {
+  slug: "google",
+  accounts: "/api/v1/eliza/google/accounts",
+  mail: "/api/v1/eliza/google/gmail",
+  calendar: "/api/v1/eliza/google/calendar"
+}

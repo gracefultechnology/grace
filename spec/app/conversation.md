@@ -43,6 +43,7 @@ type AudioOwner = HumanAudio | GraceAudio | WebsiteAudio
 type MessageAuthor = HumanMessage | GraceMessage | ActionMessage
 type TurnOrigin = HerRequest | PageEvent | ElsewhereReport | OpeningLine
 type Message = { author: MessageAuthor, text: str }
+pure val emptyHumanMessage: Message = { author: HumanMessage, text: "" }
 type Interruption = { message: int, spoken: int }
 type Conversation = {
   voice: bool, turn: Turn, generation: int, unusable: int,
@@ -250,7 +251,7 @@ reasoning context learns which part the person did not hear.
 pure def canBargeIn(c: Conversation, token: int, spoken: int, owner: AudioOwner, by: ConversationActor): bool =
   by == ConversationRuntime and c.voice and c.turn == Speaking and token == c.generation and
   owner == HumanAudio and spoken >= 0 and c.messages.length() > 0 and
-  c.messages.nthOr(c.messages.length() - 1, { author: HumanMessage, text: "" }).author == GraceMessage
+  c.messages.nthOr(c.messages.length() - 1, emptyHumanMessage).author == GraceMessage
 pure def bargeIn(c: Conversation, token: int, spoken: int, owner: AudioOwner, by: ConversationActor): Conversation =
   { ...c, turn: Listening, interrupted: c.interrupted.append({ message: c.messages.length() - 1, spoken: spoken }) }
 pure def alwaysInterruptionsMarkMessages(c: Conversation): bool =
@@ -379,7 +380,7 @@ pure def canPurgePrivate(c: Conversation, token: int, messageIndex: int, purgeDr
   (messageIndex == -1 or (messageIndex >= 0 and messageIndex < c.messages.length())) and
   (messageIndex >= 0 or purgeDraft)
 pure def purgePrivate(c: Conversation, token: int, messageIndex: int, purgeDraft: bool, by: ConversationActor): Conversation =
-  val selected = c.messages.nthOr(messageIndex, { author: HumanMessage, text: "" })
+  val selected = c.messages.nthOr(messageIndex, emptyHumanMessage)
   { ...c, voice: false, turn: Ready, generation: c.generation + 1, question: false, answers: List(),
     messages: c.messages.listMap(m => if (selected.text != "" and m.text == selected.text)
       { author: m.author, text: privateNotice } else m),
@@ -389,7 +390,7 @@ pure def stepPrivateRemovalCancelsOutput(before: Conversation, via: str, after: 
   via == "purgePrivate" implies not(after.voice) and after.turn == Ready and
     not(after.question) and after.generation > before.generation and after.messages.length() == before.messages.length()
 pure def lawPrivateRemovalClearsSelectedText(c: Conversation, token: int, messageIndex: int, purgeDraft: bool, by: ConversationActor): bool =
-  val selected = c.messages.nthOr(messageIndex, { author: HumanMessage, text: "" })
+  val selected = c.messages.nthOr(messageIndex, emptyHumanMessage)
   val after = purgePrivate(c, token, messageIndex, purgeDraft, by)
   canPurgePrivate(c, token, messageIndex, purgeDraft, by) implies
     (purgeDraft implies after.draft == "") and

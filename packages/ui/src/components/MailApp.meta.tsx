@@ -4,7 +4,8 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { susan as susanPhoto } from "./Avatar.meta.tsx";
-import type { MailAppProps, MailSummary } from "./MailApp.tsx";
+import { MailSignInBanner, MailSyncingRow, type MailAppProps, type MailSummary } from "./MailApp.tsx";
+import type { MailAccountRow } from "./MailFolderNav.tsx";
 import type { MailContact } from "./MailMessageRow.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
@@ -71,6 +72,19 @@ const open = fn();
 const folder = fn();
 const write = fn();
 const retry = fn();
+const connect = fn();
+
+export const mailAccounts: MailAccountRow[] = [
+  { id: 1, name: "Gmail", colour: 0, unread: 2, needsSignIn: false },
+  { id: 2, name: "Outlook", colour: 1, unread: 1, needsSignIn: false },
+];
+const signIn = fn();
+
+const tagged: MailSummary[] = [
+  ...inbox.slice(0, 2).map((m) => ({ ...m, account: "Gmail" })),
+  { id: "outlook-1", from: people.joan, subject: "Lunch on Thursday?", time: "10:40 AM", unread: true, account: "Outlook" },
+  ...inbox.slice(2).map((m) => ({ ...m, account: "Gmail" })),
+];
 
 export const meta: ComponentMeta<MailAppProps> = {
   args: { folder: "inbox", counts: { inbox: 2 }, messages: inbox, onOpen: open, onSelectFolder: folder, onWrite: write, onClose: fn() },
@@ -80,6 +94,19 @@ export const meta: ComponentMeta<MailAppProps> = {
     "Nothing found": { query: "Thanksgiving", messages: [] },
     Drafts: { folder: "drafts", messages: [] },
     Trash: { folder: "trash", messages: [{ ...inbox[2], id: "book" }] },
+    "Two accounts": { counts: { inbox: 3 }, accounts: mailAccounts, messages: tagged },
+    "With banners": {
+      accounts: [mailAccounts[0], { ...mailAccounts[1], needsSignIn: true }],
+      messages: tagged,
+      banners: (
+        <>
+          <MailSignInBanner name="Outlook" others onSignIn={signIn} />
+          <MailSyncingRow name="Yahoo" />
+        </>
+      ),
+    },
+    Outbox: { folder: "outbox", counts: { inbox: 2, outbox: 1 }, messages: [{ id: "o1", from: people.susan, subject: "Sunday", time: "Just now" }] },
+    "No account": { noAccount: true, messages: [], onConnect: connect, onAskGrace: fn() },
     Loading: { status: "loading", messages: [] },
     "Load failed": { status: "failed", onRetry: retry },
     Offline: { status: "offline", onFixWifi: fn() },
@@ -102,6 +129,18 @@ export const meta: ComponentMeta<MailAppProps> = {
       await expect(folder).toHaveBeenCalledWith("sent");
       await userEvent.click(canvas.getByRole("button", { name: "Write" }));
       await expect(write).toHaveBeenCalled();
+      unfocus();
+    },
+    "No account": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.queryByRole("button", { name: "Write" })).toBeNull();
+      await userEvent.click(canvas.getByRole("button", { name: "Connect your email" }));
+      await expect(connect).toHaveBeenCalled();
+      unfocus();
+    },
+    "With banners": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign in again" }));
+      await expect(signIn).toHaveBeenCalled();
       unfocus();
     },
     "Load failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
