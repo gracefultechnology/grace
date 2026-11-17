@@ -279,8 +279,6 @@ the same notice whether speech output is enabled or muted. The wake host may
 play that notice without opening another listening exchange.
 
 ```quint
-pure def canWakeSilence(c: Conversation, token: int, by: ConversationActor): bool =
-  canSilence(c, token, by)
 pure def wakeSilence(c: Conversation, token: int, by: ConversationActor): Conversation =
   { ...appended(GraceMessage, "I didn't hear anything. Say Hey Grace whenever you need me.", c),
     voice: false, turn: Ready, generation: c.generation + 1 }

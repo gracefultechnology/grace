@@ -376,7 +376,8 @@ A fully classified payment approval uses its separate atomic route below.
 The assistant's own `supersede` is the one fence for submitted content; the
 workspace applies it again only for a geometry change. Whether a reply or a
 Repeat is spoken follows the person's actual voice output, volume and mute
-setting, whatever the host sent.
+setting, whatever the host sent: a reply is spoken exactly when that setting
+is audible, and Repeat is refused while it is not.
 
 ```quint
 pure def withVoiceOutput(input: I::Interaction, w: Workspace): I::Interaction =
@@ -406,6 +407,12 @@ pure def interact(w: Workspace, input: I::Interaction, by: WorkspaceActor): Work
   val heard = withVoiceOutput(input, w)
   afterInteraction(I::interact(w.assistant, heard, if (by == Person) C::ConversationUser else C::ConversationRuntime),
     I::changesGeometry(heard), I::submitsContent(heard), w)
+pure def lawRepliesFollowVoiceOutput(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
+  canInteract(w, input, by) implies match input {
+    | Respond(data) => (interact(w, input, by).assistant.conversation.turn == C::Speaking) iff R::audible(w.preferences.session)
+    | RepeatReply(data) => R::audible(w.preferences.session)
+    | _ => true
+  }
 pure def lawGeometryDoesNotAnswerForThePerson(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   w.assistant.activity == A::UserWait and canInteract(w, input, by) and
   I::changesGeometry(input) and not(I::submitsContent(input))

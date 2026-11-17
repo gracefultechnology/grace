@@ -519,7 +519,8 @@ pure def sometimesReplacementQuestion(a: Assistant): bool = a.replacementId != "
 pure def sometimesCompleted(a: Assistant): bool = a.outcome == Completed
 pure def sometimesFailed(a: Assistant): bool = a.outcome == VerifiedFailure
 pure def sometimesAbandoned(a: Assistant): bool = a.outcome == Abandoned
-pure def sometimesKeyboardCaption(a: Assistant): bool = keyboardCaptionVisible(a)
+pure def sometimesKeyboardCaption(a: Assistant): bool =
+  keyboardCaptionVisible(a) and a.conversation.turn == C::Speaking
 pure def sometimesReopenedOverInterruptedWork(a: Assistant): bool =
   a.presentation == Compact and a.activity == Paused and a.interruptedWork
 pure val weight_publishGuidance = 10
