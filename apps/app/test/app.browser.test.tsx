@@ -1,15 +1,16 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, inject, it } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
+import { client, reply, signIn, turns } from "./cloud.vibe";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -407,6 +408,41 @@ it("Use the website under Grace's controls", async () => {
   await native.route();
   expect(native.calls("createSurface").at(-1)).toMatchObject({ id: "tab-2", url: "https://example.net/next" });
   expect(native.calls("setOcclusionRects")).toHaveLength(routing.length + 1);
+
+  await act(() => Promise.resolve(root.unmount()));
+  await runtime.dispose();
+});
+
+it("Talk or type without losing the conversation", async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const runtime = ManagedRuntime.make(application(fakePlugin().plugin, undefined, { url: cloud, key: secret }));
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  const workspace = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
+  const field = page.getByRole("textbox", { name: "Message to Grace" });
+  const type = (text: string) => act(() => userEvent.type(field, `${text}{Enter}`));
+
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  // spec/app/conversation.md, "Send consumes one exact draft once and never submits a website form": the typed turn reaches Grace's agent, and her answer is written.
+  await type("Hello Grace.");
+  await expect.element(page.getByText(reply("Hello Grace."))).toBeVisible();
+  // spec/app/conversation.md, "Answer chips come only with a closed question, two or three at a time": the agent's question comes with its answers,
+  // and what she asked of the tablet that the tablet can do is done.
+  await type("Make the text bigger.");
+  await expect.element(page.getByText("I made the text larger. Is that easier to read?")).toBeVisible();
+  await expect.poll(() => workspace().preferences.session.textSize).toBe("Larger");
+  // spec/app/conversation.md, "A tapped answer is one of the offered answers and preserves whether the microphone was active"
+  await act(() => userEvent.click(page.getByRole("button", { name: "A bit bigger" })));
+  await expect.element(page.getByText(reply("A bit bigger"))).toBeVisible();
+  expect(page.getByRole("button", { name: "Yes, thanks" }).query()).toBeNull();
+  // spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback": an answer that does not read as a reply is an apology, and does nothing.
+  await type("Say nothing.");
+  await expect.element(page.getByText("Sorry, I didn’t catch that. Could you say it again?")).toBeVisible();
+  expect(workspace().assistant.conversation.turn).toBe("Ready");
+  expect(await Effect.runPromise(Effect.provide(turns(cloud, secret), client))).toEqual(
+    ["Hello Grace.", "Make the text bigger.", "A bit bigger", "Say nothing."].map((said) => ({ said, outcome: "completed" })),
+  );
 
   await act(() => Promise.resolve(root.unmount()));
   await runtime.dispose();

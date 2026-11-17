@@ -1,0 +1,25 @@
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"
+import type { Surface } from "../gen/app__shell.effect.vibe"
+import type { Workspace } from "../gen/app__workspace.effect.vibe"
+import type { Applied, Outcome } from "./agent.vibe"
+
+/** What Grace is shown with a turn, and the screen's targets she may point at. */
+export type Shown = { readonly text: string; readonly targets: ReadonlySet<string> }
+
+const surfaces: Record<Surface, string> = {
+  Home: "Home", Calendar: "Calendar", Email: "Email", Browser: "the internet", Files: "Files", DeviceSettings: "Settings"
+}
+const outcomes: Record<Outcome, string> = { Applied: "was done", Refused: "was not allowed", NotYetAvailable: "is not available on this tablet yet" }
+
+/** The part Grace is shown on every turn, whatever is on the screen, at `now` (milliseconds since the epoch), with what of her last actions was not done. */
+export function render(w: Workspace, now: number, notDone: readonly Applied[]): Shown {
+  const { device, assistant, preferences: { session } } = w
+  const lines = [
+    `It is ${new Date(now).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}.`,
+    `On the screen: ${surfaces[device.surface]}. The internet is ${device.connectivity === "Online" ? "connected" : "not connected"}. Your window is ${assistant.presentation === "Expanded" ? "expanded" : "compact"}.`,
+    `Settings: text size ${session.textSize}, volume ${session.muted ? "muted" : session.volume}, brightness ${session.brightness}, you ${session.voiceOutput ? "speak aloud" : "do not speak aloud"}, pace ${session.pace}.`,
+    ...assistant.activity === "NoTask" ? [] : [`You are helping with: ${assistant.goal}.`],
+    ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`)
+  ]
+  return { text: lines.join("\n"), targets: new Set() }
+}

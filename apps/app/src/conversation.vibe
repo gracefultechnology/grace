@@ -1,0 +1,93 @@
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+import character from "../agent/character.json" with { type: "json" }
+import type { Interaction } from "../gen/app__interaction.effect.vibe"
+import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Agent, type Applied, type Origin } from "./agent.vibe"
+import { render } from "./context.vibe"
+import { withhold } from "./private.ts"
+import { Reply } from "./reply.schema.ts"
+
+/** Where Grace's agent answers, and the tablet's credential for it. */
+export type CloudLink = { readonly url: string; readonly key: string }
+/** A turn the person takes: typed, or one of the answers Grace offered. */
+export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
+
+export service Conversation {
+  /** Takes the person's turn when the workspace allows it; Grace then answers it. */
+  say(input: PersonTurn): boolean!!
+}
+
+const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
+const apology = "Sorry, I didn’t catch that. Could you say it again?"
+const remembered = 12
+
+schema Delta { content?: string }
+schema Choice { delta: Delta }
+schema Chunk { choices: Choice[] }
+
+error Unanswered { status: number }
+
+const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+
+/** One streamed chat completion, as the cloud's agent sends it, collected into what Grace said. */
+effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { messages, stream: true })
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
+  if (response.status !== 200) throw new Unanswered({ status: response.status })
+  const lines = Stream.filter(Stream.splitLines(Stream.decodeText(response.stream)), (line) => line.startsWith("data: ") && line !== "data: [DONE]")
+  const chunks = Stream.mapEffect(lines, (line) => Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line.slice("data: ".length)))
+  return try Stream.runFold(chunks, () => "", (said, chunk) => said + chunk.choices.map((c) => c.delta.content ?? "").join(""))
+}
+
+/** The person's turns go to Grace's agent over `link`; without one, Grace is not available and no turn starts. */
+export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
+  const workspace = try Workspaces
+  const agent = try Agent
+  const asked = try Ref.make(new Map<number, Origin>())
+  const notDone = try Ref.make<readonly Applied[]>([])
+
+  effect function fail(token: number) {
+    workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: apology } }, "Host") catch () => undefined
+  }
+
+  effect function answer(link: CloudLink, token: number) {
+    const w: Workspace = try workspace.get()
+    const { messages } = w.assistant.conversation
+    const latest = messages.length - 1
+    const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
+    if (outgoing.at(-1)?.content !== messages[latest]?.text) {
+      workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
+      return
+    }
+    const shown = render(w, try Clock.currentTimeMillis, try Ref.get(notDone))
+    const said = ask(link, [{ role: "system", content: `${character.system}\n\n${shown.text}` }, ...outgoing]) catch () => undefined
+    const reply = said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
+    if (reply === undefined) return try fail(token)
+    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply))
+  }
+
+  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type) {
+    const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, text, isQuestion, answers: [...answers], audible: false } }, "Host") catch () => undefined
+    if (responded === undefined) return
+    const origin = (try Ref.get(asked)).get(token) ?? "FromDevice"
+    const applied = try agent.apply(actions, { generation: token, workVersion, origin })
+    try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
+  }
+
+  if (link !== undefined) {
+    const { device } = try workspace.get()
+    const availability = { connection: device.connectivity, reasoning: true, microphone: device.microphoneAllowed, observation: device.observationAllowed }
+    workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined
+    const thinking = Stream.changes(Stream.map(workspace.changes, ({ assistant: { conversation: c } }) => c.turn === "Thinking" ? c.generation : -1))
+    try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(answer(link, token))))
+  }
+
+  return {
+    say: effect (input) => {
+      const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
+      if (taken === undefined) return false
+      try Ref.update(asked, (all) => new Map(all).set(taken.state.assistant.conversation.generation, origins[input.tag]))
+      return true
+    }
+  }
+}).pipe(Layer.provide(client))
