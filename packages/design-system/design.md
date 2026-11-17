@@ -344,6 +344,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `gradient.sleep` | radial-gradient(60% 70% at 20% 10%, var(--sleep-glow) 0%, transparent 70%), linear-gradient(var(--sleep), var(--sleep)) |
 | `gradient.sheen` | linear-gradient(108deg, color-mix(in srgb, var(--glass) 0%, transparent) 47%, color-mix(in srgb, var(--glass) 35%, transparent) 50%, color-mix(in srgb, var(--glass) 0%, transparent) 53%) |
 | `gradient.orb` | radial-gradient(circle at 40% 38%, var(--orb-light), var(--orb-deep)) |
+| `text.mark` | 0.75rem |
 | `text.caption` | 0.9375rem |
 | `text.label` | 1.0625rem |
 | `text.body` | 1.25rem |

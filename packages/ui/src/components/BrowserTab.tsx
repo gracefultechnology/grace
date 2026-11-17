@@ -78,7 +78,7 @@ export function TabFavicon({ favicon, initial, pageLoading = false, loadingLabel
   if (pageLoading) return <Spinner label={loadingLabel} className="size-5" />;
   if (favicon) return <img src={favicon} alt="" className="size-5 shrink-0 rounded-tag object-cover" />;
   return (
-    <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-tag text-xs leading-[normal] font-bold text-primary-foreground", initial ? "bg-site-brand" : "bg-favicon")}>
+    <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-tag text-mark leading-[normal] font-bold text-primary-foreground", initial ? "bg-site-brand" : "bg-favicon")}>
       {initial ?? "·"}
     </span>
   );
