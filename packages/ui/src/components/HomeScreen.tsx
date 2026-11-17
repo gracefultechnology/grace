@@ -109,10 +109,10 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const shift = dragShift ?? stops[page];
   const nearest: HomePage = shift > (stops.main + stops.files) / 2 ? "files" : "main";
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
+    swipedRef.current = false;
     if (layout === "greeting" || (event.target as Element).closest("[data-home-pager] button")) return;
     const home = event.currentTarget;
     const k = ((home.getBoundingClientRect().width / home.offsetWidth) || 1) * scale;
-    swipedRef.current = false;
     dragRef.current = { x: event.clientX, k, from: shift, shift, moved: false };
   };
   const drag = (event: PointerEvent<HTMLDivElement>) => {

@@ -18,7 +18,7 @@ Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 pro
 - **Type.** Figtree. Every size is a `text-*` token: `text-body` 20, `text-body-lg` 22, `text-lead` 24 (Grace's
   words), `text-title` 28, `text-display` 40. The Text size setting is `TextScale`, which sets each `--text-*` on the
   document's root to its token times the chosen percent, so every word that names a token follows, in dialogs and
-  menus too, and no box changes size. A size or line height written in pixels (`text-[19px]`, `leading-[26px]`) stays put, so a word
+  menus too, and no box changes size. A size or line height written in pixels (`text-[19px]`, `leading-[26px]`) or from the spacing scale (`leading-7`, `leading-8`) stays put, so a word
   that must scale names a token and a line height that must follow it is unitless.
 - **Motion.** `press` with `ease-spring` for a tap (scale 1.05), `window` for a window changing size.
 - **Dark.** The tablet keeps its light look; `.dark` changes only the semantic colors, for tools around it.
@@ -267,6 +267,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
 | `font.site` | Arial, Helvetica, sans-serif |
 | `shadow.sm` | 0 1px 2px color-mix(in srgb, var(--dim) 8%, transparent) |
+| `shadow.lg` | 0 12px 32px color-mix(in srgb, var(--dim) 18%, transparent) |
 | `shadow.float` | 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
 | `shadow.elevation-glass` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent) |
 | `shadow.glass-pressed` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 75%, transparent), inset 0 1.5px 1px color-mix(in srgb, var(--glass) 95%, transparent), inset 0 -1px 1px color-mix(in srgb, var(--glass) 35%, transparent), inset 0 0 0 1.5px color-mix(in srgb, var(--glass) 70%, transparent), 0 6px 18px color-mix(in srgb, var(--primary) 14%, transparent) |
