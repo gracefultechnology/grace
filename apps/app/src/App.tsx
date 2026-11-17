@@ -1,13 +1,13 @@
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
-import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
 import { CalendarDays, Folder, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
-import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
+import { canChangeLifecycle, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Grace } from "./Grace.tsx";
@@ -112,10 +112,15 @@ function Screen() {
   const bottom = keyboard + (assistant.presentation === "Compact" ? 6 + graceHeight + 6 : 6);
   const clock = Object.fromEntries(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
+  const sleeping = device.readiness === "Sleeping";
+  const wake = () => {
+    if (canChangeLifecycle(current(), "WakeDevice", "Host")) void send({ type: "changeLifecycle", lifecycle: "WakeDevice" }, "Host");
+  };
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
     <TextScale percent={textScalePercent(volume)}><div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+      <div className="contents" {...under(sleeping)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
@@ -163,6 +168,13 @@ function Screen() {
         </OverPage>
       )}
       <Grace onHeightChange={setGraceHeight} />
+      </div>
+      {sleeping && <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
+        time={`${clock.hour}:${clock.minute}`}
+        date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+        hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
+        }} />}
       {volume.brightness < 100 && <div aria-hidden className="pointer-events-none fixed inset-0 z-50 bg-foreground" style={{ opacity: (100 - volume.brightness) / 100 }} />}
     </div></TextScale>
   );

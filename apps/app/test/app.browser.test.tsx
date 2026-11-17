@@ -487,6 +487,14 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.poll(() => requests[2]?.body).toEqual({ text: "One more question" });
     await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
     await expect.poll(() => stopped).toEqual(["/api/turns/room/abort"]);
+    await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "changeLifecycle", lifecycle: "SleepDevice" }, "Host"))));
+    await expect.element(page.getByRole("button", { name: "Wake Grace" })).toBeVisible();
+    expect(page.getByRole("button", { name: "Ask Grace" }).query()).toBeNull();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Wake Grace" })));
+    await expect.element(page.getByRole("button", { name: "Ask Grace" })).toBeVisible();
+    expect(runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.surface).toBe("Calendar");
+
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
