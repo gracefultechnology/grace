@@ -56,7 +56,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               void guide.request(revision).then(async (guided) => {
                 if (guided) { setDraft(""); return; }
                 const result = await send({ type: "interact", input: { tag: "SendDraft", revision } });
-                if (Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
+                if (result !== undefined && Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
               });
             }} />
         }>
