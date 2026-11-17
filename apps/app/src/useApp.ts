@@ -1,8 +1,8 @@
 // .claude/skills/shell/SKILL.md, "The React interface": the workspace and the page layer, as components read
 // them, and the one way a component changes the workspace.
 // spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
-import { Effect, type ManagedRuntime, Stream } from "effect";
-import { createContext, createElement, type ReactNode, use, useEffect, useState } from "react";
+import { Effect, type ManagedRuntime, Option, Stream } from "effect";
+import { createContext, createElement, type ReactNode, use, useEffect, useState, useSyncExternalStore } from "react";
 import { type Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
 import type { Event as CalendarEvent } from "../gen/app__calendarView.effect.vibe";
@@ -20,7 +20,9 @@ import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.t
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
+import type { Contact } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
+import { Mail, type Note } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
@@ -119,6 +121,32 @@ function useCalendar(key: number) {
 }
 
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
+
+const silence = () => () => {};
+const nothing = (): Note | undefined => undefined;
+const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
+
+export function useMail() {
+  const runtime = useRuntime();
+  const mail = Option.getOrUndefined(runtime.runSync(Effect.serviceOption(Mail)));
+  const note = useSyncExternalStore(mail?.notes.subscribe ?? silence, mail?.notes.current ?? nothing);
+  return mail && {
+    note,
+    reply: (id: number) => runtime.runPromise(mail.reply(id)),
+    confirmSend: (id: number) => runtime.runPromise(mail.confirmSend(id)),
+    openDraft: (id: number, ref: string) => runtime.runPromise(mail.openDraft(id, ref)),
+    moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
+    contacts: (sources: string) => {
+      const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
+      contactLists.set(mail, lists);
+      const known = lists.get(sources) ?? runtime.runPromise(mail.contacts());
+      lists.set(sources, known);
+      return known;
+    },
+  };
+}
+
+export type MailWriter = NonNullable<ReturnType<typeof useMail>>;
 export type CalendarInstance = NonNullable<ReturnType<typeof useCalendar>>;
 
 export function WithMailboxes({ ids, children }: { ids: readonly number[]; children: (boxes: readonly MailInstance[]) => ReactNode }) {
