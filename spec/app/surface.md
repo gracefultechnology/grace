@@ -124,16 +124,16 @@ pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
 Expanded Grace covers the page, so the page is paused rather than drawn
 beneath it; compact Grace and popovers are drawn over a shown page. Hiding
 keeps the page, its history and its scroll. `pageShows` is the one
-definition of the page being shown, and the layer's `shown` is the one copy
-of it: each `show` takes it from `pageShows` of the shell and assistant the
-interface reports, so the layer is only as current as the last `show`. The
-interface therefore sends `show` whenever the device or the assistant
-changes so that `pageShows` differs from what the layer holds (`reconcile`
-in `apps/app/src/page.vibe`, run after every workspace change). Everything
-else that asks whether the page is shown, the native pages and the website
-requests among them, reads it from the layer through `shown` or `pageRuns`
-and never derives it again. A page shown for a covered shell or assistant
-takes no touch.
+definition of the page being shown, and the layer's `shown` is the one
+state set from it: each `show` takes it from `pageShows` of the shell and
+assistant the interface reports, so the layer is only as current as the
+last `show`. The interface therefore sends `show` whenever the device or
+the assistant changes so that `pageShows` differs from what the layer holds
+(`reconcile` in `apps/app/src/page.vibe`, run after every workspace change).
+Everything else that asks whether the page is shown, the native pages and
+the website requests among them, is told it from the layer's `shown` and
+`pageRuns` and never derives it again. A page shown for a covered shell or
+assistant takes no touch.
 
 ```quint
 pure def pageShows(s: S::Shell, a: A::Assistant): bool =
