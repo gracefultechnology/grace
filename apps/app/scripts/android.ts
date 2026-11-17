@@ -60,12 +60,16 @@ if (unrefused.length) throw new Error(`The agent payload leaves out ${unrefused.
 const Abi = Schema.Literals(["arm64-v8a", "x86_64"]);
 type Abi = typeof Abi.Type;
 const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
+const AgentStatus = Schema.Struct({
+  state: Schema.Literals(["unavailable", "stopped", "starting", "running", "failed"]),
+  failure: Schema.optional(Schema.Literals(["payload", "storage", "config", "credential", "agent", "crashed", "runtime"])),
+});
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
   Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.NonEmptyString }),
-  Schema.Struct({ agent: Schema.Struct({ state: Schema.NonEmptyString, failure: Schema.optional(Schema.NonEmptyString) }) }),
+  Schema.Struct({ agent: AgentStatus }),
   Schema.Struct({ service: Schema.String.check(Schema.isPattern(/^[A-Z]\w*$/)) }),
   Schema.Struct({ leaveFor: Schema.String.check(Schema.isPattern(/^android\.settings\.[A-Z_]+$/)) }),
 ]);
@@ -107,15 +111,18 @@ function agentRuntime(abi: Abi) {
   const building = `${payload}.building-${process.pid}`;
   const skills = path.join(building, "skills");
   mkdirSync(skills, { recursive: true });
-  const { output } = buildConsumerAndroidRuntime({
-    source: upstream, expectedCommit: commit, output: path.join(building, "payload"), skillsDirectory: skills,
-    stageGateway: () => ({}), targetAbi: abi, stubPlugins, embeddingModel: false,
-  });
-  const main = path.join(output, "android/app/src/main");
-  stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), excludedAgentDirectories: [abi], targetAbi: abi, gateway: false });
-  renameSync(output, payload);
-  rmSync(building, { recursive: true });
-  return payload;
+  try {
+    const { output } = buildConsumerAndroidRuntime({
+      source: upstream, expectedCommit: commit, output: path.join(building, "payload"), skillsDirectory: skills,
+      stageGateway: () => ({}), targetAbi: abi, stubPlugins, embeddingModel: false,
+    });
+    const main = path.join(output, "android/app/src/main");
+    stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), excludedAgentDirectories: [abi], targetAbi: abi, gateway: false });
+    renameSync(output, payload);
+    return payload;
+  } finally {
+    rmSync(building, { recursive: true, force: true });
+  }
 }
 
 function writeAgentData() {
@@ -219,7 +226,7 @@ function writeApkManifest() {
     const listed = execFileSync("unzip", ["-p", file, "assets/agent-runtime.inventory"], { encoding: "utf8" }).trim().split("\n").slice(1)
       .map((line) => line.split("\t")).map(([kind, , , source]) => kind === "native" ? `lib/${abis[0]}/${source}` : `assets/${source}`);
     const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
-    if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}`);
+    if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}; delete artifacts/agent-runtime to rebuild a payload staged by an older build`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, abi: abis[0], bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
@@ -352,8 +359,11 @@ async function devTools(url: string, signal: AbortSignal) {
     async step(step: Exclude<Step, OnDevice>) {
       const signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000);
       if ("agent" in step) {
-        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value) && listening.then((listener) => listener.remove()).then(() => done(true)); agent.getStatus().then(check); })`;
-        await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && listening.then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
+        const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const status = Schema.decodeUnknownSync(Schema.Struct({ ...AgentStatus.fields, error: Schema.optional(Schema.String) }))(result.value);
+        if (status.state !== step.agent.state || status.failure !== step.agent.failure)
+          throw new Error(`The agent is ${JSON.stringify(status)}, not ${JSON.stringify(step.agent)}`);
         return;
       }
       if ("tap" in step) return await tap(step.tap, signal);
