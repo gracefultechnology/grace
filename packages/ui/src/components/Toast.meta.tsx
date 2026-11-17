@@ -1,11 +1,12 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { cn } from "../lib/cn.ts";
+import { besideRail, TabletScreen } from "./TabletScreen.tsx";
 import type { ToastProps } from "./Toast.tsx";
 
 const undo = fn();
 
-export const compactGrace = { height: 260, standIn: <div aria-hidden className="absolute right-1.5 bottom-1.5 left-[144px] z-[3] hidden h-[260px] rounded-device bg-frost/86 shadow-banner backdrop-blur-2xl group-has-[.above-grace]/tablet:block" /> };
+export const compactGrace = { height: 260, standIn: <div aria-hidden className={cn(besideRail, "bottom-1.5 z-[3] hidden h-[260px] rounded-device bg-background shadow-window group-has-[.above-grace]/tablet:block")} /> };
 
 export const meta: ComponentMeta<ToastProps> = {
   args: { children: "Saved to your calendar", onUndo: undefined },

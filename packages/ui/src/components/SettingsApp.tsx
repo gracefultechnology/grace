@@ -4,7 +4,6 @@ import { GearIcon, SpeakerIcon } from "../icons.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SunIcon } from "./SettingsBrightness.tsx";
-import { SettingsLargeTitleContext } from "./SettingsPageHeading.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
 
 export type SettingsPage = "text-size" | "brightness" | "voice" | "wifi" | "account" | "privacy" | "about";
@@ -42,8 +41,6 @@ export type SettingsAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
   page: SettingsPage;
   /** The pages in the side list, in order. */
   pages?: SettingsPage[];
-  /** The large title, where it differs from the page's name in the list, such as "Join Home Network". */
-  pageTitle?: string;
   /** Why the latest choices were not saved, across the top of the page; the choices stay in use. */
   saveError?: ReactNode;
   /** Called by Try again on `saveError`. */
@@ -61,8 +58,7 @@ export type SettingsAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
 };
 
 /**
- * The Settings window: its pages in a side list, the open one beside it (prototype `setView()`). With a large title the
- * title is the open page's name and the page leaves out its own (prototype `axRender()`).
+ * The Settings window: its pages in a side list, the open one beside it (prototype `setView()`).
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens
@@ -71,27 +67,20 @@ export function SettingsApp({
   page,
   pages = prototypePages,
   onPageChange,
-  pageTitle,
   saveError,
   onRetrySave,
   retryLabel,
   title = "Settings",
   labels,
-  headerMode,
   children,
   ...props
 }: SettingsAppProps) {
   const words = { ...defaultLabels, ...labels };
-  const large = headerMode === "large";
   return (
     <AppWindow
-      title={large ? (pageTitle ?? words[page]) : title}
-      aria-label={title}
+      title={title}
       closeLabel={`Close ${title}`}
-      headerMode={headerMode}
-      icon={
-        <GearIcon className="size-[26px]" strokeWidth={2} />
-      }
+      icon={<GearIcon className="size-[26px]" strokeWidth={2} />}
       nav={
         <SideNav aria-label={title}>
           {pages.map((item) => (
@@ -108,7 +97,7 @@ export function SettingsApp({
           {saveError}
         </RetryNotice>
       )}
-      <SettingsLargeTitleContext value={large}>{children}</SettingsLargeTitleContext>
+      {children}
     </AppWindow>
   );
 }

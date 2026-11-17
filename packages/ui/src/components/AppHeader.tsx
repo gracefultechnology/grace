@@ -3,8 +3,6 @@ import { ArrowLeft, X } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button, press } from "./Button.tsx";
 
-type HeaderMode = "icon" | "large" | "none";
-
 export type AppTitleProps = ComponentProps<"span"> & {
   /** The app's icon, a Lucide icon at 26px, shown on an accent tile. */
   icon?: ReactNode;
@@ -32,12 +30,10 @@ export function AppTitle({ icon, small = false, className, children, ...props }:
 const capsule = "pointer-events-auto flex h-16 shrink-0 items-center gap-0.5 rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160";
 
 export type AppHeaderProps = Omit<ComponentProps<"header">, "title" | "children"> & {
-  /** The window's title: the app's name, or the page's when the title is large. */
+  /** The window's title: the app's name, or the page's beside a Back pill. */
   title: string;
-  /** The app's icon, shown on a tile before the title in `icon` mode. */
+  /** The app's icon, shown on a tile before the title. */
   icon?: ReactNode;
-  /** `icon` an icon tile and title on the header's row; `large` a large title in the page that collapses into a centred title; `none` no title. */
-  mode?: HeaderMode;
   /** Where Back goes, shown on the Back pill, such as "Calendar"; without it there is no Back. */
   backLabel?: string;
   /** Called by the Back pill. */
@@ -50,8 +46,6 @@ export type AppHeaderProps = Omit<ComponentProps<"header">, "title" | "children"
   onClose?: () => void;
   /** The accessible name of ✕. */
   closeLabel?: string;
-  /** The page has scrolled past its large title: the header becomes a bar with the title centred. */
-  collapsed?: boolean;
   /** The header spans the page column of a split window, beside its side list, rather than the whole window under a white fade. */
   split?: boolean;
 };
@@ -64,30 +58,25 @@ export type AppHeaderProps = Omit<ComponentProps<"header">, "title" | "children"
 export function AppHeader({
   title,
   icon,
-  mode = "icon",
   backLabel,
   onBack,
   backAriaLabel = backLabel ? `Back to ${backLabel}` : "Back",
   actions,
   onClose,
   closeLabel = `Close ${title}`,
-  collapsed = false,
   split = false,
   className,
   ...props
 }: AppHeaderProps) {
-  const bar = mode === "large" && collapsed;
   return (
     <header
       className={cn(
-        "pointer-events-none relative isolate flex items-center gap-2.5 p-6 font-sans transition-colors duration-quick ease-css-default",
-        bar && "bg-background/92 backdrop-blur-frost backdrop-saturate-160 shadow-hairline",
-        bar && (split ? "rounded-tr-window" : "rounded-t-window"),
+        "pointer-events-none relative isolate flex items-center gap-2.5 p-6 font-sans",
         className,
       )}
       {...props}
     >
-      {!split && !bar && (
+      {!split && (
         <span aria-hidden className="absolute inset-x-0 top-0 -bottom-10 -z-10 rounded-t-window bg-linear-to-b from-background/75 via-background/35 via-60% to-transparent" />
       )}
       {backLabel && (
@@ -98,23 +87,10 @@ export function AppHeader({
           </Button>
         </div>
       )}
-      {mode === "icon" && (
-        <AppTitle icon={backLabel ? undefined : icon} small={!!backLabel} role="heading" aria-level={1}>
-          {title}
-        </AppTitle>
-      )}
+      <AppTitle icon={backLabel ? undefined : icon} small={!!backLabel} role="heading" aria-level={1}>
+        {title}
+      </AppTitle>
       <span className="flex-1" />
-      {mode === "large" && (
-        <span
-          aria-hidden
-          className={cn(
-            "absolute top-1/2 left-1/2 -translate-1/2 text-body-lg leading-7 font-bold whitespace-nowrap text-foreground transition-opacity duration-quick ease-css-default",
-            bar ? "opacity-100" : "opacity-0",
-          )}
-        >
-          {title}
-        </span>
-      )}
       <div className={capsule}>
         {actions}
         <Button variant="plain" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="active:bg-transparent">

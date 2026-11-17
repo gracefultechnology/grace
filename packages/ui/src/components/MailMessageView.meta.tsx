@@ -67,7 +67,6 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     onSaveAll: fn(),
   },
   examples: {
-    "Large title": { headerMode: "large" },
     Scam: scam,
     "Grace Points At The Warning": { ...scam, guide: { targetId: "scam", kind: "point" } },
     Attachment: clinic,

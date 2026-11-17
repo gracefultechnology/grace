@@ -6,23 +6,20 @@ export type BrowserWindowProps = ComponentProps<"section"> & {
   tabStrip: ReactNode;
   /** The toolbar, a `BrowserToolbar` holding an `AddressBar`. */
   toolbar: ReactNode;
-  /** `screen` places the window on a `TabletScreen`, right of the rail; `inline` fills its container. */
-  placement?: "screen" | "inline";
 };
 
 /**
  * The browser's floating window: the tab strip and toolbar on glass, and the website below them, its
- * children (the selected tab's page, or a `NewTabPage`).
+ * children (the selected tab's page, or a `NewTabPage`). It fills the place it is given, a `ScreenSlot` on the tablet.
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens
  */
-export function BrowserWindow({ tabStrip, toolbar, placement = "screen", className, children, ...props }: BrowserWindowProps) {
+export function BrowserWindow({ tabStrip, toolbar, className, children, ...props }: BrowserWindowProps) {
   return (
     <section
       className={cn(
-        "isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
-        placement === "screen" ? "absolute top-1.5 bottom-1.5 left-[144px] z-[1] right-1.5" : "relative size-full",
+        "relative isolate flex size-full flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane",
         className,
       )}
       {...props}

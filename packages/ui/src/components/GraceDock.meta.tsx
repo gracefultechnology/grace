@@ -28,7 +28,7 @@ export const meta: ComponentMeta<GraceDockProps> = {
     "Long draft": { value: "Can you help me pay my Chase bill? I think it is due on Friday, and I would like to pay the full balance from my checking account if there is enough in it." },
   },
   decorator: (story) => (
-    <div className="group/grace w-[1130px] bg-background p-4" data-surface="white">
+    <div className="group/grace w-[1130px] bg-background p-4">
       {story()}
     </div>
   ),

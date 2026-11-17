@@ -145,7 +145,7 @@ export function BrowserPopoverContent({ sideOffset = 8, className, ...props }: B
         (event.currentTarget as HTMLElement).focus();
       }}
       collisionPadding={6}
-      className={cn("z-50 box-border flex max-h-[min(560px,var(--radix-popover-content-available-height))] flex-col gap-2 overflow-y-auto rounded-menu bg-glass/86 p-2 font-sans text-chrome shadow-menu backdrop-blur-frost backdrop-saturate-160 outline-none", className)}
+      className={cn("z-50 box-border flex max-h-[min(560px,var(--radix-popover-content-available-height))] flex-col gap-2 overflow-y-auto rounded-menu bg-glass/86 p-2 font-sans text-chrome shadow-menu backdrop-blur-panel backdrop-saturate-160 outline-none", className)}
       {...props}
     />
   );

@@ -9,13 +9,13 @@ import { detail, upcoming } from "./CalendarApp.meta.tsx";
 import { CalendarEventDetail } from "./CalendarEventDetail.tsx";
 import { CalendarEventRow } from "./CalendarEventRow.tsx";
 import { ListRow } from "./ListRow.tsx";
-import { PageHeading, PageText } from "./PageHeading.tsx";
+import { PageHeading } from "./PageHeading.tsx";
 import { textSizePreview, textSizes } from "./SettingsApp.meta.tsx";
 import { SettingsTextSize } from "./SettingsTextSize.tsx";
 import { SearchField } from "./TextField.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
 import type { AppWindowProps } from "./AppWindow.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 
 const icon = { size: 26, strokeWidth: 2, "aria-hidden": true } as const;
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
@@ -52,10 +52,6 @@ export const inbox = (
       <ListRow title="Account Security" subtitle="Urgent: confirm your password" time="Yesterday" leading={<Avatar name="Account Security" tone={4} aria-hidden />} />
     </div>
   </>
-);
-
-const textSize = (
-  <PageText tone="secondary">Changes the size of words everywhere on the tablet: Home, every app, websites, the left side and Grace’s messages.</PageText>
 );
 
 const comingUp = (
@@ -112,12 +108,12 @@ export const meta: ComponentMeta<AppWindowProps> = {
       actions: undefined,
       children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} />,
     },
-    "Large title": { headerMode: "large", title: "Text size", nav: settingsNav, actions: undefined, children: textSize },
-    "Large title, no list": { headerMode: "large", title: "Calendar", nav: undefined, actions: calendarActions, children: comingUp },
-    "No title": { headerMode: "none" },
-    "Large title with Back": { headerMode: "large", title: detailTitle, backLabel: "Calendar", onBack: back, nav: undefined, actions: undefined, children: <CalendarEventDetail {...eventDetail} /> },
   },
-  decorator: (story) => <TabletScreen>{story()}</TabletScreen>,
+  decorator: (story) => (
+    <TabletScreen>
+      <ScreenSlot>{story()}</ScreenSlot>
+    </TabletScreen>
+  ),
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);

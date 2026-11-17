@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode, Ref, UIEventHandler } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import { cn, focusRing } from "../lib/cn.ts";
 
 export type SplitViewProps = ComponentProps<"div"> & {
@@ -6,31 +6,21 @@ export type SplitViewProps = ComponentProps<"div"> & {
   nav: ReactNode;
   /** The window's header, an `AppHeader`: it floats over the top of the page column, not over the side list. */
   header?: ReactNode;
-  /**
-   * Where the page column starts: `header` below the header's row (an icon title, or Back), `beside` level with the ✕
-   * (a large title), `clear` just under the window's top (no title), `clearBack` below a Back with no title.
-   */
-  pageTop?: "header" | "beside" | "clear" | "clearBack";
-  /** Called as the page column scrolls, for a large title that collapses into the header. */
-  onPageScroll?: UIEventHandler<HTMLDivElement>;
   /** The page column, the element that scrolls. */
   pageRef?: Ref<HTMLDivElement>;
 };
-
-const pageTops = { header: "pt-[84px]", beside: "pt-3", clear: "pt-[18px]", clearBack: "pt-[88px]" } as const;
 
 /**
  * An app window split into a side list and the page it opens, as Email and Settings are.
  * @design packages/design-system/design.md#windows
  */
-export function SplitView({ nav, header, pageTop = "header", onPageScroll, pageRef, className, children, ...props }: SplitViewProps) {
+export function SplitView({ nav, header, pageRef, className, children, ...props }: SplitViewProps) {
   return (
     <div className={cn("relative grid h-full grid-cols-[270px_minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
       {nav}
       <div
         ref={pageRef}
-        onScroll={onPageScroll}
-        className={cn("-mr-6 min-h-0 overflow-y-auto pr-6 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", pageTops[pageTop])}
+        className="-mr-6 min-h-0 overflow-y-auto pt-[84px] pr-6 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>
@@ -46,7 +36,7 @@ export function SideNav({ className, children, ...props }: SideNavProps) {
   return (
     <nav
       className={cn(
-        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-sidebar backdrop-blur-frost backdrop-saturate-160",
+        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-sidebar backdrop-blur-panel backdrop-saturate-160",
         className,
       )}
       {...props}

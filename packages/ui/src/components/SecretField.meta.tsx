@@ -8,7 +8,7 @@ const empty = fn();
 export const meta: ComponentMeta<SecretFieldProps> = {
   args: { label: "Password for Smith Family Wi-Fi", onSubmit: submit, onEmptySubmit: empty },
   decorator: (story) => (
-    <div className="group/grace w-[1130px] bg-background p-4" data-surface="white">
+    <div className="group/grace w-[1130px] bg-background p-4">
       {story()}
     </div>
   ),

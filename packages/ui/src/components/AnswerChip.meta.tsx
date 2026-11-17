@@ -12,7 +12,7 @@ export const meta: ComponentMeta<AnswerChipProps> = {
     Empty: { children: undefined, "aria-label": "Yes, show me" },
   },
   decorator: (story) => (
-    <div className="group/grace w-[1130px] bg-background p-6" data-surface="white">
+    <div className="group/grace w-[1130px] bg-background p-6">
       <AnswerChips>{story()}</AnswerChips>
     </div>
   ),

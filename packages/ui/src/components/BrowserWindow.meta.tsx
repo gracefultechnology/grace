@@ -27,11 +27,9 @@ const newTabWindow: BrowserWindowProps = {
 
 const payTab = [{ id: 1, title: "Pay your card · Chase", initial: "C" }];
 
-const tablet = (children: ReactNode) => onTablet(() => children);
-
 export const onBrowser = (story: () => ReactNode, site = "chase.com/pay") =>
-  tablet(
-    <>
+  onTablet(
+    () => (
       <BrowserWindow
         aria-label="Browser"
         tabStrip={<BrowserTabStrip tabs={payTab} selectedId={1} />}
@@ -41,8 +39,9 @@ export const onBrowser = (story: () => ReactNode, site = "chase.com/pay") =>
           </BrowserToolbar>
         }
       />
-      {story()}
-    </>,
+    ),
+    undefined,
+    story(),
   );
 
 const pages = {
@@ -251,7 +250,7 @@ export const meta: ComponentMeta<BrowserWindowProps> = {
       children: <BrowserPageState kind="failed" site="chase.com" message="The website took too long to answer." onRetry={() => {}} />,
     },
   },
-  decorator: (story) => tablet(story() as ReactNode),
+  decorator: (story) => onTablet(story),
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
