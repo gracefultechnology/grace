@@ -1,0 +1,85 @@
+// spec/app/surface.md, "Story: Use the website under Grace's controls"
+import { NativePage, PageEvent, PageFailed } from "./nativePage.vibe"
+import { type PageId, Url } from "./nativePage.schema.ts"
+import { webView } from "./surfacePlugin.ts"
+
+type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined }
+
+export function webPage() {
+  return Layer.effect(NativePage, effect {
+    const document = webView.document
+    const events = try Queue.unbounded<PageEvent>()
+    const frames = new Map<PageId, Frame>()
+
+    const go = (id: PageId, frame: Frame, url: string) => {
+      frame.going = url
+      frame.element.src = url
+      Queue.offerUnsafe(events, PageEvent.Started({ id, url: Url.make(url) }))
+    }
+    const loaded = (id: PageId, frame: Frame) => {
+      const url = frame.going === undefined ? undefined : Url.make(frame.going)
+      frame.going = undefined
+      if (url === undefined) Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
+      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded" }))
+    }
+    const remove = (id: PageId) => {
+      frames.get(id)?.element.remove()
+      frames.delete(id)
+    }
+    effect function on(id: PageId, run: (frame: Frame) => void) {
+      const frame = frames.get(id)
+      if (frame === undefined) throw new PageFailed({ cause: `no page ${id}` })
+      run(frame)
+    }
+    const step = (id: PageId, by: number) => on(id, (frame) => {
+      const at = Math.min(Math.max(frame.at + by, 0), frame.history.length - 1)
+      if (at === frame.at && by !== 0) return
+      frame.at = at
+      go(id, frame, frame.history[at])
+    })
+    const unasked = effect () => { throw new PageFailed({ cause: "a page in a frame asks Grace nothing" }) }
+
+    try addFinalizer(() => sync(() => { for (const id of [...frames.keys()]) remove(id) }))
+    return {
+      claim: () => sync(() => { for (const left of document.querySelectorAll("iframe[data-page]")) left.remove() }),
+      create: (id, url) => sync(() => {
+        remove(id)
+        const element = document.createElement("iframe")
+        element.dataset.page = id
+        element.title = "Website"
+        Object.assign(element.style, { position: "fixed", zIndex: "0", border: "0", left: "0", top: "0", width: "0", height: "0" })
+        const frame: Frame = { element, history: [url], at: 0, going: undefined }
+        element.addEventListener("load", () => loaded(id, frame))
+        frames.set(id, frame)
+        go(id, frame, url)
+        document.body.prepend(element)
+      }),
+      place: (id, page, corners) => on(id, ({ element }) => {
+        Object.assign(element.style, {
+          left: `${page.x}px`, top: `${page.y}px`, width: `${page.width}px`, height: `${page.height}px`,
+          borderRadius: `${corners.topLeft}px ${corners.topRight}px ${corners.bottomRight}px ${corners.bottomLeft}px`
+        })
+      }),
+      route: (id) => on(id, () => undefined),
+      present: (id) => sync(() => { for (const [page, { element }] of frames) element.hidden = page !== id }),
+      pause: (id) => on(id, () => undefined),
+      resume: (id) => on(id, () => undefined),
+      navigate: (id, url) => on(id, (frame) => {
+        frame.history = [...frame.history.slice(0, frame.at + 1), url]
+        frame.at = frame.history.length - 1
+        go(id, frame, url)
+      }),
+      back: (id) => step(id, -1),
+      forward: (id) => step(id, 1),
+      reload: (id) => step(id, 0),
+      destroy: (id) => sync(() => remove(id)),
+      reply: unasked,
+      grant: unasked,
+      purge: () => sync(() => {
+        for (const id of [...frames.keys()]) remove(id)
+        return false
+      }),
+      events: Stream.fromQueue(events)
+    }
+  })
+}
