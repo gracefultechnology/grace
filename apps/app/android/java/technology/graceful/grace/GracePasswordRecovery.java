@@ -287,7 +287,8 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   activity.runOnUiThread(() -> {
    Operation pending = operation;
    operation = null;
-   if (pending != null && pending.pending != null) pending.pending.cancel(false);
+   CompletableFuture<?> answer = pending == null ? null : pending.pending;
+   if (answer != null) answer.cancel(false);
    signIn.cancelPasswordBackup();
    dismiss();
   });
