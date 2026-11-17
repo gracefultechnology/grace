@@ -50,6 +50,7 @@ pure def targetOf(ask: Ask): int = match ask {
   | DeleteAsk(x) => x.target
   | NoAsk => -1
 }
+pure def asking(p: Pending): bool = targetOf(p.ask) >= 0
 
 pure def canPropose(p: Pending, ask: Ask, request: R::Request, now: R::Moment, by: ProposalActor): bool =
   by == Grace and targetOf(ask) >= 0 and R::mayAct(request, now) and p.agreed == 0
@@ -60,7 +61,7 @@ pure def lawHostTurnCannotPropose(p: Pending, ask: Ask, request: R::Request, now
   not(R::fromPerson(request.origin)) implies not(canPropose(p, ask, request, now, by))
 pure def stepQuestionChangesMoveTheRevision(before: Pending, after: Pending): bool =
   after.revision >= before.revision and (after.ask != before.ask implies after.revision > before.revision)
-pure def sometimesAsking(p: Pending): bool = p.ask != NoAsk and p.agreed == 0
+pure def sometimesAsking(p: Pending): bool = asking(p) and p.agreed == 0
 ```
 
 ### Her yes counts once, for the revision she was shown
@@ -75,7 +76,7 @@ Nothing but her yes marks the question agreed.
 
 ```quint
 pure def canAgree(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): bool =
-  by == Person and p.ask != NoAsk and p.agreed == 0 and given.generation > p.generation and
+  by == Person and asking(p) and p.agreed == 0 and given.generation > p.generation and
   R::canUse(given, held(p), now)
 pure def agree(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): Pending =
   { ...p, spent: R::spend(given, held(p)).spent, agreed: given.stamp }
@@ -84,7 +85,7 @@ pure def stepOnlyHerYesAgrees(before: Pending, via: str, after: Pending): bool =
   (after.agreed > 0 and after.agreed != before.agreed) implies via == "agree"
 pure def stepStampsAreNeverReused(before: Pending, after: Pending): bool = after.spent >= before.spent
 pure def alwaysAgreedIsTheSpentStamp(p: Pending): bool =
-  p.agreed >= 0 and p.spent >= 0 and (p.agreed > 0 implies (p.agreed == p.spent and p.ask != NoAsk))
+  p.agreed >= 0 and p.spent >= 0 and (p.agreed > 0 implies (p.agreed == p.spent and asking(p)))
 pure def lawYesCountsOnce(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): bool =
   canAgree(p, given, now, by) implies not(canAgree(agree(p, given, now, by), given, now, by))
 pure def lawNewerTurnVoidsYes(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): bool =
@@ -115,7 +116,7 @@ pure def settleAsk(p: Pending, revision: int, by: ProposalActor): Pending =
 pure def stepAgreedQuestionIsKept(before: Pending, via: str, after: Pending): bool =
   before.agreed > 0 implies ((after.ask == before.ask and after.revision == before.revision and
     after.agreed == before.agreed) or via == "settleAsk")
-pure def sometimesSettled(p: Pending): bool = p.ask == NoAsk and p.spent > 0
+pure def sometimesSettled(p: Pending): bool = not(asking(p)) and p.spent > 0
 ```
 
 ### A correction, a No or a new conversation drops a question she has not agreed to
@@ -127,13 +128,13 @@ question waits.
 
 ```quint
 pure def canWithdraw(p: Pending, interruption: R::Interruption, by: ProposalActor): bool =
-  (by == Host or by == Grace) and p.ask != NoAsk and p.agreed == 0 and R::retires(interruption)
+  (by == Host or by == Grace) and asking(p) and p.agreed == 0 and R::retires(interruption)
 pure def withdraw(p: Pending, interruption: R::Interruption, by: ProposalActor): Pending =
   { ...p, ask: NoAsk, revision: p.revision + 1 }
 
 pure def lawLookingElsewhereKeepsTheQuestion(p: Pending, interruption: R::Interruption, by: ProposalActor): bool =
   (interruption == R::SurfaceVisit or interruption == R::RailPopover) implies not(canWithdraw(p, interruption, by))
-pure def sometimesWithdrawn(p: Pending): bool = p.ask == NoAsk and p.revision > 0 and p.spent == 0
+pure def sometimesWithdrawn(p: Pending): bool = not(asking(p)) and p.revision > 0 and p.spent == 0
 ```
 
 ### Samples ask for each kind of calendar question and answer from each kind of turn
