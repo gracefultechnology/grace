@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type KeyboardEvent, type Ref } from "react";
+import { useCallback, useImperativeHandle, useRef, useState, type ComponentProps, type KeyboardEvent, type Ref } from "react";
 import { ArrowUp } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
@@ -52,8 +52,8 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
   const labels = { ...secretFieldLabels, ...words };
   const inputRef = useRef<HTMLInputElement>(null);
   const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const field = inputRef.current;
+  const holdUntilGone = useCallback((field: HTMLInputElement | null) => {
+    inputRef.current = field;
     return () => {
       if (field) field.value = "";
     };
@@ -77,7 +77,7 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
     <div className={cn("flex items-end gap-2 font-sans", className)} {...props}>
       <div className="flex h-16 min-w-0 flex-1 items-center gap-2 rounded-full bg-glass/62 pr-1 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160">
         <input
-          ref={inputRef}
+          ref={holdUntilGone}
           type={shown ? "text" : "password"}
           aria-label={label}
           placeholder={labels.placeholder}

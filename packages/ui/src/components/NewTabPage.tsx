@@ -1,6 +1,7 @@
-import { type ComponentProps, type RefObject, useLayoutEffect, useRef, useState } from "react";
+import type { ComponentProps } from "react";
 import { X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { useSize } from "../lib/observe.ts";
 import { Button } from "./Button.tsx";
 import { Dialog, DialogContent, DialogTitle } from "./Dialog.tsx";
 
@@ -80,8 +81,8 @@ export function NewTabPage({
   ...props
 }: NewTabPageProps) {
   const labels = { ...defaultLabels, ...words };
-  const listRef = useRef<HTMLDivElement>(null);
-  const columns = useColumns(listRef, shortcuts.length > 0);
+  const [listRef, list] = useSize<HTMLElement>();
+  const columns = list ? Math.max(1, Math.floor((list.width + 16) / column)) : 5;
   const shown = shortcuts.slice(0, columns * 2);
   return (
     <div className={cn("size-full overflow-y-auto bg-site px-6 pt-32 pb-6 text-center font-sans text-chrome", className)} {...props}>
@@ -132,13 +133,7 @@ export function NewTabPage({
         </section>
       )}
       <Dialog open={confirmingClear} onOpenChange={(open) => !open && onCancelClear?.()}>
-        <DialogContent
-          className="gap-0 text-left"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            (event.currentTarget as HTMLElement).focus();
-          }}
-        >
+        <DialogContent className="gap-0 text-left">
           <DialogTitle>{labels.confirmTitle}</DialogTitle>
           <div className="mt-6 flex flex-col gap-3">
             <Button variant="warn" size="pill" className="w-full" onClick={onConfirmClear}>
@@ -152,18 +147,4 @@ export function NewTabPage({
       </Dialog>
     </div>
   );
-}
-
-function useColumns(ref: RefObject<HTMLElement | null>, shown: boolean) {
-  const [columns, setColumns] = useState(5);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setColumns(Math.max(1, Math.floor((el.clientWidth + 16) / column)));
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    measure();
-    return () => observer.disconnect();
-  }, [ref, shown]);
-  return columns;
 }

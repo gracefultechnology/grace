@@ -18,7 +18,7 @@ const buttonVariants = cva(
         outline: "border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground",
         ghost: "transition-colors hover:bg-accent hover:text-accent-foreground",
         destructive: "bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90",
-        glass: cn(press, fades, "rounded-full bg-glass/10 text-grace-ink shadow-glass backdrop-blur-glass backdrop-brightness-106 backdrop-saturate-115 active:bg-glass/42 active:shadow-glass-pressed"),
+        glass: cn(press, fades, "rounded-full bg-glass/10 text-grace-ink shadow-elevation-glass backdrop-blur-glass backdrop-brightness-106 backdrop-saturate-115 active:bg-glass/42 active:shadow-glass-pressed"),
         capsule: cn(sink, fades, "rounded-full bg-glass/62 text-grace-ink shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
         warn: cn(sink, "rounded-full bg-glass/62 text-destructive shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
         prominent: "rounded-full bg-primary text-primary-foreground shadow-prominent disabled:opacity-40 aria-disabled:opacity-40",
