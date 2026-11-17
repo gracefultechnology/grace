@@ -86,6 +86,7 @@ const Arguments = Schema.Struct({
   emulator: Schema.optional(Schema.NonEmptyString),
   exercise: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-z0-9-]+$/))),
   "billworld-passwords": Schema.optional(Schema.NonEmptyString),
+  "verify-billworld-run": Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/))),
 });
 
 export function buildTool(name: string): string {
@@ -177,7 +178,7 @@ function buildAndroid({ release = false, abi, fixture }: { release?: boolean; ab
       { command: path.join(app, "node_modules/.bin/vite"), args: ["build"] },
       { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
     ],
-    ...(fixture === undefined ? { verify: { command: process.execPath, args: [import.meta.filename, "--verify"] } } : {}),
+    verify: { command: process.execPath, args: [import.meta.filename, ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
   });
 }
 
@@ -224,11 +225,11 @@ function checkPolicy(bundle: string) {
   return declared.size;
 }
 
-function writeApkManifest() {
+function writeApkManifest(directory = artifacts) {
   const apksigner = buildTool("apksigner");
-  const apks = readdirSync(artifacts).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
+  const apks = readdirSync(directory).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
   const manifest = apks.map((name) => {
-    const file = path.join(artifacts, name);
+    const file = path.join(directory, name);
     const contents = readFileSync(file);
     const entries = execFileSync(buildTool("aapt"), ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
@@ -244,7 +245,7 @@ function writeApkManifest() {
     return { name, abi: abis[0], bytes: contents.byteLength, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
-  writeFileSync(path.join(artifacts, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
+  writeFileSync(path.join(directory, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
 }
 
 const sdk = (tool: string) => path.join(resolveAndroidSdkRoot(), tool);
@@ -527,6 +528,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const fixture = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
   if (typeof fixture.startPasswordLoginEpisode !== "function") throw new Error("BillWorld password fixture is unavailable");
   const cleanup: Array<() => Promise<unknown>> = [];
+  let buildFailure: Error | undefined;
   const screenFile = "/data/local/tmp/grace-billworld-ui.xml";
   const pin = "7539";
   const screen = async () => {
@@ -577,7 +579,12 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         copyFileSync(deviceTrust.caPath, path.join(app, resources, "raw/billworld_episode_ca.pem"));
         writeFileSync(path.join(app, resources, "xml/network_security.xml"),
           '<network-security-config><base-config cleartextTrafficPermitted="false"/><domain-config cleartextTrafficPermitted="false"><domain>localhost</domain><domain>127.0.0.1</domain><trust-anchors><certificates src="@raw/billworld_episode_ca"/></trust-anchors></domain-config></network-security-config>');
-        buildAndroid({ abi, fixture: { output, resources } });
+        try {
+          buildAndroid({ abi, fixture: { output, resources } });
+        } catch (error) {
+          buildFailure = error instanceof Error ? error : new Error("Could not build the fixture APK");
+          throw buildFailure;
+        }
         step = "install the test APK and transport";
         for (const port of deviceTrust.reversePorts) {
           await adb(["-s", serial, "reverse", "--no-rebind", `tcp:${port}`, `tcp:${port}`]);
@@ -645,6 +652,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     }
     throw new Error("BillWorld did not confirm the account view");
   } catch {
+    if (buildFailure) throw buildFailure;
     throw new Error(`BillWorld password journey stopped at: ${step}`);
   } finally {
     for (const release of cleanup.reverse()) await release().catch(() => { process.stderr.write("A BillWorld fixture cleanup step failed.\n"); });
@@ -653,8 +661,8 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
 }
 
 if (import.meta.main) {
-  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" } } }).values;
-  const { verify, release, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld } = Schema.decodeUnknownSync(Arguments)(options);
+  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" } } }).values;
+  const { verify, release, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
@@ -670,7 +678,8 @@ if (import.meta.main) {
       await Promise.race([adb(["-s", target.serial, "wait-for-device", "shell", 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'], 600), target.exited]);
       await billworldPasswords(target.serial, billworld, abi);
     } finally { target.stop(); }
-  } else if (verify) writeApkManifest();
+  } else if (fixtureRun) writeApkManifest(path.join(artifacts, "billworld-passwords", fixtureRun));
+  else if (verify) writeApkManifest();
   else {
     buildAndroid({ release, abi });
     const target = install ? attached(install) : emulator && await emulatorTarget(emulator);
