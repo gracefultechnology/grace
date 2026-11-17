@@ -3,13 +3,16 @@ import {
   type AccountColour, Alert, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm,
   OtherEmailForm, type OtherEmailProblem, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
+import { Effect } from "effect";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
 import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
-import { type MailInstance, useAccounts, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
+import type { Help } from "./context.vibe";
+import { Conversation } from "./conversation.vibe";
+import { type MailInstance, useAccounts, useRuntime, useSignIns, WithMailboxes } from "./useApp.ts";
 
 type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack">;
 
@@ -54,7 +57,7 @@ export function EmailAccounts(frame: Frame) {
 
 function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
   const { can, send } = useAccounts();
-  const workspace = useWorkspace();
+  const runtime = useRuntime();
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -63,7 +66,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
 
-  const askGrace = () => { if (workspace.can({ type: "openGrace" })) void workspace.send({ type: "openGrace" }); };
+  const askGrace = (need: Help) => () => void runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
   const choose = (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.();
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;
@@ -74,7 +77,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return registry.accounts.length === 0 ? (
           <EmailAccountList empty>
             {alert}
-            <ProviderGrid onChoose={choose} onAskGrace={askGrace} />
+            <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} />
           </EmailAccountList>
         ) : (
           <EmailAccountList onAdd={offer({ type: "addAccount" })}>
@@ -101,7 +104,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return (
           <MailServersForm key={signIn.domain} domain={signIn.domain} connecting={signIn.stage === "CheckingServers"} refused={problem === "ServersRefused"}
             onConnect={(servers) => { if (can({ type: "submitServers" })) void flows.servers(servers); }}
-            onCancel={offer({ type: "goBack" })} onAskGrace={askGrace} />
+            onCancel={offer({ type: "goBack" })} onAskGrace={askGrace("mailServers")} />
         );
       case "AccountDetail": {
         if (!shown) return null;

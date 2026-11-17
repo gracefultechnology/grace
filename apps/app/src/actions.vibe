@@ -19,6 +19,7 @@ import type { Remind } from "./reply.schema.ts"
 
 type Planned = { readonly commands: readonly AgentAction[]; readonly showsEmail: boolean }
 type Plan = Planned | "NotFound" | "NotYetAvailable" | undefined
+type Done = { readonly outcome: Outcome; readonly showsEmail: boolean }
 type Appointment = { readonly title: string; readonly day: string; readonly time: string; readonly until?: string; readonly place?: string; readonly who?: string; readonly remind?: typeof Remind.Type }
 
 const leads: Record<typeof Remind.Type, number> = { NoReminder: 0, HourBefore: hour, DayBefore: dayLength }
@@ -86,6 +87,13 @@ function inboxNamed(s: Scene, words: string | undefined) {
   return s.registry.accounts.find((a) => [a.name, a.address, a.provider].some((field) => lower(field) === asked))?.id
 }
 
+function listing(source: MailSource, query: string | undefined): AgentAction[] {
+  return [
+    ...source.mailbox.view === "Inbox" ? [] : [mail(source.account, { tag: "AssistList" })],
+    ...query === undefined ? [] : [mail(source.account, { tag: "AssistSearch", query })]
+  ]
+}
+
 function fromMessage(s: Scene, a: Appointment, fresh: string): Planned {
   const open = openOf(s)
   const id = `grace-${fresh}`
@@ -115,7 +123,6 @@ function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" 
   } }])
 }
 
-/** The AgentActions a reply's action asks for, on the tablet as `s` shows it; undefined for an action of the workspace alone. */
 effect function plan(action: GraceAction, s: Scene, request: Request, fresh: string, helper: Option.Option<Mail.Shape>): Plan!! {
   const shown = shownOf(s)
   const open = openOf(s)
@@ -124,7 +131,7 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
     return person(Option.isSome(helper) ? try helper.value.contacts() : [], words)
   }
   switch (action.kind) {
-    case "searchMail": return plain(shown.map((m) => mail(m.account, { tag: "AssistSearch", query: action.query })), true)
+    case "searchMail": return plain(shown.flatMap((m) => listing(m, action.query)), true)
     case "openMessage": {
       const found = message(s, action.message)
       return found === undefined ? "NotFound" : plain([mail(found.account, { tag: "AssistOpen", ref: found.ref })], true)
@@ -133,14 +140,13 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
       const id = inboxNamed(s, action.account)
       return id === undefined ? "NotFound" : plain([
         { tag: "FilterInbox", account: id },
-        ...shown.filter((m) => m.mailbox.view !== "Inbox").map((m) => mail(m.account, { tag: "AssistList" })),
-        ...shown.some((m) => m.mailbox.folder !== "InboxFolder") ? [{ tag: "ChooseFolder", folder: "InboxFolder" } satisfies AgentAction] : []
+        ...shown.flatMap((m) => m.mailbox.query === "" && m.mailbox.folder === "InboxFolder" ? listing(m, undefined) : listing(m, ""))
       ], true)
     }
     case "chooseFolder": return plain([{ tag: "ChooseFolder", folder: action.folder }], true)
     case "newEmail": {
       const to = try recipient(action.to)
-      return to === undefined ? "NotFound" : plain([mail(startFrom(s.registry, s.mail, to.address), { tag: "AssistNewEmail", recipient: to, subject: action.subject ?? "", body: action.body })], true)
+      return to === undefined ? "NotFound" : plain([mail(startFrom(s.registry, s.mail, to.address), { tag: "AssistNewEmail", recipient: to, subject: action.subject ?? "", body: action.body ?? "" })], true)
     }
     case "addressEmail": {
       const to = try recipient(action.to)
@@ -181,7 +187,6 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
   }
 }
 
-/** Grace's reply actions, each as the one event its route gives, on the machines that own them; what no route allows is reported with its reason. */
 export const agent = Layer.effect(Agent, effect {
   const workspace = try Workspaces
   const registry = try Accounts
@@ -227,7 +232,21 @@ export const agent = Layer.effect(Agent, effect {
     }
   }
 
+  effect function settled(account: number) {
+    const box = shelf.mail(account) catch () => undefined
+    if (box !== undefined) try Effect.ignore(Effect.timeout(Stream.runHead(Stream.filter(box.changes, (m) => m.readStatus !== "Reading" && m.messages.every((r) => r.status === "ChangeIdle"))), "10 seconds"))
+  }
+
+  effect function listed(account: number, ref: string, request: Request) {
+    const source = shownOf(try look()).find((m) => m.account === account)
+    if (source === undefined || source.mailbox.messageRefs.includes(ref)) return
+    for (const command of listing(source, "")) try routed(command, request)
+    try settled(account)
+  }
+
   effect function routed(command: AgentAction, request: Request): Outcome!! {
+    if (command.tag === "Mail") try settled(command.account)
+    if (command.tag === "Mail" && command.assist.tag === "AssistOpen") try listed(command.account, command.assist.ref, request)
     const s = try look()
     const world: World = {
       now: momentOf(s), stamp: try Clock.currentTimeMillis, timezone: zone(), accounts: s.registry, mail: s.mail, calendars: s.calendars,
@@ -238,21 +257,21 @@ export const agent = Layer.effect(Agent, effect {
     return outcome
   }
 
-  effect function perform(action: GraceAction, request: Request): Outcome!! {
+  effect function perform(action: GraceAction, request: Request): Done!! {
+    for (const source of shownOf(try look())) try settled(source.account)
     const s = try look()
     const fresh = `${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
     const planned = try plan(action, s, request, fresh, helper)
-    if (planned === "NotFound" || planned === "NotYetAvailable") return planned
+    if (planned === "NotFound" || planned === "NotYetAvailable") return { outcome: planned, showsEmail: false }
     if (planned === undefined) {
       const steps = workspaceSteps(action, s.workspace)
-      return !mayAct(request, momentOf(s)) ? "NotHerTurn" : steps === undefined ? "NotYetAvailable" : try run(steps)
+      return { outcome: !mayAct(request, momentOf(s)) ? "NotHerTurn" : steps === undefined ? "NotYetAvailable" : try run(steps), showsEmail: false }
     }
-    if (planned.commands.length === 0) return mayAct(request, momentOf(s)) ? "OwnerRefused" : "NotHerTurn"
+    if (planned.commands.length === 0) return { outcome: mayAct(request, momentOf(s)) ? "OwnerRefused" : "NotHerTurn", showsEmail: false }
     const outcomes: Outcome[] = []
     for (const command of planned.commands) outcomes.push(try routed(command, request))
     const outcome = outcomes.includes("Applied") ? "Applied" : outcomes[0]
-    if (outcome === "Applied" && planned.showsEmail) try run(visitSteps("Email", (try look()).workspace))
-    return outcome
+    return { outcome, showsEmail: outcome === "Applied" && planned.showsEmail }
   }
 
   effect function voidStaleAsk(actions: readonly GraceAction[], request: Request) {
@@ -267,11 +286,14 @@ export const agent = Layer.effect(Agent, effect {
     apply: effect (actions, request) => {
       try voidStaleAsk(actions, request)
       const applied: Applied[] = []
+      let showsEmail = false
       for (const action of actions) {
-        const outcome = try perform(action, request)
-        try logInfo("Grace's action", { kind: action.kind, outcome })
-        applied.push({ action, outcome })
+        const done = try perform(action, request)
+        try logInfo("Grace's action", { kind: action.kind, outcome: done.outcome })
+        applied.push({ action, outcome: done.outcome })
+        showsEmail = showsEmail || done.showsEmail
       }
+      if (showsEmail) try run(visitSteps("Email", (try look()).workspace))
       return applied
     }
   }

@@ -40,7 +40,7 @@ export const Action = Schema.Union([
   action("openMessage", { message: Words }),
   action("showInbox", { account: Schema.optionalKey(Words) }),
   action("chooseFolder", { folder: of<Folder>()(["InboxFolder", "SentFolder", "DraftsFolder", "TrashFolder"]) }),
-  action("newEmail", { to: Words, subject: Schema.optionalKey(Words), body: Words }),
+  action("newEmail", { to: Words, subject: Schema.optionalKey(Words), body: Schema.optionalKey(Words) }),
   action("addressEmail", { to: Words }),
   action("draftReply", { body: Words }),
   action("fillDraft", { body: Words }),

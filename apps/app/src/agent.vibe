@@ -16,7 +16,6 @@ export type Step = { readonly event: Event; readonly by: WorkspaceActor }
 const asPerson = (event: Event): Step => ({ event, by: "Person" })
 const preview = (settings: DisplayPreferences) => [asPerson({ type: "changePreferences", settings })]
 
-/** What Grace's action asks of the workspace alone, as the person's own events; undefined where it is not the workspace's. */
 export function workspaceSteps(action: GraceAction, w: Workspace): readonly Step[] | undefined {
   const session = w.preferences.session
   return match (action) {
@@ -32,7 +31,6 @@ export function workspaceSteps(action: GraceAction, w: Workspace): readonly Step
   }
 }
 
-/** Opening a Settings page, as the person's taps on Settings and then the page. */
 export const settingSteps = (page: Extract<Event, { type: "chooseSettingsPage" }>["page"], w: Workspace): readonly Step[] => [
   ...w.device.surface === "DeviceSettings" ? [] : [asPerson({ type: "visit", destination: "DeviceSettings" })],
   asPerson({ type: "chooseSettingsPage", page })

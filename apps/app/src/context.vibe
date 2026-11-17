@@ -12,8 +12,8 @@ import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.eff
 import type { Applied, Outcome } from "./agent.vibe"
 import type { MailContent } from "./connector.vibe"
 import { Instances, tablet } from "./instances.vibe"
+import { Action } from "./reply.schema.ts"
 
-/** Everything on the tablet Grace's turn is decided on: the workspace, the accounts, each account's mailbox, each calendar, her waiting question. */
 export type Scene = {
   readonly workspace: Workspace
   readonly registry: Registry
@@ -23,12 +23,10 @@ export type Scene = {
   readonly content: (account: number, ref: string) => MailContent | undefined
 }
 
-/** What Grace is shown with a turn, and the screen's targets she may point at. */
 export type Shown = { readonly text: string; readonly targets: ReadonlySet<string> }
 
 type Part = { readonly lines: readonly string[]; readonly targets: readonly string[] }
 
-/** How to look at the tablet for a turn, over the machines as the layer that asks holds them. */
 export effect function looker() {
   const shelf = try Instances
   const accounts = try Accounts
@@ -77,9 +75,25 @@ const outcomes: Record<Outcome, string> = {
   NotOnScreen: "was not done: that is not on the screen"
 }
 
+const Field = Schema.Struct({ type: Schema.optionalKey(Schema.String), enum: Schema.optionalKey(Schema.Array(Schema.String)), pattern: Schema.optionalKey(Schema.String) })
+const Kinds = Schema.Struct({ anyOf: Schema.Array(Schema.Struct({ properties: Schema.Record(Schema.String, Field), required: Schema.Array(Schema.String) })) })
+
+function shape(f: typeof Field.Type): string {
+  if (f.enum !== undefined) return f.enum.join(" | ")
+  if (f.pattern?.includes("\\d{4}") === true) return "YYYY-MM-DD"
+  if (f.pattern?.includes("2[0-3]") === true) return "HH:MM"
+  return f.type === "string" ? "words" : f.type ?? "words"
+}
+
+export const vocabulary = Option.match(Schema.decodeUnknownOption(Kinds)(Schema.toJsonSchemaDocument(Action).schema), {
+  onNone: () => "",
+  onSome: ({ anyOf }) => `Each action is one object in "actions": ${anyOf.map(({ properties, required }) =>
+    `{${Object.entries(properties).map(([name, f]) => name === "kind" ? `"kind": "${shape(f)}"` : `"${name}${required.includes(name) ? "" : "?"}": ${shape(f)}`).join(", ")}}`).join("; ")}. A field marked ? may be left out.`
+})
+
 export const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
 export const eventTarget = (key: number, id: string) => `event:${key}:${id}`
-export const unlinked = (text: string) => text.replace(/https?:\/\/\S+/g, "[a link]")
+export const unlinked = (text: string) => text.replace(/\b(https?:\/\/|www\.)\S+/gi, "[a link]")
 const said = (text: string) => text.trim() === "" ? "(empty)" : `“${text}”`
 const quoted = (text: string) => `“${text}”`
 
@@ -106,7 +120,7 @@ function asked(s: Scene, ask: Ask): string {
 
 function sender(s: Scene, account: number, ref: string) {
   const c = s.content(account, ref)
-  return c === undefined ? "an email" : `${c.from}’s email ${quoted(c.subject)}`
+  return c === undefined ? "an email" : `${c.from}’s email ${quoted(unlinked(c.subject))}`
 }
 
 function always(s: Scene, now: number): readonly string[] {
@@ -221,7 +235,6 @@ function settingsScreen(s: Scene): Part {
   return { lines: [`Settings is open on ${pages[page]}.`, ...part.lines], targets: s.registry.signIn.stage === "ProviderPage" && page === "EmailCalendarSettings" ? [] : [...nav, ...part.targets] }
 }
 
-/** What Grace is told of an email that changed, in words; empty when nothing is told. */
 export function toldOfMail(s: Scene, news: MailTold): string {
   const name = s.registry.accounts.find((a) => a.id === news.account)?.name ?? "her email"
   return match (news.news) {
@@ -234,7 +247,6 @@ export function toldOfMail(s: Scene, news: MailTold): string {
   }
 }
 
-/** What Grace is told of a calendar that changed, or of a yes the calendar could not take. */
 export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold } | { readonly refused: Ask }): string {
   if ("refused" in report) return "Margaret said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if she still wants it."
   const { key, id } = report.told
@@ -248,7 +260,6 @@ export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold }
   }
 }
 
-/** What Grace is told of the accounts on the tablet, never anything Margaret typed. */
 export function toldOfAccounts(before: Registry, after: Registry): string {
   const t = accountsTold(before, after)
   const account = [...after.accounts, ...before.accounts].find((a) => a.id === t.account)
@@ -263,7 +274,22 @@ export function toldOfAccounts(before: Registry, after: Registry): string {
   }
 }
 
-/** The part of what Grace is shown that belongs to the open screen, with what on it she may point at. */
+export type Help = "connectEmail" | "mailServers"
+
+export function helpWith(need: Help, registry: Registry): { readonly said: string; readonly told: string } {
+  const d = registry.signIn.domain
+  return match (need) {
+    when "connectEmail": {
+      said: "Help me connect my email.",
+      told: "Margaret tapped Ask Grace for help connecting her email to the tablet. She signs in herself on her email company’s own page; you never see or type passwords or codes. Ask which email she uses, with answers like Gmail, Outlook or Hotmail, Yahoo and I’m not sure. If she is not sure, ask her to read you the part of her address after the @."
+    };
+    when "mailServers": {
+      said: "Help me with the mail settings.",
+      told: `Margaret tapped Ask Grace while connecting her ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that her email company lists them on its help page.`
+    };
+  }
+}
+
 export function screen(s: Scene): Part {
   return match (s.workspace.device.surface) {
     when "Email": emailScreen(s);
@@ -273,7 +299,6 @@ export function screen(s: Scene): Part {
   }
 }
 
-/** Everything Grace is shown with a turn at `now` (milliseconds since the epoch): the screen, the tablet, what of her last actions was not done, and what she was told since. */
 export function render(s: Scene, now: number, notDone: readonly Applied[], told: readonly string[]): Shown {
   const { device, assistant, preferences: { session } } = s.workspace
   const part = screen(s)
@@ -285,7 +310,7 @@ export function render(s: Scene, now: number, notDone: readonly Applied[], told:
     `Settings: text size ${session.textSize}, volume ${session.muted ? "muted" : session.volume}, brightness ${session.brightness}, you ${session.voiceOutput ? "speak aloud" : "do not speak aloud"}, pace ${session.pace}.`,
     ...always(s, now),
     ...assistant.activity === "NoTask" ? [] : [`You are helping with: ${assistant.goal}.`],
-    ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`),
+    ...notDone.length === 0 ? [] : [`The tablet, not Margaret, tells you about your last answer: ${notDone.map(({ action, outcome }) => `${action.kind} ${outcomes[outcome]}`).join("; ")}. If you told her it was done, say plainly and kindly that it was not.`],
     ...told.length === 0 ? [] : [`What happened on the tablet since, as the tablet tells you (it asks nothing of you): ${told.join(" ")}`]
   ]
   return { text: lines.join("\n"), targets: new Set(part.targets) }
