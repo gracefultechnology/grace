@@ -1,0 +1,9 @@
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
+import { Machine as Accounts, stored as storedAccounts } from "../gen/app__accounts.effect.vibe"
+import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
+
+const restarted = Layer.effectDiscard(effect {
+  try Effect.orDie((try Accounts).send({ type: "restartAccounts" }, "AccountHost"))
+})
+
+export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, storedAccounts("accounts")), storedProposal("proposal"))

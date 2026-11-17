@@ -1,7 +1,16 @@
 // .claude/skills/shell/SKILL.md, "The React interface": the workspace and the page layer, as components read
 // them, and the one way a component changes the workspace.
+// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
 import { Effect, type ManagedRuntime, Stream } from "effect";
-import { createContext, use, useEffect, useState } from "react";
+import { createContext, createElement, type ReactNode, use, useEffect, useState } from "react";
+import { type Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
+import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
+import type { Event as CalendarEvent } from "../gen/app__calendarView.effect.vibe";
+import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
+import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
+import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
+import { type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
+import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
 import type { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
@@ -11,10 +20,11 @@ import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.t
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
+import { Instances } from "./instances.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation | Accounts | Proposal | Instances, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -58,6 +68,65 @@ export function useWebsiteRequests() {
     current: () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())),
     said: (id: number) => runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.said.get(id) ?? "")),
   };
+}
+
+export function useAccounts() {
+  const { state: accounts, can, send } = useAccountsMachine(useRuntime());
+  return { accounts, can: (event: AccountEvent) => can(event, "AccountPerson"), send: (event: AccountEvent) => send(event, "AccountPerson") };
+}
+
+export function useProposal() {
+  const { state: proposal, can, send } = useProposalMachine(useRuntime());
+  return { proposal, can: (event: ProposalEvent) => can(event, "Person"), send: (event: ProposalEvent) => send(event, "Person") };
+}
+
+const shelves = new WeakMap<Runtime, Promise<Instances["Service"]>>();
+
+function useInstances() {
+  const runtime = useRuntime();
+  const known = shelves.get(runtime);
+  if (known) return use(known);
+  const found = runtime.runPromise(Effect.service(Instances));
+  shelves.set(runtime, found);
+  return use(found);
+}
+
+/** What the connector last read of each account's emails: who, what about, when and the body, which no machine holds. */
+export function useMailContent() {
+  return useInstances().content;
+}
+
+type NestedProps<T> = { ids: readonly number[]; use: (id: number) => T | undefined; children: (all: readonly T[]) => ReactNode };
+
+function Nested<T>({ ids, use, children }: NestedProps<T>): ReactNode {
+  const [first, ...rest] = ids;
+  return first === undefined ? children([]) : createElement(Level<T>, { key: first, id: first, rest, use, children });
+}
+
+function Level<T>({ id, rest, use, children }: Omit<NestedProps<T>, "ids"> & { id: number; rest: readonly number[] }): ReactNode {
+  const own = use(id);
+  return createElement(Nested<T>, { ids: rest, use, children: (others: readonly T[]) => children(own === undefined ? others : [own, ...others]) });
+}
+
+function useMailbox(id: number) {
+  const { state, can, send } = useMailMachine(useInstances().mailRuntime(id));
+  return state && { id, state, can: (event: MailEvent) => can(event, "MailUser"), send: (event: MailEvent) => send(event, "MailUser") };
+}
+
+function useCalendar(key: number) {
+  const { state, can, send } = useCalendarMachine(useInstances().calendarRuntime(key));
+  return state && { key, state, can: (event: CalendarEvent) => can(event, "ViewUser"), send: (event: CalendarEvent) => send(event, "ViewUser") };
+}
+
+export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
+export type CalendarInstance = NonNullable<ReturnType<typeof useCalendar>>;
+
+export function WithMailboxes({ ids, children }: { ids: readonly number[]; children: (boxes: readonly MailInstance[]) => ReactNode }) {
+  return createElement(Nested<MailInstance>, { ids, use: useMailbox, children });
+}
+
+export function WithCalendars({ keys, children }: { keys: readonly number[]; children: (views: readonly CalendarInstance[]) => ReactNode }) {
+  return createElement(Nested<CalendarInstance>, { ids: keys, use: useCalendar, children });
 }
 
 /** The page layer: the page's rect and the Grace controls drawn over it. */

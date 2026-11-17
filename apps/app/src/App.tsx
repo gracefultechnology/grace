@@ -1,23 +1,24 @@
-// spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
+// spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, WifiSlash, cn } from "@repo/ui";
-import { CalendarDays, Folder, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { CalendarDays, Folder, House, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { type ReactNode, Suspense, useEffect, useState } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
+import { mailAccounts } from "../gen/app__accounts.ts";
 import { Browser } from "./Browser.tsx";
+import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { Settings } from "./Settings.tsx";
-import { RuntimeContext, type Runtime, useKeyboardHeight, useWebsiteRequests, useWorkspace } from "./useApp.ts";
+import { RuntimeContext, type Runtime, useAccounts, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 /** The surfaces that open in an app window, with nothing in them yet. */
 const apps: Partial<Record<Surface, { name: string; icon: ReactNode }>> = {
   Calendar: { name: "Calendar", icon: <CalendarDays size={26} /> },
-  Email: { name: "Email", icon: <Mail size={26} /> },
   Files: { name: "Files", icon: <Folder size={26} /> },
 };
 
@@ -61,6 +62,8 @@ const wifiWords: Record<Connectivity, string> = {
 function Screen() {
   const { workspace, can, send, current } = useWorkspace();
   const website = useWebsiteRequests();
+  const { accounts } = useAccounts();
+  const read = useMailContent();
   const now = useMinute();
   // Prototype `layout()`, kbH: the keyboard covers the screen right of the rail, which keeps its full height, and the windows rise above it.
   const keyboard = useKeyboardHeight();
@@ -128,14 +131,21 @@ function Screen() {
         // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": Home covers a page still shown.
         <OverPage className={cn(lifted, "left-1.5")} style={{ bottom }}>
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
-          <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-            calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), events: [], ...visit("Calendar") }}
-            email={{ messages: [], ...visit("Email") }} internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
-            page={device.homePage === "FilesCard" ? "files" : "main"}
-            onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
+          <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
+            <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), events: [], ...visit("Calendar") }}
+              email={{
+                messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: !accounts || mailAccounts(accounts).length === 0,
+                ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
+              }}
+              internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
+              page={device.homePage === "FilesCard" ? "files" : "main"}
+              onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
+          )}</WithMailboxes>
         </OverPage>
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
+      {surface === "Email" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {app && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
@@ -170,7 +180,7 @@ function Screen() {
 export function App({ runtime }: { runtime: Runtime }) {
   return (
     <RuntimeContext value={runtime}>
-      <PageMeasurer runtime={runtime}><Screen /></PageMeasurer>
+      <PageMeasurer runtime={runtime}><Suspense><Screen /></Suspense></PageMeasurer>
     </RuntimeContext>
   );
 }
