@@ -56,6 +56,40 @@ mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omni
 kernels a directory holds; it loads no model or library, and the check lets it pass. Both flavors'
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
+A release APK is the one handed to user QA. R8 shrinks and optimizes its Java (`releaseMinify` in
+`android/host.json`; Capacitor's own keep rules keep every plugin and its methods), and it is not
+debuggable, so no computer on USB can read or drive Grace's page, which holds her email, calendar
+and bank sessions; the content check fails a release APK that is debuggable, and
+`apk-manifest.json` records `debuggable` for each APK. The repository holds no release key and none
+has been made: whoever makes it keeps it and its passwords outside the repository and gives them to
+the build in the four variables. Built from `84a7a00` with a throwaway key, both release APKs were
+102,042,101 bytes against 113,479,785 for debug, their code 1.15 MB of dex against 10.3 MB, and
+`aapt` reported neither debuggable.
+
+### On the tablet
+
+User QA runs the launcher release APK on the Lenovo TB336FU's own Android, which has Google Play
+services and Chrome: the native Google account picker signs her in, and a website's own Google
+sign-in opens in Chrome. The Grace image (`aosp/README.md`) is staged, not built. The person
+preparing the tablet does this by hand; Grace's scripts refuse any serial that is not an emulator's.
+
+1. In Android's Settings, About tablet, tap Build number seven times; in System, Developer options,
+   turn on USB debugging, connect the tablet and allow the computer.
+2. `adb -s <serial> install -r artifacts/launcher-release.apk`, with the serial `adb devices` lists. A
+   tablet holding Grace signed by another key refuses it: `adb -s <serial> uninstall
+   technology.graceful.grace` first, which deletes her data.
+3. Make Grace Home: press Home and choose Grace, Always, or Settings, Apps, Default apps, Home app,
+   Grace. A sideloaded launcher never asks to be Home, and only the Grace image makes her Home by
+   itself. The stock launcher stays installed as the way back.
+4. Android asks for the microphone at her first Talk; Settings, Apps, Grace, Permissions, Microphone
+   grants or removes it.
+5. Turn USB debugging off.
+
+No model runs on the tablet, so the old minimums sized for models no longer apply: Grace needs what
+her process and her agent hold (about 270 MB and 170 MB resident, measured below) and the storage
+for the APK and what it unpacks (the 102 MB APK and a 202 MB agent payload on the build host; not yet
+measured on a tablet); a 4 GB tablet such as the TB336FU has room.
+
 ### On the emulator
 
 ```sh
@@ -85,7 +119,11 @@ emulator that exits before it boots fails the command with its log. An emulator 
 is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
 `--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the
 same on an emulator that is already running and never stops it; it refuses any serial that is not an
-emulator's, so a tablet on USB is never touched.
+emulator's, so a tablet on USB is never touched. With `--release` the signed launcher release APK is
+installed instead and the walk ends once Grace's process is running as Home; it needs the four
+signing variables, and `--exercise` is refused, since a release build's page has no debugging
+socket. An emulator holding Grace signed by another key (debug after release, or the reverse) has
+her uninstalled, data and all, before the install.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging
 socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
