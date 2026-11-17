@@ -83,14 +83,17 @@ attempt, so a late answer from the old one changes nothing. The page answers
 Allowed with the address and what she allowed, Cancelled, or Refused when
 she could not finish. Allowed adds the address as a new account and shows
 it; for the account she is signing in to again it renews that account
-instead; an address already on the tablet as another account is refused
-with "This email is already on the tablet." New accounts take a colour by
+instead, and a company’s page closed any other way leaves that account as it
+was and ends signing in again; an address already on the tablet as another
+account is refused with "This email is already on the tablet." New accounts take a colour by
 their place in the list.
 
 ```quint
 type SheetOutcome = Allowed | Cancelled | Refused
 type SheetReport = { attempt: int, outcome: SheetOutcome, address: str, granted: Use }
 pure def nextAttempt(s: SignIn): SignIn = { ...noSignIn, attempt: s.attempt + 1 }
+pure def closed(s: SignIn): SignIn =
+  { ...s, stage: NotSigningIn, renewing: if (s.stage == ProviderPage) 0 else s.renewing }
 pure def canAddAccount(a: Accounts, by: AccountActor): bool =
   by == AccountPerson and a.signIn.stage == NotSigningIn and a.removing == 0 and
   a.page == AccountList and a.accounts.length() > 0
@@ -105,7 +108,7 @@ pure def chooseProvider(a: Accounts, provider: Provider, by: AccountActor): Acco
 pure def canCancelSignIn(a: Accounts, by: AccountActor): bool =
   by == AccountPerson and a.signIn.stage != NotSigningIn
 pure def cancelSignIn(a: Accounts, by: AccountActor): Accounts =
-  { ...a, problem: NoProblem, signIn: { ...nextAttempt(a.signIn), provider: a.signIn.provider, renewing: a.signIn.renewing, domain: a.signIn.domain } }
+  { ...a, problem: NoProblem, signIn: { ...closed(a.signIn), attempt: a.signIn.attempt + 1 } }
 pure def canRestartAccounts(a: Accounts, by: AccountActor): bool = by == AccountHost
 pure def restartAccounts(a: Accounts, by: AccountActor): Accounts =
   { ...a, page: AccountList, shown: 0, removing: 0, problem: NoProblem, bannerDismissed: false, signIn: nextAttempt(a.signIn) }
@@ -113,7 +116,7 @@ pure def freshName(a: Accounts, name: str): bool = name != "" and not(a.accounts
 pure def admitted(provider: Provider, a: Accounts, address: str, name: str, use: Use): Accounts =
   val existing = accountWith(a, address)
   val finished = { ...a.signIn, stage: NotSigningIn }
-  if (existing.id != 0 and existing.id != a.signIn.renewing) { ...a, signIn: finished, problem: AlreadyOnTablet }
+  if (existing.id != 0 and existing.id != a.signIn.renewing) { ...a, signIn: closed(a.signIn), problem: AlreadyOnTablet }
   else if (existing.id != 0) { ...a, signIn: { ...finished, domain: "" }, page: AccountDetail, shown: existing.id, problem: NoProblem }
   else {
     ...a, signIn: { ...finished, renewing: 0, domain: "" }, page: AccountDetail, shown: a.nextId, nextId: a.nextId + 1, problem: NoProblem,
@@ -127,7 +130,7 @@ pure def canSheetResult(a: Accounts, sheet: SheetReport, name: str, by: AccountA
   (sheet.outcome == Allowed implies admits(a, sheet.address, name))
 pure def sheetResult(a: Accounts, sheet: SheetReport, name: str, by: AccountActor): Accounts =
   if (sheet.outcome == Allowed) admitted(a.signIn.provider, a, sheet.address, name, sheet.granted)
-  else { ...a, signIn: { ...a.signIn, stage: NotSigningIn }, problem: if (sheet.outcome == Refused) SignInUnfinished else NoProblem }
+  else { ...a, signIn: closed(a.signIn), problem: if (sheet.outcome == Refused) SignInUnfinished else NoProblem }
 pure def lawStaleSignInCannotConnect(a: Accounts, sheet: SheetReport, name: str, by: AccountActor): bool =
   sheet.attempt != a.signIn.attempt implies not(canSheetResult(a, sheet, name, by))
 pure def lawAnotherAccountsAddressIsRefused(a: Accounts, sheet: SheetReport, name: str, by: AccountActor): bool =
@@ -218,6 +221,8 @@ pure def lawStaleCheckCannotConnect(a: Accounts, check: OtherReport, name: str, 
   check.attempt != a.signIn.attempt implies not(canOtherResult(a, check, name, by) or canServersResult(a, check, name, by))
 pure def sometimesOtherNeedsServers(a: Accounts): bool = a.page == MailServersPage and a.signIn.domain != ""
 pure def sometimesPasswordRefused(a: Accounts): bool = a.problem == PasswordRefused
+pure def sometimesCheckingServers(a: Accounts): bool = a.signIn.stage == CheckingServers
+pure def sometimesServersRefused(a: Accounts): bool = a.problem == ServersRefused and a.page == MailServersPage
 pure def sometimesOtherEmailConnected(a: Accounts): bool = a.accounts.some(x => x.provider == OtherEmail)
 ```
 
@@ -270,7 +275,9 @@ being told authorizes nothing. She hears that a provider’s page opened (she
 cannot see it), that an account was connected, renewed or removed, and the
 problem now shown: unfinished sign-in, already on the tablet, a listed
 company’s address, a refused Other email password, refused servers or email
-still waiting. A refused password on a provider’s own page cannot be told:
+still waiting. Signing in again is told as renewed only when the company
+allowed it; Cancel or an unfinished sign-in on a company’s page renews
+nothing. A refused password on a provider’s own page cannot be told:
 the tablet learns only that sign-in was not finished.
 
 ```quint
@@ -293,6 +300,11 @@ pure def told(before: Accounts, after: Accounts): Told =
     { ...quiet, kind: TellRenewed, account: after.shown, provider: accountAt(after, after.shown).provider }
   else quiet
 pure def lawNothingChangedTellsNothing(a: Accounts): bool = told(a, a).kind == TellNothing
+pure def lawOnlyAnAllowedAnswerRenews(a: Accounts, sheet: SheetReport, name: str, by: AccountActor): bool =
+  ((canSheetResult(a, sheet, name, by) and sheet.outcome != Allowed) implies
+    told(a, sheetResult(a, sheet, name, by)).kind != TellRenewed) and
+  ((canCancelSignIn(a, by) and a.signIn.stage == ProviderPage) implies
+    told(a, cancelSignIn(a, by)).kind != TellRenewed)
 ```
 
 ## Story: Choose what each email brings and take it off the tablet
@@ -324,7 +336,8 @@ pure def stepRenewalKeepsTheAccount(before: Accounts, after: Accounts): bool =
   before.accounts.every(x => after.accounts.every(y => y.id == x.id implies
     (y.address == x.address and y.provider == x.provider and y.name == x.name and y.colour == x.colour)))
 pure def sometimesRenewed(a: Accounts): bool =
-  a.signIn.stage == NotSigningIn and a.signIn.renewing != 0 and a.page == AccountDetail and a.shown == a.signIn.renewing
+  a.signIn.stage == NotSigningIn and a.signIn.renewing != 0 and a.problem == NoProblem and
+  a.page == AccountDetail and a.shown == a.signIn.renewing
 ```
 
 ### Turning a use off hides it and keeps the account

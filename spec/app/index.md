@@ -23,7 +23,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Message folders, read status, Trash and restoration](./emailItem.md)
 - [Calendar occurrences, recurrence and reminders](./calendar.md)
 - [Week and month views, current occurrences and recurring deletion](./calendarView.md)
-- [Saved photos, documents, Email sharing and printing](./files.md)
+- [Saved photos, documents and Email sharing](./files.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
