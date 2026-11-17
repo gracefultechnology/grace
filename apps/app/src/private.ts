@@ -193,13 +193,14 @@ function cardEndsFrom(text: string, i: number, s: number, named: boolean, broken
   const low = groups === 0 || q - p < shortest ? q - p : shortest;
   const high = q - p > longest ? q - p : longest;
   if (isDigitAt(text, q) || total > 19) return false;
-  if (total >= 13 && (digitValue(text, s) !== 1 || total === 15) && i < tailEnd(text, q, 3) && luhn(text, s, q - 1, false) % 10 === 0
+  if (total >= 13 && (digitValue(text, s) !== 1 || total === 15)
     && (named || groups === 0
       || (allFour && groups >= 3 && q - p <= 4 && aligned(fourBefore(text, s, broken, 19), fourAfter(text, q, broken, 19)))
       || (groups === 2 && first === 4 && second === 6 && (q - p === 4 || q - p === 5))
       || (groups === 1 && first === 6 && q - p === 13)
       || ((total === 15 || total === 16) && groups <= 3 && low >= 3 && high <= 13 && (low < high || groups === 1) && sep > 0 && sep !== 44 && isolated(text, s, tailEnd(text, q, 3)))
-      || namesCardAfter(text, q, 4, 40))) return true;
+      || namesCardAfter(text, q, 4, 40))
+    && i < tailEnd(text, q, 3) && luhn(text, s, q - 1, false) % 10 === 0) return true;
   const next = gapEnd(text, q, 6);
   const breaks = breaksAt(text, q, next, 6);
   return steps > 0 && next > q && isDigitAt(text, next) && (named || groups === 0 || breaks === broken)
@@ -245,17 +246,21 @@ function wordBefore(text: string, start: number): string {
 function cueAt(text: string, start: number, end: number): number {
   const word = wordBetween(text, start, end);
   const before = word === "code" || word === "codes" || word === "number" ? wordBefore(text, start) : "";
-  if (word === "number") return before === "time" || before === "account" || before === "routing" || before === "security" || before === "in" ? 4 : 0;
-  if (word === "codigo" || word === "c\u00f3digo") return wordAfter(text, end) === "postal" || wordAfter(text, end) === "de" ? 0 : 4;
+  if (word === "number") return before === "time" || before === "account" || before === "routing" || before === "security" || (before === "in" && wordBefore(text, start - 3) === "sign") ? 4 : 0;
+  if (word === "codigo" || word === "c\u00f3digo") return isPlaceWord(wordAfter(text, end)) || (wordAfter(text, end) === "de" && isPlaceWord(wordAfter(text, end + 3))) ? 0 : 4;
   if (word !== "code" && word !== "codes") return codeCue(word);
   return before === "zip" || before === "postal" || before === "area" || before === "country" || before === "promo" || before === "coupon"
     || before === "discount" || before === "referral" ? 0 : before === "security" ? 3 : 4;
 }
 
+function isPlaceWord(word: string): boolean {
+  return word === "postal" || word === "area" || word === "\u00e1rea" || word === "pa\u00eds" || word === "pais";
+}
+
 function isFiller(word: string): boolean {
   return word === "is" || word === "was" || word === "are" || word === "number" || word === "no" || word === "it" || word === "s"
     || word === "its" || word === "here" || word === "the" || word === "your" || word === "my" || word === "this" || word === "be"
-    || word === "will" || word === "now" || word === "again" || word === "just" || word === "on" || word === "back";
+    || word === "will" || word === "now" || word === "again" || word === "just" || word === "on" || word === "back" || word === "es";
 }
 
 function cueBefore(text: string, j: number, words: number, numbers: boolean, lines: boolean, sentences: boolean, steps: number): number {
@@ -271,7 +276,7 @@ function cueBefore(text: string, j: number, words: number, numbers: boolean, lin
     return behind > 0 || sentences ? behind : cue;
   }
   if (cue > 0) return cue;
-  if (isFiller(word)) return cueBefore(text, start - 1, words, numbers, lines, sentences, steps - 1);
+  if (isFiller(word) || (start === j && !isAsciiLetterAt(text, j))) return cueBefore(text, start - 1, words, numbers, lines, sentences, steps - 1);
   return words > 0 ? cueBefore(text, start - 1, words - 1, numbers, lines, sentences, steps - 1) : 0;
 }
 
@@ -360,13 +365,13 @@ function codeFrom(text: string, i: number, s: number): boolean {
   const tight = cueBefore(text, s - 1, 0, false, true, false, 40);
   const dialled = length === 10 || (length === 11 && digitValue(text, s) === 1);
   const next = wordAfter(text, e);
-  if (fits(tight, length, dialled) || (tight === 4 && length === 3 && next === "" && (said === "is" || said === "was"))) return true;
+  if (fits(tight, length, dialled) || (tight === 4 && length === 3 && next === "" && !isDigitAt(text, e + 1) && (said === "is" || said === "was"))) return true;
   if (charAt(text, s - 1) === 35 || dialledAt(text, s)) return false;
   const alone = blankBack(text, s - 1, 24) && blankAhead(text, e, 24);
   const year = length === 4 && ((digitValue(text, s) === 1 && digitValue(text, s + 1) === 9) || (digitValue(text, s) === 2 && digitValue(text, s + 1) === 0));
   if (length >= 4 && alone && meets(cueBefore(text, s - 1, 120, true, true, true, 900), length)) return true;
   const owned = next === "is" && (wordAfter(text, e + 3) === "your" || wordAfter(text, e + 3) === "my");
-  if ((!year || owned) && meets(cueAfter(text, e, 2, alone, 40), length)) return true;
+  if (year && owned && meets(cueAfter(text, e, 2, alone, 40), length)) return true;
   const after = cueAfter(text, e, 12, alone, 160);
   if (meets(after, length) && length !== 4) return true;
   return length >= 4 && !year && ((after > 0 && length === 4)
@@ -426,13 +431,13 @@ function evenFrom(text: string, p: number, e: number, width: number, steps: numb
 
 function isChainCodeDigit(text: string, i: number): boolean {
   if (!isDigitAt(text, i)) return false;
-  const s = chainStart(text, runStart(text, i, 9), 8);
-  const e = chainEnd(text, s, 8);
+  const s = chainStart(text, runStart(text, i, 9), 15);
+  const e = chainEnd(text, s, 15);
   if (isDigitAt(text, s - 1) || i >= e || e === runEnd(text, s, 9) || attachedBefore(text, s) || isLetterAt(text, e)) return false;
   const width = runEnd(text, s, 9) - s;
-  const digits = digitsBetween(text, s, e, 48);
+  const digits = digitsBetween(text, s, e, 96);
   const cue = cueBefore(text, s - 1, 0, false, true, false, 40);
-  return (width === 1 || digits >= 6) && evenFrom(text, s, e, width, 8) && cue <= 4 && meets(cue, digits);
+  return (width === 1 || digits >= 6) && evenFrom(text, s, e, width, 15) && cue <= 4 && meets(cue, digits);
 }
 
 function isCodeCharAt(text: string, i: number): boolean {
@@ -609,7 +614,7 @@ export function withhold(leaving: Leaving): string {
   //@ ensures forall(k, 0 <= k && k < leaving.text.length ==> \result.charCodeAt(k) === 42 || \result.charCodeAt(k) === leaving.text.charCodeAt(k))
   //@ ensures forall(k, 0 <= k && k < leaving.text.length && isPrivateAt(leaving.text, leaving.passwords, k) ==> \result.charCodeAt(k) === 42)
   //@ ensures forall(k, 0 <= k && k < leaving.text.length ==> !isPrivateAt(leaving.text, leaving.passwords, k)) ==> \result === leaving.text
-  //@ ensures forall(k, 0 <= k && k < \result.length ==> !isCardDigit(\result, k) && !isCodeDigit(\result, k) && !isChainCodeDigit(\result, k) && !isLetteredCodeAt(\result, k))
+  //@ ensures forall(k, 0 <= k && k < \result.length && isPrivateAt(\result, leaving.passwords, k) ==> \result.charCodeAt(k) === 42)
   //@ ensures forall(j, forall(at, 0 <= j && j < leaving.passwords.length && leaving.passwords[j].length >= 4 && forall(k, 0 <= k && k < leaving.passwords[j].length ==> leaving.passwords[j].charCodeAt(k) !== 42) ==> !occursAt(\result, leaving.passwords[j], at)))
   const text = leaving.text;
   const passwords = leaving.passwords;
