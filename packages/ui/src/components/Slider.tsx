@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { Minus, Plus } from "lucide-react";
 import { cn } from "../lib/cn.ts";
@@ -9,7 +9,7 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
   value?: number;
   /** The first value, for a slider that keeps its own. */
   defaultValue?: number;
-  /** Called with each new value: dragged, tapped, keyed or stepped by − and +. */
+  /** Called with each new value: once per drag, when it is let go, and on each tap, key or step by − and +. */
   onValueChange?: (value: number) => void;
   min?: number;
   max?: number;
@@ -30,8 +30,11 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
  */
 export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max = 100, step = 10, label, decreaseLabel = "Less", increaseLabel = "More", disabled, className, ...props }: SliderProps) {
   const [own, setOwn] = useState(defaultValue);
+  const [dragged, setDragged] = useState<number>();
+  const pressedRef = useRef(false);
   const current = value ?? own;
   const set = (next: number) => {
+    setDragged(undefined);
     if (disabled) return;
     const clamped = Math.min(max, Math.max(min, next));
     setOwn(clamped);
@@ -43,7 +46,20 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
       <Button variant="capsule" size="pill-icon" aria-label={decreaseLabel} disabled={disabled} onClick={() => set(current - step)} className={end}>
         <Minus size={28} strokeWidth={2.6} aria-hidden />
       </Button>
-      <SliderPrimitive.Root value={[current]} onValueChange={([next]) => set(next)} min={min} max={max} step={1} disabled={disabled} className="relative mx-[22px] flex h-10 flex-1 cursor-pointer touch-none items-center select-none data-disabled:cursor-not-allowed">
+      <SliderPrimitive.Root
+        value={[dragged ?? current]}
+        onPointerDown={() => (pressedRef.current = true)}
+        onValueChange={([next]) => pressedRef.current && setDragged(next)}
+        onValueCommit={([next]) => set(next)}
+        onLostPointerCapture={() => {
+          pressedRef.current = false;
+          setDragged(undefined);
+        }}
+        min={min}
+        max={max}
+        step={1}
+        disabled={disabled}
+        className="relative mx-[22px] flex h-10 flex-1 cursor-pointer touch-none items-center select-none data-disabled:cursor-not-allowed">
         <SliderPrimitive.Track className="relative h-3.5 grow rounded-full bg-primary/12">
           <SliderPrimitive.Range className="absolute -ml-[22px] h-full rounded-full bg-primary" />
         </SliderPrimitive.Track>

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { cn } from "../lib/cn.ts";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { Button } from "./Button.tsx";
@@ -68,26 +68,6 @@ export function CaptionStrip({
   className,
   ...props
 }: CaptionStripProps) {
-  const lineRef = useRef<HTMLSpanElement>(null);
-  const [fit, setFit] = useState({ text, cut: 0 });
-  const cut = fit.text === text ? fit.cut : 0;
-  const words = text.split(/\s+/);
-  useLayoutEffect(() => {
-    const el = lineRef.current;
-    if (el && el.scrollWidth > el.clientWidth + 1 && cut < words.length - 1) setFit({ text, cut: cut + 1 });
-  }, [fit, text, cut, words.length]);
-  useLayoutEffect(() => {
-    const el = lineRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const refit = () => setFit((f) => ({ ...f, cut: 0 }));
-    const observer = new ResizeObserver(refit);
-    observer.observe(el);
-    document.fonts?.addEventListener("loadingdone", refit);
-    return () => {
-      observer.disconnect();
-      document.fonts?.removeEventListener("loadingdone", refit);
-    };
-  }, []);
   const grace = who === "grace" || !!answers?.length;
   return (
     <div
@@ -132,8 +112,8 @@ export function CaptionStrip({
           <span aria-live="polite" className="sr-only">
             {text}
           </span>
-          <span ref={lineRef} aria-hidden className={cn("min-w-0 flex-1 overflow-hidden text-lead leading-8 font-medium whitespace-nowrap", grace ? "text-grace-ink" : "text-user-ink")}>
-            {cut ? `… ${words.slice(cut).join(" ")}` : text}
+          <span aria-hidden dir="rtl" className={cn("min-w-0 flex-1 overflow-hidden text-left text-lead leading-8 font-medium text-ellipsis whitespace-nowrap", grace ? "text-grace-ink" : "text-user-ink")}>
+            <span dir="ltr">{text}</span>
           </span>
         </>
       )}
