@@ -1,0 +1,20 @@
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
+export { SpeechRelayCoordinator } from "@elizaos/cloud/worker"
+import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud/worker"
+import { HttpServerResponse } from "effect/http"
+
+type GraceCloud = CloudBindings & { ASSETS?: { fetch(request: Request): Promise<Response> } }
+const cloud = cloudWorker<GraceCloud>()
+
+export default {
+  scheduled: cloud.scheduled,
+  async fetch(request: Request, env: GraceCloud) {
+    const url = new URL(request.url)
+    if (url.origin === env.WEB_ORIGIN && url.pathname === "/.well-known/assetlinks.json" && request.method === "GET") return nativeAssetLinks(env)
+    if (url.origin === env.WEB_ORIGIN && env.ASSETS && !url.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request)
+    }
+    if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
+    return cloud.fetch(request, env)
+  }
+}

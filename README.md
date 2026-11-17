@@ -1,8 +1,62 @@
-This checkout contains the Grace MVP specification rebuild. Start with the
-[product contract](spec/index.md), [requirements coverage](docs/requirements-coverage.md)
-and [validation status](docs/validation-status.md). The current phase specifies
-and verifies the product before application implementation. The Vibestack
-reference documentation follows.
+Grace is a tablet assistant with a Grace-owned interface, on-device agent and
+dedicated cloud. Start with the [product contract](spec/index.md), the
+[Eliza integration inventory and launch criteria](docs/implementation-acceptance.md)
+and the [validation record](docs/validation-status.md).
+
+## Run Grace Cloud
+
+Use Node 26, the repository's pinned pnpm, and PostgreSQL. Initialize the exact
+upstream commit before installing. The Worker imports the upstream cloud
+package. Grace supplies the origins, assets and provider bindings.
+
+```sh
+git submodule update --init vendor/eliza
+pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
+pnpm install --frozen-lockfile
+```
+
+Create an empty local PostgreSQL database for Grace and set its connection
+string as `DATABASE_URL` in the ignored file `apps/cloud/.dev.vars`.
+Initialize it and start the local Worker. Run Vite in a second terminal.
+
+```sh
+pnpm --filter @grace/cloud migrate
+pnpm --filter @grace/cloud dev
+# Second terminal
+pnpm --filter @repo/app dev
+```
+
+Open `http://localhost:5173` for Grace. The Worker serves
+`http://localhost:8787/health`. The upstream migration and the Worker read
+the database identity for the selected environment from the Grace Wrangler
+configuration. The migration refuses an occupied database on first install.
+
+| Capability | Deployment bindings and registration |
+| --- | --- |
+| Database | Set a dedicated Grace PostgreSQL connection as the Worker secret `DATABASE_URL`, or bind a dedicated Hyperdrive to `HYPERDRIVE`. Require TLS for a remote connection. Run the migration against the same direct PostgreSQL URL with `CLOUD_ENVIRONMENT=production`. |
+| Google sign-in | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Register the exact API callback `/api/auth/google/callback` on the chosen Google OAuth web client. |
+| Email and SMS | `RESEND_API_KEY`, a verified `EMAIL_FROM`, a random `EMAIL_CODE_SECRET` of at least 32 characters, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`, permitted country calling codes in `SMS_ALLOWED_COUNTRY_CODES`, and the deployment’s `SMS_HOURLY_BUDGET`. |
+| Gmail and Calendar | A new 32-byte hex `GOOGLE_CONNECT_TOKEN_KEY` for this deployment. Register `/api/v1/eliza/google/connect/callback`. Optional `GOOGLE_CONNECT_CLIENT_ID` and `GOOGLE_CONNECT_CLIENT_SECRET` select a separate OAuth client. Users choose read access explicitly. |
+| Subscriptions | Grace-owned Stripe secret and webhook signing secret, a recurring `STRIPE_PRICE_ID`, matching `STRIPE_PRODUCT_ID` and `STRIPE_PLAN` from the upstream catalog. Enable the hosted customer portal. Register the webhook at `https://api.graceforseniors.com/api/v1/billing/webhook` for checkout completion, subscription changes, paid invoices, refunds and dispute changes. The Worker verifies the event signature, retrieves the customer's current subscription and applies each paid invoice once. |
+| Inference | `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `CHAT_MODEL`, `EMBEDDING_MODEL`, `MAX_COMPLETION_TOKENS`, and actual provider rates in microdollars per 1,000 tokens (`CHAT_INPUT_MICROS_PER_1K`, `CHAT_OUTPUT_MICROS_PER_1K`, `EMBEDDING_INPUT_MICROS_PER_1K`). |
+| Speech | `CARTESIA_API_KEY`, `CARTESIA_VOICE_ID`, `SPEECH_DAILY_SESSION_LIMIT`, `SPEECH_STT_MICROS_PER_SECOND` and `SPEECH_TTS_MICROS_PER_CHARACTER`. Set these rates from the Grace provider contract. The deployment binds its own `SPEECH_RELAY_SESSIONS` Durable Objects. |
+| Android | Register the Grace app package, release signer SHA-256 fingerprint, HTTPS return URLs and credential lifetime in `NATIVE_CLIENT_REGISTRY`, and select its `NATIVE_CLIENT_ID`. The app host serves the resulting Digital Asset Links document. Only the native app receives the inference credential. |
+
+Google identity sign-in requests basic identity scopes. Managed Gmail asks for
+separate read-only mailbox access. In Google’s testing mode, the designated
+test users can consent to those scopes, with authorizations expiring after
+seven days. Production use of Gmail’s restricted read scope through the
+Worker requires Google verification and a security assessment.
+[Google sign-in](https://developers.google.com/identity/verification/authentication-policy-compliance)
+· [Testing limits](https://support.google.com/cloud/answer/15549945)
+· [Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes).
+
+The deployment targets `app.graceforseniors.com` for Grace and
+`api.graceforseniors.com` for its API. The marketing site retains the apex.
+Use `pnpm --filter @grace/cloud bundle` to build the UI and dry-run the Worker.
+The production command is `pnpm --filter @grace/cloud deploy` after the Grace
+database, Cloudflare bindings, provider registrations and launch journeys are ready.
+The reference documentation for Vibestack follows.
 
 <div align="center">
 

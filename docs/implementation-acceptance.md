@@ -13,6 +13,30 @@ new direction replaces is `superseded`, with what replaces it. The
 [requirements coverage](requirements-coverage.md) maps the specs to these
 ids in more detail.
 
+## Eliza integration inventory
+
+The previous Grace release pinned `grace/integration` at `9bd888f`.
+That commit included the embedded service, Google sign-in and speech changes
+from Eliza PRs #39795, #39789 and #39784. Eliza’s v4 branch changes package
+ownership and the mobile runtime. A portable Gradle host alone does not
+establish that an agent can start or complete a turn.
+
+| Grace caller | Previous source | Owner on Eliza vibestack | Evidence required for release |
+| --- | --- | --- | --- |
+| Browser URL entry and native page bridge | Eliza app internals and browser plugin definitions | OS address and native bridge contracts | Navigate and restore an actual tablet tab |
+| Launcher Wi-Fi and web surface | Legacy native Wi-Fi and browser-surface plugin Android directories | OS Android Wi-Fi and browser-surface modules | Install launcher, join a network, interact with a page |
+| APK and AOSP build | Legacy app build scripts, agent inventory and overlay tooling | OS Android consumer tooling and AOSP overlay | Build both flavors, inspect their payload, boot the launcher |
+| Ask Grace | Embedded agent service, assistant, Eliza Cloud and SQL plugins | Device-owned agent on core with bounded Grace actions, dedicated cloud inference and local conversation storage | Cold start, stream a reply, cancel, resume, sign out |
+| Sign-in and paid access | Integration branch Google enrollment and external pilot funding | Cloud identity, device grants, checkout, portal and current entitlement | Real Google, SMS and email sign-in, isolated account, payment-provider test subscription and revocation |
+| Managed Gmail and Calendar | Managed Google routes and the connector prototype | Cloud provider grants associated with the authenticated owner | Separate consent, owned mailbox/calendar, disconnect and expiry |
+| Voice | Legacy speech bridge and cloud relay | OS audio and cloud speech with account-bound admission | Renew or revoke a real speech session and hear a reply |
+| Grace screens | Grace React app, design system and UI library | Grace | Build the production Vite entry without an Eliza UI import |
+
+The agent policy in `apps/app/agent/policy.json` lists the previously loaded
+assistant, cloud inference and SQL plugins. The remaining names in its
+refusal list describe capabilities outside the tablet’s authority. Their
+presence in that list does not add them to the migration.
+
 ## Decisions and their defaults
 
 The plan that finishes the MVP applies these defaults until the owner says
@@ -21,11 +45,11 @@ otherwise.
 1. Upstream vibestack cache work: merge the two committed branches upstream
    with selftest green and re-sync Grace; copy the uncommitted set only when
    the owner says it is finished.
-2. Eliza pull requests: push one Grace integration branch to pin to and open
-   draft PRs into upstream develop. Until the owner agrees, the four upstream
-   packages are built and tested locally only.
-3. Upstream Eliza for the runtime: the legacy monorepo at the pin, with its
-   light embedded runtime service, not the resident service.
+2. Grace pins a published commit of Eliza’s `vibestack` branch. Upstream
+   changes go to that branch before the Grace gitlink advances.
+3. Grace owns the tablet UI, the cloud deployment, its PostgreSQL database,
+   provider credentials and product policy. Eliza owns the device agent,
+   core, native OS services and shared cloud implementation.
 4. What "all MVP requirements" includes: this delivery ends at a green full
    check, the release APK, every screen walked on the emulator against the
    test site and the staging cloud, and one run against the real model. A real
@@ -42,9 +66,9 @@ otherwise.
 8. The permission sheet: Gmail (read, send, move to Trash) and Google Calendar
    (read and change events). The calendar is her Google Calendar, cached on
    the tablet.
-9. An unfunded cloud account: pilot accounts are funded outside the app. The
-   tablet shows one state, "your account needs attention", with no purchase
-   screen.
+9. Pilot accounts can be funded outside the app. An unfunded account cannot
+   use inference. The account owner can open hosted subscription checkout or
+   manage an existing subscription from Grace’s account settings.
 10. Set-up: Wi-Fi, Sign in with Google (with "Not now"), her name, speaking
     pace and text size with a live preview, one sentence on what Grace does,
     practise Talk, Type, Close and reopen, then "What would you like to do?".

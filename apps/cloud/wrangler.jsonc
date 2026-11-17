@@ -1,0 +1,81 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "grace-cloud-local",
+  "main": "dist/src/worker.js",
+  "compatibility_date": "2026-11-17",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "PUBLIC_API_ORIGIN": "http://localhost:8787",
+    "WEB_ORIGIN": "http://localhost:5173",
+    "CLOUD_ENVIRONMENT": "staging",
+    "CLOUD_IDENTITY_DIGEST": "f62b08bc7eaf597030f5d4eb325c4a0be46433f117a00296863dad956620bc4b"
+  },
+  "env": {
+    "production": {
+      "name": "grace-cloud",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        {
+          "pattern": "api.graceforseniors.com",
+          "custom_domain": true
+        },
+        {
+          "pattern": "app.graceforseniors.com",
+          "custom_domain": true
+        }
+      ],
+      "assets": {
+        "directory": "../app/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+      },
+      "vars": {
+        "PUBLIC_API_ORIGIN": "https://api.graceforseniors.com",
+        "WEB_ORIGIN": "https://app.graceforseniors.com",
+        "NATIVE_AUTH_CALLBACK": "https://app.graceforseniors.com/android/auth/callback",
+        "CLOUD_ENVIRONMENT": "production",
+        "CLOUD_IDENTITY_DIGEST": "54d302ab7acb27c0a3b326e5bc4301d8963d5eac4e181da58598d4968f95c3ec"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SPEECH_RELAY_SESSIONS",
+            "class_name": "SpeechRelayCoordinator"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": [
+          "*/5 * * * *"
+        ]
+      }
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SPEECH_RELAY_SESSIONS",
+        "class_name": "SpeechRelayCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "speech-v1",
+      "new_sqlite_classes": [
+        "SpeechRelayCoordinator"
+      ]
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  }
+}
