@@ -477,21 +477,23 @@ Settings opens Account even without a network connection. The device uses
 the Grace service's authenticated account and subscription response. An
 account from another service, a checkout return, or a browser tab's sign-in
 does not establish a Grace session or an active subscription. If the check
-fails, offer to check again. Account details are private to the device UI.
+fails, offer to check again. Account details are private to the device UI. A current subscription never
+offers checkout. A previously registered customer may both manage their
+account and subscribe again when the service reports checkout is available.
 The web page shows the sign-in methods Grace offers. The Android app checks
 its own session and opens Grace's web account to manage the subscription.
 A web session authorizes a tablet only after the person confirms the tablet
 sign-in in the browser.
 
 ```quint
-type GracePlan = PlanUnknown | PlanInactive | PlanActive | PlanInactiveManaged | PlanActiveManaged
+type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
 type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
-  | GraceSignedIn(info) => info.plan == PlanInactive
+  | GraceSignedIn(info) => info.plan == PlanInactive or info.plan == PlanInactiveManagedCheckout
   | _ => false
 }
 pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
-  | GraceSignedIn(info) => info.plan == PlanInactiveManaged or info.plan == PlanActiveManaged
+  | GraceSignedIn(info) => info.plan == PlanInactiveManaged or info.plan == PlanInactiveManagedCheckout or info.plan == PlanActiveManaged
   | _ => false
 }
 pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup = { ...s, graceAccount: report, googleLink: link }
@@ -501,13 +503,18 @@ pure val reportValues: Set[GraceAccount] = Set(
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManagedCheckout }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveBlocked }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanUnknown }),
   GraceSignedIn({ accountId: "other", email: "", plan: PlanActive }),
   GraceSignedIn({ accountId: "other", email: "", plan: PlanActiveManaged })
 )
 pure val accountValues: Set[GraceAccount] = reportValues
-pure def lawCheckoutAndBillingPortalAreDistinct(account: GraceAccount): bool =
-  not(mayStartCheckout(account) and mayOpenBillingPortal(account))
+pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
+  match account {
+    | GraceSignedIn(info) => (info.plan == PlanActive or info.plan == PlanActiveManaged) implies not(mayStartCheckout(account))
+    | _ => true
+  }
 ```
 
 
@@ -520,8 +527,8 @@ names the Google address to connect. The cloud checks the confirmed Google
 identity against the Grace account and discloses only the resulting connection.
 
 ```quint
-type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str })
-pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com" }))
+type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool })
+pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true }))
 pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
   match account {
     | GraceSignedIn(_) => link == GoogleLinkReady
@@ -529,4 +536,39 @@ pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
   }
 pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
   not(mayOfferGoogleLink(GraceDeviceSignedIn, link))
+```
+
+
+## Story: Read the Google mail and calendar I connected
+
+> As a person using Grace, I can open my managed Google inbox or upcoming
+> calendar in Grace, including when I start from the tablet and sign in on
+> Grace's web page. I choose the message or appointment I want to open.
+
+### Managed reads show only the matching signed-in account and the capability it granted
+
+The hosted read views show the Inbox and upcoming primary calendar, with
+no send, archive, delete, or appointment changes. A message opens into a
+plain-text preview for the chosen reference, never executable HTML.
+A preview carries no authority to inspect attachments, reply or forward.
+The application checks the account bound to each provider result. A
+tablet's hosted handoff retains the selected view through sign-in, and
+uses the browser account matching that tablet when there is a bound owner.
+
+```quint
+type ManagedReadView = ManagedEmail | ManagedCalendar
+pure def mayReadManaged(account: GraceAccount, link: GoogleLink, view: ManagedReadView): bool =
+  match account {
+    | GraceSignedIn(_) => match link {
+      | GoogleLinkConnected(g) => if (view == ManagedEmail) g.mail else g.calendar
+      | _ => false
+    }
+    | _ => false
+  }
+pure def managedReadMatches(accountId: str, receiptAccountId: str, wanted: str, received: str): bool =
+  accountId != "" and accountId == receiptAccountId and wanted == received
+pure def lawADeviceSessionAloneDoesNotReadGoogle(link: GoogleLink, view: ManagedReadView): bool =
+  not(mayReadManaged(GraceDeviceSignedIn, link, view))
+pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: str, ref: str): bool =
+  accountId != receiptAccountId implies not(managedReadMatches(accountId, receiptAccountId, ref, ref))
 ```

@@ -4,7 +4,7 @@
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
@@ -482,5 +482,237 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
     host.remove();
+  }
+});
+
+it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+  const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
+  const token = "8".repeat(64);
+  const speechPath = "/api/v1/voice/speech";
+  const calls: string[] = [];
+  const voiceInput = "What time is it?";
+  const voiceOutput = "It is noon.";
+  let microphoneFrames = 0;
+  const phrases: string[] = [];
+  const microphone = new AudioContext({ sampleRate: 16_000 });
+  const source = microphone.createOscillator();
+  const inputMedia = microphone.createMediaStreamDestination();
+  source.connect(inputMedia);
+  source.start();
+  const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
+    await microphone.resume();
+    return inputMedia.stream;
+  });
+  const originalFetch = window.fetch.bind(window);
+  const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
+    const pathname = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+    if (!pathname.startsWith(speechPath)) return originalFetch(input, options);
+    calls.push(pathname);
+    if (pathname.endsWith("/consent")) return Response.json({ consentNonce: sessionId });
+    if (pathname.endsWith("/session")) {
+      expect(JSON.parse(String(options?.body))).toEqual({ consentNonce: sessionId });
+      return Response.json({
+        version: 1,
+        sessionId,
+        token,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        wsUrl: `ws://localhost:8787${speechPath}/ws?sessionId=${sessionId}`,
+      });
+    }
+    return Response.json({ revoked: true });
+  });
+  class FixtureSocket extends EventTarget {
+    readyState = 0;
+    bufferedAmount = 0;
+
+    constructor(url: string) {
+      super();
+      expect(new URL(url).pathname).toBe(speechPath + "/ws");
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.dispatchEvent(new Event("open"));
+      });
+    }
+
+    receive(payload: object | ArrayBuffer) {
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
+        data: payload instanceof ArrayBuffer ? payload : JSON.stringify(payload),
+      })));
+    }
+
+    send(value: string | ArrayBuffer) {
+      if (value instanceof ArrayBuffer) {
+        expect(value.byteLength % 2).toBe(0);
+        microphoneFrames += 1;
+        if (microphoneFrames === 1) {
+          this.receive({ t: "stt", event: { type: "start-of-turn", transcript: "" } });
+          this.receive({ t: "stt", event: { type: "end-of-turn", transcript: voiceInput } });
+        }
+        return;
+      }
+      const command = JSON.parse(value);
+      if (command.t === "hello") {
+        expect(command.token).toBe(token);
+        this.receive({ t: "ready", version: 1, sampleRate: 16000, channels: 1 });
+      } else if (command.t === "tts") {
+        phrases.push(command.text);
+        const id = new TextEncoder().encode(command.id);
+        const output = new Uint8Array(2 + id.length + 3200);
+        output[0] = 1;
+        output[1] = id.length;
+        output.set(id, 2);
+        this.receive(output.buffer);
+      } else if (command.t === "finish") {
+        this.receive({ t: "complete", id: command.id });
+      } else if (command.t === "stop") {
+        this.close();
+      }
+    }
+
+    close() {
+      if (this.readyState > 1) return;
+      this.readyState = 3;
+      queueMicrotask(() => this.dispatchEvent(new Event("close")));
+    }
+  }
+  vi.stubGlobal("WebSocket", FixtureSocket);
+  const listeners = new Map<string, (input: unknown) => void>();
+  const agent: EmbeddedAgent = {
+    getStatus: async () => ({ state: "running" }),
+    request: async () => ({ status: 201, data: { conversation: { id: "voice", roomId: "room" } } }),
+    requestStream: async ({ id, body }) => {
+      expect(body).toEqual({ text: voiceInput });
+      queueMicrotask(() => {
+        listeners.get("streamData")?.({ id, data: JSON.stringify({ type: "done", fullText: voiceOutput }) });
+        listeners.get("streamEnd")?.({ id, status: 200 });
+      });
+      return { id };
+    },
+    abort: async () => ({ aborted: true }),
+    addListener: async (event, listener) => {
+      listeners.set(event, listener);
+      return { remove: async () => { listeners.delete(event); } };
+    },
+  };
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  try {
+    const workspace = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get()));
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await expect.poll(() => workspace().device.reasoningAvailable).toBe(true);
+    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Allow mic" })));
+    await act(async () => {
+      await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+      await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
+      await expect.poll(() => inputMedia.stream.getAudioTracks()[0].readyState).toBe("ended");
+    });
+    expect(microphoneFrames).toBeGreaterThan(0);
+    expect(phrases).toEqual([voiceOutput]);
+    await expect.poll(() => calls).toEqual([speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"]);
+  } finally {
+    await act(() => Promise.resolve(root.unmount()));
+    await runtime.dispose();
+    await microphone.close();
+    host.remove();
+    request.mockRestore();
+    audio.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
+
+
+it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+  const person = { id: "private-qa-account", email: "reader@example.test" };
+  const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
+  const mail = { externalId: "inbox-1", from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true };
+  const literalText = "<strong>This stays plain text.</strong>";
+  const oldURL = window.location.href;
+  const oldIntent = sessionStorage.getItem("grace-hosted-read");
+  const hint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(person.id));
+  const ownerHint = Array.from(new Uint8Array(hint), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const url = new URL(oldURL);
+  url.hash = "email";
+  url.searchParams.set("owner_hint", ownerHint);
+  window.history.replaceState(undefined, "", url);
+
+  let signedIn = false;
+  let replyFromOwner = false;
+  const fetch = window.fetch.bind(window);
+  const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
+  const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
+    const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
+    switch (api.pathname) {
+      case "/api/auth/session": return reply({ account: signedIn ? person : null });
+      case "/api/auth/refresh": return reply({}, 401);
+      case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
+      case "/api/auth/email/send":
+        expect(options?.body).toBe(JSON.stringify({ email: person.email }));
+        return reply({});
+      case "/api/auth/email/verify":
+        expect(options?.body).toBe(JSON.stringify({ email: person.email, code: "123456" }));
+        signedIn = true;
+        return reply({ account: person });
+      case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
+      case "/api/v1/eliza/google/status":
+        return reply({
+          provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
+          identity: { email: person.email }, grantedCapabilities: ["google.gmail.triage", "google.calendar.read"],
+        });
+      case "/api/v1/eliza/gmail/triage": return reply({ accountId: person.id, messages: [mail], nextPageToken: null });
+      case "/api/v1/eliza/gmail/read":
+        expect(api.searchParams.get("messageId")).toBe(mail.externalId);
+        return reply({
+          accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
+          bodyText: replyFromOwner ? literalText : "Another person’s message",
+        });
+      case "/api/v1/eliza/calendar/feed":
+        expect(api.searchParams.get("timeMin")).not.toBeNull();
+        expect(api.searchParams.get("timeMax")).not.toBeNull();
+        return reply({
+          accountId: person.id, nextPageToken: null,
+          events: [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false }],
+        });
+      default: return fetch(input, options);
+    }
+  });
+
+  const runtime = ManagedRuntime.make(application(undefined));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  const tap = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  try {
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await tap("Go to Account");
+    await tap("Use email");
+    await act(() => userEvent.type(page.getByRole("textbox", { name: "Email address" }), person.email));
+    await tap("Send code");
+    await act(() => userEvent.type(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
+    await tap("Sign in");
+    await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+
+    await tap(/Your receipt/);
+    await expect.element(page.getByRole("alert")).toBeVisible();
+    expect(page.getByText("Another person’s message").query()).toBeNull();
+    replyFromOwner = true;
+    await tap(/Your receipt/);
+    await expect.element(page.getByText(literalText, { exact: true })).toBeVisible();
+    expect(document.querySelector("strong")?.textContent).not.toBe("This stays plain text.");
+
+    await tap("Back to Inbox");
+    await tap("Close Email");
+    await tap("Calendar");
+    await tap(/Dentist/);
+    await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
+  } finally {
+    await act(() => Promise.resolve(root.unmount()));
+    await runtime.dispose();
+    host.remove();
+    provider.mockRestore();
+    if (oldIntent === null) sessionStorage.removeItem("grace-hosted-read");
+    else sessionStorage.setItem("grace-hosted-read", oldIntent);
+    window.history.replaceState(undefined, "", oldURL);
   }
 });

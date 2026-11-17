@@ -2,15 +2,17 @@
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
 import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
-import { Exit } from "effect";
+import { Effect, Exit } from "effect";
 import { useRef } from "react";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
-import { useDraft, useKeyboardHeight, useWorkspace } from "./useApp.ts";
+import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
+import { useDraft, useKeyboardHeight, useRuntime, useWorkspace } from "./useApp.ts";
 
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, current } = useWorkspace();
+  const runtime = useRuntime();
   const { assistant, device } = workspace!;
   const conversation = assistant.conversation;
   const field = useRef<HTMLTextAreaElement>(null);
@@ -19,6 +21,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const keyboard = useKeyboardHeight();
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
+  const canTalk = mayOfferTalk(workspace!);
+  const talk = () => { void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
+  const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
+    : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
@@ -31,17 +37,17 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
         style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={
-          <GraceHeader expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
+          <GraceHeader pause={conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
+            onPause={() => interact({ tag: "PauseSpeech" })} onResume={() => interact({ tag: "ResumeSpeech" })}
+            expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
           <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
             quiet={!device.reasoningAvailable || conversation.turn === "Thinking"}
-            micUnavailable={device.microphoneAllowed ? undefined : device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now"}
-            onMicChange={(on) => {
-              if (!on) interact({ tag: "StopVoice" });
-              else if (can({ type: "talk" })) void send({ type: "talk" });
-            }}
+            micUnavailable={micUnavailable}
+            onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
+            onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}
             onFieldFocus={(event) => { field.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {

@@ -9,6 +9,7 @@ import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
+import { ManagedRead } from "./ManagedRead.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { Settings } from "./Settings.tsx";
@@ -140,7 +141,7 @@ function Screen() {
       {app && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title={app.name} icon={app.icon} closeLabel={`Close ${app.name}`} onClose={visit("Home").onClick}>
-            <EmptyState title={`Nothing in ${app.name} yet.`} />
+            {surface === "Email" || surface === "Calendar" ? <ManagedRead view={surface} /> : <EmptyState title={`Nothing in ${app.name} yet.`} />}
           </AppWindow>
         </OverPage>
       )}

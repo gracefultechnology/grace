@@ -8,7 +8,7 @@ import { webView } from "./surfacePlugin.ts"
 
 const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schema.NonEmptyString, email: Schema.NullOr(Schema.String) })) })
 schema Providers { google: boolean; email: boolean; sms: boolean }
-const Subscription = Schema.Struct({ status: Schema.Literals(["inactive", "active"]), canManage: Schema.Boolean })
+schema Subscription { status: "inactive" | "active"; canManage: boolean; canCheckout: boolean }
 schema Destination { url: string }
 schema DeviceApproval { redirectUrl: string }
 schema DeviceAttempt { challenge: string; state: string }
@@ -18,11 +18,12 @@ const GoogleStatus = Schema.Struct({
   mode: Schema.Literal("cloud_managed"),
   configured: Schema.Boolean,
   connected: Schema.Boolean,
+  grantedCapabilities: Schema.Array(Schema.String),
   identity: Schema.NullOr(Schema.Struct({ email: Schema.NonEmptyString })),
 })
 schema GoogleAuthorization { authorizeUrl: string }
 
-const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
+export const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
 const deviceAttemptKey = "grace-device-sign-in"
 const deviceChallenge = /^[A-Za-z0-9_-]{43}$/
 const deviceState = /^[A-Za-z0-9_-]{43,128}$/
@@ -93,8 +94,11 @@ effect function decode<A>(response: Response, decoder: Schema.Decoder<A>) {
   return try Schema.decodeUnknownEffect(decoder)(input)
 }
 
-const planFrom = ({ status, canManage }: typeof Subscription.Type): GracePlan =>
-  status === "active" ? (canManage ? "PlanActiveManaged" : "PlanActive") : (canManage ? "PlanInactiveManaged" : "PlanInactive")
+function planFrom({ status, canManage, canCheckout }: typeof Subscription.Type): GracePlan {
+  if (status === "active") return canManage ? "PlanActiveManaged" : "PlanActive"
+  if (canManage) return canCheckout ? "PlanInactiveManagedCheckout" : "PlanInactiveManaged"
+  return canCheckout ? "PlanInactive" : "PlanInactiveBlocked"
+}
 
 effect function session(transport: Transport) {
   const first = try decode(try accepted(transport, "/api/auth/session", "GET"), Session)
@@ -127,7 +131,10 @@ effect function googleLink(transport: Transport): GoogleLink!unknown {
   if (!status.configured) return { tag: "GoogleLinkUnavailable" }
   if (!status.connected) return { tag: "GoogleLinkReady" }
   if (status.identity === null) throw new AccountRequestFailed()
-  return { tag: "GoogleLinkConnected", email: status.identity.email }
+  return { tag: "GoogleLinkConnected", email: status.identity.email,
+    mail: status.grantedCapabilities.includes("google.gmail.triage"),
+    calendar: status.grantedCapabilities.includes("google.calendar.read"),
+  }
 }
 
 effect function connectGoogle(transport: Transport, operation: Extract<Operation, { kind: "connectGoogle" }>) {
