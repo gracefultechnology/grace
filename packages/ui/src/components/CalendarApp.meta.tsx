@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
+import { X } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { Banner } from "./Banner.tsx";
+import { Button } from "./Button.tsx";
 import type { CalendarAppProps, CalendarEventItem } from "./CalendarApp.tsx";
 import type { CalendarEventDetailProps } from "./CalendarEventDetail.tsx";
 import type { CalendarEventFormProps } from "./CalendarEventForm.tsx";
+import { CalendarGlyph } from "./CalendarIcon.tsx";
 import type { CalendarMonthDay } from "./CalendarMonth.tsx";
 import type { CalendarWeekDay } from "./CalendarWeekStrip.tsx";
 import { Rail } from "./Rail.tsx";
@@ -45,6 +49,25 @@ export const upcoming: CalendarEventItem[] = [
     where: "Linda’s salon",
   },
 ];
+const tags = ["Gmail", "Gmail", "On this tablet"];
+export const taggedUpcoming: CalendarEventItem[] = upcoming.map((item, i) => ({ ...item, tag: tags[i] }));
+const connect = fn();
+const notNow = fn();
+export const connectBanner = (
+  <Banner
+    icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />}
+    title="Connect your email to keep your calendar up to date"
+    line="Appointments from your email show up here automatically."
+    actions={
+      <>
+        <Button variant="capsule" size="compact" onClick={connect}>Connect email</Button>
+        <Button variant="plain" size="compact-icon" aria-label="Not now" onClick={notNow}>
+          <X aria-hidden size={22} strokeWidth={2} />
+        </Button>
+      </>
+    }
+  />
+);
 export const bridgeDraft: CalendarEventItem = {
   id: "9",
   title: "Bridge club",
@@ -180,6 +203,9 @@ export const meta: ComponentMeta<CalendarAppProps> = {
   examples: {
     Week: {},
     Month: { view: "month", nav: { period: "November 2026" } },
+    Tagged: { upcoming: taggedUpcoming },
+    "With connect banner": { banner: connectBanner },
+    "Month with connect banner": { view: "month", nav: { period: "November 2026" }, banner: connectBanner },
     Detail: { view: "detail" },
     Form: { view: "form" },
     "Form, picking a time": {
@@ -211,6 +237,13 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       await expect(openEvent).toHaveBeenCalledWith("1");
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
+    },
+    "With connect banner": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Connect email" }));
+      await expect(connect).toHaveBeenCalled();
+      await userEvent.click(canvas.getByRole("button", { name: "Not now" }));
+      await expect(notNow).toHaveBeenCalled();
     },
     "Form, saving": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
