@@ -6,6 +6,7 @@ import path from "node:path";
 import { parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
+import { stageRuntimePayload } from "../../../vendor/eliza/packages/os/android/android-runtime-inventory.mjs";
 import { buildAndroidConsumer } from "../../../vendor/eliza/packages/os/android/build-consumer.mjs";
 import { generateAndroidConsumerHost } from "../../../vendor/eliza/packages/os/android/consumer-host.mjs";
 import { readApkSignerDigest } from "../../../vendor/eliza/packages/os/android/apk-distribution.mjs";
@@ -95,12 +96,45 @@ const versionCode = (version: string) => {
   return Number(parts[1]) * 1e6 + Number(parts[2]) * 1e3 + Number(parts[3]);
 };
 
+const Commit = Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/));
+const NodeVersion = Schema.String.check(Schema.isPattern(/^26\.[0-9]+\.[0-9]+$/));
+const NodeToolchain = {
+  version: NodeVersion,
+  ndk: Schema.NonEmptyString,
+  apiLevel: Schema.Int.check(Schema.isGreaterThanOrEqualTo(29)),
+};
+const NodeManifest = Schema.Struct({ schema: Schema.Literal(1), abi: Abi, ...NodeToolchain });
+const NodeLock = Schema.Struct({ ...NodeToolchain, entries: Schema.Array(Schema.Struct({
+  abi: Abi, sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)), url: Schema.NonEmptyString,
+})) });
+const BundlePin = Schema.Struct({ schema: Schema.Literal(1), sourceCommit: Commit });
+
 function agentRuntime(abi: Abi) {
-  const commit = execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const payload = path.join(upstream, "packages/agent/dist/android", commit, abi);
-  if (!existsSync(path.join(payload, "android/app/src/main/assets/agent/inventory.json")))
-    throw new Error(`The pinned Eliza agent ${commit} has no staged Android runtime for ${abi} at ${payload}`);
-  return payload;
+  const commit = Schema.decodeUnknownSync(Commit)(execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim());
+  const output = path.join(artifacts, "agent-runtime", commit, abi);
+  const inventory = path.join(output, "android/app/src/main/assets/agent/inventory.json");
+  if (!existsSync(inventory)) {
+    const runtime = path.join(upstream, "packages/os/dist/android", abi);
+    const bundle = path.join(upstream, "packages/agent/dist/bundle");
+    const nodeLockFile = path.join(upstream, "packages/os/aosp/runtime/node.lock.json");
+    const runtimeFile = path.join(runtime, "libeliza_node.so");
+    const runtimeManifest = path.join(runtime, "manifest.json");
+    const bundleFile = path.join(bundle, "agent.mjs");
+    const bundleManifest = path.join(bundle, "manifest.json");
+    const missing = [runtimeFile, runtimeManifest, nodeLockFile, bundleFile, bundleManifest].filter((file) => !existsSync(file));
+    if (missing.length) throw new Error(`Pinned Eliza runtime ${commit} has missing Android inputs for ${abi}\n${missing.join("\n")}`);
+    const candidate = Schema.decodeUnknownSync(NodeManifest)(readJson(runtimeManifest));
+    if (candidate.abi !== abi) throw new Error("Eliza's Node runtime advertises a different ABI");
+    stageRuntimePayload({
+      runtime: { ...candidate, file: runtimeFile },
+      nodeLock: Schema.decodeUnknownSync(NodeLock)(readJson(nodeLockFile)),
+      bundle: bundleFile, bundleManifest, sourceCommit: commit, targetAbi: abi, output,
+    });
+  }
+  const manifest = path.join(path.dirname(inventory), "manifest.json");
+  if (Schema.decodeUnknownSync(BundlePin)(readJson(manifest)).sourceCommit !== commit)
+    throw new Error("The staged Android bundle belongs to another Eliza commit");
+  return output;
 }
 
 function writeAgentData() {
