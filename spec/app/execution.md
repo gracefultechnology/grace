@@ -15,7 +15,7 @@ The caller identity comes from the authenticated shell, separately from event JS
 ```quint
 type ExecutionActor = User | BrowserBridge | Planner | Dispatcher
 type OperationPhase = Idle | NeedObservation | Observed | Queued | InFlight | Verified | Blocked | Paused
-type OperationKind = ReadPage | Navigate | FillOrdinary | FillSignInIdentifier | PrivateEntry | FinalSubmit | ConsentChoice | UnknownControl
+type OperationKind = ReadPage | Navigate | Choose | FillOrdinary | FillSignInIdentifier | PrivateEntry | FinalSubmit | ConsentChoice | UnknownControl
 type Consequence = Routine | AskFirst | PersonOnly | Commit
 type Tapper = ByPerson | ByGrace
 type PageFact = { name: str, valueRef: str, quoteRef: str }
@@ -45,7 +45,7 @@ pure val initial: Execution = {
 pure val ownerValues = Set("owner", "")
 pure val taskValues = Set("task", "")
 pure val originValues = Set("https://utility.example", "https://credit.example", "")
-pure val targetValues = Set("control", "name-field", "password", "booking-frame", "other", "")
+pure val targetValues = Set("control", "name-field", "password", "submit", "booking-frame", "other", "")
 pure val valueRefValues = Set("value", "")
 pure val reasonValues = Set("unsupported", "changed", "")
 pure val expectedGenerationValues = Set(0, 1, 2, 3)
@@ -54,7 +54,8 @@ pure val goodObservation: ObservationReport = {
   owner: "owner", task: "task", origin: "https://utility.example", generation: 1, contextRef: "page-facts", originVerified: true, matchedAccount: "account", privateInput: false, redactionReady: true,
   facts: List({ name: "balance", valueRef: "balance-value", quoteRef: "balance-quote" }),
   targets: List({ id: "control", consequence: Routine, inReach: true }, { id: "name-field", consequence: AskFirst, inReach: true },
-    { id: "password", consequence: PersonOnly, inReach: true }, { id: "booking-frame", consequence: Routine, inReach: false })
+    { id: "password", consequence: PersonOnly, inReach: true }, { id: "submit", consequence: Commit, inReach: true },
+    { id: "booking-frame", consequence: Routine, inReach: false })
 }
 pure val observationReportValues = Set(
   { ...goodObservation, facts: List({ name: "confirmed", valueRef: "confirmation-value", quoteRef: "confirmation-quote" }) },
@@ -160,7 +161,7 @@ pure def alwaysObservedContextExists(x: Execution): bool =
 
 ### Each step has a consequence class, and Grace takes only the steps that are hers
 
-The bridge classifies every target it names, from the control itself and never from what the page says about it. A routine step (read, move on, an ordinary button or option) Grace may take. An ask-first step (filling in a detail) she takes only with the person's yes, which is the value reference: a value the person gave or a saved detail she approved for this site. A person-only step (a password, sign-in, a site's consent or permission) and a commit (money, booking, sending, deleting, changing) are tapped by the person; a commit Grace takes only through the [commitment](./payment.md) route. A target out of Grace's reach is tapped by the person whatever its class. A step Grace may not take is only pointed at.
+The bridge classifies every target it names, from the control itself and never from what the page says about it. A routine step (read, move on, an ordinary button or option) Grace may take. An ask-first step (filling in a detail) she takes only with the person's yes, which is the value reference: a value the person gave or a saved detail she approved for this site. A person-only step (a password, sign-in, a site's consent or permission) and a commit (money, booking, sending, deleting, changing) are tapped by the person; a commit Grace takes only through the commitment route, never this one. A target out of Grace's reach is tapped by the person whatever its class. A step Grace may not take is only pointed at.
 
 ```quint
 pure val noTarget: PageTarget = { id: "", consequence: PersonOnly, inReach: false }
@@ -177,7 +178,7 @@ pure def alwaysQueuedStepIsGraces(x: Execution): bool =
 
 ### Grace reads the page's main frame, and a step out of her reach is the person's
 
-Grace reads the main frame of the page. A control inside a frame from another site, a canvas or an image-only button is out of her reach, and the bridge names it as a target that is not in reach. When the step the task needs is out of her reach or is the person's to tap, the task stays with the person: Grace says so in one sentence, points at it where she can, and continues only on a fresh observation after the person acts. She never taps a guess.
+Grace reads the main frame of the page. A control inside a frame from another site, a canvas or an image-only button is out of her reach, and the bridge names it as a target that is not in reach. When the step the task needs is out of her reach or is the person's to tap, the task stays with the person: Grace says so in one sentence, points at it where she can, and continues only on a fresh observation after the person acts. She never taps a guess, and she sends no picture of the screen to read what she cannot.
 
 ```quint
 pure val forThePerson = "for the person"
@@ -192,10 +193,12 @@ pure def sometimesOutOfReachStepIsThePersons(x: Execution): bool =
 
 ### Only classified ordinary operations use the generic dispatch path
 
-Read and navigation may proceed as routine steps of the requested task. The step's target must be one the current observation names and Grace may take. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./payment.md) owns final-payment authorization. No site name appears in the policy.
+Read and navigation may proceed as routine steps of the requested task. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./payment.md) owns final-payment authorization. No site name appears in the policy.
+
+Choosing an option or pressing an ordinary button is a routine step too. Whatever the operation, its target must be one the current observation names and Grace may take, by the target's consequence class and reach.
 
 ```quint
-pure def ordinary(kind: OperationKind): bool = kind == ReadPage or kind == Navigate or kind == FillOrdinary or kind == FillSignInIdentifier
+pure def ordinary(kind: OperationKind): bool = kind == ReadPage or kind == Navigate or kind == Choose or kind == FillOrdinary or kind == FillSignInIdentifier
 pure def currentApproach(x: Execution): Approach = { contextRef: x.contextRef, target: x.target, valueRef: x.valueRef, kind: x.kind }
 pure def mayTryApproach(x: Execution, target: str, valueRef: str, kind: OperationKind): bool =
   x.failures < 2 or x.failedApproach != { contextRef: x.contextRef, target: target, valueRef: valueRef, kind: kind }
