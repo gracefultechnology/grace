@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "pnpm --dir ../../vendor/eliza gen && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud run build:worker && vibelang -p tsconfig.json",
+    "build": "pnpm --dir ../../vendor/eliza gen --owner cloud && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud run build:worker && vibelang -p tsconfig.json",
     "dev": "pnpm build && wrangler dev --local --port 8787",
     "bundle": "pnpm build && pnpm --filter @repo/app build && wrangler deploy --env production --dry-run --outdir .wrangler/bundle",
     "deploy": "pnpm build && pnpm --filter @repo/app build && wrangler deploy --env production",
