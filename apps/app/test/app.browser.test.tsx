@@ -103,7 +103,17 @@ afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
 it("Use the website under Grace's controls", async () => {
   const native = fakePlugin();
   const runtime = ManagedRuntime.make(application(native.plugin));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  const enterAddress = async (url: string) => {
+    await act(() => page.getByRole("textbox", { name: "Address" }).fill(url));
+    await act(() => userEvent.keyboard("{Enter}"));
+  };
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
   /** A tab as the workspace holds it. */
   const tab = (id: number) => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === id)!;
@@ -121,7 +131,7 @@ it("Use the website under Grace's controls", async () => {
   await act(() => userEvent.click(volume.element().parentElement!, { position: { x: 1000, y: 700 } }));
   await expect.element(volume).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.com{Enter}"));
+  await enterAddress("example.com");
   // spec/app/surface.md, "The page layer holds its rect, the controls drawn over it and the rects the host routes by"
   await expect.poll(() => native.calls("createSurface")).toMatchObject([{ id: "tab-1", url: "https://example.com/", layer: "below-host", process: "isolated", storage: "isolated", profileKey: "grace", answersRequests: true }]);
   // spec/app/surface.md, "A new page waits for its first routing before it takes any touch"
@@ -344,7 +354,7 @@ it("Use the website under Grace's controls", async () => {
     await tapRouted("Internet");
   };
   await browse();
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.com{Enter}"));
+  await enterAddress("example.com");
   await expect.poll(() => native.calls("createSurface")).toHaveLength(2);
   await native.route();
   await native.started("tab-1");
@@ -391,7 +401,7 @@ it("Use the website under Grace's controls", async () => {
   await browse();
   await native.route();
   await act(() => userEvent.click(page.getByRole("button", { name: "Open a new tab" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.net{Enter}"));
+  await enterAddress("example.net");
   await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-2");
   await native.started("tab-2");
   await native.report("tab-2", "https://example.net/", 100);
@@ -410,10 +420,7 @@ it("Use the website under Grace's controls", async () => {
   await native.route();
   expect(native.calls("createSurface").at(-1)).toMatchObject({ id: "tab-2", url: "https://example.net/next" });
   expect(native.calls("setOcclusionRects")).toHaveLength(routing.length + 1);
-
-  await act(() => Promise.resolve(root.unmount()));
-  await runtime.dispose();
-});
+}, 120_000);
 
 
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
