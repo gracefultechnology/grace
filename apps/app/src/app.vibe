@@ -73,7 +73,9 @@ const signInPage = Layer.sync(SignInPage, () => {
   }
 })
 
-const mail = (cloud: CloudLink | undefined) => cloud === undefined ? Layer.empty : Layer.provide(reading, Layer.provide(connector(cloud), signInPage))
+const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
+
+const mail = (cloud: CloudLink | undefined) => cloud === undefined ? Layer.empty : Layer.provide(reading, Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced))
 
 /** Everything the interface runs on, over `plugin`, the native page's, `wifi`, where the platform has them, and `cloud`, where Grace's agent answers. */
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, cloud?: CloudLink) {
