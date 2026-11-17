@@ -35,12 +35,14 @@ type Point = { x: int, y: int }
 type PageLayer = {
   shown: bool, hostVisible: bool, page: Rect, drawn: List[Rect],
   routed: List[Rect], requested: List[Rect],
-  routingReady: bool, pending: bool, version: int
+  routingReady: bool, pending: bool, version: int,
+  keyboard: int, reclaimed: Set[int]
 }
 pure val noRect: Rect = { x: 0, y: 0, width: 0, height: 0 }
 pure val initial: PageLayer = {
   shown: false, hostVisible: true, page: noRect, drawn: List(), routed: List(), requested: List(),
-  routingReady: false, pending: false, version: 0
+  routingReady: false, pending: false, version: 0,
+  keyboard: 0, reclaimed: Set()
 }
 pure def covers(r: Rect, p: Point): bool =
   p.x >= r.x and p.y >= r.y and p.x < r.x + r.width and p.y < r.y + r.height
@@ -121,14 +123,17 @@ pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
 
 Expanded Grace covers the page, so the page is paused rather than drawn
 beneath it; compact Grace and popovers are drawn over a shown page. Hiding
-keeps the page, its history and its scroll. The layer holds no shell or
-assistant of its own: each `show` takes its shown state from `pageShows` of
-the shell and assistant the interface reports, so the layer is only as
-current as the last `show`. The interface therefore sends `show` whenever
-the device or the assistant changes so that `pageShows` differs from what
-the layer holds (`reconcile` in `apps/app/src/page.vibe`, run after every
-workspace change). A page shown for a covered shell or assistant takes no
-touch.
+keeps the page, its history and its scroll. `pageShows` is the one
+definition of the page being shown, and the layer's `shown` is the one copy
+of it: each `show` takes it from `pageShows` of the shell and assistant the
+interface reports, so the layer is only as current as the last `show`. The
+interface therefore sends `show` whenever the device or the assistant
+changes so that `pageShows` differs from what the layer holds (`reconcile`
+in `apps/app/src/page.vibe`, run after every workspace change). Everything
+else that asks whether the page is shown, the native pages and the website
+requests among them, reads it from the layer through `shown` or `pageRuns`
+and never derives it again. A page shown for a covered shell or assistant
+takes no touch.
 
 ```quint
 pure def pageShows(s: S::Shell, a: A::Assistant): bool =
@@ -174,6 +179,22 @@ pure def stepRoutingFollowsAcknowledgement(before: PageLayer, via: str, after: P
 pure val pageValues = Set({ x: 0, y: 0, width: 100, height: 100 }, { x: 0, y: 20, width: 100, height: 40 })
 ```
 
+### The keyboard's height is the host's report, held by the layer
+
+Android's keyboard, whether for Grace's composer or a website's field,
+covers the bottom of the screen. The host reports its height in whole CSS
+pixels each time it changes, zero when it closes; the interface lifts
+Grace's windows and measures the page rect from this value alone, never
+from a copy of its own. Opening or closing the keyboard changes no routing.
+
+```quint
+pure def canReportKeyboard(l: PageLayer, height: int): bool = height >= 0 and height != l.keyboard
+pure def reportKeyboard(l: PageLayer, height: int): PageLayer = { ...l, keyboard: height }
+pure def alwaysKeyboardHeightIsNonnegative(l: PageLayer): bool = l.keyboard >= 0
+pure def sometimesKeyboardOverTheShownPage(l: PageLayer): bool = l.shown and l.keyboard > 0
+pure val heightValues = Set(0, 280, 320)
+```
+
 ### A new page waits for its first routing before it takes any touch
 
 A renderer crash or a recreated surface starts again from no routing, so an
@@ -187,4 +208,42 @@ pure def recreate(l: PageLayer): PageLayer = {
   routingReady: false, pending: false, version: l.version + 1
 }
 pure def sometimesRecreatedPageWaits(l: PageLayer): bool = l.shown and not(l.routingReady) and l.version > 0
+```
+
+### A page Android reclaims behind another tab waits until its tab is selected
+
+Every tab with an address keeps a native page of its own, paused while it
+is not selected, so a tab Grace opens in the background loads at once.
+When Android takes back the page of a tab that is not selected, to free
+memory, the tab stays without a page until the person selects it, and then
+loads again at its address: reloading it at once would ask for the same
+memory, spend her connection on a page she is not looking at and repeat
+what the page did when it loaded. A closed tab is forgotten. When Android
+rebuilds Grace's own interface every page is closed and the layer starts
+again from `initial`: that is a restart, which the shell tells her in one
+plain sentence, and no page is reopened behind her.
+
+```quint
+pure def canReclaim(l: PageLayer, tab: int, selected: int): bool =
+  tab >= 0 and tab != selected and not(l.reclaimed.contains(tab))
+pure def reclaim(l: PageLayer, tab: int, selected: int): PageLayer = {
+  ...l, reclaimed: l.reclaimed.union(Set(tab))
+}
+pure def canReopen(l: PageLayer, tab: int, selected: int): bool = l.reclaimed.contains(tab) and tab == selected
+pure def reopen(l: PageLayer, tab: int, selected: int): PageLayer = {
+  ...l, reclaimed: l.reclaimed.exclude(Set(tab))
+}
+pure def canForget(l: PageLayer, tab: int): bool = l.reclaimed.contains(tab)
+pure def forget(l: PageLayer, tab: int): PageLayer = { ...l, reclaimed: l.reclaimed.exclude(Set(tab)) }
+pure def pageWanted(l: PageLayer, tab: int, selected: int, address: str): bool =
+  address != "" and (tab == selected or not(l.reclaimed.contains(tab)))
+pure def lawReclaimedPageWaitsForItsTab(l: PageLayer, tab: int, selected: int, address: str): bool =
+  (l.reclaimed.contains(tab) and tab != selected) implies not(pageWanted(l, tab, selected, address))
+pure def lawSelectedTabWithAnAddressHasAPage(l: PageLayer, tab: int, address: str): bool =
+  address != "" implies pageWanted(l, tab, tab, address)
+pure def alwaysReclaimedTabsAreTabs(l: PageLayer): bool = l.reclaimed.forall(t => t >= 0)
+pure def sometimesBackgroundPageReclaimed(l: PageLayer): bool = l.reclaimed.size() > 0
+pure val tabValues = Set(0, 1, 2)
+pure val selectedValues = Set(0, 1)
+pure val addressValues = Set("", "https://example.org/")
 ```
