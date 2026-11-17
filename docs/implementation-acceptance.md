@@ -81,6 +81,22 @@ installs. Stripe, Google and speech used network fixtures. Android
 installation, live Google consent, paid checkout and a real microphone
 session still require separate launch evidence.
 
+On November 17, 2026 the Grace Worker went live on
+[the app host](https://app.graceforseniors.com) and
+[the API host](https://api.graceforseniors.com/health).
+The public readiness check reached Grace’s production PostgreSQL database
+through Hyperdrive. An authorized sign-in email reached the recipient’s Gmail
+inbox. Its ten-minute challenge expired before redemption. The Worker and a
+real PostgreSQL instance also exercised browser-bound Blooio SMS codes with
+simulated delivery, concurrent redemption and previously issued Twilio
+challenges. Live SMS awaits an approved Grace sender.
+
+Grace selected the existing Eliza OAuth client for both sign-in and managed
+Google access. The two callbacks need registration on that client. The legacy
+Grace repository has an established release certificate for
+`technology.graceful.grace`. The production Android registry uses its SHA-256
+fingerprint. The release signing material stays in its existing custody.
+
 ## Decisions and their defaults
 
 The plan that finishes the MVP applies these defaults until the owner says

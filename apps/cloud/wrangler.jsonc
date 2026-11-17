@@ -50,7 +50,9 @@
         "CHAT_OUTPUT_MICROS_PER_1K": "3200",
         "EMBEDDING_INPUT_MICROS_PER_1K": "67",
         "MAX_COMPLETION_TOKENS": "2048",
-        "EMAIL_FROM": "signin@auth.graceforseniors.com"
+        "EMAIL_FROM": "signin@auth.graceforseniors.com",
+        "SMS_ALLOWED_COUNTRY_CODES": "+1",
+        "SMS_HOURLY_BUDGET": "300"
       },
       "durable_objects": {
         "bindings": [
