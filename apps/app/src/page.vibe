@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"
 import { type Rect, Machine as PageLayers, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
 import { type Tab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canChangePage, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
@@ -79,7 +79,7 @@ type Page = { tab: Tab; url: string; load: number | undefined; asked: { version:
 type Request = { page: PageId; key: RequestKey }
 
 data Signal {
-  Changed
+  Measured
   Followed { workspace: Workspace }
   Heard { event: PageEvent }
   Person { event: WebsiteEvent }
@@ -107,21 +107,11 @@ effect function present(native: NativePage.Shape, pages: ReadonlyMap<PageId, Pag
   return id
 }
 
-export const pageHost = Layer.effect(PageHost, effect {
-  const workspace = try Workspaces
-  const layer = try PageLayers
-  const native = try NativePage
-  const requests = try WebsiteRequests
-  const scope = try Scope.Scope
-  const asked = new Map<number, Request>()
-  const said = new Map<number, string>()
-  const forget = (id: number) => { asked.delete(id); said.delete(id) }
-  const saving = new Map<number, Request>()
-  const signals = try Queue.unbounded<Signal>()
-  const pages = new Map<PageId, Page>()
+effect function watchPage(layer: PageLayers.Shape, onMeasured: () => void!!) {
   const controls = new Map<HTMLElement, Control>()
   let area: HTMLElement | undefined = undefined
   let stripWidth = 0
+  let measured: Measured = { page: noRect, corners: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 }, controls: [] }
   const frames = Experimental.Animations.make({
     requestAnimationFrame: (callback) => webView.window.requestAnimationFrame(callback),
     cancelAnimationFrame: (id) => webView.window.cancelAnimationFrame(id),
@@ -136,6 +126,19 @@ export const pageHost = Layer.effect(PageHost, effect {
     remeasure()
   })
   try addFinalizer(() => sync(() => { resized.disconnect(); stripResized.disconnect() }))
+  const moves = ["resize", "transitionend", "transitioncancel", "animationend"].map((name) => Stream.fromEventListener(webView.window, name, { capture: true }))
+  try fork.scoped Stream.runForEach(Stream.mergeAll(moves, { concurrency: "unbounded" }), () => sync(remeasure))
+  try fork.scoped Stream.runForEach(Stream.changesWith(Stream.map(layer.changes, (l) => l.drawn), sameRects), () => sync(remeasure))
+  try fork.scoped effect {
+    while (true) {
+      try Queue.takeAll(moved)
+      try frames.nextFrame
+      try Queue.clear(moved)
+      measured = measure(area, controls, (try layer.get()).drawn, measured)
+      try onMeasured()
+    }
+  }
+
   function watch(element: HTMLElement, part: Part) {
     switch (part._tag) {
       case "Area": {
@@ -160,17 +163,72 @@ export const pageHost = Layer.effect(PageHost, effect {
     resized.unobserve(element)
     stripResized.unobserve(element)
   }
+
+  return {
+    get measured() { return measured },
+    get stripWidth() { return stripWidth },
+    follow: (drawn: Rect[]) => follow(controls, drawn),
+    effect watch(element: HTMLElement, part: Part) {
+      watch(element, part)
+      remeasure()
+    },
+    effect unwatch(element: HTMLElement) {
+      unwatch(element)
+      measured = { ...measured, controls: placedRects(controls) }
+      remeasure()
+    }
+  }
+}
+
+effect function report(workspace: Workspaces.Shape, event: Event) {
+  workspace.send(event, "Host") catch effect (error) => match (error) {
+    when Rejected: undefined;
+  }
+}
+
+effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth: number) {
+  if (stripWidth <= 0) return
+  const resize: BrowserInput = { tag: "ResizeTabs", revision: w.browser.revision, capacity: Math.max(1, Math.floor((stripWidth - STRIP_SPARE) / TAB_WIDTH)) }
+  if (resize.capacity !== w.browser.capacity && canChangePage(w, resize, "Host")) try report(workspace, { type: "changePage", browserInput: resize })
+}
+
+effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
+  const went = event.url !== undefined && event.url !== "" && event.url !== page.url
+  if (went) page.url = event.url ?? page.url
+  const before = try workspace.get()
+  const shown = before.browser.tabs.find((t) => t.id === tab)
+  if (went && shown !== undefined && shown.load !== "Loading" && page.url !== tabUrl(shown)) {
+    const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: page.url }
+    try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
+  }
+  const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
+  if (now === undefined) return
+  if (went && page.url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1)?.version === now.loadVersion)) {
+    page.load = now.loadVersion
+    page.asked = []
+  }
+  if (!event.loading && now.load === "Loading" && page.load === now.loadVersion)
+    try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result } })
+}
+
+export const pageHost = Layer.effect(PageHost, effect {
+  const workspace = try Workspaces
+  const layer = try PageLayers
+  const native = try NativePage
+  const requests = try WebsiteRequests
+  const scope = try Scope.Scope
+  const asked = new Map<number, Request>()
+  const said = new Map<number, string>()
+  const forget = (id: number) => { asked.delete(id); said.delete(id) }
+  const saving = new Map<number, Request>()
+  const signals = try Queue.unbounded<Signal>()
+  const pages = new Map<PageId, Page>()
+  const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Measured()))
   let followed = try workspace.get()
-  let measured: Measured = { page: noRect, corners: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 }, controls: [] }
   let presented: PageId | null | undefined = null
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
 
-  effect function report(event: Event) {
-    workspace.send(event, "Host") catch effect (error) => match (error) {
-      when Rejected: undefined;
-    }
-  }
   effect function website(event: WebsiteEvent, by: WebsiteActor) {
     const result = requests.send(event, by) catch (error) => match (error) {
       when RequestRejected: undefined;
@@ -193,7 +251,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
     forget(reply.request)
     const done = Effect.as(native.reply({ id: request.page, key: request.key, ask: reply.ask, answer: reply.answer, text: reply.text }), true) catch effect (cause) => {
-      try warn("reply", request.page, cause)
+      if (reply.answer === "SaveDownload" || opensElsewhere(reply.answer) || reply.answer === "Allowed") try warn("reply", request.page, cause)
       return false
     }
     if (reply.answer === "SaveDownload") {
@@ -211,7 +269,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   }
 
   effect function place(id: PageId) {
-    native.place(id, measured.page, measured.corners) catch effect (cause) => try warn("place", id, cause)
+    native.place(id, measurer.measured.page, measurer.measured.corners) catch effect (cause) => try warn("place", id, cause)
   }
 
   effect function unsaved(page: PageId | undefined) {
@@ -260,11 +318,11 @@ export const pageHost = Layer.effect(PageHost, effect {
   effect function step(page: Page, tab: Tab) {
     const id = pageOf(tab.id)
     if (page.load === tab.loadVersion) { page.tab = tab; return }
-    const step = sameHistory(tab, page.tab) ? Math.sign(tab.cursor - page.tab.cursor) : undefined
-    if (step !== undefined && step !== 0 && page.asked.length > 0) return
-    const to = step !== undefined && page.tab.cursor + step !== tab.cursor ? { ...tab, cursor: page.tab.cursor + step, loadVersion: -1 } : tab
-    const command = step === -1 ? native.back(id) : step === 1 ? native.forward(id) : step === 0 ? native.reload(id) : native.navigate(id, tabUrl(tab))
-    page.asked.push({ version: to.loadVersion, url: step === 0 ? page.url : tabUrl(to) })
+    const direction = sameHistory(tab, page.tab) ? Math.sign(tab.cursor - page.tab.cursor) : undefined
+    if (direction !== undefined && direction !== 0 && page.asked.length > 0) return
+    const to = direction !== undefined && page.tab.cursor + direction !== tab.cursor ? { ...tab, cursor: page.tab.cursor + direction, loadVersion: -1 } : tab
+    const command = direction === -1 ? native.back(id) : direction === 1 ? native.forward(id) : direction === 0 ? native.reload(id) : native.navigate(id, tabUrl(tab))
+    page.asked.push({ version: to.loadVersion, url: direction === 0 ? page.url : tabUrl(to) })
     page.tab = to
     command catch effect (cause) => { try warn("follow", id, cause); try close(tab.id) }
   }
@@ -283,32 +341,26 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
 
-  effect function resizeTabs(w: Workspace) {
-    if (stripWidth <= 0) return
-    const resize: BrowserInput = { tag: "ResizeTabs", revision: w.browser.revision, capacity: Math.max(1, Math.floor((stripWidth - STRIP_SPARE) / TAB_WIDTH)) }
-    if (resize.capacity !== w.browser.capacity && canChangePage(w, resize, "Host")) try report({ type: "changePage", browserInput: resize })
-  }
-
   effect function reconcile() {
     while (true) {
       try syncTabs(followed)
-      try resizeTabs(try workspace.get())
+      try resizeTabs(workspace, try workspace.get(), measurer.stripWidth)
       const w = try workspace.get()
       let l = try layer.get()
-      if (canPlace(l, measured.page)) {
-        l = try Effect.orDie(layer.send({ type: "place", page: measured.page }))
+      if (canPlace(l, measurer.measured.page)) {
+        l = try Effect.orDie(layer.send({ type: "place", page: measurer.measured.page }))
         for (const id of pages.keys()) try place(id)
       }
       const visible = pageShows(w.device, w.assistant)
       if (canShow(l, w.device, w.assistant)) l = try Effect.orDie(layer.send({ type: "show", s: w.device, a: w.assistant }))
       presented = try present(native, pages, paused, presented, visible ? w.browser.selected : undefined, pageRuns(l))
       try syncRequests()
-      const drawable = measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
+      const drawable = measurer.measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
       if (canDraw(l, drawable)) {
         l = try Effect.orDie(layer.send({ type: "draw", rects: drawable }))
-        follow(controls, l.drawn)
+        measurer.follow(l.drawn)
       }
-      const wanted = measured.controls
+      const wanted = measurer.measured.controls
       const settled = l.routingReady && within(l.routed, wanted) && within(wanted, l.routed)
       if (l.pending || settled || !canRequestRouting(l, wanted)) return
       const routing = try Effect.orDie(layer.send({ type: "requestRouting", rects: wanted }))
@@ -341,25 +393,6 @@ export const pageHost = Layer.effect(PageHost, effect {
     try website({ type: "pageStarted", tab }, "WebsiteHost")
   }
 
-  effect function changed(page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
-    const moved = event.url !== undefined && event.url !== "" && event.url !== page.url
-    if (moved) page.url = event.url ?? page.url
-    const before = try workspace.get()
-    const shown = before.browser.tabs.find((t) => t.id === tab)
-    if (moved && shown !== undefined && shown.load !== "Loading" && page.url !== tabUrl(shown)) {
-      const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: page.url }
-      try report(canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
-    }
-    const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
-    if (now === undefined) return
-    if (moved && page.url === tabUrl(now) && (page.asked.length === 0 || page.asked.at(-1)?.version === now.loadVersion)) {
-      page.load = now.loadVersion
-      page.asked = []
-    }
-    if (!event.loading && now.load === "Loading" && page.load === now.loadVersion)
-      try report({ type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result } })
-  }
-
   effect function hear(event: PageEvent) {
     const page = pages.get(event.id)
     if (page === undefined) return
@@ -368,7 +401,7 @@ export const pageHost = Layer.effect(PageHost, effect {
       case "Crashed": return try close(tab)
       case "Started": return try started(page, tab, event.url)
       case "Asked": return try raise(tab, event)
-      case "Changed": return try changed(page, tab, event)
+      case "Changed": return try changed(workspace, page, tab, event)
       case "Downloaded": {
         const id = numberOf(saving, event.id, event.key)
         if (id === undefined) return
@@ -389,7 +422,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function apply(signal: Signal) {
     switch (signal._tag) {
-      case "Changed": return
+      case "Measured": return
       case "Followed": return try syncTabs(signal.workspace)
       case "Heard": return try hear(signal.event)
       case "Person": {
@@ -420,18 +453,6 @@ export const pageHost = Layer.effect(PageHost, effect {
   try fork.scoped Stream.runForEach(workspace.changes, (w) => Queue.offer(signals, Signal.Followed({ workspace: w })))
   try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
   try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
-  const moves = ["resize", "transitionend", "transitioncancel", "animationend"].map((name) => Stream.fromEventListener(webView.window, name, { capture: true }))
-  try fork.scoped Stream.runForEach(Stream.mergeAll(moves, { concurrency: "unbounded" }), () => sync(remeasure))
-  try fork.scoped Stream.runForEach(Stream.changesWith(Stream.map(layer.changes, (l) => l.drawn), sameRects), () => sync(remeasure))
-  try fork.scoped effect {
-    while (true) {
-      try Queue.takeAll(moved)
-      try frames.nextFrame
-      try Queue.clear(moved)
-      measured = measure(area, controls, (try layer.get()).drawn, measured)
-      try Queue.offer(signals, Signal.Changed())
-    }
-  }
   try fork.scoped effect {
     while (true) {
       for (const signal of try Queue.takeAll(signals)) try apply(signal)
@@ -447,14 +468,7 @@ export const pageHost = Layer.effect(PageHost, effect {
       try Queue.offer(signals, Signal.ClosedBrowser())
     },
     said,
-    effect watch(element: HTMLElement, part: Part) {
-      watch(element, part)
-      remeasure()
-    },
-    effect unwatch(element: HTMLElement) {
-      unwatch(element)
-      measured = { ...measured, controls: placedRects(controls) }
-      remeasure()
-    }
+    watch: measurer.watch,
+    unwatch: measurer.unwatch
   }
 })

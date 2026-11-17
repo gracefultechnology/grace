@@ -1,4 +1,4 @@
-// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
+// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, NewTabPage } from "@repo/ui";
 import type { ComponentProps } from "react";
 import type { BrowserInput } from "../gen/app__browserControls.ts";
@@ -63,7 +63,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
       }
       toolbar={
         <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={address !== ""}
-          reloadable={offered({ tag: "Reload" })} onReload={() => edit({ tag: "Reload" })}
+          reloadable={active !== undefined && tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} onGo={go}>
           <AddressBar value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
