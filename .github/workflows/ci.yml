@@ -22,6 +22,7 @@ concurrency:
 
 env:
   TURBO_TELEMETRY_DISABLED: "1"
+  GRACE_BILLWORLD_REVISION: f335b651f9820c3454f447e3d4722b78c5298a0b
 
 permissions:
   contents: read
@@ -31,6 +32,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.billworld
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,7 +44,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: gracefultechnology/billworld
-          ref: f335b651f9820c3454f447e3d4722b78c5298a0b
+          ref: ${{ env.GRACE_BILLWORLD_REVISION }}
           path: .cache/billworld
           persist-credentials: false
       - run: pnpm gen
@@ -47,14 +52,102 @@ jobs:
         env:
           GRACE_BILLWORLD_DIR: ${{ github.workspace }}/.cache/billworld
           GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet
+          GRACE_BILLWORLD_SHARD: ${{ matrix.shard }}
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
         run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: billworld-browser-receipts
+          name: billworld-browser-receipts-${{ matrix.shard }}
           path: ${{ runner.temp }}/grace-fleet
+          if-no-files-found: error
+  billworld-aggregate:
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.billworld
+    needs: billworld
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: billworld-browser-receipts-*
+          path: ${{ runner.temp }}/grace-fleet-shards
+      - name: Verify all 100 independently graded browser receipts
+        env:
+          GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet-shards
+          GRACE_BILLWORLD_MATRIX_RESULT: ${{ needs.billworld.result }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          root = Path(os.environ["GRACE_BILLWORLD_RESULTS"])
+          revision = os.environ["GRACE_BILLWORLD_REVISION"]
+          cohort = None
+          verified = {}
+
+          def load(path):
+              if not path.is_file():
+                  raise SystemExit(f"Missing Fleet receipt {path}")
+              return json.loads(path.read_text())
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          for shard in range(1, 5):
+              manifests = list((root / f"billworld-browser-receipts-{shard}").rglob("cohort.json"))
+              require(len(manifests) == 1, f"Expected one Fleet cohort manifest for shard {shard}")
+              manifest = load(manifests[0])
+              require(
+                  (manifest["revision"], manifest["shard"], manifest["shardCount"]) == (revision, shard, 4),
+                  f"Wrong Fleet revision or shard metadata for shard {shard}",
+              )
+              tasks = manifest["cohort"]
+              ids = [task["taskId"] for task in tasks]
+              require(len(ids) == len(set(ids)) == 100, "Fleet manifest must declare 100 unique billers")
+              identity = [
+                  (task["taskId"], task["template"], task["evidence"], urlsplit(task["startUrl"])[2:], urlsplit(task["expected"])[2:])
+                  for task in tasks
+              ]
+              if cohort is None:
+                  cohort = identity
+              require(identity == cohort, f"Fleet cohort differs on shard {shard}")
+              assigned = {task["taskId"]: task for task in tasks[shard - 1::4]}
+              directory = manifests[0].parent
+              scores = load(directory / "scores.json")
+              require(
+                  (scores["revision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
+                   scores["attempted"], scores["total"], scores["passed"]) == (revision, shard, 4, 100, 25, 25, 25),
+                  f"Incomplete or failed Fleet score for shard {shard}",
+              )
+              require(set(scores["cases"]) == set(assigned), f"Wrong case membership on shard {shard}")
+              for task_id, task in assigned.items():
+                  require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
+                  receipt = load(directory / f"{task_id}.json")
+                  grade = receipt["grade"]
+                  require(task_id not in verified and scores["cases"][task_id] is True and
+                          receipt["taskId"] == task_id and receipt["startUrl"] == task["startUrl"] and
+                          receipt["decisionProvider"] == "hosted" and receipt["decisionRequests"] > 0 and
+                          receipt["outcome"]["ringTap"] is True and not receipt["outcome"].get("failure") and
+                          grade["passed"] is True and grade["visible"] is True and
+                          grade["expected"] == grade["destination"] == task["expected"] != task["startUrl"],
+                          f"Duplicate or failed Fleet browser receipt for {task_id}")
+                  verified[task_id] = shard
+
+          require(len(verified) == 100, "Expected 100 distinct verified Fleet browser receipts")
+          require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
+          (root / "qualification.json").write_text(json.dumps(
+              {"revision": revision, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
+          ) + "\n")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+              summary.write("Verified **100 of 100** distinct Fleet billers across four shards.\n")
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: billworld-browser-qualification
+          path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
           if-no-files-found: error
   verify:
     runs-on: ubuntu-latest

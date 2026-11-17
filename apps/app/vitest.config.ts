@@ -26,9 +26,11 @@ const BenchmarkDefinition = Schema.Struct({
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
+if (process.env.GRACE_BILLWORLD_SHARD !== undefined && !process.env.GRACE_BILLWORLD_DIR)
+  throw new Error("GRACE_BILLWORLD_SHARD requires GRACE_BILLWORLD_DIR");
 const host: NodeJS.Process & { graceFleet?: ReturnType<typeof fleetFixture> } = process;
 const fleet = process.env.GRACE_BILLWORLD_DIR
-  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld"))
+  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld", process.env.GRACE_BILLWORLD_SHARD))
   : undefined;
 const definitions: unknown = process.env.GRACE_BROWSER_BENCHMARK_FILE
   ? JSON.parse(readFileSync(process.env.GRACE_BROWSER_BENCHMARK_FILE, "utf8"))

@@ -20,7 +20,11 @@ const Fleet = Schema.Struct({
   world: Schema.Struct({ catalog: Schema.Struct({ billers: Catalog }) }),
 });
 
-export async function fleetFixture(directory: string, results: string) {
+export async function fleetFixture(directory: string, results: string, shardSetting?: string) {
+  const shardCount = 4;
+  if (shardSetting !== undefined && !/^[1-4]$/.test(shardSetting))
+    throw new Error("GRACE_BILLWORLD_SHARD must be one of 1, 2, 3 or 4");
+  const shard = shardSetting === undefined ? null : Number(shardSetting);
   const tree = resolve(directory);
   const sha = execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   if (sha !== revision || execFileSync("git", ["-C", tree, "status", "--porcelain", "--", "categories", "billworld/fleet"], { encoding: "utf8" }).trim())
@@ -72,11 +76,13 @@ export async function fleetFixture(directory: string, results: string) {
   mkdirSync(results, { recursive: true });
   const run = mkdtempSync(join(resolve(results), "fleet-"));
   const manifest = cases.map(({ biller, startUrl, expected }) => ({ taskId: biller.id, template: biller.template, evidence: biller.signal, startUrl, expected }));
-  writeFileSync(join(run, "cohort.json"), JSON.stringify({ revision, navigation: "public support page", cohort: manifest }, null, 2));
-  const expected = new Map(manifest.map(item => [item.taskId, item]));
+  writeFileSync(join(run, "cohort.json"), JSON.stringify({ revision, navigation: "public support page", shard, shardCount, cohort: manifest }, null, 2));
+  const assigned = cases.filter((_, index) => shard === null || index % shardCount === shard - 1);
+  const assignedIds = new Set(assigned.map(({ biller }) => biller.id));
+  const expected = new Map(manifest.filter(item => assignedIds.has(item.taskId)).map(item => [item.taskId, item]));
   const graded = new Map<string, boolean>();
   return {
-    definitions: cases.map(({ biller, startUrl }) => ({ taskId: biller.id, startUrl, intent: Intent, receipt: join(run, biller.id + ".json") })),
+    definitions: assigned.map(({ biller, startUrl }) => ({ taskId: biller.id, startUrl, intent: Intent, receipt: join(run, biller.id + ".json") })),
     async grade(taskId: string, site: Page | undefined, guided: boolean) {
       const task = expected.get(taskId);
       if (!task) throw new Error("Unknown Fleet biller");
@@ -86,7 +92,7 @@ export async function fleetFixture(directory: string, results: string) {
       const passed = guided && arrived && visible;
       graded.set(taskId, passed);
       writeFileSync(join(run, "scores.json"), JSON.stringify({
-        revision, attempted: graded.size, total: cases.length, passed: [...graded.values()].filter(Boolean).length,
+        revision, shard, shardCount, cohortTotal: cases.length, attempted: graded.size, total: assigned.length, passed: [...graded.values()].filter(Boolean).length,
         cases: Object.fromEntries(graded),
       }, null, 2));
       return { expected: task.expected, destination, visible, passed };
@@ -95,8 +101,8 @@ export async function fleetFixture(directory: string, results: string) {
       tls.closeAllConnections();
       await Promise.all([new Promise<void>(done => tls.close(() => done())), fleet.close()]);
       const passed = [...graded.values()].filter(Boolean).length;
-      if (graded.size !== cases.length || passed !== cases.length)
-        throw new Error(`BillWorld graded ${passed}/${cases.length} correct destinations on ${graded.size} attempts. See ${run}/scores.json`);
+      if (graded.size !== assigned.length || passed !== assigned.length)
+        throw new Error(`BillWorld graded ${passed}/${assigned.length} correct destinations on ${graded.size} attempts. See ${run}/scores.json`);
     },
   };
 }
