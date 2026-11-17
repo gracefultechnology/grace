@@ -66,6 +66,8 @@ sed -i '' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' -e 's/^hw.ramSize=.*/hw.
 pnpm --filter @repo/app android --emulator <avd> --exercise home
 ```
 
+On an x86_64 host add `--abi x86_64` to that last line, or the arm64 APK will not install.
+
 makes a fresh tablet AVD (2560×1600 at 320 dpi, host graphics, 4 GB) on an Apple silicon Mac (an
 x86_64 host takes the `x86_64` image, and GNU `sed` takes `-i` without `''`), then builds, attaches
 to the named AVD or boots it without a window and with host graphics (`-gpu host`; its log in
@@ -91,7 +93,10 @@ socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<t
 minutes; a step with any other key or an empty name is refused before the build, and a tap fails
 when no visible thing or more than one has that name. Three steps check the agent: `{ "agent": {
 "state": "<state>", "failure": "<cause>" } }` waits up to five minutes for the `EmbeddedAgent`
-bridge's status to have that state (and cause); `{ "service": "<class>" }` waits up to two minutes
+bridge's status to have that state (and cause), and fails at once when the status is `failed` with
+another cause; the state is one of upstream's `unavailable`, `stopped`, `starting`, `running` and
+`failed`, the cause one of `payload`, `storage`, `config`, `credential`, `agent`, `crashed` and
+`runtime`, and any other is refused before the build; `{ "service": "<class>" }` waits up to two minutes
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
 background processes (`am kill`), fails unless her process is the same one, and opens her again. A
@@ -144,13 +149,13 @@ and nothing binds one yet: until the Google sign-in does (`cloudCredential()`), 
 payload, then stops at status `failed` with `credential`, and no Google account has yet signed in on
 it.
 
-A run of this branch with `--emulator <avd>` and `--exercise agent` on a fresh API 36 tablet AVD, on a host
-with a load average near 290: both debug APKs passed the content check at 113,487,977 bytes; on a
+A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fresh API 36 tablet AVD, on a host
+with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
 was left for Android's settings, and Grace raised no `am_anr` event.
 
-The agent has not reached `ready`. Built once with `cloudCredential()` returning a placeholder line
+The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
 (never committed), the service unpacked the payload and launched Bun under its musl loader
 (`libeliza_ld_musl_aarch64_real.so`), which loaded the bundle and exited before readiness: status
 `failed` with `agent`, "Native child exited before readiness". `no_backup/embedded-agent/agent.log`
@@ -158,23 +163,31 @@ names the cause, `NATIVE_CLOUD_ROUTING_UNAVAILABLE` from `startNativeManagedGoog
 with `ELIZAOS_CLOUD_USE_INFERENCE`, which `EmbeddedAgentConfig.agentEnvironment` always sets, the
 agent requires an admitted native runtime module (`ELIZA_NATIVE_GOOGLE_HOST_MODULE` under
 `ELIZA_SMTHRS_RUNTIME_DIR`) that neither the payload nor the embedded service provides. Upstream's
-embedded service has to change before any credential can bring it to `ready`. On a warm start Bun
+embedded service has to change before any credential can bring it to `running`. On a warm start Bun
 started 9 seconds after Grace's process and exited 6 seconds later at a peak of 170 MB resident; Grace's
 own process held 270 MB.
 
 Its data files: `agent/character.json` as it is; `artifacts/agent/host.json`, which is
 `android/agent.json` (the service, the notification's words, Eliza Cloud's production API and the
-five routes the page may call) with `agent/policy.json`'s `model` as both cloud models; and
+five routes the page may call: the agent's own `/api` routes, the streamed turn as one `stream: true`
+route the bridge relays, since the payload carries no gateway) with `agent/policy.json`'s `model` as
+both cloud models; and
 `artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
 `ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
 `actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
-yet: no plugin in the payload registers them, and a name the agent does not register fails its boot.
+yet: no plugin in the payload registers them, and a name the agent does not register fails its boot. The
+route allowlist the APK ships is `android/agent.json`'s; nothing reads `agent/routes.json`, whose
+`stream/start`, `stream/pull` and `stream/cancel` routes are upstream's gateway's, not the embedded
+bridge's.
 `--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
 literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
 nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
 upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
-computed at run time (a parameter, or a variable also given other values) is not: five such objects
-in the bundle of `9bd888f`, against 68 actions it sees.
+computed at run time (a parameter, a member, a call, or a variable also given other values) is not,
+nor is an action object with no `name` of its own, such as one a factory fills in, the `DEVICE_*`
+names spread onto one action, and promoted `<UMBRELLA>_<SUB>` subactions: in the bundle of `9bd888f`
+it sees 68 actions and many more go unseen. The agent's `ELIZA_ACTION_ALLOWLIST` gate is what refuses
+those at run time.
 
 The payload (Bun for Android with its musl loader, the agent bundle, its database files and the
 inventory) is built by upstream's `buildConsumerAndroidRuntime` with no embedding model and no
