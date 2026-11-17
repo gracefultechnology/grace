@@ -433,7 +433,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
         return Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          when ProviderRefused: e.status === 404 ? { succeeded: true, evidence: "absent" } : { succeeded: false, evidence: `refused:${e.status}` };
+          when ProviderRefused: { succeeded: false, evidence: `refused:${e.status}` };
           when Unreachable: { succeeded: false, evidence: "" };
         }
       }

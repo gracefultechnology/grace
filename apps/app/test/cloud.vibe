@@ -21,7 +21,7 @@ type Mail = {
   triageReason: string
   labels: string[]
   htmlLink: string | null
-  metadata: { historyId: string; messageIdHeader: string; referencesHeader: string | null }
+  metadata: { historyId: string; sizeEstimate: number | null; dateHeader: string | null; messageIdHeader: string; referencesHeader: string | null; listId: string | null; precedence: string | null; autoSubmitted: string | null }
   attachments: Attachment[]
   bodyText: string
 }
@@ -169,6 +169,7 @@ error SubjectMismatch
 error NoRecipient
 error BadAddress
 error ModeMismatch
+error NoParts
 error ProviderFailed
 error Reconnect
 error ConsentRequired
@@ -179,7 +180,7 @@ error Unavailable
 
 const refusals: Record<string, { status: number; body: object }> = {
   Unauthorized: { status: 401, body: { error: "unauthorized" } },
-  Missing: { status: 404, body: { error: "Not found", code: "not_found" } },
+  Missing: { status: 404, body: { error: "The selected Google account or message is unavailable. Reconnect Google or refresh the selection.", code: "not_found" } },
   NoConnection: { status: 404, body: { error: "Google connection not found." } },
   NoOperation: { status: 404, body: { error: "Operation not found" } },
   Stale: { status: 412, body: { error: "The event changed since it was read. Read it again before changing it.", code: "precondition_failed" } },
@@ -189,6 +190,7 @@ const refusals: Record<string, { status: number; body: object }> = {
   NoRecipient: { status: 400, body: { error: "At least one recipient is required to send" } },
   BadAddress: { status: 400, body: { error: "Use an unambiguous email address without a display name" } },
   ModeMismatch: { status: 400, body: { error: "Reply identity is not valid for this compose mode" } },
+  NoParts: { status: 400, body: { error: "Explicit source attachment parts required" } },
   ProviderFailed: { status: 502, body: { error: "Google request failed." } },
   Reconnect: { status: 409, body: { error: "Reconnect Google to keep using Gmail.", code: "reauth_required" } },
   ConsentRequired: { status: 403, body: { error: "speech_consent_required" } },
@@ -239,12 +241,14 @@ const people: Contact[] = [
   { name: "Riverside Book Club", email: "club@riverside-books.test" }, { name: "Joan", email: "joan@family.test" }
 ]
 
-function letter(externalId: string, address: string, at: number, from: string, fromEmail: string, subject: string, bodyText: string, extra: Partial<Mail> = {}): Mail {
+type Overrides = Partial<Omit<Mail, "metadata">> & { metadata?: Partial<Mail["metadata"]> }
+
+function letter(externalId: string, address: string, at: number, from: string, fromEmail: string, subject: string, bodyText: string, { metadata, ...extra }: Overrides = {}): Mail {
   return {
     externalId, threadId: externalId, subject, from, fromEmail, replyTo: null, to: [address], cc: [], bcc: [], snippet: bodyText.slice(0, 80),
     receivedAt: new Date(at - day).toISOString(), isUnread: true, isImportant: false, likelyReplyNeeded: false, triageScore: 40,
-    triageReason: "Unread", labels: ["INBOX", "UNREAD"], htmlLink: null, metadata: { historyId: "100", messageIdHeader: `<${externalId}@mail.fake.test>`, referencesHeader: null },
-    attachments: [], bodyText, ...extra
+    triageReason: "Unread", labels: ["INBOX", "UNREAD"], htmlLink: null, attachments: [], bodyText, ...extra,
+    metadata: { historyId: "100", sizeEstimate: null, dateHeader: null, messageIdHeader: `<${externalId}@mail.fake.test>`, referencesHeader: null, listId: null, precedence: null, autoSubmitted: null, ...metadata }
   }
 }
 
@@ -267,13 +271,32 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
   }
 }
 
-type Written = Pick<Appointment, "externalId" | "calendarId" | "title" | "description" | "location" | "startAt" | "endAt" | "isAllDay" | "timezone" | "etag" | "attendees">
+type Stored = Pick<Appointment, "externalId" | "calendarId" | "title" | "description" | "location" | "startAt" | "endAt" | "isAllDay" | "timezone" | "etag" | "attendees">
 
-function appointment(written: Written): Appointment {
+function appointment(written: Stored): Appointment {
   return {
     ...written, status: "confirmed", htmlLink: null, conferenceLink: null, organizer: null,
     metadata: { etag: written.etag, iCalUID: `${written.externalId}@google.com`, recurringEventId: null, createdAt: null, updatedAt: null }
   }
+}
+
+const dateIn = (at: string, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.parse(at))
+
+function offsetAt(at: number, timeZone: string) {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "GMT"
+  const [, sign, hours, minutes] = /^GMT(?:([+-])(\d{1,2})(?::?(\d{2}))?)?$/.exec(name) ?? []
+  return sign === undefined ? 0 : (sign === "+" ? 1 : -1) * (Number(hours) * 60 + Number(minutes ?? 0)) * 60 * 1000
+}
+
+function midnightIn(date: string, timeZone: string) {
+  const base = Date.parse(`${date}T00:00:00Z`)
+  return new Date(base - offsetAt(base - offsetAt(base, timeZone), timeZone)).toISOString()
+}
+
+function shown(e: Appointment, timeZone: string): Appointment {
+  if (!e.isAllDay) return e
+  const zone = e.timezone ?? timeZone
+  return { ...e, startAt: midnightIn(dateIn(e.startAt, zone), timeZone), endAt: midnightIn(dateIn(e.endAt, zone), timeZone), timezone: timeZone }
 }
 
 function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
@@ -449,7 +472,7 @@ effect function store(site: string) {
     if (most === 0) return try HttpServerResponse.json({ error: "maxResults must be a positive integer." }, { status: 400 })
     const found = box.mail.filter((m) => matches(m, query))
     return try HttpServerResponse.json({
-      messages: found.slice(0, most).map(listedMessage), mailboxHistoryId: String(Math.max(0, ...box.mail.map((m) => Number(m.metadata.historyId)))),
+      messages: found.slice(0, most).map(listedMessage), nextPageToken: null, mailboxHistoryId: String(Math.max(0, ...box.mail.map((m) => Number(m.metadata.historyId)))),
       syncedAt: try now(), supportsSpamTrash: true
     })
   }
@@ -484,6 +507,7 @@ effect function store(site: string) {
     if (replying && parent === undefined) throw new Missing()
     if (parent !== undefined && proposal.subject !== (/^re:/i.test(parent.subject) ? parent.subject : `Re: ${parent.subject}`)) throw new SubjectMismatch()
     const source = proposal.forwardAttachments
+    if (source !== undefined && (source.partIds.length === 0 || new Set(source.partIds).size !== source.partIds.length || source.partIds.some((p) => !/^[0-9.]{1,32}$/.test(p)))) throw new NoParts()
     const origin = source === undefined ? undefined : found.mail.find((m) => m.externalId === source.messageId)
     if (source !== undefined && (origin === undefined || origin.metadata.historyId !== source.historyId)) throw new StaleRevision()
     const parts = source === undefined || origin === undefined ? [] : source.partIds.map((partId) => origin.attachments.find((a) => a.partId === partId))
@@ -594,10 +618,11 @@ effect function store(site: string) {
   }
 
   effect function calendarFeed(fixed?: Slug) {
-    const { timeMin, timeMax, grantId, calendarId } = try HttpServerRequest.schemaSearchParams(FeedQuery)
+    const { timeMin, timeMax, grantId, calendarId, timeZone } = try HttpServerRequest.schemaSearchParams(FeedQuery)
     const { box: found } = try connection(fixed, grantId)
     const calendar = calendarId?.trim() || "primary"
-    const events = found.calendar.filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
+    const zone = timeZone?.trim() || "UTC"
+    const events = found.calendar.map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
     return try HttpServerResponse.json({ calendarId: calendar, events, syncedAt: try now() })
   }
 
@@ -605,14 +630,14 @@ effect function store(site: string) {
     const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, eventId, isAllDay, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
     const { key, box: found } = try connection(fixed, grantId)
     const known = found.calendar.find((e) => e.externalId === eventId)
-    if (known) return try HttpServerResponse.json({ event: known }, { status: 201 })
+    if (known) return try HttpServerResponse.json({ event: shown(known, timeZone) }, { status: 201 })
     const added = appointment({
       externalId: eventId ?? `appointment${try next()}`, calendarId: calendarId ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
       startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: isAllDay ?? false, timezone: timeZone, etag: `"${try next()}"`,
       attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false }))
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
-    return try HttpServerResponse.json({ event: added }, { status: 201 })
+    return try HttpServerResponse.json({ event: shown(added, timeZone) }, { status: 201 })
   }
 
   effect function existing(fixed: Slug | undefined, grantId: string | undefined, calendarId: string | undefined) {
@@ -620,7 +645,7 @@ effect function store(site: string) {
     const { eventId } = try HttpRouter.params
     const request = try HttpServerRequest.HttpServerRequest
     const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === (calendarId?.trim() || "primary"))
-    if (!event) throw new Missing()
+    if (!event) throw new ProviderFailed()
     const ifMatch = request.headers["if-match"]
     if (ifMatch !== undefined && ifMatch.trim() !== event.etag) throw new Stale()
     return { key, grantId: found.grantId, found: event }
@@ -636,7 +661,7 @@ effect function store(site: string) {
       timezone: body.timeZone ?? found.timezone, isAllDay: body.isAllDay ?? found.isAllDay, etag, metadata: { ...found.metadata, etag }
     }
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === found.externalId ? moved : e) }))
-    return try HttpServerResponse.json({ event: moved }, { headers: { etag } })
+    return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
   }
 
   effect function removeAppointment(fixed?: Slug) {
