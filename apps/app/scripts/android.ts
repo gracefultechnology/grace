@@ -222,7 +222,7 @@ async function devTools(url: string, signal: AbortSignal) {
   };
 
   const describe = async () => {
-    const expression = `JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()) })`;
+    const expression = `JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()), text: document.body.innerText.slice(0, 300) })`;
     const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal: AbortSignal.timeout(30_000) });
     return String(result.value);
   };
@@ -277,10 +277,10 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
       const home = `[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`;
-      await page.until(home, AbortSignal.timeout(180_000))
-        .catch(async (error: unknown) => failing(`Waiting for Home (${await page.describe().catch(String)})`)(error));
+      const showing = (what: string) => async (error: unknown) => failing(`${what} (the page shows ${await page.describe().catch(String)})`)(error);
+      await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
       for (const step of exercise) {
-        await page.step(step).catch(failing(JSON.stringify(step)));
+        await page.step(step).catch(showing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
       }
     } finally {
