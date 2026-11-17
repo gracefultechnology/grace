@@ -6,8 +6,8 @@ export type MailConnectProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
   Pick<AccountSignInProps, "state" | "onContinue" | "onCancel" | "onCheckAgain">;
 
 /**
- * Email before there is a mailbox to read, or when reading it fails: the same Google sign-in that creates the Grace
- * account, in the Email window.
+ * Email with no mailbox to read: the same Google sign-in, in the Email window. A connection that expired or was revoked
+ * shows as ended, and one Google refused as mailDenied, so either reads as allowing email again.
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens

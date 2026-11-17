@@ -6,7 +6,7 @@ import type { MailConnectProps } from "./MailConnect.tsx";
 const proceed = fn();
 
 export const meta: ComponentMeta<MailConnectProps> = {
-  args: { state: "ready", onContinue: proceed, onCancel: fn(), onCheckAgain: fn(), onClose: fn() },
+  args: { state: "ended", onContinue: proceed, onCancel: fn(), onCheckAgain: fn(), onClose: fn() },
   decorator: mailScreen,
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {

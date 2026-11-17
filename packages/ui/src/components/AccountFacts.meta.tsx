@@ -5,7 +5,7 @@ import { settingsPage } from "./WifiNetworkList.meta.tsx";
 export const meta: ComponentMeta<AccountFactsProps> = {
   args: {
     facts: [
-      { label: "Signed in", value: "margaret.s@gmail.com" },
+      { label: "Signed in", value: "margaret.s@example.com" },
       { label: "Email", value: "Connected" },
     ],
   },

@@ -16,7 +16,7 @@ const problems: Record<Exclude<AccountAccess, "active">, string> = {
 export type AccountOverviewProps = Omit<ComponentProps<"section">, "title"> & {
   /** Where the account stands: working, needing attention, or not answering. */
   access: AccountAccess;
-  /** The Google account signed in: "margaret.s@gmail.com". */
+  /** The Google account signed in: "margaret.s@example.com". */
   account: string;
   /** Grace can read this account's email. */
   mailConnected: boolean;
