@@ -58,7 +58,7 @@ jobs:
       - id: vendor
         run: echo "sha=$(git -C vendor/eliza rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - id: payload
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: apps/app/artifacts/agent-runtime
           key: agent-runtime-${{ steps.vendor.outputs.sha }}-${{ hashFiles('apps/app/scripts/android.ts') }}
@@ -70,6 +70,11 @@ jobs:
         working-directory: vendor/eliza
         run: bun install --frozen-lockfile
       - run: pnpm --filter @repo/app android
+      - if: always() && steps.payload.outputs.cache-hit != 'true' && hashFiles('apps/app/artifacts/agent-runtime/**') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: apps/app/artifacts/agent-runtime
+          key: ${{ steps.payload.outputs.cache-primary-key }}
       - run: pnpm --filter @repo/app aosp --apk artifacts/launcher-debug.apk --development
       - uses: actions/upload-artifact@v7
         with:
