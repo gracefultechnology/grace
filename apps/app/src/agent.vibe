@@ -1,12 +1,11 @@
 // spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone"
 import { brightnessChoice, type DisplayPreferences, muteChoice, volumeChoice } from "../gen/app__preferences.effect.vibe"
+import { mayAct, type Request } from "../gen/app__request.effect.vibe"
 import { type Event, Machine as Workspaces, type Workspace, type WorkspaceActor } from "../gen/app__workspace.effect.vibe"
 import { targets } from "./context.vibe"
 import type { Action } from "./reply.schema.ts"
 
 export type GraceAction = typeof Action.Type
-export type Origin = "Typed" | "Spoken" | "Tapped" | "FromDevice"
-export type Request = { readonly generation: number; readonly workVersion: number; readonly origin: Origin }
 export type Outcome = "Applied" | "Refused" | "NotYetAvailable"
 export type Applied = { readonly action: GraceAction; readonly outcome: Outcome }
 
@@ -40,8 +39,6 @@ function steps(action: GraceAction, w: Workspace): readonly Step[] | undefined {
   }
 }
 
-const fromPerson = (origin: Origin) => origin === "Typed" || origin === "Spoken" || origin === "Tapped"
-
 /** What Grace may do today, each as the event its owner's guard decides; what has no event yet is reported, not done. */
 export const agent = Layer.effect(Agent, effect {
   const workspace = try Workspaces
@@ -57,7 +54,7 @@ export const agent = Layer.effect(Agent, effect {
       const applied: Applied[] = []
       for (const action of actions) {
         const w = try workspace.get()
-        const current = fromPerson(request.origin) && w.assistant.conversation.generation === request.generation && w.assistant.workVersion === request.workVersion
+        const current = mayAct(request, { generation: w.assistant.conversation.generation, workVersion: w.assistant.workVersion })
         const planned = steps(action, w)
         const outcome: Outcome = !current ? "Refused" : planned === undefined ? "NotYetAvailable" : try run(planned)
         try logInfo("Grace's action", { kind: action.kind, outcome })

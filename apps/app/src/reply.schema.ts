@@ -20,7 +20,7 @@ const action = <const Kind extends string, const Fields extends Schema.Struct.Fi
 
 export const Action = Schema.Union([
   action("open", { surface: of<Surface>()(["Home", "Calendar", "Email", "Browser", "Files", "DeviceSettings"]) }),
-  action("showSetting", { page: of<SettingsPage>()(["TextSizeSettings", "BrightnessSettings", "VoiceSettings", "NetworkSettings", "AboutSettings"]) }),
+  action("showSetting", { page: of<SettingsPage>()(["TextSizeSettings", "BrightnessSettings", "VoiceSettings", "NetworkSettings", "EmailCalendarSettings", "AboutSettings"]) }),
   action("setTextSize", { size: of<TextSize>()(["Smaller", "StandardText", "Larger", "Largest"]) }),
   action("setPace", { pace: of<Pace>()(["Slower", "Normal", "Faster"]) }),
   action("setVolume", { volume: Schema.Int }),

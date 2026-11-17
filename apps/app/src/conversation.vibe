@@ -1,8 +1,9 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import character from "../agent/character.json" with { type: "json" }
 import type { Interaction } from "../gen/app__interaction.effect.vibe"
+import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
-import { Agent, type Applied, type Origin } from "./agent.vibe"
+import { Agent, type Applied } from "./agent.vibe"
 import { render } from "./context.vibe"
 import { withhold } from "./private.ts"
 import { Reply } from "./reply.schema.ts"

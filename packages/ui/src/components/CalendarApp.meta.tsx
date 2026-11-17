@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
-import { X } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { Banner } from "./Banner.tsx";
-import { Button } from "./Button.tsx";
+import { Banner, BannerButton } from "./Banner.tsx";
 import type { CalendarAppProps, CalendarEventItem } from "./CalendarApp.tsx";
 import type { CalendarEventDetailProps } from "./CalendarEventDetail.tsx";
 import type { CalendarEventFormProps } from "./CalendarEventForm.tsx";
@@ -55,17 +53,12 @@ const connect = fn();
 const notNow = fn();
 export const connectBanner = (
   <Banner
+    tone="dark"
     icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />}
     title="Connect your email to keep your calendar up to date"
     line="Appointments from your email show up here automatically."
-    actions={
-      <>
-        <Button variant="capsule" size="compact" onClick={connect}>Connect email</Button>
-        <Button variant="plain" size="compact-icon" aria-label="Not now" onClick={notNow}>
-          <X aria-hidden size={22} strokeWidth={2} />
-        </Button>
-      </>
-    }
+    actions={<BannerButton onClick={connect}>Connect email</BannerButton>}
+    onDismiss={notNow}
   />
 );
 export const bridgeDraft: CalendarEventItem = {

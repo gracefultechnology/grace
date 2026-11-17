@@ -7,7 +7,7 @@ import type { SettingsPage } from "../gen/app__shell.ts";
 import { useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 const names: Record<SettingsPage, PageName> = {
-  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AboutSettings: "about",
+  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 
 /** @model spec/app/websiteRequests.md */
@@ -51,7 +51,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
             </DialogContent>
           </Dialog>
         </>
-      ) : <EmptyState title="Nothing here yet." />}
+      ) : page === "EmailCalendarSettings" ? <PageHeading>Email & calendar</PageHeading> : <EmptyState title="Nothing here yet." />}
     </SettingsApp>
   );
 }
