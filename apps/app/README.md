@@ -153,7 +153,9 @@ A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fr
 with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event.
+was left for Android's settings, and Grace raised no `am_anr` event. A run of `0f2a9c3` with
+`DISCOVER_ACTIONS` let past the action check by hand, at a load average near 320, built both APKs at
+113,483,881 bytes and passed the same walk.
 
 The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
 (never committed), the service unpacked the payload and launched Bun under its musl loader
