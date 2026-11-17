@@ -167,22 +167,26 @@ pure def lawHiddenCalendarShowsNothing(registry: A::Accounts, calendars: List[Ca
 What Grace is told of a calendar is derived from it before and after one
 event: that an appointment was added, changed or deleted, once the calendar’s
 store saved it, whether Margaret did it or it followed her yes to Grace.
-Nothing changed tells nothing. Being told is a turn of the host, never hers:
-what Grace is told is only the news, the calendar and the appointment, with
-no consent in it, so it asks Grace to do nothing.
+Only the store’s own result is news: an edit cancelled, or closed with the
+calendar, saved nothing and tells nothing, and an appointment the provider’s
+feed changed or removed is shown, not told. Nothing changed tells nothing.
+Being told is a turn of the host, never hers: what Grace is told is only the
+news, the calendar and the appointment, with no consent in it, so it asks
+Grace to do nothing.
 
 ```quint
 type CalendarNews = NoCalendarNews | AddedAppointment | ChangedAppointment | DeletedAppointment
 type CalendarTold = { news: CalendarNews, key: int, id: str }
-pure def settledFrom(before: V::CalendarView, c: C::Calendar, phase: C::CalendarPhase, wasSaved: bool): bool =
-  not(before.entries.includes(c)) and
-    before.entries.some(b => C::sameOccurrence(b, c) and b.phase == phase and b.hasSaved == wasSaved)
+pure def storedFrom(before: V::CalendarView, c: C::Calendar, wasSaved: bool): bool =
+  c.phase == C::Saved and not(before.entries.includes(c)) and
+    before.entries.some(b => C::sameOccurrence(b, c) and b.phase == C::Editing and b.hasSaved == wasSaved and
+      b.approvedRevision >= 0 and b.approvedRevision == b.revision)
 pure def told(key: int, before: V::CalendarView, after: V::CalendarView): CalendarTold =
   val quiet = { news: NoCalendarNews, key: key, id: "" }
-  val added = after.entries.select(c => c.phase == C::Saved and settledFrom(before, c, C::Editing, false))
-  val changed = after.entries.select(c => c.phase == C::Saved and settledFrom(before, c, C::Editing, true))
+  val added = after.entries.select(c => storedFrom(before, c, false))
+  val changed = after.entries.select(c => storedFrom(before, c, true))
   val deleted = after.entries.select(c => c.phase == C::Deleted and not(before.entries.includes(c)) and
-    before.entries.some(b => C::sameOccurrence(b, c) and b.phase != C::Deleted))
+    before.deletion == V::DeletionPending and before.entries.some(b => C::sameOccurrence(b, c) and b.phase != C::Deleted))
   if (added.length() > 0) { ...quiet, news: AddedAppointment, id: added.nthOr(0, C::initial).identity.occurrenceId }
   else if (changed.length() > 0) { ...quiet, news: ChangedAppointment, id: changed.nthOr(0, C::initial).identity.occurrenceId }
   else if (deleted.length() > 0) { ...quiet, news: DeletedAppointment, id: deleted.nthOr(0, C::initial).identity.occurrenceId }
@@ -195,6 +199,12 @@ pure def lawToldNamesWhatChanged(key: int, before: V::CalendarView, after: V::Ca
     after.entries.some(c => c.identity.occurrenceId == news.id and c.phase == C::Saved and not(before.entries.includes(c)))) and
   (news.news == DeletedAppointment implies
     after.entries.some(c => c.identity.occurrenceId == news.id and c.phase == C::Deleted and not(before.entries.includes(c))))
+pure def lawOnlyTheStoreIsNews(key: int, view: V::CalendarView, id: str, published: C::Calendar): bool =
+  val cancelled = V::changeOccurrence(view, id, V::CancelEditing, V::ViewUser)
+  val fed = V::publishOccurrence(view, published, view.generation, true, V::ViewStore)
+  (V::canChangeOccurrence(view, id, V::CancelEditing, V::ViewUser) implies told(key, view, cancelled).news == NoCalendarNews) and
+    told(key, view, V::closeCalendar(view, V::ViewUser)).news == NoCalendarNews and
+    (V::canPublishOccurrence(view, published, view.generation, true, V::ViewStore) implies told(key, view, fed).news == NoCalendarNews)
 ```
 
 ## Story: Ask Grace to put an email’s appointment in my calendar
@@ -436,6 +446,9 @@ pure val gmailDeleting: V::CalendarView = V::confirmDeletion(gmailStored, garden
 pure val gmailDeleted: V::CalendarView = V::deletionResult(gmailDeleting, 2, true, "storeReceipt", V::ViewStore)
 pure val gmailOpened: V::CalendarView =
   V::openOccurrence(V::openCalendar(gmailStored, "margaret", "gmail", zone, V::ViewUser), "garden", V::ViewUser)
+pure val gmailEditing: V::CalendarView = V::changeOccurrence(gmailOpened, "garden", V::BeginEditing, V::ViewUser)
+pure val gardenFedMoved: C::Calendar = { ...gardenSaved, committed: movedGarden, draft: movedGarden, revision: gardenSaved.revision + 1 }
+pure val gardenFedRemoved: C::Calendar = { ...gardenSaved, phase: C::Deleted, reminder: C::ReminderOff, revision: gardenSaved.revision + 1 }
 pure val tabletWeek: V::CalendarView = V::navigate(tabletSaved,
   { window: { ...V::emptyWindow, anchorDay: 7, selectedDay: 7, fromTime: 0, untilTime: 10 }, kind: V::Later, verified: true }, V::ViewUser)
 pure val gmailElsewhere: V::CalendarView = V::navigate(V::openCalendar(gmailStored, "margaret", "gmail", zone, V::ViewUser),
@@ -458,7 +471,9 @@ pure val pendingDeletion: P::Pending =
   P::propose(P::initial, P::DeleteAsk({ target: 1, review: gardenDeletion.review }), spoken, { generation: 1, workVersion: 1 }, P::Grace)
 pure val registryValues = M::registryValues.union(Set(gmailCalendarOff, A::dismissBanner(A::initial, A::AccountPerson)))
 pure val viewValues = Set(V::initial, tabletSaved, tabletReminder, gmailPublished, gmailConfirmed, gmailStored,
-  gmailChanging, gmailChanged, gmailDeleting, gmailDeleted)
+  gmailChanging, gmailChanged, gmailDeleting, gmailDeleted, gmailOpened, gmailEditing)
+pure val idValues = Set("garden", "lunch", "clinicVisit")
+pure val publishedValues = Set(gardenSaved, gardenFedMoved, gardenFedRemoved)
 pure val beforeValues = Set(tabletApproved, gmailConfirmed, gmailChanging, gmailDeleting, gmailStored)
 pure val afterValues = Set(tabletSaved, gmailStored, gmailChanged, gmailDeleted, gmailConfirmed)
 pure val calendarsValues = Set(List(),

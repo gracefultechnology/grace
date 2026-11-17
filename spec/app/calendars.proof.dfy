@@ -80,18 +80,18 @@ lemma lawCalendarToldIsDerived_ensures(key: int, view: app__calendarView_Calenda
 lemma lawToldNamesWhatChanged_ensures(key: int, before: app__calendarView_CalendarView, after: app__calendarView_CalendarView)
   ensures (lawToldNamesWhatChanged(key, before, after) == true)
 {
-  var added := ProofLib.Filter((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, false)), after.entries);
-  var changed := ProofLib.Filter((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, true)), after.entries);
-  var deleted := ProofLib.Filter((c: app__calendar_Calendar) => ((c.phase.Deleted? && !((c in before.entries))) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries);
+  var added := ProofLib.Filter((c: app__calendar_Calendar) => storedFrom(before, c, false), after.entries);
+  var changed := ProofLib.Filter((c: app__calendar_Calendar) => storedFrom(before, c, true), after.entries);
+  var deleted := ProofLib.Filter((c: app__calendar_Calendar) => (((c.phase.Deleted? && !((c in before.entries))) && before.deletion.DeletionPending?) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries);
   if |added| > 0 {
     assert added[0] in added;
-    ProofLib.FilterMember((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, false)), after.entries, added[0]);
+    ProofLib.FilterMember((c: app__calendar_Calendar) => storedFrom(before, c, false), after.entries, added[0]);
   } else if |changed| > 0 {
     assert changed[0] in changed;
-    ProofLib.FilterMember((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, true)), after.entries, changed[0]);
+    ProofLib.FilterMember((c: app__calendar_Calendar) => storedFrom(before, c, true), after.entries, changed[0]);
   } else if |deleted| > 0 {
     assert deleted[0] in deleted;
-    ProofLib.FilterMember((c: app__calendar_Calendar) => ((c.phase.Deleted? && !((c in before.entries))) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries, deleted[0]);
+    ProofLib.FilterMember((c: app__calendar_Calendar) => (((c.phase.Deleted? && !((c in before.entries))) && before.deletion.DeletionPending?) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries, deleted[0]);
   }
 }
 
@@ -172,10 +172,68 @@ lemma OpenSelectedShows(registry: app__accounts_Accounts, calendars: seq<Calenda
 }
 
 lemma ToldQuiet(key: int, before: app__calendarView_CalendarView, after: app__calendarView_CalendarView)
-  requires forall c :: c in after.entries ==> c in before.entries
+  requires forall c :: c in after.entries && !(c in before.entries) ==>
+    !storedFrom(before, c, false) && !storedFrom(before, c, true) && (c.phase.Deleted? ==> !before.deletion.DeletionPending?)
   ensures told(key, before, after).news.NoCalendarNews?
 {
-  ProofLib.FilterNone((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, false)), after.entries);
-  ProofLib.FilterNone((c: app__calendar_Calendar) => (c.phase.Saved? && settledFrom(before, c, app__calendar_CalendarPhase.Editing, true)), after.entries);
-  ProofLib.FilterNone((c: app__calendar_Calendar) => ((c.phase.Deleted? && !((c in before.entries))) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries);
+  ProofLib.FilterNone((c: app__calendar_Calendar) => storedFrom(before, c, false), after.entries);
+  ProofLib.FilterNone((c: app__calendar_Calendar) => storedFrom(before, c, true), after.entries);
+  ProofLib.FilterNone((c: app__calendar_Calendar) => (((c.phase.Deleted? && !((c in before.entries))) && before.deletion.DeletionPending?) && (exists b :: b in before.entries && (app__calendar_sameOccurrence(b, c) && (!b.phase.Deleted?)))), after.entries);
+}
+
+lemma CancelledEntry(v: app__calendarView_CalendarView, id: string, c: app__calendar_Calendar)
+  requires c in app__calendarView_changeOccurrence(v, id, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser).entries
+  requires !(c in v.entries)
+  ensures c == app__calendar_cancelEdit(app__calendarView_entryAt(v, id), app__calendar_CalendarActor.CalendarUser) && c.hasSaved
+{
+  var updated := app__calendarView_ownedEntryResult(v, app__calendarView_entryAt(v, id), app__calendarView_OccurrenceAction.CancelEditing);
+  var after := app__calendarView_changeOccurrence(v, id, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser).entries;
+  if updated.phase.Empty? {
+    ProofLib.FilterMember((c: app__calendar_Calendar) => (c.identity.occurrenceId != id), v.entries, c);
+  } else {
+    var i :| 0 <= i < |after| && after[i] == c;
+  }
+}
+
+lemma CancelStoresNothing(v: app__calendarView_CalendarView, id: string)
+  requires !(app__calendarView_entryAt(v, id).phase.Editing? && app__calendarView_entryAt(v, id).approvedRevision >= 0)
+  ensures forall c :: c in app__calendarView_changeOccurrence(v, id, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser).entries && !(c in v.entries) ==>
+    !storedFrom(v, c, false) && !storedFrom(v, c, true) && !c.phase.Deleted?
+{
+  var c0 := app__calendarView_entryAt(v, id);
+  var p := (c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?));
+  forall c | c in app__calendarView_changeOccurrence(v, id, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser).entries && !(c in v.entries)
+    ensures !storedFrom(v, c, false) && !storedFrom(v, c, true) && !c.phase.Deleted?
+  {
+    CancelledEntry(v, id, c);
+    var f := ProofLib.Filter(p, v.entries);
+    assert |f| == 1 && c0 == f[0];
+    ProofLib.FilterMember(p, v.entries, c0);
+    forall b | b in v.entries && app__calendar_sameOccurrence(b, c) && b.phase.Editing?
+      ensures b == c0
+    {
+      ProofLib.FilterMember(p, v.entries, b);
+    }
+  }
+}
+
+lemma lawOnlyTheStoreIsNews_ensures(key: int, view: app__calendarView_CalendarView, id: string, published: app__calendar_Calendar)
+  ensures (lawOnlyTheStoreIsNews(key, view, id, published) == true)
+{
+  if app__calendarView_canChangeOccurrence(view, id, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser) {
+    CancelStoresNothing(view, id);
+    ToldQuiet(key, view, app__calendarView_changeOccurrence(view, id, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser));
+  }
+  var selected := app__calendarView_selectedOccurrence(view);
+  var closed := app__calendarView_closeCalendar(view, app__calendarView_ViewActor.ViewUser);
+  if app__calendarView_hasEditing(view) && !(selected.phase.Editing? && selected.approvedRevision != -1) {
+    CancelStoresNothing(view, view.selectedId);
+    assert closed.entries == app__calendarView_changeOccurrence(view, view.selectedId, app__calendarView_OccurrenceAction.CancelEditing, app__calendarView_ViewActor.ViewUser).entries;
+  } else {
+    assert closed.entries == view.entries;
+  }
+  ToldQuiet(key, view, closed);
+  if app__calendarView_canPublishOccurrence(view, published, view.generation, true, app__calendarView_ViewActor.ViewStore) {
+    ToldQuiet(key, view, app__calendarView_publishOccurrence(view, published, view.generation, true, app__calendarView_ViewActor.ViewStore));
+  }
 }
