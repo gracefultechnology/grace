@@ -1,7 +1,7 @@
 // .claude/skills/shell/SKILL.md, "The React interface": the workspace and the page layer, as components read
 // them, and the one way a component changes the workspace.
 // spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
-import { Effect, type ManagedRuntime, Option, Stream, SubscriptionRef } from "effect";
+import { Effect, type ManagedRuntime, Option, Stream } from "effect";
 import { createContext, createElement, type ReactNode, use, useEffect, useState, useSyncExternalStore } from "react";
 import { type Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
@@ -17,7 +17,7 @@ import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/a
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
 import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
-import { ProviderPage, SignIns } from "./accounts.vibe";
+import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
 import { settled } from "./calendar.vibe";
@@ -28,7 +28,7 @@ import { Mail, type Note } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation | Accounts | Proposal | Instances | ProviderPage | SignIns, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation | Accounts | Proposal | Instances | SignIns, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -79,46 +79,15 @@ export function useAccounts() {
   return { accounts, can: (event: AccountEvent) => can(event, "AccountPerson"), send: (event: AccountEvent) => send(event, "AccountPerson") };
 }
 
-const signIns = new WeakMap<Runtime, Promise<SignIns["Service"]>>();
-
 export function useSignIns() {
   const runtime = useRuntime();
-  const known = signIns.get(runtime);
-  if (known) return use(known);
-  const found = runtime.runPromise(Effect.service(SignIns));
-  signIns.set(runtime, found);
-  return use(found);
-}
-
-type PageStore = { get: () => string | undefined; subscribe: (notify: () => void) => () => void };
-const providerPages = new WeakMap<Runtime, PageStore>();
-
-function pageStore(runtime: Runtime): PageStore {
-  let seen: string | undefined;
-  let stop: (() => void) | undefined;
-  const listeners = new Set<() => void>();
+  const flows = runtime.runSync(Effect.service(SignIns));
+  const note = useSyncExternalStore(flows.notes.subscribe, flows.notes.current);
   return {
-    get: () => seen,
-    subscribe: (notify) => {
-      listeners.add(notify);
-      if (!stop) {
-        const fiber = runtime.runFork(Effect.flatMap(Effect.service(ProviderPage), ({ url }) =>
-          Stream.runForEach(SubscriptionRef.changes(url), (next) => Effect.sync(() => { seen = next; for (const listener of listeners) listener(); }))));
-        stop = () => fiber.interruptUnsafe();
-      }
-      return () => {
-        listeners.delete(notify);
-        if (!listeners.size) { stop?.(); stop = undefined; }
-      };
-    },
+    note,
+    other: (details: OtherDetails) => runtime.runPromise(flows.other(details)),
+    servers: (servers: MailServers) => runtime.runPromise(flows.servers(servers)),
   };
-}
-
-export function useProviderPage(): string | undefined {
-  const runtime = useRuntime();
-  const store = providerPages.get(runtime) ?? pageStore(runtime);
-  providerPages.set(runtime, store);
-  return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useProposal() {

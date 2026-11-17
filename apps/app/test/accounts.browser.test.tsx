@@ -16,8 +16,11 @@ const riverview = "margaret@riverview.net";
 const wrongPassword = "Not-the-password-7";
 
 const chatBodies: string[] = [];
+const otherChecks: string[] = [];
+const providerPages: string[] = [];
 const fetched = globalThis.fetch;
-const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body);
+const opened = window.open.bind(window);
+const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "";
 
 let secret = "";
 const start = () => ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
@@ -27,7 +30,12 @@ beforeAll(async () => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
+    if (url.includes("/connections/other")) otherChecks.push(url);
     return fetched(input, init);
+  };
+  window.open = (url, ...rest) => {
+    providerPages.push(String(url));
+    return opened(url, ...rest);
   };
   environment.IS_REACT_ACT_ENVIRONMENT = true;
   await page.viewport(1280, 800);
@@ -40,20 +48,24 @@ afterAll(async () => {
   localStorage.clear();
   environment.IS_REACT_ACT_ENVIRONMENT = false;
   globalThis.fetch = fetched;
+  window.open = opened;
 });
 
 const tap = (target: Parameters<typeof userEvent.click>[0]) => act(() => userEvent.click(target));
 const settings = () => page.getByRole("navigation", { name: "Settings" });
 const sheet = (company: string) => page.getByRole("dialog", { name: `${company} sign-in page` });
-const providerPage = (company: string) => page.frameLocator(page.getByTitle(`${company}’s own sign-in page`));
 const tile = (company: string) => page.getByRole("button", { name: new RegExp(`^${company}`) });
 const caution = () => page.getByRole("alert");
 
-async function answerOutlook(choice: "Allow" | "Not now") {
+async function providerPage() {
+  await expect.poll(() => providerPages.length).toBeGreaterThan(0);
+  return providerPages.shift() ?? "";
+}
+
+async function answerOutlook(choice: "allow" | "unfinished") {
   await expect.element(sheet("Outlook")).toBeVisible();
-  const frame = providerPage("Outlook");
-  if (choice === "Allow") await act(() => frame.getByLabelText("Email").fill(outlook));
-  await tap(frame.getByRole("button", { name: choice }));
+  const body = new URLSearchParams({ address: choice === "allow" ? outlook : "", choice });
+  await act(async () => { await fetched(await providerPage(), { method: "POST", body }); });
   await expect.element(sheet("Outlook")).not.toBeInTheDocument();
 }
 
@@ -70,39 +82,39 @@ it("Connect the email I already use", async () => {
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(() => Promise.resolve(root.render(<App runtime={app} />)));
 
-  // spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account": Outlook's own page, in the tablet's sheet, allows it.
+  // spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"
   await openEmailSettings();
   await expect.element(page.getByText("Which email do you use?")).toBeVisible();
   await tap(tile("Outlook"));
-  await answerOutlook("Allow");
+  await answerOutlook("allow");
   await expect.element(page.getByRole("heading", { name: "Outlook", level: 1 })).toBeVisible();
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
+  await expect.element(page.getByText("Outlook connected", { exact: true })).toBeVisible();
 
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
 
+  // spec/app/accounts.md, "The settings pages go back one step at a time"
   await openEmailSettings();
-  await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
   await expect.element(page.getByRole("button", { name: new RegExp(outlook) })).toBeVisible();
 
-  // Cancel closes the page and adds nothing; a page left unfinished says so.
   await tap(page.getByRole("button", { name: "Add another email" }));
   await expect.element(page.getByRole("heading", { name: "Add an email", level: 1 })).toBeVisible();
   await tap(tile("Outlook"));
   await expect.element(sheet("Outlook")).toBeVisible();
+  await providerPage();
   await tap(sheet("Outlook").getByRole("button", { name: "Cancel" }));
   await expect.element(sheet("Outlook")).not.toBeInTheDocument();
   await expect.element(caution()).not.toBeInTheDocument();
 
   await tap(tile("Outlook"));
-  await answerOutlook("Not now");
+  await answerOutlook("unfinished");
   await expect.element(caution()).toHaveTextContent("Signing in wasn’t finished. You can try again.");
 
-  // The same address again is refused, and the tablet keeps one account for it.
   await tap(tile("Outlook"));
-  await answerOutlook("Allow");
+  await answerOutlook("allow");
   await expect.element(caution()).toHaveTextContent("This email is already on the tablet.");
 
   // spec/app/accounts.md, "An address at a listed company goes to that company’s own page"
@@ -114,6 +126,7 @@ it("Connect the email I already use", async () => {
   await act(() => form.getByLabelText("Password").fill(wrongPassword));
   await tap(form.getByRole("button", { name: "Next" }));
   await expect.element(caution()).toHaveTextContent("This is a Yahoo address. Go back and choose Yahoo, so you can sign in on Yahoo’s own page.");
+  expect(otherChecks).toEqual([]);
 
   // spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"
   await act(() => form.getByLabelText("Email address").fill(riverview));
@@ -138,8 +151,9 @@ it("Connect the email I already use", async () => {
   await tap(servers.getByRole("button", { name: "Connect" }));
   await expect.element(page.getByRole("heading", { name: "Riverview", level: 1 })).toBeVisible();
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();
+  await expect.element(page.getByText("Riverview connected", { exact: true })).toBeVisible();
 
-  // spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state": neither password is kept or shown to Grace.
+  // spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"
   const kept = Object.keys(localStorage).map((key) => localStorage.getItem(key) ?? "").join("\n");
   expect(kept).toContain(riverview);
   expect(chatBodies.join("\n")).toContain(asked);
@@ -158,7 +172,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
   await expect.element(row(outlook)).toBeVisible();
 
-  // spec/app/accounts.md, "Signing in again renews the same account": Outlook's sign-in ends, and signing in again brings it back.
+  // spec/app/accounts.md, "Signing in again renews the same account"
   await Effect.runPromise(Effect.provide(expire(cloud, secret, outlook), client));
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
@@ -169,8 +183,9 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await expect.element(row(outlook)).toHaveAccessibleName(/Outlook · Needs you to sign in again/);
   await tap(row(outlook));
   await tap(page.getByRole("button", { name: "Sign in again" }));
-  await answerOutlook("Allow");
+  await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
+  await expect.element(page.getByText("Outlook connected", { exact: true })).toBeVisible();
 
   // spec/app/accounts.md, "Turning a use off hides it and keeps the account"
   await tap(page.getByRole("switch", { name: "Calendar" }));
@@ -178,7 +193,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
   await expect.element(row(outlook)).toHaveAccessibleName(/Outlook · Email, contacts/);
 
-  // spec/app/accounts.md, "Removing asks first and waits for unsent email": Outlook leaves after the question, and comes back when connected again.
+  // spec/app/accounts.md, "Removing asks first and waits for unsent email"
   await tap(row(outlook));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   const question = page.getByRole("dialog", { name: "Remove Outlook from this tablet?" });
@@ -187,11 +202,12 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   await tap(question.getByRole("button", { name: "Remove from tablet" }));
   await expect.element(row(outlook)).not.toBeInTheDocument();
+  await expect.element(page.getByText("Outlook removed from this tablet", { exact: true })).toBeVisible();
   await expect.element(row(riverview)).toBeVisible();
 
   await tap(page.getByRole("button", { name: "Add another email" }));
   await tap(tile("Outlook"));
-  await answerOutlook("Allow");
+  await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
