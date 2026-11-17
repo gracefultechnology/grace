@@ -1,0 +1,214 @@
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+import character from "../agent/character.json" with { type: "json" }
+import policy from "../agent/policy.json" with { type: "json" }
+// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
+import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
+import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
+import { openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
+import { entryAt } from "../gen/app__calendarView.effect.vibe"
+import { messageRecord } from "../gen/app__email.effect.vibe"
+import type { Interaction } from "../gen/app__interaction.effect.vibe"
+import { openSource, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
+import type { Origin } from "../gen/app__request.effect.vibe"
+import { guidedReadKind, hasNext, Machine as Workspaces, nextOutcome, type GuidedRead } from "../gen/app__workspace.effect.vibe"
+import { Agent, type Applied } from "./agent.vibe"
+import { CalendarNews } from "./calendar.vibe"
+import { looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
+import { Instances, tablet } from "./instances.vibe"
+import { withhold } from "./private.ts"
+import { Reply } from "./reply.schema.ts"
+
+/** Where Grace's agent answers, and the tablet's credential for it. */
+export type CloudLink = { readonly url: string; readonly key: string }
+/** A turn the person takes: typed, or one of the answers Grace offered. */
+export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
+
+export service Conversation {
+  /** Takes the person's turn when the workspace allows it; Grace then answers it. */
+  say(input: PersonTurn): boolean!!
+  checkGuidedRead(): boolean!!
+}
+
+const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
+const apology = "Sorry, I didn’t catch that. Could you say it again?"
+const remembered = 12
+
+schema Delta { content?: string }
+schema Choice { delta: Delta }
+schema Chunk { choices: Choice[] }
+
+error Unanswered { status: number }
+
+const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+
+/** One streamed chat completion, as the cloud's agent sends it, collected into what Grace said. */
+effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true })
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
+  if (response.status !== 200) throw new Unanswered({ status: response.status })
+  const lines = Stream.filter(Stream.splitLines(Stream.decodeText(response.stream)), (line) => line.startsWith("data: ") && line !== "data: [DONE]")
+  const chunks = Stream.mapEffect(lines, (line) => Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line.slice("data: ".length)))
+  return try Stream.runFold(chunks, () => "", (said, chunk) => said + chunk.choices.map((c) => c.delta.content ?? "").join(""))
+}
+
+type GuidedReadSource =
+  | { tag: "CurrentMessage"; account: number; owner: string; ref: string; generation: number; revision: number; version: string }
+  | { tag: "CurrentDocument"; tab: number; loadVersion: number }
+  | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
+type GuidedReadReceipt = { source: GuidedReadSource; text: string }
+
+effect function guidedReceipt(scene: Scene, step: GuidedRead): (GuidedReadReceipt | undefined)!! {
+  const { registry, workspace } = scene
+  function receipt(source: GuidedReadSource, text: string): GuidedReadReceipt { return { source, text } }
+  switch (step) {
+    case "ReadMail": {
+      const account = openSource(registry, scene.mail)
+      const connection = registry.accounts.find((source) => source.id === account && source.use.mail)
+      const box = scene.mail.find((source) => source.account === account)?.mailbox
+      if (connection === undefined || box === undefined || box.connection !== "Connected" || box.readStatus !== "ReadIdle" ||
+          box.view !== "Message" || !box.canRead || box.account !== connection.address || box.provider !== connection.provider) return undefined
+      const { identity, revision, loaded } = messageRecord(box, box.messageRef)
+      const content = scene.content(account, box.messageRef)
+      if (!loaded || identity.owner !== box.owner || identity.account !== box.account || identity.provider !== box.provider ||
+          identity.ref !== box.messageRef || content === undefined) return undefined
+      return receipt({ tag: "CurrentMessage", account, owner: identity.owner, ref: identity.ref, generation: box.generation, revision, version: content.version },
+        content.subject === "" ? "The open message has no subject." : "Open message: " + content.subject)
+    }
+    case "ReadBrowser":
+    case "ReadChangedBrowser": {
+      const tab = activeTab(workspace.browser)
+      if (tab.load !== "Loaded" || (step === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      const url = try Effect.option(Effect.try(() => new URL(tabUrl(tab))))
+      if (Option.isNone(url) || (url.value.protocol !== "https:" && url.value.protocol !== "http:")) return undefined
+      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion }, "Open page: " + url.value.origin + url.value.pathname)
+    }
+    case "ReadCalendar": {
+      const key = openSelected(registry, scene.calendars)
+      const view = sourceAt(scene.calendars, key).view
+      const account = key === tablet ? "tablet" : registry.accounts.find((source) => source.id === key && source.use.calendar)?.address
+      const { committed, identity, revision, hasSaved, phase } = entryAt(view, view.selectedId)
+      if (account === undefined || !view.opened || !hasSaved || phase !== "Saved" || identity.kind !== "Appointment" ||
+          identity.owner !== account || view.owner !== account || identity.calendarId !== view.calendarId ||
+          identity.occurrenceId !== view.selectedId) return undefined
+      const time = try Effect.option(Effect.try(() => new Date(committed.startAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })))
+      if (Option.isNone(time)) return undefined
+      return receipt({ tag: "CurrentAppointment", key, owner: identity.owner, calendarId: identity.calendarId,
+        occurrence: identity.occurrenceId, generation: view.generation, revision }, committed.title + " · " + time.value)
+    }
+    case "UnsupportedRead": return undefined
+  }
+}
+
+/** The person's turns go to Grace's agent over `link`; without one, Grace is not available and no turn starts. */
+export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
+  const workspace = try Workspaces
+  const agent = try Agent
+  const asked = try Ref.make<{ readonly generation: number; readonly origin: Origin }>({ generation: -1, origin: "FromDevice" })
+  const notDone = try Ref.make<readonly Applied[]>([])
+  const told = try Ref.make<readonly string[]>([])
+  const look = try looker()
+  const registry = try Accounts
+  const shelf = try Instances
+  const news = try CalendarNews
+  const scope = try Scope.Scope
+
+  effect function tell(words: string) {
+    if (words !== "") try Ref.update(told, (all) => [...all, words])
+  }
+
+  effect function following<S>(changes: Stream.Stream<S>, words: (before: S, after: S) => string!!) {
+    const last = try Ref.make<S | undefined>(undefined)
+    try fork.in(scope) Stream.runForEach(changes, effect (after) => {
+      const before = try Ref.getAndSet(last, after)
+      if (before !== undefined) try tell(try words(before, after))
+    })
+  }
+
+  const watched = new Set<number>()
+  try following(registry.changes, effect (before: Registry, after: Registry) => {
+    for (const { id } of after.accounts) {
+      const box = watched.has(id) ? undefined : shelf.mail(id) catch () => undefined
+      if (box === undefined) continue
+      watched.add(id)
+      try following(box.changes, effect (was, now) => toldOfMail(try look(), mailTold(id, was, now)))
+    }
+    return toldOfAccounts(before, after)
+  })
+  try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
+
+  effect function fail(token: number) {
+    workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: apology } }, "Host") catch () => undefined
+  }
+
+  effect function answer(link: CloudLink, token: number) {
+    const scene = try look()
+    const w = scene.workspace
+    const { messages } = w.assistant.conversation
+    const latest = messages.length - 1
+    const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
+    if (outgoing.at(-1)?.content !== messages[latest]?.text) {
+      workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
+      return
+    }
+    const shown = render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), try Ref.getAndSet(told, []))
+    const said = ask(link, [{ role: "system", content: `${character.system}\n\n${shown.text}` }, ...outgoing]) catch () => undefined
+    const reply = said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
+    if (reply === undefined) return try fail(token)
+    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply))
+  }
+
+  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type) {
+    const offeredRead = actions.some((action) => action.kind === "proposeReadPlan")
+    const response = offeredRead
+      ? { text: actions.length === 1 ? "Review the selected-item checks before starting." : "I could not prepare that read plan.", isQuestion: false, answers: [] }
+      : { text, isQuestion, answers: [...answers] }
+    const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: false } }, "Host") catch () => undefined
+    if (responded === undefined) return
+    const last = try Ref.get(asked)
+    const origin = last.generation === token ? last.origin : "FromDevice"
+    const applied = try agent.apply(actions, { generation: token, workVersion, origin })
+    try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
+  }
+
+  if (link !== undefined) {
+    const { device } = try workspace.get()
+    const availability = { connection: device.connectivity, reasoning: true, microphone: device.microphoneAllowed, observation: device.observationAllowed }
+    workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined
+    const thinking = Stream.changes(Stream.map(workspace.changes, ({ assistant: { conversation: c } }) => c.turn === "Thinking" ? c.generation : -1))
+    try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(answer(link, token))))
+  }
+
+  return {
+    checkGuidedRead: effect () => {
+      const scene = try look()
+      const current = scene.workspace
+      const step = nextOutcome(current.plan)
+      if (!hasNext(current.plan) || step.surface !== current.device.surface) return false
+      const read = guidedReadKind(step)
+      const found = try guidedReceipt(scene, read)
+      if (found === undefined) return false
+      const confirmed = try look()
+      const rechecked = try guidedReceipt(confirmed, read)
+      const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
+      if (!sameRecord) return false
+      const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
+      const report = {
+        owner: current.plan.owner,
+        task: current.assistant.taskId,
+        version: current.assistant.workVersion,
+        deviceVersion: current.device.contextVersion,
+        browserRevision: current.browser.revision,
+        step,
+        evidence
+      }
+      const accepted = workspace.send({ type: "confirmGuided", report }, "Host") catch () => undefined
+      return accepted !== undefined
+    },
+    say: effect (input) => {
+      const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
+      if (taken === undefined) return false
+      try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, origin: origins[input.tag] })
+      return true
+    }
+  }
+}).pipe(Layer.provide(client))

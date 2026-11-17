@@ -1,11 +1,12 @@
 import { expect, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import type { PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
+import { bookingStatusLabels, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
 
 export const meta: ComponentMeta<PaymentStatusBadgeProps> = {
   args: { status: "scheduled", date: "Nov 12", company: "Chase", reference: "4F7K-22Q" },
   examples: {
     Unknown: { status: "unknown", reference: undefined },
+    Booking: { status: "pending", company: "Main St Clinic", reference: undefined, labels: bookingStatusLabels },
   },
   decorator: (story) => <div className="group/grace bg-background p-6">{story()}</div>,
   play: {
