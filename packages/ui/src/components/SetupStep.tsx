@@ -1,9 +1,9 @@
 import { useId, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { cn } from "../lib/cn.ts";
 import { Button, GracePill } from "./Button.tsx";
 import { GraceBubble } from "./GraceBubble.tsx";
 import { GraceCapsule } from "./GraceHeader.tsx";
-import { GraceMessages } from "./GraceMessages.tsx";
 import { GraceWindow, type GraceWindowProps } from "./GraceWindow.tsx";
 import { GuideLabel } from "./GuideLabel.tsx";
 import { GuideRing } from "./GuideRing.tsx";
@@ -12,7 +12,7 @@ import { ProgressStrip, type ProgressStripProps } from "./ProgressStrip.tsx";
 
 export type SetupRing = "talk" | "type" | "close";
 
-const dockRings: Record<Exclude<SetupRing, "close">, string> = {
+const dockRings: Partial<Record<SetupRing, string>> = {
   talk: "[&_[aria-pressed]]:shadow-guide-tight [&_[aria-pressed]]:animate-guide-pulse-tight motion-reduce:[&_[aria-pressed]]:animate-none",
   type: "[&_[data-open-keyboard]]:shadow-guide-tight [&_[data-open-keyboard]]:animate-guide-pulse-tight motion-reduce:[&_[data-open-keyboard]]:animate-none",
 };
@@ -75,7 +75,7 @@ export function SetupStep({ progress, line, speaking = false, content, action, n
       aria-label="Setting up"
       size="expanded"
       header={header}
-      dock={dock == null ? undefined : <div className={ring === "talk" || ring === "type" ? dockRings[ring] : undefined}>{dock}</div>}
+      dock={dock == null ? undefined : <div className={ring && dockRings[ring]}>{dock}</div>}
       {...props}
     >
       {progress ? (
@@ -83,7 +83,7 @@ export function SetupStep({ progress, line, speaking = false, content, action, n
           <ProgressStrip {...progress} />
         </div>
       ) : null}
-      <GraceMessages className={progress ? "pt-6" : undefined}>
+      <div className={cn("flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", progress ? "pt-6" : "pt-[88px]")}>
         <GraceBubble activity={speaking ? "speaking" : undefined}>{line}</GraceBubble>
         {content}
         {action || notNow ? (
@@ -107,7 +107,7 @@ export function SetupStep({ progress, line, speaking = false, content, action, n
             ) : null}
           </div>
         ) : null}
-      </GraceMessages>
+      </div>
     </GraceWindow>
   );
 }
