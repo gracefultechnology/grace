@@ -1,7 +1,10 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
-import { client, parts, reply, signIn, turns, unending } from "./cloud.vibe"
+import { approveSave, beginEdit, create, edit, initial as noEntry } from "../gen/app__calendar.effect.vibe"
+import type { Folder } from "../gen/app__emailItem.effect.vibe"
+import { type AccountRef, Connector, NeedsSignIn, secretPassword } from "../src/connector.vibe"
+import { client, connectorAt, expire, otherPassword, outage, parts, reply, script, signIn, turns, unending } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
@@ -57,10 +60,215 @@ it.live("Talk or type without losing the conversation: a turn streams to its end
     const said = "Hello Grace."
     const whole = (try Stream.runCollect(try parts(cloud, key, said))).join("")
     try scoped(effect { try Stream.runHead(try parts(cloud, key, unending)) })
+    try script(cloud, key, [{ answer: "Scripted." }])
+    const scripted = (try Stream.runCollect(try parts(cloud, key, said))).join("")
     const recorded = try turns(cloud, key)
-    try Effect.try(() => assert.deepStrictEqual({ whole, recorded }, {
+    try Effect.try(() => assert.deepStrictEqual({ whole, scripted, recorded }, {
       whole: reply(said),
-      recorded: [{ said, outcome: "completed" }, { said: unending, outcome: "aborted" }]
+      scripted: "Scripted.",
+      recorded: [{ said, outcome: "completed" }, { said: unending, outcome: "aborted" }, { said, outcome: "completed" }]
     }))
+  }
+})
+
+const gmail: AccountRef = { provider: "Gmail", address: "owner@grace.test" }
+const outlook: AccountRef = { provider: "Outlook", address: "margaret@outlook.com" }
+const riverview: AccountRef = { provider: "OtherEmail", address: "margaret@riverview.net" }
+const scope = (account: AccountRef, folder: Folder, query = "") => ({ owner: account.address, provider: account.provider, account: account.address, folder, query, generation: 1 })
+
+/** The messages of `account`'s `folder` the connector lists, as subjects, or the failure that stopped the listing. */
+effect function listed(account: AccountRef, folder: Folder, query = "") {
+  const found = Stream.runCollect((try Connector).mail(account).list(scope(account, folder, query), () => 0)) catch (e) => e._tag
+  return typeof found === "string" ? found : found.map((m) => m.content.subject)
+}
+
+effect function versionOf(account: AccountRef, folder: Folder, ref: string) {
+  const found = try Stream.runCollect((try Connector).mail(account).list(scope(account, folder), () => 3))
+  return found.find((m) => m.receipt.seed.identity.ref === ref)?.content.version ?? ""
+}
+
+it.live("Connect the email I already use: each company's own page answers with its outcome only, and an Other email is checked on its own servers", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    const visits = [{ choice: "allow", address: outlook.address }, { choice: "cancel" }, { choice: "unfinished", address: "margaret@aol.com" }] as const
+    provide connectorAt(cloud, secret, visits) {
+      const connector = try Connector
+      const password = secretPassword(otherPassword)
+      const pages = [
+        try connector.signIn({ provider: "Outlook", attempt: 1, renewing: "" }),
+        try connector.signIn({ provider: "Yahoo", attempt: 2, renewing: "" }),
+        try connector.signIn({ provider: "Aol", attempt: 3, renewing: "" }),
+        try connector.signIn({ provider: "OtherEmail", attempt: 4, renewing: "" })
+      ]
+      const checks = [
+        try connector.connectOther({ attempt: 5, address: "margaret@yahoo.com", password }),
+        try connector.connectOther({ attempt: 6, address: riverview.address, password: secretPassword("a guess") }),
+        try connector.connectOther({ attempt: 7, address: riverview.address, password }),
+        try connector.connectServers({ attempt: 8, address: riverview.address, password, incoming: "mail.riverview.net", outgoing: "smtp.riverview.net" })
+      ]
+      const inboxes = { outlook: try listed(outlook, "InboxFolder"), riverview: try listed(riverview, "InboxFolder"), yahoo: try listed({ provider: "Yahoo", address: "margaret@yahoo.com" }, "InboxFolder") }
+      const all = { mail: true, calendar: true, contacts: true }
+      const none = { mail: false, calendar: false, contacts: false }
+      try Effect.try(() => assert.deepStrictEqual({ pages, checks, inboxes }, {
+        pages: [
+          { attempt: 1, outcome: "Allowed", address: outlook.address, granted: all },
+          { attempt: 2, outcome: "Cancelled", address: "", granted: none },
+          { attempt: 3, outcome: "Refused", address: "", granted: none },
+          { attempt: 4, outcome: "Refused", address: "", granted: none }
+        ],
+        checks: [
+          { attempt: 5, outcome: "OtherRefused", address: "margaret@yahoo.com" },
+          { attempt: 6, outcome: "OtherPasswordRefused", address: riverview.address },
+          { attempt: 7, outcome: "OtherNeedsServers", address: riverview.address },
+          { attempt: 8, outcome: "OtherAllowed", address: riverview.address }
+        ],
+        inboxes: { outlook: ["Thanksgiving dinner sign-up"], riverview: ["Your November bill is ready"], yahoo: "NeedsSignIn" }
+      }))
+    }
+  }
+})
+
+it.live("Choose what each email brings and take it off the tablet: an expired sign-in asks again, and signing in again renews the same account", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    provide connectorAt(cloud, secret, [{ choice: "allow", address: outlook.address }, { choice: "allow", address: outlook.address }]) {
+      const connector = try Connector
+      try connector.signIn({ provider: "Outlook", attempt: 1, renewing: "" })
+      try expire(cloud, secret, outlook.address)
+      const expired = try listed(outlook, "InboxFolder")
+      const renewed = try connector.signIn({ provider: "Outlook", attempt: 2, renewing: outlook.address })
+      const again = try listed(outlook, "InboxFolder")
+      try Effect.try(() => assert.deepStrictEqual({ expired, renewed: renewed.outcome, again }, { expired: new NeedsSignIn()._tag, renewed: "Allowed", again: ["Thanksgiving dinner sign-up"] }))
+    }
+  }
+})
+
+it.live("Read an email and its original attachment, and find and open the email I intend: listing, search, the message with its PDF, and the reply's header", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    provide connectorAt(cloud, secret) {
+      const mail = (try Connector).mail(gmail)
+      const inbox = try listed(gmail, "InboxFolder")
+      const found = try listed(gmail, "InboxFolder", "clinic")
+      const opened = try mail.read("clinic", 4)
+      const header = try mail.header("clinic", 4)
+      try Effect.try(() => assert.deepStrictEqual({
+        inbox, found, header, receipt: opened.receipt, from: [opened.content.from, opened.content.fromAddress], body: opened.content.body.startsWith("Dear Margaret")
+      }, {
+        inbox: ["Your Riverside Power bill is ready", "A message for Grace", "Lunch on Sunday?", "Reminder: your appointment tomorrow at 10 am"],
+        found: ["Reminder: your appointment tomorrow at 10 am"],
+        header: { ref: "clinic", generation: 4, address: "frontdesk@mainst-clinic.test", subject: "Re: Reminder: your appointment tomorrow at 10 am", verified: true },
+        receipt: { generation: 4, succeeded: true, suspicion: "", assets: [{
+          id: "clinic/visit-form", kind: "Pdf", name: "Visit form.pdf", origin: "frontdesk@mainst-clinic.test", account: gmail.address, container: "clinic",
+          sourceRef: "clinic", contentRef: "visit-form", group: "clinic", savedAt: 0, pages: 2
+        }] },
+        from: ["Main St Clinic", "frontdesk@mainst-clinic.test"],
+        body: true
+      }))
+    }
+  }
+})
+
+it.live("Delete a message and recover it safely: Trash, Restore, unread and Delete for good each come back with the company's receipt", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    provide connectorAt(cloud, secret) {
+      const mail = (try Connector).mail(gmail)
+      const identity = { owner: gmail.address, provider: "Gmail", account: gmail.address, ref: "family" }
+      const changed = effect (change: "TrashMessage" | "RestoreMessage" | "UnreadMessage" | "ReadMessage" | "PurgeMessage", folder: Folder) => {
+        const receipt = try mail.change({ identity, change, revision: 3, version: try versionOf(gmail, folder, "family") })
+        return [receipt.result, receipt.evidence.startsWith("history:") || receipt.evidence]
+      }
+      const trashed = try changed("TrashMessage", "InboxFolder")
+      const inTrash = try listed(gmail, "TrashFolder")
+      const restored = try changed("RestoreMessage", "TrashFolder")
+      const stale = try mail.change({ identity, change: "ReadMessage", revision: 3, version: "1" })
+      const read = try changed("ReadMessage", "InboxFolder")
+      const unread = try changed("UnreadMessage", "InboxFolder")
+      try outage(cloud, secret, true)
+      const offline = try mail.change({ identity, change: "TrashMessage", revision: 3, version: "1" })
+      try outage(cloud, secret, false)
+      const purged = try changed("PurgeMessage", "InboxFolder")
+      const left = [...try listed(gmail, "InboxFolder"), ...try listed(gmail, "TrashFolder")]
+      try Effect.try(() => assert.deepStrictEqual({ trashed, inTrash, restored, stale, read, unread, offline, purged, left }, {
+        trashed: ["ChangeIdle", true], inTrash: ["Lunch on Sunday?"], restored: ["ChangeIdle", true],
+        stale: { identity, revision: 3, result: "ChangeFailed", evidence: "refused:409" },
+        read: ["ChangeIdle", true], unread: ["ChangeIdle", true],
+        offline: { identity, revision: 3, result: "ChangeUnknown", evidence: "" },
+        purged: ["ChangeIdle", true],
+        left: ["Your Riverside Power bill is ready", "A message for Grace", "Reminder: your appointment tomorrow at 10 am"]
+      }))
+    }
+  }
+})
+
+it.live("Write or reply and confirm before sending: contacts resolve, drafts keep, a send goes once per operation, and one sent while the cloud is down goes later", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    provide connectorAt(cloud, secret) {
+      const mail = (try Connector).mail(gmail)
+      const content = { to: "susan@family.test", cc: [], bcc: [], subject: "Sunday", body: "See you on Sunday. Love, Mom" }
+      const draft = { id: "draft-sunday", version: 1, content, attachments: [], replyTo: "" }
+      const reply = { ...draft, id: "", content: { ...content, to: "ruth@family.test", subject: "Re: Lunch on Sunday?", body: "Yes please." }, replyTo: "family" }
+      const people = (try mail.contacts()).length
+      const resolved = [try mail.resolve("susan"), try mail.resolve("Nobody")]
+      const saved = try mail.saveDraft(draft)
+      const drafts = try listed(gmail, "DraftsFolder")
+      const removed = try mail.deleteDraft("draft-sunday")
+      const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
+      const sent = try listed(gmail, "SentFolder")
+      const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).find((m) => m.content.ref === "family")?.receipt.seed.answered
+      const looked = [try mail.lookup("operation-1"), try mail.lookup("operation-never")]
+      try outage(cloud, secret, true)
+      const offline = try mail.send("operation-2", draft)
+      try outage(cloud, secret, false)
+      const later = [try mail.lookup("operation-2"), try mail.send("operation-2", draft), try mail.send("operation-2", draft)]
+      const evidence = sends[0].evidence
+      const once = try listed(gmail, "SentFolder")
+      try Effect.try(() => assert.deepStrictEqual({ people, resolved, saved, drafts, removed, sends, sent, answered, looked, offline, later: later.map((s) => s.resultStatus), once }, {
+        people: 6,
+        resolved: [{ address: "susan@family.test", verified: true }, { address: "", verified: false }],
+        saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], removed: true,
+        sends: [{ resultStatus: "Sent", evidence }, { resultStatus: "Sent", evidence }],
+        sent: ["Re: Lunch on Sunday?"], answered: true,
+        looked: [{ resultStatus: "Sent", evidence }, { resultStatus: "SendFailed", evidence: "refused:404" }],
+        offline: { resultStatus: "SendUnknown", evidence: "" },
+        later: ["SendFailed", "Sent", "Sent"],
+        once: ["Re: Lunch on Sunday?", "Sunday"]
+      }))
+    }
+  }
+})
+
+it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email, a change and a deletion", () => effect {
+  provide client {
+    const { secret } = try signIn(cloud)
+    provide connectorAt(cloud, secret) {
+      const calendar = (try Connector).calendar(gmail)
+      const now = try Clock.currentTimeMillis
+      const window = { owner: gmail.address, calendarId: "primary", fromTime: now - 24 * 60 * 60 * 1000, untilTime: now + 30 * 24 * 60 * 60 * 1000 }
+      const feed = effect () => (try Stream.runCollect(calendar.feed(window))).map((p) => p.incoming)
+      const [eyeCheck] = try feed()
+      const start = now + 24 * 60 * 60 * 1000
+      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+      const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + 60 * 60 * 1000, reminderEnabled: true, leadTime: 24 * 60 * 60 * 1000 }
+      const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
+      const added = [try calendar.write(fresh), try calendar.write(fresh)]
+      const [, visit] = try feed()
+      const moved = edit(beginEdit(visit, "CalendarUser"), { ...visit.committed, title: "Check-up with Dr. Patel" }, "CalendarUser")
+      const changed = try calendar.write(moved)
+      const titles = (try feed()).map((c) => [c.committed.title, c.identity.sourceRef, c.committed.participant, c.committed.reminderEnabled])
+      const removed = [try calendar.remove("clinic-visit", "ThisOccurrence"), try calendar.remove("clinic-visit", "ThisOccurrence")]
+      const left = (try feed()).map((c) => c.identity.occurrenceId)
+      try Effect.try(() => assert.deepStrictEqual({ eyeCheck: [eyeCheck.phase, eyeCheck.identity.occurrenceId, eyeCheck.committed.participant], visit: visit.committed, added, changed, titles, removed, left }, {
+        eyeCheck: ["Saved", "eye-check", "Dr. Patel"],
+        visit: details,
+        added: [{ revision: 1, succeeded: true }, { revision: 1, succeeded: true }],
+        changed: { revision: moved.revision, succeeded: true },
+        titles: [["Eye check with Dr. Patel", "", "Dr. Patel", false], ["Check-up with Dr. Patel", "clinic", "Dr. Patel", true]],
+        removed: [{ succeeded: true, evidence: "deleted:clinic-visit" }, { succeeded: true, evidence: "absent" }],
+        left: ["eye-check"]
+      }))
+    }
   }
 })

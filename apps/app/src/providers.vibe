@@ -1,0 +1,16 @@
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
+// Outlook, Yahoo, iCloud, AOL and Other email on provider-neutral cloud routes shaped as Google's are. Upstream follow-up: these routes exist only
+// in the test fake (apps/app/test/cloud.vibe); Eliza Cloud needs Microsoft Graph for Outlook and IMAP/SMTP with CalDAV for the rest.
+import type { Provider } from "../gen/app__accounts.effect.vibe"
+import type { Routes } from "./connector.vibe"
+
+const at = (slug: string): Routes => ({
+  slug,
+  accounts: `/api/v1/eliza/mail/${slug}/accounts`,
+  mail: `/api/v1/eliza/mail/${slug}`,
+  calendar: `/api/v1/eliza/calendar/${slug}`
+})
+
+export const providers: Record<Exclude<Provider, "Gmail">, Routes> = {
+  Outlook: at("outlook"), Yahoo: at("yahoo"), ICloud: at("icloud"), Aol: at("aol"), OtherEmail: at("other")
+}

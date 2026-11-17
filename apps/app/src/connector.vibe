@@ -1,0 +1,357 @@
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
+// One way to reach an email company, whichever it is. It answers sign-in with its outcome only, and parses what the cloud sends into the
+// generated mail, message and calendar types; nothing above it sees a wire payload or the password.
+import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
+import { approveSave, create, initial as noEntry, save, validDetails, type Calendar, type EntryDetails, type ViewQuery } from "../gen/app__calendar.effect.vibe"
+import type { DeleteScope } from "../gen/app__calendarView.effect.vibe"
+import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
+import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
+import type { SavedFile } from "../gen/app__files.effect.vibe"
+import { ContactList, DraftSaved, Feed, Grants, Listing, OtherCheck, Prepared, ReadResponse, Sent, Session, SessionOutcome, WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
+import type { CloudLink } from "./conversation.vibe"
+import { google } from "./google.vibe"
+import { providers } from "./providers.vibe"
+
+/** Where a company's routes are at the cloud: its sign-in name, its connected accounts, its mail and its calendar. */
+export type Routes = { readonly slug: string; readonly accounts: string; readonly mail: string; readonly calendar: string }
+/** What she typed into the Other email form: never logged, stored or shown, and handed only to the connector's check. */
+export type SecretPassword = Brand.Branded<Redacted.Redacted<string>, "SecretPassword">
+type WireMessage = typeof WireMessage.Type
+type WireEvent = typeof WireEvent.Type
+type WireAttachment = typeof WireAttachment.Type
+const branded = Brand.nominal<SecretPassword>()
+export const secretPassword = (typed: string): SecretPassword => branded(Redacted.make(typed))
+
+/** An account on the tablet, as its company knows it. */
+export type AccountRef = { readonly provider: Provider; readonly address: string }
+export type SignInRequest = { readonly provider: Provider; readonly attempt: number; readonly renewing: string }
+export type OtherForm = { readonly attempt: number; readonly address: string; readonly password: SecretPassword }
+export type ServersForm = OtherForm & { readonly incoming: string; readonly outgoing: string }
+/** What the tablet shows of an email beside its record: the provider's `version` is what a change to it must name. */
+export type MailContent = {
+  readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
+  readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
+}
+export type Listed = { readonly receipt: MetadataReceipt; readonly content: MailContent }
+export type Opened = { readonly receipt: ReadReceipt; readonly content: MailContent }
+export type Contact = { readonly name: string; readonly address: string }
+export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Exclude<MessageChange, "NoMessageChange">; readonly revision: number; readonly version: string }
+export type DraftStored = { readonly draftId: string; readonly persisted: boolean }
+export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
+export type Published = { readonly incoming: Calendar; readonly seriesVersion: number; readonly scheduleVerified: boolean }
+export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean }
+export type DeletionReceipt = { readonly succeeded: boolean; readonly evidence: string }
+
+/** The account's sign-in has run out or was taken back: she must sign in again. */
+export error NeedsSignIn
+/** The cloud or her company cannot be reached now. */
+export error Unreachable
+/** Her company answered, and said no or sent what cannot be read. */
+export error ProviderRefused { status: number }
+export type ConnectorFailure = NeedsSignIn | Unreachable | ProviderRefused
+
+/** Shows a company's own sign-in page, inside the sign-in sheet where the company allows it, else where the platform must. */
+export service SignInPage {
+  open(url: string): void!!
+  close(url: string): void!!
+}
+
+export type MailConnection = {
+  /** The messages of `scope`'s folder and query, each receipt carrying the record revision `revisionOf` captured for it when the listing began. */
+  readonly list: (scope: ListingScope, revisionOf: (ref: string) => number) => Stream.Stream<Listed, ConnectorFailure>
+  readonly read: (ref: string, generation: number) => Opened!ConnectorFailure
+  readonly header: (ref: string, generation: number) => ReplyHeader!ConnectorFailure
+  readonly resolve: (contact: string) => Recipient!ConnectorFailure
+  readonly contacts: () => readonly Contact[]!ConnectorFailure
+  readonly change: (op: ChangeOp) => ChangeReceipt!NeedsSignIn
+  readonly saveDraft: (snapshot: DraftSnapshot) => DraftStored!NeedsSignIn
+  readonly deleteDraft: (draftId: string) => boolean!NeedsSignIn
+  /** Sends once per `operationId`, however often it is asked. */
+  readonly send: (operationId: string, snapshot: DraftSnapshot) => SendOutcome!NeedsSignIn
+  readonly lookup: (operationId: string) => SendOutcome!NeedsSignIn
+}
+
+export type CalendarConnection = {
+  readonly feed: (window: ViewQuery) => Stream.Stream<Published, ConnectorFailure>
+  readonly write: (entry: Calendar) => StoreReceipt!NeedsSignIn
+  readonly remove: (id: string, scope: DeleteScope) => DeletionReceipt!NeedsSignIn
+}
+
+export service Connector {
+  signIn(request: SignInRequest): SheetReport!!
+  connectOther(form: OtherForm): OtherReport!!
+  connectServers(form: ServersForm): OtherReport!!
+  readonly mail: (account: AccountRef) => MailConnection
+  readonly calendar: (account: AccountRef) => CalendarConnection
+}
+
+const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+const routes: Record<Provider, Routes> = { Gmail: google, ...providers }
+const nothing: Use = { mail: false, calendar: false, contacts: false }
+const searched: Record<Folder, string | undefined> = { InboxFolder: "in:inbox", SentFolder: "in:sent", DraftsFolder: "in:drafts", TrashFolder: "in:trash", PurgedFolder: undefined }
+const operations: Record<ChangeOp["change"], string> = { ReadMessage: "mark-read", UnreadMessage: "mark-unread", TrashMessage: "trash", RestoreMessage: "untrash", PurgeMessage: "purge" }
+const checked: Record<typeof OtherCheck.Type["outcome"], OtherReport["outcome"]> = {
+  allowed: "OtherAllowed", passwordRefused: "OtherPasswordRefused", needsServers: "OtherNeedsServers", refused: "OtherRefused"
+}
+const ended: Record<typeof SessionOutcome.Type["status"], SheetReport["outcome"]> = { allowed: "Allowed", cancelled: "Cancelled", refused: "Refused" }
+
+function folderOf(labels: readonly string[]): Folder {
+  return labels.includes("TRASH") ? "TrashFolder" : labels.includes("DRAFT") ? "DraftsFolder" : labels.includes("SENT") ? "SentFolder" : "InboxFolder"
+}
+
+function content(m: WireMessage, body: string): MailContent {
+  return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt: Date.parse(m.receivedAt), snippet: m.snippet, body, version: m.metadata.historyId }
+}
+
+function listed(scope: ListingScope, m: WireMessage, revision: number): Listed {
+  const identity = { owner: scope.owner, provider: scope.provider, account: scope.account, ref: m.externalId }
+  return {
+    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered: m.labels.includes("ANSWERED") }, revision, evidence: `history:${m.metadata.historyId}` },
+    content: content(m, "")
+  }
+}
+
+/** An attachment the tablet can keep: a PDF or a photo, named by its message. */
+function asset(account: string, m: WireMessage, a: WireAttachment): SavedFile[] {
+  const kind = a.mimeType === "application/pdf" ? "Pdf" : a.mimeType.startsWith("image/") ? "Photo" : undefined
+  return kind === undefined ? [] : [{
+    id: `${m.externalId}/${a.id}`, kind, name: a.name, origin: m.fromEmail ?? m.from, account, container: m.externalId,
+    sourceRef: m.externalId, contentRef: a.id, group: m.externalId, savedAt: 0, pages: a.pages
+  }]
+}
+
+const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
+const iso = (at: number) => new Date(at).toISOString()
+const minute = 60 * 1000
+
+function details(window: ViewQuery, e: WireEvent): EntryDetails {
+  const { metadata: x } = e
+  return {
+    title: e.title, location: e.location, participant: x.participant ?? "", notes: e.description, startAt: Date.parse(e.startAt), endAt: Date.parse(e.endAt),
+    timezone: e.timezone ?? "UTC", allDay: e.isAllDay, seriesId: x.seriesId ?? "", recurrence: x.recurrence ?? "Once",
+    reminderEnabled: x.reminderMinutes !== undefined, leadTime: (x.reminderMinutes ?? 0) * minute, important: x.important ?? false
+  }
+}
+
+/** A provider event as the saved occurrence the calendar view admits, or nothing when it is not a complete one. */
+function published(window: ViewQuery, e: WireEvent): Published[] {
+  const identity = { owner: window.owner, calendarId: window.calendarId, occurrenceId: e.externalId, sourceRef: e.metadata.sourceRef ?? "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+  const entry = details(window, e)
+  if (!validDetails(entry) || identity.owner === "" || identity.calendarId === "" || identity.occurrenceId === "") return []
+  return [{ incoming: save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore"), seriesVersion: 0, scheduleVerified: true }]
+}
+
+function event(entry: Calendar) {
+  const d = entry.draft
+  return {
+    title: d.title, description: d.notes, location: d.location, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone, isAllDay: d.allDay,
+    metadata: {
+      ...entry.identity.sourceRef === "" ? {} : { sourceRef: entry.identity.sourceRef }, participant: d.participant, recurrence: d.recurrence,
+      ...d.seriesId === "" ? {} : { seriesId: d.seriesId }, ...d.reminderEnabled ? { reminderMinutes: Math.round(d.leadTime / minute) } : {}, important: d.important
+    }
+  }
+}
+
+/** A fresh random operation identifier, in the UUID form the cloud's operations take. */
+effect function operationId() {
+  const digits: number[] = []
+  for (let i = 0; i < 32; i++) digits.push(Math.abs(try Random.nextInt) % 16)
+  digits[12] = 4
+  digits[16] = 8 + (digits[16] % 4)
+  const hex = digits.map((d) => d.toString(16)).join("")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+const outcome = (resultStatus: SendOutcome["resultStatus"], evidence: string): SendOutcome => ({ resultStatus, evidence })
+
+/** Whether a refusal is the company's answer that it did not do it, rather than an unreadable answer to a request that may have been done. */
+const certain = (e: ProviderRefused) => e.status >= 400
+
+/** Reaches the email companies through Eliza Cloud at `link`, showing their sign-in pages with `SignInPage`. */
+export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+  const http = try HttpClient.HttpClient
+  const page = try SignInPage
+  const grants = try Ref.make(new Map<string, string>())
+
+  effect function call(request: HttpClientRequest.HttpClientRequest!ConnectorFailure) {
+    const response = http.execute(HttpClientRequest.bearerToken(try request, link.key)) catch effect () => { throw new Unreachable() }
+    if (response.status === 401) throw new NeedsSignIn()
+    if (response.status >= 500) throw new Unreachable()
+    if (response.status >= 400) throw new ProviderRefused({ status: response.status })
+    return response
+  }
+
+  effect function fetched<A>(request: HttpClientRequest.HttpClientRequest!ConnectorFailure, schema: Schema.Decoder<A>) {
+    const response = try call(request)
+    const body = response.json catch effect () => { throw new ProviderRefused({ status: response.status }) }
+    return Schema.decodeUnknownEffect(schema)(body) catch effect () => { throw new ProviderRefused({ status: response.status }) }
+  }
+
+  const get = (url: string, params: Record<string, string>) => Effect.succeed(HttpClientRequest.setUrlParams(HttpClientRequest.get(`${link.url}${url}`), params))
+  const post = (url: string, body: object) => Effect.succeed(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}${url}`), body))
+
+  /** The cloud's grant for `account`, asked once: an account the cloud does not know must be signed in again. */
+  effect function grantOf(account: AccountRef) {
+    const key = `${account.provider}:${account.address.toLowerCase()}`
+    const known = (try Ref.get(grants)).get(key)
+    if (known !== undefined) return known
+    const found = (try fetched(get(routes[account.provider].accounts, {}), Grants)).find((g) => g.email.toLowerCase() === account.address.toLowerCase())
+    if (found === undefined) throw new NeedsSignIn()
+    try Ref.update(grants, (all) => new Map(all).set(key, found.id))
+    return found.id
+  }
+
+  /** How her visit to the company's page ended; Cancel on the tablet interrupts it, and the cloud closes the page. */
+  effect function visit({ provider, attempt, renewing }: SignInRequest) {
+    const session = try fetched(post(`/api/v1/eliza/connections/${routes[provider].slug}/sessions`, { loginHint: renewing }), Session)
+    const waited = ensuring(effect {
+      try page.open(session.pageUrl)
+      return try fetched(get(`/api/v1/eliza/connections/sessions/${session.sessionId}`, {}), SessionOutcome)
+    }, page.close(session.pageUrl))
+    const outcome = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${session.sessionId}`)))))
+    const address = outcome.address ?? ""
+    const result = outcome.status === "allowed" && address === "" ? "Refused" : ended[outcome.status]
+    return { attempt, outcome: result, address: result === "Allowed" ? address : "", granted: result === "Allowed" ? outcome.granted ?? nothing : nothing } satisfies SheetReport
+  }
+
+  effect function check(attempt: number, address: string, body: object) {
+    return Effect.map(fetched(post("/api/v1/eliza/connections/other", body), OtherCheck), (c): OtherReport => ({ attempt, outcome: checked[c.outcome], address: c.address }))
+      catch (): OtherReport => ({ attempt, outcome: "OtherRefused", address })
+  }
+
+  function mail(account: AccountRef): MailConnection {
+    const at = routes[account.provider].mail
+    const asked = effect (path: string, params: Record<string, string>) => try get(`${at}${path}`, { ...params, grantId: try grantOf(account) })
+    const posted = effect (path: string, body: object, headers: Record<string, string> = {}) =>
+      HttpClientRequest.setHeaders(try post(`${at}${path}`, { ...body, grantId: try grantOf(account) }), headers)
+    const removed = effect (path: string, params: Record<string, string>) =>
+      HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { ...params, grantId: try grantOf(account) })
+
+    effect function read(ref: string) {
+      return try fetched(asked("/read", { messageId: ref }), ReadResponse)
+    }
+
+    effect function contacts(query: string) {
+      return (try fetched(asked("/contacts", { query }), ContactList)).contacts.map((c): Contact => ({ name: c.name, address: c.email }))
+    }
+
+    effect function sent(request: HttpClientRequest.HttpClientRequest!ConnectorFailure) {
+      return Effect.map(fetched(request, Sent), ({ messageId }) => outcome("Sent", `message:${messageId}`)) catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        when ProviderRefused: certain(e) ? outcome("SendFailed", `refused:${e.status}`) : outcome("SendUnknown", "");
+        when Unreachable: outcome("SendUnknown", "");
+      }
+    }
+
+    return {
+      list: (scope, revisionOf) => {
+        const folder = searched[scope.folder]
+        return folder === undefined ? Stream.empty : Stream.unwrap(effect {
+          const { messages } = try fetched(asked("/search", { query: `${folder} ${scope.query}`.trim() }), Listing)
+          return Stream.fromIterable(messages.map((m) => listed(scope, m, revisionOf(m.externalId))))
+        })
+      },
+      read: effect (ref, generation) => {
+        const { message, bodyText } = try read(ref)
+        const assets = (message.attachments ?? []).flatMap((a) => asset(account.address, message, a))
+        return { receipt: { generation, succeeded: true, assets, suspicion: "" }, content: content(message, bodyText) }
+      },
+      header: effect (ref, generation) => {
+        const { message } = try read(ref)
+        const address = message.replyTo ?? message.fromEmail
+        return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== null }
+      },
+      resolve: effect (contact) => {
+        const named = (try contacts(contact)).filter((c) => c.name.toLowerCase() === contact.trim().toLowerCase())
+        return named.length === 1 ? { address: named[0].address, verified: true } : { address: "", verified: false }
+      },
+      contacts: () => contacts(""),
+      change: effect (op) => {
+        const proposal = { kind: operations[op.change], messageId: op.identity.ref, expectedHistoryId: op.version }
+        const requestId = try operationId()
+        const answered = { identity: op.identity, revision: op.revision }
+        const dispatched = effect {
+          const { receipt } = try fetched(posted("/inbox-v1/operations", { requestId, proposal }), Prepared)
+          return (try fetched(posted(`/inbox-v1/operations/${requestId}/dispatch`, { reviewDigest: receipt.reviewDigest, proposal }), Prepared)).receipt
+        }
+        return Effect.map(dispatched, (r): ChangeReceipt => r.state === "succeeded" && r.providerResult !== null
+          ? { ...answered, result: "ChangeIdle", evidence: `history:${r.providerResult.historyId}` }
+          : { ...answered, result: "ChangeFailed", evidence: `receipt:${r.state}` }) catch effect (e) => match (e) {
+          when NeedsSignIn: throw e;
+          when ProviderRefused: certain(e) ? { ...answered, result: "ChangeFailed", evidence: `refused:${e.status}` } : { ...answered, result: "ChangeUnknown", evidence: "" };
+          when Unreachable: { ...answered, result: "ChangeUnknown", evidence: "" };
+        }
+      },
+      saveDraft: effect ({ id, content: c }) => {
+        const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body }
+        return Effect.map(fetched(posted("/drafts", body), DraftSaved), ({ draftId }): DraftStored => ({ draftId, persisted: draftId === id })) catch effect (e) => match (e) {
+          when NeedsSignIn: throw e;
+          default: { draftId: id, persisted: false };
+        }
+      },
+      deleteDraft: effect (draftId) => {
+        return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`, {})), true) catch effect (e) => match (e) {
+          when NeedsSignIn: throw e;
+          when ProviderRefused: e.status === 404;
+          when Unreachable: false;
+        }
+      },
+      send: effect (operationId, { content: c, replyTo }) => {
+        const body = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...replyTo === "" ? {} : { inReplyTo: replyTo } }
+        return try sent(posted(replyTo === "" ? "/message-send" : "/reply-send", body, { "Idempotency-Key": operationId }))
+      },
+      lookup: effect (operationId) => try sent(asked(`/message-send/${encodeURIComponent(operationId)}`, {}))
+    }
+  }
+
+  function calendar(account: AccountRef): CalendarConnection {
+    const at = routes[account.provider].calendar
+    const url = (path: string) => `${link.url}${at}${path}`
+
+    effect function stored(entry: Calendar) {
+      const id = entry.identity.occurrenceId
+      const body = { ...event(entry), grantId: try grantOf(account) }
+      return try (entry.hasSaved
+        ? call(Effect.succeed(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)))
+        : call(post(`${at}/events`, { ...body, eventId: id, calendarId: entry.identity.calendarId })))
+    }
+
+    effect function removed(id: string, scope: DeleteScope) {
+      const params = { grantId: try grantOf(account), scope: scope === "EntireSeries" ? "series" : "occurrence" }
+      return try call(Effect.succeed(HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), params)))
+    }
+
+    return {
+      feed: (window) => Stream.unwrap(effect {
+        const params = { timeMin: iso(window.fromTime), timeMax: iso(window.untilTime), grantId: try grantOf(account) }
+        const { events } = try fetched(get(`${at}/feed`, params), Feed)
+        return Stream.fromIterable(events.flatMap((e) => published(window, e)))
+      }),
+      write: effect (entry) => {
+        const revision = entry.revision
+        return Effect.as(stored(entry), { revision, succeeded: true }) catch effect (e) => match (e) {
+          when NeedsSignIn: throw e;
+          default: { revision, succeeded: false };
+        }
+      },
+      remove: effect (id, scope) => {
+        return Effect.as(removed(id, scope), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
+          when NeedsSignIn: throw e;
+          when ProviderRefused: e.status === 404 ? { succeeded: true, evidence: "absent" } : { succeeded: false, evidence: `refused:${e.status}` };
+          when Unreachable: { succeeded: false, evidence: "" };
+        }
+      }
+    }
+  }
+
+  return {
+    signIn: effect (request) => {
+      const refused: SheetReport = { attempt: request.attempt, outcome: "Refused", address: "", granted: nothing }
+      return request.provider === "OtherEmail" ? refused : (visit(request) catch () => refused)
+    },
+    connectOther: (form) => check(form.attempt, form.address, { address: form.address, password: Redacted.value(form.password) }),
+    connectServers: (form) => check(form.attempt, form.address, { address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
+    mail,
+    calendar
+  }
+}).pipe(Layer.provide(client))

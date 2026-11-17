@@ -1,0 +1,11 @@
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
+// Gmail and Google Calendar on Eliza Cloud's own Google routes. Upstream follow-up: the cloud does not yet serve Gmail drafts, contacts,
+// a send lookup by Idempotency-Key, mark-unread and purge operations, client-chosen event ids, event metadata, or a provider sign-in session; the test fake does.
+import type { Routes } from "./connector.vibe"
+
+export const google: Routes = {
+  slug: "google",
+  accounts: "/api/v1/eliza/google/accounts",
+  mail: "/api/v1/eliza/google/gmail",
+  calendar: "/api/v1/eliza/google/calendar"
+}
