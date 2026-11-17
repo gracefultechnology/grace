@@ -10,7 +10,7 @@ import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../
 import { canChangeLifecycle, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { mailAccounts } from "../gen/app__accounts.ts";
 import { Browser } from "./Browser.tsx";
-import { Calendar, calendarKeys, homeCalendar, nextAppointment } from "./Calendar.tsx";
+import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
@@ -134,6 +134,7 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+              banner={accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : undefined}
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: [] }, ...visit("Calendar") }}
               email={{
                 messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,

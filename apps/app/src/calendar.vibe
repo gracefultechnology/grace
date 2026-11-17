@@ -5,7 +5,8 @@ import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from ".
 import { type Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import type { Note, Notes } from "./accounts.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
 import { Instances, tablet } from "./instances.vibe"
 
@@ -82,7 +83,7 @@ function placeOf(v: CalendarView, definition: EntryDetails) {
   return member === undefined ? undefined : placeIn(definition.seriesId, member.identity.occurrenceId)
 }
 
-const draftPlace = (v: CalendarView, c: Calendar) => placeOf(v, seriesAt(v, c.draft.seriesId).details) ?? placeIn(c.draft.seriesId, c.identity.occurrenceId) ?? 0
+const draftPlace = (v: CalendarView, c: Calendar) => placeIn(c.draft.seriesId, c.identity.occurrenceId) ?? placeOf(v, seriesAt(v, c.draft.seriesId).details) ?? 0
 
 const single = (c: Calendar) => c.committed.seriesId === "" && c.draft.seriesId === "" && c.draft.recurrence === "Once"
 
@@ -155,10 +156,24 @@ const device: Store = {
 }
 
 export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
+export type CalendarNote = Note & { readonly row: string }
 
 export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
   publish(report: CalendarReport): void!!
+  readonly notes: { readonly subscribe: Notes["subscribe"]; readonly current: () => CalendarNote | undefined }
+}
+
+const noteFor = "2600 millis"
+
+effect function remind(box: CalendarMachine.Shape) {
+  const now = try Clock.currentTimeMillis
+  for (const c of (try box.get()).entries) {
+    if (c.reminder !== "ReminderWaiting" || c.phase === "Deleted" || c.remindAt > now) continue
+    const id = c.identity.occurrenceId
+    box.send({ type: "changeOccurrence", id, command: { tag: "AdvanceClock", now } }, "ViewClock") catch () => undefined
+    box.send({ type: "changeOccurrence", id, command: { tag: "ShowDueReminder" } }, "ViewClock") catch () => undefined
+  }
 }
 
 effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!) {
@@ -195,6 +210,7 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     }
     if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) try Effect.uninterruptible(erased(v))
     try repeat(box, try span)
+    try remind(box)
   })
 }
 
@@ -249,18 +265,36 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   })
 
   try fork.scoped Stream.runForEach(Stream.tick("30 seconds"), effect () => {
-    const now = try Clock.currentTimeMillis
     for (const key of shownKeys(try registry.get())) {
       const box = shelf.calendar(key) catch () => undefined
-      if (box === undefined) continue
-      for (const c of (try box.get()).entries) {
-        if (c.reminder !== "ReminderWaiting" || c.phase === "Deleted" || c.remindAt > now) continue
-        const id = c.identity.occurrenceId
-        box.send({ type: "changeOccurrence", id, command: { tag: "AdvanceClock", now } }, "ViewClock") catch () => undefined
-        box.send({ type: "changeOccurrence", id, command: { tag: "ShowDueReminder" } }, "ViewClock") catch () => undefined
-      }
+      if (box !== undefined) try remind(box)
     }
   })
+
+  const listeners = new Set<() => void>()
+  const board: { note: CalendarNote | undefined; next: number } = { note: undefined, next: 1 }
+
+  effect function show(said: { readonly text: string; readonly row: string }) {
+    const note = { id: board.next, ...said }
+    board.next += 1
+    board.note = note
+    listeners.forEach((listener) => listener())
+    try sleep(noteFor)
+    board.note = undefined
+    listeners.forEach((listener) => listener())
+  }
+
+  effect function noteOf(report: CalendarReport) {
+    if (!("told" in report) || report.told.news === "NoCalendarNews") return undefined
+    const { news, key, id } = report.told
+    if (news !== "DeletedAppointment") return { text: "Saved to your calendar", row: `${key}/${id}` }
+    const box = shelf.calendar(key) catch () => undefined
+    const gone = box === undefined ? undefined : (try box.get()).entries.find((c) => c.identity.occurrenceId === id)
+    return { text: `Deleted ${gone?.committed.title ?? "it"}`, row: "" }
+  }
+
+  const notices = Stream.filter(Stream.mapEffect(Stream.fromPubSub(hub), noteOf), (said) => said !== undefined)
+  try fork.scoped Stream.runDrain(Stream.switchMap(notices, (said) => Stream.fromEffect(show(said))))
 
   try fork.scoped Stream.runForEach(proposals.changes, effect () => {
     const p = try proposals.get()
@@ -275,7 +309,16 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     try logInfo("Her yes to Grace's calendar question", { ask: p.ask.tag, applied })
   })
 
-  return { reports: Stream.fromPubSub(hub), publish }
+  return {
+    reports: Stream.fromPubSub(hub), publish,
+    notes: {
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+      current: () => board.note
+    }
+  }
 })
 
 export const calendarFeeds = Layer.effectDiscard(effect {
@@ -298,11 +341,14 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     }
     const grown = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
     const signedIn = Stream.filter(Stream.drop(Stream.changes(Stream.map(registry.changes, (a) => a.signIn.stage)), 1), (stage) => stage === "NotSigningIn")
-    const again = Stream.mapEffect(Stream.merge(Stream.drop(Stream.tick("5 minutes"), 1), signedIn), () => spanOf(lead))
+    const arrives = (shows: (w: Workspace) => boolean) => Stream.filter(Stream.drop(Stream.changes(Stream.map(workspace.changes, shows)), 1), (now) => now)
+    const reopened = arrives((w) => w.device.surface === "Calendar")
+    const reconnected = arrives((w) => w.device.connectivity === "Online")
+    const again = Stream.mapEffect(Stream.mergeAll([Stream.drop(Stream.tick("5 minutes"), 1), Stream.as(signedIn, undefined), Stream.as(reopened, undefined), Stream.as(reconnected, undefined)], { concurrency: "unbounded" }), () => spanOf(lead))
     const fill = Stream.runForEach(Stream.merge(grown, again), effect (span) => {
       const v = provided(try box.get())
       const feed = link.feed({ ...v, window: { ...v.window, ...span } })
-      Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch () => undefined
+      Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch effect (cause) => try annotateLogs(logWarning("Calendar feed not fetched; asked again on sign-in, reconnection, opening Calendar or within 5 minutes", cause), { account: account.id })
       try repeat(box, span)
     })
     return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead)), fill], { concurrency: "unbounded" }))

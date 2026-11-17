@@ -1,15 +1,16 @@
-// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-import { Banner, BannerButton, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph, type HomeEvent } from "@repo/ui";
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"
+import { Banner, BannerButton, BellIcon, Button, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph, type HomeEvent, Toast } from "@repo/ui";
 import { Option } from "effect";
-import { useState } from "react";
+import { X } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
-import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, tabletKey, upcoming } from "../gen/app__calendars.ts";
+import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
 import { type CalendarView, type Event as CalendarEvent, enabled, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { anchorOf, dayOf, horizon, hour, instant, midnight, navigation, shownDays } from "./calendar.vibe";
-import { type CalendarInstance, useAccounts, useProposal, useWorkspace, WithCalendars } from "./useApp.ts";
+import { type CalendarInstance, useAccounts, useCalendarNote, useProposal, useWorkspace, WithCalendars } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
@@ -76,7 +77,12 @@ async function editSeries(box: CalendarInstance, id: string) {
   const open = { type: "openOccurrence", id: target } as const;
   if (target !== id && enabled(v, open, "ViewUser")) await box.send(open);
   const begin: CalendarEvent = { type: "changeOccurrence", id: target, command: { tag: "BeginEditing" } };
-  if (enabled(await box.current(), begin, "ViewUser")) await box.send(begin);
+  if (!enabled(await box.current(), begin, "ViewUser")) return;
+  await box.send(begin);
+  const { draft, committed } = entryAt(await box.current(), target);
+  if (draft.startAt === committed.startAt) return;
+  const own: CalendarEvent = { type: "changeOccurrence", id: target, command: { tag: "ChangeDetails", details: { ...draft, startAt: committed.startAt, endAt: committed.startAt + draft.endAt - draft.startAt } } };
+  if (enabled(await box.current(), own, "ViewUser")) await box.send(own);
 }
 
 export function homeCalendar(registry: Accounts, views: readonly CalendarInstance[], now: number, visit: (() => void) | undefined): { events: HomeEvent[]; status: string } {
@@ -88,6 +94,27 @@ export function homeCalendar(registry: Accounts, views: readonly CalendarInstanc
     onClick: visit && ((e: { stopPropagation: () => void }) => { e.stopPropagation(); void openFrom(views, r, visit); }),
   }));
   return { events, status: upcoming(registry, sources, midnight(today), midnight(today + 1)).length > 0 ? "Today" : "Nothing else today" };
+}
+
+export function homeReminder(registry: Accounts, views: readonly CalendarInstance[], now: number, visit: (() => void) | undefined): ReactNode {
+  const [due] = shownReminders(registry, sourcesOf(views)).sort(byStart);
+  const box = due && views.find((v) => v.key === due.key);
+  if (!due || !box) return undefined;
+  const d = due.details;
+  const dismiss: CalendarEvent = { type: "changeOccurrence", id: due.identity.occurrenceId, command: { tag: "DismissReminder" } };
+  const when = `${relative(dayOf(d.startAt), dayOf(now))} at ${timeLabel(d.startAt)}`;
+  return (
+    <Banner icon={<span className="flex text-alert"><BellIcon className="size-7.5" /></span>} title={d.title}
+      line={[when, d.location.split(" · ")[0]].filter(Boolean).join(" · ")}
+      actions={
+        <>
+          {visit && <Button variant="prominent" size="compact" onClick={() => void openFrom(views, due, visit)}>See details</Button>}
+          <Button variant="plain" size="compact-icon" aria-label="Dismiss" disabled={!box.can(dismiss)} onClick={() => { if (box.can(dismiss)) void box.send(dismiss); }}>
+            <X aria-hidden size={24} strokeWidth={1.75} />
+          </Button>
+        </>
+      } />
+  );
 }
 
 export function nextAppointment(registry: Accounts, views: readonly CalendarInstance[], now: number): string | undefined {
@@ -110,8 +137,10 @@ export function Calendar({ now, ...props }: Covered & { now: number }) {
 function Shown({ registry, pending, views, now, ...props }: Covered & { registry: Accounts; pending: Pending; views: readonly CalendarInstance[]; now: number }) {
   const { can, send } = useWorkspace();
   const accounts = useAccounts();
+  const note = useCalendarNote();
   const lead = views.find((v) => v.key === tabletKey);
   if (!lead) return null;
+  const toast = note && <Toast key={note.id} placement="screen">{note.text}</Toast>;
   const sources = sourcesOf(views);
   const today = dayOf(now);
   const w = lead.state.window;
@@ -182,13 +211,14 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
     },
     onClose: fire({ type: "visit", destination: "Home" }),
     closeLabel: "Close Calendar",
+    guide: note?.row ? { kind: "confirm", targetId: note.row } : undefined,
     ...props,
   };
 
   const open = views.find((v) => v.key === openSelected(registry, sources));
-  if (!open) return <CalendarApp {...browsing} />;
+  if (!open) return <><CalendarApp {...browsing} />{toast}</>;
   const entry = selectedOccurrence(open.state);
-  if (entry.phase === "Editing") return <Form key={`${open.key}/${entry.identity.occurrenceId}`} box={open} entry={entry} today={today} browsing={browsing} />;
+  if (entry.phase === "Editing") return <><Form key={`${open.key}/${entry.identity.occurrenceId}`} box={open} entry={entry} today={today} browsing={browsing} />{toast}</>;
   const d = entry.committed;
   const deletion = open.state.deletion;
   const id = entry.identity.occurrenceId;
@@ -207,6 +237,7 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
         onOpenChange={(opened) => { if (!opened) act(open, { type: "keepOccurrence" })(); }}
         onKeep={act(open, { type: "keepOccurrence" })}
         onDelete={(scope) => act(open, { type: "approveDeletion", scope: scope === "series" ? "EntireSeries" : "ThisOccurrence" })()} />
+      {toast}
     </>
   );
 }
