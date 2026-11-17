@@ -237,10 +237,10 @@ export function toldOfMail(s: Scene, news: MailTold): string {
 /** What Grace is told of a calendar that changed, or of a yes the calendar could not take. */
 export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold } | { readonly refused: Ask }): string {
   if ("refused" in report) return "Margaret said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if she still wants it."
-  const { news, key, id } = report.told
+  const { key, id } = report.told
   const c = entryAt(sourceAt(s.calendars, key).view, id)
   const what = appointment(s.registry, key, c.committed)
-  return match (news) {
+  return match (report.told.news) {
     when "AddedAppointment": `${what} was added to the calendar.`;
     when "ChangedAppointment": `${what} was changed in the calendar.`;
     when "DeletedAppointment": `${quoted(c.committed.title)} was removed from the calendar.`;

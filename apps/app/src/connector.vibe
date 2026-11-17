@@ -5,16 +5,17 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored, WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
+import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
 import { providers } from "./providers.vibe"
 
 export type Routes = { readonly slug: string; readonly accounts: string; readonly mail: string; readonly calendar: string }
 export type SecretPassword = Brand.Branded<Redacted.Redacted<string>, "SecretPassword">
-type WireMessage = typeof WireMessage.Type
-type WireEvent = typeof WireEvent.Type
-type WireAttachment = typeof WireAttachment.Type
+type Message = typeof WireMessage.Type
+type ProviderEvent = typeof WireEvent.Type
+type Attachment = typeof WireAttachment.Type
 const branded = Brand.nominal<SecretPassword>()
 export const secretPassword = (typed: string): SecretPassword => branded(Redacted.make(typed))
 
@@ -84,26 +85,25 @@ const checked: Record<typeof OtherCheck.Type["outcome"], OtherReport["outcome"]>
   allowed: "OtherAllowed", passwordRefused: "OtherPasswordRefused", needsServers: "OtherNeedsServers", refused: "OtherRefused"
 }
 const ended: Record<typeof SessionOutcome.Type["status"], SheetReport["outcome"]> = { allowed: "Allowed", cancelled: "Cancelled", refused: "Refused" }
-const minute = 60 * 1000
 
 function folderOf(labels: readonly string[]): Folder {
   return labels.includes("TRASH") ? "TrashFolder" : labels.includes("DRAFT") ? "DraftsFolder" : labels.includes("SENT") ? "SentFolder" : "InboxFolder"
 }
 
-function receivedOf(m: WireMessage) {
+function receivedOf(m: Message) {
   const at = Date.parse(m.receivedAt)
   return Number.isNaN(at) ? undefined : at
 }
 
-function content(m: WireMessage, receivedAt: number, body: string): MailContent {
+function content(m: Message, receivedAt: number, body: string): MailContent {
   return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "", to: m.to }
 }
 
-function repliedTo(sent: readonly WireMessage[]): ReadonlySet<string> {
+function repliedTo(sent: readonly Message[]): ReadonlySet<string> {
   return new Set(sent.filter((s) => s.labels.includes("SENT")).flatMap((s) => (s.metadata.referencesHeader ?? "").trim().split(/\s+/).slice(-1).filter((id) => id !== "")))
 }
 
-function listed(scope: ListingScope, m: WireMessage, revision: number, replied: ReadonlySet<string>): Listed[] {
+function listed(scope: ListingScope, m: Message, revision: number, replied: ReadonlySet<string>): Listed[] {
   const identity = { owner: scope.owner, provider: scope.provider, account: scope.account, ref: m.externalId }
   const receivedAt = receivedOf(m)
   const answered = replied.has(m.metadata.messageIdHeader ?? "")
@@ -117,7 +117,7 @@ function searchOf(folder: string, text: string) {
   return [folder, ...text.split(/\s+/).map((w) => w.replace(/"/g, "")).filter((w) => w !== "").map((w) => `"${w}"`)].join(" ")
 }
 
-function asset(account: AccountRef, m: WireMessage, savedAt: number, a: WireAttachment): SavedFile[] {
+function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment): SavedFile[] {
   const kind = a.mimeType === "application/pdf" ? "Pdf" : a.mimeType.startsWith("image/") ? "Photo" : undefined
   const pages = kind === "Pdf" ? a.pages ?? 0 : 0
   return kind === undefined || a.filename === "" || (kind === "Pdf" && pages < 1) ? [] : [{
@@ -126,7 +126,7 @@ function asset(account: AccountRef, m: WireMessage, savedAt: number, a: WireAtta
   }]
 }
 
-function manifest(account: AccountRef, ref: string, m: WireMessage, all: readonly WireAttachment[] | undefined): SavedFile[] | undefined {
+function manifest(account: AccountRef, ref: string, m: Message, all: readonly Attachment[] | undefined): SavedFile[] | undefined {
   const savedAt = receivedOf(m)
   const kept = savedAt === undefined ? [] : (all ?? []).flatMap((a) => asset(account, m, savedAt, a))
   return all === undefined || savedAt === undefined || m.externalId !== ref || kept.length !== all.length ? undefined : kept
@@ -159,19 +159,19 @@ function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, time
   return allDay && !(zones.has(timeZone) && midnight(dateIn(at, timeZone), timeZone) === at) ? undefined : at
 }
 
-function schedule(zones: ReadonlySet<string>, e: WireEvent, timeZone: string) {
+function schedule(zones: ReadonlySet<string>, e: ProviderEvent, timeZone: string) {
   const exact = [exactly(zones, e.startAt, e.isAllDay, timeZone), exactly(zones, e.endAt, e.isAllDay, timeZone)]
   const loose = [Date.parse(e.startAt), Date.parse(e.endAt)]
   const [startAt, endAt] = exact.every((t) => t !== undefined) ? exact : loose
   return { startAt: startAt ?? Number.NaN, endAt: endAt ?? Number.NaN, verified: exact.every((t) => t !== undefined) }
 }
 
-function participantOf(e: WireEvent) {
+function participantOf(e: ProviderEvent) {
   const other = e.attendees.find((a) => !a.self)
   return other?.displayName ?? other?.email ?? ""
 }
 
-function details(e: WireEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
+function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
   const kept = known ?? { participant: participantOf(e), seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
   return {
     title: e.title, location: e.location, notes: e.description, startAt, endAt, timezone, allDay: e.isAllDay,
@@ -185,7 +185,7 @@ function sameDetails(a: EntryDetails, b: EntryDetails) {
 
 const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "" ? 0 : Math.max(0, seriesAt(view, seriesId).version)
 
-function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent, entry: EntryDetails): Calendar | undefined {
+function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails): Calendar | undefined {
   if (known === undefined) {
     const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
@@ -197,7 +197,7 @@ function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent
 
 const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(known, "CalendarUser"), "CalendarUser"), true, "CalendarStore")
 
-function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly WireEvent[]): Published[] {
+function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[]): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
   const changed = events.flatMap((e) => {
     const known = own.find((c) => c.identity.occurrenceId === e.externalId)
@@ -218,7 +218,7 @@ function event({ draft: d, committed: c, hasSaved }: Calendar) {
   return d.allDay || (hasSaved && c.allDay) ? undefined : { ...fields, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone }
 }
 
-function adopted(zones: ReadonlySet<string>, view: CalendarView, entry: Calendar, saved: WireEvent): Published[] {
+function adopted(zones: ReadonlySet<string>, view: CalendarView, entry: Calendar, saved: ProviderEvent): Published[] {
   const identity = { ...entry.identity, occurrenceId: saved.externalId }
   const timezone = saved.timezone ?? entry.draft.timezone
   const { startAt, endAt, verified } = schedule(zones, saved, timezone)

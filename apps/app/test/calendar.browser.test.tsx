@@ -29,7 +29,7 @@ const mondayOf = (n: number) => n - ((new Date(n * day).getUTCDay() + 6) % 7);
 const tile = (n: number, plans = "(\\s*has plans)?") => new RegExp(`^(Today|${new Date(midnight(n)).toLocaleDateString("en-US", { weekday: "short" })})\\s*${new Date(midnight(n)).getDate()}${plans}$`);
 
 async function company(key: string) {
-  const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${key}` } });
+  const response = await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${key}` } });
   const { boxes } = await response.json() as { boxes: { calendar: { externalId: string; title: string; startAt: string }[] }[] };
   return boxes[0].calendar;
 }

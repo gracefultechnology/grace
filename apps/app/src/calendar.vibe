@@ -2,7 +2,7 @@
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { type Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"

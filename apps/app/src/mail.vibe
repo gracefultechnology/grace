@@ -1,6 +1,6 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
-import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, Machine as MailMachine, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
+import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, type Machine as MailMachine, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
@@ -47,6 +47,23 @@ function settled(before: Mailbox, after: Mailbox): { change: MessageChange; reco
 
 function leftOutbox(before: Mailbox, after: Mailbox): QueuedSend[] {
   return after.outboxSent > before.outboxSent ? before.outbox.filter((q) => !after.outbox.some((o) => o.operationId === q.operationId)) : []
+}
+
+effect function expired(box: MailMachine.Shape) {
+  box.send({ type: "endConnection", resultStatus: "Expired" }, "MailConnector") catch () => undefined
+}
+
+effect function relist(box: MailMachine.Shape) {
+  const m = try box.get()
+  if (m.view === "Inbox" && m.readStatus === "ReadIdle") box.send({ type: "readMail", kind: "Search", ref: m.query, approved: true }, "MailUser") catch () => undefined
+}
+
+effect function closeUndo(box: MailMachine.Shape, record: MessageRecord) {
+  box.send({ type: "closeUndoToast", target: { ref: record.identity.ref, revision: record.undoRevision } }, "MailHost") catch () => undefined
+}
+
+effect function noteSent(registry: Accounts.Shape, id: number, to: string) {
+  for (const recipient of recipientsOf(to)) registry.send({ type: "noteSent", recipient, id }, "AccountHost") catch () => undefined
 }
 
 export const mailing = Layer.effect(Mail, effect {
@@ -109,23 +126,6 @@ export const mailing = Layer.effect(Mail, effect {
     return found
   }
 
-  effect function expired(box: MailMachine.Shape) {
-    box.send({ type: "endConnection", resultStatus: "Expired" }, "MailConnector") catch () => undefined
-  }
-
-  effect function relist(box: MailMachine.Shape) {
-    const m = try box.get()
-    if (m.view === "Inbox" && m.readStatus === "ReadIdle") box.send({ type: "readMail", kind: "Search", ref: m.query, approved: true }, "MailUser") catch () => undefined
-  }
-
-  effect function closeUndo(box: MailMachine.Shape, record: MessageRecord) {
-    box.send({ type: "closeUndoToast", target: { ref: record.identity.ref, revision: record.undoRevision } }, "MailHost") catch () => undefined
-  }
-
-  effect function noteSent(id: number, to: string) {
-    for (const recipient of recipientsOf(to)) registry.send({ type: "noteSent", recipient, id }, "AccountHost") catch () => undefined
-  }
-
   effect function prepareReply(id: number, mail: MailConnection, m: Mailbox) {
     const header = mail.header(m.messageRef, m.generation) catch () => undefined
     if (header !== undefined) post({ replies: new Map(board.replies).set(id, header) })
@@ -141,12 +141,12 @@ export const mailing = Layer.effect(Mail, effect {
     }
     const news = told(account.id, before, after).news
     if (news === "SentEmail") {
-      try noteSent(account.id, after.draft.to)
+      try noteSent(registry, account.id, after.draft.to)
       try show(`Sent to ${nameOf(after.draft.to)}`)
     }
     if (news === "QueuedEmail") try show("Waiting in Outbox until you’re back online")
     const gone = leftOutbox(before, after)
-    for (const q of gone) try noteSent(account.id, q.snapshot.content.to)
+    for (const q of gone) try noteSent(registry, account.id, q.snapshot.content.to)
     if (gone.length === 1) try show(`Your email to ${nameOf(gone[0].snapshot.content.to)} was sent`)
     if (gone.length > 1) try show("Your waiting emails were sent")
     for (const record of undoable(after).filter((r) => !undoable(before).some((o) => o.identity.ref === r.identity.ref))) {

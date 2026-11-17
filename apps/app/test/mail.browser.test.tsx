@@ -32,7 +32,7 @@ const Kept = Schema.Struct({
 });
 
 async function allowOutlook(key: string) {
-  const started = await fetch(`${cloud}/api/v1/eliza/connections/outlook/sessions`, {
+  const started = await fetch(new URL("/api/v1/eliza/connections/outlook/sessions", cloud), {
     method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
   });
   const { pageUrl } = await started.json() as { pageUrl: string };
@@ -65,7 +65,7 @@ async function start() {
     host: (availability: "Online" | "Offline") => act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
       w.send({ type: "setAvailability", availability: { connection: availability, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed } }, "Host"))))),
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
-    company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } })).json()),
+    company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } })).json()),
   };
 }
 
