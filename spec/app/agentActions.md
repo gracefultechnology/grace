@@ -113,8 +113,9 @@ An email action names the account whose mailbox it acts on. It is routed
 only while that account is on the tablet with its Email on, and only when
 that mailbox's own guard for Grace (`E::canAssistMail`) allows it now, which
 runs the guard of the same tap Margaret would make. A refused action is told
-to Grace with its reason. Whatever she does there leaves no email approved,
-sent or queued, deletes none for good and opens no link.
+to Grace with its reason. Whatever she does there approves no email, starts
+no send that was not already under way, queues or takes nothing from Outbox,
+deletes none for good and opens no link.
 
 ```quint
 pure def routeMail(w: World, account: int, assist: E::MailAssist): Route =
@@ -130,10 +131,21 @@ pure def lawRoutedMailIsAllowedByItsMailbox(w: World, request: R::Request, comma
         E::canAssistMail(M::sourceOf(w.mail, r.account).mailbox, r.assist, true, E::MailAssistant)
     | _ => true
   }
+pure def keepsSendingHers(source: M::MailSource, assist: E::MailAssist): bool =
+  val before = source.mailbox
+  val after = E::assistMail(before, assist, true, E::MailAssistant)
+  (after.approvedRevision == -1 or after.approvedRevision == before.approvedRevision) and
+  (after.sendStatus == E::Sending implies before.sendStatus == E::Sending) and
+  after.outbox.listMap(q => q.operationId) == before.outbox.listMap(q => q.operationId) and
+  after.outbox.listMap(q => q.status) == before.outbox.listMap(q => q.status) and
+  after.issuedSends.subseteq(before.issuedSends) and before.issuedSends.subseteq(after.issuedSends) and
+  (after.link == before.link or after.link == E::noLink) and
+  after.messages.every(r => r.pending != I::PurgeMessage or
+    before.messages.some(o => o.identity == r.identity and o.pending == I::PurgeMessage))
 pure def lawRoutedMailNeverSendsOrDeletes(w: World, request: R::Request, command: AgentAction): bool =
   val routed = route(w, request, command)
   match routed {
-    | ToMail(r) => E::lawGraceNeverRaisesApproval(M::sourceOf(w.mail, r.account).mailbox, r.assist, true, E::MailAssistant)
+    | ToMail(r) => keepsSendingHers(M::sourceOf(w.mail, r.account), r.assist)
     | _ => true
   }
 ```
@@ -305,7 +317,7 @@ pure def lawConsentNeedsAWaitingQuestion(w: World, request: R::Request, command:
 
 ### Samples are the tablet as Margaret reads, asks, agrees and switches a calendar off
 
-Gmail on the tablet with its calendar, the clinic email open, listed,
+Gmail on the tablet with its calendar, the clinic email open, read,
 flagged as a scam or being answered; the tablet's calendar with lunch saved
 and Gmail's with the garden club; Grace asking about the clinic visit, then
 agreed; and Gmail's calendar switched off. Requests come from Margaret's
@@ -326,10 +338,11 @@ pure val stored: World = { ...reading, calendars: List({ key: 0, view: K::tablet
 pure val flagged: World = { ...reading, mail: List({ account: 1, mailbox: K::gmailFlagged }) }
 pure val answering: World = { ...reading, mail: List({ account: 1, mailbox: M::gmailComposing }), targets: Set("body", "send") }
 pure val calendarOff: World = { ...reading, accounts: K::gmailCalendarOff,
-  calendars: List({ key: 0, view: V::initial }, { key: 1, view: K::gmailPublished }) }
+  calendars: List({ key: 0, view: K::tabletSaved }, { key: 1, view: K::gmailPublished }) }
+pure val tidying: World = { ...reading, mail: List({ account: 1, mailbox: M::gmailRead }) }
 pure val empty: World = { ...reading, accounts: A::initial, mail: List(), calendars: List({ key: 0, view: V::initial }),
   targets: Set() }
-pure val wValues = Set(reading, asking, agreed, stored, flagged, answering, calendarOff, empty)
+pure val wValues = Set(reading, asking, agreed, stored, flagged, answering, calendarOff, tidying, empty)
 pure val requestValues = Set(
   { generation: 1, workVersion: 1, origin: R::Spoken }, { generation: 2, workVersion: 1, origin: R::Tapped },
   { generation: 1, workVersion: 1, origin: R::FromEmail }, { generation: 2, workVersion: 1, origin: R::FromGrace },
