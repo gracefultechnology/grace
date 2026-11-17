@@ -54,8 +54,8 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { kind: "mail"; accountId: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type }
-type Calendar = { kind: "calendar"; accountId: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow }
+type Mail = { kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type }
+type Calendar = { kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
   | { kind: "waiting"; view: ReadView; reason: Waiting }
@@ -185,7 +185,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
       const existing = prior?.kind === "mail" ? prior.rows : []
       const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
-      return { kind: "mail" as const, accountId: scope.accountId, rows, next: loaded.nextPageToken }
+      return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken }
     }
     const window = prior?.kind === "calendar" ? { from: prior.from, until: prior.until } : range(try Clock.currentTimeMillis)
     const path = `calendar/feed?timeMin=${encodeURIComponent(window.from)}&timeMax=${encodeURIComponent(window.until)}${cursor}${grant}`
@@ -193,7 +193,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
     const existing = prior?.kind === "calendar" ? prior.rows : []
     const rows = [...new Map([...existing, ...loaded.events].map((row) => [row.externalId, row])).values()]
-    return { kind: "calendar" as const, accountId: scope.accountId, rows, next: loaded.nextPageToken, ...window }
+    return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, ...window }
   }
 
   effect function refresh(scope: Scope) {
@@ -225,7 +225,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     }
     if (scope.kind !== "ready") return false
     const shown = try SubscriptionRef.get(latest)
-    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId ||
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
       (shown.kind === "mail") !== (scope.view === "Email")) return false
     if (command.kind === "back") {
       try SubscriptionRef.set(latest, { ...shown, selected: undefined })
@@ -257,6 +257,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (scope.kind !== "ready" || scope.view !== view || scope.accountId !== accountId ||
       !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, kind)) return undefined
     const shown = try SubscriptionRef.get(latest)
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
     if (action.kind === "trash" && (shown.kind !== "mail" || shown.selected?.message.externalId !== action.id ||
       shown.selected.message.metadata?.historyId !== action.version)) return undefined
     if (action.kind === "appointment" && action.action !== "create" && (shown.kind !== "calendar" ||

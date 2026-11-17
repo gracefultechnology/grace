@@ -217,7 +217,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
   }
 
   if (!authorized || (snapshot.kind !== "mail" && snapshot.kind !== "calendar") ||
-    snapshot.accountId !== signedIn?.accountId || (snapshot.kind === "mail") !== (view === "Email")) {
+    snapshot.accountId !== signedIn?.accountId || snapshot.grant !== grant || (snapshot.kind === "mail") !== (view === "Email")) {
     return <PageText role="status">{view === "Email" ? "Opening your inbox…" : "Opening your calendar…"}</PageText>;
   }
 
