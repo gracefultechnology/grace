@@ -32,6 +32,9 @@ export function usePasswordGuide() {
   const { state } = usePasswordView(runtime);
   return {
     guide: state?.guide,
+    microphone: state?.guideMic,
+    listen: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.listenForGuide())),
+    stopMic: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.stopGuideMic())),
     request: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Passwords), (service) => service.guideTyped(revision))),
     finish: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide())),
   };

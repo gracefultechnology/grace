@@ -31,12 +31,19 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
+          <GraceDock value={draft} maxLines={expanded ? 6 : 4}
+            mic={conversation.voice || guide.microphone === "GuideMicListening"}
+            listening={guide.microphone === "GuideMicListening"}
+            placeholder={guide.microphone === "GuideMicUnavailable" ? "Voice help is unavailable. You can type to Grace." :
+              guide.microphone === "GuideMicNoMatch" ? "Try saying “Open Passwords”, or type to Grace." : undefined}
             onMicChange={(on) => {
-              if (!on) interact({ tag: "StopVoice" });
-              else if (can({ type: "talk" })) void send({ type: "talk" });
+              if (on) guide.listen();
+              else {
+                guide.stopMic();
+                interact({ tag: "StopVoice" });
+              }
             }}
-            onFieldFocus={() => interact({ tag: "TypeIntoChat" })}
+            onFieldFocus={() => { guide.stopMic(); interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
               const { draftRevision } = conversation;

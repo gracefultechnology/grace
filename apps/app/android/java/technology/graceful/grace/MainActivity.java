@@ -29,6 +29,7 @@ public class MainActivity extends ElizaBridgeActivity {
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   registerPlugin(PasswordsPlugin.class);
   registerPlugin(PrivateViewPlugin.class);
+  registerPlugin(GraceGuideSpeechPlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
   super.onCreate(state);
   preferSixtyHertz();
