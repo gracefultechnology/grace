@@ -15,6 +15,11 @@ const Day = Schema.String.check(
 )
 const Clock = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
 const of = <T extends string>() => <const L extends readonly [T, ...T[]]>(literals: L) => Schema.Literals(literals)
+const Repeat = of<Recurrence>()(["Once", "Weekly", "Monthly"])
+export const Remind = Schema.Literals(["NoReminder", "HourBefore", "DayBefore"])
+const appointment = {
+  title: Words, day: Day, time: Clock, until: Schema.optionalKey(Clock), place: Schema.optionalKey(Words), who: Schema.optionalKey(Words), remind: Schema.optionalKey(Remind),
+}
 const action = <const Kind extends string, const Fields extends Schema.Struct.Fields>(kind: Kind, fields: Fields) =>
   Schema.Struct({ kind: Schema.Literal(kind), ...fields })
 
@@ -31,17 +36,29 @@ export const Action = Schema.Union([
   action("navigate", { url: Words }),
   action("browse", { control: of<BrowserInput["tag"]>()(["Back", "Forward", "Reload", "NewTab"]) }),
   action("guide", { target: Words, emphasis: Schema.Literals(["point", "instruction", "confirm"]), title: Words, detail: Schema.optionalKey(Words) }),
-  action("proposeAppointment", { entry: Schema.optionalKey(Words), title: Words, day: Day, time: Clock, place: Schema.optionalKey(Words), repeat: of<Recurrence>()(["Once", "Weekly", "Monthly"]) }),
-  action("confirmAppointment", {}),
-  action("cancelAppointment", {}),
-  action("deleteAppointment", { entry: Words, scope: of<DeleteScope>()(["ThisOccurrence", "EntireSeries"]) }),
-  action("dismissReminder", { entry: Words }),
   action("searchMail", { query: Words }),
   action("openMessage", { message: Words }),
+  action("showInbox", { account: Schema.optionalKey(Words) }),
   action("chooseFolder", { folder: of<Folder>()(["InboxFolder", "SentFolder", "DraftsFolder", "TrashFolder"]) }),
+  action("newEmail", { to: Words, subject: Schema.optionalKey(Words), body: Words }),
+  action("addressEmail", { to: Words }),
   action("draftReply", { body: Words }),
-  action("draftMessage", { to: Words, subject: Schema.optionalKey(Words), body: Words }),
+  action("fillDraft", { body: Words }),
+  action("forwardMessage", {}),
+  action("saveDraft", {}),
   action("trashMessage", {}),
+  action("restoreMessage", {}),
+  action("undoTrash", {}),
+  action("markUnread", {}),
+  action("proposeAppointment", { ...appointment, repeat: Repeat }),
+  action("proposeFromMessage", appointment),
+  action("proposeChange", {
+    entry: Words, title: Schema.optionalKey(Words), day: Schema.optionalKey(Day), time: Schema.optionalKey(Clock), until: Schema.optionalKey(Clock),
+    place: Schema.optionalKey(Words), repeat: Schema.optionalKey(Repeat), remind: Schema.optionalKey(Remind),
+  }),
+  action("proposeDeletion", { entry: Words, scope: of<DeleteScope>()(["ThisOccurrence", "EntireSeries"]) }),
+  action("confirmProposal", {}),
+  action("cancelProposal", {}),
   action("findFile", { tab: of<FileTab>()(["Photos", "Documents"]), query: Words }),
   action("beginTask", { task: Schema.Literals(["PayBill", "BookAppointment"]) }),
   action("fill", {}),
@@ -63,10 +80,12 @@ const trimmed = (value: unknown) => typeof value === "string" ? value.trim() : v
 const given = (value: unknown) => value !== null && value !== ""
 const list = (value: unknown): readonly unknown[] => Array.isArray(value) ? value : []
 const whole = (value: unknown) => typeof value === "string" && /^-?\d+$/.test(value) ? Number(value) : value
+const padded = (value: unknown) => typeof value === "string" ? value.replace(/^(\d):/, "0$1:") : value
 const normal: ReadonlyMap<string, (value: unknown) => unknown> = new Map([
   ["volume", whole],
   ["brightness", whole],
-  ["time", (value: unknown) => typeof value === "string" ? value.replace(/^(\d):/, "0$1:") : value],
+  ["time", padded],
+  ["until", padded],
 ])
 const isFields = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value)
 const present = (value: unknown) => isFields(value)

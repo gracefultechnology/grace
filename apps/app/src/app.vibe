@@ -8,7 +8,7 @@ import { Machine as Workspaces, machine as workspaces } from "../gen/app__worksp
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { accounts, framedPage, providerPage, signIns } from "./accounts.vibe"
 import { calendarFeeds, calendars } from "./calendar.vibe"
-import { agent } from "./agent.vibe"
+import { agent } from "./actions.vibe"
 import { connector } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
 import { instances, reading } from "./instances.vibe"
@@ -69,14 +69,16 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
-const calendar = (cloud: CloudLink | undefined) =>
-  cloud === undefined ? calendars(false) : Layer.provideMerge(Layer.provide(calendarFeeds, Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced)), calendars(true))
+const linked = (cloud: CloudLink) => Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced)
 
-const mail = (cloud: CloudLink | undefined) => cloud === undefined ? signIns : Layer.provide(Layer.mergeAll(reading, signIns, mailing), Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced))
+const services = (cloud: CloudLink | undefined) => cloud === undefined
+  ? Layer.mergeAll(signIns, calendars(false))
+  : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
 
 /** Everything the interface runs on, over `plugin`, the native page's, `wifi`, where the platform has them, and `cloud`, where Grace's agent answers. */
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, cloud?: CloudLink) {
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept, providerPage)
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), conversation(cloud), mail(cloud), calendar(cloud)), Layer.provideMerge(agent, machines))
+  const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), grace), machines)
 }
