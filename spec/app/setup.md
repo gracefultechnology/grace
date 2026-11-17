@@ -31,8 +31,8 @@ and acknowledged save that Settings uses.
 
 ### Set-up has an ordered list of steps and a current one
 
-`done` holds the steps answered or already true, `skipped` those put off
-with Not now. The facts are what the host reports: whether this build owns
+Each step is pending, done (answered, or already true) or put off with Not
+now. The facts are what the host reports: whether this build owns
 Wi-Fi (the launcher does, the standalone app does not), whether the tablet
 is online, and whether an email account is connected. The hand-over is the
 place after the last step, where set-up is ending.
@@ -42,11 +42,12 @@ import preferences as P from "./preferences"
 type SetupStep = WifiStep | AccountStep | NameStep | PaceStep | TextSizeStep | ExplainStep | TalkStep | TypeStep | CloseStep | HandOverStep
 type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
 type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool }
-type SetupProgress = { step: SetupStep, done: Set[SetupStep], skipped: Set[SetupStep] }
+type StepOutcome = Pending | Done | PutOff
+type SetupProgress = { step: SetupStep, outcomes: SetupStep -> StepOutcome }
 type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, name: str, left: bool, endToken: int }
 type SetupEffect = | AskWhatToDo
 type SetupResult = { state: Setup, out: List[SetupEffect] }
-pure val allSetupSteps: Set[SetupStep] = Set(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, HandOverStep)
+pure val allSetupSteps: List[SetupStep] = List(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, HandOverStep)
 pure def orderOf(st: SetupStep): int =
   if (st == WifiStep) 0 else if (st == AccountStep) 1 else if (st == NameStep) 2 else if (st == PaceStep) 3
   else if (st == TextSizeStep) 4 else if (st == ExplainStep) 5 else if (st == TalkStep) 6 else if (st == TypeStep) 7
@@ -56,6 +57,8 @@ pure def nextStep(st: SetupStep): SetupStep =
   else if (st == PaceStep) TextSizeStep else if (st == TextSizeStep) ExplainStep else if (st == ExplainStep) TalkStep
   else if (st == TalkStep) TypeStep else if (st == TypeStep) CloseStep else HandOverStep
 pure val noFacts: SetupFacts = { ownsWifi: false, online: false, accountConnected: false }
+pure def outcomeOf(p: SetupProgress, st: SetupStep): StepOutcome = p.outcomes.getOr(st, Pending)
+pure def outcomeFor(answered: bool): StepOutcome = if (answered) Done else PutOff
 ```
 
 ### A new tablet starts in set-up
@@ -65,7 +68,7 @@ for the host to report its facts.
 
 ```quint
 pure val initial: Setup = {
-  phase: Unstarted, progress: { step: WifiStep, done: Set(), skipped: Set() },
+  phase: Unstarted, progress: { step: WifiStep, outcomes: Map() },
   facts: noFacts, name: "", left: false, endToken: 0
 }
 pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending or s.phase == EndFailed
@@ -88,11 +91,22 @@ pure def passes(st: SetupStep, f: SetupFacts, name: str): bool =
   else if (st == NameStep) name != ""
   else false
 pure def passOne(p: SetupProgress, st: SetupStep, f: SetupFacts, name: str): SetupProgress =
-  if (p.step == st and passes(st, f, name)) { step: nextStep(st), done: p.done.union(Set(st)), skipped: p.skipped } else p
+  if (passes(st, f, name) and (p.step == st or outcomeOf(p, st) == PutOff))
+    { step: if (p.step == st) nextStep(st) else p.step, outcomes: p.outcomes.put(st, outcomeFor(true)) }
+  else p
 pure def settledProgress(p: SetupProgress, f: SetupFacts, name: str): SetupProgress =
-  val q = passOne(passOne(passOne(p, WifiStep, f, name), AccountStep, f, name), NameStep, f, name)
-  val cleared = q.skipped.filter(st => passes(st, f, name))
-  { step: q.step, done: q.done.union(cleared), skipped: q.skipped.exclude(cleared) }
+  passOne(passOne(passOne(p, WifiStep, f, name), AccountStep, f, name), NameStep, f, name)
+```
+
+### Once started, the current step is never one already true
+
+Discovered by the proof: without it, nothing showed that Not now on the
+account step happens only while no account is connected, so a put-off
+account could have stood beside a connected one.
+
+```quint
+pure def alwaysTheCurrentStepIsNotAlreadyTrue(s: Setup): bool =
+  s.phase != Unstarted implies not(passes(s.progress.step, s.facts, s.name))
 ```
 
 ### The launcher and the standalone app differ only in the Wi-Fi step
@@ -154,12 +168,7 @@ the hand-over and asks the store to keep that set-up has ended.
 pure def answerable(st: SetupStep): bool =
   st == PaceStep or st == TextSizeStep or st == ExplainStep or st == TalkStep or st == TypeStep or st == CloseStep
 pure def moveOn(st: SetupStep, s: Setup, answered: bool): Setup =
-  val p = s.progress
-  val onward = {
-    step: nextStep(st),
-    done: if (answered) p.done.union(Set(st)) else p.done,
-    skipped: if (answered) p.skipped else p.skipped.union(Set(st))
-  }
+  val onward = { step: nextStep(st), outcomes: s.progress.outcomes.put(st, outcomeFor(answered)) }
   val q = settledProgress(onward, s.facts, s.name)
   if (q.step == HandOverStep) { ...s, progress: q, phase: Ending, endToken: s.endToken + 1 } else { ...s, progress: q }
 pure def canAnswer(s: Setup, st: SetupStep): bool = s.phase == Answering and st == s.progress.step and answerable(st)
@@ -193,9 +202,9 @@ pure def skipCost(st: SetupStep): SkipCost =
 pure def canSkip(s: Setup, st: SetupStep): bool = s.phase == Answering and st == s.progress.step and skipCost(st) != NotSkippable
 pure def skip(s: Setup, st: SetupStep): Setup =
   if (st == AccountStep)
-    { ...s, phase: Away, left: true, progress: { ...s.progress, skipped: s.progress.skipped.union(Set(AccountStep)) } }
+    { ...s, phase: Away, left: true, progress: { ...s.progress, outcomes: s.progress.outcomes.put(st, outcomeFor(false)) } }
   else moveOn(st, s, false)
-pure def needsAccount(s: Setup): bool = s.progress.skipped.exists(st => st == AccountStep)
+pure def needsAccount(s: Setup): bool = outcomeOf(s.progress, AccountStep) == PutOff
 ```
 
 ### Set-up never passes the account step without an account
@@ -225,11 +234,10 @@ Resuming never repeats a finished step, and no step ahead is settled early.
 
 ```quint
 pure def alwaysEarlierStepsAreSettled(s: Setup): bool =
-  allSetupSteps.forall(st =>
-    (orderOf(st) < orderOf(s.progress.step) implies (s.progress.done.contains(st) or s.progress.skipped.contains(st))) and
-    (orderOf(st) >= orderOf(s.progress.step) implies (not(s.progress.done.contains(st)) and
-      (s.progress.skipped.contains(st) implies st == AccountStep))) and
-    not(s.progress.done.contains(st) and s.progress.skipped.contains(st)))
+  allSetupSteps.every(st =>
+    if (orderOf(st) < orderOf(s.progress.step)) outcomeOf(s.progress, st) != Pending
+    else if (st == s.progress.step and st == AccountStep) outcomeOf(s.progress, st) != Done
+    else outcomeOf(s.progress, st) == Pending)
 ```
 
 ### Leaving mid-way resumes at the same step
@@ -300,6 +308,6 @@ pure def sometimesFinished(s: Setup): bool = s.phase == Ended
 pure def sometimesAccountPutOff(s: Setup): bool = s.phase == Away and needsAccount(s)
 pure def sometimesResumed(s: Setup): bool = s.phase == Answering and s.left and orderOf(s.progress.step) > orderOf(AccountStep)
 pure def sometimesSaveFailed(s: Setup): bool = s.phase == EndFailed
-pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and s.progress.done.exists(st => st == WifiStep) and s.phase == Answering
-pure def sometimesWifiPutOff(s: Setup): bool = s.progress.skipped.exists(st => st == WifiStep)
+pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and outcomeOf(s.progress, WifiStep) == Done and s.phase == Answering
+pure def sometimesWifiPutOff(s: Setup): bool = outcomeOf(s.progress, WifiStep) == PutOff
 ```
