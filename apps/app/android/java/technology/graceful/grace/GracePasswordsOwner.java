@@ -40,8 +40,10 @@ final class GracePasswordsOwner {
    return GraceCredentials.withRead(() -> {
     if (!legacyClear(context)) return false;
     JSONObject binding = owner(ownership(context));
-    String credentialId = GraceCredentials.passwordCredentialId(context);
-    return binding == null ? credentialId == null : binding.getString("credentialId").equals(credentialId);
+    GraceCredentials.PasswordCredential credential = GraceCredentials.passwordCredential(context);
+    if (binding == null) return credential == null;
+    return credential != null && binding.getString("credentialId").equals(credential.id())
+      && binding.optString("environment").equals(credential.account().environment());
    });
   } catch (Exception unavailable) {
    return false;
@@ -50,15 +52,14 @@ final class GracePasswordsOwner {
 
  static void bindVerified(Context context, String scope, String expectedCloudKey, boolean linkExisting) throws Exception {
   GraceCredentials.withRead(() -> {
-   if (!legacyClear(context) || scope == null || !scope.matches("[a-f0-9]{64}") || expectedCloudKey == null ||
-     !expectedCloudKey.equals(GraceCredentials.cloudKey(context))) throw new IllegalStateException("Account verification changed");
-   String credentialId = GraceCredentials.passwordCredentialId(context);
-   if (credentialId == null) throw new IllegalStateException("Sign in first");
+   GraceCredentials.PasswordCredential credential = GraceCredentials.passwordCredential(context);
+   if (!legacyClear(context) || scope == null || !scope.matches("[a-f0-9]{64}") || credential == null ||
+     !credential.account().key().equals(expectedCloudKey)) throw new IllegalStateException("Account verification changed");
    JsonCredentialSlots store = ownership(context);
    JSONObject binding = owner(store);
    if (binding != null && !scope.equals(binding.getString("scope"))) throw new IllegalStateException("This vault belongs to another account");
    if (binding == null && PasswordVaultAccess.get(context).exists() && !linkExisting) throw new IllegalStateException("Confirm linking the saved passwords");
-   store.write(OWNER, new JSONObject().put("scope", scope).put("credentialId", credentialId).toString());
+   store.write(OWNER, new JSONObject().put("scope", scope).put("credentialId", credential.id()).put("environment", credential.account().environment()).toString());
    return null;
   });
  }

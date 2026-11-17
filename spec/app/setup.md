@@ -471,7 +471,7 @@ pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away a
 
 ### Only the device-only profile or the current verified owner can open the vault
 
-An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation in the same deployment environment. A debug tablet with two active environments must choose one account before opening the vault. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
 
 ```quint
 type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })

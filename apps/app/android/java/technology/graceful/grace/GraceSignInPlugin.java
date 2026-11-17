@@ -8,10 +8,13 @@ import ai.eliza.auth.cloud.CloudSignInPlugin;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Handler;
+import android.os.Looper;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.lang.ref.WeakReference;
 import java.util.concurrent.Callable;
 
 @CapacitorPlugin(name = "GraceSignIn")
@@ -54,7 +57,27 @@ public final class GraceSignInPlugin extends CloudSignInPlugin {
   catch (PackageManager.NameNotFoundException absent) { return false; }
  }
 
+ private static volatile WeakReference<GraceSignInPlugin> activeHost = new WeakReference<>(null);
  private GracePasswordRecovery passwordRecovery;
+
+ @Override public void load() {
+  super.load();
+  activeHost = new WeakReference<>(this);
+ }
+
+ @Override protected void handleOnDestroy() {
+  if (activeHost.get() == this) activeHost.clear();
+  super.handleOnDestroy();
+ }
+
+ static void passwordOwnerChanged(boolean retiring) {
+  new Handler(Looper.getMainLooper()).post(() -> {
+   GraceSignInPlugin plugin = activeHost.get();
+   if (plugin == null) return;
+   if (retiring && plugin.passwordRecovery != null) plugin.passwordRecovery.accountChanged();
+   plugin.notifyListeners("passwordOwnerChanged", new JSObject());
+  });
+ }
 
  @PluginMethod public void passwordBackupStatus(PluginCall call) {
   getBridge().execute(() -> call.resolve(new JSObject().put("ready", passwordBackupReady())));

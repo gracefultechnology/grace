@@ -48,19 +48,34 @@ final class GraceCredentials {
   return credential.getLong("expiresAt") > System.currentTimeMillis() ? credential.getString("token") : null;
  }
 
- static String passwordCredentialId(Context context) throws Exception {
+ record BackupAccount(String environment, String key) {
+  @Override public String toString() { return environment; }
+ }
+ record PasswordCredential(BackupAccount account, String id) {}
+
+ static PasswordCredential passwordCredential(Context context) throws Exception {
   JsonCredentialSlots store = store(context);
-  if (read(store, ACTIVATION) != null || read(store, PENDING) != null) throw new IllegalStateException("Account change in progress");
-  if (BuildConfig.DEBUG && (read(store, STAGING_KEY) != null
-    || read(store, STAGING_ACTIVATION) != null)) {
-   throw new IllegalStateException("Use the matching password environment");
+  if (read(store, PENDING) != null || read(store, ACTIVATION) != null || (BuildConfig.DEBUG && read(store, STAGING_ACTIVATION) != null)) {
+   throw new IllegalStateException("Account change in progress");
   }
-  String saved = read(store, KEY);
-  if (saved == null) return null;
-  JSONObject credential = new JSONObject(saved);
-  String id = credential.getString("credentialId");
-  if (!CloudSignInFlow.validUuid(id) || credential.getLong("expiresAt") <= System.currentTimeMillis()) throw new IllegalStateException("Verify the account again");
-  return id;
+  String production = read(store, KEY);
+  String staging = BuildConfig.DEBUG ? read(store, STAGING_KEY) : null;
+  if (production != null && staging != null) throw new IllegalStateException("Select one password account");
+  if (production == null && staging == null) return null;
+  JSONObject saved = new JSONObject(production != null ? production : staging);
+  String key = saved.getString("token");
+  String id = saved.getString("credentialId");
+  if (!CloudSignInFlow.validMobileSecret(key) || !CloudSignInFlow.validUuid(id) || saved.getLong("expiresAt") <= System.currentTimeMillis()) {
+   throw new IllegalStateException("Verify the account again");
+  }
+  return new PasswordCredential(new BackupAccount(production != null ? "production" : "staging", key), id);
+ }
+
+ static BackupAccount backupAccount(Context context) throws Exception {
+  return withRead(() -> {
+   PasswordCredential credential = passwordCredential(context);
+   return credential == null ? null : credential.account();
+  });
  }
 
  static CloudCredentialSlots slots(Context context, Runnable guard) {
@@ -117,6 +132,7 @@ final class GraceCredentials {
    }
    @Override public long reserveStop() { return lifecycleEpoch; }
    @Override public void requestStop(long request) throws Exception {
+    GraceSignInPlugin.passwordOwnerChanged(true);
     PasswordVaultAccess.get(context).lockAndClose();
     context.stopService(new Intent(context, GraceAgentService.class));
    }
@@ -128,6 +144,7 @@ final class GraceCredentials {
    @Override public void finishMutation(long epoch, long request, boolean attempted, boolean committed) {
     if (mutationEpoch != epoch) return;
     mutationEpoch = -1;
+    GraceSignInPlugin.passwordOwnerChanged(false);
     if (request >= 0 && (!attempted || committed)) GraceAgentService.start(context);
    }
   };
