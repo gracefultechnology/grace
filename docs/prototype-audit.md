@@ -1,20 +1,10 @@
 # Current Grace prototype and requirements audit
 
-This audit dates from the models-only phase (13 November 2026) and audits the
-`prototype/Grace Prototype.html` of that day: 2,401 lines, SHA-256 `968731aa…`
-([specification plan](specification-plan.md#goal-and-source-precedence)). It
-superseded the earlier `Grace Bill Pay.html`, which is no longer in the
-repository. An updated prototype of 2,570 lines replaced it on 16 November
-2026 and is the current reference, so the line ranges below point into the
-13 November file, which `git show "7007516^:prototype/Grace Prototype.html"`
-prints. This inventory is based on source inspection; it does not certify
-a running provider integration, microphone, Android device or pixel comparison.
-
-Where it differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults)
-or the specs, those win: no wake detector is installed (decision 5), nothing
-asks the agent or the speech service offline (decision 6), the browser has no
-zoom control (decision 21), email accounts are one per provider, and Files has
-no Print.
+This audit dates from the models-only phase (13 November 2026) and audits the `prototype/Grace Prototype.html` of that day: 2,401 lines, SHA-256 `968731aa…` ([specification plan](specification-plan.md#goal-and-source-precedence)), which superseded the earlier `Grace Bill Pay.html`, no longer in the repository.
+An updated prototype of 2,570 lines replaced it on 16 November 2026 and is the current reference, so the line ranges below point into the 13 November file, which `git show "7007516^:prototype/Grace Prototype.html"` prints.
+This inventory is based on source inspection; it does not certify a running provider integration, microphone, Android device or pixel comparison.
+Where it differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults) or the specs, those win: no wake detector is installed (decision 5), nothing asks the agent or the speech service offline (decision 6),
+the browser has no zoom control (decision 21), email accounts are one per provider, and Files has no Print.
 
 `prototype/prd.md` is a concatenation of revisions: early exploration at
 1–765, future vision at 766–834, On-screen Helper at 835–1351, Screen Share at
