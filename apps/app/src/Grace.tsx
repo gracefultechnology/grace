@@ -12,6 +12,7 @@ const checkLabels: Record<GuidedRead, string> = {
   ReadMail: "Check email",
   ReadBrowser: "Check page",
   ReadChangedBrowser: "Check page",
+  ReadStatement: "Read statement",
   ReadCalendar: "Check appointment",
   UnsupportedRead: "",
 };

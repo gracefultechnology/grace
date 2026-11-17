@@ -48,7 +48,7 @@ type GuidedObservation = {
   owner: str, task: str, version: int, deviceVersion: int, browserRevision: int,
   step: GuidedStep, evidence: str
 }
-type GuidedRead = ReadMail | ReadBrowser | ReadChangedBrowser | ReadCalendar | UnsupportedRead
+type GuidedRead = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | UnsupportedRead
 type GuidedReview = { revision: int, generation: int, workVersion: int, request: GuidedRequest }
 type GuidedLink = {
   task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
@@ -988,10 +988,15 @@ highlighted destination to this step and its current page context. A
 highlight does not record a read or navigate the page. Visiting a
 different destination does not finish the pointed step.
 
+For a requested statement read, the host reads the current visible document locally. The amount due and due date each need a single distinct labeled value on the same statement. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
+
 ```quint
+pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
+  amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
 pure def readStep(read: GuidedRead): GuidedStep = match read {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
   | ReadBrowser => { surface: S::Browser, subject: "Open website", outcome: "Open the page you want me to check." }
+  | ReadStatement => { surface: S::Browser, subject: "Current statement", outcome: "Check the statement amount due and its due date." }
   | ReadChangedBrowser => { surface: S::Browser, subject: "Next website page", outcome: "Open the next page you want me to check." }
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | UnsupportedRead => noGuidedStep
@@ -999,12 +1004,13 @@ pure def readStep(read: GuidedRead): GuidedStep = match read {
 pure def guidedReadKind(guidedStep: GuidedStep): GuidedRead =
   if (guidedStep == readStep(ReadMail)) ReadMail
   else if (guidedStep == readStep(ReadBrowser)) ReadBrowser
+  else if (guidedStep == readStep(ReadStatement)) ReadStatement
   else if (guidedStep == readStep(ReadChangedBrowser)) ReadChangedBrowser
   else if (guidedStep == readStep(ReadCalendar)) ReadCalendar
   else UnsupportedRead
 pure def mayGuideReadLink(w: Workspace): bool =
   val read = guidedReadKind(nextOutcome(w.plan))
-  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser) and
+  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser or read == ReadStatement) and
   w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
   w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
