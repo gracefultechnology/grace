@@ -461,9 +461,14 @@ async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: str
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
   try {
-    const targets = Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(120_000) })
-      .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
-    const host = targets.find((target) => target.type === "page" && target.url.startsWith("https://localhost"))?.webSocketDebuggerUrl;
+    const ready = AbortSignal.timeout(120_000);
+    let host: string | undefined;
+    while (!host && !ready.aborted) {
+      const targets = Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: ready })
+        .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
+      host = targets.find((target) => target.type === "page" && URL.parse(target.url)?.origin === "https://localhost")?.webSocketDebuggerUrl;
+      if (!host) await delay(250);
+    }
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
     const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
@@ -600,26 +605,37 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         const previous = (await shell(serial, "settings get secure autofill_service")).trim();
         const noProvider = previous === "null" || previous === "";
         if (!noProvider && !/^[a-zA-Z0-9_.]+\/[a-zA-Z0-9_.]+$/.test(previous)) throw new Error("Unknown Android autofill state");
+        const logLevel = (await shell(serial, "cmd autofill get log_level")).trim();
+        if (!["off", "debug", "verbose"].includes(logLevel)) throw new Error("Unknown Android autofill log level");
         await shell(serial, "cmd autofill set log_level off");
+        cleanup.push(() => shell(serial, `cmd autofill set log_level ${logLevel}`));
         await shell(serial, `settings put secure autofill_service ${autofill}`);
         cleanup.push(() => shell(serial, noProvider ? "settings delete secure autofill_service" : `settings put secure autofill_service ${previous}`));
         if ((await shell(serial, "settings get secure autofill_service")).trim() !== autofill) throw new Error("Android did not select Grace Passwords");
-        await shell(serial, `am start -W -n ${activity}`, 120);
-        step = "provision via the native password editor";
+        step = "start the Grace tablet app";
+        const started = await shell(serial, `am start -W -n ${activity}`, 180);
+        if (!started.includes(`Activity: ${activity}`)) throw new Error("Grace did not open");
+        step = "wait for the Grace home screen";
         const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
         await withGracePage(serial, waitForPid, async (page) => {
+          step = "open Passwords from Home";
           await page.step({ tap: "More apps" });
           await page.step({ tap: "Passwords" });
           await page.step({ tap: "Unlock Passwords" });
+          step = "confirm the tablet screen lock";
           await submitPin();
+          step = "open the protected password editor";
           await page.step({ tap: "Add password" });
+          step = "enter the synthetic sign-in in Android";
           await editor("Name", login.label);
           await editor("Website address", origin.origin);
           await editor("Username", login.username);
           await editor("Password", login.password);
           await shell(serial, "input keyevent KEYCODE_BACK");
+          step = "save the synthetic sign-in";
           await tap((node) => node.packageName === identity.appId && node.label === "Save", "the native Save button");
           await page.step({ expect: "Password saved." });
+          process.stdout.write("The installed native password editor saved the synthetic sign-in.\n");
           step = "open the private HTTPS browser";
           await page.step({ tap: "Close Passwords" });
           await page.step({ tap: "Internet" });
