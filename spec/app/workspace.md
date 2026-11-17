@@ -27,6 +27,9 @@ There is no provider name, domain allowlist or fixed sequence of website steps.
 Caller identities are supplied by the authenticated host, not website content.
 Discovered by the proof: every retained plan step has a named subject and
 nonempty outcome, so the next instruction still exists after a receipt.
+The workspace also retains the component rules for a loaded page's security,
+the assistant's visible work, guidance and conversation offers, and the
+execution's verified observation context.
 
 ```quint
 import shell as S from "./shell"
@@ -144,14 +147,11 @@ pure def alwaysDeviceRules(w: Workspace): bool =
 pure def alwaysBrowserRules(w: Workspace): bool =
   B::alwaysTabsAreWellFormed(w.browser) and B::alwaysTabIdentifiersAreUnique(w.browser) and
   B::alwaysSelectedTabExists(w.browser) and B::alwaysBrowserCountersAreValid(w.browser) and
-  B::alwaysRecentDestinationsAreDistinct(w.browser)
-pure def alwaysAssistantRules(w: Workspace): bool =
-  A::alwaysConversationRules(w.assistant) and A::alwaysHiddenIsQuiet(w.assistant) and
-  A::alwaysTaskContextExists(w.assistant) and A::alwaysOperationsBelongToWorkingTasks(w.assistant) and
-  A::alwaysOnlyVerifiedEndpointsClaimCompletion(w.assistant) and A::alwaysReplacementIsComplete(w.assistant)
+  B::alwaysOnlyALoadedPageIsSecure(w.browser) and B::alwaysRecentDestinationsAreDistinct(w.browser)
+pure def alwaysAssistantRules(w: Workspace): bool = I::validAssistant(w.assistant)
 pure def alwaysExecutionRules(w: Workspace): bool =
   X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
+  X::alwaysObservedContextExists(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
   X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
   X::alwaysNoExhaustedApproachQueued(w.execution)
 pure def validPayment(p: P::Payment): bool =
