@@ -2,6 +2,7 @@ package technology.graceful.grace;
 
 import android.Manifest;
 import android.content.Context;
+import android.util.Base64;
 import ai.eliza.plugins.reminders.ReminderConfiguration;
 import ai.eliza.plugins.reminders.ReminderEngine;
 import ai.eliza.plugins.reminders.ReminderPlugin;
@@ -11,7 +12,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
 
 @CapacitorPlugin(name = "GraceReminders", permissions = { @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }) })
 public class GraceRemindersPlugin extends ReminderPlugin {
@@ -25,16 +25,16 @@ public class GraceRemindersPlugin extends ReminderPlugin {
 
  static final SecureStringStore.Factory STORE = context -> new SecureStringStore() {
   private File file(String key) {
-   return new File(GraceRecordStorePlugin.folder(context, "reminders"), HexFormat.of().formatHex(key.getBytes(StandardCharsets.UTF_8)));
+   return new File(GraceRecordStorePlugin.folder(context, "reminders"), Base64.encodeToString(key.getBytes(StandardCharsets.UTF_8), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING));
   }
 
   @Override public String identity() { return "grace-app-private-records-v1"; }
 
-  @Override public String read(String key) throws Exception { return GraceRecordStorePlugin.read(file(key)).value(); }
+  @Override public String read(String key) throws Exception { return GraceRecordStorePlugin.load(file(key)).value(); }
 
   @Override public void write(String key, String value) throws Exception {
    File file = file(key);
-   GraceRecordStorePlugin.write(file, GraceRecordStorePlugin.read(file).revision(), value);
+   GraceRecordStorePlugin.commit(file, GraceRecordStorePlugin.load(file).revision(), value);
   }
  };
 

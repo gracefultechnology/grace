@@ -13,13 +13,15 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "GraceRecords")
 public class GraceRecordStorePlugin extends Plugin {
- static final Set<String> RECORDS = Set.of("commitments", "preferences", "setup", "memory", "calendar");
+ static final Set<String> RECORDS = new HashSet<>(Arrays.asList("commitments", "preferences", "setup", "memory", "calendar"));
 
  static final class Stale extends Exception {}
 
@@ -31,16 +33,16 @@ public class GraceRecordStorePlugin extends Plugin {
   return folder;
  }
 
- static Stored read(File file) throws IOException, JSONException {
+ static Stored load(File file) throws IOException, JSONException {
   AtomicFile atomic = new AtomicFile(file);
   if (!atomic.exists()) return new Stored(0, null);
   JSONObject stored = new JSONObject(new String(atomic.readFully(), StandardCharsets.UTF_8));
   return new Stored(stored.getLong("revision"), stored.optString("value", null));
  }
 
- static long write(File file, long expected, String value) throws IOException, JSONException, Stale {
+ static long commit(File file, long expected, String value) throws IOException, JSONException, Stale {
   try (RandomAccessFile lockFile = new RandomAccessFile(new File(file.getPath() + ".lock"), "rw"); FileLock lock = lockFile.getChannel().lock()) {
-   if (read(file).revision() != expected) throw new Stale();
+   if (load(file).revision() != expected) throw new Stale();
    AtomicFile atomic = new AtomicFile(file);
    FileOutputStream out = atomic.startWrite();
    try {
@@ -62,7 +64,7 @@ public class GraceRecordStorePlugin extends Plugin {
 
  @PluginMethod public void read(PluginCall call) {
   try {
-   Stored stored = read(record(call));
+   Stored stored = load(record(call));
    call.resolve(new JSObject().put("revision", stored.revision()).put("value", stored.value()));
   } catch (IOException | JSONException | RuntimeException failed) {
    call.reject("The record could not be read", "unreadable", failed);
@@ -74,7 +76,7 @@ public class GraceRecordStorePlugin extends Plugin {
   String value = call.getString("value");
   if (revision == null || revision < 0 || value == null) { call.reject("A write needs the revision it read and a value", "invalid"); return; }
   try {
-   call.resolve(new JSObject().put("revision", write(record(call), revision, value)));
+   call.resolve(new JSObject().put("revision", commit(record(call), revision, value)));
   } catch (Stale stale) {
    call.reject("The record changed since it was read", "stale");
   } catch (IOException | JSONException | RuntimeException failed) {

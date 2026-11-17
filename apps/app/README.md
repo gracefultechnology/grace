@@ -99,11 +99,19 @@ another cause; the state is one of upstream's `unavailable`, `stopped`, `startin
 `runtime`, and any other is refused before the build; `{ "service": "<class>" }` waits up to two minutes
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
-background processes (`am kill`), fails unless her process is the same one, and opens her again. A
+background processes (`am kill`), fails unless her process is the same one, and opens her again.
+Five steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
+expression in Grace's page and fails unless its value is that JSON, and `{ "evaluate": "<expression>",
+"rejects": "<code>" }` unless it rejects with that code; `{ "grant": "android.permission.<NAME>" }`
+grants Grace that permission, as the person's Allow would; `{ "notification": "<title>" }` opens
+Android's settings over Grace, waits up to five minutes for a notification of hers with that title, and
+opens her again; `{ "restart": "force-stop" }` force-stops Grace, opens Home and walks on in her new
+process. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-and `agent.json` the agent service below.
+`agent.json` the agent service below, and `records.json` the record store, reminders and file library
+below.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
@@ -200,6 +208,55 @@ list, and reused by every later build. It refuses a `vendor/eliza` with local ch
 libraries go in as native libraries only: the inventory leaves out the payload's `agent/<abi>/`
 copy, which the generated host drops from the assets.
 
+### Records, reminders and files
+
+Three bridges of Grace's own keep what must outlive her page and her process, in her app-private
+storage (`no backup`, as `res/xml/data_extraction_rules.xml` says), registered by `MainActivity`:
+
+| Bridge | Class | Keeps |
+|---|---|---|
+| `GraceRecords` | `GraceRecordStorePlugin` | the named durable records: `commitments`, `preferences`, `setup`, `memory` and `calendar`, each one file under `files/records/` |
+| `GraceReminders` | `GraceRemindersPlugin` | upstream's reminder engine (`plugin-native-reminders`, the `eliza-reminders` module) |
+| `GraceFiles` | `GraceFilesPlugin` | Grace's library of photos and PDFs, `files/library/` |
+
+`GraceRecords.read({ name })` gives `{ revision, value }` (revision 0 and no value before the first
+write). `write({ name, revision, value })` commits only when the record is still at the revision the
+caller read, under a lock on the record's file that holds across processes, and rejects with `stale`
+otherwise, so a late or concurrent write never replaces a newer one; the commit is Android's
+`AtomicFile`, synced to disk before the rename, so a record is whole after a crash and readable
+whatever happens to the WebView. This is the storage `spec/app/payment.md`, "A durable unresolved
+window exists before either submission route is enabled", asks for. The page's own storage is not
+used for any of them; the workspace itself stays in memory.
+
+`GraceReminders` posts a reminder at its time on its own `grace-reminders-due` channel with Grace's
+G, while her page, or her whole process, is gone. It holds `USE_EXACT_ALARM` (calendar reminders),
+so Android 13 and later ring it on time; on Android 12 it asks for `SCHEDULE_EXACT_ALARM`, and without
+it the engine falls back to an inexact alarm. Its receiver re-arms every reminder after a boot, an
+update, or a change of time or time zone, and nothing else; it starts no activity and no agent.
+Notifications need `POST_NOTIFICATIONS`, which the engine asks for at the first reminder. The engine
+keeps its reminders, with their revisions, in its own preferences file; the routes of notification
+taps, which upstream asks a host to keep in its own storage, go to `files/reminders/` through the same
+atomic file write.
+
+`GraceFiles.list()` gives each photo and PDF with its `name`, `kind` (`photo` or `pdf`), `path`
+(for `Capacitor.convertFileSrc`), `size`, `savedAt` and PDF `pages`; `save({ name, data })` keeps
+base64 bytes (an email attachment) under a free name; `page({ name, page, width })` renders one PDF
+page natively (`PdfRenderer`) as a PNG; `remove({ name })` deletes one. `choose({ kind })` opens
+Android's photo picker (`photo`) or document picker for a PDF and copies the choice into the library;
+`capture()` asks for the camera, opens Android's camera app (`IMAGE_CAPTURE`, with a `FileProvider`
+over the library, `res/xml/library_paths.xml`) and keeps the photo it returns. None of these need a
+storage permission.
+
+Upstream's camera, media and filesystem modules are not used: the camera module is an in-app CameraX
+recorder and the media module a 13,000-line library with Media3 video editing, both far beyond
+taking one photo and keeping a few files; the filesystem module is the agent's FILE action, with no
+Android library. Upstream's notifications module mirrors other apps' and mail notices, which Grace
+does not do. There is no printing: the product has none.
+
+Grace starts with the tablet as Home: on the launcher flavor Android opens her at boot and
+`MainActivity` starts the agent service, so no boot receiver starts anything. The standalone flavor
+starts only when opened.
+
 ### Why the host is as it is
 
 - The web UI is Capacitor's bridge WebView drawn over the website, which ElizaSurfaceManager keeps
@@ -222,11 +279,12 @@ copy, which the generated host drops from the assets.
   location are asked for after the person's Allow and Android's own prompt
   (`spec/app/websiteRequests.md`); the launcher's Wi-Fi scan needs location too. Grace opts out of
   Android's camera compatibility rotation, which turned the display to portrait when a website opened
-  the camera. `CHANGE_NETWORK_STATE`, which `ElizaWiFi`'s library manifest asks for, is removed:
+  the camera. Grace's own Take a photo needs `CAMERA` granted too, since Android refuses its camera app
+  to an app that declares the permission and lacks it. `CHANGE_NETWORK_STATE`, which `ElizaWiFi`'s library manifest asks for, is removed:
   nothing in Grace requests a network; the standalone flavor removes its Wi-Fi permissions too, and
   `android.hardware.wifi` is not required (without it Grace's Wi-Fi settings say Wi-Fi is unavailable).
 - The `<queries>` list the apps `openExternalLink` can resolve on API 30+: mail and text compose, the
   dial pad, maps, the store and apps with an https link filter; any other app is refused as
-  `EXTERNAL_APP_UNAVAILABLE`.
+  `EXTERNAL_APP_UNAVAILABLE`. The camera app (`IMAGE_CAPTURE`) is listed for Take a photo.
 - `app_icon.xml` is the logotype's G on a paper tile, 60 of 108 tall so the splash screen's circular
   crop keeps the whole letter.

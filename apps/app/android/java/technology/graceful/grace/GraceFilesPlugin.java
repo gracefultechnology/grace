@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.Build;
+import android.os.FileUtils;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
@@ -50,7 +51,7 @@ public class GraceFilesPlugin extends Plugin {
  }
 
  private File named(String name) {
-  if (name == null || name.isBlank() || name.length() > 200 || name.startsWith(".") || name.contains("/") || kind(name) == null) throw new IllegalArgumentException("Not a photo or PDF name: " + name);
+  if (name == null || name.trim().isEmpty() || name.length() > 200 || name.startsWith(".") || name.contains("/") || kind(name) == null) throw new IllegalArgumentException("Not a photo or PDF name: " + name);
   return new File(library(), name);
  }
 
@@ -77,7 +78,7 @@ public class GraceFilesPlugin extends Plugin {
   AtomicFile atomic = new AtomicFile(file);
   FileOutputStream out = atomic.startWrite();
   try (in) {
-   in.transferTo(out);
+   FileUtils.copy(in, out);
    atomic.finishWrite(out);
   } catch (IOException | RuntimeException failed) {
    atomic.failWrite(out);
@@ -98,7 +99,7 @@ public class GraceFilesPlugin extends Plugin {
   File[] files = library().listFiles((folder, name) -> kind(name) != null);
   JSArray entries = new JSArray();
   try {
-   for (File file : Arrays.stream(files == null ? new File[0] : files).sorted(Comparator.comparingLong(File::lastModified).reversed()).toList()) entries.put(entry(file));
+   for (File file : Arrays.stream(files == null ? new File[0] : files).sorted(Comparator.comparingLong(File::lastModified).reversed()).toArray(File[]::new)) entries.put(entry(file));
    call.resolve(new JSObject().put("files", entries));
   } catch (IOException | RuntimeException failed) {
    call.reject("The saved files could not be read", "unreadable", failed);
