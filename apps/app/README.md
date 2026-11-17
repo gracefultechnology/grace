@@ -23,10 +23,11 @@ and traces (SPEC.md, "One spec tree").
 
 Run `git submodule update --init vendor/eliza` from the repository root. Grace uses the Android
 consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
-The pinned checkout supplies the built agent bundle at
-`vendor/eliza/packages/agent/dist/bundle`. Each target's Node artifact and build manifest go in
-`vendor/eliza/packages/os/dist/android/<abi>`, with the runtime pin in Eliza's
-`packages/os/aosp/runtime/node.lock.json`. At build time the OS stager checks the artifact digest,
+The Android build generates the Eliza Core and Agent owners from the pinned checkout and builds
+the device entry and its verified bundle in `vendor/eliza/packages/agent/dist/bundle`. The build
+downloads each target's pinned Node runtime from Eliza's public Android Node prerelease when the
+executable and build manifest are absent in `vendor/eliza/packages/os/dist/android/<abi>`. The
+runtime lock is Eliza's `packages/os/aosp/runtime/node.lock.json`. The OS stager checks the runtime digest,
 ELF ABI and Android interpreter, then inventories the bundle, PGlite assets and native executable
 in `artifacts/agent-runtime/<pinned-commit>/<abi>`.
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseArgs, promisify } from "node:util";
@@ -103,31 +103,96 @@ const NodeToolchain = {
   ndk: Schema.NonEmptyString,
   apiLevel: Schema.Int.check(Schema.isGreaterThanOrEqualTo(29)),
 };
-const NodeManifest = Schema.Struct({ schema: Schema.Literal(1), abi: Abi, ...NodeToolchain });
-const NodeLock = Schema.Struct({ ...NodeToolchain, entries: Schema.Array(Schema.Struct({
-  abi: Abi, sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)), url: Schema.NonEmptyString,
+const Digest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
+const SourceArtifact = Schema.String.check(Schema.isPattern(/^https:\/\/github\.com\/elizaOS\/eliza\/releases\/download\/android-node-v26\.[0-9]+\.[0-9]+-ndk-[0-9.]+\/node-v26\.[0-9]+\.[0-9]+-android-(arm64-v8a|x86_64)\.zip$/));
+const NodeManifest = Schema.Struct({ schema: Schema.Literal(1), abi: Abi, ...NodeToolchain, sha256: Digest, sourceSha256: Digest, buildCommit: Commit });
+const NodeLock = Schema.Struct({ ...NodeToolchain, sourceSha256: Digest, buildCommit: Commit, entries: Schema.Array(Schema.Struct({
+  abi: Abi, sha256: Digest, archiveSha256: Digest, url: SourceArtifact,
 })) });
 const BundlePin = Schema.Struct({ schema: Schema.Literal(1), sourceCommit: Commit });
 
+function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: Abi) {
+  const selected = lock.entries.filter((entry) => entry.abi === abi);
+  if (selected.length !== 1) throw new Error(`Eliza's runtime lock must name ${abi} once`);
+  const [source] = selected;
+  const executable = "libeliza_node.so";
+  const manifest = "manifest.json";
+  function verified(binary: Buffer, receipt: Buffer) {
+    const candidate = Schema.decodeUnknownSync(NodeManifest)(JSON.parse(receipt.toString("utf8")));
+    if (candidate.abi !== abi || candidate.version !== lock.version || candidate.ndk !== lock.ndk
+        || candidate.apiLevel !== lock.apiLevel || candidate.buildCommit !== lock.buildCommit
+        || candidate.sourceSha256 !== lock.sourceSha256 || candidate.sha256 !== source.sha256
+        || createHash("sha256").update(binary).digest("hex") !== source.sha256) {
+      throw new Error(`Eliza's Android Node ${abi} differs from the runtime lock`);
+    }
+    return { ...candidate, file: path.join(directory, executable), url: source.url };
+  }
+  if (existsSync(path.join(directory, executable)) && existsSync(path.join(directory, manifest))) {
+    return verified(readFileSync(path.join(directory, executable)), readFileSync(path.join(directory, manifest)));
+  }
+  mkdirSync(path.dirname(directory), { recursive: true });
+  const scratch = mkdtempSync(path.join(path.dirname(directory), ".android-node-"));
+  const archive = path.join(scratch, "runtime.zip");
+  const formatLimit = 256 * 1024 * 1024;
+  try {
+    execFileSync("curl", ["--proto", "=https", "--proto-redir", "=https", "--fail", "--location", "--silent", "--show-error",
+      "--retry", "2", "--connect-timeout", "15", "--max-time", "240", "--max-filesize", String(formatLimit),
+      "--output", archive, source.url], { stdio: "inherit" });
+    if (createHash("sha256").update(readFileSync(archive)).digest("hex") !== source.archiveSha256)
+      throw new Error(`Eliza's Android Node ${abi} archive differs from the runtime lock`);
+    const read = (entry: string) => execFileSync("unzip", ["-p", archive, entry], { maxBuffer: formatLimit });
+    const binary = read(executable);
+    const receipt = read(manifest);
+    const runtime = verified(binary, receipt);
+    writeFileSync(path.join(scratch, executable), binary, { mode: 0o755 });
+    writeFileSync(path.join(scratch, manifest), receipt, { mode: 0o644 });
+    rmSync(archive);
+    renameSync(scratch, directory);
+    return runtime;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function bundleAgent(commit: string, bundle: string) {
+  const generate = (owner: string) => execFileSync("pnpm", ["--dir", upstream, "gen", "--owner", owner], { stdio: "inherit" });
+  generate("core");
+  generate("agent");
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core", "build"], { stdio: "inherit" });
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/agent", "exec", "vibelang", "-p", "tsconfig.device.json"], { stdio: "inherit" });
+  const build = path.join(upstream, "packages/agent/dist/src/bundle/build.js");
+  execFileSync(process.execPath, ["--input-type=module", "--eval", [
+    'import { pathToFileURL } from "node:url";',
+    'const [file, outDir, sourceCommit, plugins] = process.argv.slice(1);',
+    'const { buildAgentBundle } = await import(pathToFileURL(file).href);',
+    'await buildAgentBundle({ outDir, sourceCommit, plugins: JSON.parse(plugins) });',
+  ].join("\n"), build, bundle, commit, JSON.stringify(pluginLoad)], { cwd: upstream, stdio: "inherit" });
+}
+
 function agentRuntime(abi: Abi) {
-  const commit = Schema.decodeUnknownSync(Commit)(execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim());
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  const commit = Schema.decodeUnknownSync(Commit)(git(app, "rev-parse", "HEAD:vendor/eliza"));
+  if (git(upstream, "rev-parse", "HEAD") !== commit) throw new Error(`The Eliza checkout must match Grace's gitlink ${commit}`);
   const output = path.join(artifacts, "agent-runtime", commit, abi);
   const inventory = path.join(output, "android/app/src/main/assets/agent/inventory.json");
   if (!existsSync(inventory)) {
     const runtime = path.join(upstream, "packages/os/dist/android", abi);
     const bundle = path.join(upstream, "packages/agent/dist/bundle");
     const nodeLockFile = path.join(upstream, "packages/os/aosp/runtime/node.lock.json");
-    const runtimeFile = path.join(runtime, "libeliza_node.so");
-    const runtimeManifest = path.join(runtime, "manifest.json");
     const bundleFile = path.join(bundle, "agent.mjs");
     const bundleManifest = path.join(bundle, "manifest.json");
-    const missing = [runtimeFile, runtimeManifest, nodeLockFile, bundleFile, bundleManifest].filter((file) => !existsSync(file));
-    if (missing.length) throw new Error(`Pinned Eliza runtime ${commit} has missing Android inputs for ${abi}\n${missing.join("\n")}`);
-    const candidate = Schema.decodeUnknownSync(NodeManifest)(readJson(runtimeManifest));
-    if (candidate.abi !== abi) throw new Error("Eliza's Node runtime advertises a different ABI");
+    if (!existsSync(nodeLockFile)) throw new Error(`Pinned Eliza runtime ${commit} lacks the reviewed Android Node lock`);
+    const nodeLock = Schema.decodeUnknownSync(NodeLock)(readJson(nodeLockFile));
+    const androidNode = resolveNodeRuntime(runtime, nodeLock, abi);
+    if (!existsSync(bundleFile) || !existsSync(bundleManifest)
+        || Schema.decodeUnknownSync(BundlePin)(readJson(bundleManifest)).sourceCommit !== commit) {
+      const sourceEdits = git(upstream, "status", "--porcelain", "--", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
+        "packages/core", "packages/agent", "packages/os", "spec", "vibestack");
+      if (sourceEdits) throw new Error("The Eliza device source has uncommitted changes");
+      bundleAgent(commit, bundle);
+    }
     stageRuntimePayload({
-      runtime: { ...candidate, file: runtimeFile },
-      nodeLock: Schema.decodeUnknownSync(NodeLock)(readJson(nodeLockFile)),
+      runtime: androidNode, nodeLock,
       bundle: bundleFile, bundleManifest, sourceCommit: commit, targetAbi: abi, output,
     });
   }
