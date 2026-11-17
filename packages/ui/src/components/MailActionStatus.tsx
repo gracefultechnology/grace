@@ -24,8 +24,6 @@ export const headerPill = cn(press, "text-grace-ink active:scale-97 active:bg-tr
 export const pendingMark = (pending: boolean, icon: ReactNode) => (pending ? <Spinner size="md" aria-hidden /> : icon);
 
 export type MailActionStatusProps = Omit<ComponentProps<"div">, "children"> & {
-  /** The action it reports: saving to Files, the only one. */
-  action?: "save";
   /** What saving actually did. */
   status: MailSaveStatus;
   /** Tries again after a failure, by the Try again its words offer. */
@@ -40,7 +38,7 @@ export type MailActionStatusProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
  */
-export function MailActionStatus({ action: _action, status, onRetry, labels, className, ...props }: MailActionStatusProps) {
+export function MailActionStatus({ status, onRetry, labels, className, ...props }: MailActionStatusProps) {
   const l = { ...mailActionStatusLabels, ...labels };
   const failed = status === "failed";
   const done = status === "saved";
