@@ -2,6 +2,7 @@ package technology.graceful.grace;
 
 import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
+import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import android.content.Context;
 import java.io.File;
 import java.nio.file.Files;
@@ -41,13 +42,34 @@ final class GracePasswordsOwner {
   }
  }
 
+ static synchronized void bindVerified(Context context, CloudPasswordBackup.Approval approval, boolean linkExisting) throws Exception {
+  if (changingAccount || !hasNoPriorOwner(context) || !approval.current()) throw new IllegalStateException("Account verification changed");
+  var current = GraceAccount.account(context).session();
+  if (current == null || !current.accountId().equals(approval.ownerId())) throw new IllegalStateException("Account verification changed");
+  var store = custody(context);
+  String existing = store.read(OWNER);
+  if (existing != null) {
+   var owner = new JSONObject(existing);
+   if (!current.accountId().equals(owner.getString("accountId"))
+       || !current.organizationId().equals(owner.getString("organizationId"))
+       || (owner.has("scope") && !approval.scope().equals(owner.getString("scope")))) {
+    throw new IllegalStateException("This vault belongs to another account");
+   }
+  } else if (PasswordVaultAccess.get(context).exists() && !linkExisting) {
+   throw new IllegalStateException("Confirm linking the saved passwords");
+  }
+  if (changingAccount || !approval.current()) throw new IllegalStateException("Account verification changed");
+  store.write(OWNER, new JSONObject().put("accountId", current.accountId())
+    .put("organizationId", current.organizationId()).put("scope", approval.scope()).toString());
+ }
+
  static void enteringAccountChange(Context context) {
-  changingAccount = true;
+  synchronized (GracePasswordsOwner.class) { changingAccount = true; }
   try { PasswordVaultAccess.get(context).lockAndClose(); }
   catch (Exception unavailable) { }
  }
 
- static void leavingAccountChange() {
+ static synchronized void leavingAccountChange() {
   changingAccount = false;
  }
 
@@ -56,7 +78,7 @@ final class GracePasswordsOwner {
   catch (Exception unavailable) { }
  }
 
- private static void bindVerifiedAccount(Context context) throws Exception {
+ private static synchronized void bindVerifiedAccount(Context context) throws Exception {
   if (!hasNoPriorOwner(context)) return;
   var current = GraceAccount.account(context).session();
   if (current == null || PasswordVaultAccess.get(context).exists()) return;

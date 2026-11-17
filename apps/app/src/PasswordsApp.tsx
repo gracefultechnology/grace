@@ -22,6 +22,7 @@ const noticeText: Record<VaultNotice, string> = {
   FailedVaultAction: "Something went wrong. Please try again.",
   SavedLogin: "Password saved.",
   DeletedLogin: "Password deleted.",
+  BackupUnavailable: "Backup and recovery is unavailable right now.",
   ChangedLogin: "This sign-in changed. Check its details and try again.",
 };
 
@@ -137,6 +138,7 @@ export function PasswordsApp() {
         </div>
       )}
       {vault?.tag === "OpenVault" && <OpenLogins entries={vault.entries} selected={vault.selected} choose={choose} act={act} guide={guide} finishGuide={finishGuide} />}
+      {state?.backupReady && <Button className="self-start" variant="capsule" size="pill" onClick={() => act({ kind: "Backup" })}>Backup and recovery</Button>}
       {state && state.notice !== "QuietVault" && <p role="status" className="text-body">{noticeText[state.notice]}</p>}
       {vault?.tag === "LockedVault" && <p className="text-body text-muted-foreground">Passwords are saved on this tablet.</p>}
       <details className="max-w-prose text-body">

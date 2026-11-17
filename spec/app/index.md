@@ -62,14 +62,14 @@ type VaultActor = PasswordsPerson | PasswordsHost
 type LoginBinding = { kind: str, facet: str, display: str }
 type LoginSummary = { id: str, label: str, username: str, bindings: List[LoginBinding], revision: int }
 type VaultIssue = NoDeviceLock | UnsupportedVault | LostVaultKey | VaultClosed
-type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | SpokenHelpUnavailable | SavedLogin | DeletedLogin | ChangedLogin
+type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | SpokenHelpUnavailable | SavedLogin | DeletedLogin | ChangedLogin | BackupUnavailable
 type VaultMode = ClosedPasswords | CheckingVault | LockedVault | UnavailableVault({ reason: VaultIssue })
   | OpenVault({ entries: List[LoginSummary], selected: str })
 type PasswordGuide = NoPasswordGuide | OpenPasswordGuide | FindPasswordGuide | ShowPasswordGuide | CopyPasswordGuide | FillPasswordGuide
 type GuideMic = GuideMicIdle | GuideMicListening | GuideMicUnavailable | GuideMicNoMatch
-type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, guide: PasswordGuide, guideMic: GuideMic, guideMicEpoch: int }
+type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, guide: PasswordGuide, backupReady: bool, guideMic: GuideMic, guideMicEpoch: int }
 
-pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide, guideMic: GuideMicIdle, guideMicEpoch: 0 }
+pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide, backupReady: false, guideMic: GuideMicIdle, guideMicEpoch: 0 }
 pure def canOpenPasswords(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost and v.vault == ClosedPasswords
 pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
@@ -77,7 +77,7 @@ pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
 pure def canClosePasswords(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost and v.vault != ClosedPasswords
 pure def closePasswords(v: PasswordView, by: VaultActor): PasswordView =
-  { ...v, vault: ClosedPasswords, generation: v.generation + 1, notice: QuietVault, guide: NoPasswordGuide }
+  { ...v, vault: ClosedPasswords, generation: v.generation + 1, notice: QuietVault, guide: NoPasswordGuide, backupReady: false }
 pure def canLockPasswords(v: PasswordView, by: VaultActor): bool =
   v.vault != ClosedPasswords and v.vault != LockedVault
 pure def lockPasswords(v: PasswordView, by: VaultActor): PasswordView =
@@ -196,7 +196,26 @@ pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
 pure def passwordOwnerChanged(v: PasswordView, by: VaultActor): PasswordView =
   { ...v,
     vault: if (v.vault == ClosedPasswords) ClosedPasswords else CheckingVault,
-    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle }
+    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle, backupReady: false }
 pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool =
-  via == "passwordOwnerChanged" implies not(match after.vault { | OpenVault(_) => true | _ => false }) and after.guide == NoPasswordGuide
+  via == "passwordOwnerChanged" implies not(match after.vault { | OpenVault(_) => true | _ => false }) and after.guide == NoPasswordGuide and not(after.backupReady)
+```
+
+
+### Backup and recovery uses a fresh approval
+
+On a tablet with a supported Cloud account, Backup and recovery opens a
+protected Android screen. Grace opens a first-party browser approval for the
+specific operation and only accepts the current return for that device
+session. The device unlock, recovery key and passwords stay on the tablet.
+A restore only changes an empty vault, and removing a backup leaves the
+tablet's passwords in place.
+
+```quint
+pure def canReportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): bool =
+  by == PasswordsHost and generation == v.generation and v.vault != ClosedPasswords and ready != v.backupReady
+pure def reportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): PasswordView =
+  { ...v, backupReady: ready }
+pure def alwaysClosedVaultHasNoBackupAction(v: PasswordView): bool =
+  v.vault == ClosedPasswords implies not(v.backupReady)
 ```

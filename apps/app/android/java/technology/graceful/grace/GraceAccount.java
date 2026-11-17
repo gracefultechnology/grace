@@ -1,6 +1,7 @@
 package technology.graceful.grace;
 
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
+import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -15,6 +16,62 @@ import java.util.concurrent.Executors;
 @CapacitorPlugin(name = "GraceAccount")
 public final class GraceAccount extends Plugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
+ private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
+ private CloudPasswordBackup passwordBackup;
+ private GracePasswordRecovery recovery;
+
+ @Override public void load() {
+  passwordBackup = new CloudPasswordBackup(account(getContext()), "technology.graceful.grace", "production");
+  recovery = new GracePasswordRecovery(getActivity(), this);
+ }
+
+ @PluginMethod public void passwordRecoveryStatus(PluginCall call) {
+  RECOVERY.execute(() -> call.resolve(new JSObject().put("ready", passwordBackup.available())));
+ }
+
+ @PluginMethod public void showPasswordRecovery(PluginCall call) {
+  getActivity().runOnUiThread(() -> {
+   if (getActivity().isFinishing() || getActivity().isDestroyed() || !recovery.open()) {
+    call.reject("Password recovery is unavailable");
+   } else call.resolve();
+  });
+ }
+
+ @PluginMethod public void dismissPasswordRecovery(PluginCall call) {
+  recovery.accountChanged();
+  call.resolve();
+ }
+
+ void authorizePasswordBackup(GracePasswordRecovery controller, GracePasswordRecovery.Operation request) {
+  RECOVERY.execute(() -> {
+   if (!controller.isCurrent(request)) return;
+   try {
+    Uri address = passwordBackup.begin(request.purpose);
+    getActivity().runOnUiThread(() -> {
+     if (!controller.isCurrent(request)) return;
+     try { getActivity().startActivity(new Intent(Intent.ACTION_VIEW, address)); }
+     catch (Exception unavailable) { controller.failed(request, "Couldn't open secure password backup approval."); }
+    });
+   } catch (Exception unavailable) {
+    controller.failed(request, "Sign in to Grace to use cloud backup.");
+   }
+  });
+ }
+
+ void cancelPasswordBackup() { passwordBackup.cancel(); }
+
+ private void acceptPasswordBackup(Uri data) {
+  GracePasswordRecovery.Operation operation = recovery.pending();
+  if (operation == null || !passwordBackup.accepts(data)) return;
+  RECOVERY.execute(() -> {
+   try {
+    var approval = passwordBackup.exchange(data, operation.purpose, () -> recovery.isCurrent(operation));
+    recovery.run(operation, approval);
+   } catch (Exception unavailable) {
+    recovery.failed(operation, "This password backup approval has ended. Try again.");
+   }
+  });
+ }
 
  static CloudDeviceAccount account(Context context) {
   return new CloudDeviceAccount(context, "https://app.graceforseniors.com", "https://api.graceforseniors.com", "/android/auth/callback");
@@ -76,6 +133,7 @@ public final class GraceAccount extends Plugin {
  }
 
  @PluginMethod public void signOut(PluginCall call) {
+  recovery.accountChanged();
   ACCOUNT.execute(() -> {
    try {
     try {
@@ -93,6 +151,7 @@ public final class GraceAccount extends Plugin {
  }
 
  void acceptCallback(Uri data) {
+  if (CloudPasswordBackup.isBackupReturn(data)) { acceptPasswordBackup(data); return; }
   ACCOUNT.execute(() -> {
    try {
     try {
@@ -117,6 +176,7 @@ public final class GraceAccount extends Plugin {
  }
 
  private void didSignIn() {
+  recovery.accountChanged();
   getActivity().runOnUiThread(() -> {
    if (getActivity().isFinishing() || getActivity().isDestroyed()) return;
    notifyListeners("sessionChanged", projection(true));
