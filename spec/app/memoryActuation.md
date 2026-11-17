@@ -24,6 +24,7 @@ again has a newer revision and does not revive the old authorization.
 
 ```quint
 import memory as M from "./memory"
+import savedDetails as SD from "./savedDetails"
 import actuation as AC from "./actuation"
 import workspace as WS from "./workspace"
 import execution as X from "./execution"
@@ -110,7 +111,7 @@ pure def lawSavedOperationUsesExactTaskOriginKind(f: M::PersonalFact, saved: Sav
 
 The same original receipt fails after a correction proposal, confirmed
 correction, deletion or Clear all, even if Workspace has not changed.
-Non-fill plans derived from memory, such as navigating to a saved biller,
+Non-fill plans derived from memory, such as navigating to a saved provider,
 retain their original owner/key/revision dependencies. The host checks every
 dependency with `currentFactRevision` before the next external action; a stale
 dependency invalidates or pauses the existing Workspace operation. These plans
@@ -144,6 +145,31 @@ pure def lawForgetRevokesSavedCommand(w: WS::Workspace, pendingEffect: WS::Works
     not(currentSavedEffect(w, pendingEffect, M::forget(f, f.revision, M::MemoryUser), saved, by))
 pure def lawClearAllRevokesReceipts(facts: List[M::PersonalFact], authorization: M::MemoryEffect): bool =
   M::clearAll(facts).every(f => not(currentFactAuthorization(f, authorization)))
+```
+
+### A queued fill is checked against the current detail in her saved details
+
+The fact a receipt is checked against is the one her
+[saved details](./savedDetails.md) hold under the receipt's key now, never a
+copy kept with the command. Changing that detail, deleting it or Clear all
+therefore refuses the command at dispatch, even if Workspace has not changed.
+None of these touches Workspace or any commitment: a payment, a booking or a
+calendar entry made before stays as it is.
+
+```quint
+pure def receiptKey(authorization: M::MemoryEffect): str = match authorization {
+  | FillAuthorized(receipt) => receipt.factKey
+}
+pure def currentSavedDetailEffect(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  currentSavedEffect(w, pendingEffect, SD::detailAt(d, receiptKey(saved.authorization)), saved, by)
+pure def lawChangedDetailRevokesSavedCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, proposedFact: M::FactProposal, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  SD::canProposeDetail(d, proposedFact, M::MemoryUser) and proposedFact.factKey == receiptKey(saved.authorization) implies
+    not(currentSavedDetailEffect(w, pendingEffect, SD::proposeDetail(d, proposedFact, M::MemoryUser), saved, by))
+pure def lawDeletedDetailRevokesSavedCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, version: int, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  SD::canForgetDetail(d, receiptKey(saved.authorization), version, M::MemoryUser) implies
+    not(currentSavedDetailEffect(w, pendingEffect, SD::forgetDetail(d, receiptKey(saved.authorization), version, M::MemoryUser), saved, by))
+pure def lawClearAllRevokesSavedCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  not(currentSavedDetailEffect(w, pendingEffect, SD::forgetAll(d, M::MemoryUser), saved, by))
 ```
 
 ### Finite examples retain the original receipt after correction and deletion
@@ -187,8 +213,35 @@ pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin
   X::Operate({ owner: "owner", task: "task", origin: P::exampleKey.origin, generation: 1, observation: 1,
     target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillSignInIdentifier }))
 pure val proposedFactValues = Set(correction, { ...correction, version: 1 })
-pure val factKeyValues = Set("name", "biller", "missing")
+pure val factKeyValues = Set("name", "provider", "missing")
+pure val dValues = Set(SD::initial, { facts: List(authorizedFill(approvedFact(M::initial)).state) },
+  { facts: List(M::propose(authorizedFill(approvedFact(M::initial)).state, correction, M::MemoryUser)) },
+  { facts: List(M::forget(authorizedFill(approvedFact(M::initial)).state, 2, M::MemoryUser)) })
+pure val versionValues = Set(1, 2, 3)
 pure val revisionValues = Set(1, 2, 3, 4)
 pure val factsValues = Set(List(), List(authorizedFill(approvedFact(M::initial)).state),
   List(authorizedFill(approvedFact(M::initial)).state, M::initial))
+```
+
+## Story: Fill a booking or sign-up form for me
+
+> As an older adult booking an appointment or signing up on a website, I want
+> Grace to fill each field from what I just told her or from a detail I saved,
+> and never from anything else.
+
+### A form field is filled from her own answer or from a current saved detail
+
+Each fill of a form or sign-up names its source. Her answer in this task
+needs the Workspace check of the current command alone. A saved detail also
+needs the saved-value check against the detail her saved details hold now.
+There is no third source: a value read from a website or an old conversation is
+neither.
+
+```quint
+type FillSource = HerAnswer | HerSavedDetail
+pure def fillAllowed(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, source: FillSource, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  if (source == HerSavedDetail) currentSavedDetailEffect(w, pendingEffect, d, saved, by) else AC::currentEffect(w, pendingEffect, by)
+pure def lawSavedSourceNeedsTheCurrentDetail(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, saved: SavedFill, by: WS::WorkspaceActor): bool =
+  fillAllowed(w, pendingEffect, d, HerSavedDetail, saved, by) implies
+    AC::currentEffect(w, pendingEffect, by) and currentFactAuthorization(SD::detailAt(d, receiptKey(saved.authorization)), saved.authorization)
 ```
