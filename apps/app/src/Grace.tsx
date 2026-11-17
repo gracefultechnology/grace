@@ -4,8 +4,7 @@
 import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
-import { replyControlsCurrent } from "../gen/app__workspace.ts";
-import { ReplyControls } from "./replyControls.vibe";
+import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
@@ -26,7 +25,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     return () => fiber.interruptUnsafe();
   }, [runtime]);
   const offered = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ReplyControls, (controls) => controls.get())));
-  const currentOffer = workspace && offered && replyControlsCurrent(workspace, offered.context) ? offered : undefined;
+  const currentOffer = workspace && offered && replyOfferIsVisible(workspace, offered) ? offered : undefined;
   const choose = (id: number, index: number) => {
     void runtime.runPromise(Effect.flatMap(ReplyControls, (controls) => controls.choose(id, index))).then((accepted) => {
       if (!accepted) setUnavailable(current().assistant.conversation.generation);

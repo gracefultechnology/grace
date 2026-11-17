@@ -15,7 +15,7 @@ type Control =
   | { kind: "hosted"; title: string; view: "Email" | "Calendar" }
   | { kind: "managed"; title: string; proposed: ProposedWork }
   | { kind: "read"; title: string; accountId: string; grant: string; id: string }
-export type ReplyOffer = { id: number; context: ReplyControlContext; labels: string[]; blocked: boolean }
+export type ReplyOffer = { id: number; context: ReplyControlContext; messageIndex: number; messageText: string; labels: string[]; blocked: boolean }
 type RequestScene = { context: ReplyControlContext; managed: ManagedSnapshot }
 type Offer = { visible: ReplyOffer; controls: readonly Control[] }
 
@@ -23,8 +23,15 @@ export service ReplyControls {
   readonly state: Stream.Stream<ReplyOffer | undefined>
   get(): (ReplyOffer | undefined)!!
   capture(): RequestScene!!
-  offer(scene: RequestScene, actions: readonly Suggested[]): void!!
+  offer(scene: RequestScene, response: Workspace, actions: readonly Suggested[]): void!!
   choose(id: number, index: number): boolean!!
+}
+
+export function replyOfferIsVisible(w: Workspace, offer: ReplyOffer) {
+  const conversation = w.assistant.conversation
+  const message = conversation.messages[offer.messageIndex]
+  return replyControlsCurrent(w, offer.context) && conversation.messages.length === offer.messageIndex + 1 &&
+    message?.author === "GraceMessage" && message.text === offer.messageText
 }
 
 const surfaceName: Record<Surface, string> = {
@@ -158,10 +165,13 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
   const serial = try Ref.make(0)
   const gate = try Semaphore.make(1)
 
-  effect function offer(scene: RequestScene, actions: readonly Suggested[]) {
+  effect function offer(scene: RequestScene, response: Workspace, actions: readonly Suggested[]) {
     if (!actions.length) return try SubscriptionRef.set(active, undefined)
-    const w = try desk.get()
-    if (!replyControlsCurrent(w, scene.context)) return
+    const w = response
+    const context = replyControlContext(w)
+    const index = w.assistant.conversation.messages.length - 1
+    const message = w.assistant.conversation.messages[index]
+    if (message?.author !== "GraceMessage") return
     const account = try setup.get()
     const planned = actions.slice(0, 3).map((action) => {
       const direct = plan(action, w, scene.managed)
@@ -179,12 +189,12 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     })
     const controls = [...new Map(planned.flatMap((control) => control ? [[control.title, control] as const] : [])).values()]
     const id = try Ref.updateAndGet(serial, (prior) => prior + 1)
-    try SubscriptionRef.set(active, { visible: { id, context: scene.context, labels: controls.map((control) => control.title), blocked: planned.some((item) => item === undefined) }, controls })
+    try SubscriptionRef.set(active, { visible: { id, context, messageIndex: index, messageText: message.text, labels: controls.map((control) => control.title), blocked: planned.some((item) => item === undefined) }, controls })
   }
 
   effect function choose(id: number, index: number) {
     const kept = try SubscriptionRef.get(active)
-    if (kept?.visible.id !== id || !replyControlsCurrent(try desk.get(), kept.visible.context)) return false
+    if (kept?.visible.id !== id || !replyOfferIsVisible(try desk.get(), kept.visible)) return false
     const choice = kept.controls[index]
     if (!choice) return false
     try SubscriptionRef.set(active, undefined)
@@ -215,13 +225,20 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
   }
   try fork.scoped Stream.runForEach(desk.changes, () => gate.withPermit(effect {
     const workspace = try desk.get()
-    try SubscriptionRef.update(active, (proposal) => proposal && replyControlsCurrent(workspace, proposal.visible.context) ? proposal : undefined)
+    try SubscriptionRef.update(active, (proposal) => {
+      if (!proposal) return undefined
+      const context = proposal.visible.context
+      const conversation = workspace.assistant.conversation
+      return replyOfferIsVisible(workspace, proposal.visible) || (conversation.turn === "Thinking" &&
+        conversation.generation === context.generation && workspace.device.contextVersion === context.device &&
+        workspace.preferences.revision === context.preferences) ? proposal : undefined
+    })
   }))
   return {
     state: Stream.map(SubscriptionRef.changes(active), (offer) => offer?.visible),
     get: () => Effect.map(SubscriptionRef.get(active), (offer) => offer?.visible),
     capture: effect () => ({ context: replyControlContext(try desk.get()), managed: try managed.get() }),
-    offer: effect (scene, actions) => gate.withPermit(offer(scene, actions)),
+    offer: (scene, response, actions) => gate.withPermit(offer(scene, response, actions)),
     choose: effect (id, index) => gate.withPermit(choose(id, index)) catch () => false
   }
 })

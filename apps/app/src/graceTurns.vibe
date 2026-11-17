@@ -134,13 +134,10 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
         const before = try workspace.get()
         const response: Event = { type: "interact", input: { tag: "Respond", token, text: safe,
           isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak } }
-        const expected = sameContext(replyControlContext(before), request.context) && enabled(before, response, "Host")
-          ? replyControlContext(step(before, response, "Host").state) : undefined
-        const shown = try workspace.send(response, "Host")
-        const context = replyControlContext(shown.state)
-        if (expected && sameContext(expected, context) && safe === reply.text) {
-          try controls.offer({ ...request, context }, reply.actions)
+        if (safe === reply.text && sameContext(replyControlContext(before), request.context) && enabled(before, response, "Host")) {
+          try controls.offer(request, step(before, response, "Host").state, reply.actions)
         }
+        try workspace.send(response, "Host")
       })
     } catch effect () => {
       workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: "Grace couldn’t answer just now. Please try again." } }, "Host") catch () => undefined
