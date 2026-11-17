@@ -3,8 +3,8 @@
 The list of what Grace remembers about the person, held as one
 [approved personal fact](./memory.md) per key, deleted keys included as
 tombstones. Settings lists the saved ones, each with Delete, and Clear all.
-Her name from set-up is the fact under the key `name`; Home's greeting, Grace's
-opening line and set-up's name step read it here. A form or sign-up that needs
+Her name from set-up is the fact under the key `name`; Home's greeting and
+Grace's opening line read it here. A form or sign-up that needs
 a saved detail is filled through the queued fill below, checked again at
 dispatch by [the saved-value check](./memoryActuation.md).
 
@@ -153,8 +153,7 @@ pure def lawClearedDetailIsNotSaved(d: SavedDetails, factKey: str): bool =
 The greeting's name is the saved value of the Name fact, or nothing while she
 has none, a proposal waiting for her yes included; it is never a default or a
 name from her account. Deleting her name, alone or with Clear all, leaves the
-greeting without one. Set-up's name step is answered when this name is not
-empty.
+greeting without one.
 
 ```quint
 pure def greetingName(d: SavedDetails): str =
