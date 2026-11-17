@@ -57,7 +57,7 @@ function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text
     case "FileChoice": {
       const open = answer === "OpenFilePicker"
       return p.answerFileChooser({ ...surface, requestId: key, open }).catch((cause: unknown) =>
-        open ? p.answerFileChooser({ ...surface, requestId: key, open: false }).catch(() => undefined).then(() => Promise.reject(cause)) : Promise.reject(cause))
+        open ? p.answerFileChooser({ ...surface, requestId: key, open: false }).then(() => Promise.reject(cause), (closing: unknown) => Promise.reject(new AggregateError([cause, closing]))) : Promise.reject(cause))
     }
     case "SitePermission": return key === "" ? Promise.resolve() : p.answerSitePermission({ ...surface, requestId: key, grant: answer === "Allowed" })
     case "DownloadOffer": return answer === "SaveDownload" ? p.saveDownload({ ...surface, requestId: key }) : Promise.resolve()

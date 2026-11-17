@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"
 import { Effect, ManagedRuntime } from "effect";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
@@ -24,19 +24,20 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
     await runtime.dispose();
   });
   root.render(<App runtime={runtime} />);
-  const tab = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === 1);
+  const tab = (id = 1) => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === id);
   const placed = () => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (m) => m.get())).page;
-  const website = page.getByTitle("Website");
-  const shown = () => {
-    const frame = website.query();
-    return frame instanceof HTMLIFrameElement ? frame : null;
-  };
+  const frames = () => [...document.querySelectorAll<HTMLIFrameElement>('iframe[title="Website"]')];
+  const shown = (id = 1) => frames().find((frame) => frame.dataset.page === `tab-${id}`) ?? null;
+  const showing = () => frames().filter((frame) => !frame.hidden).map((frame) => frame.src);
   const address = page.getByRole("textbox", { name: "Address" });
-  const visit = async (url: string) => {
+  const visit = async (url: string, id = 1) => {
     await userEvent.clear(address);
     await userEvent.type(address, `${url}{Enter}`);
-    await expect.poll(() => ({ src: shown()?.src, load: tab()?.load })).toEqual({ src: url, load: "Loaded" });
+    await expect.poll(() => ({ src: shown(id)?.src, load: tab(id)?.load })).toEqual({ src: url, load: "Loaded" });
   };
+  const host = new URL(site).hostname;
+  const drawnTabs = () => page.getByRole("button", { name: host, exact: true }).elements();
+  const tabsDrawn = () => drawnTabs().length;
 
   await userEvent.click(page.getByRole("button", { name: "Internet" }));
   await visit(`${site}index.html`);
@@ -56,6 +57,26 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await userEvent.click(page.getByRole("button", { name: "Reload" }));
   await expect.poll(() => ({ load: tab()?.load, reloaded: (tab()?.loadVersion ?? 0) > loaded })).toEqual({ load: "Loaded", reloaded: true });
 
+  await userEvent.click(page.getByRole("button", { name: "Open a new tab" }));
+  await visit(`${site}booking/index.html`, 2);
+  await expect.poll(showing).toEqual([`${site}booking/index.html`]);
+  await userEvent.click(page.getByRole("button", { name: host, exact: true }).first());
+  await expect.poll(showing).toEqual([`${site}bill/index.html`]);
+  const kept = tab()?.loadVersion;
+  await userEvent.click(page.getByRole("button", { name: "Home", exact: true }));
+  await userEvent.click(page.getByRole("button", { name: "Internet" }));
+  await expect.poll(() => ({ showing: showing(), cursor: tab()?.cursor, loadVersion: tab()?.loadVersion })).toEqual({ showing: [`${site}bill/index.html`], cursor: 2, loadVersion: kept });
+
+  await userEvent.click(page.getByRole("button", { name: "Open a new tab" }));
+  await visit(`${site}index.html`, 3);
+  await expect.poll(tabsDrawn).toBe(3);
+  await page.viewport(800, 800);
+  await expect.poll(() => ({ drawn: tabsDrawn(), selected: drawnTabs().filter((t) => t.getAttribute("aria-current") === "page").length })).toEqual({ drawn: 2, selected: 1 });
+  await page.viewport(1280, 800);
+  await expect.poll(() => ({ drawn: tabsDrawn(), tabs: frames().length })).toEqual({ drawn: 3, tabs: 3 });
+  await userEvent.click(page.getByRole("button", { name: host, exact: true }).first());
+  await expect.poll(showing).toEqual([`${site}bill/index.html`]);
+
   await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
   await expect.poll(() => shown()?.hidden).toBe(true);
   await userEvent.click(page.getByRole("button", { name: "Collapse" }));
@@ -64,5 +85,5 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await expect.poll(() => grace.query()?.contains(topmost(grace.element())) ?? false).toBe(true);
 
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
-  await expect.poll(shown).toBeNull();
+  await expect.poll(frames).toEqual([]);
 });

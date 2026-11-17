@@ -193,8 +193,9 @@ effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth
 }
 
 effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
-  const went = event.url !== undefined && event.url !== "" && event.url !== page.url
-  if (went) page.url = event.url ?? page.url
+  const url = event.url
+  const went = url !== undefined && url !== "" && url !== page.url
+  if (went) page.url = url
   const before = try workspace.get()
   const shown = before.browser.tabs.find((t) => t.id === tab)
   if (went && shown !== undefined && shown.load !== "Loading" && page.url !== tabUrl(shown)) {

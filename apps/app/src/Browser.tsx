@@ -63,7 +63,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
       }
       toolbar={
         <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={address !== ""}
-          reloadable={active !== undefined && tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
+          reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} onGo={go}>
           <AddressBar value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
