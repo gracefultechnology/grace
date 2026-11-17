@@ -3,6 +3,8 @@ import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "nod
 import { copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
@@ -66,7 +68,7 @@ const AgentStatus = Schema.Struct({
 });
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
-  Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString }),
+  Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString, replace: Schema.optional(Schema.Boolean) }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.NonEmptyString }),
   Schema.Struct({ agent: AgentStatus }),
@@ -83,6 +85,7 @@ const Arguments = Schema.Struct({
   install: Schema.optional(EmulatorSerial),
   emulator: Schema.optional(Schema.NonEmptyString),
   exercise: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-z0-9-]+$/))),
+  "billworld-passwords": Schema.optional(Schema.NonEmptyString),
 });
 
 export function buildTool(name: string): string {
@@ -137,39 +140,44 @@ function writeAgentData() {
   });
 }
 
-function buildAndroid({ release = false, abi }: { release?: boolean; abi: Abi }) {
+function buildAndroid({ release = false, abi, fixture }: { release?: boolean; abi: Abi; fixture?: { output: string; resources: string } }) {
   const { version } = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.String }))(readJson(path.join(app, "package.json")));
   writeAgentData();
+  const authored = Schema.decodeUnknownSync(Schema.Struct({ sourceSets: Schema.Record(Schema.String, Schema.Unknown) }))(profile);
+  const hostProfile = fixture ? {
+    ...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(profile),
+    sourceSets: { ...authored.sourceSets, debug: { res: [{ root: "consumer", path: fixture.resources }] } },
+  } : profile;
   generateAndroidConsumerHost({
     consumerRoot: app,
     upstreamRoot: upstream,
     dependencyRoot: realpathSync(path.dirname(createRequire(import.meta.url).resolve("@capacitor/android/package.json"))),
     output: path.join(app, project),
     identity: { appId: identity.appId, appName: identity.appName, version, versionCode: versionCode(version) },
-    profile,
+    profile: hostProfile,
     runtimeDirectory: agentRuntime(abi),
   });
   const userHome = path.join(app, project, "android-user");
   mkdirSync(userHome, { recursive: true });
   copyFileSync(path.join(app, "android/debug.keystore"), path.join(userHome, "debug.keystore"));
-  if (!release) for (const flavor of flavors) for (const suffix of ["", "-unsigned"])
+  if (!release && fixture === undefined) for (const flavor of flavors) for (const suffix of ["", "-unsigned"])
     rmSync(path.join(artifacts, `${flavor}-release${suffix}.apk`), { force: true });
   buildAndroidConsumer({
     root: app,
     environment: { ...environment(), ANDROID_USER_HOME: userHome },
-    variants: flavors,
+    variants: fixture ? ["standalone"] : flavors,
     release,
     lint: false,
     androidTest: false,
     daemon: true,
     project,
-    output: "artifacts",
+    output: fixture?.output ?? "artifacts",
     signing: { environment: Object.values(signing) },
     prepare: [
       { command: path.join(app, "node_modules/.bin/vite"), args: ["build"] },
       { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
     ],
-    verify: { command: process.execPath, args: [import.meta.filename, "--verify"] },
+    ...(fixture === undefined ? { verify: { command: process.execPath, args: [import.meta.filename, "--verify"] } } : {}),
   });
 }
 
@@ -389,6 +397,10 @@ async function devTools(url: string, signal: AbortSignal) {
       if ("tap" in step) return await tap(step.tap, signal);
       if ("into" in step) {
         await tap(step.into, signal);
+        if (step.replace) {
+          const select = { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 2 };
+          for (const type of ["rawKeyDown", "keyUp"]) await send({ method: "Input.dispatchKeyEvent", params: { type, ...select }, schema: Nothing, signal });
+        }
         await send({ method: "Input.insertText", params: { text: step.type }, schema: Nothing, signal });
         return;
       }
@@ -431,6 +443,19 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   process.stdout.write(`${serial} ${webView ?? "WebView unknown"}\n`);
   const debuggable = `grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit`;
   const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); case "$pid" in *" "*) echo "$pid"; exit;; "") ;; *) ${debuggable};; esac; sleep 1; done`;
+  await withGracePage(serial, waitForPid, async (page, pid) => {
+    const home = `[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`;
+    const showing = (what: string) => async (error: unknown) =>
+      failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
+    await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
+    for (const step of exercise) {
+      await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
+      process.stdout.write(`${JSON.stringify(step)} ok\n`);
+    }
+  });
+}
+
+async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string) => Promise<void>) {
   const pid = (await shell(serial, waitForPid, 180)).trim();
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
@@ -441,14 +466,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
     const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
-      const home = `[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`;
-      const showing = (what: string) => async (error: unknown) =>
-        failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
-      await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
-      for (const step of exercise) {
-        await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
-        process.stdout.write(`${JSON.stringify(step)} ok\n`);
-      }
+      await run(page, pid);
     } finally {
       page.close();
     }
@@ -476,15 +494,183 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   process.stdout.write(`${serial} Grace is Home and responding; other processes raised ${others} am_anr events since the install began\n`);
 }
 
+const LoginFixture = Schema.Struct({
+  runId: Schema.String.check(Schema.isPattern(/^[0-9a-f-]{36}$/)),
+  entryUrl: Schema.String,
+  deviceTrust: Schema.Struct({
+    caPath: Schema.String,
+    billingOrigin: Schema.String,
+    reversePorts: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65535 }))),
+  }),
+  login: Schema.Struct({ label: Schema.String, origin: Schema.String, username: Schema.String, password: Schema.String }),
+});
+const Grade = Schema.Struct({ grade: Schema.Struct({ success: Schema.Boolean }), paymentCount: Schema.Int });
+
+function deviceNodes(xml: string) {
+  return Array.from(xml.matchAll(/<node\b[^>]*>/g)).flatMap(([node]) => {
+    const attr = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(node)?.[1] ?? "";
+    const bounds = /^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/.exec(attr("bounds"));
+    return bounds ? [{
+      x: Math.round((Number(bounds[1]) + Number(bounds[3])) / 2),
+      y: Math.round((Number(bounds[2]) + Number(bounds[4])) / 2),
+      label: attr("text"), description: attr("content-desc"), id: attr("resource-id").split("/").at(-1),
+      className: attr("class"), packageName: attr("package"), password: attr("password") === "true",
+    }] : [];
+  });
+}
+
+async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi) {
+  if ((await shell(serial, "getprop ro.kernel.qemu")).trim() !== "1" ||
+      (await shell(serial, `pm path ${identity.appId}`).catch(() => "")).trim() !== "") {
+    throw new Error("BillWorld requires an emulator with no existing Grace installation");
+  }
+  const fixture = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
+  if (typeof fixture.startPasswordLoginEpisode !== "function") throw new Error("BillWorld password fixture is unavailable");
+  const cleanup: Array<() => Promise<unknown>> = [];
+  const screenFile = "/data/local/tmp/grace-billworld-ui.xml";
+  const pin = "7539";
+  const screen = async () => {
+    await shell(serial, `uiautomator dump ${screenFile}`, 15);
+    return deviceNodes(await shell(serial, `cat ${screenFile}`, 15));
+  };
+  const tap = async (matches: (node: ReturnType<typeof deviceNodes>[number]) => boolean, label: string) => {
+    const until = Date.now() + 90_000;
+    while (Date.now() < until) {
+      const nodes = await screen().catch(() => []);
+      const found = nodes.find(matches);
+      if (found) {
+        await shell(serial, `input tap ${found.x} ${found.y}`);
+        return;
+      }
+      await delay(1000);
+    }
+    throw new Error(`Android did not show ${label}`);
+  };
+  const text = (value: string) => shell(serial, `input text '${value.replaceAll(" ", "%s").replaceAll("'", "'\\''")}'`)
+    .catch(() => { throw new Error("Android did not accept a fixture field"); });
+  const submitPin = async () => {
+    await tap((node) => node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui"), "the system screen lock");
+    await text(pin);
+    await shell(serial, "input keyevent KEYCODE_ENTER");
+  };
+  const editor = async (field: string, value: string) => {
+    await tap((node) => node.packageName === identity.appId && node.description === field && node.className === "android.widget.EditText", "a native editor field");
+    await text(value);
+  };
+  let episode: { grade(): Promise<unknown>; close(): Promise<unknown> } | undefined;
+  let step = "open fixture";
+  try {
+    episode = await fixture.startPasswordLoginEpisode({
+      provision: async (input: unknown) => {
+        const { runId, login, entryUrl, deviceTrust } = Schema.decodeUnknownSync(LoginFixture)(input);
+        const entry = new URL(entryUrl);
+        const origin = new URL(login.origin);
+        if (origin.protocol !== "https:" || !["localhost", "127.0.0.1"].includes(origin.hostname) ||
+            entry.origin !== origin.origin || deviceTrust.billingOrigin !== origin.origin || entry.username || entry.password ||
+            !deviceTrust.reversePorts.includes(Number(origin.port))) throw new Error("Untrusted fixture address");
+        step = "build debug APK with an episode CA";
+        const output = `artifacts/billworld-passwords/${runId}`;
+        const resources = `${output}/res`;
+        mkdirSync(path.join(app, resources, "raw"), { recursive: true, mode: 0o700 });
+        mkdirSync(path.join(app, resources, "xml"), { recursive: true });
+        cleanup.push(async () => { rmSync(path.join(app, output), { recursive: true, force: true }); });
+        copyFileSync(deviceTrust.caPath, path.join(app, resources, "raw/billworld_episode_ca.pem"));
+        writeFileSync(path.join(app, resources, "xml/network_security.xml"),
+          '<network-security-config><base-config cleartextTrafficPermitted="false"/><domain-config cleartextTrafficPermitted="false"><domain>localhost</domain><domain>127.0.0.1</domain><trust-anchors><certificates src="@raw/billworld_episode_ca"/></trust-anchors></domain-config></network-security-config>');
+        buildAndroid({ abi, fixture: { output, resources } });
+        step = "install the test APK and transport";
+        for (const port of deviceTrust.reversePorts) {
+          await adb(["-s", serial, "reverse", "--no-rebind", `tcp:${port}`, `tcp:${port}`]);
+          cleanup.push(() => adb(["-s", serial, "reverse", "--remove", `tcp:${port}`]));
+        }
+        await adb(["-s", serial, "install", path.join(app, output, "standalone-debug.apk")], 300);
+        cleanup.push(() => adb(["-s", serial, "uninstall", identity.appId], 120));
+        const set = await shell(serial, `locksettings set-pin ${pin}`);
+        if (!set.includes("Pin set")) throw new Error("The fixture device needs a fresh screen lock");
+        cleanup.push(() => shell(serial, `locksettings clear --old ${pin}`));
+        cleanup.push(() => shell(serial, `rm -f ${screenFile}`));
+        const autofill = `${identity.appId}/ai.eliza.plugins.passwords.ElizaPasswordAutofillService`;
+        const previous = (await shell(serial, "settings get secure autofill_service")).trim();
+        const noProvider = previous === "null" || previous === "";
+        if (!noProvider && !/^[a-zA-Z0-9_.]+\/[a-zA-Z0-9_.]+$/.test(previous)) throw new Error("Unknown Android autofill state");
+        await shell(serial, "cmd autofill set log_level off");
+        await shell(serial, `settings put secure autofill_service ${autofill}`);
+        cleanup.push(() => shell(serial, noProvider ? "settings delete secure autofill_service" : `settings put secure autofill_service ${previous}`));
+        if ((await shell(serial, "settings get secure autofill_service")).trim() !== autofill) throw new Error("Android did not select Grace Passwords");
+        await shell(serial, `am start -W -n ${activity}`, 120);
+        step = "provision via the native password editor";
+        const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
+        await withGracePage(serial, waitForPid, async (page) => {
+          await page.step({ tap: "More apps" });
+          await page.step({ tap: "Passwords" });
+          await page.step({ tap: "Unlock Passwords" });
+          await submitPin();
+          await page.step({ tap: "Add password" });
+          await editor("Name", login.label);
+          await editor("Website address", origin.origin);
+          await editor("Username", login.username);
+          await editor("Password", login.password);
+          await shell(serial, "input keyevent KEYCODE_BACK");
+          await tap((node) => node.packageName === identity.appId && node.label === "Save", "the native Save button");
+          await page.step({ expect: "Password saved." });
+          step = "open the private HTTPS browser";
+          await page.step({ tap: "Close Passwords" });
+          await page.step({ tap: "Internet" });
+          await page.step({ type: origin.origin, into: "Address" });
+          await page.step({ press: "Enter" });
+          await page.step({ tap: "Private sign-in" });
+          await page.step({ type: entry.href, into: "Private website address", replace: true });
+          await page.step({ press: "Enter" });
+        });
+        step = "request Android autofill and choose the matching entry";
+        await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
+        await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
+        await submitPin();
+        await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
+      },
+    });
+    const activeEpisode = episode;
+    if (activeEpisode === undefined) throw new Error("The fixture did not start");
+    const readGrade = async () => Schema.decodeUnknownSync(Grade)(await activeEpisode.grade());
+    const before = await readGrade();
+    if (before.grade.success || before.paymentCount !== 0) throw new Error("Autofill must not submit or pay");
+    step = "submit the website form and grade";
+    await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
+    const until = Date.now() + 45_000;
+    while (Date.now() < until) {
+      const after = await readGrade();
+      if (after.paymentCount !== 0) throw new Error("The sign-in run encountered a payment");
+      if (after.grade.success) { process.stdout.write("BillWorld sign-in passed through installed Android Autofill. No payment was made.\n"); return; }
+      await delay(1000);
+    }
+    throw new Error("BillWorld did not confirm the account view");
+  } catch {
+    throw new Error(`BillWorld password journey stopped at: ${step}`);
+  } finally {
+    for (const release of cleanup.reverse()) await release().catch(() => { process.stderr.write("A BillWorld fixture cleanup step failed.\n"); });
+    await episode?.close();
+  }
+}
+
 if (import.meta.main) {
-  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" } } }).values;
-  const { verify, release, abi = "arm64-v8a", install, emulator, exercise } = Schema.decodeUnknownSync(Arguments)(options);
+  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" } } }).values;
+  const { verify, release, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
   if (emulator && !avds().includes(emulator)) throw new Error(`No AVD named ${emulator}`);
   const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step), { onExcessProperty: "error" })(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
-  if (verify) writeApkManifest();
+  if (billworld !== undefined) {
+    if (verify || release || install || exercise || !emulator?.startsWith("grace-billworld-")) {
+      throw new Error("Use --billworld-passwords CHECKOUT with --emulator grace-billworld-… on a disposable AVD");
+    }
+    mkdirSync(artifacts, { recursive: true });
+    const target = await emulatorTarget(emulator);
+    try {
+      await Promise.race([adb(["-s", target.serial, "wait-for-device", "shell", 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'], 600), target.exited]);
+      await billworldPasswords(target.serial, billworld, abi);
+    } finally { target.stop(); }
+  } else if (verify) writeApkManifest();
   else {
     buildAndroid({ release, abi });
     const target = install ? attached(install) : emulator && await emulatorTarget(emulator);

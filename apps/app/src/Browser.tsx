@@ -56,6 +56,7 @@ type PrivateToolbarProps = {
 };
 
 function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps) {
+  const field = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const go = () => {
@@ -66,6 +67,7 @@ function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps
     const address = draft;
     setDraft(null);
     setNotice(undefined);
+    field.current?.blur();
     void navigate(active.id, address).then(
       (opened) => { if (!opened) setNotice("This private address couldn't open."); },
       () => setNotice("This private address couldn't open."),
@@ -75,7 +77,7 @@ function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps
     <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
       reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })}
       onGo={go} trailing={<span className="flex items-center gap-2 whitespace-nowrap text-body"><LockKeyhole aria-hidden /> Private sign-in</span>}>
-      <AddressBar value={draft ?? tabUrl(active)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+      <AddressBar ref={field} value={draft ?? tabUrl(active)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
         notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); }} onSubmit={go} />
     </BrowserToolbar>
   );
