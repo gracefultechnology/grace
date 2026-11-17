@@ -19,6 +19,7 @@ const GoogleStatus = Schema.Struct({
   configured: Schema.Boolean,
   connected: Schema.Boolean,
   grantedCapabilities: Schema.Array(Schema.String),
+  connectionId: Schema.optional(Schema.NullOr(Schema.String)),
   identity: Schema.NullOr(Schema.Struct({ email: Schema.NonEmptyString })),
 })
 schema GoogleAuthorization { authorizeUrl: string }
@@ -53,7 +54,7 @@ type CodeProvider = "email" | "sms"
 export type Operation =
   | { kind: "refresh" | "signIn" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
-  | { kind: "connectGoogle"; mail: boolean; calendar: boolean; expectedEmail: string }
+  | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
 type RequestPath = `/api/auth/${CodeProvider}/${"send" | "verify"}` | "/api/auth/providers" | "/api/auth/device/authorize" | "/api/auth/session" | "/api/auth/refresh" | "/api/auth/logout" | "/api/v1/billing/subscription" | "/api/v1/billing/checkout" | "/api/v1/billing/portal" | `/api/v1/eliza/google/${"status" | "connect/initiate" | "disconnect"}`
 type Transport = {
@@ -132,6 +133,10 @@ effect function googleLink(transport: Transport): GoogleLink!unknown {
   if (!status.connected) return { tag: "GoogleLinkReady" }
   if (status.identity === null) throw new AccountRequestFailed()
   return { tag: "GoogleLinkConnected", email: status.identity.email,
+    grant: status.connectionId ?? "",
+    trashMail: status.grantedCapabilities.includes("google.gmail.trash"),
+    writeCalendar: status.grantedCapabilities.includes("google.calendar.write"),
+    sendMail: status.grantedCapabilities.includes("google.gmail.send"),
     mail: status.grantedCapabilities.includes("google.gmail.triage"),
     calendar: status.grantedCapabilities.includes("google.calendar.read"),
   }
@@ -139,7 +144,7 @@ effect function googleLink(transport: Transport): GoogleLink!unknown {
 
 effect function connectGoogle(transport: Transport, operation: Extract<Operation, { kind: "connectGoogle" }>) {
   const response = try accepted(transport, "/api/v1/eliza/google/connect/initiate", "POST", {
-    mail: operation.mail, calendar: operation.calendar, expectedEmail: operation.expectedEmail,
+    mail: operation.mail, calendar: operation.calendar, sendMail: operation.sendMail, trashMail: operation.trashMail, writeCalendar: operation.writeCalendar, expectedEmail: operation.expectedEmail,
   })
   const { authorizeUrl } = try decode(response, GoogleAuthorization)
   const url = try Effect.try(() => new URL(authorizeUrl))

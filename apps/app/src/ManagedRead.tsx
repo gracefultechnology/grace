@@ -1,10 +1,10 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
-import { Button, CalendarEventRow, EmptyState, MailMessageRow, PageHeading, PageText, RetryNotice } from "@repo/ui";
+import { Button, CalendarEventRow, EmptyState, Input, MailMessageRow, PageHeading, PageText, RetryNotice } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { mayReadManaged } from "../gen/app__setup.ts";
-import { ManagedReads, type EventRow, type ReadView } from "./managedReads.vibe";
+import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
+import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
 import { useRuntime } from "./useApp.ts";
 
 const calendarDay = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -20,12 +20,137 @@ function start(event: EventRow) {
 
 const managedState = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.state));
 
+function MailDraft({ accountId, email, grant }: { accountId: string; email: string; grant: string }) {
+  const runtime = useRuntime();
+  const [draft, setDraft] = useState(() => runtime.runSync(localMailDraft(accountId, email)));
+  const [step, setStep] = useState<"Inbox" | "Edit" | "Review" | "Uncertain" | "Sent">(draft.operationId ? "Uncertain" : "Inbox");
+  const [pending, startTransition] = useTransition();
+  const [saveFailed, setSaveFailed] = useState(false);
+  const update = (patch: Partial<LocalMailDraft>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    setSaveFailed(!Exit.isSuccess(runtime.runSyncExit(keepMailDraft(accountId, email, next))));
+  };
+  const send = (checkOnly: boolean) => startTransition(async () => {
+    const approved = draft.operationId ? draft : { ...draft, grant, operationId: crypto.randomUUID() };
+    setDraft(approved);
+    const result = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.sendMail({ accountId, email, grant, draft: approved, checkOnly })));
+    if (Exit.isSuccess(result) && result.value) {
+      setDraft({ recipient: "", subject: "", text: "" });
+      setStep("Sent");
+    } else setStep("Uncertain");
+  });
+  if (step === "Inbox" || step === "Sent") return <div className="flex flex-col items-start gap-3">
+    {step === "Sent" && <PageText role="status">Gmail accepted your email.</PageText>}
+    <Button variant="prominent" size="pill" onClick={() => setStep("Edit")}>
+      {draft.recipient || draft.subject || draft.text ? "Continue draft" : "New email"}
+    </Button>
+  </div>;
+  if (step === "Edit") return <form className="flex flex-col gap-3" onSubmit={(event) => {
+    event.preventDefault();
+    setStep("Review");
+  }}>
+    <PageHeading>New email</PageHeading>
+    <label>To<Input type="email" required maxLength={254} value={draft.recipient} onChange={(event) => update({ recipient: event.target.value })} /></label>
+    <label>Subject<Input maxLength={120} value={draft.subject} onChange={(event) => update({ subject: event.target.value })} /></label>
+    <label>Message<textarea className="block w-full rounded border p-2" required maxLength={8192} value={draft.text}
+      onChange={(event) => update({ text: event.target.value })} /></label>
+    {saveFailed && <RetryNotice role="alert">This browser couldn’t keep the draft.</RetryNotice>}
+    <div className="flex gap-3">
+      <Button type="button" variant="capsule" size="pill" onClick={() => setStep("Inbox")}>Close draft</Button>
+      <Button type="submit" variant="prominent" size="pill" disabled={!draft.text.trim()}>Review email</Button>
+    </div>
+  </form>;
+  return <section className="flex flex-col gap-3" aria-busy={pending || undefined}>
+    <PageHeading>{step === "Review" ? "Review your email" : "Check Sent in Gmail"}</PageHeading>
+    <PageText>To {draft.recipient}</PageText>
+    <PageText>Subject {draft.subject || "No subject"}</PageText>
+    <PageText className="whitespace-pre-wrap break-words">{draft.text}</PageText>
+    {step === "Review" ? (
+      <div className="flex gap-3">
+        <Button variant="capsule" size="pill" disabled={pending} onClick={() => setStep("Edit")}>Edit draft</Button>
+        <Button variant="prominent" size="pill" loading={pending} onClick={() => send(false)}>Confirm and send</Button>
+      </div>
+    ) : <>
+      <RetryNotice role="status">Grace couldn’t confirm whether Gmail accepted this email. Check Sent before sending another copy.</RetryNotice>
+      {draft.grant === grant && <Button variant="capsule" size="pill" loading={pending} onClick={() => send(true)}>Check send status</Button>}
+    </>}
+  </section>;
+}
+
+type AppointmentDraft = { title: string; start: string; end: string; location: string };
+
+function dateInput(time: Date) {
+  return new Date(time.getTime() - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function AppointmentEditor({ event, write, pending, close }: {
+  event?: EventRow;
+  write: (command: ManagedWrite) => void;
+  pending: boolean;
+  close: () => void;
+}) {
+  const [draft, setDraft] = useState<AppointmentDraft>(() => ({
+    title: event?.title ?? "",
+    start: dateInput(event ? new Date(event.startAt) : new Date()),
+    end: dateInput(event ? new Date(event.endAt) : new Date(Date.now() + 3600000)),
+    location: event?.location ?? "",
+  }));
+  const [review, setReview] = useState<"save" | "delete">();
+  const update = (field: keyof AppointmentDraft, value: string) => setDraft((previous) => ({ ...previous, [field]: value }));
+  const start = new Date(draft.start);
+  const end = new Date(draft.end);
+  const valid = draft.title.trim() !== "" && end > start;
+  const confirm = () => {
+    if (review === "delete") {
+      if (event?.etag) write({ kind: "appointment", action: "delete", id: event.externalId, version: event.etag });
+      return;
+    }
+    if (!valid) return;
+    const update = { title: draft.title, location: draft.location, startAt: start.toISOString(), endAt: end.toISOString() };
+    if (event?.etag) write({ kind: "appointment", action: "update", id: event.externalId, version: event.etag, event: update });
+    else if (!event) write({ kind: "appointment", action: "create", event: update });
+  };
+  if (review !== undefined) return <section className="flex flex-col items-start gap-3" aria-busy={pending || undefined}>
+    <PageHeading>{review === "delete" ? "Remove this appointment?" : "Review your appointment"}</PageHeading>
+    <PageText>{review === "delete" ? event?.title : draft.title}</PageText>
+    {review === "delete" && event ? <PageText>{day(event.startAt)} · {event.isAllDay ? "All day" : clock.format(new Date(event.startAt))}</PageText>
+      : <PageText>{day(start.toISOString())} · {clock.format(start)} to {day(end.toISOString())} · {clock.format(end)}</PageText>}
+    <PageText>{review === "delete" ? event?.location : draft.location}</PageText>
+    <div className="flex flex-wrap gap-3">
+      <Button variant="capsule" size="pill" disabled={pending} onClick={() => setReview(undefined)}>Back</Button>
+      <Button variant={review === "delete" ? "warn" : "prominent"} size="pill" loading={pending} onClick={confirm}>
+        {review === "delete" ? "Confirm removal" : "Confirm appointment"}
+      </Button>
+    </div>
+  </section>;
+  return <form className="flex flex-col items-start gap-3" onSubmit={(event) => {
+    event.preventDefault();
+    if (valid) setReview("save");
+  }}>
+    <PageHeading>{event ? "Edit appointment" : "New appointment"}</PageHeading>
+    {!event?.isAllDay && <>
+      <label>Title<Input required maxLength={160} value={draft.title} onChange={(event) => update("title", event.target.value)} /></label>
+      <label>Start<Input type="datetime-local" required value={draft.start} onChange={(event) => update("start", event.target.value)} /></label>
+      <label>End<Input type="datetime-local" required min={draft.start} value={draft.end} onChange={(event) => update("end", event.target.value)} /></label>
+      <label>Location<Input maxLength={320} value={draft.location} onChange={(event) => update("location", event.target.value)} /></label>
+    </>}
+    <div className="flex flex-wrap gap-3">
+      <Button type="button" variant="capsule" size="pill" onClick={close}>Cancel</Button>
+      {event && <Button type="button" variant="warn" size="pill" onClick={() => setReview("delete")}>Remove appointment</Button>}
+      {!event?.isAllDay && <Button type="submit" variant="prominent" size="pill" disabled={!valid}>Review appointment</Button>}
+    </div>
+  </form>;
+}
+
 /** Grace's hosted read view for an Inbox or the primary Google calendar. */
 export function ManagedRead({ view }: { view: ReadView }) {
   const runtime = useRuntime();
   const account = useMachine(runtime).state;
   const [failed, setFailed] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [editor, setEditor] = useState<{ key: string; event?: EventRow }>();
+  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; receipt?: WriteReceipt }>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(managedState, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
@@ -39,6 +164,34 @@ export function ManagedRead({ view }: { view: ReadView }) {
   const signedIn = account?.graceAccount.tag === "GraceSignedIn" ? account.graceAccount : undefined;
   const authorized = signedIn !== undefined && account !== undefined &&
     mayReadManaged(signedIn, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar");
+
+  const link = account?.googleLink;
+  const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";
+  const accountId = signedIn?.accountId ?? "";
+  const projection = JSON.stringify([view, accountId, grant]);
+  const notice = writeNotice?.key === projection ? writeNotice : undefined;
+  const exact = editor?.key === projection ? editor : undefined;
+  const canTrash = signedIn && link && mayChangeManaged(signedIn, link, accountId, grant, "ManagedTrash");
+  const canSchedule = signedIn && link && mayChangeManaged(signedIn, link, accountId, grant, "ManagedAppointmentChange");
+  const write = (action: ManagedWrite) => startTransition(async () => {
+    setWriteNotice(undefined);
+    const out = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.change({ accountId, grant }, action)));
+    const receipt = Exit.isSuccess(out) ? out.value : undefined;
+    if (action.kind === "appointment") setEditor(undefined);
+    const text = !receipt ? "Grace couldn’t confirm that change. Refresh to check what Google saved."
+      : action.kind === "trash" ? "Moved to Trash."
+        : action.kind === "undo" ? "Message restored."
+          : action.action === "delete" ? "Appointment removed." : "Appointment saved.";
+    setWriteNotice({ key: projection, text, receipt: action.kind === "trash" ? receipt : undefined });
+  });
+  const showNotice = notice && <div className="flex flex-wrap items-center gap-3">
+    <PageText role="status">{notice.text}</PageText>
+    {notice.receipt?.version && <Button variant="capsule" size="pill" disabled={pending} onClick={() => {
+      const receipt = notice.receipt;
+      if (receipt?.version) write({ kind: "undo", id: receipt.itemId, version: receipt.version, prior: receipt.operationId });
+    }}>Undo</Button>}
+    <Button variant="capsule" size="pill" disabled={pending} onClick={() => setWriteNotice(undefined)}>Dismiss</Button>
+  </div>;
 
   if (snapshot.kind === "waiting" && snapshot.view === view) {
     if (snapshot.reason === "native") {
@@ -77,6 +230,11 @@ export function ManagedRead({ view }: { view: ReadView }) {
     return selected ? (
       <section data-sensitive="true" className="flex flex-col items-start gap-4">
         {back}
+        {showNotice}
+        {canTrash && selected.message.metadata?.historyId && <Button variant="warn" size="pill" loading={pending} onClick={() => {
+          const version = selected.message.metadata?.historyId;
+          if (version) write({ kind: "trash", id: selected.message.externalId, version });
+        }}>Move to Trash</Button>}
         <PageHeading>{selected.message.subject || "No subject"}</PageHeading>
         <PageText>{selected.message.from || "Unknown sender"}</PageText>
         <PageText tone="secondary">{day(selected.message.receivedAt)}</PageText>
@@ -85,6 +243,12 @@ export function ManagedRead({ view }: { view: ReadView }) {
     ) : (
       <section data-sensitive="true" className="flex flex-col gap-4" aria-busy={pending || undefined}>
         <PageHeading>Inbox</PageHeading>
+        {showNotice}
+        {signedIn && account?.googleLink.tag === "GoogleLinkConnected" &&
+          maySendManagedMail(signedIn, account.googleLink, snapshot.accountId, account.googleLink.grant) && (
+          <MailDraft key={JSON.stringify([snapshot.accountId, account.googleLink.email, account.googleLink.grant])}
+            accountId={snapshot.accountId} email={account.googleLink.email} grant={account.googleLink.grant} />
+        )}
         {snapshot.rows.length === 0 && <EmptyState title="Your inbox is empty." />}
         {snapshot.rows.map((row) => (
           <MailMessageRow key={row.externalId} from={{ name: row.from || "Unknown sender" }} subject={row.subject || "No subject"}
@@ -96,10 +260,16 @@ export function ManagedRead({ view }: { view: ReadView }) {
     );
   }
 
+  if (canSchedule && exact) return <section data-sensitive="true">
+    <AppointmentEditor event={exact.event} write={write} pending={pending} close={() => setEditor(undefined)} />
+  </section>;
   const event = snapshot.selected;
   return event ? (
     <section data-sensitive="true" className="flex flex-col items-start gap-4">
       {back}
+      {showNotice}
+      {canSchedule && event.etag && event.editable && <Button variant="capsule" size="pill"
+        onClick={() => setEditor({ key: projection, event })}>Change appointment</Button>}
       <PageHeading>{event.title || "Untitled appointment"}</PageHeading>
       <PageText>{day(event.startAt)} · {start(event)}</PageText>
       {event.location && <PageText>{event.location}</PageText>}
@@ -108,6 +278,8 @@ export function ManagedRead({ view }: { view: ReadView }) {
   ) : (
     <section data-sensitive="true" className="flex flex-col gap-4" aria-busy={pending || undefined}>
       <PageHeading>Upcoming</PageHeading>
+      {showNotice}
+      {canSchedule && <Button variant="prominent" size="pill" onClick={() => setEditor({ key: projection })}>New appointment</Button>}
       {snapshot.rows.length === 0 && <EmptyState title="No upcoming appointments." />}
       {snapshot.rows.map((event) => (
         <CalendarEventRow key={event.externalId} title={event.title || "Untitled appointment"} dayLabel={day(event.startAt)}

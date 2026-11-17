@@ -28,6 +28,9 @@ export function GraceAccountSettings() {
   const [code, setCode] = useState("");
   const inputId = useId();
   const [mail, setMail] = useState(false);
+  const [trashMail, setTrashMail] = useState(false);
+  const [writeCalendar, setWriteCalendar] = useState(false);
+  const [sendMail, setSendMail] = useState(false);
   const [calendar, setCalendar] = useState(false);
   const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
@@ -130,17 +133,29 @@ export function GraceAccountSettings() {
           {link !== undefined && mayOfferGoogleLink(snapshot, link) && (
             <form className="flex flex-col items-start gap-3" onSubmit={(event) => {
               event.preventDefault();
-              run({ kind: "connectGoogle", mail, calendar, expectedEmail: expectedEmail.trim() });
+              run({ kind: "connectGoogle", mail, calendar, sendMail: mail && sendMail, trashMail: mail && trashMail, writeCalendar: calendar && writeCalendar, expectedEmail: expectedEmail.trim() });
             }}>
               <fieldset disabled={pending || confirmingSignOut} className="flex flex-col gap-3">
-                <legend>Connect Google</legend>
+                <legend>{link.tag === "GoogleLinkConnected" ? "Change Google permissions" : "Connect Google"}</legend>
                 <label className="flex items-center gap-3">
                   <input type="checkbox" checked={mail} onChange={(event) => setMail(event.target.checked)} />
-                  Gmail (read only)
+                  Read Gmail
                 </label>
                 <label className="flex items-center gap-3">
                   <input type="checkbox" checked={calendar} onChange={(event) => setCalendar(event.target.checked)} />
-                  Google Calendar (read only)
+                  Read Google Calendar
+                </label>
+                <label className="flex items-center gap-3">
+                  <input type="checkbox" checked={mail && sendMail} disabled={!mail} onChange={(event) => setSendMail(event.target.checked)} />
+                  Send Gmail messages I approve
+                </label>
+                <label className="flex items-center gap-3">
+                  <input type="checkbox" checked={mail && trashMail} disabled={!mail} onChange={(event) => setTrashMail(event.target.checked)} />
+                  Move Gmail messages to Trash and undo
+                </label>
+                <label className="flex items-center gap-3">
+                  <input type="checkbox" checked={calendar && writeCalendar} disabled={!calendar} onChange={(event) => setWriteCalendar(event.target.checked)} />
+                  Add, edit and remove appointments I approve
                 </label>
                 {snapshot.email === "" && (
                   <>
