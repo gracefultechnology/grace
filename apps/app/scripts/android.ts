@@ -255,9 +255,11 @@ const failing = (what: string) => (error: unknown) => { throw new Error(`${what}
 async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>) {
   const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
   await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
-  await shell(serial, "settings put global device_provisioned 1 && settings put secure user_setup_complete 1");
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
   await shell(serial, `cmd package set-home-activity ${activity}`);
+  const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
+  await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
+    .catch(async (error: unknown) => failing(`Waiting for Home to resolve to Grace rather than ${(await shell(serial, resolveHome).catch(String)).trim()}`)(error));
   const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
   if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   const webView = /Current WebView package \(name, version\): \((.*)\)/.exec(await shell(serial, "dumpsys webviewupdate"))?.[1];
