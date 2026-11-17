@@ -173,37 +173,39 @@ function isolated(text: string, s: number, q: number): boolean {
   return !(before < s && before - runStart(text, before, 20) >= 3) && !(after > q && runEnd(text, after, 20) - after >= 3);
 }
 
-function inTail(text: string, q: number, i: number, steps: number): boolean {
+function tailEnd(text: string, q: number, steps: number): number {
   //@ decreases steps
   const next = gapEnd(text, q, 6);
   const end = runEnd(text, next, 5);
-  if (steps <= 0 || next === q || breaksAt(text, q, next, 6) || !isDigitAt(text, next) || end - next > 4 || isDigitAt(text, end)) return false;
-  return (next <= i && i < end && !isLetterAt(text, end)) || inTail(text, end, i, steps - 1);
+  return steps > 0 && next > q && !breaksAt(text, q, next, 6) && isDigitAt(text, next) && end - next <= 4 && !isDigitAt(text, end) && !isLetterAt(text, end)
+    ? tailEnd(text, end, steps - 1) : q;
 }
 
-function cardEndsFrom(text: string, i: number, s: number, named: boolean, broken: boolean, p: number, count: number, groups: number, shortest: number, longest: number, allFour: boolean, sep: number, steps: number): boolean {
+function cardEndsFrom(text: string, i: number, s: number, named: boolean, broken: boolean, p: number, count: number, groups: number, first: number, second: number, shortest: number, longest: number, allFour: boolean, sep: number, steps: number): boolean {
   //@ decreases steps
   const q = runEnd(text, p, 20);
   const total = count + q - p;
   const low = groups === 0 || q - p < shortest ? q - p : shortest;
   const high = q - p > longest ? q - p : longest;
   if (isDigitAt(text, q) || total > 19) return false;
-  if (total >= 13 && (digitValue(text, s) !== 1 || total === 15) && (i < q || inTail(text, q, i, 3)) && luhn(text, s, q - 1, false) % 10 === 0
+  if (total >= 13 && (digitValue(text, s) !== 1 || total === 15) && i < tailEnd(text, q, 3) && luhn(text, s, q - 1, false) % 10 === 0
     && (named || groups === 0
       || (allFour && groups >= 3 && q - p <= 4 && aligned(fourBefore(text, s, broken, 19), fourAfter(text, q, broken, 19)))
-      || (groups <= 3 && low >= 3 && high <= 13 && (low < high || groups === 1) && sep > 0 && sep !== 44 && isolated(text, s, q))
+      || (groups === 2 && first === 4 && second === 6 && (q - p === 4 || q - p === 5))
+      || (groups === 1 && first === 6 && q - p === 13)
+      || (groups <= 3 && low >= 3 && high <= 13 && (low < high || groups === 1) && sep > 0 && sep !== 44 && isolated(text, s, tailEnd(text, q, 3)))
       || namesCardAfter(text, q, 4, 40))) return true;
   const next = gapEnd(text, q, 6);
   const breaks = breaksAt(text, q, next, 6);
   return steps > 0 && next > q && isDigitAt(text, next) && (named || groups === 0 || breaks === broken)
-    && cardEndsFrom(text, i, s, named, groups === 0 ? breaks : broken, next, total, groups + 1, low, high, allFour && q - p === 4,
+    && cardEndsFrom(text, i, s, named, groups === 0 ? breaks : broken, next, total, groups + 1, groups === 0 ? q - p : first, groups === 1 ? q - p : second, low, high, allFour && q - p === 4,
       groups === 0 || charAt(text, q) === sep ? charAt(text, q) : -1, steps - 1);
 }
 
 function cardStartsBack(text: string, i: number, s: number, steps: number): boolean {
   //@ decreases steps
   if (isDigitAt(text, s - 1)) return false;
-  if (opensCard(text, s) && !decimalBefore(text, s) && cardEndsFrom(text, i, s, namesCard(text, s - 1, 32), false, s, 0, 0, 0, 0, true, 0, 19)) return true;
+  if (opensCard(text, s) && !decimalBefore(text, s) && cardEndsFrom(text, i, s, namesCard(text, s - 1, 32), false, s, 0, 0, 0, 0, 0, 0, true, 0, 19)) return true;
   const gap = gapStart(text, s, 6);
   return steps > 0 && gap < s && isDigitAt(text, gap - 1) && cardStartsBack(text, i, runStart(text, gap - 1, 20), steps - 1);
 }
@@ -253,6 +255,10 @@ function cueBefore(text: string, j: number, words: number, numbers: boolean, lin
   const start = wordStart(text, j, 16);
   if (!isLetterAt(text, start)) return numbers && words > 0 ? cueBefore(text, start - 1, words - 1, numbers, lines, sentences, steps - 1) : 0;
   const cue = cueAt(text, start, j + 1);
+  if (cue > 4 && numbers) {
+    const behind = words > 0 ? cueBefore(text, start - 1, words - 1, numbers, lines, sentences, steps - 1) : 0;
+    return behind > 0 ? behind : cue;
+  }
   if (cue > 0) return cue;
   if (isFiller(wordBetween(text, start, j + 1))) return cueBefore(text, start - 1, words, numbers, lines, sentences, steps - 1);
   return words > 0 ? cueBefore(text, start - 1, words - 1, numbers, lines, sentences, steps - 1) : 0;
@@ -281,7 +287,7 @@ function dialledAt(text: string, s: number): boolean {
   const word = isLetterAt(text, end - 1) ? wordBetween(text, wordStart(text, end, 12), end) : "";
   return word === "call" || word === "calling" || word === "called" || word === "at" || word === "to" || word === "dial"
     || word === "text" || word === "texted" || word === "phone" || word === "tel" || word === "fax" || word === "cell"
-    || word === "mobile" || word === "ending" || word === "ends" || word === "ext" || word === "extension" || word === "number";
+    || word === "mobile" || word === "ending" || word === "ends" || word === "ext" || word === "extension";
 }
 
 function followsColon(text: string, j: number, steps: number): boolean {
@@ -337,13 +343,14 @@ function codeFrom(text: string, i: number, s: number): boolean {
   const e = pair ? second : q;
   const length = pair ? 2 * (q - s) : q - s;
   if (i >= e || isDigitAt(text, e) || attachedAfter(text, e) || length < 3 || length > 12 || runsOn(text, s, e, pair ? q - s : length)) return false;
+  const said = wordBefore(text, s);
   const tight = cueBefore(text, s - 1, 0, false, true, false, 40);
-  if (tight > 0 && length >= (tight > 4 ? tight : 3)) return true;
+  const dialable = length === 7 || length === 10 || (length === 11 && digitValue(text, s) === 1);
+  if (!dialable && (meets(tight, length) || (tight === 4 && length === 3 && (said === "is" || said === "was")))) return true;
   if (charAt(text, s - 1) === 35 || dialledAt(text, s)) return false;
   const alone = blankBack(text, s - 1, 24) && blankAhead(text, e, 24);
   if (length >= 4 && alone && meets(cueBefore(text, s - 1, 120, true, true, true, 900), length)) return true;
   const year = length === 4 && ((digitValue(text, s) === 1 && digitValue(text, s + 1) === 9) || (digitValue(text, s) === 2 && digitValue(text, s + 1) === 0));
-  const said = wordBefore(text, s);
   const next = wordAfter(text, e);
   if ((!year || next === "is") && meets(cueAfter(text, e, 2, alone, 40), length)) return true;
   const after = cueAfter(text, e, 12, alone, 160);
@@ -395,15 +402,19 @@ function digitsBetween(text: string, j: number, e: number, steps: number): numbe
   return steps > 0 && j < e ? (isDigitAt(text, j) ? 1 : 0) + digitsBetween(text, j + 1, e, steps - 1) : 0;
 }
 
+function evenFrom(text: string, p: number, e: number, width: number, steps: number): boolean {
+  //@ decreases steps
+  const q = runEnd(text, p, 9);
+  const join = charAt(text, q);
+  return q - p === width && (q >= e || (steps > 0 && (width >= 3 || (join !== 44 && join !== 46)) && evenFrom(text, joinEnd(text, q, 3), e, width, steps - 1)));
+}
+
 function isChainCodeDigit(text: string, i: number): boolean {
   if (!isDigitAt(text, i)) return false;
   const s = chainStart(text, runStart(text, i, 9), 8);
   const e = chainEnd(text, s, 8);
   if (isDigitAt(text, s - 1) || i >= e || e === runEnd(text, s, 9) || attachedBefore(text, s) || isLetterAt(text, e)) return false;
-  const digits = digitsBetween(text, s, e, 48);
-  const phone = (digits === 10 || (digits === 11 && digitValue(text, s) === 1)) && e - runStart(text, e, 9) === 4;
-  const cue = cueBefore(text, s - 1, 0, false, true, false, 40);
-  return !phone && cue > 0 && digits >= (cue > 4 ? cue : 4);
+  return evenFrom(text, s, e, runEnd(text, s, 9) - s, 8) && meets(cueBefore(text, s - 1, 0, false, true, false, 40), digitsBetween(text, s, e, 48));
 }
 
 function isCodeCharAt(text: string, i: number): boolean {
@@ -421,13 +432,18 @@ function codeCharEnd(text: string, j: number, steps: number): number {
   return steps > 0 && isCodeCharAt(text, j) ? codeCharEnd(text, j + 1, steps - 1) : j;
 }
 
+function spelled(text: string, j: number, e: number, run: number, steps: number): boolean {
+  //@ decreases steps
+  return run >= 3 || (steps > 0 && j < e && spelled(text, j + 1, e, isLetterAt(text, j) ? run + 1 : 0, steps - 1));
+}
+
 function isLetteredCodeAt(text: string, i: number): boolean {
   if (!isCodeCharAt(text, i)) return false;
   const s = codeCharStart(text, i, 13);
   const e = codeCharEnd(text, i, 13);
   if (e - s < 5 || e - s > 12 || isWordAt(text, s - 1) || isWordAt(text, e)) return false;
   const digits = digitsBetween(text, s, e, 13);
-  return digits * 2 >= e - s && digits < e - s && cueBefore(text, s - 1, 0, false, true, false, 40) > 0;
+  return digits * 2 >= e - s && digits < e - s && !spelled(text, s, e, 0, 13) && cueBefore(text, s - 1, 0, false, true, false, 40) > 0;
 }
 
 function ssnFrom(text: string, i: number, s: number): boolean {

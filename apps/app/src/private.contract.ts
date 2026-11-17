@@ -60,9 +60,20 @@ const placements = {
   spaced: (cue: string) => `ok your ${cue} is #.`,
   far: (cue: string) => `ok the ${cue} they sent to my phone this morning is #.`,
   next: (cue: string) => `ok I asked for a ${cue}.\n# is the one.`,
+  entered: (cue: string) => `ok the ${cue} you need to enter is #`,
 };
 
-const groupings = { "4-4-4-4": [4, 4, 4, 4], "8-8": [8, 8], "8-4-4": [8, 4, 4], "5-5-6": [5, 5, 6], "3-4-4-5": [3, 4, 4, 5] };
+const groupings = { "4-4-4-4": [4, 4, 4, 4], "4-6-5": [4, 6, 5], "8-8": [8, 8], "8-4-4": [8, 4, 4], "5-5-6": [5, 5, 6], "3-4-4-5": [3, 4, 4, 5] };
+
+const printed = (grouping: keyof typeof groupings) => grouping === "4-4-4-4" || grouping === "4-6-5";
+
+const codes = {
+  six: (code: number[]) => Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)),
+  four: (code: number[]) => [3 + digit(code[0] ?? 0) % 7, ...Array.from({ length: 3 }, (_, k) => digit(code[k + 1] ?? k))],
+  lettered: (code: number[]) => Array.from({ length: 6 }, (_, k) => (k % 3 === 1 ? "ABCDEFGHJK"[digit(code[k] ?? k)] : digit(code[k] ?? k))),
+};
+
+const fold = (text: string) => text.replace(/[A-Z]/g, (c) => c.toLowerCase());
 
 const outgoing = Arbitrary.schema(
   Schema.Struct({
@@ -71,23 +82,27 @@ const outgoing = Arbitrary.schema(
     after: Schema.String,
     body: Schema.Array(Schema.Int),
     gaps: Schema.Array(Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    ", "\u00a0", "\n", "\u200b"])),
-    named: Schema.Literals(["", "card ", "Visa "]),
+    named: Schema.Literals(["", "card ", "Visa ", " is my card"]),
     extra: Schema.Literals(["", " 12 27", " 12 2027 123", ",123", "/12/27", " 415 555 0123", " next"]),
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
-    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next"]),
-    grouping: Schema.Literals(["4-4-4-4", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
+    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered"]),
+    grouping: Schema.Literals(["4-4-4-4", "4-6-5", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
+    form: Schema.Literals(["six", "four", "lettered"]),
     code: Schema.Array(Schema.Int),
     kind: Schema.Literals(["grid", "range", "amounts", "statement", "phones", "years", "answers", "fraction", "call", "texted", "meeting"]),
     gap: Schema.Literals([" ", "\t", "\n", "  "]),
     numbers: Schema.Array(Schema.Int),
   }),
 ).pipe(
-  Arbitrary.map(({ before, passwords, after, body, gaps, named, extra, cue, placement, grouping, code, kind, gap, numbers }): Outgoing => {
-    const card = cardNumber(Array.from({ length: 15 }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), [...gaps], groupings[named === "" || extra === " next" ? "4-4-4-4" : grouping]);
-    const secret = Array.from({ length: 6 }, (_, k) => digit(code[k] ?? k)).join(placement === "spaced" ? " " : "");
+  Arbitrary.map(({ before, passwords, after, body, gaps, named, extra, cue, placement, grouping, form, code, kind, gap, numbers }): Outgoing => {
+    const shape = extra === " next" && named !== " is my card" && !printed(grouping) ? "4-4-4-4" : grouping;
+    const isolated = named === "" && !printed(shape);
+    const card = cardNumber(Array.from({ length: groupings[shape].reduce((sum, size) => sum + size, -1) }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), isolated ? gaps.slice(0, 1) : [...gaps], groupings[shape]);
+    const kept = form === "lettered" ? "before" : form === "four" && placement === "verb" ? "entered" : placement;
+    const secret = codes[form]([...code]).join(kept === "spaced" ? " " : "");
     const plain = plainKinds[kind]([...numbers], gap);
-    const head = [`${plain}.`, "ok", before, ...passwords, "ok", named].join(" ");
-    const parts = [card, ...(extra === " next" ? [" ", card] : [extra]), " ", ...placements[placement](cue).split("#").flatMap((part, k) => (k === 0 ? [part] : [secret, part])), ` ${after}`];
+    const head = [`${plain}.`, "ok", before, ...passwords, ...passwords.map((word) => word.toUpperCase()), "ok", named === " is my card" ? "" : named].join(" ");
+    const parts = [card, named === " is my card" ? named : "", ...(extra === " next" ? [" ", card] : [extra]), " ", ...placements[kept](cue).split("#").flatMap((part, k) => (k === 0 ? [part] : [secret, part])), ` ${after}`];
     const starts = parts.map((_, k) => head.length + parts.slice(0, k).join("").length);
     return {
       text: head + parts.join(""),
@@ -104,9 +119,9 @@ export const withheld = contract({
   deterministic: true,
   invariant: ({ text, passwords, plain, secrets }, out) =>
     out.length === text.length
-    && secrets.every(([from, to]) => !/[0-9]/.test(out.slice(from, to)))
+    && secrets.every(([from, to]) => !/[0-9A-Z]/.test(out.slice(from, to)))
     && Array.from({ length: text.length }, (_, k) => !isPrivateAt(text, passwords, k) || out[k] === "*").every(Boolean)
-    && passwords.every((word) => word.length < 4 || word.includes("*") || !out.includes(word))
+    && passwords.every((word) => word.length < 4 || word.includes("*") || !fold(out).includes(fold(word)))
     && (passwords.some((word) => word.length >= 4 && text.slice(0, plain.length + word.length).toLowerCase().includes(word.toLowerCase())) || out.startsWith(plain))
     && withhold({ text: out, passwords }) === out,
 });
