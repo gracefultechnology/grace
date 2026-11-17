@@ -128,7 +128,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
       const response = await fetch(new URL("/api/v1/decisions", origin), {
         method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(10000),
+        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(20000),
       }).catch(() => new Response('{"status":"unavailable","reason":"provider_error"}', { status: 503 }));
       const body = await response.text();
       const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
