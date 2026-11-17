@@ -13,6 +13,7 @@ schema Destination { url: string }
 schema DeviceApproval { redirectUrl: string }
 schema DeviceAttempt { challenge: string; state: string }
 const GoogleStatus = Schema.Struct({
+  accountId: Schema.NonEmptyString,
   provider: Schema.Literal("google"),
   side: Schema.Literal("owner"),
   mode: Schema.Literal("cloud_managed"),
@@ -127,8 +128,9 @@ effect function readAccount(transport: Transport): GraceAccount!unknown {
   return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan: subscription === undefined ? "PlanUnknown" : planFrom(subscription) }
 }
 
-effect function googleLink(transport: Transport): GoogleLink!unknown {
+effect function googleLink(transport: Transport, accountId: string): GoogleLink!unknown {
   const status = try decode(try accepted(transport, "/api/v1/eliza/google/status", "GET"), GoogleStatus)
+  if (status.accountId !== accountId) throw new AccountRequestFailed()
   if (!status.configured) return { tag: "GoogleLinkUnavailable" }
   if (!status.connected) return { tag: "GoogleLinkReady" }
   if (status.identity === null) throw new AccountRequestFailed()
@@ -179,7 +181,7 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     const account: GraceAccount = native ? (readDevice() catch () => ({ tag: "AccountUnavailable" } as const)) :
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
     const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
-      (googleLink(webTransport) catch () => ({ tag: "GoogleLinkUnknown" } as const))
+      (googleLink(webTransport, account.accountId) catch () => ({ tag: "GoogleLinkUnknown" } as const))
     setup.send({ type: "reportGraceAccount", report: account, link }) catch () => undefined
     return account
   }

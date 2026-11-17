@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -648,6 +648,21 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true }];
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
+  const changeInput = Schema.fromJsonString(Schema.Struct({
+    accountId: Schema.String,
+    grantId: Schema.String,
+    operationId: Schema.String,
+    recipient: Schema.optional(Schema.String),
+    subject: Schema.optional(Schema.String),
+    text: Schema.optional(Schema.String),
+    messageId: Schema.optional(Schema.String),
+    version: Schema.optional(Schema.String),
+    undoOf: Schema.optional(Schema.String),
+    id: Schema.optional(Schema.String),
+    action: Schema.optional(Schema.Literals(["create", "update", "delete"])),
+    event: Schema.optional(Schema.Struct({ title: Schema.String, startAt: Schema.String, endAt: Schema.String, location: Schema.String })),
+  }));
+  const decodeChange = Schema.decodeUnknownSync(changeInput);
   const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
@@ -664,7 +679,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status":
         return reply({
-          provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
+          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
           identity: { email: person.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"],
         });
       case "/api/v1/eliza/gmail/triage": return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
@@ -675,28 +690,29 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
       case "/api/v1/eliza/google/gmail/send": {
-        const outbound = JSON.parse(String(options?.body));
+        const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test", subject: "Hello", text: "See you soon." });
         sent = true;
         return reply({ accountId: person.id, operationId: outbound.operationId, messageId: "sent-1" });
       }
       case "/api/v1/eliza/google/gmail/trash": {
-        const outbound = JSON.parse(String(options?.body));
+        const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
         if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
         trashed = !trashed;
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId: mail.externalId, version: "9" });
       }
       case "/api/v1/eliza/google/calendar/change": {
-        const outbound = JSON.parse(String(options?.body));
+        const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant });
+        if (!outbound.action) throw new Error("Missing calendar action");
         changed = [...changed, outbound.action];
         const itemId = outbound.id ?? outbound.operationId.replaceAll("-", "");
         if (outbound.action === "delete") events = events.filter((event) => event.externalId !== itemId);
-        else if (outbound.action === "update") {
+        else if (outbound.event && outbound.action === "update") {
           expect(outbound.version).toBe('"one"');
           events = events.map((event) => event.externalId === itemId ? { ...event, ...outbound.event, etag: '"two"' } : event);
-        } else events = [...events, { ...outbound.event, externalId: itemId, description: "", isAllDay: false, editable: true, etag: '"new"' }];
+        } else if (outbound.event) events = [...events, { ...outbound.event, externalId: itemId, description: "", isAllDay: false, editable: true, etag: '"new"' }];
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
       case "/api/v1/eliza/calendar/feed":

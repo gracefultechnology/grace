@@ -243,10 +243,10 @@ effect function store(site: string) {
   }
 
   effect function googleStatus() {
-    const { grantId } = try signedIn()
+    const { grantId, key } = try signedIn()
     const connected = grantId !== null
     return try HttpServerResponse.json({
-      provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected,
+      accountId: key, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected,
       reason: connected ? "connected" : "disconnected", identity: connected ? { email: owner } : null,
       grantedCapabilities: connected ? capabilities : [], grantedScopes: connected ? scopes : [], expiresAt: null,
       hasRefreshToken: connected, connectionId: grantId, linkedAt: null, lastUsedAt: null

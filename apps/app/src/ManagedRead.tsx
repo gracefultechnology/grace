@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
-import { Button, CalendarEventRow, EmptyState, Input, MailMessageRow, PageHeading, PageText, RetryNotice } from "@repo/ui";
+import { Button, CalendarEventRow, EmptyState, Input, MailMessageRow, PageHeading, PageText, RetryNotice, Textarea } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
@@ -53,7 +53,7 @@ function MailDraft({ accountId, email, grant }: { accountId: string; email: stri
     <PageHeading>New email</PageHeading>
     <label>To<Input type="email" required maxLength={254} value={draft.recipient} onChange={(event) => update({ recipient: event.target.value })} /></label>
     <label>Subject<Input maxLength={120} value={draft.subject} onChange={(event) => update({ subject: event.target.value })} /></label>
-    <label>Message<textarea className="block w-full rounded border p-2" required maxLength={8192} value={draft.text}
+    <label>Message<Textarea required maxLength={8192} value={draft.text}
       onChange={(event) => update({ text: event.target.value })} /></label>
     {saveFailed && <RetryNotice role="alert">This browser couldn’t keep the draft.</RetryNotice>}
     <div className="flex gap-3">
@@ -158,6 +158,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
   const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (reads) => reads.get())));
   const run = (command: Parameters<ManagedReads.Shape["send"]>[0]) => startTransition(async () => {
     setFailed(false);
+    if (command.kind === "refresh") setWriteNotice(undefined);
     const result = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.send(command)));
     if (!Exit.isSuccess(result) || !result.value) setFailed(true);
   });
