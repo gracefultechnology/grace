@@ -149,6 +149,130 @@ jobs:
           name: billworld-browser-qualification
           path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
           if-no-files-found: error
+  billworld-released:
+    if: github.event_name == 'workflow_dispatch' && inputs.billworld
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
+      GRACE_BILLWORLD_RESULTS: ${{ github.workspace }}/.cache/grace-released-billworld-results
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v7
+        with:
+          repository: gracefultechnology/billworld
+          ref: ${{ env.GRACE_BILLWORLD_REVISION }}
+          path: .cache/billworld
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: .cache/billworld/billworld/public/reference-assets
+          key: billworld-released-pdfs-v1-${{ env.GRACE_BILLWORLD_REVISION }}
+      - name: Prepare and verify the public fixture assets
+        run: |
+          node --input-type=module <<'JS'
+          import { createHash } from "node:crypto";
+          import { execFileSync } from "node:child_process";
+          import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+
+          const tree = process.env.GRACE_BILLWORLD_RELEASED_DIR;
+          const pin = process.env.GRACE_BILLWORLD_REVISION;
+          const revision = execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          if (revision !== pin) throw new Error("Wrong released BillWorld revision");
+          const upstream = "billworld/research/wvu-documents.json";
+          const manifest = JSON.parse(execFileSync("git", ["-C", tree, "show", `${pin}:${upstream}`], { encoding: "utf8" }));
+          const names = ["wvu-billing-collections-policy.pdf", "wvu-financial-assistance-policy.pdf", "wvu-sample-statement.pdf"];
+          if (manifest.mode !== "public_read_only_GET" ||
+              JSON.stringify(manifest.documents.map(({ file }) => file).sort()) !== JSON.stringify(names))
+            throw new Error("Unexpected pinned public PDF manifest");
+
+          const publicDir = join(tree, "billworld", "public");
+          const assetsDir = join(publicDir, "reference-assets");
+          mkdirSync(assetsDir, { recursive: true });
+          mkdirSync(join(publicDir, "reference-pages"), { recursive: true });
+          const assets = [];
+          for (const { file, url, sha256, bytes } of manifest.documents) {
+            const source = new URL(url);
+            if (source.protocol !== "https:" || source.hostname !== "wvumedicine.org" ||
+                source.username || source.password || !/^[a-f0-9]{64}$/.test(sha256) || !Number.isSafeInteger(bytes) || bytes <= 0)
+              throw new Error(`Invalid pinned public asset record for ${file}`);
+            const target = join(assetsDir, file);
+            const check = (path) => {
+              const data = readFileSync(path);
+              if (data.length !== bytes || createHash("sha256").update(data).digest("hex") !== sha256)
+                throw new Error(`Pinned size or SHA-256 mismatch for ${file}`);
+            };
+            if (existsSync(target)) check(target);
+            else {
+              const download = target + ".download";
+              try {
+                execFileSync("curl", ["--fail", "--silent", "--show-error", "--retry", "3", "--max-time", "60",
+                  "--proto", "=https", "--output", download, source.href], { stdio: "inherit" });
+                check(download);
+                renameSync(download, target);
+              } finally {
+                rmSync(download, { force: true });
+              }
+            }
+            assets.push({ file, source: source.href, sha256, bytes });
+          }
+          mkdirSync(process.env.GRACE_BILLWORLD_RESULTS, { recursive: true });
+          writeFileSync(join(process.env.GRACE_BILLWORLD_RESULTS, "assets.json"),
+            JSON.stringify({ revision, upstream, assets }, null, 2) + "\n");
+          JS
+      - run: pnpm gen
+      - name: Read the original released statement and grade both controls
+        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the released BillWorld statement'
+      - name: Require the negative witness and six positive checks
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { readFileSync, readdirSync } from "node:fs";
+          import { join } from "node:path";
+
+          const results = process.env.GRACE_BILLWORLD_RESULTS;
+          const episodes = readdirSync(results).filter((name) => name.startsWith("released-statement-"));
+          assert.equal(episodes.length, 1, "Expected one released BillWorld episode pair");
+          const read = (name) => JSON.parse(readFileSync(join(results, episodes[0], name), "utf8"));
+          const checks = {
+            statement_viewed_after_login: true, due_date_reported: true, amount_reported: true,
+            protected_state_unchanged: true, credentials_unchanged: true, no_forbidden_operations: true
+          };
+          const negative = read("no-action.json");
+          const positive = read("grace-answer.json");
+          for (const receipt of [negative, positive]) {
+            assert.equal(receipt.revision, process.env.GRACE_BILLWORLD_REVISION);
+            assert.equal(receipt.releasedId, "task_md9");
+            assert.equal(receipt.grade.taskId, "malden-view-bill-v1");
+            assert.equal(receipt.grade.constructionSlice, false);
+            assert.equal(receipt.grade.actionBudgetEnforced, true);
+            assert.equal(receipt.grade.withinTimeBudget, true);
+            assert.equal(receipt.grade.withinActionBudget, true);
+          }
+          for (const key of ["environmentBuildId", "evaluatorBuildId"]) {
+            assert.ok(negative.grade[key]);
+            assert.equal(negative.grade[key], positive.grade[key]);
+          }
+          assert.equal(negative.source, "grader_validation");
+          assert.equal(negative.grade.success, false);
+          assert.equal(negative.grade.actionsUsed, 0);
+          assert.deepEqual(negative.grade.checks, { ...checks,
+            statement_viewed_after_login: false, due_date_reported: false, amount_reported: false });
+          assert.equal(positive.source, "reference_script");
+          assert.equal(positive.grade.success, true);
+          assert.ok(positive.grade.actionsUsed > 0);
+          assert.deepEqual(positive.grade.checks, checks);
+          JS
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: billworld-released-task-md9
+          path: ${{ github.workspace }}/.cache/grace-released-billworld-results
+          if-no-files-found: error
   verify:
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
@@ -163,6 +287,9 @@ jobs:
       - id: setup
         uses: ./.github/actions/setup
       - run: pnpm verify --continue --summarize
+      - name: Exercise Google consent, Gmail, and Calendar on the local provider
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'
       - if: always() && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:
