@@ -64,7 +64,7 @@ const appPages: SettingsPage[] = ["text-size", "brightness", "voice", "wifi", "a
 export const meta: ComponentMeta<SettingsAppProps> = {
   args: { page: "text-size", onPageChange: pick, onClose: fn(), children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} /> },
   examples: {
-    Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake /> },
+    Voice: { page: "voice", children: <SettingsVoice speeds={speeds} speed="1" speaks wake="unavailable" /> },
     "Wi-Fi": { page: "wifi", children: <WifiNetworkList current={current} networks={nearby} /> },
     "Wi-Fi join": {
       page: "wifi",
@@ -86,7 +86,7 @@ export const meta: ComponentMeta<SettingsAppProps> = {
     Account: {
       page: "account",
       pages: appPages,
-      children: <AccountOverview access="active" account="margaret.s@example.com" subscription={{ plan: "Grace Plus", status: "Active", periodEnd: "Dec 1, 2026" }} onOpen={fn()} onSignOut={fn()} />,
+      children: <AccountOverview access="active" account="margaret.s@example.com" mailConnected support="help@example.com" onSignOut={fn()} />,
     },
     "Saved details": { page: "privacy", pages: appPages, children: <SettingsPrivacy details={savedDetails} /> },
   },
