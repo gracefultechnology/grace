@@ -92,7 +92,7 @@ const outgoing = Arbitrary.schema(
     gaps: Schema.Array(Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    ", "\u00a0", "\n", "\u200b", "x"])),
     named: Schema.Literals(["", "card ", "Visa ", " is my card"]),
     extra: Schema.Literals(["", " 12 27", " 12 2027 123", ",123", "/12/27", " 415 555 0123", " next"]),
-    cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
+    cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:", "codice"]),
     placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered", "copula", "es", "promo", "product", "tenths"]),
     grouping: Schema.Literals(["4-4-4-4", "4-6-5", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
     form: Schema.Literals(["six", "four", "seven", "ten", "lettered"]),
@@ -105,7 +105,7 @@ const outgoing = Arbitrary.schema(
   Arbitrary.map(({ before, passwords, after, body, gaps, named, extra, cue, placement, grouping, form, code, kind, gap, numbers }): Outgoing => {
     const shape = extra === " next" && named !== " is my card" && !printed(grouping) ? "4-4-4-4" : grouping;
     const isolated = named === "" && !printed(shape);
-    const card = cardNumber(Array.from({ length: groupings[shape].reduce((sum, size) => sum + size, -1) }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), isolated ? gaps.slice(0, 1) : [...gaps], groupings[shape]);
+    const card = cardNumber(Array.from({ length: groupings[shape].reduce((sum, size) => sum + size, -1) }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), isolated || gaps.includes("x") ? gaps.slice(0, 1) : [...gaps], groupings[shape]);
     const kept = form === "lettered" || (form === "four" && placement === "tenths") ? "before" : (form === "four" || form === "ten") && placement === "verb" ? "entered" : placement;
     const secret = codes[form]([...code]).join(kept === "spaced" ? " " : "");
     const plain = plainKinds[kind]([...numbers], gap);
