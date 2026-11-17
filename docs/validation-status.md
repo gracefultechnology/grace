@@ -1,5 +1,19 @@
 # Specification validation status
 
+This is the dated log of the models-only phase, from `eb1c1e7` to `de1d909`
+(14 November 2026). It is not the current state. What `pnpm check`
+reports, with its cached results, is the current evidence, and each pull
+request carries its own verify output while hosted CI is blocked by billing
+([acceptance list](implementation-acceptance.md#decisions-and-their-defaults),
+decision 30). The `/tmp` artifacts it cites are on the machine that ran them,
+not in the repository. The template's greeting
+scaffold it counts was removed from `apps/app`. The "Hey Grace" approval below
+is superseded: no wake detector is installed (decision 5). The rules each
+section discovered are written in the spec's prose: restart and sleep in
+`workspace`, the verified account in `execution` and `workspace`, Email
+confirmation in `email`, handoff navigation in `handoffs`, the failed Calendar
+save in `calendar`, and the review conversion in `preparationReview`.
+
 The `eb1c1e7` specification passed **4,321 individual Dafny proof obligations**
 across 21 Grace domain units and the retained template scaffold. The restart
 correction changes Workspace and the proof bundle that imports it. Generation

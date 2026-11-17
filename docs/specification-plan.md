@@ -1,5 +1,14 @@
 # Grace specification rebuild
 
+This is the plan of the models-only phase, which ended on 14 November 2026.
+The interface, the shell and the Android host are now being built from the
+spec, and the owner's directions in the
+[acceptance list](implementation-acceptance.md#owner-directions) replace the
+request below: bill payment is the first kind of a general task, set-up and
+one Google sign-in are in scope, speech runs through Eliza Cloud with no model
+on the tablet, and no wake detector is installed (decision 5). The template's
+greeter it kept as a scaffold has been removed.
+
 ## Goal and source precedence
 
 Specify the complete email, calendar, Files, browser and calendar-launched bill-payment MVP before migrating application code. `spec/` is the executable product contract; `prototype/Grace Prototype.html` is the new visual reference. The current rebuild request takes precedence over older delivery phases, including their exclusions of email, calendar and websites other than Chase.
@@ -24,9 +33,8 @@ The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa945444
 - Missing confirmation is uncertainty, never verified failure. Pending or unknown submissions block a new attempt. Scheduled and accepted results are distinguished from completed settlement. Later verified returns/reversals replace historical positive status while retaining the attempt and requiring durable evidence plus a new user decision before retry.
 - Resume observes the current site and account before continuing; it never replays a saved click queue. Stop, corrections, navigation and changes to remembered facts invalidate stale work.
 - Sleep and ordinary departures retain a paused session. Crash/Restart follows ANDROID 09 and the prototype reset at lines 1765–1767: clear the active assistance task, transient chat/draft/guidance and browser page session, advancing callback versions. Confirmed preferences, personal memory, saved application data and canonical payment evidence retain their separate lifecycles. A new request must reobserve before using an existing bill record; restart is never permission to resubmit.
-- The user's November 13 decision includes the prototype's enabled-by-default “Hey Grace” feature, including wake from sleep; it supersedes the old no-wake-word exclusion. Native local wake detection is separate from conversation recording. A current human phrase starts listening, pauses old website work and grants no transaction authority. Opening Grace, typed exchanges, touch wake and navigation do not automatically activate conversation capture. Private passwords, verification codes and payment credentials are not model state or stored personal facts.
+- The user's November 13 decision included the prototype's enabled-by-default “Hey Grace” feature, including wake from sleep. The later direction of no models on the tablet overrides it for the MVP: the wake rules stay and no detector is installed. Native local wake detection is separate from conversation recording. A current human phrase starts listening, pauses old website work and grants no transaction authority. Opening Grace, typed exchanges, touch wake and navigation do not automatically activate conversation capture. Private passwords, verification codes and payment credentials are not model state or stored personal facts.
 - Wake is not device authentication. The native host must retain the lock screen and withhold an admitted wake/ready report until OS authentication permits the application. A locked-device wake may illuminate the native lock screen without exposing Grace, file previews or a task.
-- Keep the template's existing greeter as an explicitly identified validation scaffold during this models-only phase. Grace models do not import it. Replacing its UI, source, tests and driver belongs to the subsequent implementation phase.
 
 ## Implementation sequence
 
@@ -39,7 +47,7 @@ The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa945444
 
 ## Validation and acceptance boundary
 
-The target is passing model, invariant simulation, event/goal reachability, TypeScript replay, generated types and Dafny proof stages for every Grace module. Existing template tests continue to run. This phase adds no tests that merely reassert generated transitions; those are checked by the formal pipeline. Runtime journeys and drivers must be added when the VibeLang shell, React UI and real services are implemented.
+The target is passing model, invariant simulation, event/goal reachability, TypeScript replay, generated types and Dafny proof stages for every Grace module. This phase adds no tests that merely reassert generated transitions; those are checked by the formal pipeline. Runtime journeys and drivers must be added when the VibeLang shell, React UI and real services are implemented.
 
 Static requirements and formal proof cannot certify that Chromium observes arbitrary websites correctly, that a provider accepts a payment, that a visual layout works on hardware, or that a senior completes a task independently. The specification must define those interfaces and acceptance exercises explicitly without presenting model evidence as runtime evidence.
 

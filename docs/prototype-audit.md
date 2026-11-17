@@ -1,10 +1,16 @@
 # Current Grace prototype and requirements audit
 
 The current visual and interaction reference is `prototype/Grace Prototype.html`
-(2,401 lines), supplied during this task. It supersedes
-`prototype/Grace Bill Pay.html`. The latter remains historical evidence only.
+(2,401 lines), supplied during this task. It supersedes the earlier
+`Grace Bill Pay.html`, which is no longer in the repository.
 This inventory is based on source inspection; it does not certify a running
 provider integration, microphone, printer, Android device or pixel comparison.
+
+This audit dates from the models-only phase (13 November 2026). Where it
+differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults),
+the decisions win: no wake detector is installed (decision 5), nothing asks
+the agent or the speech service offline (decision 6), the browser has no zoom
+control (decision 21), and the email and calendar build is removing Print.
 
 `prototype/prd.md` is a concatenation of revisions: early exploration at
 1–765, future vision at 766–834, On-screen Helper at 835–1351, Screen Share at
@@ -57,9 +63,9 @@ The new reference blocks Internet and Email launches while offline
 (2249–2250), dims Internet and says new mail will arrive after reconnection
 (1878–1882). It also expects Grace to help reconnect (1858–1870, 2110–2111,
 2227). The model therefore distinguishes actual host reasoning availability
-from network connectivity: supported offline assistance may work, while web
-and payment actions require a real online connection. This does not claim
-that a local model has already been implemented. Previously retained mail
+from network connectivity. Reasoning and speech both run in the cloud, so
+offline Ask Grace shows one sentence and Fix Wi-Fi is a written list of steps
+(decision 6). Previously retained mail
 must not be discarded because new mail cannot refresh.
 
 Wi-Fi and Volume are popovers over the current surface, with a close button,
@@ -72,9 +78,9 @@ Settings pages are Text size, Brightness, Grace's voice, Wi-Fi and About
 (2038–2053). Text sizes are Smaller, Normal, Larger and Largest. Brightness
 has a slider, minus/plus and night dimming from 9 pm to 7 am. Grace's voice has
 sample playback, Slower/Normal/Faster and spoken-output control. The prototype
-also offers a wake-word toggle. The user explicitly approved "Hey Grace"
-during this task, extending the earlier explicit-Talk requirements; the
-separate wake model and workspace composition govern that activation.
+also offers a wake-word toggle. The user approved "Hey Grace" during this
+task; with no model on the tablet, Settings shows it as not available
+(decision 5), and the wake model keeps its rules for later.
 The About screen's "everything up to date" is a static placeholder, not
 verified update status.
 
@@ -170,11 +176,11 @@ within the active task; it must not force a new user Resume at every page.
 Sleep shows clock/date and the next appointment and hides Grace while retaining
 the conversation and task (2254–2258). Touch wakes to the retained surface
 with Grace still closed (2259–2260). The new wake-word demonstration (2261–2268)
-is not evidence of an implemented wake detector. The user approved the wake
-phrase as a product requirement: enabled, permitted detection may activate
-Grace and open a bounded listening exchange when reasoning is available. If
-the detector works but reasoning is unavailable, Grace opens a notice without
-conversation capture. Touch wake alone does not start
+is not evidence of an implemented wake detector. The wake rules say what a
+detector may do: activate Grace and open a bounded listening exchange when
+reasoning is available, or open a notice without capture when it is not. The
+MVP installs none (decision 5), and the sleep screen says to touch the
+screen. Touch wake alone does not start
 listening, and neither kind of wake authorizes a consequential action.
 
 ## Explicit conflicts and integration boundaries
@@ -183,8 +189,8 @@ listening, and neither kind of wake authorizes a consequential action.
 |---|---|
 | Old single-provider and Email/Calendar exclusions | Current user scope and the new app prototype supersede them. Provider identities and website targets remain data. |
 | Old native-settings-only presentation | Current Settings and popovers are the visual reference; OS capabilities, permission results and security checks remain authoritative. |
-| Wake word and automatic microphone restoration | The user approved enabled "Hey Grace" activation. Keep it distinct from touch wake or keyboard closure, fence detector callbacks and expire unanswered listening; waking never approves a payment. |
-| "Offline Grace runs on the tablet" | Model actual supported reasoning availability independently; do not claim a local model exists. |
+| Wake word and automatic microphone restoration | No wake detector is installed in the MVP (decision 5); the wake rules keep it distinct from touch wake or keyboard closure, fence detector callbacks and expire unanswered listening; waking never approves a payment. |
+| "Offline Grace runs on the tablet" | No model runs on the tablet: offline, nothing asks the agent or the speech service (decision 6). |
 | Certificate safety inferred from physical location | Show actual OS evidence; location alone does not authenticate a certificate. |
 | Instant login, send, print, join or scheduled payment | Require corresponding authoritative result, errors and uncertainty rather than mock timers/toasts. |
 | Hardcoded card, bill, account, network, date or recipient | Use unbounded opaque identities and provider data; finite examples exist only in simulation. |
