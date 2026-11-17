@@ -227,7 +227,7 @@ function codeCue(word: string): number {
     || word === "passcode" || word === "passcodes" || word === "password" || word === "passwords"
     || word === "verification" || word === "verify" || word === "authentication" || word === "token" || word === "tokens"
     || word === "routing" || word === "ssn"
-    || word === "codice" || word === "verificacion" || word === "verificaci\u00f3n" || word === "contrasena" || word === "contrase\u00f1a" || word === "clave" ? 4 : 0;
+    || word === "verificacion" || word === "verificaci\u00f3n" || word === "contrasena" || word === "contrase\u00f1a" || word === "clave" ? 4 : 0;
 }
 
 function meets(cue: number, length: number): boolean {
@@ -248,13 +248,13 @@ function cueAt(text: string, start: number, end: number): number {
   const before = word === "code" || word === "codes" || word === "number" || word === "key" ? wordBefore(text, start) : "";
   if (word === "key") return before === "product" || before === "license" || before === "licence" || before === "activation" || before === "recovery" ? 4 : 6;
   if (word === "number") return before === "time" || before === "account" || before === "routing" || before === "security" || (before === "in" && wordBefore(text, start - 3) === "sign") ? 4 : 0;
-  if (word === "codigo" || word === "c\u00f3digo") return isPlaceWord(wordAfter(text, end)) || (wordAfter(text, end) === "de" && isPlaceWord(wordAfter(text, end + 3))) ? 0 : 4;
+  if (word === "codigo" || word === "c\u00f3digo" || word === "codice") return isPlaceWord(wordAfter(text, end)) || (wordAfter(text, end) === "de" && isPlaceWord(wordAfter(text, end + 3))) ? 0 : 4;
   if (word !== "code" && word !== "codes") return codeCue(word);
   return before === "zip" || before === "postal" || before === "area" || before === "country" ? 0 : before === "security" ? 3 : 4;
 }
 
 function isPlaceWord(word: string): boolean {
-  return word === "postal" || word === "area" || word === "\u00e1rea" || word === "pa\u00eds" || word === "pais";
+  return word === "postal" || word === "postale" || word === "area" || word === "\u00e1rea" || word === "pa\u00eds" || word === "pais";
 }
 
 function isFiller(word: string): boolean {
