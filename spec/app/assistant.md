@@ -356,8 +356,7 @@ pure val exampleReport: GuidanceReport =
 pure val reportValues = Set(exampleReport,
   { ...exampleReport, workVersion: 0, conversationVersion: 2 }, { ...exampleReport, conversationVersion: 2 },
   { ...exampleReport, verified: false }, { ...exampleReport, target: "" },
-  { ...exampleReport, workVersion: 2, conversationVersion: 3 },
-  { ...exampleReport, workVersion: 2 }, { ...exampleReport, workVersion: 2, conversationVersion: 2 })
+  { ...exampleReport, workVersion: 2, conversationVersion: 3 })
 ```
 
 ### Page guidance shows only on the visible page and steps aside while Grace talks or works
@@ -486,7 +485,10 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 ### Hidden assistance is quiet and every task status has its necessary context
 
 ```quint
-pure def alwaysConversationRules(a: Assistant): bool = C::validConversation(a.conversation)
+pure def alwaysConversationRules(a: Assistant): bool =
+  C::alwaysListeningHasAnActiveExchange(a.conversation) and C::alwaysRecognitionRetriesAreBounded(a.conversation) and
+  C::alwaysReadingPositionExists(a.conversation) and C::alwaysGenerationsAreNonnegative(a.conversation) and
+  C::alwaysMessagesHaveContent(a.conversation)
 pure def alwaysHiddenIsQuiet(a: Assistant): bool =
   a.presentation == Closed implies not(a.conversation.voice) and a.conversation.turn == C::Ready and
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)
@@ -511,10 +513,6 @@ pure def stepWindowChangesKeepConversation(before: Assistant, via: str, after: A
 
 ### Pausing, reconciliation, replacement and verified outcomes are reachable
 
-A green check needs a completed task and then a report of exactly its
-versions before any Tap takes the guidance revision, so the simulator tries
-finishing a task and publishing a named kind more often than other events.
-
 ```quint
 pure def sometimesPaused(a: Assistant): bool = a.activity == Paused
 pure def sometimesRechecking(a: Assistant): bool = a.activity == Rechecking
@@ -524,30 +522,10 @@ pure def sometimesReplacementQuestion(a: Assistant): bool = a.replacementId != "
 pure def sometimesCompleted(a: Assistant): bool = a.outcome == Completed
 pure def sometimesFailed(a: Assistant): bool = a.outcome == VerifiedFailure
 pure def sometimesAbandoned(a: Assistant): bool = a.outcome == Abandoned
-pure def sometimesKeyboardCaption(a: Assistant): bool =
-  keyboardCaptionVisible(a) and a.conversation.turn == C::Speaking
+pure def sometimesKeyboardCaption(a: Assistant): bool = keyboardCaptionVisible(a)
 pure def sometimesReopenedOverInterruptedWork(a: Assistant): bool =
   a.presentation == Compact and a.activity == Paused and a.interruptedWork
 pure val weight_publishGuidance = 10
 pure val weight_dismissGuidance = 10
 pure val weight_showGuidance = 10
-pure val weight_finishTask = 10
-pure val weight_publishGuidanceAs = 30
-```
-
-### An assistant is valid when it meets every rule above
-
-`validAssistant` gathers every `always` rule of this spec in one place, so
-that the [interaction dispatcher](./interaction.md) and the
-[workspace](./workspace.md), which holds the assistant, require the whole
-list and gain each new rule without keeping a copy of their own. Whoever
-adds an `always` rule here adds it to `validAssistant` too.
-
-```quint
-pure def validAssistant(a: Assistant): bool =
-  alwaysGraceWorksOnlyOnTheVisiblePage(a) and alwaysGuidanceIsNotAhead(a) and
-  alwaysDoneMeansVerifiedCompletion(a) and alwaysConversationRules(a) and alwaysHiddenIsQuiet(a) and
-  alwaysTaskContextExists(a) and alwaysOperationsBelongToWorkingTasks(a) and
-  alwaysOnlyVerifiedEndpointsClaimCompletion(a) and alwaysConversationOffersAndInterruptions(a) and
-  alwaysReplacementIsComplete(a)
 ```

@@ -68,6 +68,10 @@ lemma CloseQuietWorkspace(w: Workspace)
 }
 
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedPaymentCannotSubmit(openGrace(w, by_)))
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysOneTask(openGrace(w, by_)))
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedTogether(openGrace(w, by_)))
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysRecordingHasPermission(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysOperationHasVisibleTask(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysWakeRules(openGrace(w, by_)))
@@ -80,10 +84,6 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPaymentRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPaymentRegistryIsCanonical(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPaymentAssociation(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedPaymentCannotSubmit(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysOneTask(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedTogether(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysRecordingHasPermission(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCurrentBeforeAction(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(openGrace(w, by_)))
@@ -101,6 +101,10 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedPaymentCannotSubmit(closeGrace(w, by_)))
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysOneTask(closeGrace(w, by_)))
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedTogether(closeGrace(w, by_)))
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysRecordingHasPermission(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysOperationHasVisibleTask(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysWakeRules(closeGrace(w, by_)))
@@ -113,10 +117,6 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPaymentRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPaymentRegistryIsCanonical(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPaymentAssociation(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedPaymentCannotSubmit(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysOneTask(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedTogether(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysRecordingHasPermission(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCurrentBeforeAction(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(closeGrace(w, by_)))
@@ -135,6 +135,10 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedPaymentCannotSubmit(talk(w, by_)))
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysOneTask(talk(w, by_)))
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedTogether(talk(w, by_)))
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysRecordingHasPermission(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysOperationHasVisibleTask(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysWakeRules(talk(w, by_)))
@@ -147,10 +151,6 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPaymentRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPaymentRegistryIsCanonical(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPaymentAssociation(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedPaymentCannotSubmit(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysOneTask(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedTogether(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysRecordingHasPermission(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCurrentBeforeAction(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(talk(w, by_)))
@@ -168,6 +168,10 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDraft: bool, by_: WorkspaceActor)
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedPaymentCannotSubmit(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysOneTask(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedTogether(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysRecordingHasPermission(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysOperationHasVisibleTask(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysEvidenceVersionsAreNonnegative(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysWakeRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
@@ -180,10 +184,6 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPaymentRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPaymentRegistryIsCanonical(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPaymentAssociation(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedPaymentCannotSubmit(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysOneTask(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedTogether(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysRecordingHasPermission(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPaymentUsesCanonicalIdentity(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCurrentBeforeAction(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPaymentReviewUsesCurrentContext(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
@@ -202,6 +202,10 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
 }
 
 lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedPaymentCannotSubmit(cancelWake(w, by_)))
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysOneTask(cancelWake(w, by_)))
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedTogether(cancelWake(w, by_)))
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysRecordingHasPermission(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysOperationHasVisibleTask(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysWakeRules(cancelWake(w, by_)))
@@ -214,10 +218,6 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPaymentRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPaymentRegistryIsCanonical(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPaymentAssociation(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedPaymentCannotSubmit(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysOneTask(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedTogether(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysRecordingHasPermission(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCurrentBeforeAction(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(cancelWake(w, by_)))
@@ -234,6 +234,10 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma changePreferences_ensures(w: Workspace, settings: app__preferences_DisplayPreferences, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedPaymentCannotSubmit(changePreferences(w, settings, by_)))
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysOneTask(changePreferences(w, settings, by_)))
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedTogether(changePreferences(w, settings, by_)))
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysRecordingHasPermission(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysOperationHasVisibleTask(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysEvidenceVersionsAreNonnegative(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysWakeRules(changePreferences(w, settings, by_)))
@@ -246,10 +250,6 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPaymentRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPaymentRegistryIsCanonical(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPaymentAssociation(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedPaymentCannotSubmit(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysOneTask(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedTogether(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysRecordingHasPermission(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPaymentUsesCanonicalIdentity(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCurrentBeforeAction(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPaymentReviewUsesCurrentContext(changePreferences(w, settings, by_)))
@@ -267,6 +267,10 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
 }
 
 lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedPaymentCannotSubmit(savePreferences(w, by_)))
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysOneTask(savePreferences(w, by_)))
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedTogether(savePreferences(w, by_)))
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysRecordingHasPermission(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysOperationHasVisibleTask(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysWakeRules(savePreferences(w, by_)))
@@ -279,10 +283,6 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPaymentRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPaymentRegistryIsCanonical(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPaymentAssociation(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedPaymentCannotSubmit(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysOneTask(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedTogether(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysRecordingHasPermission(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCurrentBeforeAction(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(savePreferences(w, by_)))
@@ -299,6 +299,10 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by_: WorkspaceActor)
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedPaymentCannotSubmit(preferencesSaved(w, saveToken, succeeded, by_)))
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysOneTask(preferencesSaved(w, saveToken, succeeded, by_)))
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedTogether(preferencesSaved(w, saveToken, succeeded, by_)))
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysRecordingHasPermission(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysOperationHasVisibleTask(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysEvidenceVersionsAreNonnegative(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysWakeRules(preferencesSaved(w, saveToken, succeeded, by_)))
@@ -311,10 +315,6 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPaymentRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPaymentRegistryIsCanonical(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPaymentAssociation(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedPaymentCannotSubmit(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysOneTask(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedTogether(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysRecordingHasPermission(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPaymentUsesCanonicalIdentity(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCurrentBeforeAction(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPaymentReviewUsesCurrentContext(preferencesSaved(w, saveToken, succeeded, by_)))
@@ -332,6 +332,10 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
 }
 
 lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: WorkspaceActor)
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedPaymentCannotSubmit(wakeNoSpeech(w, timer, by_).state))
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysOneTask(wakeNoSpeech(w, timer, by_).state))
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedTogether(wakeNoSpeech(w, timer, by_).state))
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysRecordingHasPermission(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysOperationHasVisibleTask(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysEvidenceVersionsAreNonnegative(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysWakeRules(wakeNoSpeech(w, timer, by_).state))
@@ -344,10 +348,6 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPaymentRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPaymentRegistryIsCanonical(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPaymentAssociation(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedPaymentCannotSubmit(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysOneTask(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedTogether(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysRecordingHasPermission(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPaymentUsesCanonicalIdentity(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPaymentReviewUsesCurrentContext(wakeNoSpeech(w, timer, by_).state))
@@ -361,24 +361,14 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
     ComponentInvariants(w);
     app__wake_noSpeech_ensures(w.wake, timer, app__wake_WakeActor.WakeHost);
     app__conversation_wakeSilence_ensures(w.assistant.conversation, timer.conversationVersion, app__conversation_ConversationActor.ConversationRuntime);
-    var after := wakeNoSpeech(w, timer, by_).state.assistant;
-    assert after.conversation.generation == w.assistant.conversation.generation + 1;
-    assert !app__assistant_guidanceIsCurrent(after) || w.assistant.guidance.conversationVersion != w.assistant.conversation.generation;
-    assert app__assistant_alwaysGraceWorksOnlyOnTheVisiblePage(after);
-    assert app__assistant_alwaysGuidanceIsNotAhead(after);
-    assert app__assistant_alwaysDoneMeansVerifiedCompletion(after);
-    assert app__assistant_alwaysConversationRules(after);
-    assert app__assistant_alwaysHiddenIsQuiet(after);
-    assert app__assistant_alwaysTaskContextExists(after);
-    assert app__assistant_alwaysOperationsBelongToWorkingTasks(after);
-    assert app__assistant_alwaysOnlyVerifiedEndpointsClaimCompletion(after);
-    assert app__assistant_alwaysConversationOffersAndInterruptions(after);
-    assert app__assistant_alwaysReplacementIsComplete(after);
-    assert app__assistant_inv(after);
   }
 }
 
 lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: WorkspaceActor)
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedPaymentCannotSubmit(wakeReturn(w, timer, by_)))
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysOneTask(wakeReturn(w, timer, by_)))
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedTogether(wakeReturn(w, timer, by_)))
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysRecordingHasPermission(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysOperationHasVisibleTask(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysEvidenceVersionsAreNonnegative(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysWakeRules(wakeReturn(w, timer, by_)))
@@ -391,10 +381,6 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPaymentRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPaymentRegistryIsCanonical(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPaymentAssociation(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedPaymentCannotSubmit(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysOneTask(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedTogether(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysRecordingHasPermission(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPaymentUsesCanonicalIdentity(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPaymentReviewUsesCurrentContext(wakeReturn(w, timer, by_)))
@@ -413,6 +399,10 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
 }
 
 lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedPaymentCannotSubmit(stop(w, by_)))
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysOneTask(stop(w, by_)))
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedTogether(stop(w, by_)))
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysRecordingHasPermission(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysOperationHasVisibleTask(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysWakeRules(stop(w, by_)))
@@ -425,10 +415,6 @@ lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysPaymentRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysPaymentRegistryIsCanonical(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysPaymentAssociation(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedPaymentCannotSubmit(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysOneTask(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedTogether(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysRecordingHasPermission(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCurrentBeforeAction(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(stop(w, by_)))
@@ -518,8 +504,8 @@ lemma RegistryStoredExact(records: seq<app__payment_Payment>, p: app__payment_Pa
 }
 
 lemma RegistryQuietPayment(p: app__payment_Payment)
-  requires app__payment_validPayment(p)
-  ensures app__payment_validPayment(quietPayment(p))
+  requires validPayment(p)
+  ensures validPayment(quietPayment(p))
   ensures quietPayment(p).key == p.key && quietPayment(p).attempt == p.attempt &&
     quietPayment(p).durable == p.durable && quietPayment(p).result == p.result
   ensures !p.stage.Empty? ==> !quietPayment(p).stage.Empty? && !quietPayment(p).live && !quietPayment(p).fresh_ && !quietPayment(p).readBack
@@ -601,7 +587,7 @@ lemma RegistrySave(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
     assert after.payment.key == w.payment.key;
   } else {
     forall i | 0 <= i < |w.otherPayments|
-      ensures app__payment_validPayment(after.otherPayments[i])
+      ensures validPayment(after.otherPayments[i])
       ensures after.otherPayments[i].key == w.otherPayments[i].key
       ensures !after.otherPayments[i].stage.Empty? && !after.otherPayments[i].live &&
         !after.otherPayments[i].fresh_ && !after.otherPayments[i].readBack
@@ -632,7 +618,7 @@ lemma RegistryRestart(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
       app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
     }
     forall i | 0 <= i < |w.otherPayments|
-      ensures app__payment_validPayment(after.otherPayments[i])
+      ensures validPayment(after.otherPayments[i])
       ensures after.otherPayments[i].key == w.otherPayments[i].key
       ensures !after.otherPayments[i].stage.Empty? && !after.otherPayments[i].live &&
         !after.otherPayments[i].fresh_ && !after.otherPayments[i].readBack
@@ -649,6 +635,10 @@ lemma RegistryRestart(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
 }
 
 lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedPaymentCannotSubmit(newConversation(w, by_)))
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysOneTask(newConversation(w, by_)))
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedTogether(newConversation(w, by_)))
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysRecordingHasPermission(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysOperationHasVisibleTask(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysWakeRules(newConversation(w, by_)))
@@ -661,10 +651,6 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPaymentRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPaymentRegistryIsCanonical(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPaymentAssociation(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedPaymentCannotSubmit(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysOneTask(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedTogether(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysRecordingHasPermission(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCurrentBeforeAction(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(newConversation(w, by_)))
@@ -682,6 +668,10 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedGoal: string, by_: WorkspaceActor)
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedPaymentCannotSubmit(requestReplacement(w, requestedTask, requestedGoal, by_)))
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysOneTask(requestReplacement(w, requestedTask, requestedGoal, by_)))
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedTogether(requestReplacement(w, requestedTask, requestedGoal, by_)))
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysRecordingHasPermission(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysOperationHasVisibleTask(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysEvidenceVersionsAreNonnegative(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysWakeRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
@@ -694,10 +684,6 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPaymentRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPaymentRegistryIsCanonical(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPaymentAssociation(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedPaymentCannotSubmit(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysOneTask(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedTogether(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysRecordingHasPermission(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPaymentUsesCanonicalIdentity(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCurrentBeforeAction(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPaymentReviewUsesCurrentContext(requestReplacement(w, requestedTask, requestedGoal, by_)))
@@ -716,6 +702,10 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
 }
 
 lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedPaymentCannotSubmit(keepTask(w, by_)))
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysOneTask(keepTask(w, by_)))
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedTogether(keepTask(w, by_)))
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysRecordingHasPermission(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysOperationHasVisibleTask(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysWakeRules(keepTask(w, by_)))
@@ -728,10 +718,6 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPaymentRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPaymentRegistryIsCanonical(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPaymentAssociation(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedPaymentCannotSubmit(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysOneTask(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedTogether(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysRecordingHasPermission(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCurrentBeforeAction(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(keepTask(w, by_)))
@@ -749,6 +735,10 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedPaymentCannotSubmit(continueTask(w, by_)))
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysOneTask(continueTask(w, by_)))
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedTogether(continueTask(w, by_)))
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysRecordingHasPermission(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysOperationHasVisibleTask(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysWakeRules(continueTask(w, by_)))
@@ -761,10 +751,6 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPaymentRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPaymentRegistryIsCanonical(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPaymentAssociation(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedPaymentCannotSubmit(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysOneTask(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedTogether(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysRecordingHasPermission(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCurrentBeforeAction(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(continueTask(w, by_)))
@@ -786,6 +772,10 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedPaymentCannotSubmit(completeOrdinary(w, completion, by_)))
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysOneTask(completeOrdinary(w, completion, by_)))
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedTogether(completeOrdinary(w, completion, by_)))
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysRecordingHasPermission(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysOperationHasVisibleTask(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysEvidenceVersionsAreNonnegative(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysWakeRules(completeOrdinary(w, completion, by_)))
@@ -798,10 +788,6 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPaymentRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPaymentRegistryIsCanonical(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPaymentAssociation(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedPaymentCannotSubmit(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysOneTask(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedTogether(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysRecordingHasPermission(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPaymentUsesCanonicalIdentity(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCurrentBeforeAction(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPaymentReviewUsesCurrentContext(completeOrdinary(w, completion, by_)))
@@ -819,6 +805,10 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
 }
 
 lemma approveSpokenPayment_ensures(w: Workspace, paymentTokens: PaymentTokens, spoken: SpokenApproval, by_: WorkspaceActor)
+  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPausedPaymentCannotSubmit(approveSpokenPayment(w, paymentTokens, spoken, by_)))
+  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysOneTask(approveSpokenPayment(w, paymentTokens, spoken, by_)))
+  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPausedTogether(approveSpokenPayment(w, paymentTokens, spoken, by_)))
+  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysRecordingHasPermission(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysOperationHasVisibleTask(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysEvidenceVersionsAreNonnegative(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysWakeRules(approveSpokenPayment(w, paymentTokens, spoken, by_)))
@@ -831,10 +821,6 @@ lemma approveSpokenPayment_ensures(w: Workspace, paymentTokens: PaymentTokens, s
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPaymentRules(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPaymentRegistryIsCanonical(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPaymentAssociation(approveSpokenPayment(w, paymentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPausedPaymentCannotSubmit(approveSpokenPayment(w, paymentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysOneTask(approveSpokenPayment(w, paymentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPausedTogether(approveSpokenPayment(w, paymentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysRecordingHasPermission(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPaymentUsesCanonicalIdentity(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysCurrentBeforeAction(approveSpokenPayment(w, paymentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenPayment(w, paymentTokens, spoken, by_) ==> alwaysPaymentReviewUsesCurrentContext(approveSpokenPayment(w, paymentTokens, spoken, by_)))
@@ -853,6 +839,10 @@ lemma approveSpokenPayment_ensures(w: Workspace, paymentTokens: PaymentTokens, s
 }
 
 lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: WorkspaceActor)
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedPaymentCannotSubmit(interact(w, input, by_)))
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysOneTask(interact(w, input, by_)))
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedTogether(interact(w, input, by_)))
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysRecordingHasPermission(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysOperationHasVisibleTask(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysEvidenceVersionsAreNonnegative(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysWakeRules(interact(w, input, by_)))
@@ -865,10 +855,6 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPaymentRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPaymentRegistryIsCanonical(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPaymentAssociation(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedPaymentCannotSubmit(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysOneTask(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedTogether(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysRecordingHasPermission(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPaymentUsesCanonicalIdentity(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCurrentBeforeAction(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPaymentReviewUsesCurrentContext(interact(w, input, by_)))
@@ -881,13 +867,16 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   if inv(w) && canInteract(w, input, by_) {
     ComponentInvariants(w);
     var actor := if by_ == WorkspaceActor.Person then app__conversation_ConversationActor.ConversationUser else app__conversation_ConversationActor.ConversationRuntime;
-    var heard := withVoiceOutput(input, w);
-    InteractionFrame(w.assistant, heard, actor);
-    AfterInteractionInvariant(app__interaction_interact(w.assistant, heard, actor), app__interaction_changesGeometry(heard), app__interaction_submitsContent(heard), w);
+    InteractionFrame(w.assistant, input, actor);
+    AfterInteractionInvariant(app__interaction_interact(w.assistant, input, actor), app__interaction_changesGeometry(input), app__interaction_submitsContent(input), w);
   }
 }
 
 lemma bindPayment_ensures(w: Workspace, key: app__payment_BillKey, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPausedPaymentCannotSubmit(bindPayment(w, key, by_)))
+  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysOneTask(bindPayment(w, key, by_)))
+  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPausedTogether(bindPayment(w, key, by_)))
+  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysRecordingHasPermission(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysOperationHasVisibleTask(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysEvidenceVersionsAreNonnegative(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysWakeRules(bindPayment(w, key, by_)))
@@ -900,10 +889,6 @@ lemma bindPayment_ensures(w: Workspace, key: app__payment_BillKey, by_: Workspac
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPaymentRules(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPaymentRegistryIsCanonical(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPaymentAssociation(bindPayment(w, key, by_)))
-  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPausedPaymentCannotSubmit(bindPayment(w, key, by_)))
-  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysOneTask(bindPayment(w, key, by_)))
-  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPausedTogether(bindPayment(w, key, by_)))
-  ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysRecordingHasPermission(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPaymentUsesCanonicalIdentity(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysCurrentBeforeAction(bindPayment(w, key, by_)))
   ensures (inv(w) ==> canBindPayment(w, key, by_) ==> alwaysPaymentReviewUsesCurrentContext(bindPayment(w, key, by_)))
@@ -920,6 +905,10 @@ lemma bindPayment_ensures(w: Workspace, key: app__payment_BillKey, by_: Workspac
 }
 
 lemma savePayment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPausedPaymentCannotSubmit(savePayment(w, saveReport, by_)))
+  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysOneTask(savePayment(w, saveReport, by_)))
+  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPausedTogether(savePayment(w, saveReport, by_)))
+  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysRecordingHasPermission(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysOperationHasVisibleTask(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysEvidenceVersionsAreNonnegative(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysWakeRules(savePayment(w, saveReport, by_)))
@@ -932,10 +921,6 @@ lemma savePayment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceAc
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPaymentRules(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPaymentRegistryIsCanonical(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPaymentAssociation(savePayment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPausedPaymentCannotSubmit(savePayment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysOneTask(savePayment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPausedTogether(savePayment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysRecordingHasPermission(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPaymentUsesCanonicalIdentity(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysCurrentBeforeAction(savePayment(w, saveReport, by_)))
   ensures (inv(w) ==> canSavePayment(w, saveReport, by_) ==> alwaysPaymentReviewUsesCurrentContext(savePayment(w, saveReport, by_)))
@@ -958,7 +943,6 @@ lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: boo
   requires app__assistant_unfinished(changed) == app__assistant_unfinished(w.assistant)
   requires changed.activity.Paused? == w.assistant.activity.Paused?
   requires !(geometry || content) ==> changed.activity.DoingWork? == w.assistant.activity.DoingWork?
-  requires content && app__assistant_unfinished(changed) && !changed.activity.Paused? ==> changed.activity.Rechecking?
   requires changed.conversation.voice ==> w.device.readiness.Ready? && w.device.microphoneAllowed && app__shell_mayRequestReasoning(w.device) && app__assistant_isVisible(changed)
   ensures inv(afterInteraction(changed, geometry, content, w))
 {
@@ -992,20 +976,20 @@ lemma InteractionFrame(a: app__assistant_Assistant, input: app__interaction_Inte
   ensures app__assistant_unfinished(app__interaction_interact(a, input, by_)) == app__assistant_unfinished(a)
   ensures app__interaction_interact(a, input, by_).activity.Paused? == a.activity.Paused?
   ensures !(app__interaction_changesGeometry(input) || app__interaction_submitsContent(input)) ==> app__interaction_interact(a, input, by_).activity.DoingWork? == a.activity.DoingWork?
-  ensures app__interaction_submitsContent(input) && app__assistant_unfinished(app__interaction_interact(a, input, by_)) && !app__interaction_interact(a, input, by_).activity.Paused? ==> app__interaction_interact(a, input, by_).activity.Rechecking?
   ensures app__interaction_interact(a, input, by_).conversation.voice ==> a.conversation.voice
 {
   app__interaction_lawInteractionPreservesAssistant_ensures(a, input, by_);
   match input {
     case UnusableSpeech(token, owner) => assert a.conversation.voice;
-    case SendDraft(revision) => assert app__interaction_interact(a, input, by_) == app__assistant_sendDraft(a, revision, by_);
-    case ChooseAnswer(token, text) => assert app__interaction_interact(a, input, by_) == app__assistant_chooseAnswer(a, token, text, by_);
-    case Hear(token, text, owner) => assert app__interaction_interact(a, input, by_) == app__assistant_hear(a, token, text, owner, by_);
     case _ => assert true;
   }
 }
 
 lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedPaymentCannotSubmit(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysOneTask(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedTogether(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysRecordingHasPermission(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysOperationHasVisibleTask(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysEvidenceVersionsAreNonnegative(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysWakeRules(begin(w, taskRequest, by_)))
@@ -1018,10 +1002,6 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentRegistryIsCanonical(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentAssociation(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedPaymentCannotSubmit(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysOneTask(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedTogether(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysRecordingHasPermission(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentUsesCanonicalIdentity(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPaymentReviewUsesCurrentContext(begin(w, taskRequest, by_)))
@@ -1042,6 +1022,10 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
 }
 
 lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedPaymentCannotSubmit(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysOneTask(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedTogether(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysRecordingHasPermission(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysOperationHasVisibleTask(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysEvidenceVersionsAreNonnegative(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysWakeRules(replaceTask(w, taskRequest, by_)))
@@ -1054,10 +1038,6 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentRegistryIsCanonical(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentAssociation(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedPaymentCannotSubmit(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysOneTask(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedTogether(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysRecordingHasPermission(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentUsesCanonicalIdentity(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPaymentReviewUsesCurrentContext(replaceTask(w, taskRequest, by_)))
@@ -1072,14 +1052,22 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
     QuietComponents(w);
     app__browser_navigate_ensures(w.browser, taskRequest.origin);
     app__assistant_chooseReplacement_ensures(w.assistant, true, app__conversation_ConversationActor.ConversationUser);
-    app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.User);
-    var retired := app__execution_retire(w.execution, app__execution_ExecutionActor.User);
-    app__execution_start_ensures(retired, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    if hasNext(w.plan) {
+      app__execution_start_ensures(w.execution, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    } else {
+      app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.User);
+      var retired := app__execution_retire(w.execution, app__execution_ExecutionActor.User);
+      app__execution_start_ensures(retired, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    }
     app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
 }
 
 lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedPaymentCannotSubmit(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysOneTask(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedTogether(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysRecordingHasPermission(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysOperationHasVisibleTask(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysWakeRules(closeBrowser(w, by_)))
@@ -1092,10 +1080,6 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentRegistryIsCanonical(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentAssociation(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedPaymentCannotSubmit(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysOneTask(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedTogether(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysRecordingHasPermission(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCurrentBeforeAction(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(closeBrowser(w, by_)))
@@ -1114,6 +1098,10 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysOneTask(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedTogether(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysOperationHasVisibleTask(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysEvidenceVersionsAreNonnegative(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysWakeRules(unexpectedPage(w, unexpected, by_)))
@@ -1126,10 +1114,6 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentRegistryIsCanonical(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentAssociation(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysOneTask(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedTogether(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentUsesCanonicalIdentity(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPaymentReviewUsesCurrentContext(unexpectedPage(w, unexpected, by_)))
@@ -1148,6 +1132,10 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
 
 // A background tab's move keeps the selected page and the revision (the browser's law), and website work needs the selected page in view.
 lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysOneTask(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedTogether(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysOperationHasVisibleTask(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysEvidenceVersionsAreNonnegative(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysWakeRules(unwatchedPage(w, unexpected, by_)))
@@ -1160,10 +1148,6 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentRegistryIsCanonical(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentAssociation(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysOneTask(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedTogether(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentUsesCanonicalIdentity(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentReviewUsesCurrentContext(unwatchedPage(w, unexpected, by_)))
@@ -1181,6 +1165,10 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
 }
 
 lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedPaymentCannotSubmit(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysOneTask(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedTogether(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysRecordingHasPermission(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysOperationHasVisibleTask(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysEvidenceVersionsAreNonnegative(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysWakeRules(receiveLoad(w, loadReport, by_)))
@@ -1193,10 +1181,6 @@ lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceAc
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentRegistryIsCanonical(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentAssociation(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedPaymentCannotSubmit(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysOneTask(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedTogether(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysRecordingHasPermission(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentUsesCanonicalIdentity(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCurrentBeforeAction(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPaymentReviewUsesCurrentContext(receiveLoad(w, loadReport, by_)))
@@ -1219,6 +1203,10 @@ if inv(w) && canReceiveLoad(w, loadReport, by_) {
 }
 
 lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedPaymentCannotSubmit(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysOneTask(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedTogether(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysRecordingHasPermission(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysOperationHasVisibleTask(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysEvidenceVersionsAreNonnegative(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysWakeRules(receiveProgress(w, progress, by_)))
@@ -1231,10 +1219,6 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentRegistryIsCanonical(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentAssociation(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedPaymentCannotSubmit(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysOneTask(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedTogether(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysRecordingHasPermission(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentUsesCanonicalIdentity(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCurrentBeforeAction(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPaymentReviewUsesCurrentContext(receiveProgress(w, progress, by_)))
@@ -1262,6 +1246,10 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
 }
 
 lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedPaymentCannotSubmit(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysOneTask(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedTogether(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysRecordingHasPermission(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysOperationHasVisibleTask(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysEvidenceVersionsAreNonnegative(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysWakeRules(changePage(w, browserInput, by_)))
@@ -1274,10 +1262,6 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentRegistryIsCanonical(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentAssociation(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedPaymentCannotSubmit(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysOneTask(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedTogether(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysRecordingHasPermission(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentUsesCanonicalIdentity(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCurrentBeforeAction(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPaymentReviewUsesCurrentContext(changePage(w, browserInput, by_)))
@@ -1403,6 +1387,10 @@ lemma lawRestartKeepsPaymentRecords_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedPaymentCannotSubmit(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOneTask(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedTogether(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysRecordingHasPermission(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOperationHasVisibleTask(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysEvidenceVersionsAreNonnegative(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysWakeRules(changeLifecycle(w, lifecycle, by_)))
@@ -1415,10 +1403,6 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentRegistryIsCanonical(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentAssociation(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedPaymentCannotSubmit(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOneTask(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedTogether(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysRecordingHasPermission(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentUsesCanonicalIdentity(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCurrentBeforeAction(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPaymentReviewUsesCurrentContext(changeLifecycle(w, lifecycle, by_)))
@@ -1475,323 +1459,114 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   }
 }
 
-lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOperationHasVisibleTask(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysEvidenceVersionsAreNonnegative(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysWakeRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysActiveWakePausesWebsiteWork(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPreferencesRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysDeviceRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysBrowserRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysAssistantRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPaymentRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPaymentRegistryIsCanonical(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPaymentAssociation(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedPaymentCannotSubmit(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOneTask(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedTogether(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysRecordingHasPermission(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPaymentUsesCanonicalIdentity(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCurrentBeforeAction(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPaymentReviewUsesCurrentContext(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepInterruptionsKeepTask(w, "visit", visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepWakeNeverDispatchesWebsite(w, "visit", visit(w, destination, by_), []))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepEffectsRequireCurrentContext(w, visit(w, destination, by_), []))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepDepartureKeepsPaymentAttempt(w, "visit", visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepPaymentSwitchRetainsRecords(w, "visit", visit(w, destination, by_)))
+lemma beginGuided_ensures(w: Workspace, request: GuidedRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPausedPaymentCannotSubmit(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysOneTask(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPausedTogether(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysRecordingHasPermission(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysOperationHasVisibleTask(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysEvidenceVersionsAreNonnegative(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysWakeRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysActiveWakePausesWebsiteWork(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPreferencesRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysDeviceRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysBrowserRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysAssistantRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysExecutionRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPaymentRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPaymentRegistryIsCanonical(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPaymentAssociation(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPaymentUsesCanonicalIdentity(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCurrentBeforeAction(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPaymentReviewUsesCurrentContext(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepInterruptionsKeepTask(w, "beginGuided", beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepWakeNeverDispatchesWebsite(w, "beginGuided", beginGuided(w, request, by_), []))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepEffectsRequireCurrentContext(w, beginGuided(w, request, by_), []))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepDepartureKeepsPaymentAttempt(w, "beginGuided", beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepPaymentSwitchRetainsRecords(w, "beginGuided", beginGuided(w, request, by_)))
 {
-  if inv(w) && canVisit(w, destination, by_) {
-    ComponentInvariants(w);
-    app__shell_openSurface_ensures(w.device, destination);
-    app__shell_openNative_ensures(w.device, destination);
-    InterruptedInvariant(visit(w, destination, by_).device, w.browser, w);
-  }
-}
-
-lemma returnToApplication_ensures(w: Workspace, by_: WorkspaceActor)
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysOperationHasVisibleTask(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysWakeRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysActiveWakePausesWebsiteWork(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPreferencesRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysDeviceRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysBrowserRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysAssistantRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysExecutionRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPaymentRules(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPaymentRegistryIsCanonical(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPaymentAssociation(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPausedPaymentCannotSubmit(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysOneTask(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPausedTogether(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysRecordingHasPermission(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysCurrentBeforeAction(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> stepInterruptionsKeepTask(w, "returnToApplication", returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "returnToApplication", returnToApplication(w, by_), []))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> stepEffectsRequireCurrentContext(w, returnToApplication(w, by_), []))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> stepDepartureKeepsPaymentAttempt(w, "returnToApplication", returnToApplication(w, by_)))
-  ensures (inv(w) ==> canReturnToApplication(w, by_) ==> stepPaymentSwitchRetainsRecords(w, "returnToApplication", returnToApplication(w, by_)))
-{
-  if inv(w) && canReturnToApplication(w, by_) {
-    ComponentInvariants(w);
-    app__shell_returnFromNative_ensures(w.device);
-    InterruptedInvariant(app__shell_returnFromNative(w.device), w.browser, w);
-  }
-}
-
-lemma chooseHomePage_ensures(w: Workspace, page: app__shell_HomePage, by_: WorkspaceActor)
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysOperationHasVisibleTask(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysEvidenceVersionsAreNonnegative(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysWakeRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysActiveWakePausesWebsiteWork(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPreferencesRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysDeviceRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysBrowserRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysAssistantRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysExecutionRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPaymentRules(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPaymentRegistryIsCanonical(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPaymentAssociation(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPausedPaymentCannotSubmit(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysOneTask(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPausedTogether(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysRecordingHasPermission(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPaymentUsesCanonicalIdentity(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysCurrentBeforeAction(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> alwaysPaymentReviewUsesCurrentContext(chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> stepInterruptionsKeepTask(w, "chooseHomePage", chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> stepWakeNeverDispatchesWebsite(w, "chooseHomePage", chooseHomePage(w, page, by_), []))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> stepEffectsRequireCurrentContext(w, chooseHomePage(w, page, by_), []))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> stepDepartureKeepsPaymentAttempt(w, "chooseHomePage", chooseHomePage(w, page, by_)))
-  ensures (inv(w) ==> canChooseHomePage(w, page, by_) ==> stepPaymentSwitchRetainsRecords(w, "chooseHomePage", chooseHomePage(w, page, by_)))
-{
-  if inv(w) && canChooseHomePage(w, page, by_) {
-    ComponentInvariants(w);
-    app__shell_chooseHomePage_ensures(w.device, page);
-    InterruptedInvariant(app__shell_chooseHomePage(w.device, page), w.browser, w);
-  }
-}
-
-lemma chooseSettingsPage_ensures(w: Workspace, page: app__shell_SettingsPage, by_: WorkspaceActor)
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysOperationHasVisibleTask(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysEvidenceVersionsAreNonnegative(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysWakeRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysActiveWakePausesWebsiteWork(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPreferencesRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysDeviceRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysBrowserRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysAssistantRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysExecutionRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPaymentRules(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPaymentRegistryIsCanonical(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPaymentAssociation(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPausedPaymentCannotSubmit(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysOneTask(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPausedTogether(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysRecordingHasPermission(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPaymentUsesCanonicalIdentity(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysCurrentBeforeAction(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> alwaysPaymentReviewUsesCurrentContext(chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> stepInterruptionsKeepTask(w, "chooseSettingsPage", chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> stepWakeNeverDispatchesWebsite(w, "chooseSettingsPage", chooseSettingsPage(w, page, by_), []))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> stepEffectsRequireCurrentContext(w, chooseSettingsPage(w, page, by_), []))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> stepDepartureKeepsPaymentAttempt(w, "chooseSettingsPage", chooseSettingsPage(w, page, by_)))
-  ensures (inv(w) ==> canChooseSettingsPage(w, page, by_) ==> stepPaymentSwitchRetainsRecords(w, "chooseSettingsPage", chooseSettingsPage(w, page, by_)))
-{
-  if inv(w) && canChooseSettingsPage(w, page, by_) {
-    ComponentInvariants(w);
-    app__shell_chooseSettingsPage_ensures(w.device, page);
-    InterruptedInvariant(app__shell_chooseSettingsPage(w.device, page), w.browser, w);
-  }
-}
-
-lemma togglePopover_ensures(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOperationHasVisibleTask(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysEvidenceVersionsAreNonnegative(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysWakeRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysActiveWakePausesWebsiteWork(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPreferencesRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysDeviceRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysBrowserRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysAssistantRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysExecutionRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPaymentRules(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPaymentRegistryIsCanonical(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPaymentAssociation(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedPaymentCannotSubmit(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOneTask(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedTogether(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysRecordingHasPermission(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPaymentUsesCanonicalIdentity(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCurrentBeforeAction(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPaymentReviewUsesCurrentContext(togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), []))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), []))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepDepartureKeepsPaymentAttempt(w, "togglePopover", togglePopover(w, popover, by_)))
-  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepPaymentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_)))
-{
-  if inv(w) && canTogglePopover(w, popover, by_) {
-    ComponentInvariants(w);
-    app__shell_togglePopover_ensures(w.device, popover);
-    InterruptedInvariant(app__shell_togglePopover(w.device, popover), w.browser, w);
-  }
-}
-
-lemma dismissPopover_ensures(w: Workspace, by_: WorkspaceActor)
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysOperationHasVisibleTask(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysWakeRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysActiveWakePausesWebsiteWork(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPreferencesRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysDeviceRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysBrowserRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysAssistantRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysExecutionRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPaymentRules(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPaymentRegistryIsCanonical(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPaymentAssociation(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPausedPaymentCannotSubmit(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysOneTask(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPausedTogether(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysRecordingHasPermission(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysCurrentBeforeAction(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> stepInterruptionsKeepTask(w, "dismissPopover", dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "dismissPopover", dismissPopover(w, by_), []))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> stepEffectsRequireCurrentContext(w, dismissPopover(w, by_), []))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> stepDepartureKeepsPaymentAttempt(w, "dismissPopover", dismissPopover(w, by_)))
-  ensures (inv(w) ==> canDismissPopover(w, by_) ==> stepPaymentSwitchRetainsRecords(w, "dismissPopover", dismissPopover(w, by_)))
-{
-  if inv(w) && canDismissPopover(w, by_) {
-    ComponentInvariants(w);
-    app__shell_dismissPopover_ensures(w.device);
-    InterruptedInvariant(app__shell_dismissPopover(w.device), w.browser, w);
-  }
-}
-
-lemma setAvailability_ensures(w: Workspace, availability: Availability, by_: WorkspaceActor)
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysOperationHasVisibleTask(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysEvidenceVersionsAreNonnegative(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysWakeRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysActiveWakePausesWebsiteWork(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPreferencesRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysDeviceRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysBrowserRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysAssistantRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysExecutionRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPaymentRules(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPaymentRegistryIsCanonical(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPaymentAssociation(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPausedPaymentCannotSubmit(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysOneTask(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPausedTogether(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysRecordingHasPermission(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPaymentUsesCanonicalIdentity(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysCurrentBeforeAction(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> alwaysPaymentReviewUsesCurrentContext(setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> stepInterruptionsKeepTask(w, "setAvailability", setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> stepWakeNeverDispatchesWebsite(w, "setAvailability", setAvailability(w, availability, by_), []))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> stepEffectsRequireCurrentContext(w, setAvailability(w, availability, by_), []))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> stepDepartureKeepsPaymentAttempt(w, "setAvailability", setAvailability(w, availability, by_)))
-  ensures (inv(w) ==> canSetAvailability(w, availability, by_) ==> stepPaymentSwitchRetainsRecords(w, "setAvailability", setAvailability(w, availability, by_)))
-{
-  if inv(w) && canSetAvailability(w, availability, by_) {
-    ComponentInvariants(w);
-    var connected := app__shell_setConnectivity(w.device, availability.connection);
-    app__shell_setConnectivity_ensures(w.device, availability.connection);
-    var reasoning := app__shell_setReasoningAvailability(connected, availability.reasoning);
-    app__shell_setReasoningAvailability_ensures(connected, availability.reasoning);
-    var microphone := app__shell_setMicrophonePermission(reasoning, availability.microphone);
-    app__shell_setMicrophonePermission_ensures(reasoning, availability.microphone);
-    app__shell_setObservationPermission_ensures(microphone, availability.observation);
-    InterruptedInvariant(app__shell_setObservationPermission(microphone, availability.observation), w.browser, w);
-  }
-}
-
-lemma detectWake_ensures(w: Workspace, detection: app__wake_WakeDetection, by_: WorkspaceActor)
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysOperationHasVisibleTask(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysEvidenceVersionsAreNonnegative(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysWakeRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysActiveWakePausesWebsiteWork(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPreferencesRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysDeviceRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysBrowserRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysAssistantRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysExecutionRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPaymentRules(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPaymentRegistryIsCanonical(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPaymentAssociation(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPausedPaymentCannotSubmit(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysOneTask(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPausedTogether(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysRecordingHasPermission(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPaymentUsesCanonicalIdentity(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysCurrentBeforeAction(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> alwaysPaymentReviewUsesCurrentContext(detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> stepInterruptionsKeepTask(w, "detectWake", detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> stepWakeNeverDispatchesWebsite(w, "detectWake", detectWake(w, detection, by_).state, detectWake(w, detection, by_).out))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> stepEffectsRequireCurrentContext(w, detectWake(w, detection, by_).state, detectWake(w, detection, by_).out))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> stepDepartureKeepsPaymentAttempt(w, "detectWake", detectWake(w, detection, by_).state))
-  ensures (inv(w) ==> canDetectWake(w, detection, by_) ==> stepPaymentSwitchRetainsRecords(w, "detectWake", detectWake(w, detection, by_).state))
-{
-  if inv(w) && canDetectWake(w, detection, by_) {
+  if inv(w) && canBeginGuided(w, request, by_) {
     ComponentInvariants(w);
     QuietComponents(w);
-    var paused := quietAssistant(w.assistant);
-    var presentation := if app__assistant_isVisible(paused) then paused.presentation else if w.device.surface.Home? then app__assistant_Presentation.Expanded else app__assistant_Presentation.Compact;
-    var window := wakeWindow(paused, presentation);
-    assert !window.activity.DoingWork? && !window.activity.WebsiteWait?;
-    assert app__assistant_alwaysGraceWorksOnlyOnTheVisiblePage(window);
-    assert app__assistant_alwaysGuidanceIsNotAhead(window);
-    assert app__assistant_alwaysDoneMeansVerifiedCompletion(window);
-    assert app__assistant_alwaysConversationRules(window);
-    assert app__assistant_alwaysHiddenIsQuiet(window);
-    assert app__assistant_alwaysTaskContextExists(window);
-    assert app__assistant_alwaysOperationsBelongToWorkingTasks(window);
-    assert app__assistant_alwaysOnlyVerifiedEndpointsClaimCompletion(window);
-    assert app__assistant_alwaysConversationOffersAndInterruptions(window);
-    assert app__assistant_alwaysReplacementIsComplete(window);
-    assert app__assistant_inv(window);
-    if w.device.reasoningAvailable { app__assistant_talk_ensures(window, app__conversation_ConversationActor.ConversationUser); }
-    assert app__assistant_inv(listeningAfterWake(w));
+    app__assistant_beginTask_ensures(w.assistant, request.task, request.goal, app__conversation_ConversationActor.ConversationUser);
+    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
 }
 
-lemma observe_ensures(w: Workspace, currentObservation: CurrentObservation, by_: WorkspaceActor)
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysOperationHasVisibleTask(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysEvidenceVersionsAreNonnegative(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysWakeRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysActiveWakePausesWebsiteWork(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPreferencesRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysDeviceRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysBrowserRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysAssistantRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysExecutionRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPaymentRules(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPaymentRegistryIsCanonical(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPaymentAssociation(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPausedPaymentCannotSubmit(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysOneTask(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPausedTogether(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysRecordingHasPermission(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPaymentUsesCanonicalIdentity(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysCurrentBeforeAction(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> alwaysPaymentReviewUsesCurrentContext(observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> stepInterruptionsKeepTask(w, "observe", observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> stepWakeNeverDispatchesWebsite(w, "observe", observe(w, currentObservation, by_), []))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> stepEffectsRequireCurrentContext(w, observe(w, currentObservation, by_), []))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> stepDepartureKeepsPaymentAttempt(w, "observe", observe(w, currentObservation, by_)))
-  ensures (inv(w) ==> canObserve(w, currentObservation, by_) ==> stepPaymentSwitchRetainsRecords(w, "observe", observe(w, currentObservation, by_)))
+lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPausedPaymentCannotSubmit(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysOneTask(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPausedTogether(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysRecordingHasPermission(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysOperationHasVisibleTask(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysWakeRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPreferencesRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysDeviceRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysBrowserRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysAssistantRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysExecutionRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPaymentRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPaymentRegistryIsCanonical(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPaymentAssociation(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPaymentUsesCanonicalIdentity(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCurrentBeforeAction(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPaymentReviewUsesCurrentContext(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepInterruptionsKeepTask(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuided", confirmGuided(w, report, by_), []))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuided(w, report, by_), []))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepDepartureKeepsPaymentAttempt(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepPaymentSwitchRetainsRecords(w, "confirmGuided", confirmGuided(w, report, by_)))
 {
-  if inv(w) && canObserve(w, currentObservation, by_) {
+  if inv(w) && canConfirmGuided(w, report, by_) {
     ComponentInvariants(w);
-    if w.assistant.activity.Rechecking? {
-      app__assistant_reconcile_ensures(w.assistant, w.assistant.taskId, currentObservation.taskVersion, currentObservation.checkpoint, true, app__conversation_ConversationActor.ConversationRuntime);
+    var after := confirmGuided(w, report, by_);
+    assert |after.plan.receipts| == |w.plan.receipts| + 1;
+    if hasNext(after.plan) {
+      assert nextOutcome(after.plan) in w.plan.steps;
+      assert nextOutcome(after.plan).outcome != "";
+    } else {
+      app__assistant_finishTask_ensures(w.assistant, report.task, report.version, app__assistant_TaskOutcome.Completed, report.evidence, app__conversation_ConversationActor.ConversationRuntime);
     }
+  }
+}
+
+lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPausedPaymentCannotSubmit(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysOneTask(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPausedTogether(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysRecordingHasPermission(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysOperationHasVisibleTask(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysWakeRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysActiveWakePausesWebsiteWork(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPreferencesRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysDeviceRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysBrowserRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysAssistantRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysExecutionRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPaymentRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPaymentRegistryIsCanonical(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPaymentAssociation(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPaymentUsesCanonicalIdentity(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCurrentBeforeAction(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPaymentReviewUsesCurrentContext(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepInterruptionsKeepTask(w, "resume", resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "resume", resume(w, by_), []))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepEffectsRequireCurrentContext(w, resume(w, by_), []))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepDepartureKeepsPaymentAttempt(w, "resume", resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepPaymentSwitchRetainsRecords(w, "resume", resume(w, by_)))
+{
+  if inv(w) && canResume(w, by_) {
+    ComponentInvariants(w);
+    app__assistant_resume_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
+    if !hasNext(w.plan) {
+      app__execution_resume_ensures(w.execution, app__execution_ExecutionActor.User);
+      if app__payment_canResume(w.payment, app__payment_PaymentActor.Person) {
+        app__payment_resume_ensures(w.payment, app__payment_PaymentActor.Person);
+      }
+    }
+    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
 }

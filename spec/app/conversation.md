@@ -31,6 +31,7 @@ type Turn = Ready | Listening | Thinking | Speaking | Paused
 type AudioOwner = HumanAudio | GraceAudio | WebsiteAudio
 type MessageAuthor = HumanMessage | GraceMessage
 type Message = { author: MessageAuthor, text: str }
+pure val emptyHumanMessage: Message = { author: HumanMessage, text: "" }
 type Interruption = { message: int, spoken: int }
 type Conversation = {
   voice: bool, turn: Turn, generation: int, unusable: int,
@@ -44,7 +45,6 @@ pure val initial: Conversation = {
   question: false, answers: List(), interrupted: List(),
   atBottom: true, unread: false, readingPosition: 0
 }
-pure val noMessage: Message = { author: HumanMessage, text: "" }
 pure def appended(author: MessageAuthor, text: str, c: Conversation): Conversation =
   { ...c, messages: c.messages.append({ author: author, text: text }), unread: not(c.atBottom),
     readingPosition: if (c.atBottom) c.messages.length() + 1 else c.readingPosition }
@@ -236,7 +236,7 @@ reasoning context learns which part the person did not hear.
 pure def canBargeIn(c: Conversation, token: int, spoken: int, owner: AudioOwner, by: ConversationActor): bool =
   by == ConversationRuntime and c.voice and c.turn == Speaking and token == c.generation and
   owner == HumanAudio and spoken >= 0 and c.messages.length() > 0 and
-  c.messages.nthOr(c.messages.length() - 1, noMessage).author == GraceMessage
+  c.messages.nthOr(c.messages.length() - 1, emptyHumanMessage).author == GraceMessage
 pure def bargeIn(c: Conversation, token: int, spoken: int, owner: AudioOwner, by: ConversationActor): Conversation =
   { ...c, turn: Listening, interrupted: c.interrupted.append({ message: c.messages.length() - 1, spoken: spoken }) }
 pure def alwaysInterruptionsMarkMessages(c: Conversation): bool =
@@ -365,7 +365,7 @@ pure def canPurgePrivate(c: Conversation, token: int, messageIndex: int, purgeDr
   (messageIndex == -1 or (messageIndex >= 0 and messageIndex < c.messages.length())) and
   (messageIndex >= 0 or purgeDraft)
 pure def purgePrivate(c: Conversation, token: int, messageIndex: int, purgeDraft: bool, by: ConversationActor): Conversation =
-  val selected = c.messages.nthOr(messageIndex, noMessage)
+  val selected = c.messages.nthOr(messageIndex, emptyHumanMessage)
   { ...c, voice: false, turn: Ready, generation: c.generation + 1, question: false, answers: List(),
     messages: c.messages.listMap(m => if (selected.text != "" and m.text == selected.text)
       { author: m.author, text: privateNotice } else m),
@@ -375,7 +375,7 @@ pure def stepPrivateRemovalCancelsOutput(before: Conversation, via: str, after: 
   via == "purgePrivate" implies not(after.voice) and after.turn == Ready and
     not(after.question) and after.generation > before.generation and after.messages.length() == before.messages.length()
 pure def lawPrivateRemovalClearsSelectedText(c: Conversation, token: int, messageIndex: int, purgeDraft: bool, by: ConversationActor): bool =
-  val selected = c.messages.nthOr(messageIndex, noMessage)
+  val selected = c.messages.nthOr(messageIndex, emptyHumanMessage)
   val after = purgePrivate(c, token, messageIndex, purgeDraft, by)
   canPurgePrivate(c, token, messageIndex, purgeDraft, by) implies
     (purgeDraft implies after.draft == "") and
@@ -405,19 +405,4 @@ pure def sometimesUnreadReply(c: Conversation): bool = c.unread
 pure def sometimesDraftSurvivesTalk(c: Conversation): bool = c.voice and c.draft != ""
 pure def sometimesAnswersOffered(c: Conversation): bool = c.answers.length() >= 2
 pure def sometimesTypedReplySpoken(c: Conversation): bool = not(c.voice) and c.turn == Speaking
-```
-
-### A conversation is valid when it meets every rule above
-
-`validConversation` gathers every `always` rule of this spec in one place,
-so that the [assistant](./assistant.md), which holds the conversation,
-requires the whole list and gains each new rule without keeping a copy of
-its own. Whoever adds an `always` rule here adds it to `validConversation`
-too.
-
-```quint
-pure def validConversation(c: Conversation): bool =
-  alwaysListeningHasAnActiveExchange(c) and alwaysAnswersBelongToTheQuestion(c) and
-  alwaysInterruptionsMarkMessages(c) and alwaysRecognitionRetriesAreBounded(c) and
-  alwaysReadingPositionExists(c) and alwaysGenerationsAreNonnegative(c) and alwaysMessagesHaveContent(c)
 ```

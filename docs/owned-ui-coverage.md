@@ -1,11 +1,20 @@
 # Owned UI operation inventory
 
+This is the inventory of the models-only phase (13 to 15 November 2026), and it
+is not kept in step: the specs that own these routes are where to read them.
+Where a row differs from the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults),
+the decisions win: the browser has no zoom control (decision 21), no wake
+detector is installed (decision 5), and Files has no Print. Email accounts,
+mailboxes across accounts, the calendars together and Grace's calendar
+question came after this inventory; their routes are in `accounts`,
+`mailboxes`, `calendars`, `proposal` and `agentActions`.
+
 `Workspace` owns the actual Shell, Browser, Assistant/Conversation, Preferences,
 Wake, Execution and payment states. A component must dispatch through that
 owning aggregate rather than instantiate a second child machine. The two
 stateless interaction libraries call child guards and transitions on those
-same stored values. This inventory concerns specified routes, not an implemented
-React/VibeLang interface or hardware acceptance.
+same stored values. This inventory concerns specified routes, not which of
+them the React/VibeLang interface already wires, nor hardware acceptance.
 
 Files, Email and Calendar retain their own canonical state. The stateless
 `Handoffs.trySharePhoto` operation updates Files and the chosen mailbox together;
@@ -29,10 +38,10 @@ its returned pair replaces those owners' values and is not another store.
 | Reconciliation, ordinary step, website waiting, verified endpoint | `observe`, `prepare`, `dispatch`, `verify`, `completeOrdinary`; payment waiting/completion use the payment routes |
 | Text size, brightness/night dimming, speech pace/output, system volume/mute, wake preference | `changePreferences`; validated setting values come from the existing Preferences helpers |
 | Undo, automatic save/retry, success/failure acknowledgement, voice/system sound sample | `undoPreferences`, `savePreferences`, `preferencesSaved`, `samplePreferences`; samples carry the current preference revision |
-| Enabled wake detection, silence notice, return to prior window, cancellation | `detectWake`, `wakeNoSpeech`, `wakeReturn`, `cancelWake` |
+| Enabled wake detection, silence notice, return to prior window, cancellation | `detectWake`, `wakeNoSpeech`, `wakeReturn`, `cancelWake`; no detector is installed in the MVP (acceptance list, decision 5), so only touch wakes the tablet |
 | Share the current readable Files photo into a chosen mailbox | `Handoffs.trySharePhoto`; preflight the current file and mailbox before clearing preview, then create an unsent draft with that exact photo |
 | Close Calendar or Email | Calendar `closeCalendar`, or Email `preserveDraft` / explicit `discardDraft`, precedes workspace `visit(Home)`; pending operations remain owned and recoverable |
-| Close Files | Files `closeFiles` precedes workspace `visit(Home)`; previews and reads close, while the catalog, chosen tab and dispatched storage/print operations remain owned |
+| Close Files | Files `closeFiles` precedes workspace `visit(Home)`; previews and reads close, while the catalog, chosen tab and dispatched storage operations remain owned |
 | Close Settings | Workspace `visit(Home)` follows the prototype's app-header Close; `returnToApplication` is the separate return from native settings to the prior application, not this Close action |
 
 Address-keyboard changes, text-size changes and native/browser geometry use the

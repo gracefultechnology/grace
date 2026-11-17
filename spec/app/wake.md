@@ -99,6 +99,8 @@ pure def sometimesSilenceNotice(w: Wake): bool = w.phase == SilenceNotice
 pure def sometimesWakeFinished(w: Wake): bool = w.phase == Dormant and w.generation > 1
 ```
 
+### Examples cover enabled, disabled, playback and expired callbacks
+
 ```quint
 pure val availableContext: WakeContext = { enabled: true, permitted: true, available: true, ready: true, source: HumanWake }
 pure val contextValues = Set(availableContext, { ...availableContext, enabled: false },
@@ -112,16 +114,4 @@ pure val timerValues = Set({ generation: 1, conversationVersion: 1, now: 8000 },
   { generation: 1, conversationVersion: 1, now: 16000 },
   { generation: 1, conversationVersion: 2, now: 16000 },
   { generation: 0, conversationVersion: 1, now: 16000 })
-```
-
-### A wake detector is valid when it meets every rule above
-
-`validWake` gathers every `always` rule of this spec in one place, so that
-the [workspace](./workspace.md), which holds the wake detector, requires the
-whole list and gains each new rule without keeping a copy of its own.
-Whoever adds an `always` rule here adds it to `validWake` too.
-
-```quint
-pure def validWake(w: Wake): bool =
-  alwaysWakeCounters(w) and alwaysActiveWakeHasDeadline(w)
 ```

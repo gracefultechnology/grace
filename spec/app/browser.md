@@ -50,7 +50,7 @@ pure val initial: Browser = {
 }
 pure def hasTab(b: Browser, id: int): bool = b.tabs.some(t => t.id == id)
 pure def activeTab(b: Browser): Tab = tabById(b, b.selected)
-pure def tabUrl(candidate: Tab): str = candidate.history.nthOr(candidate.cursor, "")
+pure def tabUrl(t: Tab): str = t.history.nthOr(t.cursor, "")
 pure def alwaysTabsAreWellFormed(b: Browser): bool =
   b.tabs.length() > 0 and b.tabs.every(t =>
     t.id > 0 and t.id < b.nextId and t.recency >= 0 and t.recency <= b.serial
@@ -133,8 +133,8 @@ recently used others, breaking equal recency by newer ID. Both visible and
 overflow lists preserve opening order. A width change never closes a tab.
 
 ```quint
-pure def moreRecent(newer: Tab, candidate: Tab): bool =
-  newer.recency > candidate.recency or (newer.recency == candidate.recency and newer.id > candidate.id)
+pure def moreRecent(a: Tab, candidate: Tab): bool =
+  a.recency > candidate.recency or (a.recency == candidate.recency and a.id > candidate.id)
 pure def tabVisible(b: Browser, candidate: Tab): bool =
   candidate.id == b.selected or
     b.tabs.select(t => t.id != b.selected and moreRecent(t, candidate)).length() < b.capacity - 1
@@ -149,7 +149,8 @@ pure def lawSelectedTabIsVisible(b: Browser, candidate: Tab): bool =
   candidate.id == b.selected implies tabVisible(b, candidate)
 pure def sometimesOverflowIsNeeded(b: Browser): bool = b.tabs.length() > b.capacity
 pure val candidateValues = Set(blankTab(1, 0), blankTab(2, 1))
-pure val newerValues = candidateValues
+pure val tValues = candidateValues
+pure val aValues = candidateValues
 pure val capacityValues = Set(-1, 0, 1, 2, 3)
 ```
 
@@ -174,11 +175,11 @@ pure def canExplainEmptyAddress(b: Browser): bool = b.addressDraft == ""
 pure def explainEmptyAddress(b: Browser): Browser = { ...b, emptyAddressNotice: true }
 pure def canDismissAddress(b: Browser): bool = alwaysBrowserCountersAreValid(b)
 pure def dismissAddress(b: Browser): Browser = { ...b, editingAddress: false }
-pure def navigated(candidate: Tab, url: str, loadVersion: int): Tab = {
-  ...candidate,
-  history: candidate.history.foldl(List(), (kept, visit) =>
-    if (kept.length() <= candidate.cursor) kept.append(visit) else kept).append(url),
-  cursor: candidate.cursor + 1, scroll: 0, pagePanel: "", load: Loading, loadVersion: loadVersion, secure: false
+pure def navigated(t: Tab, url: str, loadVersion: int): Tab = {
+  ...t,
+  history: t.history.foldl(List(), (kept, visit) =>
+    if (kept.length() <= t.cursor) kept.append(visit) else kept).append(url),
+  cursor: t.cursor + 1, scroll: 0, pagePanel: "", load: Loading, loadVersion: loadVersion, secure: false
 }
 pure def canNavigate(b: Browser, url: str): bool = url != ""
 pure def navigate(b: Browser, url: str): Browser =
@@ -412,18 +413,4 @@ pure def alwaysRecentDestinationsAreDistinct(b: Browser): bool =
   b.recent.every(url => url != "" and b.recent.select(visit => visit == url).length() == 1)
 pure def stepRevisionNeverMovesBack(before: Browser, after: Browser): bool = after.revision >= before.revision
 pure def sometimesRecentWebsiteExists(b: Browser): bool = b.recent.length() > 0
-```
-
-### A browser is valid when it meets every rule above
-
-`validBrowser` gathers every `always` rule of this spec in one place, so
-that the [workspace](./workspace.md), which holds the browser, requires the
-whole list and gains each new rule without keeping a copy of its own.
-Whoever adds an `always` rule here adds it to `validBrowser` too.
-
-```quint
-pure def validBrowser(b: Browser): bool =
-  alwaysTabsAreWellFormed(b) and alwaysTabIdentifiersAreUnique(b) and alwaysSelectedTabExists(b) and
-  alwaysBrowserCountersAreValid(b) and alwaysOnlyALoadedPageIsSecure(b) and
-  alwaysRecentDestinationsAreDistinct(b)
 ```

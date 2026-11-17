@@ -58,31 +58,31 @@ import workspace as WS from "./workspace"
 import websiteRequests as WR from "./websiteRequests"
 type BackAction = CancelClearData | DismissWebsiteRequest | DismissPopover | DismissAddress | DismissKeyboard
   | CollapseGrace | PageBack | GoHome | ShowMainCards | Unconsumed
-pure def addressKeyboardOpen(shell: S::Shell, browser: B::Browser): bool =
-  shell.surface == S::Browser and BC::canControl(browser, BC::DismissAddress, BC::BrowserControlUser)
-pure def restingAtHome(shell: S::Shell, assistant: A::Assistant, requests: WR::WebsiteRequests): bool =
-  shell.surface == S::Home and shell.homePage == S::MainCards and shell.railPopover == S::NoPopover and
-  assistant.keyboard == A::NoKeyboard and assistant.presentation != A::Expanded and
-  requests.clearing != WR::ConfirmingClear and not(WR::presented(requests).id > 0)
-pure def backAction(shell: S::Shell, assistant: A::Assistant, browser: B::Browser, requests: WR::WebsiteRequests): BackAction =
-  if (shell.readiness != S::Ready) Unconsumed
-  else if (requests.clearing == WR::ConfirmingClear) CancelClearData
-  else if (WR::presented(requests).id > 0) DismissWebsiteRequest
-  else if (shell.railPopover != S::NoPopover) DismissPopover
-  else if (addressKeyboardOpen(shell, browser)) DismissAddress
-  else if (assistant.keyboard != A::NoKeyboard) DismissKeyboard
-  else if (assistant.presentation == A::Expanded) CollapseGrace
-  else if (shell.surface == S::Browser and B::canGoBack(browser)) PageBack
-  else if (shell.surface != S::Home) GoHome
-  else if (shell.homePage != S::MainCards) ShowMainCards
+pure def addressKeyboardOpen(s: S::Shell, b: B::Browser): bool =
+  s.surface == S::Browser and BC::canControl(b, BC::DismissAddress, BC::BrowserControlUser)
+pure def restingAtHome(s: S::Shell, a: A::Assistant, r: WR::WebsiteRequests): bool =
+  s.surface == S::Home and s.homePage == S::MainCards and s.railPopover == S::NoPopover and
+  a.keyboard == A::NoKeyboard and a.presentation != A::Expanded and
+  r.clearing != WR::ConfirmingClear and not(WR::presented(r).id > 0)
+pure def backAction(s: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): BackAction =
+  if (s.readiness != S::Ready) Unconsumed
+  else if (r.clearing == WR::ConfirmingClear) CancelClearData
+  else if (WR::presented(r).id > 0) DismissWebsiteRequest
+  else if (s.railPopover != S::NoPopover) DismissPopover
+  else if (addressKeyboardOpen(s, b)) DismissAddress
+  else if (a.keyboard != A::NoKeyboard) DismissKeyboard
+  else if (a.presentation == A::Expanded) CollapseGrace
+  else if (s.surface == S::Browser and B::canGoBack(b)) PageBack
+  else if (s.surface != S::Home) GoHome
+  else if (s.homePage != S::MainCards) ShowMainCards
   else Unconsumed
-pure def lawBackLeavesOnlyFromARestingHome(shell: S::Shell, assistant: A::Assistant, browser: B::Browser, requests: WR::WebsiteRequests): bool =
-  backAction(shell, assistant, browser, requests) == Unconsumed iff (shell.readiness != S::Ready or restingAtHome(shell, assistant, requests))
-pure def lawShellBackRestsAtHome(shell: S::Shell, assistant: A::Assistant, browser: B::Browser, requests: WR::WebsiteRequests): bool =
-  (backAction(shell, assistant, browser, requests) == GoHome implies backAction(S::openSurface(shell, S::Home), assistant, browser, requests) == Unconsumed) and
-  (backAction(shell, assistant, browser, requests) == ShowMainCards implies
-    backAction(S::chooseHomePage(shell, S::MainCards), assistant, browser, requests) == Unconsumed)
-pure val shellValues = Set(S::initial, S::finishStartup(S::initial, false), S::finishStartup(S::initial, true),
+pure def lawBackLeavesOnlyFromARestingHome(s: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): bool =
+  backAction(s, a, b, r) == Unconsumed iff (s.readiness != S::Ready or restingAtHome(s, a, r))
+pure def lawShellBackRestsAtHome(s: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): bool =
+  (backAction(s, a, b, r) == GoHome implies backAction(S::openSurface(s, S::Home), a, b, r) == Unconsumed) and
+  (backAction(s, a, b, r) == ShowMainCards implies
+    backAction(S::chooseHomePage(s, S::MainCards), a, b, r) == Unconsumed)
+pure val sValues = Set(S::initial, S::finishStartup(S::initial, false), S::finishStartup(S::initial, true),
   S::chooseHomePage(S::finishStartup(S::initial, true), S::FilesCard),
   S::togglePopover(S::chooseHomePage(S::finishStartup(S::initial, true), S::FilesCard), S::VolumePopover),
   S::togglePopover(S::finishStartup(S::initial, true), S::VolumePopover),
@@ -93,19 +93,19 @@ pure val shellValues = Set(S::initial, S::finishStartup(S::initial, false), S::f
   S::chooseSettingsPage(S::openSurface(S::finishStartup(S::initial, true), S::Browser), S::NetworkSettings),
   S::sleep(S::finishStartup(S::initial, true)),
   S::sleep(S::openSurface(S::finishStartup(S::initial, true), S::Browser)))
-pure val assistantValues = Set(A::initial, A::open(A::initial, C::ConversationUser),
+pure val aValues = Set(A::initial, A::open(A::initial, C::ConversationUser),
   A::resize(A::open(A::initial, C::ConversationUser), false, C::ConversationUser),
   A::chooseType(A::open(A::initial, C::ConversationUser), C::ConversationUser),
   A::focusWebsite(A::open(A::initial, C::ConversationUser), C::ConversationUser),
   A::focusWebsite(A::resize(A::open(A::initial, C::ConversationUser), false, C::ConversationUser), C::ConversationUser))
-pure val browserValues = Set(B::initial, B::navigate(B::initial, "page"),
+pure val bValues = Set(B::initial, B::navigate(B::initial, "page"),
   B::editAddress(B::initial, ""), B::editAddress(B::navigate(B::initial, "page"), "next"),
   B::goBack(B::navigate(B::initial, "page")), B::openTab(B::navigate(B::initial, "page")))
 pure def askedOnTab1(ask: WR::Ask): WR::WebsiteRequests =
   { ...WR::exampleShown, nextId: 2, requests: List({ id: 1, tab: 1, ask: ask }) }
 pure val purgingRequests: WR::WebsiteRequests = WR::answerClearBrowsingData(
   WR::requestClearBrowsingData(WR::exampleTwoAsk, WR::WebsitePerson), true, WR::WebsitePerson).state
-pure val requestsValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exampleAsking,
+pure val rValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exampleAsking,
   purgingRequests, WR::purgeFinished(purgingRequests, false, WR::WebsiteHost),
   askedOnTab1(WR::SitePermission({ origin: "https://clinic.example", kinds: WR::clinicCamera })),
   askedOnTab1(WR::WebsiteMessage({ dialog: WR::ConfirmMessage })),
@@ -143,21 +143,21 @@ by the person, through the guard of its event.
 ```quint
 pure val alertMessage: WR::Ask = WR::WebsiteMessage({ dialog: WR::AlertMessage })
 pure def declineChoice(ask: WR::Ask): WR::Choice = { accept: ask == alertMessage, text: "" }
-pure def workspaceOf(shell: S::Shell, assistant: A::Assistant, browser: B::Browser): WS::Workspace =
-  { ...WS::initial, device: shell, assistant: assistant, browser: browser }
-pure def lawBackActionIsAllowed(shell: S::Shell, assistant: A::Assistant, browser: B::Browser, requests: WR::WebsiteRequests): bool =
-  val w = workspaceOf(shell, assistant, browser)
-  val chosen = backAction(shell, assistant, browser, requests)
-  val shown = WR::presented(requests)
+pure def workspaceOf(s: S::Shell, a: A::Assistant, b: B::Browser): WS::Workspace =
+  { ...WS::initial, device: s, assistant: a, browser: b }
+pure def lawBackActionIsAllowed(s: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): bool =
+  val w = workspaceOf(s, a, b)
+  val chosen = backAction(s, a, b, r)
+  val shown = WR::presented(r)
   match chosen {
-    | CancelClearData => WR::canAnswerClearBrowsingData(requests, false, WR::WebsitePerson)
-    | DismissWebsiteRequest => WR::canAnswer(requests, shown.id, declineChoice(shown.ask), WR::WebsitePerson)
+    | CancelClearData => WR::canAnswerClearBrowsingData(r, false, WR::WebsitePerson)
+    | DismissWebsiteRequest => WR::canAnswer(r, shown.id, declineChoice(shown.ask), WR::WebsitePerson)
     | DismissPopover => WS::canDismissPopover(w, WS::Person)
     | DismissAddress => WS::canChangePage(w, BC::DismissAddress, WS::Person)
     | DismissKeyboard => WS::canInteract(w, I::DismissKeyboard, WS::Person)
     | CollapseGrace => WS::canInteract(w, I::Resize({ expanded: false }), WS::Person)
     | PageBack => WS::canChangePage(w, BC::Back, WS::Person)
-    | GoHome => shell.surface != S::Home and WS::canVisit(w, S::Home, WS::Person)
+    | GoHome => s.surface != S::Home and WS::canVisit(w, S::Home, WS::Person)
     | ShowMainCards => WS::canChooseHomePage(w, S::MainCards, WS::Person)
     | Unconsumed => true
   }
@@ -191,16 +191,16 @@ surviving keyboard, then expanded Grace; with Grace compact and no keyboard,
 the next Back leaves.
 
 ```quint
-pure def homeRequests(requests: WR::WebsiteRequests): WR::WebsiteRequests = {
-  val hidden = if (WR::canHideBrowser(requests, WR::WebsiteHost)) WR::hideBrowser(requests, WR::WebsiteHost).state else requests
+pure def homeRequests(r: WR::WebsiteRequests): WR::WebsiteRequests = {
+  val hidden = if (WR::canHideBrowser(r, WR::WebsiteHost)) WR::hideBrowser(r, WR::WebsiteHost).state else r
   if (WR::canSettingsClosed(hidden, WR::WebsiteHost)) WR::settingsClosed(hidden, WR::WebsiteHost) else hidden
 }
-pure def lawLauncherHomeLeavesOnlyGraceToStepBack(shell: S::Shell, assistant: A::Assistant, browser: B::Browser, requests: WR::WebsiteRequests): bool =
-  val w = workspaceOf(shell, assistant, browser)
+pure def lawLauncherHomeLeavesOnlyGraceToStepBack(s: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): bool =
+  val w = workspaceOf(s, a, b)
   val home = WS::visit(w, S::Home, WS::Person)
-  val afterHome = backAction(home.device, home.assistant, home.browser, homeRequests(requests))
+  val afterHome = backAction(home.device, home.assistant, home.browser, homeRequests(r))
   WS::canVisit(w, S::Home, WS::Person) implies
     (afterHome == DismissKeyboard or afterHome == CollapseGrace or afterHome == Unconsumed) and
     (afterHome == Unconsumed iff
-      (assistant.presentation != A::Expanded and (assistant.keyboard == A::NoKeyboard or shell.surface != S::Home)))
+      (a.presentation != A::Expanded and (a.keyboard == A::NoKeyboard or s.surface != S::Home)))
 ```
