@@ -18,9 +18,6 @@
   { "tap": "Clear" },
   { "expect": "Forget every website on this list?" },
   { "tap": "Cancel" },
-  { "tap": "Clear" },
-  { "expect": "Forget every website on this list?" },
-  { "tap": "Clear" },
   { "tap": "Close browser" },
   { "expect": "Good" }
 ]

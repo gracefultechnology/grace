@@ -81,8 +81,7 @@ type Page = { tab: Tab; held: Held; url: string; load: number | undefined; asked
 type Request = { page: PageId; key: RequestKey }
 
 data Signal {
-  Measured
-  Followed
+  Woken
   Heard { event: PageEvent }
   Person { event: WebsiteEvent }
   ClosedBrowser
@@ -241,7 +240,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   const signals = try Queue.unbounded<Signal>()
   const pages = new Map<PageId, Page>()
   const unmade = new Map<number, number>()
-  const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Measured()))
+  const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
   let presented: PageId | null | undefined = null
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
@@ -351,7 +350,8 @@ export const pageHost = Layer.effect(PageHost, effect {
     command catch effect (cause) => { try warn("follow", id, cause); try close(tab.id) }
   }
 
-  effect function syncTabs(w: Workspace) {
+  effect function syncTabs() {
+    const w = try workspace.get()
     const tabs = w.browser.tabs
     for (const { tab } of [...pages.values()]) if (!tabs.some((t) => t.id === tab.id)) try close(tab.id)
     const purging = (try requests.get()).clearing === "Purging"
@@ -366,7 +366,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function reconcile() {
     while (true) {
-      try syncTabs(try workspace.get())
+      try syncTabs()
       try resizeTabs(workspace, try workspace.get(), measurer.stripWidth)
       const w = try workspace.get()
       let l = try layer.get()
@@ -447,7 +447,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function apply(signal: Signal) {
     switch (signal._tag) {
-      case "Measured": case "Followed": return
+      case "Woken": return
       case "Heard": return try hear(signal.event)
       case "Person": {
         const result = try website(signal.event, "WebsitePerson")
@@ -474,7 +474,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   native.claim() catch effect (cause) => try warn("claim", undefined, cause)
   const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
-  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Followed()))
+  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
   try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
   try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
   try fork.scoped effect {
