@@ -31,7 +31,7 @@ ended on a connection the adapter reported secure; a fresh tab's is not.
 type Load = Blank | Loading | Loaded | LoadFailed | SecurityBlocked
 type Tab = {
   id: int, history: List[str], cursor: int, scroll: int,
-  pagePanel: str, load: Load, recency: int, loadVersion: int, zoomPercent: int, secure: bool
+  pagePanel: str, load: Load, recency: int, loadVersion: int, zoomPercent: int, secure: bool, manualSignIn: bool
 }
 type Browser = {
   tabs: List[Tab], selected: int, serial: int, nextId: int,
@@ -41,7 +41,7 @@ type Browser = {
 }
 pure def blankTab(id: int, recency: int): Tab = {
   id: id, history: List(""), cursor: 0, scroll: 0,
-  pagePanel: "", load: Blank, recency: recency, loadVersion: 0, zoomPercent: 100, secure: false
+  pagePanel: "", load: Blank, recency: recency, loadVersion: 0, zoomPercent: 100, secure: false, manualSignIn: false
 }
 pure val initial: Browser = {
   tabs: List(blankTab(1, 0)), selected: 1, serial: 0, nextId: 2,
@@ -120,6 +120,41 @@ pure def closeBrowser(b: Browser): Browser = {
   nextId: b.nextId + 1, serial: b.serial + 1
 }
 ```
+
+## Story: Sign in privately on a website
+
+> On a secure website, I can open a separate private sign-in tab and fill a
+> saved password through Android. I choose the login and press the site's
+> sign-in button myself.
+
+### A private sign-in tab keeps its purpose until it closes
+
+Private Sign-in opens from the selected HTTPS website’s origin. The
+person can paste a full HTTPS address directly into its private address bar;
+paths, query values and fragments stay out of the workspace, recent sites,
+conversation and diagnostics. Its native
+process and storage stay isolated for the tab's lifetime. Browser chrome
+gets origins and load outcomes. Grace cannot read or capture private page
+content, send website operations, or offer a password through conversation.
+A private visit never enters recent websites. Closing the tab discards its
+native session; no authenticated session is transferred to another tab.
+
+~~~quint
+pure def canOpenPrivateSignIn(b: Browser, url: str): bool =
+  alwaysBrowserCountersAreValid(b) and url != "" and not(activeTab(b).manualSignIn)
+pure def openPrivateSignIn(b: Browser, url: str): Browser = {
+  val tab = { ...blankTab(b.nextId, b.serial + 1), history: List(url),
+    load: Loading, loadVersion: b.revision + 1, manualSignIn: true }
+  {
+    ...addressClosed(b.tabs.append(tab), b),
+    selected: b.nextId, nextId: b.nextId + 1, serial: b.serial + 1
+  }
+}
+pure def sometimesPrivateSignInIsOpen(b: Browser): bool = activeTab(b).manualSignIn
+pure def lawPrivateVisitsStayOutOfRecent(b: Browser, id: int, loadVersion: int, result: Load): bool =
+  (canFinishLoad(b, id, loadVersion, result) and tabById(b, id).manualSignIn) implies
+    finishLoad(b, id, loadVersion, result).recent == b.recent
+~~~
 
 ## Story: Keep every tab reachable when the window changes
 
@@ -324,12 +359,14 @@ pure def finishLoad(b: Browser, id: int, loadVersion: int, result: Load): Browse
 pure def canFinishPageLoad(b: Browser, id: int, loadVersion: int, result: Load): bool =
   canFinishLoad(b, id, loadVersion, result)
 pure def finishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, secure: bool): Browser = {
-  val url = tabUrl(tabById(b, id))
+  val tab = tabById(b, id)
+  val url = tabUrl(tab)
+  val remember = result == Loaded and url != "" and not(tab.manualSignIn)
   {
     ...b, tabs: b.tabs.listMap(t => if (t.id == id) { ...t, load: result, secure: secure and result == Loaded } else t),
-    recent: if (result == Loaded and url != "")
+    recent: if (remember)
       List(url).concat(b.recent.select(visit => visit != url)) else b.recent,
-    clearRequested: if (result == Loaded and url != "") false else b.clearRequested,
+    clearRequested: if (remember) false else b.clearRequested,
     revision: if (id == b.selected) b.revision + 1 else b.revision
   }
 }

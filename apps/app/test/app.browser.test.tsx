@@ -4,12 +4,13 @@
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, expect, it, onTestFinished, vi } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
+import type { PasswordVault } from "../src/passwords.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import "../src/main.css";
 
@@ -716,4 +717,94 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     else sessionStorage.setItem("grace-hosted-read", oldIntent);
     window.history.replaceState(undefined, "", oldURL);
   }
+});
+
+it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+  let locked = true;
+  let edited = false;
+  let shown = false;
+  const vault: PasswordVault = {
+    status: () => Promise.resolve({
+      available: true, locked, unlockRemainingMs: locked ? 0 : 60_000, unlockSeconds: 60, biometric: false,
+      autofill: { supported: true, selected: "this-app" },
+    }),
+    lock: () => { locked = true; return Promise.resolve(); },
+    unlock: () => { locked = false; return Promise.resolve({ unlockRemainingMs: 60_000 }); },
+    list: () => Promise.resolve([{ id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] }]),
+    openEditor: (input) => {
+      expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
+      edited = true;
+      return Promise.resolve({ status: "saved", id: "first-login", revision: 5 });
+    },
+    remove: () => Promise.resolve(),
+    reveal: () => { shown = true; return Promise.resolve({ hidesAfterMs: 30_000 }); },
+    copy: () => Promise.resolve({ clearsAfterMs: 45_000 }),
+    openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
+  };
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, vault }));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  const unlock = page.getByRole("button", { name: "Unlock Passwords" });
+  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(unlock));
+  await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
+  expect(shown).toBe(false);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Show password" })));
+  await expect.poll(() => shown).toBe(true);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
+  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
+  await expect.poll(() => locked).toBe(true);
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
+  await expect.element(unlock).toBeEnabled();
+});
+
+it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
+  const native = fakePlugin();
+  const runtime = ManagedRuntime.make(application(native.plugin));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal{Enter}"));
+  await expect.poll(() => native.calls("createSurface").length).toBe(1);
+  await native.route();
+  await native.started("tab-1");
+  await native.report("tab-1", "https://utility.example/normal", 100);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
+    url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
+  });
+  expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
+  await native.route();
+  await native.report("tab-2", "https://utility.example", 100);
+  const address = page.getByRole("textbox", { name: "Private website address" });
+  await act(() => userEvent.clear(address));
+  await act(() => userEvent.type(address, "https://utility.example/enter/sample?ref=one-time{Enter}"));
+  await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
+    url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
+  });
+  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100);
+  const state = JSON.stringify(browserState());
+  expect(state).not.toContain("one-time");
+  expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
 });

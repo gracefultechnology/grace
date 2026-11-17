@@ -7,11 +7,12 @@ import { useRef } from "react";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
-import { useDraft, useKeyboardHeight, useRuntime, useWorkspace } from "./useApp.ts";
+import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, current } = useWorkspace();
+  const guide = usePasswordGuide();
   const runtime = useRuntime();
   const { assistant, device } = workspace!;
   const conversation = assistant.conversation;
@@ -52,7 +53,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
               const revision = current().assistant.conversation.draftRevision;
-              void send({ type: "interact", input: { tag: "SendDraft", revision } }).then((result) => {
+              void guide.request(revision).then(async (guided) => {
+                if (guided) { setDraft(""); return; }
+                const result = await send({ type: "interact", input: { tag: "SendDraft", revision } });
                 if (Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
               });
             }} />

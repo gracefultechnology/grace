@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { agentPlugin } from "./agentPlugin.ts";
 import { application } from "./app.vibe";
-import { devicePlugin, wifiPlugin } from "./surfacePlugin.ts";
+import { devicePlugin, wifiPlugin, passwordClient } from "./surfacePlugin.ts";
 import "./main.css";
 
-createRoot(document.getElementById("root")!).render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, { native: Capacitor.isNativePlatform(), agent: agentPlugin }))} /></StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, { native: Capacitor.isNativePlatform(), agent: agentPlugin, vault: passwordClient }))} /></StrictMode>);

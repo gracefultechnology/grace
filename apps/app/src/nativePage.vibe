@@ -1,3 +1,4 @@
+// spec/app/browser.md, "Story: Sign in privately on a website"
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"
 import type { Rect } from "../gen/app__surface.effect.vibe"
 import type { Load } from "../gen/app__browser.effect.vibe"
@@ -26,8 +27,9 @@ export type Corners = { topLeft: number; topRight: number; bottomRight: number; 
 export type Reply = { id: PageId; key: RequestKey; ask: Ask; answer: Answer; text: string }
 
 export service NativePage {
+  readonly privateSignIn: boolean
   claim(): void!PageFailed
-  create(id: PageId, url: string): void!PageFailed
+  create(id: PageId, url: string, manualSignIn: boolean): void!PageFailed
   place(id: PageId, page: Rect, corners: Corners): void!PageFailed
   route(id: PageId, rects: Rect[]): void!PageFailed
   present(id: PageId | null): void!PageFailed
@@ -124,8 +126,14 @@ function devicePage(plugin: SurfacePlugin) {
       (answer) => Effect.mapError(Schema.decodeUnknownEffect(schema)(answer), (cause) => new PageFailed({ cause })))
   const own = (id: PageId) => ({ ...identity, id })
   return Layer.succeed(NativePage, {
+    privateSignIn: true,
     claim: () => call((p) => p.reconcileOwner({ ...identity, desiredIds: [] })),
-    create: (id, url) => call((p) => p.createSurface({ ...own(id), url, process: "isolated", storage: "isolated", profileKey, layer: "below-host", answersRequests: true })),
+    create: (id, url, manualSignIn) => {
+      const options = { ...own(id), url, process: "isolated", storage: "isolated", layer: "below-host" } as const
+      return call((p) => manualSignIn
+        ? p.createSurface({ ...options, purpose: "manual-sign-in" })
+        : p.createSurface({ ...options, profileKey, answersRequests: true }))
+    },
     place: (id, page, corners) => call((p) => p.setBounds({ ...own(id), ...page, outerClip: { ...page, cornerRadii: corners } })),
     route: (id, rects) => call((p) => p.setOcclusionRects({ ...own(id), rects: rects.map((r) => ({ ...r, cornerRadius: 0 })) })),
     present: (id) => call((p) => p.presentSurface({ ...identity, id })),
