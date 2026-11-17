@@ -359,7 +359,7 @@ async function devTools(url: string, signal: AbortSignal) {
     async step(step: Exclude<Step, OnDevice>) {
       const signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000);
       if ("agent" in step) {
-        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && listening.then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
+        const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && Promise.resolve(listening).then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
         const status = Schema.decodeUnknownSync(Schema.Struct({ ...AgentStatus.fields, error: Schema.optional(Schema.String) }))(result.value);
         if (status.state !== step.agent.state || status.failure !== step.agent.failure)
