@@ -1,7 +1,7 @@
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
-import { PaymentStatusBadge, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
+import { bookingStatusLabels, PaymentStatusBadge, paymentStatusLabels, type PaymentStatusBadgeProps, type PaymentStatusLabels } from "./PaymentStatusBadge.tsx";
 
 export type OutcomeCheckLabels = {
   title: string;
@@ -9,6 +9,7 @@ export type OutcomeCheckLabels = {
   check: string;
   open: string;
   retrySave: string;
+  status: PaymentStatusLabels;
 };
 
 export const billCheckLabels: OutcomeCheckLabels = {
@@ -17,6 +18,7 @@ export const billCheckLabels: OutcomeCheckLabels = {
   check: "Check again",
   open: "Open {site}",
   retrySave: "Try saving again",
+  status: paymentStatusLabels,
 };
 
 export const bookingCheckLabels: OutcomeCheckLabels = {
@@ -25,6 +27,7 @@ export const bookingCheckLabels: OutcomeCheckLabels = {
   check: "Check again",
   open: "Open {site}",
   retrySave: "Try saving again",
+  status: bookingStatusLabels,
 };
 
 export type OutcomeCheckCardProps = Omit<PanelProps, "variant" | "children" | "title"> & {
@@ -43,7 +46,7 @@ export type OutcomeCheckCardProps = Omit<PanelProps, "variant" | "children" | "t
   /** A check is under way. */
   checking?: boolean;
   /** The result, once found: the card shows it in place of its actions. */
-  result?: PaymentStatusBadgeProps;
+  result?: Omit<PaymentStatusBadgeProps, "labels">;
   /** The task kind's words, such as `billCheckLabels`. */
   labels: OutcomeCheckLabels;
 };
@@ -51,7 +54,7 @@ export type OutcomeCheckCardProps = Omit<PanelProps, "variant" | "children" | "t
 /**
  * The calm card for a task whose result is not known, or not saved, on coming back to it: it asks Margaret not to pay
  * or book again, and offers only to look (Check again, Open the website) or to save what was seen (Try saving again).
- * @model spec/app/commitment.md
+ * @model spec/app/payment.md
  * @design packages/design-system/design.md#grace
  */
 export function OutcomeCheckCard({ site, title, message, onCheck, onOpenSite, onRetrySave, checking = false, result, labels, className, ...props }: OutcomeCheckCardProps) {
@@ -68,7 +71,7 @@ export function OutcomeCheckCard({ site, title, message, onCheck, onOpenSite, on
     >
       <p className="m-0 text-title-sm leading-8 font-bold text-chrome">{heading}</p>
       <p className="m-0 text-body-lg leading-[30px] font-normal text-foreground">{fill(message ?? labels.message)}</p>
-      {result && <PaymentStatusBadge className="self-start" {...result} />}
+      {result && <PaymentStatusBadge className="self-start" {...result} labels={labels.status} />}
       {actions && (
         <div className="mt-1 flex flex-wrap gap-3">
           {onRetrySave ? (

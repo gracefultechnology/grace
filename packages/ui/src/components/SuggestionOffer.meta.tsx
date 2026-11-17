@@ -34,7 +34,7 @@ export const meta: ComponentMeta<SuggestionOfferProps> = {
       detail: undefined,
       optionsLabel: "Times",
       options: [
-        { id: "fri", value: "Fri, Dec 4, 10:00 AM", detail: "You have lunch with Ruth then" },
+        { id: "fri", value: "Fri, Dec 4, 12:00 PM", detail: "You have lunch with Ruth then" },
         { id: "mon", value: "Mon, Dec 7, 2:00 PM", detail: "Your calendar is free" },
       ],
       answers: answers("Neither"),

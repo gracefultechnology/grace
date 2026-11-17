@@ -10,6 +10,18 @@ const chase: TaskFact[] = [
   { label: "Current balance", value: "$112.55" },
 ];
 
+const booking: Partial<TaskFactsCardProps> = {
+  who: "Main St Clinic",
+  account: undefined,
+  labels: bookingFactsLabels,
+  rows: [
+    { label: "Visit", value: "Follow-up with Dr. Patel" },
+    { label: "Times offered", value: "Fri, Dec 4, 12:00 PM · Mon, Dec 7, 2:00 PM" },
+    { label: "Your calendar", value: "Lunch with Ruth on Fri at 12:00 PM" },
+    { label: "Price" },
+  ],
+};
+
 const open = fn();
 const recheck = fn();
 
@@ -34,17 +46,8 @@ export const meta: ComponentMeta<TaskFactsCardProps> = {
       onOpen: undefined,
       onRecheck: recheck,
     },
-    Booking: {
-      who: "Main St Clinic",
-      account: undefined,
-      labels: bookingFactsLabels,
-      rows: [
-        { label: "Visit", value: "Follow-up with Dr. Patel" },
-        { label: "Times offered", value: "Fri, Dec 4, 10:00 AM · Mon, Dec 7, 2:00 PM" },
-        { label: "Your calendar", value: "Lunch with Ruth on Fri at 10:00 AM" },
-        { label: "Price" },
-      ],
-    },
+    Booking: booking,
+    Booked: { ...booking, existing: { status: "scheduled", date: "Dec 7", reference: "MS-2210" }, onOpen: undefined },
   },
   decorator: inGrace,
   play: {
@@ -58,6 +61,8 @@ export const meta: ComponentMeta<TaskFactsCardProps> = {
     },
     "Payment scheduled": ({ canvasElement }: { canvasElement: HTMLElement }) =>
       expect(within(canvasElement).getByRole("status").getAttribute("aria-label")).toBe("Payment: Scheduled for Nov 12, Confirmation 4F7K-22Q"),
+    Booked: ({ canvasElement }: { canvasElement: HTMLElement }) =>
+      expect(within(canvasElement).getByRole("status").getAttribute("aria-label")).toBe("Booking: Booked for Dec 7, Confirmation MS-2210"),
     Conflicting: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.getByRole("alert").textContent).toContain("Conflicting bill details");

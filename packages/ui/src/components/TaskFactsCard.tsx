@@ -4,7 +4,7 @@ import { FactRow, factLabel, factList, factValue } from "../lib/facts.tsx";
 import { Alert } from "./Alert.tsx";
 import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
-import { PaymentStatusBadge, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
+import { bookingStatusLabels, PaymentStatusBadge, paymentStatusLabels, type PaymentStatusBadgeProps, type PaymentStatusLabels } from "./PaymentStatusBadge.tsx";
 
 export type TaskFact = {
   label: string;
@@ -18,6 +18,7 @@ export type TaskFactsLabels = {
   unknown: string;
   open: string;
   recheck: string;
+  status: PaymentStatusLabels;
 };
 
 export const billFactsLabels: TaskFactsLabels = {
@@ -26,14 +27,16 @@ export const billFactsLabels: TaskFactsLabels = {
   unknown: "Not shown on the website",
   open: "Open bill",
   recheck: "Check website again",
+  status: paymentStatusLabels,
 };
 
 export const bookingFactsLabels: TaskFactsLabels = {
   outcome: "Booking",
   noOutcome: "Nothing booked yet",
   unknown: "Not shown on the website",
-  open: "Open booking",
+  open: "Open website",
   recheck: "Check website again",
+  status: bookingStatusLabels,
 };
 
 export type TaskFactsCardProps = Omit<PanelProps, "variant" | "children"> & {
@@ -44,7 +47,7 @@ export type TaskFactsCardProps = Omit<PanelProps, "variant" | "children"> & {
   /** The facts as last read from the website, in order. */
   rows: TaskFact[];
   /** A result the website already shows for this task; without one, the kind's `noOutcome`. */
-  existing?: PaymentStatusBadgeProps;
+  existing?: Omit<PaymentStatusBadgeProps, "labels">;
   /** Opens the task on its website: the one next step. */
   onOpen?: () => void;
   /** Reads the website again, to settle facts that disagree or are missing. */
@@ -58,7 +61,7 @@ export type TaskFactsCardProps = Omit<PanelProps, "variant" | "children"> & {
 /**
  * Grace's own read-out of a task's current facts as seen on its website: who and which account, then a row for each
  * fact, and whether a result already exists. It is Grace's summary, not the website restyled.
- * @model spec/app/prep.md
+ * @model spec/app/billpay.md
  * @design packages/design-system/design.md#windows
  */
 export function TaskFactsCard({ who, account, rows, existing, onOpen, onRecheck, conflict, labels, className, ...props }: TaskFactsCardProps) {
@@ -79,7 +82,7 @@ export function TaskFactsCard({ who, account, rows, existing, onOpen, onRecheck,
           <dt className={cn(factLabel, "font-medium text-muted-foreground")}>{labels.outcome}</dt>
           {existing ? (
             <dd className="col-span-2 m-0 -mt-1 min-w-0">
-              <PaymentStatusBadge {...existing} />
+              <PaymentStatusBadge {...existing} labels={labels.status} />
             </dd>
           ) : (
             <dd className={cn(factValue, "font-medium text-muted-foreground")}>{labels.noOutcome}</dd>

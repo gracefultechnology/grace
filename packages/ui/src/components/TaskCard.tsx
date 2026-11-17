@@ -80,7 +80,6 @@ export type TaskCardProps = Omit<ComponentProps<"article">, "title"> & {
 /**
  * One task Grace started: its status and date, its name and one line, then Resume or Ask Grace beside Stop this task.
  * Stop asks on the card before anything is stopped; a finished card can leave the list after one question.
- * @model spec/app/prep.md
  * @design packages/design-system/design.md#windows
  */
 export function TaskCard({

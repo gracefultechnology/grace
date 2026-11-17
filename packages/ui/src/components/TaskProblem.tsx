@@ -13,7 +13,6 @@ export type TaskProblemProps = Omit<AlertProps, "variant" | "children"> & {
 /**
  * Why a task Grace was doing has stopped, the question it leaves and the ways on (the wrong account, sign-in
  * unavailable, a payment or a booking the site does not allow), on the caution notice.
- * @model spec/app/prep.md
  * @design packages/design-system/design.md#windows
  */
 export function TaskProblem({ text, question, actions, ...props }: TaskProblemProps) {
