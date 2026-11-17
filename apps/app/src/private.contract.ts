@@ -66,6 +66,7 @@ const placements = {
   es: (cue: string) => `ok su ${cue} es # y vence pronto`,
   promo: (cue: string) => `ok use promo ${cue} # at checkout`,
   product: () => "ok the product key is #",
+  tenths: (cue: string) => `ok ${cue} #.2 minutes`,
 };
 
 const groupings = { "4-4-4-4": [4, 4, 4, 4], "4-6-5": [4, 6, 5], "8-8": [8, 8], "8-4-4": [8, 4, 4], "5-5-6": [5, 5, 6], "3-4-4-5": [3, 4, 4, 5] };
@@ -88,11 +89,11 @@ const outgoing = Arbitrary.schema(
     passwords: Schema.Array(Schema.String),
     after: Schema.String,
     body: Schema.Array(Schema.Int),
-    gaps: Schema.Array(Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    ", "\u00a0", "\n", "\u200b"])),
+    gaps: Schema.Array(Schema.Literals(["", " ", "-", "  ", ".", " - ", "/", "    ", "\u00a0", "\n", "\u200b", "x"])),
     named: Schema.Literals(["", "card ", "Visa ", " is my card"]),
     extra: Schema.Literals(["", " 12 27", " 12 2027 123", ",123", "/12/27", " 415 555 0123", " next"]),
     cue: Schema.Literals(["code", "PIN", "otp", "Passcode", "verification codes:"]),
-    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered", "copula", "es", "promo", "product"]),
+    placement: Schema.Literals(["before", "after", "colon", "below", "verb", "earlier", "bold", "list", "row", "spaced", "far", "next", "entered", "copula", "es", "promo", "product", "tenths"]),
     grouping: Schema.Literals(["4-4-4-4", "4-6-5", "8-8", "8-4-4", "5-5-6", "3-4-4-5"]),
     form: Schema.Literals(["six", "four", "seven", "ten", "lettered"]),
     code: Schema.Array(Schema.Int),
@@ -105,7 +106,7 @@ const outgoing = Arbitrary.schema(
     const shape = extra === " next" && named !== " is my card" && !printed(grouping) ? "4-4-4-4" : grouping;
     const isolated = named === "" && !printed(shape);
     const card = cardNumber(Array.from({ length: groupings[shape].reduce((sum, size) => sum + size, -1) }, (_, k) => (k === 0 ? 3 + digit(body[0] ?? 1) % 4 : digit(body[k] ?? k))), isolated ? gaps.slice(0, 1) : [...gaps], groupings[shape]);
-    const kept = form === "lettered" ? "before" : (form === "four" || form === "ten") && placement === "verb" ? "entered" : placement;
+    const kept = form === "lettered" || (form === "four" && placement === "tenths") ? "before" : (form === "four" || form === "ten") && placement === "verb" ? "entered" : placement;
     const secret = codes[form]([...code]).join(kept === "spaced" ? " " : "");
     const plain = plainKinds[kind]([...numbers], gap);
     const head = [`${plain}.`, "ok", before, ...passwords, ...passwords.map((word) => word.toUpperCase()), "ok", named === " is my card" ? "" : named].join(" ");

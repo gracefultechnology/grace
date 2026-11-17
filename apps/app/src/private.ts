@@ -40,7 +40,7 @@ function isCardGapAt(text: string, i: number): boolean {
   const c = charAt(text, i);
   return isSpaceAt(text, i) || c === 44 || c === 45 || c === 46 || c === 47 || c === 95 || c === 124
     || c === 8199 || c === 8201 || c === 8239 || c === 8208 || c === 8209 || c === 8211 || c === 8722
-    || c === 8203 || c === 8204 || c === 8205 || c === 8288 || c === 65279;
+    || c === 8203 || c === 8204 || c === 8205 || c === 8288 || c === 65279 || (c === 120 && isDigitAt(text, i - 1) && isDigitAt(text, i + 1));
 }
 
 function isCodeJoinAt(text: string, i: number): boolean {
@@ -125,7 +125,7 @@ function fourBefore(text: string, s: number, broken: boolean, steps: number): nu
   //@ decreases steps
   const gap = gapStart(text, s, 6);
   const start = runStart(text, gap, 20);
-  return steps > 0 && gap < s && breaksAt(text, gap, s, 6) === broken && gap - start === 4 && !isDigitAt(text, start - 1)
+  return steps > 0 && gap < s && charAt(text, s - 1) !== 120 && breaksAt(text, gap, s, 6) === broken && gap - start === 4 && !isDigitAt(text, start - 1)
     ? 1 + fourBefore(text, start, broken, steps - 1) : 0;
 }
 
@@ -133,7 +133,7 @@ function fourAfter(text: string, q: number, broken: boolean, steps: number): num
   //@ decreases steps
   const next = gapEnd(text, q, 6);
   const end = runEnd(text, next, 20);
-  return steps > 0 && next > q && breaksAt(text, q, next, 6) === broken && end - next === 4 && !isDigitAt(text, end)
+  return steps > 0 && next > q && charAt(text, q) !== 120 && breaksAt(text, q, next, 6) === broken && end - next === 4 && !isDigitAt(text, end)
     ? 1 + fourAfter(text, end, broken, steps - 1) : 0;
 }
 
@@ -360,13 +360,14 @@ function codeFrom(text: string, i: number, s: number): boolean {
   const pair = second - q - 1 === q - s && (q - s === 3 || q - s === 4);
   const e = pair ? second : q;
   const length = pair ? 2 * (q - s) : q - s;
-  if (i >= e || isDigitAt(text, e) || attachedAfter(text, e) || length < 3 || length > 12 || runsOn(text, s, e, pair ? q - s : length)) return false;
+  const tenths = length >= 6 && charAt(text, e) === 46 && isDigitAt(text, e + 1) && !isDigitAt(text, e + 2);
+  if (i >= e || isDigitAt(text, e) || (attachedAfter(text, e) && !tenths) || length < 3 || length > 12 || runsOn(text, s, e, pair ? q - s : length)) return false;
   const said = wordBefore(text, s);
   const tight = cueBefore(text, s - 1, 0, false, true, false, 40);
   const dialled = length === 10 || (length === 11 && digitValue(text, s) === 1);
   const next = wordAfter(text, e);
   if (fits(tight, length, dialled) || (tight === 4 && length === 3 && next === "" && !isDigitAt(text, e + 1) && (said === "is" || said === "was"))) return true;
-  if (charAt(text, s - 1) === 35 || dialledAt(text, s)) return false;
+  if (tenths || charAt(text, s - 1) === 35 || dialledAt(text, s)) return false;
   const alone = blankBack(text, s - 1, 24) && blankAhead(text, e, 24);
   const year = length === 4 && ((digitValue(text, s) === 1 && digitValue(text, s + 1) === 9) || (digitValue(text, s) === 2 && digitValue(text, s + 1) === 0));
   if (length >= 4 && alone && meets(cueBefore(text, s - 1, 120, true, true, true, 900), length)) return true;
