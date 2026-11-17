@@ -70,7 +70,7 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
 const calendar = (cloud: CloudLink | undefined) =>
-  cloud === undefined ? calendars : Layer.provideMerge(Layer.provide(calendarFeeds, Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced)), calendars)
+  cloud === undefined ? calendars(false) : Layer.provideMerge(Layer.provide(calendarFeeds, Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced)), calendars(true))
 
 const mail = (cloud: CloudLink | undefined) => cloud === undefined ? signIns : Layer.provide(Layer.mergeAll(reading, signIns, mailing), Layer.mergeAll(Layer.provide(connector(cloud), framedPage), untraced))
 

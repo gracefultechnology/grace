@@ -7,10 +7,10 @@ import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKe
 import { muteChoice, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
-import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
+import { canChangeLifecycle, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { mailAccounts } from "../gen/app__accounts.ts";
 import { Browser } from "./Browser.tsx";
-import { Calendar, calendarKeys, homeEvents, nextAppointment } from "./Calendar.tsx";
+import { Calendar, calendarKeys, homeCalendar, nextAppointment } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
@@ -134,7 +134,7 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), events: accounts ? homeEvents(accounts, calendars, now.getTime()) : [], ...visit("Calendar") }}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime()) : { events: [] }, ...visit("Calendar") }}
               email={{
                 messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: !accounts || mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
@@ -179,7 +179,7 @@ function Screen() {
         <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
           <SleepScreen time={`${clock.hour}:${clock.minute}`} date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
             next={accounts && nextAppointment(accounts, calendars, now.getTime())} hint="Touch the screen to wake it"
-            onClick={() => void send({ type: "changeLifecycle", lifecycle: "WakeDevice" }, "Host")} />
+            onClick={() => { if (canChangeLifecycle(workspace, "WakeDevice", "Host")) void send({ type: "changeLifecycle", lifecycle: "WakeDevice" }, "Host"); }} />
         )}</WithCalendars>
       )}
     </div>

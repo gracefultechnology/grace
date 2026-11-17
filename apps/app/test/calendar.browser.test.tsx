@@ -127,24 +127,14 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
 it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eyeDay, toEyeWeek, stop } = await start();
+  const titles = async () => (await company(secret)).map((e) => e.title);
   await toEyeWeek();
 
-  // spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle": a change is kept by Gmail's company.
-  await act(() => userEvent.click(row("Eye check with Dr\\. Patel")));
-  await click("Edit");
-  await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Eye check at Riverside"));
-  await click("Save");
-  await expect.element(page.getByRole("heading", { name: "Eye check at Riverside" })).toBeVisible();
-  await expect.poll(async () => (await company(secret)).map((e) => e.title)).toEqual(["Eye check at Riverside"]);
-  await click("Back to Calendar");
-
-  // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form": a new appointment is kept on the tablet.
+  // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form": a new appointment is kept on the tablet, and Save shows its day.
   await click("Add");
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Bridge club"));
   await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
   await click("Save");
-  await expect.element(page.getByText("Repeats every week")).toBeVisible();
-  await click("Back to Calendar");
   await expect.element(row("Bridge club", "On this tablet").first()).toBeVisible();
   await click("Next week");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "\\s*has plans") })).toBeVisible();
@@ -154,7 +144,6 @@ it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurr
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
-  await expect.element(row("Bridge club", "On this tablet").first()).toBeVisible();
   await click("Previous week");
   await act(() => userEvent.click(row("Bridge club").first()));
   await click("Delete");
@@ -163,14 +152,33 @@ it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurr
   await click("Next week");
   await click("Next week");
   await expect.element(row("Bridge club")).not.toBeInTheDocument();
-  expect((await company(secret)).map((e) => e.title)).toEqual(["Eye check at Riverside"]);
+  await click("Previous week");
+  await click("Previous week");
 
-  await click("Previous week");
-  await click("Previous week");
-  await act(() => userEvent.click(row("Eye check at Riverside")));
+  // spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle": Gmail's company keeps the change, and its appointment repeats here.
+  await act(() => userEvent.click(row("Eye check with Dr\\. Patel")));
+  await click("Edit");
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Eye check at Riverside"));
+  await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
+  await click("Save");
+  await expect.element(page.getByText("Repeats every week")).toBeVisible();
+  await expect.poll(titles).toEqual(["Eye check at Riverside"]);
+  await click("Back to Calendar");
+  await click("Next week");
+  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await click("Delete");
-  await click("Delete it");
+  await click("Delete only this one");
+  await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
+  expect(await titles()).toEqual(["Eye check at Riverside"]);
+  await click("Next week");
+  await expect.element(row("Eye check at Riverside", "Gmail").first()).toBeVisible();
+  await act(() => userEvent.click(row("Eye check at Riverside").first()));
+  await click("Delete");
+  await click("Delete every one");
   await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
-  await expect.poll(async () => (await company(secret)).map((e) => e.title)).toEqual([]);
+  await expect.poll(titles).toEqual([]);
+  await click("Previous week");
+  await click("Previous week");
+  await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
   await stop();
 });
