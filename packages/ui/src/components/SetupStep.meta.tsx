@@ -43,7 +43,7 @@ export const meta: ComponentMeta<SetupStepProps> = {
     "No internet": {
       progress: at("Your email", 2),
       line: "Connecting your email needs the internet.",
-      content: <AccountSignIn state="offline" />,
+      content: undefined,
       action: { label: "Connect to Wi-Fi", onAction: answered },
       notNow: notNowAccount,
     },
@@ -134,6 +134,7 @@ export const meta: ComponentMeta<SetupStepProps> = {
     },
     "No internet": async ({ canvasElement }: Play) => {
       answered.mockClear();
+      await expect(within(canvasElement).queryByRole("button", { name: "Continue with Google" })).toBeNull();
       await tap(canvasElement, "Connect to Wi-Fi");
       await expect(answered).toHaveBeenCalled();
     },
