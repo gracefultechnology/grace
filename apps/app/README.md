@@ -42,22 +42,26 @@ version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each relea
 ### On the emulator
 
 ```sh
+avdmanager create avd -n <avd> -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_tablet
+sed -i '' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' -e 's/^hw.ramSize=.*/hw.ramSize=4096/' \
+  ~/.android/avd/<avd>.avd/config.ini
 pnpm --filter @repo/app android --emulator <avd> --exercise home
 ```
 
-builds, then attaches to the named AVD or boots it without a window and with host graphics
-(`-gpu host`; its log in `artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs
-the launcher debug APK, makes Grace Home (`cmd package set-home-activity`), waits up to 10 minutes for
-the HOME intent to resolve to her (an image's first-boot set-up, such as `google_apis`'s
-`googlesdksetup`, holds Home at a higher priority until it has run), starts Home and fails unless
-Grace is what Home opens, her WebView shows the Home screen (the rail's Home is current) and `dumpsys
-window` shows no "Application Not Responding" window of Grace's, printing the `am_anr` events when it
-does. Another process's is not hers: a cold boot on a busy host leaves the image's own (SystemUI, the
-phone, Google Play services) not responding for minutes. It prints the emulator's WebView package and
-version. Every `adb` call has a time limit (the boot 15 minutes, the install 5) and is killed when the
-command exits, and an emulator that exits before it boots fails the command with its log. An emulator the command booted is stopped when the
-command fails or is interrupted, and left running when it succeeds, for the next `--install`; stop it
-with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the same on an emulator that
+makes a fresh tablet AVD (2560×1600 at 320 dpi, host graphics, 4 GB), then builds, attaches to the
+named AVD or boots it without a window and with host graphics (`-gpu host`; its log in
+`artifacts/emulator-<avd>.log`), waits for `sys.boot_completed`, installs the launcher debug APK,
+makes Grace Home (`cmd package set-home-activity`), waits up to 10 minutes for the HOME intent to
+resolve to her (an image's first-boot set-up, such as `google_apis`'s `googlesdksetup`, holds Home at
+a higher priority until it has run), starts Home and fails unless Grace is what Home opens, her
+WebView shows the Home screen (the rail's Home is current) and no `am_anr` event since the install
+names her, printing those events when one does. Other processes' are counted, not failed: on a busy
+host the image's own (the phone, Google Play services, the launcher, SystemUI) keep timing out for
+minutes after boot. It prints the emulator's WebView package and version. Every `adb` call has a
+time limit (the boot 15 minutes, the install 5) and is killed when the command exits, and an
+emulator that exits before it boots fails the command with its log. An emulator the command booted
+is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
+`--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the same on an emulator that
 is already running and never stops it; it refuses any serial that is not an emulator's, so a tablet on
 USB is never touched.
 

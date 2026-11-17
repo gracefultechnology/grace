@@ -255,6 +255,7 @@ const failing = (what: string) => (error: unknown) => { throw new Error(`${what}
 async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>) {
   const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
   await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
+  const installed = (await shell(serial, "date +%s")).trim();
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
@@ -289,9 +290,11 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
   } finally {
     await adb(["-s", serial, "forward", "--remove", `tcp:${port}`]).catch((error: unknown) => process.stderr.write(`${String(error)}\n`));
   }
-  if ((await shell(serial, "dumpsys window")).includes(`Application Not Responding: ${identity.appId}`))
-    throw new Error(`Grace is not responding on ${serial}:\n${await shell(serial, "logcat -d -b events -s am_anr")}`);
-  process.stdout.write(`${serial} Grace is Home and responding\n`);
+  const anrs = (await shell(serial, `logcat -d -b events -s am_anr -T ${installed}.000`).catch(failing("Reading the am_anr events")))
+    .split("\n").filter((line) => line.includes("am_anr"));
+  const graces = anrs.filter((line) => line.includes(`,${identity.appId},`));
+  if (graces.length) throw new Error(`Grace was not responding on ${serial}:\n${graces.join("\n")}`);
+  process.stdout.write(`${serial} Grace is Home and responding; other processes raised ${anrs.length} am_anr events since the install\n`);
 }
 
 if (import.meta.main) {
