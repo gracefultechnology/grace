@@ -161,8 +161,10 @@ size answers only once the preferences store acknowledges the choice, Talk
 when she has spoken once, Type when she has sent a typed line, and Close
 when she has closed Grace and brought her back with Ask Grace. In the Close
 step the Close button is her answer, not leaving. A tap anywhere else, or an
-answer meant for another step, is refused. Answering the last step reaches
-the hand-over and asks the store to keep that set-up has ended.
+answer meant for another step, is refused. Her name is the name step's
+answer; it is never empty, and she can give it again at any time after the
+host's first report. Answering the last step reaches the hand-over and asks
+the store to keep that set-up has ended.
 
 ```quint
 pure def answerable(st: SetupStep): bool =
@@ -191,7 +193,8 @@ an account to help; Email and Calendar stay empty. Set-up waits at the
 account step and goes on by itself once an account is connected. Not now on
 the name means Grace greets her without one; on pace or text size, the
 current setting stays; on a practice step, she can learn it later, and the
-control still works. The one sentence on what Grace does has only Next.
+control still works. Not now on the last practice step reaches the hand-over
+as answering it does. The one sentence on what Grace does has only Next.
 
 ```quint
 type SkipCost = NeedsInternet | GraceCannotHelp | GreetsWithoutName | KeepsCurrentSetting | LearnsLater | NotSkippable
