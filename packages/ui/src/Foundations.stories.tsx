@@ -82,7 +82,7 @@ export const Blurs = () => (
     {keys(tokens.blur).map(([name, value]) => (
       <div key={name} className="relative">
         <div className="absolute top-6 left-6 size-12 rounded-full bg-primary" />
-        <div className="relative h-24 rounded-row bg-glass/10 shadow-glass" style={{ backdropFilter: `blur(var(--blur-${name}, ${value}))` }} />
+        <div className="relative h-24 rounded-row bg-glass/10 shadow-elevation-glass" style={{ backdropFilter: `blur(var(--blur-${name}, ${value}))` }} />
         <Name name={name} value={value} />
       </div>
     ))}
