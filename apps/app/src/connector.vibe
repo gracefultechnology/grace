@@ -63,6 +63,7 @@ export type MailConnection = {
 export type CalendarConnection = {
   readonly feed: (view: CalendarView) => Stream.Stream<Published, ConnectorFailure>
   readonly write: (entry: Calendar, view: CalendarView) => StoreReceipt!NeedsSignIn
+  readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => boolean!ConnectorFailure
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
 }
 
@@ -74,7 +75,6 @@ export service Connector {
   readonly calendar: (account: AccountRef) => CalendarConnection
 }
 
-const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
 const routes: Record<Provider, Routes> = { Gmail: google, ...providers }
 const nothing: Use = { mail: false, calendar: false, contacts: false }
 const sentMail = "in:sent"
@@ -270,7 +270,8 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   effect function call(request: HttpClientRequest.HttpClientRequest!ConnectorFailure) {
     const sent = try request
-    const response = http.execute(HttpClientRequest.bearerToken(sent, link.key)) catch effect () => { throw new Unreachable() }
+    const response = Effect.provideService(http.execute(HttpClientRequest.bearerToken(sent, link.key)), HttpClient.TracerPropagationEnabled, false)
+      catch effect () => { throw new Unreachable() }
     if (response.status === 401 || (response.status === 409 && (try reconnects(sent, response)))) throw new NeedsSignIn()
     if (response.status >= 500) throw new Unreachable()
     if (response.status >= 400) throw new ProviderRefused({ status: response.status })
@@ -440,12 +441,24 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       return entry.hasSaved ? [] : adopted(zones, view, entry, saved)
     }
 
+    effect function readEvents(view: CalendarView, from: number, until: number) {
+      const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(from), timeMax: iso(until), grantId: try grantOf(account) }
+      return (try fetched(get(`${at}/feed`, params), Feed)).events
+    }
+
     return {
       feed: (view) => Stream.unwrap(effect {
-        const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(view.window.fromTime), timeMax: iso(view.window.untilTime), grantId: try grantOf(account) }
-        const { events } = try fetched(get(`${at}/feed`, params), Feed)
-        return Stream.fromIterable(published(zones, view, events))
+        const feed = try readEvents(view, view.window.fromTime, view.window.untilTime)
+        return Stream.fromIterable(published(zones, view, feed))
       }),
+      verifySaved: effect (view, occurrence, expected) => {
+        const feed = try readEvents(view, expected.startAt, expected.endAt)
+        const saved = feed.find((row) => row.externalId === occurrence)
+        if (saved === undefined) return false
+        const timezone = saved.timezone ?? view.timezone
+        const { startAt, endAt, verified } = schedule(zones, saved, timezone)
+        return verified && sameDetails(details(saved, startAt, endAt, timezone, expected), expected)
+      },
       write: effect (entry, view) => {
         const revision = entry.revision
         return Effect.map(stored(entry, view), (published): StoreReceipt => ({ revision, succeeded: true, published })) catch effect (e) => match (e) {
@@ -474,4 +487,4 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     mail,
     calendar
   }
-}).pipe(Layer.provide(client))
+}).pipe(Layer.provide(FetchHttpClient.layer))

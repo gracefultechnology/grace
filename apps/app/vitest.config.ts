@@ -1,12 +1,14 @@
 import tailwindcss from "@tailwindcss/vite";
 import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Schema } from "effect";
 import type { BrowserContext, CDPSession, Page } from "playwright";
 import { defineConfig } from "vitest/config";
 import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
+import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { fleetFixture } from "./test/fleet.fixture.ts";
 import { webArena } from "./test/webarena.ts";
 
@@ -24,9 +26,11 @@ const BenchmarkDefinition = Schema.Struct({
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
+if (process.env.GRACE_BILLWORLD_SHARD !== undefined && !process.env.GRACE_BILLWORLD_DIR)
+  throw new Error("GRACE_BILLWORLD_SHARD requires GRACE_BILLWORLD_DIR");
 const host: NodeJS.Process & { graceFleet?: ReturnType<typeof fleetFixture> } = process;
 const fleet = process.env.GRACE_BILLWORLD_DIR
-  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld"))
+  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld", process.env.GRACE_BILLWORLD_SHARD))
   : undefined;
 const definitions: unknown = process.env.GRACE_BROWSER_BENCHMARK_FILE
   ? JSON.parse(readFileSync(process.env.GRACE_BROWSER_BENCHMARK_FILE, "utf8"))
@@ -126,7 +130,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
       const response = await fetch(new URL("/api/v1/decisions", origin), {
         method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(10000),
+        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(20000),
       }).catch(() => new Response('{"status":"unavailable","reason":"provider_error"}', { status: 503 }));
       const body = await response.text();
       const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
@@ -185,6 +189,12 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     return { url: website.url() };
   }
   if (!existing) throw new Error("The Chromium benchmark site is not open");
+  return observeSite(existing, action);
+}
+
+type SiteObservation = Extract<SiteAction, { kind: "read" | "tapGuide" | "control" }>;
+
+async function observeSite(existing: Site, action: SiteObservation) {
   const { page, origin, session } = existing;
   const { frameTree } = await session.send("Page.getFrameTree");
   const { id, loaderId, url } = frameTree.frame;
@@ -238,6 +248,70 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   return { documentId: loaderId, frameScope: "main", result: snapshotId && !result.error ? { ...result, snapshotId } : result };
 }
 
+type StatementAction =
+  | { kind: "prepare" }
+  | { kind: "observe"; request: Command }
+  | { kind: "answer"; text: string }
+  | { kind: "close" };
+
+type ReleasedEpisode = Awaited<ReturnType<Awaited<ReturnType<typeof releasedBillworld>>["start"]>>;
+const statementRuns = new WeakMap<Page, { episode: ReleasedEpisode; site: Site; directory: string }>();
+const releasedDirectory = process.env.GRACE_BILLWORLD_RELEASED_DIR;
+
+async function releasedStatement(context: BrowserCommandContext, action: StatementAction) {
+  const existing = statementRuns.get(context.page);
+  if (action.kind === "prepare") {
+    if (!releasedDirectory || existing) throw new Error("The released BillWorld test needs one pinned episode");
+    const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
+    mkdirSync(results, { recursive: true });
+    const directory = mkdtempSync(join(results, "released-statement-"));
+    const released = await releasedBillworld(releasedDirectory);
+    const negative = await released.start("grader_validation");
+    try {
+      const grade = await negative.finish("", join(directory, "no-action.json"));
+      const checks = grade.checks;
+      if (grade.success || grade.actionsUsed !== 0 ||
+          checks.statement_viewed_after_login !== false || checks.due_date_reported !== false || checks.amount_reported !== false)
+        throw new Error("The no-action control did not independently reject the statement and its answer");
+    } finally { await negative.close(); }
+    const episode = await released.start("reference_script");
+    const browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
+    if (!browser) {
+      await episode.close();
+      throw new Error("The released trial needs an isolated Chromium context");
+    }
+    try {
+      const question = episode.task.prompt.match(/Report [^.]+\. Make no changes\.$/u)?.[0];
+      if (!question) throw new Error("The pinned task no longer supplies its released read-only question");
+      const page = await browser.newPage();
+      await episode.prepareStatement(page);
+      const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await browser.newCDPSession(page) };
+      statementRuns.set(context.page, { episode, site, directory });
+      await context.page.bringToFront();
+      return { taskId: episode.taskId, url: page.url(), question };
+    } catch (error) {
+      await browser.close();
+      await episode.close();
+      throw error;
+    }
+  }
+  if (!existing) throw new Error("No released statement is attached to this test");
+  if (action.kind === "close") {
+    statementRuns.delete(context.page);
+    try { await existing.site.browser.close(); }
+    finally { await existing.episode.close(); }
+    return {};
+  }
+  if (action.kind === "answer") {
+    await existing.episode.action("grace.submit_visible_answer");
+    const grade = await existing.episode.finish(action.text, join(existing.directory, "grace-answer.json"));
+    return grade;
+  }
+  if (action.request.command.subaction !== "snapshot") throw new Error("The statement trial only permits native observation");
+  await existing.episode.action("grace.observe_statement");
+  return observeSite(existing.site, { kind: "control", request: action.request });
+}
+
 async function googleConsent(context: BrowserCommandContext, endpoint: string, address: string) {
   const expected = new URL(endpoint);
   if (expected.hostname !== "127.0.0.1" || expected.pathname !== "/o/oauth2/v2/auth" || !address.endsWith("@grace.test"))
@@ -266,11 +340,13 @@ declare module "vitest/browser" {
   interface BrowserCommands {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
+    releasedStatement: (action: StatementAction) => Promise<Record<string, unknown>>;
   }
 }
 declare module "vitest" {
   interface ProvidedContext {
     browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl"> & { gradeWholeCohort: boolean })[];
+    releasedBillworldEnabled: boolean;
   }
 }
 
@@ -278,9 +354,9 @@ export default defineConfig(async (env) => {
   const config = await base(env);
   const projects = config.test?.projects?.map((entry) =>
     typeof entry === "object" && "test" in entry && entry.test?.browser
-      ? { ...entry, test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent } } } }
+      ? { ...entry, test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } } }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl }) => ({ taskId, intent, startUrl, gradeWholeCohort: Boolean(fleet) }));
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
-  return { ...config, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks }, globalSetup: ["test/setup.vibe"] } };
+  return { ...config, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, releasedBillworldEnabled: releasedDirectory !== undefined }, globalSetup: ["test/setup.vibe"] } };
 });
