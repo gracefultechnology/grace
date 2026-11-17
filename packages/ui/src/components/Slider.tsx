@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { Minus, Plus } from "lucide-react";
 import { cn } from "../lib/cn.ts";
@@ -31,6 +31,7 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
 export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max = 100, step = 10, label, decreaseLabel = "Less", increaseLabel = "More", disabled, className, ...props }: SliderProps) {
   const [own, setOwn] = useState(defaultValue);
   const [dragged, setDragged] = useState<number>();
+  const pressedRef = useRef(false);
   const current = value ?? own;
   const set = (next: number) => {
     setDragged(undefined);
@@ -47,9 +48,13 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
       </Button>
       <SliderPrimitive.Root
         value={[dragged ?? current]}
-        onValueChange={([next]) => setDragged(next)}
+        onPointerDown={() => (pressedRef.current = true)}
+        onValueChange={([next]) => pressedRef.current && setDragged(next)}
         onValueCommit={([next]) => set(next)}
-        onLostPointerCapture={() => setDragged(undefined)}
+        onLostPointerCapture={() => {
+          pressedRef.current = false;
+          setDragged(undefined);
+        }}
         min={min}
         max={max}
         step={1}
