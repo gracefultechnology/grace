@@ -3,27 +3,29 @@
 A new tablet walks its owner through a short set-up before Home. The steps,
 in order: Wi-Fi, connecting an email account (with Not now), her preferred
 name, speaking pace and text size with a live preview, a short explanation
-of what Grace does, trying Talk, trying Type, closing Grace and bringing her
-back, then Grace's own question, "What would you like to do?". English, one voice,
-no language picker and no wake word.
+of what Grace does, trying Talk, trying Type, closing Grace, bringing her
+back with Ask Grace, then Grace's own question, "What would you like to
+do?". English, one voice, no language picker and no wake word.
 
 This follows PRD ONB-01 to ONB-03 (`prototype/prd.md:923–927`). The owner
 changed three things since: Wi-Fi comes first on the launcher tablet,
 because thinking and speech run in the cloud; the account step comes before
-anything spoken, because the cloud account behind speech and reasoning rides
-on it, so Not now there leaves Grace unable to answer; and the closing
-question hands over to the ordinary conversation, where her answer starts a
-task, instead of being a step of set-up.
+anything spoken, because the one Google sign-in that connects her inbox also
+signs in the cloud account behind speech and reasoning, so Not now there
+leaves Grace unable to answer; and the closing question hands over to the
+ordinary conversation, where her answer starts a task, instead of being a
+step of set-up.
 
-Set-up is its own record, not a conversation. Until the account is
-connected nothing can think or speak, so every step is fixed written text
-answered by a tap or by typing, and no step needs Grace to reason. Speech is
-used only where cloud speech reports it is available: Grace reads the lines
-aloud, and the Talk step can be tried. The record survives a restart, unlike
-the conversation. Which accounts exist, and how one is connected, is the
-accounts model's; set-up only hears that one was connected. Pace and text
-size stay the preferences model's: a set-up answer there is the same preview
-and acknowledged save that Settings uses.
+Set-up is its own record, not a conversation. Until Grace can think, every
+step is fixed written text answered by a tap or by typing, and no step
+needs Grace to reason. Speech is used only where cloud speech reports it is
+available: Grace reads the lines aloud, and the Talk step can be tried. The
+record survives a restart, unlike the conversation. Which email accounts
+exist, and how one is connected, is the accounts model's; whether the cloud
+account is signed in and usable is the cloud connection's; her name is the
+memory model's Name fact. Set-up only hears each of them. Pace and text size
+stay the preferences model's: a set-up answer there is the same preview and
+acknowledged save that Settings uses.
 
 ## Story: Set up my tablet
 
@@ -35,31 +37,35 @@ and acknowledged save that Settings uses.
 Each step is pending, done (answered, or already true) or put off with Not
 now. The facts are what the host reports: whether this build owns
 Wi-Fi (the launcher does, the standalone app does not), whether the tablet
-is online, whether an email account is connected, and whether cloud speech
-is available. The hand-over is the place after the last step, where set-up
-is ending.
+is online, whether an email account is connected, whether the cloud account
+is signed in and usable (signed in, and not needing attention), whether she
+has a saved name, and whether cloud speech is available. Grace can think
+only while an email account is connected, the cloud account is usable and
+the tablet is online. The hand-over is the place after the last step, where
+set-up is ending.
 
 ```quint
 import preferences as P from "./preferences"
-type SetupStep = WifiStep | AccountStep | NameStep | PaceStep | TextSizeStep | ExplainStep | TalkStep | TypeStep | CloseStep | HandOverStep
+type SetupStage = WifiStep | AccountStep | NameStep | PaceStep | TextSizeStep | ExplainStep | TalkStep | TypeStep | CloseStep | ReopenStep | HandOverStep
 type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
-type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, speechAvailable: bool }
+type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
 type StepOutcome = Pending | Done | PutOff
-type SetupProgress = { step: SetupStep, outcomes: SetupStep -> StepOutcome }
-type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, name: str, left: bool, endToken: int }
+type SetupProgress = { step: SetupStage, outcomes: SetupStage -> StepOutcome }
+type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int }
 type SetupEffect = | AskWhatToDo
 type SetupResult = { state: Setup, out: List[SetupEffect] }
-pure val allSetupSteps: List[SetupStep] = List(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, HandOverStep)
-pure def orderOf(st: SetupStep): int =
+pure val allSetupSteps: List[SetupStage] = List(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, ReopenStep, HandOverStep)
+pure def orderOf(st: SetupStage): int =
   if (st == WifiStep) 0 else if (st == AccountStep) 1 else if (st == NameStep) 2 else if (st == PaceStep) 3
   else if (st == TextSizeStep) 4 else if (st == ExplainStep) 5 else if (st == TalkStep) 6 else if (st == TypeStep) 7
-  else if (st == CloseStep) 8 else 9
-pure def nextStep(st: SetupStep): SetupStep =
+  else if (st == CloseStep) 8 else if (st == ReopenStep) 9 else 10
+pure def nextStep(st: SetupStage): SetupStage =
   if (st == WifiStep) AccountStep else if (st == AccountStep) NameStep else if (st == NameStep) PaceStep
   else if (st == PaceStep) TextSizeStep else if (st == TextSizeStep) ExplainStep else if (st == ExplainStep) TalkStep
-  else if (st == TalkStep) TypeStep else if (st == TypeStep) CloseStep else HandOverStep
-pure val noFacts: SetupFacts = { ownsWifi: false, online: false, accountConnected: false, speechAvailable: false }
-pure def outcomeOf(p: SetupProgress, st: SetupStep): StepOutcome = p.outcomes.getOr(st, Pending)
+  else if (st == TalkStep) TypeStep else if (st == TypeStep) CloseStep else if (st == CloseStep) ReopenStep else HandOverStep
+pure val noFacts: SetupFacts = { ownsWifi: false, online: false, accountConnected: false, cloudUsable: false, named: false, speechAvailable: false }
+pure def graceThinks(f: SetupFacts): bool = f.accountConnected and f.cloudUsable and f.online
+pure def outcomeOf(p: SetupProgress, st: SetupStage): StepOutcome = p.outcomes.getOr(st, Pending)
 pure def outcomeFor(answered: bool): StepOutcome = if (answered) Done else PutOff
 ```
 
@@ -72,7 +78,7 @@ show from that report on.
 ```quint
 pure val initial: Setup = {
   phase: Unstarted, progress: { step: WifiStep, outcomes: Map() },
-  facts: noFacts, name: "", left: false, endToken: 0
+  facts: noFacts, wentAway: false, endToken: 0
 }
 pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending or s.phase == EndFailed
 ```
@@ -81,24 +87,24 @@ pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending 
 
 Wi-Fi is passed when the tablet is online, or when this build does not own
 Wi-Fi (the standalone app, where an offline tablet is pointed to the
-system's own settings). The account step is passed when an account is
-connected, and the name step when she has given a name. A step put off with
+system's own settings). The account step is passed when an email account is
+connected, and the name step when she has a saved name. A step put off with
 Not now is cleared the moment its outcome comes true: coming online clears a
 put-off Wi-Fi step. Passing never goes beyond the name step, and never
 repeats a finished step.
 
 ```quint
-pure def passes(st: SetupStep, f: SetupFacts, name: str): bool =
+pure def passes(st: SetupStage, f: SetupFacts): bool =
   if (st == WifiStep) not(f.ownsWifi) or f.online
   else if (st == AccountStep) f.accountConnected
-  else if (st == NameStep) name != ""
+  else if (st == NameStep) f.named
   else false
-pure def passOne(p: SetupProgress, st: SetupStep, f: SetupFacts, name: str): SetupProgress =
-  if (passes(st, f, name) and (p.step == st or outcomeOf(p, st) == PutOff))
+pure def passOne(p: SetupProgress, st: SetupStage, f: SetupFacts): SetupProgress =
+  if (passes(st, f) and (p.step == st or outcomeOf(p, st) == PutOff))
     { step: if (p.step == st) nextStep(st) else p.step, outcomes: p.outcomes.put(st, outcomeFor(true)) }
   else p
-pure def settledProgress(p: SetupProgress, f: SetupFacts, name: str): SetupProgress =
-  passOne(passOne(passOne(p, WifiStep, f, name), AccountStep, f, name), NameStep, f, name)
+pure def settledProgress(p: SetupProgress, f: SetupFacts): SetupProgress =
+  passOne(passOne(passOne(p, WifiStep, f), AccountStep, f), NameStep, f)
 ```
 
 ### Once started, the current step is never one already true
@@ -109,141 +115,187 @@ account could have stood beside a connected one.
 
 ```quint
 pure def alwaysTheCurrentStepIsNotAlreadyTrue(s: Setup): bool =
-  s.phase != Unstarted implies not(passes(s.progress.step, s.facts, s.name))
+  s.phase != Unstarted implies not(passes(s.progress.step, s.facts))
 ```
 
 ### The launcher and the standalone app differ only in the Wi-Fi step
 
+The standalone app shows one step fewer, and its progress count says so.
+
 ```quint
-pure def lawFlavorsDifferOnlyInWifi(st: SetupStep, online: bool, connected: bool, name: str): bool =
+pure def lawFlavorsDifferOnlyInWifi(st: SetupStage, online: bool, connected: bool, named: bool): bool =
   st != WifiStep implies
-    passes(st, { ownsWifi: true, online: online, accountConnected: connected, speechAvailable: false }, name) ==
-    passes(st, { ownsWifi: false, online: online, accountConnected: connected, speechAvailable: false }, name)
+    passes(st, { ...noFacts, ownsWifi: true, online: online, accountConnected: connected, named: named }) ==
+    passes(st, { ...noFacts, ownsWifi: false, online: online, accountConnected: connected, named: named })
+```
+
+### The progress count follows the steps actually shown
+
+Set-up shows "Step n of m", where m counts every step but the hand-over,
+less Wi-Fi on a build that does not own it. A step passed because it was
+already true still counts, so the number only goes up within a run.
+
+```quint
+pure def shownStepCount(f: SetupFacts): int = if (f.ownsWifi) 10 else 9
+pure def progressNumber(s: Setup): int = if (s.facts.ownsWifi) orderOf(s.progress.step) + 1 else orderOf(s.progress.step)
+pure def alwaysTheCountFitsTheStepsShown(s: Setup): bool =
+  (s.phase == Answering) implies (1 <= progressNumber(s) and progressNumber(s) <= shownStepCount(s.facts))
 ```
 
 ### The host's report starts set-up, and a restart keeps the step
 
-The host reports its facts at every cold start. The first report shows the
-first step not already true. After a restart set-up is where it was: the
-same step, unless its outcome came true meanwhile; still away if she had
-left; and an end that was being saved is reported unconfirmed, so its late
-acknowledgement is refused and Retry saves it again, or, if the account is
-gone, she is on Home waiting for one. Speech is unknown until cloud speech
-reports again.
+The host reports at every cold start whether it owns Wi-Fi, whether the
+tablet is online, whether an email account is connected and whether she has
+a saved name. The first report shows the first step not already true. After
+a restart set-up is where it was: the same step, unless its outcome came
+true meanwhile, and still on Home if she was there. Whether the cloud
+account is usable and whether speech is available are unknown until they
+are reported again, so an end that was being saved, or whose save failed,
+is not known to be kept: she is on Home, and Carry on setting up saves it
+again once Grace can think.
 
 ```quint
-pure def hostStarted(s: Setup, ownsWifi: bool, online: bool, connected: bool): Setup =
-  val f = { ownsWifi: ownsWifi, online: online, accountConnected: connected, speechAvailable: false }
-  { ...s, facts: f, progress: settledProgress(s.progress, f, s.name), endToken: s.endToken + 1,
-    phase: if (s.phase == Unstarted) Answering
-      else if (s.phase == Ending or s.phase == EndFailed) (if (connected) EndFailed else Away)
-      else s.phase }
+pure def withFacts(f: SetupFacts, s: Setup): Setup =
+  val stops = (s.phase == Ending or s.phase == EndFailed) and not(graceThinks(f))
+  { ...s, facts: f, progress: settledProgress(s.progress, f),
+    phase: if (stops) Away else s.phase, wentAway: s.wentAway or stops }
+pure def hostStarted(s: Setup, ownsWifi: bool, online: bool, connected: bool, named: bool): Setup =
+  val t = withFacts({ ownsWifi: ownsWifi, online: online, accountConnected: connected, cloudUsable: false, named: named, speechAvailable: false }, s)
+  { ...t, endToken: s.endToken + 1, phase: if (s.phase == Unstarted) Answering else t.phase }
 pure def stepRestartKeepsTheStep(before: Setup, via: str, after: Setup): bool =
-  via == "hostStarted" implies after.progress.step == settledProgress(before.progress, after.facts, after.name).step
+  (via == "hostStarted" and before.phase != Unstarted) implies
+    (after.progress.step == before.progress.step or passes(before.progress.step, after.facts))
 ```
 
-### Connectivity, the account and speech are facts reported to set-up
+### Connectivity, the accounts, her name and speech are facts reported to set-up
 
-Set-up does not connect anything itself. The Wi-Fi page, the accounts model
-and cloud speech do; set-up hears that the tablet came online or went
-offline, that an account was connected or removed, and that speech became
-available or stopped. It hears nothing before the host's first report, since
-until then it cannot know whether this build owns Wi-Fi. An account removed
-while the end is being saved, or after a failed save, takes her to Home,
-where set-up waits for an account.
+Set-up does not connect anything itself. The Wi-Fi page, the accounts
+model, the cloud connection, the memory model and cloud speech do; set-up
+hears that the tablet came online or went offline, that an email account
+was connected or removed, that the cloud account became usable or stopped
+being usable, that her name was saved or deleted, and that speech became
+available or stopped. It hears nothing before the host's first report,
+since until then it cannot know whether this build owns Wi-Fi. If Grace
+stops being able to think while the end is being saved, or after a failed
+save, she is taken to Home, where set-up waits.
 
 ```quint
 pure def canConnectivityChanged(s: Setup, online: bool): bool = s.phase != Unstarted
-pure def connectivityChanged(s: Setup, online: bool): Setup =
-  val f = { ...s.facts, online: online }
-  { ...s, facts: f, progress: settledProgress(s.progress, f, s.name) }
+pure def connectivityChanged(s: Setup, online: bool): Setup = withFacts({ ...s.facts, online: online }, s)
 pure def canAccountChanged(s: Setup, connected: bool): bool = s.phase != Unstarted
-pure def accountChanged(s: Setup, connected: bool): Setup =
-  val f = { ...s.facts, accountConnected: connected }
-  { ...s, facts: f, progress: settledProgress(s.progress, f, s.name),
-    phase: if (not(connected) and (s.phase == Ending or s.phase == EndFailed)) Away else s.phase }
+pure def accountChanged(s: Setup, connected: bool): Setup = withFacts({ ...s.facts, accountConnected: connected }, s)
+pure def canCloudChanged(s: Setup, usable: bool): bool = s.phase != Unstarted
+pure def cloudChanged(s: Setup, usable: bool): Setup = withFacts({ ...s.facts, cloudUsable: usable }, s)
+pure def canNameChanged(s: Setup, named: bool): bool = s.phase != Unstarted
+pure def nameChanged(s: Setup, named: bool): Setup = withFacts({ ...s.facts, named: named }, s)
 pure def canSpeechChanged(s: Setup, available: bool): bool = s.phase != Unstarted
 pure def speechChanged(s: Setup, available: bool): Setup = { ...s, facts: { ...s.facts, speechAvailable: available } }
 ```
 
 ### Within a run, a step advances only on its own answer, a skip, or its outcome coming true
 
-Pace, text size, the explanation of what Grace does and the three practice
+Pace, text size, the explanation of what Grace does and the four practice
 steps are answered by their own control: the shell sends the pace and text
 size answers only once the preferences store acknowledges the choice (a
 choice equal to the current setting needs no save and is answered at once),
-Talk when she has spoken once, Type when she has sent a typed line, and
-Close when she has closed Grace and brought her back with Ask Grace. The
-explanation says in one sentence what Grace does, and that while the
-microphone is on her voice goes to the cloud to be understood and Grace's
-replies come back from it to be spoken. In the Close
+Talk when she has spoken once, Type when she has sent a typed line, Close
+when she has closed Grace's window, and Reopen when she has brought it back
+with Ask Grace. The explanation says in one sentence what Grace does, and
+that while the microphone is on her voice goes to the cloud to be
+understood and Grace's replies come back from it to be spoken. In the Close
 step the Close button is her answer, not leaving. A tap anywhere else, or an
-answer meant for another step, is refused. Her name is the name step's
-answer; it is never empty, and she can give it again at any time after the
-host's first report. Answering the last step reaches the hand-over and,
-while an account is connected, asks the store to keep that set-up has ended;
-without one she goes to Home, where set-up waits for an account. Within a
-run the step never goes back; only Run set-up again starts over.
+answer meant for another step, is refused. The name step is answered by the
+memory model saving her name. Answering the last step reaches the hand-over
+and, while Grace can think, asks the store to keep that set-up has ended;
+otherwise she goes to Home, where set-up waits. Within a run the step never
+goes back; only Run set-up again starts over.
 
 ```quint
-pure def answerable(st: SetupStep): bool =
-  st == PaceStep or st == TextSizeStep or st == ExplainStep or st == TalkStep or st == TypeStep or st == CloseStep
+pure def answerable(st: SetupStage): bool =
+  st == PaceStep or st == TextSizeStep or st == ExplainStep or st == TalkStep or st == TypeStep or st == CloseStep or st == ReopenStep
 pure def reachHandOver(q: SetupProgress, s: Setup): Setup =
-  if (s.facts.accountConnected) { ...s, progress: q, phase: Ending, endToken: s.endToken + 1 }
-  else { ...s, progress: q, phase: Away, left: true }
-pure def moveOn(st: SetupStep, s: Setup, answered: bool): Setup =
+  if (graceThinks(s.facts)) { ...s, progress: q, phase: Ending, endToken: s.endToken + 1 }
+  else { ...s, progress: q, phase: Away, wentAway: true }
+pure def moveOn(st: SetupStage, s: Setup, answered: bool): Setup =
   val onward = { step: nextStep(st), outcomes: s.progress.outcomes.put(st, outcomeFor(answered)) }
-  val q = settledProgress(onward, s.facts, s.name)
+  val q = settledProgress(onward, s.facts)
   if (q.step == HandOverStep) reachHandOver(q, s) else { ...s, progress: q }
-pure def canAnswer(s: Setup, st: SetupStep): bool =
+pure def canAnswer(s: Setup, st: SetupStage): bool =
   s.phase == Answering and st == s.progress.step and answerable(st) and (st != TalkStep or readsAloud(s))
-pure def answer(s: Setup, st: SetupStep): Setup = moveOn(st, s, true)
-pure def canSetName(s: Setup, name: str): bool = s.phase != Unstarted and name != ""
-pure def setName(s: Setup, name: str): Setup = { ...s, name: name, progress: settledProgress(s.progress, s.facts, name) }
+pure def answer(s: Setup, st: SetupStage): Setup = moveOn(st, s, true)
 pure def stepOnlyItsAnswerASkipOrItsOutcomeAdvances(before: Setup, via: str, after: Setup): bool =
   after.progress.step != before.progress.step implies
-    (via == "answer" or via == "skip" or via == "runAgain" or passes(before.progress.step, after.facts, after.name))
+    (via == "answer" or via == "skip" or via == "runAgain" or passes(before.progress.step, after.facts))
 pure def stepNeverGoesBack(before: Setup, after: Setup): bool =
   before.phase != Ended implies orderOf(after.progress.step) >= orderOf(before.progress.step)
 ```
 
-### Every step but the explanation can be put off, at a stated cost
+### Each practice step rings exactly one control
+
+The practice steps point at the control they teach with a ring: Talk at
+the dock's Talk button while Grace speaks, Type at the Type button, Close at
+the window's Close button and Reopen at Ask Grace in the rail. No other
+step, and no step while set-up is not being answered, rings anything. While
+speech is unavailable the Talk step rings nothing and says why.
+
+```quint
+type RingTarget = NoRing | RingOnTalk | RingOnType | RingOnClose | RingOnAskGrace
+pure def ringOn(s: Setup): RingTarget =
+  if (s.phase != Answering) NoRing
+  else if (s.progress.step == TalkStep) (if (readsAloud(s)) RingOnTalk else NoRing)
+  else if (s.progress.step == TypeStep) RingOnType
+  else if (s.progress.step == CloseStep) RingOnClose
+  else if (s.progress.step == ReopenStep) RingOnAskGrace
+  else NoRing
+```
+
+### Every step but the explanation can be put off, at a stated cost, and is offered again in one place
 
 Not now on Wi-Fi moves on, and the account step then waits for the
 internet, so offline set-up stops there: her name, pace and text size come
-after it. Not now on the account takes her to Home, where the browser,
-Settings and the Wi-Fi page work by hand and Grace's window says she needs
-an account to help; Email and Calendar stay empty. Set-up stays on Home
-until she taps Carry on setting up; once an account is connected the
+after it. The account step offers Wi-Fi again, as the one thing it needs.
+Not now on the account takes her to Home, where the browser, Settings and
+the Wi-Fi page work by hand and Grace's window says she needs an account to
+help; Email and Calendar stay empty. Set-up stays on Home until she taps
+Carry on setting up, its one way back; once an account is connected the
 account step is settled, and carrying on starts at the step after it. Not
-now on the name means Grace greets her without one; on pace or text size,
-the live preview is undone and the current setting stays; on a practice
-step, she can learn it later, and the control still works. Talk can only be
-put off while speech is unavailable. Not now on the last practice step
-reaches the hand-over as answering it does. The explanation of what Grace
-does has only Next.
+now on the name means Grace greets her without one, and her name can be
+given later in Settings. On pace or text size, the live preview is undone,
+the current setting stays, and Settings has the same choice. On a practice
+step, she learns it later in Grace's own window, where the control still
+works. Not now on Talk is always allowed; while speech is unavailable it is
+the only way on. Not now on the last practice step reaches the hand-over as
+answering it does. The explanation of what Grace does has only Next.
 
 ```quint
 type SkipCost = NeedsInternet | GraceCannotHelp | GreetsWithoutName | KeepsCurrentSetting | LearnsLater | NotSkippable
-pure def skipCost(st: SetupStep): SkipCost =
+type OfferedAgain = OnTheAccountStep | CarryOnSettingUp | InSettings | InGracesWindow | NotOffered
+pure def skipCost(st: SetupStage): SkipCost =
   if (st == WifiStep) NeedsInternet else if (st == AccountStep) GraceCannotHelp
   else if (st == NameStep) GreetsWithoutName else if (st == PaceStep or st == TextSizeStep) KeepsCurrentSetting
-  else if (st == TalkStep or st == TypeStep or st == CloseStep) LearnsLater else NotSkippable
-pure def canSkip(s: Setup, st: SetupStep): bool = s.phase == Answering and st == s.progress.step and skipCost(st) != NotSkippable
-pure def skip(s: Setup, st: SetupStep): Setup =
+  else if (st == TalkStep or st == TypeStep or st == CloseStep or st == ReopenStep) LearnsLater else NotSkippable
+pure def offeredAgain(st: SetupStage): OfferedAgain =
+  if (st == WifiStep) OnTheAccountStep else if (st == AccountStep) CarryOnSettingUp
+  else if (st == NameStep or st == PaceStep or st == TextSizeStep) InSettings
+  else if (st == TalkStep or st == TypeStep or st == CloseStep or st == ReopenStep) InGracesWindow else NotOffered
+pure def canSkip(s: Setup, st: SetupStage): bool = s.phase == Answering and st == s.progress.step and skipCost(st) != NotSkippable
+pure def skip(s: Setup, st: SetupStage): Setup =
   if (st == AccountStep)
-    { ...s, phase: Away, left: true, progress: { ...s.progress, outcomes: s.progress.outcomes.put(st, outcomeFor(false)) } }
+    { ...s, phase: Away, wentAway: true, progress: { ...s.progress, outcomes: s.progress.outcomes.put(st, outcomeFor(false)) } }
   else moveOn(st, s, false)
 pure def accountPutOff(s: Setup): bool = outcomeOf(s.progress, AccountStep) == PutOff
+pure def lawEveryPutOffStepIsOfferedAgain(st: SetupStage): bool =
+  (skipCost(st) == NotSkippable) == (offeredAgain(st) == NotOffered)
 ```
 
 ### Set-up never passes the account step without an account
 
 Nothing claims Grace can help before she can think and speak. The account
 step says plainly what connecting lets Grace do: read her email and
-calendar to help her, and write or send an email or change an event only
-when she says so. An account put off is still missing, and set-up is still
-at its step; while the account step is current it is never yet done.
+calendar to help her, and send an email, move one to Trash or change an
+event only when she says so. An account put off is still missing, and
+set-up is still at its step; while the account step is current it is never
+yet done.
 
 ```quint
 pure def stepAccountIsPassedOnlyWithAnAccount(before: Setup, after: Setup): bool =
@@ -252,30 +304,34 @@ pure def alwaysPutOffAccountIsStillMissing(s: Setup): bool =
   accountPutOff(s) implies (not(s.facts.accountConnected) and s.progress.step == AccountStep)
 ```
 
-### Set-up ends only with an account connected
+### Set-up ends only while Grace can think
 
-The hand-over opens a conversation in which Grace must think, so it never
-happens without an account, even one removed after its step.
+The hand-over opens a conversation in which Grace must think, so it is
+saved and ended only while an email account is connected, the cloud
+account is usable and the tablet is online. Reaching the hand-over at any
+other time leaves her on Home, which says what is missing (the internet, an
+account, or an account that needs attention), and Carry on setting up comes
+back when Grace can think.
 
 ```quint
-pure def alwaysTheEndIsSavedOnlyWithAnAccount(s: Setup): bool =
-  (s.phase == Ending or s.phase == EndFailed) implies s.facts.accountConnected
-pure def stepSetUpEndsOnlyWithAnAccount(before: Setup, after: Setup): bool =
-  (before.phase != Ended and after.phase == Ended) implies after.facts.accountConnected
+pure def alwaysTheEndIsSavedOnlyWhileGraceCanThink(s: Setup): bool =
+  (s.phase == Ending or s.phase == EndFailed) implies graceThinks(s.facts)
+pure def stepSetUpEndsOnlyWhileGraceCanThink(before: Setup, after: Setup): bool =
+  (before.phase != Ended and after.phase == Ended) implies graceThinks(after.facts)
 ```
 
 ### Set-up is written, and spoken only while cloud speech is available
 
 Every step up to the account is silent text. From the name step on, Grace
-reads each line aloud and Talk is the dock's main button only while an
-account is connected, the tablet is online and cloud speech reports it is
-available; otherwise the line stays written and Type is the main button.
-The Talk step is answered only while she can be heard; otherwise Not now is
-the way on.
+reads each line aloud and Talk is the dock's main button only while Grace
+can think and cloud speech reports it is available; otherwise the line
+stays written and Type is the main button. The Talk step is answered only
+while Grace speaks, and only once she has been heard, which also needs the
+microphone permission the system asks for; otherwise Not now is the way on.
 
 ```quint
 pure def readsAloud(s: Setup): bool =
-  s.facts.accountConnected and s.facts.online and s.facts.speechAvailable and orderOf(s.progress.step) > orderOf(AccountStep)
+  graceThinks(s.facts) and s.facts.speechAvailable and orderOf(s.progress.step) > orderOf(AccountStep)
 pure def stepTalkIsTriedOnlyWhileGraceSpeaks(before: Setup, via: str, after: Setup): bool =
   (via == "answer" and before.progress.step == TalkStep and after.progress.step != TalkStep) implies readsAloud(before)
 ```
@@ -294,20 +350,43 @@ pure def alwaysEarlierStepsAreSettled(s: Setup): bool =
 
 ### Leaving mid-way resumes at the same step
 
-Close, Back or launcher Home during set-up take her to Home, where Carry on
-setting up brings her back to the step she left. An end being saved, or one
-whose save failed, can be left the same way, and carrying on saves it
-again; at the hand-over Carry on is offered only once an account is
-connected.
+While set-up shows, it fills the screen: the rail, Home's cards and
+Settings are out of reach, Grace's window opens only for the practice steps,
+and only the system's volume keys work beside set-up's own page. Close,
+Back or launcher Home take her to Home, where Carry on setting up brings her
+back to the step she left. The screen sleeping and waking tells set-up
+nothing, so the step is kept. An end being saved, or one whose save failed,
+can be left the same way, and carrying on saves it again; at the hand-over
+Carry on is offered only while Grace can think. Whether set-up has gone to
+Home is kept for the run.
 
 ```quint
 pure def canLeave(s: Setup): bool = showsSetUp(s)
-pure def leave(s: Setup): Setup = { ...s, phase: Away, left: true }
-pure def canResume(s: Setup): bool = s.phase == Away and (s.progress.step != HandOverStep or s.facts.accountConnected)
+pure def leave(s: Setup): Setup = { ...s, phase: Away, wentAway: true }
+pure def canResume(s: Setup): bool = s.phase == Away and (s.progress.step != HandOverStep or graceThinks(s.facts))
 pure def offersCarryOn(s: Setup): bool = canResume(s)
 pure def resume(s: Setup): Setup =
-  val q = settledProgress(s.progress, s.facts, s.name)
+  val q = settledProgress(s.progress, s.facts)
   if (q.step == HandOverStep) reachHandOver(q, s) else { ...s, progress: q, phase: Answering }
+pure def alwaysAwayMeansSetUpWentAway(s: Setup): bool = s.phase == Away implies s.wentAway
+```
+
+### Set-up ends while Grace can think and she keeps going
+
+From any started state where Grace can think, set-up ends, as long as she
+answers, puts off or carries on whenever she can and the store
+acknowledges a request it is given, unless Grace stops being able to think
+on the way. Nothing promises the internet, the account or the cloud, so
+this is the only end set-up can promise.
+
+```quint
+pure val fair_answer = "strong"
+pure val fair_skip = "strong"
+pure val fair_resume = "strong"
+pure val fair_retryEnd = "strong"
+pure val fair_endSaved = "strong"
+pure def leadsToSetUpEnds(s: Setup, later: Setup): bool =
+  (s.phase != Unstarted and graceThinks(s.facts)) implies (later.phase == Ended or not(graceThinks(later.facts)))
 ```
 
 ### Each run of set-up ends exactly once, on the store's current acknowledgement
@@ -316,11 +395,13 @@ The end is kept only when the store acknowledges the current request. Then,
 and only then, set-up hands over: Grace's window opens on the ordinary
 conversation with "What would you like to do?", and her answer there starts
 a task. A failed save says so and offers Retry; an acknowledgement for an
-earlier request is refused. Each request carries its own token, counting up
-from zero. Saving, a failed save and the end all stand at the hand-over,
-which is never a question. Once ended, set-up stays ended until she chooses
-Run set-up again in Settings, which starts a new run from the first step
-not already true, keeping her name and the host's facts.
+earlier request is refused. Each request carries its own token, and tokens
+only count up. Saving, a failed save and the end all stand at the
+hand-over, which is never a question. Once ended, set-up stays ended until
+she chooses Run set-up again in Settings, which starts a new run from the
+first step not already true, keeping the host's facts. A run started again
+ends only by walking it to the hand-over; leaving it waits on Home like any
+other.
 
 ```quint
 pure def canEndSaved(s: Setup, token: int): bool = s.phase == Ending and token == s.endToken
@@ -331,11 +412,13 @@ pure def canRetryEnd(s: Setup): bool = s.phase == EndFailed
 pure def retryEnd(s: Setup): Setup = { ...s, phase: Ending, endToken: s.endToken + 1 }
 pure def canRunAgain(s: Setup): bool = s.phase == Ended
 pure def runAgain(s: Setup): Setup =
-  { ...s, phase: Answering, left: false, progress: settledProgress({ step: WifiStep, outcomes: Map() }, s.facts, s.name) }
+  { ...s, phase: Answering, wentAway: false, progress: settledProgress({ step: WifiStep, outcomes: Map() }, s.facts) }
 pure def stepEachRunEndsOnce(before: Setup, after: Setup, out: List[SetupEffect]): bool =
   ((before.phase == Ended and after.phase != Ended) implies
     (after.phase == Answering and orderOf(after.progress.step) <= orderOf(PaceStep))) and
   ((out.length() > 0) iff (before.phase != Ended and after.phase == Ended))
+pure def stepOnlyTheAcknowledgementEnds(before: Setup, via: str, after: Setup): bool =
+  ((before.phase != Ended and after.phase == Ended) implies via == "endSaved") and after.endToken >= before.endToken
 pure def alwaysEndingIsAtTheHandOver(s: Setup): bool =
   (s.phase == Ending or s.phase == EndFailed or s.phase == Ended) implies s.progress.step == HandOverStep
 pure def alwaysTheHandOverIsNotAQuestion(s: Setup): bool =
@@ -360,16 +443,22 @@ pure def lawSetUpChoicesArePreferencePreviews(settings: P::DisplayPreferences, p
     paceChoice(settings, pace).textSize == settings.textSize and textSizeChoice(settings, chosenSize).pace == settings.pace
 ```
 
-### A finished set-up, a put-off account and a resumed set-up are reachable
+### Every way through set-up is reachable
+
+A finished set-up, a failed save, a put-off account, a put-off Wi-Fi step,
+a resumed set-up, the standalone app passing Wi-Fi, Talk tried aloud, and
+set-up waiting on Home at the hand-over for Grace to be able to think are
+all reachable.
 
 ```quint
-pure val nameValues = Set("", "Margaret")
 pure val weight_answer = 12
 pure val weight_hostStarted = 2
 pure def sometimesFinished(s: Setup): bool = s.phase == Ended
-pure def sometimesAccountPutOff(s: Setup): bool = s.phase == Away and accountPutOff(s)
-pure def sometimesResumed(s: Setup): bool = s.phase == Answering and s.left and orderOf(s.progress.step) > orderOf(AccountStep)
 pure def sometimesSaveFailed(s: Setup): bool = s.phase == EndFailed
-pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and outcomeOf(s.progress, WifiStep) == Done and s.phase == Answering
+pure def sometimesAccountPutOff(s: Setup): bool = s.phase == Away and accountPutOff(s)
 pure def sometimesWifiPutOff(s: Setup): bool = outcomeOf(s.progress, WifiStep) == PutOff
+pure def sometimesResumed(s: Setup): bool = s.phase == Answering and s.wentAway and orderOf(s.progress.step) > orderOf(AccountStep)
+pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and outcomeOf(s.progress, WifiStep) == Done and s.phase == Answering
+pure def sometimesTalkTriedAloud(s: Setup): bool = outcomeOf(s.progress, TalkStep) == Done
+pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away and s.progress.step == HandOverStep and not(graceThinks(s.facts))
 ```
