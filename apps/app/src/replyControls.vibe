@@ -11,6 +11,7 @@ type Suggested = typeof Action.Type
 type Control =
   | { kind: "workspace"; title: string; event: Event }
   | { kind: "website"; title: string; url: string }
+  | { kind: "cancelReview"; title: string; number: number }
   | { kind: "hosted"; title: string; view: "Email" | "Calendar" }
   | { kind: "managed"; title: string; proposed: ProposedWork }
   | { kind: "read"; title: string; accountId: string; grant: string; id: string }
@@ -123,8 +124,11 @@ function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot): Contro
       return managed.kind === "mail" && managed.selected?.message.metadata?.historyId
         ? { kind: "managed", title: "Review moving email to Trash", proposed: { kind: "trash", accountId: managed.accountId,
           grant: managed.grant, id: managed.selected.message.externalId, version: managed.selected.message.metadata.historyId } } : undefined
-    case "confirmAppointment":
     case "cancelAppointment":
+      return managed.kind === "calendar" && managed.proposed &&
+        (managed.proposed.proposal.kind === "appointment" || managed.proposed.proposal.kind === "removeAppointment")
+        ? { kind: "cancelReview", title: "Cancel appointment review", number: managed.proposed.number } : undefined
+    case "confirmAppointment":
     case "dismissReminder":
     case "findFile":
     case "beginTask":
@@ -196,6 +200,10 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
       case "hosted": {
         if ((try desk.get()).device.surface !== choice.view) try desk.send({ type: "visit", destination: choice.view }, "Person")
         return try managed.send({ kind: "openHosted" })
+      }
+      case "cancelReview": {
+        const shown = try managed.get()
+        return shown.kind === "calendar" && shown.proposed?.number === choice.number && (try managed.send({ kind: "dismissProposal" }))
       }
       case "read": {
         const shown = try managed.get()
