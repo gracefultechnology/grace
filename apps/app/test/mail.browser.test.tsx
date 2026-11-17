@@ -151,6 +151,13 @@ it("See all my email in one place", async () => {
   await click(row("All inboxes"));
   await expect.element(page.getByRole("searchbox", { name: "Search email" })).toHaveValue("");
   await expect.element(clinic).toBeVisible();
+  // spec/app/accounts.md, "Signing in again renews the same account"
+  await click(page.getByRole("button", { name: "Sign in again" }));
+  const sheet = page.getByRole("dialog", { name: "Outlook sign-in page" });
+  await expect.element(sheet).toBeVisible();
+  await click(sheet.getByRole("button", { name: "Cancel" }));
+  await click(page.getByRole("button", { name: "Close Settings" }));
+  await expect.element(clinic).toBeVisible();
 
   // spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
   await person({ type: "setUse", id: 2, use: { mail: false, calendar: true, contacts: true } });

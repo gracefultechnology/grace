@@ -70,15 +70,20 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   if (!workspace) return null;
   const now = new Date();
   const online = workspace.device.connectivity === "Online";
-  const fire = (event: WorkspaceEvent) => () => { if (can(event)) void send(event); };
-  const frame = { onClose: fire({ type: "visit", destination: "Home" }), closeLabel: close, ...props };
+  const fire = (event: WorkspaceEvent) => (can(event) ? () => void send(event) : undefined);
+  const home: WorkspaceEvent = { type: "visit", destination: "Home" };
+  const frame = { onClose: () => fire(home)?.(), closeLabel: close, ...props };
+  const accountSettings: WorkspaceEvent = { type: "chooseSettingsPage", page: "EmailCalendarSettings" };
   if (mailAccounts(registry).length === 0)
-    return <MailApp noAccount folder="inbox" messages={[]} onConnect={fire({ type: "chooseSettingsPage", page: "EmailCalendarSettings" })} onAskGrace={fire({ type: "openGrace" })} {...frame} />;
+    return <MailApp noAccount folder="inbox" messages={[]} onConnect={fire(accountSettings)} onAskGrace={fire({ type: "openGrace" })} {...frame} />;
 
   const sources = sourcesOf(boxes);
   const shown = boxes.filter((b) => showsMail(registry, b.id));
   const name = (id: number) => registry.accounts.find((a) => a.id === id)?.name ?? "";
   const filter = (id: number) => { if (account.can({ type: "filterInbox", id })) void account.send({ type: "filterInbox", id }); };
+  const renew = (id: number) => account.can({ type: "signInAgain", id }) && can(accountSettings)
+    ? () => void account.send({ type: "signInAgain", id }).then((exit) => Exit.isSuccess(exit) && fire(accountSettings)?.())
+    : undefined;
   const offer = (b: MailInstance, event: MailEvent) => (b.can(event) ? () => void b.send(event) : undefined);
   const sender = (b: MailInstance) => read(b.id, b.state.replyTo)?.from ?? "";
 
@@ -146,7 +151,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const notice = (b: MailBanner): ReactNode => {
     switch (b.kind) {
       case "OfflineBanner": return null;
-      case "SignInBanner": return <MailSignInBanner key={`sign-in-${b.account}`} name={name(b.account)} others={b.othersFine} />;
+      case "SignInBanner": return <MailSignInBanner key={`sign-in-${b.account}`} name={name(b.account)} others={b.othersFine} onSignIn={renew(b.account)} />;
       case "SyncingRow": return <MailSyncingRow key={`syncing-${b.account}`} name={name(b.account)} />;
       default: {
         const _exhaustive: never = b.kind;
@@ -180,7 +185,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
       query={lead?.query ?? ""}
       onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
-      onRetry={() => failed.forEach((b) => { const again = search(b.state.query); if (b.can(again)) void b.send(again); })}
+      onRetry={failed.some((b) => b.can(search(b.state.query))) ? () => failed.forEach((b) => offer(b, search(b.state.query))?.()) : undefined}
       onSelectFolder={(chosen) => {
         setOutboxChosen(chosen === "outbox");
         if (chosen === "outbox") return;
