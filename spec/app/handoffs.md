@@ -134,7 +134,8 @@ pure val openingValues = Set(
 pure val liveValues = openingValues
 pure val deviceValues = Set(S::initial, { ...S::initial, readiness: S::Ready, surface: S::Email, contextVersion: 3 },
   { ...S::initial, readiness: S::Ready, surface: S::Calendar, contextVersion: 3 },
-  { ...S::initial, readiness: S::Ready, surface: S::Browser, contextVersion: 3 })
+  { ...S::initial, readiness: S::Ready, surface: S::Browser, contextVersion: 3 },
+  { ...S::initial, readiness: S::Ready, surface: S::Files, contextVersion: 3 })
 pure val browserValues = Set(B::initial)
 pure val resolvedValues = openingValues.map(opening => ResolvedBill({ key: opening.source.key, recordRef: "record-1",
   source: opening.source, requestVersion: 2, context: opening.context }))
@@ -502,10 +503,6 @@ pure def lawCloseKeepsTheComposerContent(device: S::Shell, calendarView: V::Cale
         ((app == S::Email and E::canEditDraft(mailbox, E::MailUser) and not(emptyComposer(mailbox))) implies
           result.mail.draftStorage == E::DraftSaving)
   }
-pure val deviceValues = Set(S::initial,
-  { ...S::initial, readiness: S::Ready, surface: S::Calendar, contextVersion: 3 },
-  { ...S::initial, readiness: S::Ready, surface: S::Email, contextVersion: 3 },
-  { ...S::initial, readiness: S::Ready, surface: S::Files, contextVersion: 3 })
 pure val calendarViewValues = Set(V::initial, { ...V::initial, owner: "owner", calendarId: "calendar", opened: true })
 pure val mailboxValues = Set(photoMailbox,
   E::startDraft(photoMailbox, false, E::MailUser),
