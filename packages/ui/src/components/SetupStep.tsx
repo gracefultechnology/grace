@@ -22,7 +22,7 @@ export type SetupStepProps = Omit<GraceWindowProps, "header" | "children" | "con
   progress?: Pick<ProgressStripProps, "title" | "step" | "total">;
   /** Grace's fixed written line for the step. */
   line: string;
-  /** Grace reads the line aloud: from the name step on, while she can think and cloud speech is available. */
+  /** Grace is reading the line aloud right now; she reads only from the name step on, while she can think and cloud speech is available. */
   speaking?: boolean;
   /** What the step asks for, under the line: the Wi-Fi list, the email account choice, the pace, or the text size with its preview. */
   content?: ReactNode;
@@ -32,7 +32,7 @@ export type SetupStepProps = Omit<GraceWindowProps, "header" | "children" | "con
   notNow?: { cost: string; onNotNow: () => void };
   /** The one control a practice step rings: the dock's Talk or Type, or Close. */
   ring?: SetupRing;
-  /** The answer row, a `GraceDock` with `setup`, from the name step on. */
+  /** The answer row, a `GraceDock` with `setup`, on the steps answered by talking or typing: the name and the practice steps. */
   dock?: ReactNode;
   /** Set-up's own Close, to Home where Carry on setting up returns; on the Close step, her answer. */
   onClose?: () => void;
@@ -40,7 +40,7 @@ export type SetupStepProps = Omit<GraceWindowProps, "header" | "children" | "con
 
 /**
  * One step of set-up, filling Grace's window: Close, the progress strip, Grace's written line, what the step asks for,
- * its answer and Not now with its cost, over the answer row. Practice steps ring the control they teach.
+ * then, held in view below whatever scrolls, its answer and Not now with its cost, over the answer row. Practice steps ring the control they teach.
  * @model spec/app/setup.md
  * @design packages/design-system/design.md#grace
  * @design packages/design-system/design.md#screens
@@ -49,6 +49,7 @@ export function SetupStep({ progress, line, speaking = false, content, action, n
   const tipId = useId();
   const costId = useId();
   const closeRinged = ring === "close";
+  const answered = action != null || notNow != null;
   const header = (
     <div className="relative z-[2] flex h-16 shrink-0 items-center justify-between gap-3 font-sans">
       <GraceCapsule>
@@ -83,31 +84,31 @@ export function SetupStep({ progress, line, speaking = false, content, action, n
           <ProgressStrip {...progress} />
         </div>
       ) : null}
-      <div className={cn("flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", progress ? "pt-6" : "pt-[88px]")}>
+      <div className={cn("flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4", answered || dock == null ? "pb-4" : "pb-24", progress ? "pt-6" : "pt-[88px]")}>
         <GraceBubble activity={speaking ? "speaking" : undefined}>{line}</GraceBubble>
         {content}
-        {action || notNow ? (
-          <div className="flex flex-col items-end gap-3">
-            <div className="flex flex-wrap justify-end gap-3">
-              {notNow ? (
-                <Button variant="capsule" size="pill" aria-describedby={costId} onClick={notNow.onNotNow}>
-                  Not now
-                </Button>
-              ) : null}
-              {action ? (
-                <Button variant="prominent" size="pill" loading={action.saving} onClick={action.onAction}>
-                  {action.label}
-                </Button>
-              ) : null}
-            </div>
+      </div>
+      {answered ? (
+        <div className={cn("flex flex-none flex-col items-end gap-3 px-4 pt-2", dock == null ? "pb-2" : "pb-24")}>
+          <div className="flex flex-wrap justify-end gap-3">
             {notNow ? (
-              <PageText id={costId} tone="secondary">
-                {notNow.cost}
-              </PageText>
+              <Button variant="capsule" size="pill" aria-describedby={costId} onClick={notNow.onNotNow}>
+                Not now
+              </Button>
+            ) : null}
+            {action ? (
+              <Button variant="prominent" size="pill" loading={action.saving} onClick={action.onAction}>
+                {action.label}
+              </Button>
             ) : null}
           </div>
-        ) : null}
-      </div>
+          {notNow ? (
+            <PageText id={costId} tone="secondary">
+              {notNow.cost}
+            </PageText>
+          ) : null}
+        </div>
+      ) : null}
     </GraceWindow>
   );
 }

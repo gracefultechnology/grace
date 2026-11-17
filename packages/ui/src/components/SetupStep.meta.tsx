@@ -21,20 +21,29 @@ const answered = fn();
 const putOff = fn();
 const closed = fn();
 
-const accountLine = "Connect your email so I can read your email and calendar to help you. I send an email, move one to Trash or change an event only when you say so.";
+const accountLine = "Connect your email so I can help with your email and calendar.";
 const notNowAccount = { cost: "Grace can’t help until your email is connected.", onNotNow: putOff };
 const learnLater = { cost: "You can try it later in Grace’s window.", onNotNow: putOff };
 const next = { label: "Next", onAction: answered };
 const practice = (onTalk?: () => void, onType?: () => void) => <GraceDock value="" setup placeholder="Talk or tap to type" onTalk={onTalk} onType={onType} />;
 
 type Play = { canvasElement: HTMLElement };
+const putOffInView = async (canvasElement: HTMLElement) => {
+  putOff.mockClear();
+  const notNow = within(canvasElement).getByRole("button", { name: "Not now" });
+  const cost = canvasElement.querySelector(`[id="${notNow.getAttribute("aria-describedby")}"]`)?.getBoundingClientRect();
+  const step = within(canvasElement).getByRole("region", { name: "Setting up" }).getBoundingClientRect();
+  await expect(cost?.bottom).toBeLessThanOrEqual(step.bottom);
+  await tap(canvasElement, "Not now");
+  await expect(putOff).toHaveBeenCalled();
+};
 const tap = async (canvasElement: HTMLElement, name: string) => userEvent.click(within(canvasElement).getByRole("button", { name }));
 
 export const meta: ComponentMeta<SetupStepProps> = {
   args: {
     progress: at("Wi-Fi", 1),
     line: "Let’s get on the internet first. Which network is yours?",
-    content: <WifiNetworkList networks={nearby} offlineHint="" onSelect={joined} />,
+    content: <WifiNetworkList networks={nearby} limit={3} offlineHint="" onSelect={joined} />,
     notNow: { cost: "Grace needs the internet to think and speak.", onNotNow: putOff },
     onClose: closed,
   },
@@ -64,7 +73,7 @@ export const meta: ComponentMeta<SetupStepProps> = {
       line: "What would you like me to call you?",
       speaking: true,
       content: undefined,
-      notNow: { cost: "I’ll greet you without a name. You can add it in Settings.", onNotNow: putOff },
+      notNow: { cost: "Grace will greet you without a name. You can add it in Settings.", onNotNow: putOff },
       dock: <GraceDock value="Margaret" setup composerOpen onSend={sent} />,
     },
     Pace: {
@@ -126,11 +135,9 @@ export const meta: ComponentMeta<SetupStepProps> = {
   play: {
     Default: async ({ canvasElement }: Play) => {
       joined.mockClear();
-      putOff.mockClear();
       await tap(canvasElement, "NETGEAR-4F2");
       await expect(joined).toHaveBeenCalledWith("NETGEAR-4F2");
-      await tap(canvasElement, "Not now");
-      await expect(putOff).toHaveBeenCalled();
+      await putOffInView(canvasElement);
     },
     "No internet": async ({ canvasElement }: Play) => {
       answered.mockClear();
@@ -140,16 +147,15 @@ export const meta: ComponentMeta<SetupStepProps> = {
     },
     Account: async ({ canvasElement }: Play) => {
       signedIn.mockClear();
-      putOff.mockClear();
       await tap(canvasElement, "Continue with Google");
       await expect(signedIn).toHaveBeenCalled();
-      await tap(canvasElement, "Not now");
-      await expect(putOff).toHaveBeenCalled();
+      await putOffInView(canvasElement);
     },
     "Sign-in cancelled": async ({ canvasElement }: Play) => {
       signedIn.mockClear();
       await tap(canvasElement, "Continue with Google");
       await expect(signedIn).toHaveBeenCalled();
+      await putOffInView(canvasElement);
     },
     Name: async ({ canvasElement }: Play) => {
       sent.mockClear();
