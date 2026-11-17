@@ -41,6 +41,28 @@ four shared packages.
 | `@elizaos/plugin-elizacloud` | `packages/agent/src/host/cloud-model.vibe` uses the native device credential. The `@elizaos/cloud/worker` entry point authenticates the caller, reserves funding and settles usage. | `apps/app/android/agent.json` selects the Grace API. The device keeps its bearer in Android-protected storage. |
 | `@elizaos/plugin-sql` | `packages/agent/src/storage` supplies Core's database adapter with an owner-bound PGlite store. | The device host initializes its own store. The hosted accounts and billing ledger use a separate Grace PostgreSQL database. |
 
+An independent comparison of Eliza `origin/develop` at `68d3069434` with
+Grace's shipped launcher paths found these ownership boundaries. A plugin's
+presence in the upstream tree is evidence of an available implementation to
+review. Release evidence still comes from the Grace entry point.
+
+| Grace control | Relevant Eliza develop capability | Grace runtime coverage and launch gaps |
+| --- | --- | --- |
+| Home, Settings and preferences | Core turns supply the model reply. OS owns the device surfaces. | Grace owns the launcher, Settings, and exact-turn action controls. Tapped text-size, in-app dimming, and voice changes reuse the workspace preferences. Device-wide brightness and preference persistence need device evidence. |
+| Browser navigation and pointing | `plugin-browser` and `plugin-computeruse` can directly operate pages or the desktop. | Grace keeps website navigation inside its Browser and OS bridge. A model reply can offer a supported Grace screen or an exact HTTPS destination. Page-element pointing with verified current geometry remains open. |
+| Gmail | `plugin-inbox` and `plugin-google-workspace` reach provider data. | Grace Cloud owns Gmail grants and provider operations. Hosted Grace supports Inbox previews, reviewed drafts and threaded replies, and Trash with Undo. Search from a model reply resolves a unique result on the currently loaded Inbox page. Full folder search, attachments, forwarding and permanent deletion remain open. |
+| Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace can review and confirm timed creation and confirmed owned occurrence or whole-series edits and removals. Creating a repeating series, showing and handling due reminders, and a Home review that completes without opening Calendar remain open. |
+| Files | `plugin-files` provides managed files, revision-bound selections and durable receipts. | The Grace Files window is reachable. Its owned catalog, file lookup, content access and local persistence remain open. |
+| Bill payment, booking and fill | `plugin-form`, `plugin-browser` and `plugin-computeruse` provide general form and website tools. | Grace has workspace rules for observed contexts and explicit payment approval. Live task review, verified form fill, bill submission and appointment booking are not mounted in the launcher. These need Grace-owned actuation and provider evidence. |
+
+Chromium exercised a structured reply through the actual Grace app with a
+fixture at the EmbeddedAgent boundary. The window stayed on Home until the
+person tapped Open Calendar. A model-only confirmation offered no write
+approval. Separate Google route checks used PostgreSQL and a simulated Google
+transport; the hosted journey checked explicit review and provider receipts.
+Those checks leave live model behavior, signed-device acceptance and live
+Google consent and writes open.
+
 The APK build previously called scripts in Eliza's app and native-agent
 plugin. It now uses the tools and native browser and Wi-Fi modules in
 `packages/os/android`. The AOSP overlay uses `packages/os/aosp`. The
