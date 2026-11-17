@@ -133,7 +133,7 @@ A calendar that does not show has no row in the chosen days, on Home, on
 the sleep screen or in what Grace is shown, no due reminder and nothing open
 on screen. Grace is shown the saved appointments of the shown calendars only.
 The appointment open on screen belongs to the first shown calendar that is
-open with one selected.
+open with one selected; with none, it belongs to no calendar (-1).
 
 ```quint
 pure def sourceReminders(registry: A::Accounts, s: CalendarSource): List[CalRow] =
@@ -144,7 +144,7 @@ pure def shownReminders(registry: A::Accounts, calendars: List[CalendarSource]):
 pure def openSelected(registry: A::Accounts, calendars: List[CalendarSource]): int =
   calendars.select(s => showsCalendar(registry, s.key) and s.view.opened and s.view.selectedId != "").nthOr(0, noCalendar).key
 pure def lawHiddenCalendarShowsNothing(registry: A::Accounts, calendars: List[CalendarSource], pending: P::Pending, fromTime: int, untilTime: int, key: int): bool =
-  not(showsCalendar(registry, key)) implies
+  (key != noCalendar.key and not(showsCalendar(registry, key))) implies
     (dayRows(registry, calendars, pending, fromTime, untilTime).every(r => r.key != key) and
       upcoming(registry, calendars, fromTime, untilTime).every(r => r.key != key) and
       calendarContext(registry, calendars, fromTime, untilTime).every(r => r.key != key) and
