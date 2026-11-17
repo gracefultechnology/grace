@@ -707,7 +707,8 @@ pure def begin(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): Work
 }
 pure def canChangePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and w.device.surface == S::Browser and
-  BC::canControl(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost)
+  BC::canControl(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost) and
+  BC::requestMatchesTask(browserInput, w.execution.task, w.execution.origin)
 pure def changePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceActor): Workspace =
   val browser = BC::control(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost)
   val updated = if (browser.revision != w.browser.revision) interrupted(w.device, browser, w)

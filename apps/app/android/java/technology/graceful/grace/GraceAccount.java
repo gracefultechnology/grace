@@ -25,7 +25,8 @@ public final class GraceAccount extends Plugin {
    try {
     CloudDeviceAccount account = account(getContext());
     boolean signedIn = account.credential() != null;
-    if (!signedIn && account.finishAcknowledgment()) { didSignIn(); signedIn = true; }
+    if (!signedIn && finishAcknowledgment(account)) { didSignIn(); signedIn = true; }
+    if (signedIn) GracePasswordsOwner.confirmVerifiedAccount(getContext());
     call.resolve(projection(signedIn));
    }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
@@ -38,7 +39,7 @@ public final class GraceAccount extends Plugin {
    try {
     CloudDeviceAccount account = account(getContext());
     account.retryRevocation();
-    if (account.finishAcknowledgment()) { didSignIn(); call.resolve(); return; }
+    if (finishAcknowledgment(account)) { didSignIn(); call.resolve(); return; }
     open(account.begin(), call);
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
   });
@@ -77,7 +78,10 @@ public final class GraceAccount extends Plugin {
  @PluginMethod public void signOut(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {
-    account(getContext()).clear();
+    try {
+     GracePasswordsOwner.enteringAccountChange(getContext());
+     account(getContext()).clear();
+    } finally { GracePasswordsOwner.leavingAccountChange(); }
     getActivity().runOnUiThread(() -> {
      getContext().stopService(new Intent(getContext(), GraceAgentService.class));
      notifyListeners("sessionChanged", projection(false));
@@ -91,9 +95,25 @@ public final class GraceAccount extends Plugin {
  void acceptCallback(Uri data) {
   ACCOUNT.execute(() -> {
    try {
-    if (account(getContext()).exchange(data)) didSignIn();
+    try {
+     GracePasswordsOwner.enteringAccountChange(getContext());
+     if (account(getContext()).exchange(data)) {
+      GracePasswordsOwner.confirmVerifiedAccount(getContext());
+      didSignIn();
+     }
+    } finally { GracePasswordsOwner.leavingAccountChange(); }
    } catch (Exception unavailable) { }
   });
+ }
+
+ private boolean finishAcknowledgment(CloudDeviceAccount account) throws Exception {
+  if (!account.awaitingAcknowledgment()) return false;
+  try {
+   GracePasswordsOwner.enteringAccountChange(getContext());
+   if (!account.finishAcknowledgment()) return false;
+   GracePasswordsOwner.confirmVerifiedAccount(getContext());
+   return true;
+  } finally { GracePasswordsOwner.leavingAccountChange(); }
  }
 
  private void didSignIn() {

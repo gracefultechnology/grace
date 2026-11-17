@@ -31,6 +31,7 @@ public class MainActivity extends ElizaBridgeActivity {
   registerPlugin(GraceAccount.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   registerPlugin(PasswordsPlugin.class);
+  registerPlugin(GraceGuideSpeechPlugin.class);
   registerPlugin(PrivateViewPlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
   super.onCreate(state);

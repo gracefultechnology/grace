@@ -66,9 +66,10 @@ type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | Spoke
 type VaultMode = ClosedPasswords | CheckingVault | LockedVault | UnavailableVault({ reason: VaultIssue })
   | OpenVault({ entries: List[LoginSummary], selected: str })
 type PasswordGuide = NoPasswordGuide | OpenPasswordGuide | FindPasswordGuide | ShowPasswordGuide | CopyPasswordGuide | FillPasswordGuide
-type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, guide: PasswordGuide }
+type GuideMic = GuideMicIdle | GuideMicListening | GuideMicUnavailable | GuideMicNoMatch
+type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, guide: PasswordGuide, guideMic: GuideMic, guideMicEpoch: int }
 
-pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide }
+pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide, guideMic: GuideMicIdle, guideMicEpoch: 0 }
 pure def canOpenPasswords(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost and v.vault == ClosedPasswords
 pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
@@ -144,7 +145,9 @@ form values and has no authority over the editor or browser. Recognized
 requests from the current typed draft or a current complete human utterance
 select only the general Passwords screen or Browser and a cue for the
 named control. Guidance never chooses or reveals an entry, copies a
-password, opens a private page or presses a website button.
+password or presses a website button. A direct sign-in command follows the [browser admission rule](./browserControls.md).
+
+A separate Passwords microphone button starts one recognition request on the Android device. The current complete result can guide the person. Leaving Grace, typing, opening a protected surface or cancelling stops recognition.
 
 ~~~quint
 pure val passwordsHelpText = "Open Passwords from the second Home page to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
@@ -165,5 +168,35 @@ pure def setPasswordGuide(v: PasswordView, guide: PasswordGuide, by: VaultActor)
 pure def stepGuidanceNeverChangesVault(before: PasswordView, via: str, after: PasswordView): bool =
   via == "setPasswordGuide" implies before.vault == after.vault
 pure def sometimesPasswordsGuideToCopy(v: PasswordView): bool = v.guide == CopyPasswordGuide
+pure def canStartGuideMic(v: PasswordView, by: VaultActor): bool =
+  by == PasswordsPerson and v.guideMic != GuideMicListening
+pure def startGuideMic(v: PasswordView, by: VaultActor): PasswordView =
+  { ...v, guideMic: GuideMicListening, guideMicEpoch: v.guideMicEpoch + 1 }
+pure def canFinishGuideMic(v: PasswordView, ticket: int, result: GuideMic, by: VaultActor): bool =
+  by == PasswordsHost and v.guideMic == GuideMicListening and ticket == v.guideMicEpoch and result != GuideMicListening
+pure def finishGuideMic(v: PasswordView, ticket: int, result: GuideMic, by: VaultActor): PasswordView =
+  { ...v, guideMic: result }
+pure def sometimesGuideMicListens(v: PasswordView): bool = v.guideMic == GuideMicListening
+pure def lawOldGuideMicResultIsIgnored(v: PasswordView, ticket: int, result: GuideMic): bool =
+  ticket != v.guideMicEpoch implies not(canFinishGuideMic(v, ticket, result, PasswordsHost))
 pure val wordsValues = Set("open passwords", "find a password", "show my password", "copy my password", "fill my password", "show password example")
 ~~~
+
+
+### Passwords belongs to the verified device account
+
+A new vault may be bound to the account and organization in Grace's verified
+device session. A different account or a retired device session cannot access
+that vault. A guest vault with saved passwords stays with the tablet guest.
+A change of account discards the previous Passwords view, guide and grant.
+
+```quint
+pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
+  by == PasswordsHost
+pure def passwordOwnerChanged(v: PasswordView, by: VaultActor): PasswordView =
+  { ...v,
+    vault: if (v.vault == ClosedPasswords) ClosedPasswords else CheckingVault,
+    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle }
+pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool =
+  via == "passwordOwnerChanged" implies not(match after.vault { | OpenVault(_) => true | _ => false }) and after.guide == NoPasswordGuide
+```

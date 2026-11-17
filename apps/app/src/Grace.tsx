@@ -60,6 +60,14 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               });
             }} />
         }>
+        <div className="px-4 py-2">
+          <button type="button" className="min-h-11 rounded-lg border px-3"
+            onClick={guide.mic === "GuideMicListening" ? guide.stopListening : guide.listen}>
+            {guide.mic === "GuideMicListening" ? "Stop listening for Passwords" : "Say a Passwords command"}
+          </button>
+          {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
+          {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
+        </div>
         <GraceMessages>
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end

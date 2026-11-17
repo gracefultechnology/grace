@@ -27,6 +27,18 @@ type PrivateViewPlugin = {
 export const androidHost = Capacitor.isNativePlatform();
 export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;
 
+export type GuideSpeechResult =
+  | { status: "complete"; text: string }
+  | { status: "cancelled" | "unavailable" | "no-match" };
+
+export type GuideSpeechPlugin = {
+  listen(input: { id: string }): Promise<GuideSpeechResult>;
+  cancel(input: { id: string }): Promise<void>;
+};
+
+export const guideSpeechPlugin = Capacitor.isPluginAvailable("GraceGuideSpeech")
+  ? registerPlugin<GuideSpeechPlugin>("GraceGuideSpeech") : undefined;
+
 /** The Wi-Fi plugin, which only the launcher registers; elsewhere the WebView's own online state is all there is. */
 export const wifiPlugin = Capacitor.isPluginAvailable("ElizaWiFi") ? registerPlugin<WiFiPlugin>("ElizaWiFi") : undefined;
 
