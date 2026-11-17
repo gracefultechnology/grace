@@ -58,7 +58,7 @@ export function GraceWindow({ size = "expanded", height, onHeightChange, header,
       aria-label="Grace"
       data-size={size}
       className={cn(
-        "group/grace relative isolate flex w-full flex-col gap-6 overflow-hidden rounded-device bg-background p-4 font-sans text-grace-ink shadow-window transition-[height,bottom] duration-slow ease-settle motion-reduce:transition-none",
+        "group/grace relative isolate flex w-full flex-col gap-6 overflow-hidden rounded-device bg-background p-4 font-sans text-grace-ink shadow-window transition-[height] duration-slow ease-settle motion-reduce:transition-none",
         expanded && "h-full",
         className,
       )}

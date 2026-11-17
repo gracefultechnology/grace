@@ -1,6 +1,4 @@
 import type { ComponentMeta } from "vibestack/stories";
-import { cn } from "../lib/cn.ts";
-import { besideRail } from "./AppWindow.tsx";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceDock } from "./GraceDock.tsx";
 import { dockArgs } from "./GraceDock.meta.tsx";
@@ -10,7 +8,7 @@ import { GraceMessages } from "./GraceMessages.tsx";
 import { conversation, greeting, thinking } from "./GraceMessages.meta.tsx";
 import { GraceVoiceMenu } from "./GraceVoiceMenu.tsx";
 import type { GraceWindowProps } from "./GraceWindow.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { UserBubble } from "./UserBubble.tsx";
 
 const header = (expanded: boolean, pause: "idle" | "live" = "live") => (
@@ -63,7 +61,7 @@ export const meta: ComponentMeta<GraceWindowProps> = {
   },
   decorator: (story) => (
     <TabletScreen>
-      <div className={cn(besideRail, "z-[3] flex flex-col justify-end")}>{story()}</div>
+      <ScreenSlot className="z-[3] flex flex-col justify-end">{story()}</ScreenSlot>
     </TabletScreen>
   ),
 };

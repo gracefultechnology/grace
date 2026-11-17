@@ -7,15 +7,11 @@ export type AppWindowProps = Omit<ComponentProps<"section">, "title"> &
   Pick<AppHeaderProps, "title" | "icon" | "backLabel" | "onBack" | "backAriaLabel" | "actions" | "onClose" | "closeLabel"> & {
     /** A side list, a `SideNav`: the window splits into the list and the page beside it. */
     nav?: ReactNode;
-    /** `screen` places the window on a `TabletScreen`, right of the rail; `inline` fills its container. */
-    placement?: "screen" | "inline";
   };
 
-export const besideRail = "absolute top-1.5 bottom-1.5 left-[144px] right-1.5";
-
 /**
- * An app's floating window (Calendar, Email, Files, Settings): white, 6px from the rail and the screen's
- * edges, with its header floating over the page that scrolls beneath it.
+ * An app's floating window (Calendar, Email, Files, Settings): white, filling the place it is given (a `ScreenSlot` on
+ * the tablet), with its header floating over the page that scrolls beneath it.
  * @model spec/app/workspace.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens
@@ -30,7 +26,6 @@ export function AppWindow({
   onClose,
   closeLabel,
   nav,
-  placement = "screen",
   className,
   children,
   ...props
@@ -52,8 +47,7 @@ export function AppWindow({
     <section
       aria-label={title}
       className={cn(
-        "overflow-hidden rounded-window bg-background font-sans text-foreground shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
-        placement === "screen" ? cn(besideRail, "z-[2]") : "relative size-full",
+        "relative size-full overflow-hidden rounded-window bg-background font-sans text-foreground shadow-pane",
         className,
       )}
       {...props}

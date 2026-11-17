@@ -15,7 +15,7 @@ import { SettingsTextSize } from "./SettingsTextSize.tsx";
 import { SearchField } from "./TextField.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
 import type { AppWindowProps } from "./AppWindow.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 
 const icon = { size: 26, strokeWidth: 2, "aria-hidden": true } as const;
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
@@ -109,7 +109,11 @@ export const meta: ComponentMeta<AppWindowProps> = {
       children: <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} />,
     },
   },
-  decorator: (story) => <TabletScreen>{story()}</TabletScreen>,
+  decorator: (story) => (
+    <TabletScreen>
+      <ScreenSlot>{story()}</ScreenSlot>
+    </TabletScreen>
+  ),
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);

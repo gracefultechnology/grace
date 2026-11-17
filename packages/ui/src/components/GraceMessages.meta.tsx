@@ -52,7 +52,7 @@ export const meta: ComponentMeta<GraceMessagesProps> = {
     "Reading earlier": { children: conversation, following: false, hasNewer: true, onJumpToLatest: jump },
   },
   decorator: (story) => (
-    <div className="group/grace flex h-[480px] w-[1130px] flex-col bg-background" data-surface="white" data-size="expanded">
+    <div className="group/grace flex h-[480px] w-[1130px] flex-col bg-background" data-size="expanded">
       {story()}
     </div>
   ),

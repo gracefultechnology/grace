@@ -3,8 +3,8 @@
 Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 product surface, from
 `prototype/Grace Prototype.html`. Color carries meaning; position and weight carry hierarchy.
 
-- **Surfaces.** The `screen` sits under `bg-gradient-frame`. Floating surfaces (rail, windows, Grace) are
-  glass over it; app windows are white (`background`). `panel` is a row or panel on white; `card` a white
+- **Surfaces.** The `screen` sits under `bg-gradient-frame`. The rail and the browser window are glass
+  over it; app windows and Grace's window are white (`background`). `panel` is a row or panel on white; `card` a white
   panel on glass; `sidebar` a side list inside a window.
 - **Text.** `foreground` in apps and on Home, `grace-ink` in Grace's window and on glass buttons, `chrome`
   for the rail and window buttons, `muted-foreground` for what matters less. Each pair meets WCAG AA, except three of the prototype's own pale
@@ -43,7 +43,8 @@ rail's buttons, segmented choices and menu options. No outlines.
 
 ## Windows
 
-App windows float 6px from the rail and the screen edges, `rounded-window`, white with `shadow-float`. The
+App windows float 6px from the rail and the screen edges, `rounded-window`, white with `shadow-float`. A window
+fills the place it is given; `ScreenSlot` (`besideRail`) is that place on the screen, for windows and Grace alike. The
 header is two glass capsules over the scrolling content; the title sits on the ✕'s row. Split apps keep
 their side list (`sidebar`) still while the page beside it scrolls. One margin: 24px.
 
@@ -62,7 +63,7 @@ works, `guide` for "your turn", `ok` when done. A target off screen becomes a gl
 
 Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
 the line of the function that draws it. The prototype draws from today's date; the stories hold it at 8:56 or 8:57 PM
-on Friday, November 13, 2026. Open the story and that line side by side. Unless its row maps it, an `Empty`,
+on Friday, November 13, 2026. Open the story and that line side by side. Unless its row maps it, an `Empty` or
 `Placement …` story is the bare component and its props (`hdr()` 1885 draws the header's icon and title);
 "app only" marks a state the prototype does not draw, built in its look.
 
@@ -352,7 +353,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `blur.mist` | 14px |
 | `blur.capsule` | 16px |
 | `blur.nav` | 18px |
-| `blur.frost` | 20px |
+| `blur.panel` | 20px |
 | `blur.fade` | 24px |
 | `blur.haze` | 30px |
 | `keyframes.rise` | from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none} |

@@ -8,12 +8,12 @@ import type { CalendarMonthDay } from "./CalendarMonth.tsx";
 import type { CalendarWeekDay } from "./CalendarWeekStrip.tsx";
 import { Rail } from "./Rail.tsx";
 import { homeRail } from "./Rail.meta.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 
 export const onTablet = (story: () => ReactNode) => (
   <TabletScreen>
     <Rail {...homeRail(null)} />
-    {story()}
+    <ScreenSlot>{story()}</ScreenSlot>
   </TabletScreen>
 );
 

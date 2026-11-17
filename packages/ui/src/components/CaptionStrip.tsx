@@ -42,8 +42,6 @@ export type CaptionStripProps = Omit<ComponentProps<"div">, "children"> & {
   onShowGuide?: () => void;
   /** The words on Show me again. */
   showGuideLabel?: string;
-  /** `screen` places the strip on a `TabletScreen` over the keyboard; `inline` fills its container. */
-  placement?: "screen" | "inline";
 };
 
 /**
@@ -67,7 +65,6 @@ export function CaptionStrip({
   showGuide = false,
   onShowGuide,
   showGuideLabel,
-  placement = "screen",
   className,
   ...props
 }: CaptionStripProps) {
@@ -96,8 +93,7 @@ export function CaptionStrip({
     <div
       onClick={onShowChat}
       className={cn(
-        "group/strip isolate flex h-20 cursor-pointer items-center gap-3.5 rounded-segment bg-gradient-frame pr-2 pl-6 font-sans shadow-strip",
-        placement === "screen" ? "absolute bottom-[312px] left-[144px] z-[4] right-1.5" : "relative w-full",
+        "group/strip relative isolate flex h-20 w-full cursor-pointer items-center gap-3.5 rounded-segment bg-gradient-frame pr-2 pl-6 font-sans shadow-strip",
         className,
       )}
       {...props}

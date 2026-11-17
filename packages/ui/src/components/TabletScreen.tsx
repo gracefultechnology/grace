@@ -8,6 +8,16 @@ export type TabletScreenProps = ComponentProps<"div"> & {
   device?: boolean;
 };
 
+export const besideRail = "absolute right-1.5 left-[144px]";
+
+/**
+ * Where a window or Grace sits on the tablet's screen: right of the rail, 6px from the screen's edges. What it holds fills it.
+ * @design packages/design-system/design.md#screens
+ */
+export function ScreenSlot({ className, ...props }: ComponentProps<"div">) {
+  return <div className={cn(besideRail, "inset-y-1.5", className)} {...props} />;
+}
+
 /**
  * The tablet's 1280×800 screen: what every screen-level view is drawn on. Its children are placed absolutely,
  * as the rail, windows and Grace are.

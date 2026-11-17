@@ -11,14 +11,14 @@ import { SettingsPrivacy } from "./SettingsPrivacy.tsx";
 import { savedDetails } from "./SettingsPrivacy.meta.tsx";
 import { SettingsTextSize } from "./SettingsTextSize.tsx";
 import { SettingsVoice } from "./SettingsVoice.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { WifiJoinForm } from "./WifiJoinForm.tsx";
 import { WifiNetworkList } from "./WifiNetworkList.tsx";
 import { current, nearby } from "./WifiNetworkList.meta.tsx";
 
 const icon = { size: 28, strokeWidth: 1.9, "aria-hidden": true } as const;
 
-export const onTablet = (story: () => ReactNode, open?: "Settings") => (
+export const onTablet = (story: () => ReactNode, open?: "Settings", over?: ReactNode) => (
   <TabletScreen>
     <Rail
       battery={75}
@@ -33,21 +33,20 @@ export const onTablet = (story: () => ReactNode, open?: "Settings") => (
       <RailButton icon={<House {...icon} />} label="Home" />
       <RailButton icon={<Volume2 {...icon} />} label="Volume" />
     </Rail>
-    {story()}
+    <ScreenSlot>{story()}</ScreenSlot>
+    {over}
   </TabletScreen>
 );
 
 export const overWifiPage = (story: () => ReactNode) =>
   onTablet(
     () => (
-      <>
-        <SettingsApp page="wifi" onClose={() => {}}>
-          <WifiNetworkList current={current} networks={nearby} />
-        </SettingsApp>
-        {story()}
-      </>
+      <SettingsApp page="wifi" onClose={() => {}}>
+        <WifiNetworkList current={current} networks={nearby} />
+      </SettingsApp>
     ),
     "Settings",
+    story(),
   );
 
 export const textSizes = ["Smaller", "Normal", "Larger", "Largest"];

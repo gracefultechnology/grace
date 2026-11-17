@@ -1,6 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
-import { besideRail } from "./AppWindow.tsx";
 
 export type BrowserWindowProps = ComponentProps<"section"> & {
   /** The tab strip, a `BrowserTabStrip`. */
@@ -11,7 +10,7 @@ export type BrowserWindowProps = ComponentProps<"section"> & {
 
 /**
  * The browser's floating window: the tab strip and toolbar on glass, and the website below them, its
- * children (the selected tab's page, or a `NewTabPage`).
+ * children (the selected tab's page, or a `NewTabPage`). It fills the place it is given, a `ScreenSlot` on the tablet.
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens
@@ -20,8 +19,7 @@ export function BrowserWindow({ tabStrip, toolbar, className, children, ...props
   return (
     <section
       className={cn(
-        besideRail,
-        "z-[1] isolate flex flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane transition-[bottom] duration-slow ease-settle motion-reduce:transition-none",
+        "relative isolate flex size-full flex-col overflow-hidden rounded-window bg-glass/42 font-sans text-chrome shadow-pane",
         className,
       )}
       {...props}

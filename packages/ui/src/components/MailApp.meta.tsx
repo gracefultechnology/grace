@@ -7,7 +7,7 @@ import { susan as susanPhoto } from "./Avatar.meta.tsx";
 import type { MailAppProps, MailSummary } from "./MailApp.tsx";
 import type { MailContact } from "./MailMessageRow.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
-import { TabletScreen } from "./TabletScreen.tsx";
+import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { Toast } from "./Toast.tsx";
 
 const railIcon = { size: 28, strokeWidth: 1.9 };
@@ -27,7 +27,7 @@ export const mailScreen = (story: () => ReactNode) => (
       <RailButton icon={<House {...railIcon} />} label="Home" />
       <RailButton icon={<Volume2 {...railIcon} />} label="Volume" />
     </Rail>
-    {story()}
+    <ScreenSlot>{story()}</ScreenSlot>
   </TabletScreen>
 );
 

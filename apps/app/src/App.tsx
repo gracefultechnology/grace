@@ -1,6 +1,6 @@
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
-import { AppWindow, AskGraceButton, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, WifiSlash, cn } from "@repo/ui";
 import { CalendarDays, Folder, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
@@ -135,18 +135,18 @@ function Screen() {
             onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
         </OverPage>
       )}
-      {surface === "Browser" && <Browser style={{ bottom }} {...under(covered)} />}
-      {surface === "DeviceSettings" && <OverPage className={cn(lifted, "left-[144px] z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
+      {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
+      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {app && (
-        <OverPage className={cn(lifted, "left-[144px] z-[2]")} style={{ bottom }}>
-          <AppWindow placement="inline" {...under(covered)} title={app.name} icon={app.icon} closeLabel={`Close ${app.name}`} onClose={visit("Home").onClick}>
+        <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
+          <AppWindow {...under(covered)} title={app.name} icon={app.icon} closeLabel={`Close ${app.name}`} onClose={visit("Home").onClick}>
             <EmptyState title={`Nothing in ${app.name} yet.`} />
           </AppWindow>
         </OverPage>
       )}
       {device.railPopover !== "NoPopover" && (
         // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": a tap anywhere right of the rail closes it.
-        <OverPage className="absolute inset-y-0 right-0 left-[144px] z-[5]" onPointerDown={(event) => { if (event.target === event.currentTarget && can({ type: "dismissPopover" })) void send({ type: "dismissPopover" }); }}>
+        <OverPage className={cn(besideRail, "inset-y-0 right-0 z-[5]")} onPointerDown={(event) => { if (event.target === event.currentTarget && can({ type: "dismissPopover" })) void send({ type: "dismissPopover" }); }}>
           {device.railPopover === "VolumePopover" ? (
             <RailPopover className="left-3" top={Math.max(6, anchor - 58)} icon={volume.muted ? <VolumeX size={30} strokeWidth={2} /> : <Volume2 size={30} strokeWidth={2} />} title="Volume"
               value={volume.muted ? "Muted" : `${volume.volume}%`} onClose={() => void send({ type: "dismissPopover" })}
