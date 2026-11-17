@@ -30,6 +30,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
 function fakePlugin(autoRoute = false) {
   const calls: Call[] = [];
   const android = { allows: true };
+  const privateSignIn = { allows: true };
   const held = { starts: false };
   const starts: (() => Promise<void>)[] = [];
   const unanswered: (() => void)[] = [];
@@ -42,6 +43,9 @@ function fakePlugin(autoRoute = false) {
         return Promise.resolve({ remove: () => Promise.resolve() });
       }
       calls.push({ method, options, graceShown: graceWindow() !== null });
+      if (method === "createSurface" && options.purpose === "manual-sign-in" && !privateSignIn.allows) {
+        return Promise.reject(new Error("Android private WebView unavailable"));
+      }
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
         return Promise.resolve({ granted: outcome === "granted", outcome });
@@ -64,6 +68,7 @@ function fakePlugin(autoRoute = false) {
   return {
     plugin,
     android,
+    privateSignIn,
     held,
     /** The page starts what Grace asked last: a command superseded before it started never starts. */
     start: () => starts.splice(0).at(-1)?.(),
@@ -548,6 +553,22 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
+  expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
+  native.privateSignIn.allows = false;
+  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
+  await expect.element(unavailable).toBeVisible();
+  await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");
+  const retry = unavailable.getByRole("button", { name: "Try again" });
+  await expect.element(retry).toBeEnabled();
+  native.privateSignIn.allows = true;
+  await act(() => userEvent.click(retry));
+  const attempts = () => native.calls("createSurface").filter(({ id }) => id === "tab-4");
+  const privateAttempt = { url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated" };
+  await expect.poll(attempts).toMatchObject([privateAttempt, privateAttempt]);
+  await native.report("tab-4", "https://utility.example", 100);
+  await expect.element(unavailable).not.toBeInTheDocument();
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
 });
 
