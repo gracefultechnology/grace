@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"
 import type { Rect } from "../gen/app__surface.effect.vibe"
 import type { Load } from "../gen/app__browser.effect.vibe"
 import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../gen/app__websiteRequests.effect.vibe"
@@ -47,12 +47,10 @@ export service NativePage {
 const messages: Record<typeof DialogRequested.Type["kind"], MessageKind> = { alert: "AlertMessage", confirm: "ConfirmMessage", prompt: "PromptMessage", beforeunload: "LeavePageMessage" }
 const handoffs: Record<typeof ExternalLinkRequested.Type["handoff"], AppHandoff> = { "send-to": "SendToApp", dial: "DialApp", view: "ViewInApp", refuse: "RefusedLink" }
 const providers: Record<typeof IdentityProviderRequested.Type["provider"], string> = { google: "Google", facebook: "Facebook" }
-// spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"
 const outcomes: Record<typeof SitePermissionAnswer.Type["outcome"], AndroidOutcome> = { granted: "AndroidGranted", denied: "AndroidEnded", "android-refused": "AndroidRefused", ended: "AndroidEnded" }
 
 type Surface = { owner: string; session: string; epoch: number; id: PageId }
 
-// spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"
 function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text }: Reply): Promise<unknown> {
   switch (ask.tag) {
     case "WebsiteMessage": return p.answerDialog({ ...surface, dialogId: key, accept: answer === "Ok", text })
@@ -68,7 +66,6 @@ function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text
   }
 }
 
-// spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"
 const profileKey = "grace"
 
 type Owned = { owner?: string | null; session?: string | null; epoch?: number | null }
@@ -92,7 +89,6 @@ effect function reported(heard: Heard) {
 function surfaceEvents(plugin: SurfacePlugin) {
   const heard = Stream.callback<Heard>((queue) => acquireRelease(
     Effect.orDie(tryPromise(() => Promise.all([
-      // spec/app/browser.md, "Load results must match the tab and request that produced them"
       plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => e.exists === false ? undefined : PageEvent.Changed({
         id: e.id, url: e.currentUrl ?? undefined, loading: e.progress !== undefined && e.progress < 100,
         result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
@@ -106,7 +102,6 @@ function surfaceEvents(plugin: SurfacePlugin) {
       plugin.addListener("downloadFinished", hear(queue, DownloadFinished, (e) => PageEvent.Downloaded({ id: e.id, key: e.requestId, saved: e.status === "saved" }))),
       plugin.addListener("fileChooserRequested", hear(queue, FileChooserRequested, (e) =>
         PageEvent.Asked({ id: e.id, key: e.requestId, ask: { tag: "FileChoice" }, topFrame: true, said: "" }))),
-      // spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"
       plugin.addListener("sitePermissionRequested", hear(queue, SitePermissionRequested, (e) => PageEvent.Asked({
         id: e.id, key: e.requestId ?? RequestKey.make(""), topFrame: e.topFrame, said: "",
         ask: { tag: "SitePermission", origin: e.origin ?? "", kinds: { camera: e.kinds.includes("camera"), microphone: e.kinds.includes("microphone"), location: e.kinds.includes("location") } }
@@ -130,7 +125,6 @@ function devicePage(plugin: SurfacePlugin) {
   const own = (id: PageId) => ({ ...identity, id })
   return Layer.succeed(NativePage, {
     claim: () => call((p) => p.reconcileOwner({ ...identity, desiredIds: [] })),
-    // spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"
     create: (id, url) => call((p) => p.createSurface({ ...own(id), url, process: "isolated", storage: "isolated", profileKey, layer: "below-host", answersRequests: true })),
     place: (id, page, corners) => call((p) => p.setBounds({ ...own(id), ...page, outerClip: { ...page, cornerRadii: corners } })),
     route: (id, rects) => call((p) => p.setOcclusionRects({ ...own(id), rects: rects.map((r) => ({ ...r, cornerRadius: 0 })) })),
