@@ -82,7 +82,7 @@ type Request = { page: PageId; key: RequestKey }
 
 data Signal {
   Measured
-  Followed { workspace: Workspace }
+  Followed
   Heard { event: PageEvent }
   Person { event: WebsiteEvent }
   ClosedBrowser
@@ -242,7 +242,6 @@ export const pageHost = Layer.effect(PageHost, effect {
   const pages = new Map<PageId, Page>()
   const unmade = new Map<number, number>()
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Measured()))
-  let followed = try workspace.get()
   let presented: PageId | null | undefined = null
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
@@ -353,7 +352,6 @@ export const pageHost = Layer.effect(PageHost, effect {
   }
 
   effect function syncTabs(w: Workspace) {
-    followed = w
     const tabs = w.browser.tabs
     for (const { tab } of [...pages.values()]) if (!tabs.some((t) => t.id === tab.id)) try close(tab.id)
     const purging = (try requests.get()).clearing === "Purging"
@@ -368,7 +366,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function reconcile() {
     while (true) {
-      try syncTabs(followed)
+      try syncTabs(try workspace.get())
       try resizeTabs(workspace, try workspace.get(), measurer.stripWidth)
       const w = try workspace.get()
       let l = try layer.get()
@@ -449,8 +447,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function apply(signal: Signal) {
     switch (signal._tag) {
-      case "Measured": return
-      case "Followed": return try syncTabs(signal.workspace)
+      case "Measured": case "Followed": return
       case "Heard": return try hear(signal.event)
       case "Person": {
         const result = try website(signal.event, "WebsitePerson")
@@ -477,7 +474,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   native.claim() catch effect (cause) => try warn("claim", undefined, cause)
   const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
-  try fork.scoped Stream.runForEach(workspace.changes, (w) => Queue.offer(signals, Signal.Followed({ workspace: w })))
+  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Followed()))
   try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
   try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
   try fork.scoped effect {
