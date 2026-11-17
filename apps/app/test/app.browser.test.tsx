@@ -9,6 +9,7 @@ import { type Locator, page, userEvent } from "vitest/browser";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { App } from "../src/App.tsx";
+import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -828,4 +829,35 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+});
+
+it('Approve the shown account before returning to the tablet (spec/app/setup.md, "Story: Approve a password backup in my browser")', async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  const approval = {
+    clientId: "technology.graceful.grace", environment: "staging", purpose: "save",
+    redirectUri: "https://app.graceforseniors.com/android/auth/callback", state: "s".repeat(43),
+    codeChallenge: "c".repeat(43), codeChallengeMethod: "S256",
+  } as const;
+  const returned = new URL(approval.redirectUri);
+  returned.searchParams.set("code", "pbackup_" + "k".repeat(43));
+  returned.searchParams.set("state", approval.state);
+  const requests: unknown[] = [];
+  const network = window.fetch.bind(window);
+  const fetch = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    if (typeof input !== "string" || !input.endsWith("/api/v1/app-auth/mobile/password-backup")) return network(input, init);
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json({ redirectUrl: returned.href });
+  });
+  onTestFinished(async () => {
+    fetch.mockRestore();
+    await act(() => root.unmount());
+    element.remove();
+  });
+  await act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }} />));
+  expect(requests).toEqual([]);
+  await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
+  await expect.element(page.getByRole("link", { name: "Return to Grace" })).toHaveAttribute("href", returned.href);
+  expect(requests).toEqual([{ approval, expectedOwnerId: "owner" }]);
 });

@@ -575,3 +575,24 @@ pure def lawADeviceSessionAloneDoesNotReadGoogle(link: GoogleLink, view: Managed
 pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: str, ref: str): bool =
   accountId != receiptAccountId implies not(managedReadMatches(accountId, receiptAccountId, ref, ref))
 ```
+
+## Story: Approve a password backup in my browser
+
+> As the person using Grace Passwords on my tablet, I can see which Grace
+> account is approving my request, finish sign-in if needed, and choose
+> whether Grace should continue with the requested backup action.
+
+### Browser approval needs an explicit choice for the shown account
+
+Grace opens its registered Cloud approval page in a browser. The page shows
+one requested action and the account that will approve it. Approve sends
+that account and action together. If the browser account changes or needs
+fresh sign-in, the person signs in and chooses again. Cancel closes the
+approval without issuing it. The return to the tablet carries a single-use
+code bound to the native request. The browser never handles the recovery
+key or password data.
+
+```quint
+pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
+  registered and recentSignIn and sameAccount and confirmed
+```
