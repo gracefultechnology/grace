@@ -7,20 +7,21 @@ export type ProgressStripProps = Omit<ComponentProps<"div">, "title"> & {
   title: string;
   /** Which step it is, from 1; held between 1 and `total`. */
   step: number;
-  /** How many steps set-up has. */
+  /** How many steps set-up shows: 10 on the launcher, 9 on the standalone app, which has no Wi-Fi step. */
   total: number;
-  /** "{step} of {total}", for another language. */
+  /** "Step {step} of {total}", for another language. */
   countLabel?: (step: number, total: number) => string;
   /** What the bar is, for assistive technology. */
   progressLabel?: string;
 };
 
 /**
- * How far set-up has come: the step's name and "3 of 17" over a thin bar. It sits in Grace's header, so it
+ * How far set-up has come: the step's name and "Step 3 of 10" over a thin bar. It sits in Grace's header, so it
  * has no surface of its own.
+ * @model spec/app/setup.md
  * @design packages/design-system/design.md#grace
  */
-export function ProgressStrip({ title, step, total, countLabel = (s, n) => `${s} of ${n}`, progressLabel = "Set-up progress", className, ...props }: ProgressStripProps) {
+export function ProgressStrip({ title, step, total, countLabel = (s, n) => `Step ${s} of ${n}`, progressLabel = "Set-up progress", className, ...props }: ProgressStripProps) {
   const count = Math.max(1, Math.floor(total));
   const current = Math.min(count, Math.max(1, Math.round(step)));
   return (

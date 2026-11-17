@@ -23,6 +23,8 @@ export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions"
   view: CalendarMode | "detail" | "form";
   /** The app's name, and where Back goes from an event or the form. */
   title?: string;
+  /** A notice above the week or month, such as the dark banner asking her to connect her email's calendar. */
+  banner?: ReactNode;
   /** The browsing views' ‹ period › row and its Week and Month choice. */
   nav: Omit<CalendarNavProps, "mode">;
   /** The week's days, in the week view. */
@@ -70,8 +72,8 @@ const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 const defaultLabels = { today: "Today", add: "Add", save: "Save" };
 
 /**
- * The Calendar app's window: the week with the chosen day and what is coming up, the month, one event, or the form
- * (prototype `calView`).
+ * The Calendar app's window: an optional banner over the week with the chosen day and what is coming up, the month, one event,
+ * or the form (prototype `calView`, `calBanner`).
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
  * @design packages/design-system/design.md#screens
@@ -79,6 +81,7 @@ const defaultLabels = { today: "Today", add: "Add", save: "Save" };
 export function CalendarApp({
   view,
   title = "Calendar",
+  banner,
   nav,
   week,
   month,
@@ -164,6 +167,7 @@ export function CalendarApp({
       }
       {...props}
     >
+      {banner != null && <div className="mb-4">{banner}</div>}
       <CalendarNav mode={mode} className="mb-4" {...nav} />
       {mode === "month" ? (
         <CalendarMonth {...month} onSelect={onSelectDay} />

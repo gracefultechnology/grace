@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ComponentProps, type KeyboardEvent } from "react";
+import { useCallback, useImperativeHandle, useRef, useState, type ComponentProps, type KeyboardEvent, type Ref } from "react";
 import { ArrowUp } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
@@ -21,6 +21,9 @@ export const secretFieldLabels: SecretFieldLabels = {
   send: "Send",
 };
 
+/** How a form whose own button sends the secret asks the field for it. */
+export type SecretFieldHandle = { submit: () => void };
+
 export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
   /** The field's accessible name: "Password for Smith Family Wi-Fi". */
   label: string;
@@ -31,6 +34,12 @@ export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
   autoFocus?: boolean;
   /** Words to replace, for another language; the rest keep their defaults. */
   labels?: Partial<SecretFieldLabels>;
+  /** Shows Send beside the field. Without it the field is one of a form's: Enter submits the form, and the form's own button sends the secret through `handle`. */
+  send?: boolean;
+  /** Called with whether anything is typed, never with what. */
+  onFilledChange?: (filled: boolean) => void;
+  /** Receives `submit`, which sends the secret as Send does. */
+  handle?: Ref<SecretFieldHandle>;
 };
 
 /**
@@ -39,7 +48,7 @@ export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
  * goes.
  * @design packages/design-system/design.md#grace
  */
-export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels: words, className, ...props }: SecretFieldProps) {
+export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels: words, send = true, onFilledChange, handle, className, ...props }: SecretFieldProps) {
   const labels = { ...secretFieldLabels, ...words };
   const inputRef = useRef<HTMLInputElement>(null);
   const [shown, setShown] = useState(false);
@@ -55,8 +64,10 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
     const secret = field.value;
     if (!secret) return onEmptySubmit?.();
     field.value = "";
+    onFilledChange?.(false);
     onSubmit(secret);
   };
+  useImperativeHandle(handle, () => ({ submit }));
   const enter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     event.preventDefault();
@@ -74,10 +85,11 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          enterKeyHint="send"
+          enterKeyHint={send ? "send" : "go"}
           data-sensitive="true"
           autoFocus={autoFocus}
-          onKeyDown={enter}
+          onKeyDown={send ? enter : undefined}
+          onInput={(event) => onFilledChange?.(event.currentTarget.value !== "")}
           className="m-0 h-8 min-w-0 flex-1 border-0 bg-transparent p-0 font-sans text-lead leading-8 font-medium text-grace-ink caret-primary outline-none placeholder:tracking-normal placeholder:text-placeholder placeholder:opacity-100 [&[type=password]]:tracking-[.2em]"
         />
         <Button
@@ -91,10 +103,12 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
           {shown ? labels.hide : labels.show}
         </Button>
       </div>
-      <Button variant="prominent" size="pill" className="shadow-none" onClick={submit}>
-        <ArrowUp size={24} strokeWidth={2.4} aria-hidden />
-        {labels.send}
-      </Button>
+      {send && (
+        <Button variant="prominent" size="pill" className="shadow-none" onClick={submit}>
+          <ArrowUp size={24} strokeWidth={2.4} aria-hidden />
+          {labels.send}
+        </Button>
+      )}
     </div>
   );
 }
