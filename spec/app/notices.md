@@ -30,10 +30,11 @@ aloud only when the person asks her to.
 A notice is raised by its source with what it is about (a message, an event,
 a file) and at most one action: Undo, from Email or Settings, or See details,
 on a reminder. The calendar raises only reminders, through the reminder rule
-below. A toast that arrives while another is showing waits, and
-toasts show first come, first shown. The toast sits 24 pixels above compact
-Grace, or above the bottom edge when she is closed or expanded
-(`Grace Prototype.html:1826`).
+below. A new toast joins the end of the line; while one is showing the
+others wait, and when it closes the next in line shows, so toasts show first
+come, first shown. A toast waiting shows as soon as nothing stops it. The
+toast sits 24 pixels above compact Grace, or above the bottom edge when she
+is closed or expanded (`Grace Prototype.html:1826`).
 
 ```quint
 type NoticeActor = Person | App | Host
@@ -171,7 +172,7 @@ The banner sits at the top of Home, hidden while Grace is expanded, while
 the tablet sleeps and while a decision is open (`Grace Prototype.html:1865–1871`).
 When the tablet is not connected it reads "Not connected to the internet"
 with Fix Wi-Fi, which opens the written steps on the Wi-Fi page. Otherwise
-the earliest reminder still shown is the banner, with its event's title, day,
+the earliest reminder not yet dismissed is the banner, with its event's title, day,
 time and place, See details and Dismiss. A banner stays until what it reports
 ends; it has no timer.
 
@@ -183,10 +184,6 @@ pure def bannerOf(n: Notices): Banner =
   else if (not(n.online)) { kind: OfflineBanner, subject: "" }
   else if (n.reminders.length() > 0) { kind: ReminderBanner, subject: n.reminders.head() }
   else { kind: NoBanner, subject: "" }
-pure def canMove(n: Notices, place: Place, by: NoticeActor): bool = by == Host
-pure def move(n: Notices, place: Place, by: NoticeActor): Notices =
-  if (place == Background) { ...n, place: Background, shown: List(), waiting: List() }
-  else withShown(n.shown, { ...n, place: place })
 pure def canExpand(n: Notices, expanded: bool, by: NoticeActor): bool = by == Host
 pure def expand(n: Notices, expanded: bool, by: NoticeActor): Notices = { ...n, expanded: expanded }
 pure def alwaysOfflineComesFirst(n: Notices): bool =
@@ -198,8 +195,8 @@ pure def sometimesReminderBanner(n: Notices): bool = bannerOf(n).kind == Reminde
 ### Coming back online is told once, in a toast
 
 When the connection returns, the offline banner goes and the toast "Back
-online" says so once (`Grace Prototype.html:2132`). Losing the connection
-raises no toast: the banner says it on Home, and Email and the browser say
+online" says so once (`Grace Prototype.html:2132`). Losing the connection,
+or hearing again that it is still up or still down, raises no toast: the banner says it on Home, and Email and the browser say
 it where they need it.
 
 ```quint
@@ -267,9 +264,14 @@ Nothing else becomes an Android notification: no new-mail notification in
 this delivery. A toast raised while Grace is in the background is not kept
 for later, because it described a moment that has passed; leaving the
 foreground closes the toast showing and the ones waiting, and each closed
-Undo is withdrawn by its source.
+Undo is withdrawn by its source. Coming back to Home or another screen shows
+the next toast raised from then on.
 
 ```quint
+pure def canMove(n: Notices, place: Place, by: NoticeActor): bool = by == Host
+pure def move(n: Notices, place: Place, by: NoticeActor): Notices =
+  if (place == Background) { ...n, place: Background, shown: List(), waiting: List() }
+  else withShown(n.shown, { ...n, place: place })
 pure def stepAndroidOnlyInTheBackground(before: Notices, after: Notices): bool =
   after.androidNotifications.every(r => before.androidNotifications.includes(r) or before.place == Background)
 pure def alwaysNoToastInTheBackground(n: Notices): bool =
