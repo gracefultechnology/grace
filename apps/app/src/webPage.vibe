@@ -49,8 +49,11 @@ export function webPage() {
 
     try addFinalizer(() => sync(() => { for (const id of [...frames.keys()]) remove(id) }))
     return {
+      privateSignIn: false,
       claim: () => sync(() => { for (const left of document.querySelectorAll("iframe[data-page]")) left.remove() }),
-      create: (id, url) => sync(() => {
+      create: (id, url, manualSignIn) => manualSignIn
+        ? Effect.fail(new PageFailed({ cause: "Private sign-in requires Android" }))
+        : sync(() => {
         remove(id)
         const element = document.createElement("iframe")
         element.dataset.page = id

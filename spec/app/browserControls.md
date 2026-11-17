@@ -27,6 +27,7 @@ import browser as B from "./browser"
 type BrowserControlActor = BrowserControlUser | BrowserControlHost
 type BrowserInput = NewTab | Back | Forward | Reload | ExplainEmptyAddress | DismissAddress
   | RequestClearHistory
+  | OpenPrivateSignIn({ url: str })
   | SelectTab({ id: int }) | CloseTab({ id: int }) | Navigate({ url: str })
   | EditAddress({ text: str }) | ZoomPage({ percent: int }) | RemoveRecent({ url: str })
   | AnswerClearHistory({ confirmed: bool })
@@ -41,6 +42,7 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
       (data.scroll != B::activeTab(b).scroll or data.pagePanel != B::activeTab(b).pagePanel) and
       B::canRememberPagePosition(b, data.scroll)
   | PageChanged(data) => by == BrowserControlHost and data.id == b.selected and data.revision == b.revision and B::canPageChanged(b)
+  | OpenPrivateSignIn(data) => by == BrowserControlUser and B::canOpenPrivateSignIn(b, data.url)
   | NewTab => by == BrowserControlUser and B::canOpenTab(b)
   | SelectTab(data) => by == BrowserControlUser and data.id != b.selected and B::canSelectTab(b, data.id)
   | CloseTab(data) => by == BrowserControlUser and B::canCloseTab(b, data.id)
@@ -57,6 +59,7 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
   | AnswerClearHistory(data) => by == BrowserControlUser and B::canAnswerClearHistory(b)
 }
 pure def control(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): B::Browser = match browserInput {
+  | OpenPrivateSignIn(data) => B::openPrivateSignIn(b, data.url)
   | NewTab => B::openTab(b)
   | SelectTab(data) => B::selectTab(b, data.id)
   | CloseTab(data) => B::closeTab(b, data.id)
@@ -93,6 +96,7 @@ pure def lawRecentEditsKeepPage(b: B::Browser, browserInput: BrowserInput, by: B
 pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
 pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAddress, DismissAddress,
   RequestClearHistory, SelectTab({ id: 1 }), SelectTab({ id: 2 }), CloseTab({ id: 1 }),
+  OpenPrivateSignIn({ url: "https://utility.example" }),
   Navigate({ url: "https://utility.example" }), Navigate({ url: "https://credit.example" }), Navigate({ url: "" }),
   EditAddress({ text: "https://utility.example" }), EditAddress({ text: "" }),
   ZoomPage({ percent: 125 }), ZoomPage({ percent: 0 }), RemoveRecent({ url: "https://utility.example" }),

@@ -1,7 +1,7 @@
 # Grace device and Home
 
 The Home and system rail follow `prototype/Grace Prototype.html`: Calendar,
-Email, Internet and Files cards, persistent Ask Grace, and clearly separate
+Email, Internet, Files and Passwords cards, persistent Ask Grace, and clearly separate
 Home and Close browser controls. Two Home pages have arrow, dot and swipe
 navigation; the final prototype uses the progressive-blur carousel and icon
 app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi and
@@ -27,7 +27,7 @@ References: PRD MVP01–06, ANDROID01–10, ENG02–03; prototype 1847–1882, 2
 
 ```quint
 type Readiness = Starting | Ready | StartupFailed | Sleeping
-type Surface = Home | Calendar | Email | Browser | Files | DeviceSettings
+type Surface = Home | Calendar | Email | Browser | Files | Passwords | DeviceSettings
 type Connectivity = Offline | Scanning | NoNetworks | Connecting | Online | CaptivePortal | WrongPassword | ConnectionFailed
 type HomePage = MainCards | FilesCard
 type RailPopover = NoPopover | WifiPopover | VolumePopover
@@ -74,7 +74,7 @@ Changing surfaces changes only navigation context, not the permissions.
 
 ```quint
 pure def isTaskSurface(destination: Surface): bool =
-  destination == Home or destination == Calendar or destination == Email or destination == Browser or destination == Files
+  destination == Home or destination == Calendar or destination == Email or destination == Browser or destination == Files or destination == Passwords
 pure def canOpenSurface(s: Shell, destination: Surface): bool =
   s.readiness == Ready and isTaskSurface(destination)
 pure def openSurface(s: Shell, destination: Surface): Shell = {
@@ -86,6 +86,7 @@ pure def sometimesCalendarIsReachable(s: Shell): bool = s.surface == Calendar
 pure def sometimesEmailIsReachable(s: Shell): bool = s.surface == Email
 pure def sometimesBrowserIsReachable(s: Shell): bool = s.surface == Browser
 pure def sometimesFilesIsReachable(s: Shell): bool = s.surface == Files
+pure def sometimesPasswordsIsReachable(s: Shell): bool = s.surface == Passwords
 pure def canChooseHomePage(s: Shell, page: HomePage): bool = s.readiness == Ready and s.surface == Home
 pure def chooseHomePage(s: Shell, page: HomePage): Shell = {
   ...s, homePage: page, contextVersion: s.contextVersion + 1

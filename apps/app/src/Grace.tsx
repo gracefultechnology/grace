@@ -4,11 +4,12 @@
 import { besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
-import { useDraft, useKeyboardHeight, useWorkspace } from "./useApp.ts";
+import { useDraft, useKeyboardHeight, usePasswordGuide, useWorkspace } from "./useApp.ts";
 
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send } = useWorkspace();
+  const guide = usePasswordGuide();
   const { assistant } = workspace!;
   const conversation = assistant.conversation;
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
@@ -37,7 +38,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             }}
             onFieldFocus={() => interact({ tag: "TypeIntoChat" })}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
-            onSend={() => interact({ tag: "SendDraft", revision: conversation.draftRevision })} />
+            onSend={() => {
+              const { draftRevision } = conversation;
+              void guide.request(draftRevision).then((guided) => {
+                if (guided) setDraft("");
+                else interact({ tag: "SendDraft", revision: draftRevision });
+              });
+            }} />
         }>
         <GraceMessages>
           {conversation.messages.map((message, index) =>

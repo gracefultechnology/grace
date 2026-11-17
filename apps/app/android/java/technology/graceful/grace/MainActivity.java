@@ -17,6 +17,7 @@ import ai.eliza.plugins.agent.embedded.EmbeddedAgentPlugin;
 import ai.eliza.plugins.browsersurface.ElizaBridgeActivity;
 import ai.eliza.plugins.browsersurface.ElizaSurfaceManagerPlugin;
 import ai.eliza.plugins.wifi.WiFiPlugin;
+import ai.eliza.plugins.passwords.PasswordsPlugin;
 
 public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
@@ -25,6 +26,8 @@ public class MainActivity extends ElizaBridgeActivity {
  @Override public void onCreate(Bundle state) {
   registerPlugin(EmbeddedAgentPlugin.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
+  registerPlugin(PasswordsPlugin.class);
+  registerPlugin(PrivateViewPlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
   super.onCreate(state);
   preferSixtyHertz();
