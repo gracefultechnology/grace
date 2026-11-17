@@ -21,7 +21,7 @@ const answered = fn();
 const putOff = fn();
 const closed = fn();
 
-const accountLine = "Connect your email so I can help with your email and calendar.";
+const accountLine = "Connect your email so I can read your email and calendar to help you. I send an email, move one to Trash or change an event only when you say so.";
 const notNowAccount = { cost: "Grace can’t help until your email is connected.", onNotNow: putOff };
 const learnLater = { cost: "You can try it later in Grace’s window.", onNotNow: putOff };
 const next = { label: "Next", onAction: answered };
