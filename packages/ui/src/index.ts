@@ -72,7 +72,6 @@ export * from "./components/MailActionStatus.tsx";
 export * from "./components/MailApp.tsx";
 export * from "./components/MailAttachment.tsx";
 export * from "./components/MailCompose.tsx";
-export * from "./components/MailConnect.tsx";
 export * from "./components/MailFolderNav.tsx";
 export * from "./components/MailMessageRow.tsx";
 export * from "./components/MailMessageView.tsx";

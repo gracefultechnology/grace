@@ -6,6 +6,16 @@ import type { MailComposeProps } from "./MailCompose.tsx";
 const send = fn();
 const add = fn();
 const retrySave = fn();
+const chooseFrom = fn();
+
+const from = {
+  accounts: [
+    { id: 1, address: "margaret.ellis@gmail.com", name: "Gmail" },
+    { id: 2, address: "margaret@outlook.com", name: "Outlook" },
+  ],
+  selected: 1,
+  onSelect: chooseFrom,
+};
 
 export const meta: ComponentMeta<MailComposeProps> = {
   args: {
@@ -34,6 +44,8 @@ export const meta: ComponentMeta<MailComposeProps> = {
     "Not sure it sent": { sendStatus: "unknown" },
     "Record not saved": { sendStatus: "saveFailed", onRetrySave: retrySave },
     "Draft not saved": { draftError: "Your draft couldn’t be saved. Try again.", onRetryDraft: fn() },
+    From: { from },
+    "From menu open": { from: { ...from, open: true } },
     Reply: { title: "Reply", backLabel: "Susan’s email", subject: "Re: Photos from Lily’s recital", body: "", attachments: [] },
   },
   decorator: mailScreen,
@@ -44,6 +56,12 @@ export const meta: ComponentMeta<MailComposeProps> = {
       await expect(add).toHaveBeenCalledWith("to");
       await userEvent.click(canvas.getByRole("button", { name: "Send" }));
       await expect(send).toHaveBeenCalled();
+      unfocus();
+    },
+    From: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: /margaret\.ellis@gmail\.com/ }));
+      await userEvent.click(await within(document.body).findByRole("menuitemradio", { name: /margaret@outlook\.com/ }));
+      await expect(chooseFrom).toHaveBeenCalledWith(2);
       unfocus();
     },
     "Not sure it sent": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true),
