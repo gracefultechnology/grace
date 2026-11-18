@@ -864,18 +864,60 @@ type DeviceNode = ReturnType<typeof deviceNodes>[number];
 const legacyCredential = (node: DeviceNode) =>
   node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui");
 
-function passwordEditorLabels(apk: string) {
-  const lines = execFileSync(buildTool("aapt2"), ["dump", "resources", apk], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
-    .split(/\r?\n/);
-  const label = (resource: string) => {
-    const index = lines.findIndex((line) => line.trimEnd().endsWith(` string/eliza_passwords_${resource}`));
-    const raw = lines[index + 1]?.trim();
-    if (index < 0 || !raw?.startsWith("() ")) throw new Error("The fixture APK is missing a default password editor string");
-    return Schema.decodeUnknownSync(Schema.NonEmptyString)(JSON.parse(raw.slice(3)));
-  };
+const editorFixturePackage = "technology.graceful.fixture";
+const editorFixtureRunner = `${editorFixturePackage}/.BillWorldPasswordEditor`;
+
+function buildPasswordEditorFixture(directory: string, login: typeof LoginFixture.Type["login"], hostApk: string) {
+  const work = path.join(directory, "native-editor-test");
+  const assets = path.join(work, "assets");
+  const classes = path.join(work, "classes");
+  const sdkJar = sdk("platforms/android-36/android.jar");
+  for (const folder of [work, assets, classes]) mkdirSync(folder, { mode: 0o700 });
+  writeFileSync(path.join(assets, "synthetic-login.json"), JSON.stringify(login), { mode: 0o600 });
+  const manifest = path.join(work, "AndroidManifest.xml");
+  writeFileSync(manifest, `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${editorFixturePackage}"><uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36"/><application android:testOnly="true" android:allowBackup="false"/><instrumentation android:name=".BillWorldPasswordEditor" android:targetPackage="${identity.appId}"/></manifest>`);
+  const compile = (tool: string, args: string[]) => execFileSync(tool, args, { stdio: "ignore", timeout: 180_000 });
+  compile(path.join(resolveJavaHome(), "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
+    path.join(app, "test/device/BillWorldPasswordEditor.java")]);
+  const compiled = path.join(classes, "technology/graceful/fixture/BillWorldPasswordEditor.class");
+  compile(buildTool("d8"), ["--lib", sdkJar, "--min-api", "29", "--output", work, compiled]);
+  const unsigned = path.join(work, "unsigned.apk");
+  const aligned = path.join(work, "aligned.apk");
+  const apk = path.join(work, "native-editor-test.apk");
+  compile(buildTool("aapt2"), ["link", "-I", sdkJar, "--manifest", manifest, "-A", assets, "-o", unsigned]);
+  compile("zip", ["-q", "-j", unsigned, path.join(work, "classes.dex")]);
+  compile(buildTool("zipalign"), ["-f", "4", unsigned, aligned]);
+  const apksigner = buildTool("apksigner");
+  compile(apksigner, ["sign", "--ks", path.join(app, "android/debug.keystore"), "--ks-key-alias", "androiddebugkey",
+    "--ks-pass", "pass:android", "--out", apk, aligned]);
+  if (readApkSignerDigest(apk, { apksigner }) !== readApkSignerDigest(hostApk, { apksigner })) {
+    throw new Error("The native editor fixture must have the same signer as the episode APK");
+  }
+  return apk;
+}
+
+function runPasswordEditorFixture(serial: string, signal: AbortSignal) {
+  const child = spawn(sdk("platform-tools/adb"), ["-s", serial, "shell", "am", "instrument", "-w", "-r", editorFixtureRunner],
+    { stdio: ["ignore", "pipe", "ignore"] });
+  const output = createInterface({ input: child.stdout });
+  const phases = new Set<string>();
+  let exited = false;
+  output.on("line", (line) => {
+    const phase = /^INSTRUMENTATION_STATUS: fixtureStage=(ready|save-dispatched|failed)$/.exec(line)?.[1];
+    if (phase) phases.add(phase);
+  });
+  child.once("error", () => { exited = true; });
+  child.once("close", () => { exited = true; });
   return {
-    name: label("editor_label"), website: label("editor_website"), username: label("editor_username"),
-    password: label("editor_password"), save: label("save"),
+    stop: () => { output.close(); child.kill(); },
+    async wait(phase: "ready" | "save-dispatched", seconds: number) {
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(seconds * 1000)]);
+      while (!phases.has(phase)) {
+        deadline.throwIfAborted();
+        if (exited || phases.has("failed")) throw new Error("The disposable native editor instrumentation stopped");
+        await delay(250, undefined, { signal: deadline });
+      }
+    },
   };
 }
 
@@ -905,19 +947,19 @@ function systemPinPad(nodes: DeviceNode[]) {
 }
 
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi, signal: AbortSignal) {
-  const installedApk = async () => {
-    const packages = (await shell(serial, `cmd package list packages -f ${identity.appId}`)).trim();
+  const installedApk = async (packageName = identity.appId) => {
+    const packages = (await shell(serial, `cmd package list packages -f ${packageName}`)).trim();
     if (!packages) return undefined;
-    const entry = packages.split("\n").find((line) => line.endsWith(`=${identity.appId}`));
+    const entry = packages.split("\n").find((line) => line.endsWith(`=${packageName}`));
     if (!entry) throw new Error("Unexpected Android package state");
-    const file = entry.slice("package:".length, -identity.appId.length - 1);
+    const file = entry.slice("package:".length, -packageName.length - 1);
     if (!entry.startsWith("package:") || !/^\/data\/app\/[A-Za-z0-9_~+=/.-]+\/base\.apk$/.test(file)) throw new Error("Unexpected installed APK path");
     const result = (await shell(serial, `sha256sum '${file}'`, 120)).split(/\s/)[0];
     if (!result || !/^[0-9a-f]{64}$/.test(result)) throw new Error("Android could not identify the installed APK");
     return result;
   };
   if ((await shell(serial, "getprop ro.kernel.qemu")).trim() !== "1" ||
-      await installedApk() !== undefined) {
+      await installedApk() !== undefined || await installedApk(editorFixturePackage) !== undefined) {
     throw new Error("BillWorld requires an emulator with no existing Grace installation");
   }
   const fixture = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
@@ -979,22 +1021,6 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     step = `confirm Android’s credential prompt for ${purpose}`;
     await shell(serial, "input keyevent KEYCODE_ENTER");
   };
-  const editor = async (field: "name" | "website" | "username" | "password", label: string, value: string) => {
-    const matches = (node: DeviceNode) => node.packageName === identity.appId && node.className === "android.widget.EditText" &&
-      node.description === label && node.enabled && node.clickable && node.password === (field === "password");
-    step = `find the native editor ${field} field`;
-    const control = await waitForUi((nodes) => {
-      const fields = nodes.filter(matches);
-      return fields.length === 1 ? fields[0] : undefined;
-    }, "one matching native editor field");
-    step = `tap the native editor ${field} field`;
-    await tapNode(control);
-    step = `verify focus on the native editor ${field} field`;
-    await waitForNode((node) => matches(node) && node.focused, "the focused native editor field");
-    step = `type into the focused native editor ${field} field`;
-    signal.throwIfAborted();
-    await text(value);
-  };
   let episode: { grade(): Promise<unknown>; close(): Promise<unknown> } | undefined;
   let step = "open fixture";
   try {
@@ -1022,9 +1048,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           buildFailure = error instanceof Error ? error : new Error("Could not build the fixture APK");
           throw buildFailure;
         }
-        step = "read the native editor labels from the episode APK";
+        step = "build the signed native editor instrumentation";
         const apk = path.join(app, output, "standalone-debug.apk");
-        const labels = passwordEditorLabels(apk);
+        const editorApk = buildPasswordEditorFixture(path.join(app, output), login, apk);
         signal.throwIfAborted();
         step = "install the test APK and transport";
         for (const port of deviceTrust.reversePorts) {
@@ -1070,6 +1096,21 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         await shell(serial, `settings put secure autofill_service ${autofill}`);
         cleanup.push(() => shell(serial, noProvider ? "settings delete secure autofill_service" : `settings put secure autofill_service ${previous}`));
         if ((await shell(serial, "settings get secure autofill_service")).trim() !== autofill) throw new Error("Android did not select Grace Passwords");
+        step = "install the owned native editor instrumentation";
+        const editorDigest = createHash("sha256").update(readFileSync(editorApk)).digest("hex");
+        cleanup.push(async () => {
+          const installed = await installedApk(editorFixturePackage);
+          if (installed === undefined) return;
+          if (installed !== editorDigest) throw new Error("The native editor test package changed during the episode");
+          await adb(["-s", serial, "uninstall", editorFixturePackage], 180);
+          if (await installedApk(editorFixturePackage) !== undefined) throw new Error("The native editor test package remains installed");
+        });
+        await adb(["-s", serial, "install", "-t", editorApk], 420);
+        if (await installedApk(editorFixturePackage) !== editorDigest) throw new Error("Android did not install the native editor test package");
+        step = "start the owned native editor instrumentation";
+        const editor = runPasswordEditorFixture(serial, signal);
+        cleanup.push(async () => { editor.stop(); });
+        await editor.wait("ready", 480);
         step = "start the Grace tablet app";
         const started = await shell(serial, `am start -n ${activity}`, 120);
         if (!started.startsWith("Starting: Intent {") || !started.includes(`cmp=${activity}`)) throw new Error("Android did not dispatch Grace");
@@ -1095,14 +1136,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await submitPin("Passwords");
           step = "open the protected password editor";
           await page.step({ tap: "Add password" });
-          await editor("name", labels.name, login.label);
-          await editor("website", labels.website, origin.origin);
-          await editor("username", labels.username, login.username);
-          await editor("password", labels.password, login.password);
-          await shell(serial, "input keyevent KEYCODE_BACK");
-          step = "save the synthetic sign-in";
-          await tap((node) => node.packageName === identity.appId && node.className === "android.widget.Button" &&
-            node.label.toLocaleLowerCase("en-US") === labels.save.toLocaleLowerCase("en-US"), "the native Save button");
+          step = "save through the focused native editor";
+          await editor.wait("save-dispatched", 90);
+          step = "confirm the saved password in Grace";
           await page.step({ expect: "Password saved." });
           process.stdout.write("The installed native password editor saved the synthetic sign-in.\n");
           step = "open the private HTTPS browser";
