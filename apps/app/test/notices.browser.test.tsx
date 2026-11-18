@@ -6,11 +6,11 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine as Notices } from "../gen/app__notices.effect.vibe";
 import { type Event as ProposalEvent, Machine as Proposals, addVisit } from "../gen/app__proposal.effect.vibe";
-import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { NoticeHost, type Reply } from "../src/notices.vibe";
+import { mount, signInToGrace } from "./screen.tsx";
 import "../src/main.css";
 
 describe('spec/app/notices.md, "Story: See one message at a time, in the order things happened"', () => {
@@ -98,17 +98,8 @@ it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A du
       },
     },
   }));
-  const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
-  onTestFinished(async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    host.remove();
-  });
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
-  await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
-    report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
+  await mount(runtime);
+  await signInToGrace(runtime);
   const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await click("Settings");
   entries = reminders;

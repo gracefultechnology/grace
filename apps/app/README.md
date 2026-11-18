@@ -12,6 +12,7 @@ and traces (SPEC.md, "One spec tree").
 | `src/useApp.ts`, `src/PageLayer.tsx` | React hooks over both machines; what the interface measures (`PageArea`, `OverPage`) |
 | `src/App.tsx`, `src/Browser.tsx`, `src/Grace.tsx` | Home, the browser window and Grace's window, on `@repo/ui` |
 | `test/app.browser.test.tsx` | the journey "Use the website under Grace's controls", with the plugin faked at its boundary (`pnpm test:browser`) |
+| `scripts/android.ts`, `scripts/aosp.ts` | the Android and AOSP runners, checked by `pnpm typecheck` against upstream's Android tools read from their source. Strict mode cannot use two of them, so `scripts/toolchain.d.ts` and `scripts/build-consumer.d.ts` declare what the runners call: `toolchain.ts` leaves its parameters untyped, and the defaults of `build-consumer.mjs` infer `null` and `never[]`; a change to those two shows only when a runner runs |
 
 | Command | Does |
 |---|---|

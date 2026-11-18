@@ -1,7 +1,6 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
@@ -9,14 +8,13 @@ import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider,
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { tabletViewport } from "./tablet.fixture.tsx";
+import { mount, actOnScreen } from "./screen.tsx";
 import "../src/main.css";
 
-tabletViewport();
+actOnScreen();
 
 const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";
@@ -64,13 +62,8 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  onTestFinished(async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    localStorage.clear();
-  });
+  onTestFinished(() => localStorage.clear());
+  await mount(runtime);
   return {
     secret,
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {

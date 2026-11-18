@@ -15,10 +15,10 @@ import { application } from "../src/app.vibe";
 import { day, dayOf, hour, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, signIn } from "./cloud.vibe";
-import { tabletViewport } from "./tablet.fixture.tsx";
+import { actOnScreen } from "./screen.tsx";
 import "../src/main.css";
 
-tabletViewport();
+actOnScreen();
 
 const cloud = inject("cloud");
 const gmail = "owner@grace.test";

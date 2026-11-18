@@ -9,7 +9,6 @@ import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
-import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -22,7 +21,7 @@ import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, otherPassword, reply, script, signIn, turns } from "./cloud.vibe";
-import { mountTablet, tabletView, tabletViewport } from "./tablet.fixture.tsx";
+import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -135,7 +134,7 @@ async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: strin
   return { ...routedControls(native), dispose: view.dispose };
 }
 
-tabletViewport();
+actOnScreen();
 
 it("Use the website under Grace's controls", async () => {
   const native = fakePlugin();
@@ -144,7 +143,7 @@ it("Use the website under Grace's controls", async () => {
     await act(() => page.getByRole("textbox", { name: "Address" }).fill(url));
     await act(() => userEvent.keyboard("{Enter}"));
   };
-  await mountTablet(runtime);
+  await mount(runtime);
   /** A tab as the workspace holds it. */
   const tab = (id: number) => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === id)!;
 
@@ -456,7 +455,7 @@ it("Use the website under Grace's controls", async () => {
 it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday tasks from Home")', async () => {
   // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"
   const runtime = ManagedRuntime.make(application(undefined));
-  await mountTablet(runtime);
+  await mount(runtime);
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   const tap = (name: string) => act(() => userEvent.click(button(name)));
 
@@ -568,7 +567,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     passwordBackupStatus: () => Promise.resolve({ ready: true }),
     openBackupRecovery: () => { recoveryOpened = true; return Promise.resolve({ status: "opened" }); },
   }));
-  await mountTablet(runtime);
+  await mount(runtime);
   const unlock = await askToShowPassword();
   const guide = () => runtime.runSync(Effect.flatMap(Effect.service(PasswordViews), (machine) => machine.get())).guide;
   expect(guide()).toBe("ShowPasswordGuide");
@@ -640,7 +639,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
 async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter: (field: Locator, text: string) => PromiseLike<void>) {
   const runtime = ManagedRuntime.make(application(native.plugin));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
-  await mountTablet(runtime);
+  await mount(runtime);
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
   await enter(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal");
   await act(() => userEvent.keyboard("{Enter}"));
@@ -708,7 +707,7 @@ it('Use only the current local speech for Passwords guidance (spec/app/index.md,
     listen: () => new Promise<Heard>((resolve) => requests.push(resolve)),
     cancel: ({ id }) => { cancellations.push(id); return Promise.resolve(); },
   }));
-  await mountTablet(runtime);
+  await mount(runtime);
   const ask = page.getByRole("button", { name: "Ask Grace" });
   const mic = () => page.getByRole("switch", { name: "Mic off" });
   await act(() => userEvent.click(ask));
@@ -1134,6 +1133,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let connectorConfigured = false;
   let inboxRequests = 0;
   let replyFromOwner = false;
+  let unconfirmed: string | undefined;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
@@ -1181,10 +1181,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
         });
       case "/api/v1/eliza/google/gmail/triage":
+        expect(Object.fromEntries(api.searchParams)).toEqual({ maxResults: "20", grantId: grant });
         inboxRequests++;
         return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
       case "/api/v1/eliza/google/gmail/read":
-        expect(api.searchParams.get("messageId")).toBe(mail.externalId);
+        expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
           accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
@@ -1197,8 +1198,15 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           expect(outbound).toMatchObject({ replyTo: mail.externalId, subject: "Your receipt", text: "Thank you." });
         else expect(outbound).toMatchObject({ subject: "Hello", text: "See you soon." });
         sent.push(outbound.replyTo ? "reply" : "new");
+        if (!outbound.replyTo) {
+          unconfirmed = outbound.operationId;
+          return reply({ error: "google_action_outcome_unknown" }, 409);
+        }
         return reply({ accountId: person.id, operationId: outbound.operationId, messageId: "sent-1" });
       }
+      case "/api/v1/eliza/google/gmail/send/status":
+        expect(Object.fromEntries(api.searchParams)).toEqual({ grantId: grant, operationId: unconfirmed });
+        return reply({ accountId: person.id, operationId: unconfirmed, messageId: "sent-2" });
       case "/api/v1/eliza/google/gmail/trash": {
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
@@ -1250,6 +1258,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
       case "/api/v1/eliza/google/calendar/feed":
+        expect(api.searchParams.get("grantId")).toBe(grant);
         expect(api.searchParams.get("timeMin")).not.toBeNull();
         expect(api.searchParams.get("timeMax")).not.toBeNull();
         return reply({
@@ -1316,6 +1325,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("To robin@example.test")).toBeVisible();
     expect(sent).toEqual(["reply"]);
     await tap("Confirm and send");
+    await tap("Check send status");
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply", "new"]);
     await tap("Close Email");
@@ -1376,6 +1386,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await view.render();
     await expect.element(page.getByRole("heading", { name: reminderEvent.title, exact: true })).toBeVisible();
     await expect.element(page.getByText(reminderEvent.description, { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Back to calendar" })).toBeVisible();
     expect(new URL(window.location.href).searchParams.has("occurrence")).toBe(false);
   } finally {
     await view.dispose();
@@ -1405,7 +1416,7 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
     },
   }));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
-  await mountTablet(runtime);
+  await mount(runtime);
   await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: false, step: 9 });
   await tap("Volume");
   await tap("Mute");
@@ -1495,10 +1506,8 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
       },
     },
   }));
-  await mountTablet(runtime);
-  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
-  await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
-    report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
+  await mount(runtime);
+  await signInToGrace(runtime);
   await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
     workspace.send({ type: "chooseHomePage", page: "FilesCard" }, "Person"))));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
@@ -1549,7 +1558,7 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
       cancel: () => { finishSpeech?.({ status: "cancelled" }); return Promise.resolve(); },
     },
   }));
-  await mountTablet(runtime);
+  await mount(runtime);
   const unlock = await askToShowPassword();
   await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
   await act(() => userEvent.click(unlock));
@@ -1682,8 +1691,7 @@ it("Talk or type without losing the conversation", async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const runtime = ManagedRuntime.make(application(fakePlugin().plugin, undefined, { url: cloud, key: secret }));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  await mount(runtime);
   const workspace = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
   const field = page.getByRole("textbox", { name: "Message to Grace" });
   const type = (text: string) => act(() => userEvent.type(field, `${text}{Enter}`));
@@ -1708,9 +1716,6 @@ it("Talk or type without losing the conversation", async () => {
   expect(await Effect.runPromise(Effect.provide(turns(cloud, secret), client))).toEqual(
     ["Hello Grace.", "Make the text bigger.", "A bit bigger", "Say nothing."].map((said) => ({ said, outcome: "completed" })),
   );
-
-  await act(() => Promise.resolve(root.unmount()));
-  await runtime.dispose();
 });
 
 it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {

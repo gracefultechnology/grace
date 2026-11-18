@@ -5,10 +5,10 @@ import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } f
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import { client, expire, otherPassword, reply, signIn } from "./cloud.vibe";
-import { mountTablet, tabletViewport } from "./tablet.fixture.tsx";
+import { mount, actOnScreen } from "./screen.tsx";
 import "../src/main.css";
 
-tabletViewport();
+actOnScreen();
 const cloud = inject("cloud");
 const outlook = "margaret@outlook.com";
 const riverview = "margaret@riverview.net";
@@ -42,7 +42,7 @@ beforeEach(async () => {
   providerPages.length = 0;
   secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
   const app = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  await mountTablet(app);
+  await mount(app);
   onTestFinished(() => { localStorage.clear(); });
 });
 afterAll(() => {
