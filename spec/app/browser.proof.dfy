@@ -1,11 +1,11 @@
 lemma openTab_ensures(b: Browser)
-  ensures (inv(b) ==> canOpenTab(b) ==> alwaysTabsAreWellFormed(openTab(b)))
-  ensures (inv(b) ==> canOpenTab(b) ==> alwaysTabIdentifiersAreUnique(openTab(b)))
-  ensures (inv(b) ==> canOpenTab(b) ==> alwaysBrowserCountersAreValid(openTab(b)))
-  ensures (inv(b) ==> canOpenTab(b) ==> alwaysSelectedTabExists(openTab(b)))
-  ensures (inv(b) ==> canOpenTab(b) ==> alwaysOnlyALoadedPageIsSecure(openTab(b)))
-  ensures (inv(b) ==> canOpenTab(b) ==> alwaysRecentDestinationsAreDistinct(openTab(b)))
-  ensures (inv(b) ==> canOpenTab(b) ==> stepRevisionNeverMovesBack(b, openTab(b)))
+  ensures (inv(b) ==> alwaysTabsAreWellFormed(openTab(b)))
+  ensures (inv(b) ==> alwaysTabIdentifiersAreUnique(openTab(b)))
+  ensures (inv(b) ==> alwaysBrowserCountersAreValid(openTab(b)))
+  ensures (inv(b) ==> alwaysSelectedTabExists(openTab(b)))
+  ensures (inv(b) ==> alwaysOnlyALoadedPageIsSecure(openTab(b)))
+  ensures (inv(b) ==> alwaysRecentDestinationsAreDistinct(openTab(b)))
+  ensures (inv(b) ==> stepRevisionNeverMovesBack(b, openTab(b)))
 {
   if inv(b) {
     TabKeysBridge(b);
@@ -15,13 +15,13 @@ lemma openTab_ensures(b: Browser)
 }
 
 lemma closeBrowser_ensures(b: Browser)
-  ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysTabsAreWellFormed(closeBrowser(b)))
-  ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysTabIdentifiersAreUnique(closeBrowser(b)))
-  ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysBrowserCountersAreValid(closeBrowser(b)))
-  ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysSelectedTabExists(closeBrowser(b)))
-  ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysOnlyALoadedPageIsSecure(closeBrowser(b)))
-  ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysRecentDestinationsAreDistinct(closeBrowser(b)))
-  ensures (inv(b) ==> canCloseBrowser(b) ==> stepRevisionNeverMovesBack(b, closeBrowser(b)))
+  ensures (inv(b) ==> alwaysTabsAreWellFormed(closeBrowser(b)))
+  ensures (inv(b) ==> alwaysTabIdentifiersAreUnique(closeBrowser(b)))
+  ensures (inv(b) ==> alwaysBrowserCountersAreValid(closeBrowser(b)))
+  ensures (inv(b) ==> alwaysSelectedTabExists(closeBrowser(b)))
+  ensures (inv(b) ==> alwaysOnlyALoadedPageIsSecure(closeBrowser(b)))
+  ensures (inv(b) ==> alwaysRecentDestinationsAreDistinct(closeBrowser(b)))
+  ensures (inv(b) ==> stepRevisionNeverMovesBack(b, closeBrowser(b)))
 {
   if inv(b) { TabKeysBridge(closeBrowser(b)); }
 }
@@ -208,26 +208,16 @@ lemma removeRecent_ensures(b: Browser, url: string)
   }
 }
 
-lemma finishPageLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load, secure: bool)
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> alwaysTabsAreWellFormed(finishPageLoad(b, id, loadVersion, result, secure)))
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> alwaysTabIdentifiersAreUnique(finishPageLoad(b, id, loadVersion, result, secure)))
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> alwaysBrowserCountersAreValid(finishPageLoad(b, id, loadVersion, result, secure)))
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> alwaysSelectedTabExists(finishPageLoad(b, id, loadVersion, result, secure)))
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> alwaysOnlyALoadedPageIsSecure(finishPageLoad(b, id, loadVersion, result, secure)))
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> alwaysRecentDestinationsAreDistinct(finishPageLoad(b, id, loadVersion, result, secure)))
-  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result) ==> stepRevisionNeverMovesBack(b, finishPageLoad(b, id, loadVersion, result, secure)))
+lemma finishPageLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> alwaysTabsAreWellFormed(finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> alwaysTabIdentifiersAreUnique(finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> alwaysBrowserCountersAreValid(finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> alwaysSelectedTabExists(finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> alwaysOnlyALoadedPageIsSecure(finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> alwaysRecentDestinationsAreDistinct(finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
+  ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> stepRevisionNeverMovesBack(b, finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
 {
-  if inv(b) && canFinishPageLoad(b, id, loadVersion, result) {
-    var after := finishPageLoad(b, id, loadVersion, result, secure);
-    MappedTabKeys(b, after); RecentBridge(b); RecentBridge(after); FinishRecentFilter(b, id, loadVersion, result, secure);
-    var url := tabUrl(tabById(b, id));
-    if result.Loaded? && url != "" {
-      var kept := ProofLib.Filter((visit: string) => (visit != url), b.recent);
-      ProofLib.FilterKeepsDistinctBy((visit: string) => (visit != url), b.recent, (url: string) => url);
-      forall visit | visit in kept ensures visit != "" && visit != url
-      { ProofLib.FilterMember((visit: string) => (visit != url), b.recent, visit); }
-    }
-  }
+  if inv(b) && canFinishPageLoad(b, id, loadVersion, result, endedAt) { FinishedLoadKeepsRules(b, id, loadVersion, result, secure, endedAt); }
 }
 
 lemma finishLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load)
@@ -239,7 +229,76 @@ lemma finishLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load)
   ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysRecentDestinationsAreDistinct(finishLoad(b, id, loadVersion, result)))
   ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> stepRevisionNeverMovesBack(b, finishLoad(b, id, loadVersion, result)))
 {
-  if inv(b) && canFinishLoad(b, id, loadVersion, result) { finishPageLoad_ensures(b, id, loadVersion, result, false); }
+  if inv(b) && canFinishLoad(b, id, loadVersion, result) { FinishedLoadKeepsRules(b, id, loadVersion, result, false, ""); }
+}
+
+lemma FinishedLoadKeepsRules(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
+  requires inv(b) && canFinishLoad(b, id, loadVersion, result)
+  ensures inv(finishPageLoad(b, id, loadVersion, result, secure, endedAt))
+  ensures stepRevisionNeverMovesBack(b, finishPageLoad(b, id, loadVersion, result, secure, endedAt))
+{
+  var after := finishPageLoad(b, id, loadVersion, result, secure, endedAt);
+  forall t | t in b.tabs ensures |endedAtCursor(t, endedAt).history| == |t.history|
+  { if endedAt != "" { EndedAtFold(t.history, t.cursor, endedAt); } }
+  MappedTabKeys(b, after); RecentBridge(b); RecentBridge(after); FinishRecentFilter(b, id, loadVersion, result, secure, endedAt);
+  var url := if endedAt == "" then tabUrl(tabById(b, id)) else endedAt;
+  if result.Loaded? && url != "" {
+    var kept := ProofLib.Filter((visit: string) => (visit != url), b.recent);
+    ProofLib.FilterKeepsDistinctBy((visit: string) => (visit != url), b.recent, (url: string) => url);
+    forall visit | visit in kept ensures visit != "" && visit != url
+    { ProofLib.FilterMember((visit: string) => (visit != url), b.recent, visit); }
+  }
+}
+
+lemma EndedAtFold(xs: seq<string>, cursor: int, endedAt: string)
+  ensures |Std.Collections.Seq.FoldLeft((kept: seq<string>, visit: string) => (kept + [(if (|kept| == cursor) then endedAt else visit)]), [], xs)| == |xs|
+  ensures 0 <= cursor < |xs| ==> Std.Collections.Seq.FoldLeft((kept: seq<string>, visit: string) => (kept + [(if (|kept| == cursor) then endedAt else visit)]), [], xs)[cursor] == endedAt
+  decreases |xs|
+{
+  if |xs| > 0 {
+    var rest := xs[..|xs|-1];
+    var finalVisit := xs[|xs|-1];
+    EndedAtFold(rest, cursor, endedAt);
+    ProofLib.FoldLeftAppend((kept: seq<string>, visit: string) => (kept + [(if (|kept| == cursor) then endedAt else visit)]), [], rest, finalVisit);
+    assert xs == rest + [finalVisit];
+  }
+}
+
+lemma lawALoadRecordsWhereItEnded_ensures(t: Tab, endedAt: string)
+  ensures (lawALoadRecordsWhereItEnded(t, endedAt) == true)
+{
+  EndedAtFold(t.history, t.cursor, endedAt);
+}
+
+lemma lawAFailedLoadOffersReload_ensures(b: Browser, loadVersion: int, endedAt: string)
+  ensures (lawAFailedLoadOffersReload(b, loadVersion, endedAt) == true)
+{
+  if alwaysTabsAreWellFormed(b) && canFinishPageLoad(b, b.selected, loadVersion, Load.LoadFailed, endedAt) {
+    var after := finishPageLoad(b, b.selected, loadVersion, Load.LoadFailed, false, endedAt);
+    ProofLib.FilterPointwise((t: Tab) => (t.id == b.selected), (t: Tab) => (t.id == b.selected),
+      (x: Tab, y: Tab) => (x.id == b.selected ==> y == endedAtCursor(x, endedAt).(load := Load.LoadFailed, secure := false)), b.tabs, after.tabs);
+    LookupFilter(b, b.selected);
+    LookupFilter(after, b.selected);
+    var matches := ProofLib.Filter((t: Tab) => (t.id == b.selected), b.tabs);
+    var found := matches[|matches|-1];
+    ProofLib.FilterMember((t: Tab) => (t.id == b.selected), b.tabs, found);
+    EndedAtFold(found.history, found.cursor, endedAt);
+  }
+}
+
+lemma openWindow_ensures(b: Browser, url: string)
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> alwaysTabsAreWellFormed(openWindow(b, url)))
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> alwaysTabIdentifiersAreUnique(openWindow(b, url)))
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> alwaysBrowserCountersAreValid(openWindow(b, url)))
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> alwaysSelectedTabExists(openWindow(b, url)))
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> alwaysOnlyALoadedPageIsSecure(openWindow(b, url)))
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> alwaysRecentDestinationsAreDistinct(openWindow(b, url)))
+  ensures (inv(b) ==> canOpenWindow(b, url) ==> stepRevisionNeverMovesBack(b, openWindow(b, url)))
+{
+  if inv(b) && canOpenWindow(b, url) {
+    openTab_ensures(b);
+    navigate_ensures(openTab(b), url);
+  }
 }
 
 lemma TabKeysFilter(b: Browser)
@@ -347,8 +406,9 @@ lemma RemoveRecentFilter(b: Browser, url: string)
 {
 }
 
-lemma FinishRecentFilter(b: Browser, id: int, loadVersion: int, result: Load, secure: bool)
-  ensures finishPageLoad(b, id, loadVersion, result, secure).recent == (if result.Loaded? && tabUrl(tabById(b, id)) != "" then [tabUrl(tabById(b, id))] + ProofLib.Filter((visit: string) => (visit != tabUrl(tabById(b, id))), b.recent) else b.recent)
+lemma FinishRecentFilter(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
+  ensures finishPageLoad(b, id, loadVersion, result, secure, endedAt).recent == (var url := if endedAt == "" then tabUrl(tabById(b, id)) else endedAt;
+    if result.Loaded? && url != "" then [url] + ProofLib.Filter((visit: string) => (visit != url), b.recent) else b.recent)
 {
 }
 

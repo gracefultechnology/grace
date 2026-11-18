@@ -1124,3 +1124,22 @@ lemma DismissFilter(s: WebsiteRequests, id: int, by_: WebsiteActor)
   ensures dismissDownload(s, id, by_).downloads == ProofLib.Filter((d: DownloadRecord) => (d.id != id), s.downloads)
 {
 }
+
+lemma lawAnsweringTheOnlyMessageReleasesThePage_ensures(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor)
+  ensures (lawAnsweringTheOnlyMessageReleasesThePage(s, id, choice, by_) == true)
+{
+  if canAnswer(s, id, choice, by_) && isMessage(presented(s).ask) && |s.requests| == 1 && |s.asking| == 0 {
+    PresentedIsWaiting(s);
+    AnswerState(s, id, choice, by_);
+    var r := presented(s);
+    assert s.requests == [r];
+    var kept := ProofLib.Filter((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests);
+    forall q | q in kept ensures false
+    { ProofLib.FilterMember((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests, q); }
+    assert kept == [];
+    var after := answer(s, id, choice, by_).state;
+    assert after.requests == [] && after.asking == [];
+    PresentedFilter(after);
+    assert ProofLib.Filter((r: WebsiteRequest) => (r.tab == after.selected), after.requests) == [];
+  }
+}
