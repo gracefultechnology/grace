@@ -15,6 +15,7 @@ import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/brid
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
+import { AccountActions } from "../src/graceAccount.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -1011,6 +1012,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   window.history.replaceState(undefined, "", url);
 
   let signedIn = false;
+  let connectorConfigured = false;
+  let inboxRequests = 0;
   let replyFromOwner = false;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
@@ -1053,10 +1056,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status":
         return reply({
-          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
-          identity: { email: person.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"],
+          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
+          identity: connectorConfigured ? { email: person.email } : null, connectionId: connectorConfigured ? grant : null,
+          grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
         });
-      case "/api/v1/eliza/gmail/triage": return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
+      case "/api/v1/eliza/gmail/triage":
+        inboxRequests++;
+        return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
       case "/api/v1/eliza/gmail/read":
         expect(api.searchParams.get("messageId")).toBe(mail.externalId);
         return reply({
@@ -1132,6 +1138,14 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Send code");
     await act(() => userEvent.type(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
     await tap("Sign in");
+    await expect.element(page.getByRole("button", { name: "Close Email" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Go to Account" })).not.toBeInTheDocument();
+    expect(inboxRequests).toBe(0);
+
+    connectorConfigured = true;
+    await act(async () => {
+      await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
+    });
     await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
     const homeUrl = new URL(window.location.href);
     homeUrl.hash = "";
