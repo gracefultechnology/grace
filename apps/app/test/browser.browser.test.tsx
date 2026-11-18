@@ -188,6 +188,7 @@ const BrowserDocument = Schema.Struct({
   documentId: Schema.NonEmptyString,
   title: Schema.String,
   text: Schema.String,
+  readyState: Schema.Literals(["loading", "interactive", "complete"]),
   truncated: Schema.Boolean,
 });
 const BrowserControl = Schema.Struct({
@@ -286,7 +287,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
       outcome.ringTap = true;
-      await expect.poll(async () => (await read()).documentId, { timeout: 15_000 }).not.toBe(previous.documentId);
+      await expect.poll(async () => {
+        const document = await read();
+        return document.documentId !== previous.documentId && document.readyState === "complete";
+      }, { timeout: 30_000 }).toBe(true);
       const landed = await read();
       outcome.destination = { url: landed.url, documentId: landed.documentId };
       expect(visited.has(landed.url)).toBe(false);

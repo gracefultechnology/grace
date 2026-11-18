@@ -66,7 +66,7 @@ const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.opti
 type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
-const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean });
+const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
 const SiteState = Schema.Struct({
   cookies: Schema.Array(Schema.Struct({
     name: Schema.NonEmptyString, value: Schema.String, domain: Schema.NonEmptyString, path: Schema.NonEmptyString,
@@ -216,7 +216,10 @@ async function observeSite(existing: Site, action: SiteObservation) {
     return value.result.value;
   };
   if (action.kind === "read") {
-    const content = await evaluate(`({title: document.title, text: document.body.innerText.slice(0, 6000), truncated: document.body.innerText.length > 6000})`);
+    const content = await evaluate(`(() => {
+      const text = document.body?.innerText ?? "";
+      return { title: document.title, text: text.slice(0, 6000), truncated: text.length > 6000, readyState: document.readyState };
+    })()`);
     return { url, documentId: loaderId, ...Schema.decodeUnknownSync(PageText)(content) };
   }
   if (action.kind === "tapGuide") {
