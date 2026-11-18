@@ -68,7 +68,7 @@
     "@effect/platform-node": "4.1.1",
     "@informalsystems/quint": "^0.33.1",
     "effect": "4.1.1",
-    "lemmascript": "^0.6.8",
+    "lemmascript": "0.6.10",
     "playwright": "catalog:",
     "typescript": "^6.0.3",
     "vibelang-runtime": "0.0.13"
