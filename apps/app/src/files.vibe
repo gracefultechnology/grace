@@ -4,13 +4,13 @@ import type { Attached } from "./connector.vibe"
 import { HeldFile } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 
-export const libraryOwner = "tablet"
+const libraryOwner = "tablet"
 
 export service Library {
   save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string): (FileFeedback | undefined)!!
 }
 
-export error LibraryUnavailable { step: string }
+error LibraryUnavailable { step: string }
 
 const decodeCatalog = Schema.decodeUnknownEffect(Schema.UndefinedOr(Schema.Array(HeldFile)))
 const catalogKey = "catalog"
