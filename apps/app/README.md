@@ -74,8 +74,14 @@ checks that approving the plan and approving the calendar write are separate
 decisions. The native chat journey checks that the person sees a browser plan
 for review before starting it.
 
-Run these checks after `pnpm gen`. The Google and cross-app journeys run with
-the local provider and need no real accounts or hosted inference key.
+In GitHub Actions, dispatch `ci` with `cross_app_only` enabled to run these
+four journeys with the usual Linux setup. CI uses the repository variable
+`GRACE_CROSS_APP_RUNNER` as the runner label when set and otherwise uses
+`ubuntu-latest`. This mode skips the benchmarks, repository-wide verification,
+and verification cache and artifact uploads. The journeys use the local
+provider and require no real accounts or hosted inference key.
+
+After `pnpm gen`, run the same journeys locally with the following command.
 
 ```sh
 pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx \
