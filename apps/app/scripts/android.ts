@@ -426,12 +426,15 @@ const SignInReport = Schema.Struct({
   google: Schema.Boolean,
 });
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
-const homeControlReady = (controlName: { label: string } | { text: string }) => `(() => {
+type HomeControl = { label: string } | { text: string };
+const HomePoint = Schema.NullOr(Schema.Struct({ x: Schema.Number, y: Schema.Number }));
+const homeControlPoint = (controlName: HomeControl) => `(() => {
   const control = [...document.querySelectorAll("button:enabled")].find((button) =>
     ${"label" in controlName ? `button.getAttribute("aria-label") === ${JSON.stringify(controlName.label)}` : `button.textContent.trim() === ${JSON.stringify(controlName.text)}`});
-  if (!control || control.closest("[inert]")) return false;
+  if (!control || control.closest("[inert]")) return null;
   const { left, top, width, height } = control.getBoundingClientRect();
-  return control.contains(document.elementFromPoint(left + width / 2, top + height / 2));
+  const x = left + width / 2, y = top + height / 2;
+  return control.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
 })()`;
 const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
 const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
@@ -501,8 +504,23 @@ async function devTools(url: string, signal: AbortSignal) {
     const { quads: [quad] } = await send({ method: "DOM.getContentQuads", params: { backendNodeId: node }, schema: Quads, signal });
     if (!quad) throw new Error(`"${name}" is not on screen`);
     const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
-    for (const type of ["mousePressed", "mouseReleased"])
+    await tapAt({ x, y }, signal);
+  };
+
+  const tapAt = async ({ x, y }: NonNullable<typeof HomePoint.Type>, signal: AbortSignal) => {
+    for (const type of ["mousePressed", "mouseReleased"]) {
       await send({ method: "Input.dispatchMouseEvent", params: { type, x, y, button: "left", clickCount: 1 }, schema: Nothing, signal });
+    }
+  };
+
+  const waitForHomeControl = async (control: HomeControl, signal: AbortSignal) => {
+    const expression = homeControlPoint(control);
+    for (;;) {
+      await until(expression, signal);
+      const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal });
+      const point = Schema.decodeUnknownSync(HomePoint)(result.value);
+      if (point !== null) return point;
+    }
   };
 
   const describe = async () => {
@@ -514,6 +532,8 @@ async function devTools(url: string, signal: AbortSignal) {
   return {
     until,
     describe,
+    tapAt,
+    waitForHomeControl,
     async mainFrame(signal: AbortSignal) {
       const { frameTree } = await send({ method: "Page.getFrameTree", params: {}, schema: MainFrame, signal });
       return frameTree.frame;
@@ -1062,14 +1082,14 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.until(selectedHome, AbortSignal.timeout(180_000));
           process.stdout.write("The installed Grace Home is ready.\n");
           step = "wait for the Page 2 control on Grace Home";
-          await page.until(homeControlReady({ label: "Page 2" }), AbortSignal.timeout(120_000));
+          const page2 = await page.waitForHomeControl({ label: "Page 2" }, AbortSignal.timeout(120_000));
           step = "tap Page 2 on Grace Home";
-          await page.step({ tap: "Page 2" });
+          await page.tapAt(page2, AbortSignal.timeout(120_000));
           step = "wait for the Passwords card on Grace Home";
-          await page.until(homeControlReady({ text: "Passwords" }), AbortSignal.timeout(120_000));
+          const passwords = await page.waitForHomeControl({ text: "Passwords" }, AbortSignal.timeout(120_000));
           process.stdout.write("The Passwords card is ready on the second Grace Home page.\n");
           step = "open Passwords from the second Grace Home page";
-          await page.step({ tap: "Passwords" });
+          await page.tapAt(passwords, AbortSignal.timeout(120_000));
           step = "request Passwords unlock";
           await page.step({ tap: "Unlock Passwords" });
           await submitPin("Passwords");
