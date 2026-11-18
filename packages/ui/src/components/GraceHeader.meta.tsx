@@ -44,7 +44,7 @@ export const meta: ComponentMeta<GraceHeaderProps> = {
       pause.mockClear();
       const button = within(canvasElement).getByRole("button", { name: "Pause Grace" });
       await expect(button.getAttribute("aria-disabled")).toBe("true");
-      await userEvent.click(button);
+      await userEvent.click(button, { pointerEventsCheck: 0 });
       await expect(pause).not.toHaveBeenCalled();
     },
     "Show guidance": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
