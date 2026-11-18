@@ -899,12 +899,15 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     }
     return Response.json({ revoked: true });
   });
+  const sockets: FixtureSocket[] = [];
+  let recordedFrames = 0;
   class FixtureSocket extends EventTarget {
     readyState = 0;
     bufferedAmount = 0;
 
     constructor(url: string) {
       super();
+      sockets.push(this);
       expect(new URL(url).pathname).toBe(speechPath + "/ws");
       queueMicrotask(() => {
         this.readyState = 1;
@@ -920,6 +923,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 
     send(value: string | ArrayBuffer) {
       if (value instanceof ArrayBuffer) {
+        recordedFrames++;
         expect(value.byteLength % 2).toBe(0);
         if (nextTranscript) {
           this.receive({ t: "stt", event: { type: "start-of-turn", transcript: "" } });
@@ -996,7 +1000,15 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 
     const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
       machine.send({ type: "chooseHomePage", page }, "Person")));
+    const firstTurnFrames = recordedFrames;
+    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+    await expect.poll(() => recordedFrames).toBeGreaterThan(firstTurnFrames);
     await act(() => choosePage("PasswordsCard").then(() => undefined));
+    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+    await act(async () => {
+      sockets.at(-1)?.receive({ t: "stt", event: { type: "end-of-turn", transcript: "fixture stale utterance" } });
+    });
     await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
     await expect.poll(() => localRequests.length).toBe(1);
     await act(async () => { localRequests[0]?.({ status: "complete", text: "fixture spoken credential" }); });
@@ -1008,8 +1020,8 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       machine.send({ type: "interact", input: { tag: "SendDraft", revision } }, "Person")))).rejects.toBeDefined();
     await expect.element(page.getByRole("button", { name: "Send", exact: true })).not.toBeInTheDocument();
     await act(() => userEvent.keyboard("{Enter}"));
-    expect(calls).toEqual(speechSession);
-    expect(captures).toHaveLength(1);
+    expect(calls).toEqual([...speechSession, ...speechSession]);
+    expect(captures).toHaveLength(2);
     expect(turns).toEqual([{ text: voiceInput }]);
     await act(() => choosePage("MainCards").then(() => undefined));
     await expect.element(draft).toHaveValue("");
@@ -1018,8 +1030,8 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     nextTranscript = "Where can I find my saved passwords?";
     await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
     await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
-    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
-    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended", "ended"]);
+    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession, ...speechSession]);
     expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
     expect(turns).toEqual([{ text: voiceInput }]);
     expect(phrases).toEqual([voiceOutput]);
