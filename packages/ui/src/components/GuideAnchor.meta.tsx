@@ -20,6 +20,7 @@ export const meta: ComponentMeta<GuideAnchorProps> = {
   examples: {
     Point: { kind: "point", title: undefined },
     "Added by Margaret": { kind: "confirm", title: undefined, radius: 22, className: "flex", children: <CalendarEventRow {...lunch} /> },
+    "Below a row": { title: "Tap Lunch with Susan", placement: "below", radius: 22, className: "flex", children: <CalendarEventRow {...lunch} /> },
   },
   decorator: (story) => (
     <div className="w-[1130px] bg-background px-6 py-10">

@@ -11,7 +11,7 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
   detail?: string;
   /** The type on the file's icon: "PDF". */
   kind?: string;
-  /** Opens the file in the reader. */
+  /** Opens the file in the reader; without it Open is not offered. */
   onOpen?: () => void;
   /** The Open button's words. */
   openLabel?: string;
@@ -24,7 +24,7 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
 };
 
 /**
- * A file attached to an email, with Open (prototype `.a-att`).
+ * A file attached to an email, with Open when it can be opened (prototype `.a-att`).
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  */
@@ -43,9 +43,11 @@ export function MailAttachment({ name, detail, kind = "PDF", onOpen, openLabel =
           detail && <div className="mt-0.5 text-body leading-[26px] font-medium text-muted-foreground">{detail}</div>
         )}
       </div>
-      <Button variant="capsule" size="pill" className={cn(appButton, "ml-auto")} onClick={onOpen}>
-        {openLabel}
-      </Button>
+      {onOpen && (
+        <Button variant="capsule" size="pill" className={cn(appButton, "ml-auto")} onClick={onOpen}>
+          {openLabel}
+        </Button>
+      )}
     </div>
   );
 }

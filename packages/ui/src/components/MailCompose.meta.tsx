@@ -49,7 +49,14 @@ export const meta: ComponentMeta<MailComposeProps> = {
     "Draft not saved": { draftError: "Your draft couldn’t be saved. Try again.", onRetryDraft: fn() },
     From: { from },
     "From menu open": { from: { ...from, open: true } },
-    Reply: { title: "Reply", backLabel: "Susan’s email", subject: "Re: Photos from Lily’s recital", body: "", attachments: [] },
+    "Reply, Grace points at Send": {
+      title: "Reply",
+      backLabel: "Susan’s email",
+      subject: "Re: Photos from Lily’s recital",
+      body: "They’re lovely, thank you! See you on Sunday.",
+      attachments: [],
+      guide: { targetId: "send", kind: "instruction", title: "Tap Send", onClose: fn() },
+    },
   },
   decorator: mailScreen,
   play: {
