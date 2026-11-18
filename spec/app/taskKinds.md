@@ -94,7 +94,7 @@ pure def suggestion(facts: Facts, today: int): T::Terms = match facts {
 }
 pure val samplePayTerms: T::Terms = suggestion(sampleBillFacts, 1)
 pure def lawASuggestionFitsOrIsAbsent(kind: T::TaskKind, facts: Facts, today: int): bool =
-  factsFit(kind, facts) implies (suggestion(facts, today) == T::NoTerms or termsFit(facts, suggestion(facts, today)))
+  factsFit(kind, facts) implies (not(T::hasTerms(suggestion(facts, today))) or termsFit(facts, suggestion(facts, today)))
 ```
 
 ### Every kind's plan confirms the facts, reviews, asks consent and checks the outcome, and records in the calendar only a kind that does
@@ -108,6 +108,6 @@ pure def plan(kind: T::TaskKind): List[StepKind] =
   List(SourceStep, AccessStep, FactsStep, ConfirmStep, ChoiceStep, FillStep, FormStep, ReviewStep, ConsentStep, SubmitStep, OutcomeStep)
     .concat(if (T::recordsInCalendar(kind)) List(RecordStep) else List())
 pure def lawEveryPlanConfirmsReviewsAndConsents(kind: T::TaskKind): bool =
-  plan(kind).includes(ConfirmStep) and plan(kind).includes(ReviewStep) and plan(kind).includes(ConsentStep) and
-  plan(kind).includes(OutcomeStep) and (plan(kind).includes(RecordStep) iff T::recordsInCalendar(kind))
+  plan(kind).some(s => s == ConfirmStep) and plan(kind).some(s => s == ReviewStep) and plan(kind).some(s => s == ConsentStep) and
+  plan(kind).some(s => s == OutcomeStep) and (plan(kind).some(s => s == RecordStep) iff T::recordsInCalendar(kind))
 ```

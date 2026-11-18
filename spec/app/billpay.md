@@ -14,6 +14,7 @@ The facts are a reading of one kind of task, here the [bill kind's](./billKind.m
 
 ```quint
 import task as T from "./task"
+import billKind as BK from "./billKind"
 import taskKinds as K from "./taskKinds"
 type BillPhase = NoBill | NeedsLogin | ReadBill | ChoosePayment | PreparePayment | ReadyForReview | HandedOff | NoPaymentDue | ConflictingPayment | BillBlocked
 type Access = SignedOut | Challenge | SignedIn | WrongAccount | AccessDenied
@@ -58,6 +59,9 @@ pure val formReportValues = {
     .union(Set({ ...form, key: { ...form.key, origin: "https://credit.example" } }, { ...form, evidence: "" }, { ...form, proposal: T::NoTerms },
       { ...form, proposal: T::BookTerms({ book: { service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "", shares: List("name"), acceptsClash: false } }) }))
 }
+pure val termsValues = Set(K::samplePayTerms, T::NoTerms,
+  T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } }),
+  T::BookTerms({ book: { service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "", shares: List("name"), acceptsClash: false } }))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 2
@@ -96,7 +100,7 @@ While sign-in is required, the bill preparation has no bill facts, confirmed amo
 ```quint
 pure def alwaysPrivateLoginHasNoPaymentAuthority(b: BillPreparation): bool =
   b.phase == NeedsLogin implies
-    (not(b.factsConfirmed) and b.fillBy == NotAsked and b.choice == T::NoTerms and b.facts == K::NoFacts)
+    (not(b.factsConfirmed) and b.fillBy == NotAsked and not(T::hasTerms(b.choice)) and b.facts == initial.facts)
 ```
 
 ### Current bill facts distinguish payment choices, no payment due and an existing payment
@@ -119,7 +123,7 @@ pure def readFacts(b: BillPreparation, factReport: FactReport, by: T::TaskActor)
     reason: if (found == K::Unavailable) K::whyUnavailable(factReport.facts) else "" }
 pure def suggestedPayment(b: BillPreparation, today: int): T::Terms =
   if (b.phase == ChoosePayment and b.live) K::suggestion(b.facts, today) else T::NoTerms
-pure def alwaysFactsFitTheKind(b: BillPreparation): bool = b.facts == K::NoFacts or K::factsFit(b.key.kind, b.facts)
+pure def alwaysFactsFitTheKind(b: BillPreparation): bool = b.facts == initial.facts or K::factsFit(b.key.kind, b.facts)
 pure def sometimesNoPaymentDue(b: BillPreparation): bool = b.phase == NoPaymentDue
 pure def sometimesExistingPaymentIsInvestigated(b: BillPreparation): bool = b.phase == ConflictingPayment
 pure def sometimesFeeStillNeedsObservation(b: BillPreparation): bool = b.phase == ChoosePayment and K::costUnobserved(b.facts)
@@ -142,7 +146,7 @@ pure def disputeFacts(b: BillPreparation, by: T::TaskActor): BillPreparation =
 pure def lawDisputingFactsPaysNothing(b: BillPreparation, by: T::TaskActor): bool =
   canDisputeFacts(b, by) implies
     disputeFacts(b, by).phase == ReadBill and disputeFacts(b, by).key == b.key and
-    disputeFacts(b, by).choice == T::NoTerms and disputeFacts(b, by).fillBy == NotAsked and
+    not(T::hasTerms(disputeFacts(b, by).choice)) and disputeFacts(b, by).fillBy == NotAsked and
     disputeFacts(b, by).version > b.version and not(canChoose(disputeFacts(b, by), b.choice, by))
 ```
 
@@ -172,7 +176,10 @@ pure def canDecideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): bo
   b.phase == PreparePayment and b.live and fillBy != NotAsked and by == T::Person
 pure def decideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): BillPreparation = { ...b, fillBy: fillBy }
 pure def graceMayFill(b: BillPreparation, fill: K::Fill): bool =
-  b.phase == PreparePayment and b.live and b.fillBy == GraceFills and fill != K::NoFill and fill == K::fillOf(b.choice)
+  b.phase == PreparePayment and b.live and b.fillBy == GraceFills and (match fill {
+    | NoFill => false
+    | PayFill(x) => fill == K::fillOf(b.choice)
+  })
 pure def alwaysFillAnswerBelongsToAChoice(b: BillPreparation): bool =
   b.fillBy != NotAsked implies (b.phase == PreparePayment or b.phase == ReadyForReview or b.phase == HandedOff)
 pure def stepGraceFillsOnlyAfterTheirYes(before: BillPreparation, via: str, after: BillPreparation): bool =
