@@ -66,7 +66,7 @@ export const meta: ComponentMeta<GraceMessagesProps> = {
       await expect(jump).toHaveBeenCalled();
       const log = canvas.getByRole("log", { name: "Conversation" });
       log.scrollTop = log.scrollHeight;
-      fireEvent.scroll(log);
+      await fireEvent.scroll(log);
       await waitFor(() => expect(follow).toHaveBeenLastCalledWith(true));
     },
   },
