@@ -1,7 +1,7 @@
 // spec/app/workspace.md, "Story: Open an available control from Grace's reply"
 import { brightnessChoice, muteChoice, volumeChoice } from "../gen/app__preferences.effect.vibe"
-import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
-import { Machine as Workspaces, enabled, replyControlContext, replyControlsCurrent, type Event, type ReplyControlContext, type Workspace } from "../gen/app__workspace.effect.vibe"
+import type { SettingsPage } from "../gen/app__shell.effect.vibe"
+import { Machine as Workspaces, enabled, privateSurfaceActive, replyControlContext, replyControlsCurrent, type Event, type ReplyControlContext, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { ManagedReads, type ManagedSnapshot, type ProposedWork } from "./managedReads.vibe"
 import { withhold } from "./private.ts"
@@ -30,12 +30,12 @@ export service ReplyControls {
 export function replyOfferIsVisible(w: Workspace, offer: ReplyOffer) {
   const conversation = w.assistant.conversation
   const message = conversation.messages[offer.messageIndex]
-  return replyControlsCurrent(w, offer.context) && conversation.messages.length === offer.messageIndex + 1 &&
+  return !privateSurfaceActive(w) && replyControlsCurrent(w, offer.context) && conversation.messages.length === offer.messageIndex + 1 &&
     message?.author === "GraceMessage" && message.text === offer.messageText
 }
 
-const surfaceName: Record<Surface, string> = {
-  Home: "Home", Calendar: "Calendar", Email: "Email", Browser: "Internet", Files: "Files", Passwords: "Passwords", DeviceSettings: "Settings",
+const surfaceName: Record<Extract<Suggested, { kind: "open" }>["surface"], string> = {
+  Home: "Home", Calendar: "Calendar", Email: "Email", Browser: "Internet", Files: "Files", DeviceSettings: "Settings",
 }
 const settingName: Record<SettingsPage, string> = {
   TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi",

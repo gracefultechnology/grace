@@ -49,11 +49,12 @@ export type PasswordBackupPlugin = {
 };
 
 const backupReady = Schema.decodeUnknownSync(Schema.Struct({ ready: Schema.Boolean }));
-export const passwordBackupPlugin: PasswordBackupPlugin | undefined = accountPlugin && {
-  addListener: (_event, changed) => accountPlugin.addListener("sessionChanged", changed),
-  passwordBackupStatus: async () => backupReady(await accountPlugin.passwordRecoveryStatus()),
-  openBackupRecovery: async () => { await accountPlugin.showPasswordRecovery(); return { status: "opened" }; },
-  dismissPasswordRecovery: () => accountPlugin.dismissPasswordRecovery(),
+const recoveryAccount = accountPlugin;
+export const passwordBackupPlugin: PasswordBackupPlugin | undefined = recoveryAccount && {
+  addListener: (_event, changed) => recoveryAccount.addListener("sessionChanged", changed),
+  passwordBackupStatus: async () => backupReady(await recoveryAccount.passwordRecoveryStatus()),
+  openBackupRecovery: async () => { await recoveryAccount.showPasswordRecovery(); return { status: "opened" }; },
+  dismissPasswordRecovery: () => recoveryAccount.dismissPasswordRecovery(),
 };
 
 /** The Wi-Fi plugin, which only the launcher registers; elsewhere the WebView's own online state is all there is. */
