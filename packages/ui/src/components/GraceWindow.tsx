@@ -1,6 +1,6 @@
 import { useCallback, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
-import { watch } from "../lib/observe.ts";
+import { useSize, watch } from "../lib/observe.ts";
 
 export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref"> & {
   /** `compact` is three rows over the page (header, the current message, the answer row); `expanded` fills the screen. */
@@ -19,6 +19,7 @@ export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref
 
 const COMPACT = 260;
 const LINE = 32;
+const COMPACT_DOCK = 88;
 
 function fitted(section: HTMLElement): number {
   let current = section.querySelector("[role=log]")?.lastElementChild;
@@ -39,16 +40,20 @@ export function GraceWindow({ size = "expanded", height, onHeightChange, header,
   const expanded = size === "expanded";
   const fits = !expanded && height === undefined;
   const [fit, setFit] = useState(COMPACT);
+  const [dockRef, dockSize] = useSize<HTMLDivElement>();
+  const dockHeight = dockSize?.height ?? 0;
+  const dockExtra = Math.max(0, dockHeight - COMPACT_DOCK);
+  const dockStyle = { "--grace-dock-height": `${dockHeight}px` };
   const ref = useCallback(
     (section: HTMLElement | null) =>
       section && fits
         ? watch(section, () => {
             const next = fitted(section);
             setFit(next);
-            onHeightChange?.(next);
+            onHeightChange?.(next + dockExtra);
           })
         : undefined,
-    [fits, onHeightChange],
+    [fits, onHeightChange, dockExtra],
   );
   return (
     <section
@@ -60,7 +65,7 @@ export function GraceWindow({ size = "expanded", height, onHeightChange, header,
         expanded && "h-full",
         className,
       )}
-      style={expanded ? style : { height: height ?? fit, ...style }}
+      style={expanded ? { ...dockStyle, ...style } : { ...dockStyle, height: height ?? fit + dockExtra, ...style }}
       {...props}
     >
       <span
@@ -75,7 +80,7 @@ export function GraceWindow({ size = "expanded", height, onHeightChange, header,
             aria-hidden
             className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-[1] rounded-b-device bg-linear-to-t from-background/75 via-background/35 via-60% to-transparent mask-t-from-50% backdrop-blur-fade", expanded ? "h-[120px]" : "h-[110px]")}
           />
-          <div className="absolute inset-x-4 bottom-4 z-[2]">{dock}</div>
+          <div ref={dockRef} className="absolute inset-x-4 bottom-4 z-[2]">{dock}</div>
         </>
       )}
     </section>
