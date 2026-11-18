@@ -63,14 +63,24 @@ checks on the completed trial, including unchanged protected state and
 credentials. CI uploads asset provenance and both grader receipts as
 `billworld-released-task-md9`.
 
-The standard verification job also runs **Gmail signup to Calendar** in
-Chromium using the loopback Google provider. The simulated person grants
-consent to the fixture account, opens the clinic email, asks Grace to prepare
-its appointment, and separately approves the save. The test checks the
-saved appointment through the provider readback. It needs no real Google
-account, external provider login, or hosted model key. Run it locally after
-`pnpm gen` with
-`pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'`.
+The standard verification job exercises Google sign-in and cross-app tasks in
+Chromium. A resettable loopback provider serves OAuth consent, Gmail messages
+and Calendar events for synthetic accounts. In **Gmail signup to Calendar**,
+the person opens a clinic email and approves the appointment. The test reads
+the saved event from that account’s calendar. A second journey checks a named browser page, two
+appointment emails with the same subject, and a saved calendar event.
+Rereading the first email leaves the second email step open. A third journey
+checks that approving the plan and approving the calendar write are separate
+decisions. The native chat journey checks that the person sees a browser plan
+for review before starting it.
+
+Run these checks after `pnpm gen`. The Google and cross-app journeys run with
+the local provider and need no real accounts or hosted inference key.
+
+```sh
+pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx \
+  -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply'
+```
 
 ## Android
 

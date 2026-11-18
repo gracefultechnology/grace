@@ -64,7 +64,7 @@ type GuidedReadSource =
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
 type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
 
-function normalizedTitle(value: string | null | undefined): string {
+function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
 }
 
@@ -102,16 +102,18 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
           tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
       const url = tabUrl(tab)
-      const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
-      const result = snapshot?.result
-      const heading = step.subject
-      const title = normalizedTitle(result?.title)
-      if (!snapshot || !result || result.url !== url || result.readyState !== "complete" ||
-          result.blockers.some((item) => item.covers !== "partial") ||
-          title === "" || normalizedTitle(heading) !== title ||
-          !result.text?.split(/\r?\n/u).some((line) => normalizedTitle(line) === title)) return undefined
-      return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId, url, heading },
-        [url.replace(/#.*$/u, "")], "Open page: " + title)
+      const id = PageId.make(`tab-${tab.id}`)
+      const before = native.observeLinks(id) catch () => undefined
+      if (!before || before.result.url !== url || before.result.readyState !== "complete" ||
+          before.result.blockers.some((item) => item.covers !== "partial")) return undefined
+      const primary = native.readPrimaryHeading(id) catch () => undefined
+      const observed = normalizedHeading(primary?.text)
+      if (!primary || primary.url !== url || observed === "" || observed !== normalizedHeading(step.subject)) return undefined
+      const after = native.observeLinks(id) catch () => undefined
+      if (!after || after.documentId !== before.documentId || after.result.url !== url || after.result.readyState !== "complete" ||
+          after.result.domRevision !== before.result.domRevision || after.result.blockers.some((item) => item.covers !== "partial")) return undefined
+      return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
+        [url.replace(/#.*$/u, "")], "Open page: " + observed)
     }
     case "ReadBrowser":
     case "ReadChangedBrowser": {

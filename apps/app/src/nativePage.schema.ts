@@ -90,5 +90,5 @@ export const LinkObservation = Schema.Struct({
   })
 })
 export type LinkObservation = typeof LinkObservation.Type
-export const MenuRead = Schema.Struct({ url: Url, text: Schema.NonEmptyString, truncated: Schema.Literal(false) })
+export const VisibleTextRead = Schema.Struct({ url: Url, text: Schema.NonEmptyString, truncated: Schema.Literal(false) })
 export const PointResult = Schema.Struct({ result: Schema.Struct({ accepted: Schema.optional(Schema.Boolean) }) })
