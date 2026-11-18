@@ -78,16 +78,16 @@ const outcomes: Record<Outcome, string> = {
   NotOnScreen: "was not done: that is not on the screen"
 }
 
-export const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
-export const eventTarget = (key: number, id: string) => `event:${key}:${id}`
-export const unlinked = (text: string) => text.replace(/https?:\/\/\S+/g, "[a link]")
+const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
+const eventTarget = (key: number, id: string) => `event:${key}:${id}`
+const unlinked = (text: string) => text.replace(/https?:\/\/\S+/g, "[a link]")
 const said = (text: string) => text.trim() === "" ? "(empty)" : `“${text}”`
 const quoted = (text: string) => `“${text}”`
 
-export const when = (at: number) =>
+const when = (at: number) =>
   new Date(at).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
 
-export function calendarName(registry: Registry, key: number) {
+function calendarName(registry: Registry, key: number) {
   return key === tablet ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "a calendar no longer on the tablet"
 }
 

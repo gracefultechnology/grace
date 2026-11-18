@@ -1,20 +1,17 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it, onTestFinished } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
+import { actOnScreen, mount } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
-afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
+actOnScreen();
 
 const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";
@@ -57,13 +54,8 @@ async function start(withAccounts = true) {
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  onTestFinished(async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    localStorage.clear();
-  });
+  onTestFinished(() => localStorage.clear());
+  await mount(runtime);
   return {
     secret,
     host: (availability: "Online" | "Offline") => act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
@@ -358,6 +350,13 @@ it("Delete a message and recover it safely", async () => {
   const prize = email(/Prize Desk/);
   const undo = page.getByRole("button", { name: "Undo" });
   const labels = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction").map((m) => m.labels.filter((l) => l !== "UNREAD")));
+  const openInTrash = async () => {
+    await opened(/Prize Desk/, "A message for Grace");
+    await click(page.getByRole("button", { name: "Delete" }));
+    await expect.element(undo).toBeVisible();
+    await click(row("Trash"));
+    await opened(/Prize Desk/, "A message for Grace");
+  };
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(prize).toBeVisible();
 
@@ -369,20 +368,12 @@ it("Delete a message and recover it safely", async () => {
   await expect.poll(labels).toEqual([["INBOX"]]);
   await expect.element(prize).toBeVisible();
 
-  await opened(/Prize Desk/, "A message for Grace");
-  await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(undo).toBeVisible();
-  await click(row("Trash"));
-  await opened(/Prize Desk/, "A message for Grace");
+  await openInTrash();
   await click(page.getByRole("button", { name: "Restore" }));
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(labels).toEqual([["INBOX"]]);
   await click(row("All inboxes"));
-  await opened(/Prize Desk/, "A message for Grace");
-  await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(undo).toBeVisible();
-  await click(row("Trash"));
-  await opened(/Prize Desk/, "A message for Grace");
+  await openInTrash();
   await click(page.getByRole("button", { name: "Delete forever" }));
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction"))).toEqual([]);
