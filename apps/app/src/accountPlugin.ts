@@ -20,3 +20,14 @@ interface AccountPlugin {
 }
 
 export const accountPlugin = Capacitor.isPluginAvailable("GraceAccount") ? registerPlugin<AccountPlugin>("GraceAccount") : undefined;
+
+export interface ReminderPlugin {
+  enableManagedReminders(): Promise<void>;
+  managedDue(): Promise<unknown>;
+  dismissManagedDue(input: { id: string }): Promise<unknown>;
+  openManagedDue(input: { id: string }): Promise<void>;
+  addListener(event: "managedDueChanged", listener: () => void): Promise<PluginListenerHandle>;
+}
+
+export const reminderPlugin = Capacitor.isPluginAvailable("GraceReminders")
+  ? registerPlugin<ReminderPlugin>("GraceReminders") : undefined;

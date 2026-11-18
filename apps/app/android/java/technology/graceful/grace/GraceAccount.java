@@ -384,6 +384,7 @@ public final class GraceAccount extends Plugin {
    return change.call();
   } finally {
    GracePasswordsOwner.leavingAccountChange();
+   ManagedCalendarReminders.reconcile(context);
    GraceAgentService.finishAccountChange(context);
   }
  }
