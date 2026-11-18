@@ -178,12 +178,20 @@ function isolated(text: string, s: number, q: number): boolean {
   return !(before < s && before - runStart(text, before, 20) >= 3) && !(after > q && runEnd(text, after, 20) - after >= 3);
 }
 
+function groupsOnAfter(text: string, q: number): boolean {
+  const next = gapEnd(text, q, 6);
+  const end = runEnd(text, next, 20);
+  const after = gapEnd(text, end, 6);
+  return next > q && !breaksAt(text, q, next, 6) && end - next >= 5 && after > end && isDigitAt(text, after);
+}
+
 function tailEnd(text: string, q: number, steps: number): number {
   //@ decreases steps
   const next = gapEnd(text, q, 6);
   const end = runEnd(text, next, 5);
-  return steps > 0 && next > q && !breaksAt(text, q, next, 6) && isDigitAt(text, next) && end - next <= 4 && !isDigitAt(text, end) && !isLetterAt(text, end)
-    ? tailEnd(text, end, steps - 1) : q;
+  if (steps <= 0 || next <= q || breaksAt(text, q, next, 6) || !isDigitAt(text, next) || end - next > 4 || isDigitAt(text, end) || isLetterAt(text, end)) return q;
+  const further = tailEnd(text, end, steps - 1);
+  return further > end || !groupsOnAfter(text, end) ? further : q;
 }
 
 function cardEndsFrom(text: string, i: number, s: number, named: boolean, broken: boolean, p: number, count: number, groups: number, first: number, second: number, shortest: number, longest: number, allFour: boolean, sep: number, steps: number): boolean {
