@@ -37,7 +37,7 @@ function links(snapshot: LinkObservation, page: URL) {
   const { result } = snapshot
   if (result.url !== page.href || result.readyState !== "complete" ||
       result.blockers.some(blocker => blocker.covers !== "partial")) return []
-  const destinations = new Map<string, { id: string; label: string; labels: Set<string>; visible: boolean; path: string }>()
+  const destinations = new Map<string, { id: string; label: string; labels: Set<string>; rank: number; path: string }>()
   for (const item of result.elements) {
     if (item.tag !== "a" || item.disabled || item.sensitive || !item.label || !item.href || !URL.canParse(item.href)) continue
     const address = new URL(item.href)
@@ -45,15 +45,24 @@ function links(snapshot: LinkObservation, page: URL) {
         (address.pathname === page.pathname && address.search === page.search)) continue
     const label = publicWords(item.label)
     if (!label || label.includes("*") || label.length > CLEF_DECISION_LIMITS.candidateLabel) continue
+    const bounds = item.bounds
+    const viewport = result.viewport
+    let rank = item.inViewport ? 2 : 1
+    if (item.inViewport && bounds !== undefined && viewport !== undefined && viewport.scale > 0) {
+      const contained = bounds.x >= viewport.offsetLeft && bounds.y >= viewport.offsetTop &&
+        bounds.x + bounds.width <= viewport.offsetLeft + viewport.width / viewport.scale &&
+        bounds.y + bounds.height <= viewport.offsetTop + viewport.height / viewport.scale
+      if (!contained) rank = 0
+    }
     const existing = destinations.get(address.href)
     if (existing === undefined) {
-      destinations.set(address.href, { id: item.id, label, labels: new Set([label]), visible: item.inViewport, path: address.pathname })
+      destinations.set(address.href, { id: item.id, label, labels: new Set([label]), rank, path: address.pathname })
     } else {
       existing.labels.add(label)
-      if (item.inViewport && !existing.visible) {
+      if (rank > existing.rank) {
         existing.id = item.id
         existing.label = label
-        existing.visible = true
+        existing.rank = rank
       }
     }
   }
