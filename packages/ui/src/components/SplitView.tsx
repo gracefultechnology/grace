@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode, Ref } from "react";
 import { cn, focusRing } from "../lib/cn.ts";
 
 export type SplitViewProps = ComponentProps<"div"> & {
-  /** The side list, a `SideNav`: it stays still while the page beside it scrolls. */
+  /** The side list, a `SideNav`: it scrolls independently of the page beside it. */
   nav: ReactNode;
   /** The window's header, an `AppHeader`: it floats over the top of the page column, not over the side list. */
   header?: ReactNode;
@@ -16,7 +16,7 @@ export type SplitViewProps = ComponentProps<"div"> & {
  */
 export function SplitView({ nav, header, pageRef, className, children, ...props }: SplitViewProps) {
   return (
-    <div className={cn("relative grid h-full grid-cols-[270px_minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
+    <div className={cn("relative grid h-full grid-cols-[270px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
       {nav}
       <div
         ref={pageRef}
@@ -36,7 +36,7 @@ export function SideNav({ className, children, ...props }: SideNavProps) {
   return (
     <nav
       className={cn(
-        "flex h-[calc(100%-16px)] flex-col gap-1.5 rounded-window bg-sidebar/92 p-3 shadow-elevation-sidebar backdrop-blur-panel backdrop-saturate-160",
+        "flex h-[calc(100%-16px)] min-h-0 flex-col gap-1.5 overflow-y-auto rounded-window bg-sidebar/92 p-3 shadow-elevation-sidebar backdrop-blur-panel backdrop-saturate-160",
         className,
       )}
       {...props}
