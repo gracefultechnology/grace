@@ -632,8 +632,10 @@ pure val guidanceReportValues = Set(
 
 Choosing Wi-Fi on the rail moves expanded chat into the lower pane, just as
 Home and Settings do. The Wi-Fi popover still toggles on each tap.
-Entering or leaving the Passwords card discards the draft and stops the current
-voice turn. On that card Ask Grace accepts only local Passwords commands.
+An interruption keeps the task, checkpoint, goal and transcript and stops the
+current voice turn. Entering or leaving the Passwords card clears the draft.
+Other interruptions preserve it. On the Passwords card Ask Grace accepts
+only local Passwords commands.
 
 ```quint
 pure def canChooseHomePage(w: Workspace, page: S::HomePage, by: WorkspaceActor): bool =
@@ -665,7 +667,9 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
   implies after.assistant.taskId == before.assistant.taskId and
     after.assistant.goal == before.assistant.goal and after.assistant.checkpoint == before.assistant.checkpoint and
     after.assistant.conversation.messages == before.assistant.conversation.messages and
-    after.assistant.conversation.draft == before.assistant.conversation.draft and
+    after.assistant.conversation.draft ==
+      (if (localPasswordCommands(before.device) != localPasswordCommands(after.device)) ""
+       else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
 ```
 
