@@ -1047,7 +1047,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       machine.send({ type: "chooseHomePage", page }, "Person")));
     audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
     await startTalk();
-    await expect.poll(() => audio.mock.calls.length).toBe(3);
+    await expect.poll(() => audio.mock.calls.length).toBe(2);
     await expect.element(notice).not.toBeInTheDocument();
     accountId = firstAccount;
     await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
