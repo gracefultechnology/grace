@@ -1071,8 +1071,8 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         cleanup.push(() => shell(serial, noProvider ? "settings delete secure autofill_service" : `settings put secure autofill_service ${previous}`));
         if ((await shell(serial, "settings get secure autofill_service")).trim() !== autofill) throw new Error("Android did not select Grace Passwords");
         step = "start the Grace tablet app";
-        const started = await shell(serial, `am start -W -n ${activity}`, 180);
-        if (!started.includes(`Activity: ${activity}`)) throw new Error("Grace did not open");
+        const started = await shell(serial, `am start -n ${activity}`, 120);
+        if (!started.startsWith("Starting: Intent {") || !started.includes(`cmp=${activity}`)) throw new Error("Android did not dispatch Grace");
         step = "wait for the Grace home screen";
         const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
         signal.throwIfAborted();
