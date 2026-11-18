@@ -20,6 +20,7 @@ export type FileSnapshot = Closed | Ready
 export type FileHome = { photos: { src: string; alt: string }[]; document?: { name: string } }
 type Command =
   | { kind: "open"; id: string }
+  | { kind: "deletePhoto"; id: string; lease: string; generation: number }
   | { kind: "tab"; tab: "Photos" | "Documents" }
   | { kind: "photo" | "page"; direction: -1 | 1 }
   | { kind: "search"; query: string }
@@ -155,6 +156,21 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     return success
   }
 
+  effect function deletePhoto(ready: Ready, command: Extract<Command, { kind: "deletePhoto" }>) {
+    if (!port || ready.lease !== command.lease || !ready.model.contentReady) return false
+    const { id, generation } = command
+    const { ready: removing } = try advance({ ...ready, busy: true }, { type: "deletePhoto", id, generation }, "FileUser")
+    const succeeded = effect {
+      try tryPromise(() => port.remove({ lease: ready.lease, id }))
+      return true
+    } catch () => false
+    const { ready: after } = try advance({ ...removing, busy: false, image: succeeded ? undefined : ready.image }, { type: "writeResult", fileReceipt: {
+      owner: ready.lease, generation: removing.model.generation, id, succeeded, evidence: "device-removal",
+    } }, "FileStore")
+    if (succeeded) try exposeCatalog(after)
+    return succeeded
+  }
+
   effect function run(command: Command) {
     if (command.kind === "account") {
       try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
@@ -176,6 +192,7 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
         }
         try load(current)
         return true
+      case "deletePhoto": return try deletePhoto(current, command)
       case "capture": return try importOwner(current, { kind: "capture" })
       case "pick": return try importOwner(current, command)
       case "tab":

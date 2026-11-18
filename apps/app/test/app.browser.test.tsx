@@ -8,6 +8,7 @@ import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vit
 import { type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
+import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -1183,6 +1184,58 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     else sessionStorage.setItem("grace-hosted-read", oldIntent);
     window.history.replaceState(undefined, "", oldURL);
   }
+});
+
+it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share, print and remove the chosen file")', async () => {
+  const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
+  const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
+  let entries = [photo];
+  const removals: string[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    files: {
+      open: async () => ({ lease }),
+      close: async () => undefined,
+      list: async () => ({ entries }),
+      preview: async ({ id, page }) => ({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
+      pick: async () => undefined,
+      capture: async () => undefined,
+      commit: async () => undefined,
+      remove: async (request) => {
+        expect(request).toEqual({ lease, id: photo.id });
+        removals.push(request.id);
+        if (removals.length === 1) throw new Error("Device storage unavailable");
+        entries = [];
+      },
+    },
+  }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  await act(() => root.render(<App runtime={runtime} />));
+  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
+  await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
+    report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
+  await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
+    workspace.send({ type: "chooseHomePage", page: "FilesCard" }, "Person"))));
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await tap("Files");
+  await tap("Garden.jpg");
+  await tap("Delete");
+  await tap("Cancel");
+  expect(removals).toEqual([]);
+  await tap("Delete");
+  await tap("Delete photo");
+  await expect.element(page.getByRole("img", { name: photo.name })).toBeVisible();
+  await tap("Try again");
+  await tap("Delete photo");
+  await expect.poll(() => removals).toEqual([photo.id, photo.id]);
+  await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
+  expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
 });
 
 it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
