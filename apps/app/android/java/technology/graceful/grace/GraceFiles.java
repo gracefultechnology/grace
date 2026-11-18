@@ -235,7 +235,8 @@ public final class GraceFiles extends Plugin {
    call.getData().put("capture", destination.getName());
    Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".grace.capture", destination);
    Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE).putExtra(MediaStore.EXTRA_OUTPUT, uri)
-     .setClipData(ClipData.newRawUri("Photo", uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+   intent.setClipData(ClipData.newRawUri("Photo", uri));
    getActivity().runOnUiThread(() -> {
     try { startActivityForResult(call, intent, "captured"); }
     catch (RuntimeException failed) { destination.delete(); call.reject("Camera unavailable", "files_unavailable"); }
