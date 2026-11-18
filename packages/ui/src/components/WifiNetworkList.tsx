@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { EmptyState } from "./EmptyState.tsx";
@@ -40,8 +40,10 @@ export type WifiNetworkListProps = Omit<ComponentProps<"section">, "onSelect"> &
   onTurnOn?: () => void;
   /** Called with the network a person taps. */
   onSelect?: (name: string) => void;
-  /** Called by Fix Wi-Fi, offline: Grace helps reconnect. */
+  /** Called by Fix Wi-Fi, offline: Grace helps reconnect. Without it the offline row offers nothing. */
   onFix?: () => void;
+  /** The one control under an empty list, such as Look again. */
+  action?: ReactNode;
   /** The page's title. */
   title?: string;
   /** The label over the other networks. */
@@ -85,6 +87,7 @@ export function WifiNetworkList({
   onTurnOn,
   onSelect,
   onFix,
+  action,
   title = "Wi-Fi",
   othersLabel = "Other networks nearby",
   offlineLabel = "Not connected",
@@ -122,12 +125,14 @@ export function WifiNetworkList({
             <ListRow
               className="mt-[18px]"
               title={offlineLabel}
-              subtitle={offlineHint}
+              subtitle={onFix && offlineHint}
               leading={<WifiSlash size={30} />}
               trailing={
-                <Button variant="prominent" size="pill" onClick={onFix}>
-                  {fixLabel}
-                </Button>
+                onFix && (
+                  <Button variant="prominent" size="pill" onClick={onFix}>
+                    {fixLabel}
+                  </Button>
+                )
               }
             />
           )}
@@ -138,7 +143,7 @@ export function WifiNetworkList({
               <PageText tone="secondary">{scanningLabel}</PageText>
             </div>
           )}
-          {status === "none" && <EmptyState title={noneLabel} className="py-2" />}
+          {status === "none" && <EmptyState title={noneLabel} className="py-2">{action}</EmptyState>}
           {status === "ready" && (
             <>
               <div className="flex flex-col gap-2.5">
