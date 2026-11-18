@@ -1025,7 +1025,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let replyFromOwner = false;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
-  const reminderEvent = { ...events[0], externalId: "reminder-1", title: "Evening check-in" };
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
@@ -1110,10 +1109,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         return reply({ ...input, status: input.minutes === 0 ? "cancelled" : "saved",
           fireAt: Date.parse(time) - input.minutes * 60_000 });
       }
-      case "/api/v1/eliza/google/calendar/reminder/event":
-        expect(api.searchParams.get("grantId")).toBe(grant);
-        expect(api.searchParams.get("occurrenceId")).toBe(reminderEvent.externalId);
-        return reply({ accountId: person.id, event: reminderEvent });
       case "/api/v1/eliza/google/calendar/series":
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
         expect(api.searchParams.get("grantId")).toBe(grant);
