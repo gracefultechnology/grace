@@ -453,6 +453,15 @@ it("Talk or type without losing the conversation", async () => {
 it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const target = "Help center";
+  const ask = 'Help me reach the help page named "Help center", then read my two appointment emails and saved appointment. Leave everything unchanged.';
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: ask,
+    answer: JSON.stringify({
+      text: "Review and start the read plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }, "ReadMail", "ReadMail", "ReadCalendar"] }],
+    }),
+  }]), client));
   const subject = "Reminder: your appointment tomorrow at 10 am";
   const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
     method: "POST",
@@ -464,10 +473,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const account = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(account));
+  const origin = "https://example.org";
+  const home = { id: "example-home", path: "/", title: "Example", text: "Example\nHelp center" };
+  const about = { id: "example-about", path: "/about", title: "About Example", text: "About Example\nHelp center\nOur team" };
+  const help = { id: "example-help", path: "/help", title: target, text: "Help center\nFind answers to frequently asked questions." };
+  let currentPage = home;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
-      return { documentId: "example-home", frameScope: "main", result: {
-        snapshotId: "links", url: "https://example.org/", complete: true, readyState: "complete", blockers: [],
+      return { documentId: currentPage.id, frameScope: "main", result: {
+        snapshotId: currentPage.id, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
+        complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
@@ -501,13 +516,14 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Ask Grace" }));
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
-    const ask = "Check the help page on this website, then read my two appointment emails and saved appointment. Don't move or change anything.";
     await act(() => userEvent.type(field, ask + "{Enter}"));
-    await routeTo(page.getByRole("list", { name: "Read plan" }));
+    await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
     await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
     const check = page.getByRole("button", { name: "Check page" });
+    const plan = page.getByRole("region", { name: "Task plan" });
+    const pending = plan.getByText("Find and check the named page.", { exact: true });
     expect(check.query()).toBeNull();
     const showLink = page.getByRole("button", { name: "Show me the link" });
     expect(showLink.query()).toBeNull();
@@ -525,22 +541,27 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(allowReading);
     await tap(resumeReading);
     await tap(check);
-    await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the next page you want me to check/)).toBeVisible();
+    await expect.element(pending).toBeVisible();
 
     await tap(showLink);
     await routeTo(page.getByText("Look for “Help center” on example.org."));
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: "example-home", command: {
       subaction: "guide", guidance: { kind: "show", nodeId: "help" },
     } });
-    await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the next page you want me to check/)).toBeVisible();
+    await expect.element(pending).toBeVisible();
 
     const resume = page.getByRole("button", { name: "Resume Grace" });
-    await native.report("tab-1", "https://example.org/about", 100);
+    currentPage = about;
+    await native.report("tab-1", origin + about.path, 100);
     await tap(resume);
     await tap(check);
-    await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the next page you want me to check/)).toBeVisible();
+    await expect.element(page.getByRole("status", { name: "Page check result" })).toHaveTextContent("I couldn’t verify “Help center” on this page.");
+    await expect.element(pending).toBeVisible();
+    expect(plan.getByText("Read checks complete").query()).toBeNull();
+    expect(plan.getByText(/^Open the email you want me to read/).query()).toBeNull();
 
-    await native.report("tab-1", "https://example.org/help", 100);
+    currentPage = help;
+    await native.report("tab-1", origin + help.path, 100);
     await native.route();
     await routeTo(resume);
     expect(check.query()).toBeNull();
@@ -579,11 +600,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Riverside Clinic"));
     await tap(resume);
     await tap(page.getByRole("button", { name: "Check appointment" }));
-    const plan = page.getByRole("region", { name: "Task plan" });
     await expect.element(plan.getByText("Read checks complete")).toBeVisible();
     await routeTo(plan.getByText(/^Eye check with Dr\. Patel · /));
     await tap(page.getByRole("button", { name: "Expand", exact: true }));
-    await routeTo(plan.getByText("Open page: https://example.org/help", { exact: true }));
+    await routeTo(plan.getByText("Open page: Help center", { exact: true }));
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
