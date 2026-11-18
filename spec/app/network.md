@@ -105,7 +105,7 @@ pure def join(n: NetworkJoin, by: NetworkActor): NetworkJoin = {
 pure def alwaysPrivateVisibilityIsLocal(n: NetworkJoin): bool =
   n.privateVisible implies n.phase == PrivateEntry
 pure def alwaysReadinessBelongsToPrivateEntry(n: NetworkJoin): bool =
-  n.entryReady implies n.phase == PrivateEntry or n.phase == PortalEntry
+  n.entryReady implies n.phase == PrivateEntry
 ```
 
 ### Only the current OS result can complete or challenge the join
