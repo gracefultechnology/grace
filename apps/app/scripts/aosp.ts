@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
+import {execFileSync} from "node:child_process";
 import os from "node:os";
 import {parseArgs} from "node:util";
 import {Schema} from "effect";
+import {isAndroidExecutableForAbi} from "@elizaos/os/android/android-runtime-inventory.mjs";
+import {readApkEntries} from "@elizaos/os/android/apk-distribution.mjs";
 import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "@elizaos/os/aosp/stage-launcher-overlay.ts";
 import {buildTool as tool, identity as capacitor} from "./android.ts";
 
@@ -19,6 +22,17 @@ const Arguments = Schema.Union([
 const {values} = parseArgs({options: {apk: {type: "string"}, development: {type: "boolean", default: false}, signer: {type: "string"}}});
 const args = Schema.decodeUnknownSync(Arguments, {onExcessProperty: "error"})(values);
 const {apk, development} = args;
+
+const targetAbi = "x86_64";
+const requiredRuntime = `lib/${targetAbi}/libeliza_node.so`;
+const nodeRuntimes = readApkEntries(apk).filter((entry: string) => /^lib\/[^/]+\/libeliza_node\.so$/.test(entry));
+if (nodeRuntimes.length !== 1 || nodeRuntimes[0] !== requiredRuntime) {
+  throw new Error(`The x86_64 Cuttlefish launcher requires one x86_64 Eliza Node runtime, found ${nodeRuntimes.join(", ") || "none"}`);
+}
+const executable = execFileSync("unzip", ["-p", apk, requiredRuntime], {maxBuffer: 256 * 1024 * 1024});
+if (!isAndroidExecutableForAbi(executable, targetAbi)) {
+  throw new Error("The Eliza Node executable in the Cuttlefish launcher is not an x86_64 Android binary");
+}
 
 const pin = "signer" in args
   ? {schemaVersion: 1, ...identity, apkSha256: createHash("sha256").update(fs.readFileSync(apk)).digest("hex"), certificateSha256: args.signer.replaceAll(":", "").toLowerCase()}

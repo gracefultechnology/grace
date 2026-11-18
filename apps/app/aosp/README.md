@@ -5,6 +5,7 @@ stager in `vendor/eliza/packages/os/aosp`: Grace installed in
 `/product/app/Grace`, `RECORD_AUDIO` granted on first boot (revocable), Grace as
 default HOME on first boot, and the product makefiles in this directory.
 
+The stock Cuttlefish product needs a launcher with the x86_64 agent runtime.
 Build on an x86_64 Linux host set up for Cuttlefish
 ([source.android.com/docs/devices/cuttlefish](https://source.android.com/docs/devices/cuttlefish/get-started)).
 
@@ -12,6 +13,7 @@ Build on an x86_64 Linux host set up for Cuttlefish
 # 1. Stage (in apps/app). --development admits a debug-signed APK; a signed release APK
 #    (README.md, "Android") takes --signer <cert SHA-256>, the "certificate SHA-256 digest" of
 #    apksigner verify --print-certs artifacts/launcher-release.apk
+pnpm android --abi x86_64
 pnpm aosp --apk artifacts/launcher-debug.apk --development   # prints artifacts/aosp/grace-<sha>
 
 # 2. Copy into an Android 17 tree
