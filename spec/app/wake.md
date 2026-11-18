@@ -8,9 +8,14 @@ sleep screen, wake response and silence return. The default is enabled.
 only one wake interaction and its timers. [Workspace](./workspace.md) joins it
 to the actual device and conversation.
 
-The native wake detector operates locally. Pre-trigger audio is neither saved
-nor sent to a speech/model service. Detection is not open-ended conversation
-recording. The host excludes Grace's and website audio, checks current microphone
+On November 16 the owner chose speech through Grace's cloud service with no
+model on the tablet. A wake phrase cannot be heard in the cloud without
+sending the room's sound all day, so the MVP ships no wake detector: the host
+reports detection unavailable, no detection is admitted, the Settings row shows
+that it is not available and the sleep screen says to touch the screen. The
+rules below stay so that a detector can return later. Pre-trigger audio is
+neither saved nor sent to any speech service. Detection is not open-ended
+conversation recording. The host excludes Grace's and website audio, checks current microphone
 permission and binds callbacks to this interaction's generation. A recognized
 human wake phrase starts a fresh listening exchange; it never resumes website
 execution or supplies approval to a payment. Turning the setting off stops the
@@ -97,6 +102,23 @@ pure def lawOldTimerCannotClose(w: Wake, timer: WakeTimer, by: WakeActor): bool 
   timer.generation != w.generation implies not(canReturnAfterSilence(w, timer, by))
 pure def sometimesSilenceNotice(w: Wake): bool = w.phase == SilenceNotice
 pure def sometimesWakeFinished(w: Wake): bool = w.phase == Dormant and w.generation > 1
+```
+
+### Settings and the sleep screen say when wake detection is unavailable
+
+The Settings row is on, off, or not available when the tablet has no
+detector, whatever the saved choice. The sleep screen offers the wake phrase
+only when it would be heard; otherwise it says to touch the screen.
+
+```quint
+type WakeRow = WakeOn | WakeOff | WakeUnavailable
+pure def wakeRow(chosen: bool, available: bool): WakeRow =
+  if (not(available)) WakeUnavailable else if (chosen) WakeOn else WakeOff
+pure def sleepHint(chosen: bool, available: bool): str =
+  if (wakeRow(chosen, available) == WakeOn) "Say “Hey Grace”, or touch the screen" else "Touch the screen to wake it"
+pure def lawUnavailableNeverWakes(context: WakeContext): bool =
+  not(context.available) implies
+    not(permittedWake(context)) and wakeRow(context.enabled, context.available) == WakeUnavailable
 ```
 
 ### Examples cover enabled, disabled, playback and expired callbacks

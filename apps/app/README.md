@@ -19,6 +19,59 @@ and traces (SPEC.md, "One spec tree").
 | `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
 
+## Browser qualification
+
+Dispatch the CI workflow with BillWorld enabled to run the Fleet cohorts and
+the released statement task. Fleet runs four deterministic shards against the
+same pinned 100-biller cohort. The aggregate requires all 100 distinct
+browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
+pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
+for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
+for its result-directory lock and an unmodified tracked Grace checkout.
+
+To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
+`fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
+BillWorld checkout, and shard setting. Use the browser command with
+`--passWithNoTests` so an already complete shard can validate without
+opening pages. To resume in CI, dispatch on the original Grace commit and
+supply its workflow run ID in `billworld_resume_run`. Each shard must have
+uploaded its receipt directory in that run.
+
+Fleet preserves the initial cohort manifest and every completed receipt,
+including failed grades. It runs only billers without a receipt and
+rebuilds scores from the receipts. A stopped writer releases the directory
+lock when its process exits. A score without a final receipt is rerun.
+The final aggregate still requires 100 successful receipts from the
+declared cohort at the same Grace commit.
+
+The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
+CI checks out the public BillWorld revision
+`f335b651f9820c3454f447e3d4722b78c5298a0b` and prepares the three public
+WVU Medicine PDFs required to boot its shared host. The versioned CI cache
+holds the original bytes. Preparation verifies the size and SHA-256 of each
+file on both cache hits and fresh public downloads against the pinned
+[upstream document manifest](https://github.com/gracefultechnology/billworld/blob/f335b651f9820c3454f447e3d4722b78c5298a0b/billworld/research/wvu-documents.json).
+The Malden journey uses the shipped portal routes.
+
+The simulated person uses the fixture account to sign in, opens the utility
+account and current bill, and presents that statement to Grace. They submit
+the released read-only question, review and start its read plan, and select
+**Read statement**. The planner reply is scripted at the test boundary.
+Grace reads the real fixture document and the upstream grader checks her
+visible answer. The job requires a rejected zero-action control and all six
+checks on the completed trial, including unchanged protected state and
+credentials. CI uploads asset provenance and both grader receipts as
+`billworld-released-task-md9`.
+
+The standard verification job also runs **Gmail signup to Calendar** in
+Chromium using the loopback Google provider. The simulated person grants
+consent to the fixture account, opens the clinic email, asks Grace to prepare
+its appointment, and separately approves the save. The test checks the
+saved appointment through the provider readback. It needs no real Google
+account, external provider login, or hosted model key. Run it locally after
+`pnpm gen` with
+`pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'`.
+
 ## Android
 
 Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
@@ -55,6 +108,18 @@ mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omni
 `assets/agent/llama-kernel-diagnostic.mjs`, a 3 KB script that only lists which llama.cpp files and
 kernels a directory holds; it loads no model or library, and the check lets it pass. Both flavors'
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
+
+Every machine and CI sign debug builds with one key, `android/debug.keystore`, so a debug APK built
+anywhere installs over one built elsewhere and the Google sign-in registration can name one
+certificate. It is a throwaway debug key made for this with `keytool -genkeypair -keystore
+android/debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA
+-keysize 2048 -validity 18250 -dname "CN=Grace Debug, O=Grace, C=US"`, never a release key and
+never a copy of a developer's own `~/.android/debug.keystore`; its SHA-1 is
+`18:C2:91:5A:D3:61:87:10:A5:7F:A3:94:D9:F4:82:4B:5E:6F:4F:58` and its SHA-256
+`41:C2:73:72:4A:EA:BA:69:3F:1B:B0:91:A0:8B:E7:60:7E:75:AD:D8:A4:C4:19:9B:AF:69:50:0C:3A:89:C0:64`. The
+build copies it into `android/generated/android-user/` and points Gradle's `ANDROID_USER_HOME` there.
+Anyone holding the repository can sign a debug build with it, which is why no production registration
+may list it.
 
 A release APK is the one handed to user QA. R8 shrinks and optimizes its Java (`releaseMinify` in
 `android/host.json`; Capacitor's own keep rules keep every plugin and its methods), and it is not
@@ -134,14 +199,17 @@ when no visible thing or more than one has that name. Three steps check the agen
 bridge's status to have that state (and cause), and fails at once when the status is `failed` with
 another cause; the state is one of upstream's `unavailable`, `stopped`, `starting`, `running` and
 `failed`, the cause one of `payload`, `storage`, `config`, `credential`, `agent`, `crashed` and
-`runtime`, and any other is refused before the build; `{ "service": "<class>" }` waits up to two minutes
+`runtime`, and any other is refused before the build; `{ "signIn": { "signedIn": <bool>, "google":
+<bool> } }` asks the `GraceSignIn` bridge for its production status (re-measuring a negative answer)
+and saved identity, prints the status, and fails when either differs or when the answer holds an
+`eliza_mobile_` key; `{ "service": "<class>" }` waits up to two minutes
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
 background processes (`am kill`), fails unless her process is the same one, and opens her again. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-and `agent.json` the agent service below.
+`agent.json` the agent service below and `signin-status.json` the sign-in below.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
@@ -183,7 +251,7 @@ white square), shown once Grace holds `POST_NOTIFICATIONS`; without it the servi
 foreground and Android lists it only under its active apps. `MainActivity` starts it in `onCreate`,
 before the first WebView frame, and registers its bridge, `EmbeddedAgent`, which reaches the agent over its loopback socket, so the page keeps
 refusing cleartext and never holds a key. The service needs the signed-in Eliza Cloud credential,
-and nothing binds one yet: until the Google sign-in does (`cloudCredential()`), the agent unpacks its
+which `cloudCredential()` reads from the sign-in's store (below); signed out, the agent unpacks its
 payload, then stops at status `failed` with `credential`, and no Google account has yet signed in on
 it.
 
@@ -191,9 +259,10 @@ A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fr
 with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event. A run of `0f2a9c3` with
-`DISCOVER_ACTIONS` let past the action check by hand, at a load average near 320, built both APKs at
-113,483,881 bytes and passed the same walk.
+was left for Android's settings, and Grace raised no `am_anr` event. A plain build of `17fdcc3` with
+`DISCOVER_ACTIONS` under `plannerTools`, at a load average near 380, exited 0 in 2 minutes: both debug
+APKs at 113,631,337 bytes passed the action check with 68 actions seen, and `--verify` with
+`17fdcc3`'s own `policy.json` fails on the same APKs, naming `DISCOVER_ACTIONS`.
 
 The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
 (never committed), the service unpacked the payload and launched Bun under its musl loader
@@ -214,14 +283,17 @@ route the bridge relays, since the payload carries no gateway) with `agent/polic
 both cloud models; and
 `artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
 `ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
-`actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
+`actions.upstream.refuse` and denies the plugins it refuses. `actions.upstream.plannerTools` is not
+passed on: it names the planner's own tools, such as `DISCOVER_ACTIONS`, which the planner builds on
+each turn without registering them, so the allowlist cannot name them; that tool lists and loads only
+actions the allowlist admits. The `GRACE_*` actions are not allowed
 yet: no plugin in the payload registers them, and a name the agent does not register fails its boot. The
 route allowlist the APK ships is `android/agent.json`'s; nothing reads `agent/routes.json`, whose
 `stream/start`, `stream/pull` and `stream/cancel` routes are upstream's gateway's, not the embedded
 bridge's.
 `--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
-literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
-nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
+literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`),
+refused, nor a planner tool, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
 upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
 computed at run time (a parameter, a member, a call, or a variable also given other values) is not,
 nor is an action object with no `name` of its own, such as one a factory fills in, the `DEVICE_*`
@@ -237,6 +309,80 @@ gateway, without the packages `stubPlugins` in `scripts/android.ts` names (`@eli
 list, and reused by every later build. It refuses a `vendor/eliza` with local changes. Bun and its
 libraries go in as native libraries only: the inventory leaves out the payload's `agent/<abi>/`
 copy, which the generated host drops from the assets.
+
+### Sign-in
+
+One Google sign-in gives Grace her Eliza Cloud account and, in the same step, connects that Google
+account's Gmail, Calendar and contacts to it. Upstream's native client does the protocol
+(`packages/auth/android`, `ai.eliza.auth.cloud`, the `eliza-auth-cloud` module): Steward's Google
+challenge, Cloud's `POST /api/v1/app-auth/mobile/google`, the acknowledgement, renewal and revocation
+of replaced keys. The key is kept in Keystore-encrypted slots from
+`plugin-native-secure-store/android-nativeonly`, never its sibling Capacitor plugin, which would let
+the page read it.
+
+- `GraceSignInPlugin` is the bridge `GraceSignIn`: App Auth client `technology.graceful.grace`,
+  product "Grace", device "Grace tablet", Steward app client `grace`, production
+  (`cloud.eliza.app`, tenant `elizacloud`) and in debug builds staging (`cloud-staging.eliza.app`,
+  `elizacloud-staging`), return path `/auth/grace/callback`. Where Google Play services is installed
+  and enabled it uses the native account picker and then one Google permission sheet for `email`,
+  `gmail.modify`, `gmail.send`, `calendar.events` and `contacts.readonly`; elsewhere it uses the
+  browser route, which asks Google for no scopes, so Gmail is connected afterwards, and which needs a
+  browser and the verified App Link both manifests share.
+- `GraceCredentials` is the one binding of those slots (`no_backup/grace-signin`). The sign-in plugin
+  writes through it; a change to the production key or its pending acknowledgement first stops
+  `GraceAgentService` and waits up to 15 seconds for it to be gone, then commits, then starts it
+  again, and a read while a change is under way is refused. `GraceCredentials.cloudKey` is the only
+  reader: the production key while unexpired and acknowledged, which `cloudCredential()` hands the
+  agent and which a native Cloud transport for speech and mail is to read too. Staging keys never
+  reach the agent, whose `agent.json` names production Cloud.
+
+What the page sees, for the account connector to call (the plugin's methods are upstream's):
+
+| Call | Answers |
+|---|---|
+| `status({ environment?, refreshNegative? })` | `{ active, kind?, activationPending?, google, email, phone, inApp, methodsKnown, googleScopes }`: whether Cloud admits each method for Grace now |
+| `startGoogle({ environment: "production", requestId? })` | `{ status: "authenticated", environment, credentialId, expiresAt, accountCreated, google }`, where `google` is `{ connected: true, email, scopes }` or `{ connected: false, reason }`; a refusal or cancel rejects with its code |
+| `cancel()`, `signOut({ environment })` | the attempt ends; signing out retires the agent before the key goes |
+| `credentialIdentity({ environment })` | `{ environment, credentialId }`, an opaque id or `null` when signed out |
+| events | `signInCompleted`, `signInIncomplete`, `signInRenewed`, `signInReadinessChanged` |
+
+No answer or event carries the key. For the connector's sheet report, `startGoogle` resolving is
+allowed, a rejection with code `cancelled` is cancelled and any other code refused; the account's
+address is `google.email`, and mail, calendar and contacts are granted when `google.scopes` holds a
+`gmail.`, `calendar.` or `contacts.` scope.
+
+Sign-in works only once these match this build. They are the owner's or an operator's to make, and
+none can be checked from the repository:
+
+1. A Google Cloud Android OAuth client for `technology.graceful.grace` with each signing key's SHA-1:
+   the debug key above, the release key, and the platform key if a launcher image signs Grace.
+2. Steward's app client `grace` for native Google in `elizacloud` and `elizacloud-staging`, with
+   `STEWARD_GOOGLE_NATIVE_CLIENT_IDS` listing that Android client under it.
+3. Cloud's mobile App Auth client `technology.graceful.grace` with callback
+   `https://cloud.eliza.app/auth/grace/callback` (and the staging host's), and for the browser route a
+   Digital Asset Links file on each callback host naming the package and each certificate's SHA-256.
+4. Cloud's `GOOGLE_CLIENT_ID` being the web client Steward verifies, with the Gmail scopes approved:
+   `gmail.modify` is restricted and `gmail.send` sensitive, so production needs Google's verification
+   before real people can grant them.
+5. The agent's Cloud (`api.eliza.app` in `agent.json`) accepting keys minted through `cloud.eliza.app`.
+
+Three reads check them: `GET /api/v1/app-auth/mobile/config` on the Cloud host lists the client,
+`GET /steward/auth/providers` shows `googleNative`, and `GET /api/v1/app-auth/mobile/google` answers
+`configured: true` with a `serverClientId` and the scopes. On 17 November 2026 all three answered so
+for production and staging, but Cloud's scopes held `gmail.readonly` and `calendar.readonly` rather
+than `gmail.modify`, which moving mail to Trash needs, and neither host's `assetlinks.json` listed the
+debug key above, so the browser route cannot verify on a debug build yet. A fourth read, `POST
+/steward/auth/oauth/google/native/challenge` with `{ tenantId, clientId: "grace", codeChallenge,
+codeChallengeMethod: "S256" }`, answered "App client not found or disabled" in both tenants, so the
+native route stops before the account picker until item 2 is made.
+
+The same day, on a fresh `android-36` `google_apis` tablet AVD with Google Play services and its
+Credential Manager provider, the launcher debug APK signed with the debug key above loaded
+`GraceSignIn`, which answered signed out (`credentialId: null`, no attempt active, the five scopes
+above), and the agent stopped at `failed` with `credential`. The emulator found no network at a host
+load above 200, so readiness measured nothing (`methodsKnown: false`, `google: false`) and neither
+the account picker nor a sign-in has run: `signin-status.json` still waits for a run with a network
+and the Steward client.
 
 ### Why the host is as it is
 

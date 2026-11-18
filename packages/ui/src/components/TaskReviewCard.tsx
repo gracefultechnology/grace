@@ -4,46 +4,51 @@ import { FactRow, factList } from "../lib/facts.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
 import { VoiceBars } from "./VoiceBars.tsx";
 
-export type PaymentReviewRow = {
+export type TaskReviewRow = {
   label: string;
   value: string;
 };
 
-export type PaymentReviewCardProps = Omit<PanelProps, "variant" | "children" | "title"> & {
-  /** The company to be paid: "Chase". */
-  company: string;
-  /** Every detail of the proposal, in the order Grace reads them: amount, date, pay from, fee, account. */
-  rows: PaymentReviewRow[];
-  /** One line under the details: "Nothing is paid until you say yes." */
-  note?: string;
+export type TaskReviewLabels = {
+  heading: string;
+  note: string;
+  stale: string;
+};
+
+export const billReviewLabels: TaskReviewLabels = {
+  heading: "Pay {who}",
+  note: "Nothing is paid until you say yes.",
+  stale: "These details changed",
+};
+
+export const bookingReviewLabels: TaskReviewLabels = {
+  ...billReviewLabels,
+  heading: "Book with {who}",
+  note: "Nothing is booked until you say yes.",
+};
+
+export type TaskReviewCardProps = Omit<PanelProps, "variant" | "children" | "title"> & {
+  /** Who the task is with: "Chase", "Main St Clinic". */
+  who: string;
+  /** Every detail of what she agrees to, in the order Grace reads them. */
+  rows: TaskReviewRow[];
   /** The details changed and are being checked again: they fade and cannot be approved. */
   stale?: boolean;
   /** Grace is reading the details aloud. */
   reading?: boolean;
-  /** The heading; `{company}` is filled in. */
-  title?: string;
-  /** What a stale card says. */
-  staleLabel?: string;
+  /** The task kind's words, such as `billReviewLabels`; `{who}` in the heading is filled in. */
+  labels: TaskReviewLabels;
 };
 
 /**
- * The review shown before Margaret approves a payment by voice or tap: "Pay Chase", then each detail of the proposal,
- * the same that Grace reads aloud. Its answers ("Yes, pay it", "Change something") are `AnswerChip`s after it.
+ * The review shown before Margaret approves a task by voice or tap: "Pay Chase" or "Book with Main St Clinic", then each
+ * detail, the same that Grace reads aloud. Its answers, naming the whole action ("Yes, pay it", "Yes, book it",
+ * "Change something"), are `AnswerChip`s after it, and her own tap on the website's button approves as well.
  * @model spec/app/payment.md
  * @design packages/design-system/design.md#grace
  */
-export function PaymentReviewCard({
-  company,
-  rows,
-  note,
-  stale = false,
-  reading = false,
-  title = "Pay {company}",
-  staleLabel = "These details changed",
-  className,
-  ...props
-}: PaymentReviewCardProps) {
-  const heading = title.replace("{company}", company);
+export function TaskReviewCard({ who, rows, stale = false, reading = false, labels, className, ...props }: TaskReviewCardProps) {
+  const heading = labels.heading.replace("{who}", who);
   return (
     <Panel
       role="group"
@@ -70,10 +75,10 @@ export function PaymentReviewCard({
       {stale ? (
         <p role="status" className="m-0 flex items-center gap-2.5 text-body leading-[26px] font-semibold text-warn">
           <RefreshCw aria-hidden size={22} strokeWidth={2.2} className="animate-spin-slow motion-reduce:animate-none" />
-          {staleLabel}
+          {labels.stale}
         </p>
       ) : (
-        note && <p className="m-0 text-body leading-[26px] font-medium text-muted-foreground">{note}</p>
+        <p className="m-0 text-body leading-[26px] font-medium text-muted-foreground">{labels.note}</p>
       )}
     </Panel>
   );

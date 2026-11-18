@@ -12,7 +12,9 @@
   "modules": [
     { "name": "capacitor-android", "source": { "root": "dependencies", "path": "capacitor" } },
     { "name": "eliza-browser-surface", "source": { "root": "upstream", "path": "plugins/plugin-native-browser-surface/android" } },
-    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "plugins/plugin-native-wifi/android" } }
+    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "plugins/plugin-native-wifi/android" } },
+    { "name": "eliza-auth-cloud", "source": { "root": "upstream", "path": "packages/auth/android" } },
+    { "name": "eliza-secure-store-nativeonly", "source": { "root": "upstream", "path": "plugins/plugin-native-secure-store/android-nativeonly" } }
   ],
   "signing": { "storeFile": "GRACE_KEYSTORE", "storePassword": "GRACE_KEYSTORE_PASSWORD", "keyAlias": "GRACE_KEY_ALIAS", "keyPassword": "GRACE_KEY_PASSWORD" },
   "manifest": { "root": "consumer", "path": "android/AndroidManifest.xml" },

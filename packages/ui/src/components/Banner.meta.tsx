@@ -1,7 +1,8 @@
-import { AlarmClockPlus, Wifi, X } from "lucide-react";
+import { AlarmClockPlus, CalendarDays, Wifi, X } from "lucide-react";
+import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { BellIcon } from "../icons.tsx";
-import type { BannerProps } from "./Banner.tsx";
+import { BannerButton, type BannerProps } from "./Banner.tsx";
 import { Button } from "./Button.tsx";
 import { WifiSlash } from "./Rail.tsx";
 
@@ -46,8 +47,26 @@ export const offline: BannerProps = {
   ),
 };
 
+const dismiss = fn();
+
+export const connectCalendar: BannerProps = {
+  tone: "dark",
+  icon: <CalendarDays aria-hidden size={26} strokeWidth={2} />,
+  title: "Connect your email to keep your calendar up to date",
+  line: "Appointments from your email show up here automatically.",
+  actions: <BannerButton>Connect email</BannerButton>,
+  onDismiss: dismiss,
+};
+
 export const meta: ComponentMeta<BannerProps> = {
   args: reminder,
-  examples: { Snooze: reminderSnooze, Offline: offline },
+  examples: { Snooze: reminderSnooze, Offline: offline, "Dark with Not now": connectCalendar },
   decorator: (story) => <div className="w-[682px] bg-gradient-frame-soft p-6">{story()}</div>,
+  play: {
+    "Dark with Not now": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "Not now" }));
+      await expect(dismiss).toHaveBeenCalled();
+      (document.activeElement as HTMLElement | null)?.blur();
+    },
+  },
 };

@@ -285,9 +285,11 @@ with no label; Tap labels the control the person should use next; Done is the
 green check. Green means done: Done is published only for a task that finished
 with a verified completed outcome (prototype 1485, 1519; RESP 05), so a
 scheduled payment turns green only once its task has finished with that
-verified result. Grace's own working marker comes from her activity, never
-from guidance. The host names the kind beside its report (`publishGuidanceAs`);
-`publishGuidance` publishes the label of a Tap.
+verified result. A Done marker for the current work and conversation keeps this
+requirement even while the window or current activity hides it. Grace's own
+working marker comes from her activity. Guidance cannot name a future work or
+conversation generation. The host names the kind beside its report
+(`publishGuidanceAs`). `publishGuidance` publishes the label of a Tap.
 
 ```quint
 pure def guidanceInstruction(a: Assistant): str =
@@ -311,9 +313,12 @@ pure def canPublishGuidance(a: Assistant, report: GuidanceReport, by: C::Convers
   canPublishGuidanceAs(a, report, Tap, by)
 pure def publishGuidance(a: Assistant, report: GuidanceReport, by: C::ConversationActor): Assistant =
   publishGuidanceAs(a, report, Tap, by)
-pure def alwaysGuidanceIsNotAhead(a: Assistant): bool = a.guidance.workVersion <= a.workVersion
+pure def alwaysGuidanceIsNotAhead(a: Assistant): bool =
+  a.guidance.workVersion <= a.workVersion and a.guidance.conversationVersion <= a.conversation.generation
 pure def alwaysDoneMeansVerifiedCompletion(a: Assistant): bool =
-  (guidanceIsCurrent(a) and a.guidance.kind == Done) implies a.activity == Finished and a.outcome == Completed
+  (a.guidance.target != "" and a.guidance.kind == Done and
+    a.guidance.workVersion == a.workVersion and a.guidance.conversationVersion == a.conversation.generation) implies
+      a.activity == Finished and a.outcome == Completed
 pure def sometimesDoneShown(a: Assistant): bool = guidanceIsCurrent(a) and a.guidance.kind == Done
 pure def canInvalidateGuidance(a: Assistant, revision: int, by: C::ConversationActor): bool =
   by == C::ConversationRuntime and revision == a.guidance.revision and a.guidance.target != ""
