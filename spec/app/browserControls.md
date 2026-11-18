@@ -42,12 +42,10 @@ type BrowserInput = NewTab | Back | Forward | Reload | ExplainEmptyAddress | Dis
 pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool = match browserInput {
   | ResizeTabs(data) => by == BrowserControlHost and data.revision == b.revision and
       data.capacity != b.capacity and B::canResize(b, data.capacity)
-  | RememberPage(data) => by == BrowserControlHost and data.id == b.selected and data.revision == b.revision and
+  | RememberPage(data) => by == BrowserControlHost and not(B::activeTab(b).manualSignIn) and data.id == b.selected and data.revision == b.revision and
       (data.scroll != B::activeTab(b).scroll or data.pagePanel != B::activeTab(b).pagePanel) and
       B::canRememberPagePosition(b, data.scroll)
   | PageChanged(data) => by == BrowserControlHost and data.id == b.selected and data.revision == b.revision
-  | RequestPrivateSignIn(data) => by == BrowserControlUser and data.id == b.selected and data.revision == b.revision and B::canOpenPrivateSignIn(b, data.origin)
-  | OpenPrivateSignIn(data) => by == BrowserControlUser and B::canOpenPrivateSignIn(b, data.url)
   | OpenWindow(data) => by == BrowserControlHost and B::canOpenWindow(b, data.url)
   | ZoomPage(data) => by == BrowserControlHost and data.percent != B::activeTab(b).zoomPercent and B::canZoomPage(b, data.percent)
   | RequestPrivateSignIn(data) => by == BrowserControlUser and data.id == b.selected and data.revision == b.revision and B::canOpenPrivateSignIn(b, data.origin)
@@ -55,8 +53,8 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
   | NewTab => by == BrowserControlUser
   | SelectTab(data) => by == BrowserControlUser and data.id != b.selected and B::canSelectTab(b, data.id)
   | CloseTab(data) => by == BrowserControlUser and B::canCloseTab(b, data.id)
-  | Navigate(data) => by == BrowserControlUser and B::canNavigate(b, data.url)
-  | EditAddress(data) => by == BrowserControlUser
+  | Navigate(data) => by == BrowserControlUser and not(B::activeTab(b).manualSignIn) and B::canNavigate(b, data.url)
+  | EditAddress(data) => by == BrowserControlUser and not(B::activeTab(b).manualSignIn)
   | ExplainEmptyAddress => by == BrowserControlUser and B::canExplainEmptyAddress(b)
   | DismissAddress => by == BrowserControlUser and b.editingAddress
   | Back => by == BrowserControlUser and B::canGoBack(b)
@@ -140,6 +138,11 @@ pure def lawAnActiveBillCannotHandOffToAnotherOrigin(task: str, origin: str, oth
 pure def lawStaleSignInRequestIsIgnored(b: B::Browser, id: int, revision: int, origin: str): bool =
   (id != b.selected or revision != b.revision) implies
     not(canControl(b, RequestPrivateSignIn({ id: id, revision: revision, origin: origin }), BrowserControlUser))
+pure def lawPrivateAddressesAndPanelsStayOutOfControls(b: B::Browser, text: str, scroll: int): bool =
+  B::activeTab(b).manualSignIn implies
+    (not(canControl(b, EditAddress({ text: text }), BrowserControlUser)) and
+     not(canControl(b, Navigate({ url: text }), BrowserControlUser)) and
+     not(canControl(b, RememberPage({ id: b.selected, revision: b.revision, scroll: scroll, pagePanel: text }), BrowserControlHost)))
 pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str): bool =
   not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```

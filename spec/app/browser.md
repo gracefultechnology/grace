@@ -100,7 +100,7 @@ surface reports such a window only from the person's tap: a window a script
 opens by itself never opens.
 
 ```quint
-pure def canOpenWindow(b: Browser, url: str): bool = url != ""
+pure def canOpenWindow(b: Browser, url: str): bool = url != "" and not(activeTab(b).manualSignIn)
 pure def openWindow(b: Browser, url: str): Browser = navigate(openTab(b), url)
 pure def lawANewWindowOpensANewSelectedTab(b: Browser, url: str): bool =
   canOpenWindow(b, url) implies
@@ -149,7 +149,7 @@ conversation and diagnostics. Its native
 process and storage stay isolated for the tab's lifetime. Browser chrome
 gets origins and load outcomes. Grace cannot read or capture private page
 content, send website operations, or offer a password through conversation.
-A private visit never enters recent websites. Closing the tab discards its
+The private tab can confirm a load at its current origin. It never reports a redirect address or opens another window in the ordinary browser. A private visit never enters recent websites. Closing the tab discards its
 native session; no authenticated session is transferred to another tab.
 
 ~~~quint
@@ -164,6 +164,11 @@ pure def openPrivateSignIn(b: Browser, url: str): Browser = {
   }
 }
 pure def sometimesPrivateSignInIsOpen(b: Browser): bool = activeTab(b).manualSignIn
+pure def lawPrivateLoadsRefuseOtherAddresses(b: Browser, id: int, loadVersion: int, result: Load, endedAt: str): bool =
+  (tabById(b, id).manualSignIn and endedAt != tabUrl(tabById(b, id))) implies
+    not(canFinishPageLoad(b, id, loadVersion, result, endedAt))
+pure def lawPrivateTabsCannotOpenOrdinaryWindows(b: Browser, url: str): bool =
+  activeTab(b).manualSignIn implies not(canOpenWindow(b, url))
 pure def lawPrivateVisitsStayOutOfRecent(b: Browser, id: int, loadVersion: int, result: Load): bool =
   (canFinishLoad(b, id, loadVersion, result) and tabById(b, id).manualSignIn) implies
     finishLoad(b, id, loadVersion, result).recent == b.recent
@@ -198,6 +203,9 @@ pure def lawSelectedTabIsVisible(b: Browser, candidate: Tab): bool =
 pure def sometimesOverflowIsNeeded(b: Browser): bool = b.tabs.length() > b.capacity
 pure val candidateValues = Set(blankTab(1, 0), blankTab(2, 1))
 pure val tabValues = candidateValues
+pure val tValues = tabValues.union(Set(
+  { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 1 },
+  { ...blankTab(2, 1), history: List("https://utility.example"), manualSignIn: true }))
 pure val capacityValues = Set(-1, 0, 1, 2, 3)
 ```
 
@@ -380,7 +388,8 @@ pure def canFinishLoad(b: Browser, id: int, loadVersion: int, result: Load): boo
 pure def finishLoad(b: Browser, id: int, loadVersion: int, result: Load): Browser =
   finishPageLoad(b, id, loadVersion, result, false, "")
 pure def canFinishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, endedAt: str): bool =
-  canFinishLoad(b, id, loadVersion, result) and endedAt != ""
+  canFinishLoad(b, id, loadVersion, result) and endedAt != "" and
+  (not(tabById(b, id).manualSignIn) or endedAt == tabUrl(tabById(b, id)))
 pure def finishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: str): Browser = {
   val tab = tabById(b, id)
   val url = if (endedAt == "") tabUrl(tab) else endedAt

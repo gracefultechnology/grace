@@ -132,6 +132,22 @@ price are registered. Live checkout awaits its credential and webhook.
 The deployed Worker has its Grace-specific Cartesia
 standard key, stock English voice and metering configuration.
 
+### Release checks after the standalone integration
+
+Grace [PR 52](https://github.com/gracefultechnology/grace-new/pull/52) merged
+into `develop`. The merged tree depends on Eliza `3570d7d` for private
+Passwords, browser sign-in and encrypted recovery. That revision still needs
+to reach Eliza’s `vibestack` branch through
+[the Passwords integration](https://github.com/elizaOS/eliza/pull/39861).
+The production Worker remains on the verified revision recorded above.
+
+| Area | Observed result | Remaining launch work |
+| --- | --- | --- |
+| Browser guidance | The merged Grace host imports `vendor/eliza-cloud-sdk/clef-decisions.mjs`. The tablet entry point supplies a native agent, while the guide expects a URL and bearer key. The previous Eliza tree served `POST /api/v1/decisions`. | Port the bounded decision route and public client to Eliza Cloud. Use the signed-in account on the tablet, remove the copied SDK and exercise link selection against Grace’s Worker. |
+| Account credits | Eliza [updated the Worker](https://github.com/elizaOS/eliza/commit/dd0632672a9f2365ee66132d83d9252242266ca3) to consume the new generated funding decision. Real PostgreSQL recorded one addition across an initial credit, an exact replay, a replay with a different amount and an invalid amount. | Qualify a published Eliza revision containing both the funding repair and private Passwords, then advance the Grace pin. |
+| Android Node | The [build for Grace’s runtime](https://github.com/elizaOS/eliza/actions/runs/44225326512) produced the arm64 artifact. Its checksum matched the build manifest, and the executable returned `v26.13.1` and `android/arm64` on a fresh API 36 tablet emulator. | Verify the x86_64 artifact, publish and pin both archives, then exercise the signed Grace APK and its microphone. |
+| Full Grace check | Six simulations hit the 60-minute limit on the launch checkout. They cover Assistant, Execution, Workspace, Website Requests, Email and Setup. The run also reported pending spec and contract reviews. | Complete the simulations on the integrated source and reconcile the reviews for owner acceptance. |
+
 ## Decisions and their defaults
 
 The plan that finishes the MVP applies these defaults until the owner says
