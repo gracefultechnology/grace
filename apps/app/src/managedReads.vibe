@@ -127,8 +127,13 @@ effect function ownerHash(owner: string) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-effect function query<A>(path: string, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
-  const get = () => timeout(tryPromise((signal) => webView.window.fetch(apiOrigin + "/api/v1/eliza/" + path, {
+const google = apiOrigin + "/api/v1/eliza/google/"
+type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series"
+type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change"
+
+effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
+  const params = new URLSearchParams(Object.entries(search).flatMap(([name, value]) => value ? [[name, value]] : []))
+  const get = () => timeout(tryPromise((signal) => webView.window.fetch(google + route + "?" + params, {
     method: "GET", credentials: "include", cache: "no-store", headers: { Accept: "application/json" }, signal,
   })), "12 seconds")
   const first = try get()
@@ -138,8 +143,8 @@ effect function query<A>(path: string, schema: Schema.Decoder<A>, authorization:
   return try Schema.decodeUnknownEffect(schema)(input)
 }
 
-effect function postChange<A>(path: string, payload: object, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
-  const post = () => timeout(tryPromise((signal) => webView.window.fetch(apiOrigin + "/api/v1/eliza/google/" + path, {
+effect function postChange<A>(route: GoogleChange, payload: object, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
+  const post = () => timeout(tryPromise((signal) => webView.window.fetch(google + route, {
     method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload),
   })), "32 seconds")
   const first = try post()
@@ -199,18 +204,16 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   }
 
   effect function fetchPage(scope: ReadyScope, prior?: Mail | Calendar, next?: string) {
-    const grant = scope.grant ? "&grantId=" + encodeURIComponent(scope.grant) : ""
-    const cursor = next ? "&pageToken=" + encodeURIComponent(next) : ""
+    const paging = { pageToken: next, grantId: scope.grant }
     if (scope.view === "Email") {
-      const loaded = try query("gmail/triage?maxResults=20" + cursor + grant, MailPage, authorization)
+      const loaded = try query("gmail/triage", { maxResults: "20", ...paging }, MailPage, authorization)
       if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
       const existing = prior?.kind === "mail" ? prior.rows : []
       const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
       return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken }
     }
     const window = prior?.kind === "calendar" ? { from: prior.from, until: prior.until } : range(try Clock.currentTimeMillis)
-    const path = `calendar/feed?timeMin=${encodeURIComponent(window.from)}&timeMax=${encodeURIComponent(window.until)}${cursor}${grant}`
-    const loaded = try query(path, CalendarPage, authorization)
+    const loaded = try query("calendar/feed", { timeMin: window.from, timeMax: window.until, ...paging }, CalendarPage, authorization)
     if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
     const existing = prior?.kind === "calendar" ? prior.rows : []
     const rows = [...new Map([...existing, ...loaded.events].map((row) => [row.externalId, row])).values()]
@@ -300,7 +303,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       try SubscriptionRef.set(latest, { ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
       return true
     }
-    const preview = try query("gmail/read?messageId=" + encodeURIComponent(command.id) + (scope.grant ? "&grantId=" + encodeURIComponent(scope.grant) : ""), MailBody, authorization)
+    const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
     if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) || !(try still(scope))) return false
     try SubscriptionRef.set(latest, { ...shown, selected: preview, proposed: undefined })
     return true
@@ -348,8 +351,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return undefined
     const shown = try SubscriptionRef.get(latest)
     if (shown.kind !== "calendar" || shown.grant !== grant || shown.selected?.externalId !== occurrenceId || !shown.selected.seriesId) return undefined
-    const path = "google/calendar/series?grantId=" + encodeURIComponent(grant) + "&occurrenceId=" + encodeURIComponent(occurrenceId)
-    const found = try query(path, Series, authorization)
+    const found = try query("calendar/series", { grantId: grant, occurrenceId }, Series, authorization)
     if (!managedReadMatches(accountId, found.accountId, occurrenceId, found.occurrenceId) ||
       found.event.externalId !== shown.selected.seriesId || !(try still(scope))) return undefined
     try SubscriptionRef.set(latest, { ...shown, series: found.event })
@@ -406,7 +408,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     try keepMailDraft(accountId, email, draft, replyTo)
     const payload = { accountId, grantId: grant, operationId, recipient: draft.recipient, subject: draft.subject, text: draft.text, replyTo }
     const receipt = checkOnly
-      ? (try query("google/gmail/send/status?grantId=" + encodeURIComponent(grant) + "&operationId=" + encodeURIComponent(operationId), SentMail, authorization))
+      ? (try query("gmail/send/status", { grantId: grant, operationId }, SentMail, authorization))
       : (try postChange("gmail/send", payload, SentMail, authorization))
     if (!managedReadMatches(accountId, receipt.accountId, operationId, receipt.operationId)) return false
     try keepMailDraft(accountId, email, null, replyTo)
