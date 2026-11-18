@@ -17,6 +17,31 @@ final class GracePasswordsOwner {
  private static final String OWNER = "password-owner";
  private static volatile boolean changingAccount;
  private static long generation;
+ private static Enrollment enrollment;
+
+ static final class Enrollment implements AutoCloseable {
+  @Override public void close() {
+   synchronized (GracePasswordsOwner.class) {
+    if (enrollment == this) enrollment = null;
+   }
+  }
+ }
+
+ static Enrollment beginEnrollment(Context context) throws Exception {
+  var lease = new Enrollment();
+  synchronized (GracePasswordsOwner.class) {
+   if (enrollment != null || changingAccount) throw new IllegalStateException("Sign-in is already in progress");
+   enrollment = lease;
+   generation++;
+  }
+  try {
+   PasswordVaultAccess.get(context).lockAndClose();
+   return lease;
+  } catch (Exception unavailable) {
+   lease.close();
+   throw unavailable;
+  }
+ }
 
  private GracePasswordsOwner() {}
 
@@ -62,11 +87,11 @@ final class GracePasswordsOwner {
  static boolean accountChanging() { return changingAccount; }
 
  static synchronized boolean admitted(Context context) {
-  if (changingAccount || !hasNoPriorOwner(context)) return false;
+  if (changingAccount || enrollment != null || !hasNoPriorOwner(context)) return false;
   try {
    var current = stableSession(context);
    String stored = custody(context).read(OWNER);
-   if (stored == null) return current == null && !changingAccount;
+   if (stored == null) return current == null && GraceAccount.deviceOnly(context) && !changingAccount;
    var owner = new JSONObject(stored);
    return current != null && ownsProfile(owner) && current.accountId().equals(owner.getString("accountId"))
     && current.organizationId().equals(owner.getString("organizationId"))

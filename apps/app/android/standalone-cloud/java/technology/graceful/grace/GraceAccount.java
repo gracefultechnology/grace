@@ -106,6 +106,8 @@ public final class GraceAccount extends Plugin {
   return account.session();
  }
 
+ static boolean deviceOnly(Context context) throws Exception { return account(context).isDeviceOnly(); }
+
  static boolean handles(Context context, Uri address) { return account(context).handles(address); }
 
  static Uri hostedView(Context context, String view) throws Exception { return account(context).hostedView(view); }
@@ -130,7 +132,7 @@ public final class GraceAccount extends Plugin {
 
  @PluginMethod public void beginSignIn(PluginCall call) {
   ACCOUNT.execute(() -> {
-   try {
+   try (var enrollment = GracePasswordsOwner.beginEnrollment(getContext())) {
     CloudDeviceAccount account = account(getContext());
     account.retryRevocation();
     if (finishAcknowledgment(account)) { didSignIn(); call.resolve(); return; }

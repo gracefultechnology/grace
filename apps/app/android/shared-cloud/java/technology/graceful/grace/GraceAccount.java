@@ -43,6 +43,7 @@ public final class GraceAccount extends CloudSignInPlugin {
   .build();
 
  private record BackupOwner(CloudDeviceAccount.Session session, Runnable requireGeneration) {}
+ private volatile GracePasswordsOwner.Enrollment enrollment;
  private SharedGraceCredentials account;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
@@ -75,6 +76,8 @@ public final class GraceAccount extends CloudSignInPlugin {
   if (GracePasswordsOwner.accountChanging()) throw new IllegalStateException("Account change in progress");
   return credentialsFor(context).session();
  }
+
+ static boolean deviceOnly(Context context) throws Exception { return credentialsFor(context).deviceOnly(); }
 
  static boolean handles(Context context, Uri address) {
   return address != null && CloudSignInFlow.parseCallback(address.toString(), ENVIRONMENT) != null;
@@ -156,30 +159,39 @@ public final class GraceAccount extends CloudSignInPlugin {
   ACCOUNT.execute(() -> {
    try {
     if (readOwner() != null) { call.reject("Sign out before adding another account"); return; }
-    super.startGoogle(accountCall(call, data -> {
-     if (!"authenticated".equals(data.optString("status"))) {
-      try { super.cancel(accountCall(call, ignored -> call.reject("Complete sign-in in your browser"))); }
-      catch (RuntimeException unavailable) { call.reject("Cloud sign-in could not complete"); }
-      return;
-     }
-     final Runnable current;
-     try { current = account.observe(); }
-     catch (RuntimeException unavailable) { call.reject("Sign-in could not be verified"); return; }
-     ACCOUNT.execute(() -> {
-      try {
-       current.run();
-       var owner = readOwner();
-       SharedGraceCredentials.withRead(() -> {
-        current.run();
-        if (owner == null || !owner.equals(session(getContext()))) throw new IllegalStateException("Account changed");
-        notifyListeners("sessionChanged", projection(true), true);
-        call.resolve();
-        return null;
-       });
-      } catch (Exception unavailable) { call.reject("Sign-in could not be verified"); }
-     });
-    }), "browser".equals(method) || !hasGooglePlayServices());
+    var lease = GracePasswordsOwner.beginEnrollment(getContext());
+    enrollment = lease;
+    try {
+     super.startGoogle(accountCall(call, data -> finishEnrollment(call, data), lease), "browser".equals(method) || !hasGooglePlayServices());
+    } catch (RuntimeException refused) {
+     lease.close();
+     throw refused;
+    }
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
+  });
+ }
+
+ private void finishEnrollment(PluginCall call, JSObject data) {
+  if (!"authenticated".equals(data.optString("status"))) {
+   try { super.cancel(accountCall(call, ignored -> call.reject("Complete sign-in in your browser"))); }
+   catch (RuntimeException unavailable) { call.reject("Cloud sign-in could not complete"); }
+   return;
+  }
+  final Runnable current;
+  try { current = account.observe(); }
+  catch (RuntimeException unavailable) { call.reject("Sign-in could not be verified"); return; }
+  ACCOUNT.execute(() -> {
+   try {
+    current.run();
+    var owner = readOwner();
+    SharedGraceCredentials.withRead(() -> {
+     current.run();
+     if (owner == null || !owner.equals(session(getContext()))) throw new IllegalStateException("Account changed");
+     notifyListeners("sessionChanged", projection(true), true);
+     call.resolve();
+     return null;
+    });
+   } catch (Exception unavailable) { call.reject("Sign-in could not be verified"); }
   });
  }
 
@@ -195,12 +207,26 @@ public final class GraceAccount extends CloudSignInPlugin {
   } catch (RuntimeException unavailable) { call.reject("Couldn't sign out on this device"); }
  }
 
+ @Override protected void handleOnDestroy() {
+  super.handleOnDestroy();
+  var lease = enrollment;
+  if (lease != null) lease.close();
+ }
+
  private static PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved) {
+  return accountCall(caller, resolved, null);
+ }
+
+ private static PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved, GracePasswordsOwner.Enrollment lease) {
   var input = new JSObject().put("environment", ENVIRONMENT.name);
   return new PluginCall(null, caller.getPluginId(), caller.getCallbackId(), caller.getMethodName(), input) {
-   @Override public void resolve(JSObject data) { resolved.accept(data); }
-   @Override public void resolve() { resolved.accept(new JSObject()); }
+   @Override public void resolve(JSObject data) {
+    if (lease != null) lease.close();
+    resolved.accept(data);
+   }
+   @Override public void resolve() { resolve(new JSObject()); }
    @Override public void reject(String message, String code, Exception ignored, JSObject data) {
+    if (lease != null) lease.close();
     caller.reject("Cloud account operation could not complete", code);
    }
   };

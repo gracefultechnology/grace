@@ -24,11 +24,13 @@ final class SharedGraceCredentials {
  private static final String OWNER = "verified-owner";
  private static final Object MUTATION = new Object();
  private final Context context;
+ private final CloudSignInConfig registration;
  private final JsonCredentialSlots store;
  private final String keySlot, receiptSlot, pendingSlot;
 
  SharedGraceCredentials(Context context, CloudSignInConfig registration, CloudSignInEnvironment environment) {
   this.context = context.getApplicationContext();
+  this.registration = registration;
   store = new JsonCredentialSlots(new File(context.getNoBackupFilesDir(), "shared-cloud-account-" + BuildConfig.CLOUD_PROFILE),
     "technology.graceful.grace.shared-account.v1." + BuildConfig.CLOUD_PROFILE, slot -> 16384);
   keySlot = registration.credentialSlot(environment);
@@ -124,13 +126,25 @@ final class SharedGraceCredentials {
   @Override public String toString() { return "SharedGraceCredentials.Key"; }
  }
 
+ private boolean enrollmentPending() throws Exception {
+  String raw = read(pendingSlot);
+  if (raw == null) return false;
+  var pending = CloudSignInFlow.Pending.parse(raw, registration);
+  if (pending == null) throw new IOException("Unreadable sign-in request");
+  return !pending.expired(System.currentTimeMillis());
+ }
+
+ boolean deviceOnly() throws Exception {
+  return withRead(() -> read(keySlot) == null && read(receiptSlot) == null && !enrollmentPending());
+ }
+
  private Key acknowledged() throws Exception {
-  if (read(receiptSlot) != null || read(pendingSlot) != null) throw new IOException("Account change in progress");
+  if (read(receiptSlot) != null || enrollmentPending()) return null;
   String value = read(keySlot);
   if (value == null) return null;
   JSONObject key = new JSONObject(value);
   String id = key.getString("credentialId"), token = key.getString("token");
-  if (!CloudSignInFlow.validUuid(id) || !token.startsWith("eliza_")) throw new IOException("Invalid account credential");
+  if (!CloudSignInFlow.validUuid(id) || !CloudSignInFlow.validMobileSecret(token)) throw new IOException("Invalid account credential");
   if (key.getLong("expiresAt") <= System.currentTimeMillis()) return null;
   return new Key(id, token);
  }
