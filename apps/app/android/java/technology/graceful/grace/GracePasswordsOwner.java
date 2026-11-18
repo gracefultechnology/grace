@@ -5,8 +5,12 @@ import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import org.json.JSONObject;
 
 final class GracePasswordsOwner {
@@ -43,6 +47,16 @@ final class GracePasswordsOwner {
   return BuildConfig.CLOUD_PROFILE.equals(owner.optString("profile", "standalone-production"));
  }
 
+ private static String credentialId(CloudDeviceAccount.Session session) throws NoSuchAlgorithmException {
+  byte[] fingerprint = MessageDigest.getInstance("SHA-256").digest(session.token().getBytes(StandardCharsets.UTF_8));
+  return Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint);
+ }
+
+ private static JSONObject ownerRecord(CloudDeviceAccount.Session current) throws Exception {
+  return new JSONObject().put("profile", BuildConfig.CLOUD_PROFILE).put("accountId", current.accountId())
+    .put("organizationId", current.organizationId()).put("credentialId", credentialId(current));
+ }
+
  static synchronized long generation() { return generation; }
 
  static boolean accountChanging() { return changingAccount; }
@@ -55,7 +69,8 @@ final class GracePasswordsOwner {
    if (stored == null) return current == null && !changingAccount;
    var owner = new JSONObject(stored);
    return current != null && ownsProfile(owner) && current.accountId().equals(owner.getString("accountId"))
-    && current.organizationId().equals(owner.getString("organizationId")) && !changingAccount;
+    && current.organizationId().equals(owner.getString("organizationId"))
+    && credentialId(current).equals(owner.optString("credentialId")) && !changingAccount;
   } catch (Exception unavailable) {
    return false;
   }
@@ -78,8 +93,7 @@ final class GracePasswordsOwner {
    throw new IllegalStateException("Confirm linking the saved passwords");
   }
   if (changingAccount || !approval.current()) throw new IllegalStateException("Account verification changed");
-  store.write(OWNER, new JSONObject().put("profile", BuildConfig.CLOUD_PROFILE).put("accountId", current.accountId())
-    .put("organizationId", current.organizationId()).put("scope", approval.scope()).toString());
+  store.write(OWNER, ownerRecord(current).put("scope", approval.scope()).toString());
  }
 
  static void enteringAccountChange(Context context) throws Exception {
@@ -101,7 +115,6 @@ final class GracePasswordsOwner {
   var current = GraceAccount.session(context);
   if (current == null || PasswordVaultAccess.get(context).exists()) return;
   var store = custody(context);
-  if (store.read(OWNER) == null) store.write(OWNER, new JSONObject()
-   .put("profile", BuildConfig.CLOUD_PROFILE).put("accountId", current.accountId()).put("organizationId", current.organizationId()).toString());
+  if (store.read(OWNER) == null) store.write(OWNER, ownerRecord(current).toString());
  }
 }
