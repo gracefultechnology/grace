@@ -51,7 +51,7 @@ review. Release evidence still comes from the Grace entry point.
 | Home, Settings and preferences | Core turns supply the model reply. OS owns the device surfaces. | Grace owns the launcher, Settings, and exact-turn action controls. Tapped text-size, in-app dimming, and voice changes reuse the workspace preferences. A Chromium journey observed a failed native-record write, a successful retry and the saved text size after recreating the workspace. Device-wide brightness and signed-tablet persistence still need device evidence. |
 | Browser navigation and pointing | `plugin-browser` and `plugin-computeruse` can directly operate pages or the desktop. | Grace owns the browser and its controls. Eliza Cloud selects among bounded candidates for the current account. The Grace browser checks the target against the current document before highlighting it. The person taps the link. Chromium exercised the visible ring and tap. Signed-tablet evidence is tracked below. |
 | Gmail | `plugin-inbox` and `plugin-google-workspace` reach provider data. | Grace Cloud owns Gmail grants and provider operations. Hosted Grace supports Inbox previews, reviewed drafts and threaded replies, and Trash with Undo. Search from a model reply resolves a unique result on the currently loaded Inbox page. Full folder search, attachments, forwarding and permanent deletion remain open. |
-| Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace supports reviewed creation of one-time, weekly and monthly appointments and confirmed owned occurrence or whole-series edits and removals. Live Google consent, due reminders and completing a review from Home remain open. |
+| Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace supports reviewed creation of one-time, weekly and monthly appointments and confirmed owned occurrence or whole-series edits and removals. The owner can select a reminder one hour or one day before a timed appointment. The device reconciles reminders for its enrolled account. Live Google consent and completing a review from Home remain open. |
 | Files | `plugin-files` provides managed files, revision-bound selections and durable receipts. | Grace owns a device library partitioned by the signed-in account. Its Android picker, camera, catalog and bounded previews feed the Files screen. The Files viewer confirms deletion of the selected photo and retries a failed write. Chromium checked both paths against the device-library boundary. Device acceptance, sharing and printing remain open. |
 | Bill payment, booking and fill | `plugin-form`, `plugin-browser` and `plugin-computeruse` provide general form and website tools. | Grace has workspace rules for observed contexts and explicit payment approval. Live task review, verified form fill, bill submission and appointment booking are not mounted in the launcher. These need Grace-owned actuation and provider evidence. |
 
@@ -93,9 +93,7 @@ installs. Stripe and Google used network fixtures. The speech relay also
 used the real Cartesia service from a local Worker. Julia – Gentle Guide
 synthesized “Welcome to Grace.” The Worker streamed 46,080 bytes of PCM
 back through transcription, which recognized “Grace.” PostgreSQL recorded
-765 microdollars for synthesis and 419 for transcription. Android
-installation, live Google consent, paid checkout and a device microphone
-session still require launch evidence.
+765 microdollars for synthesis and 419 for transcription. The later release checks below cover Android installation and Stripe sandbox checkout. Live Google consent, production checkout and a device microphone session still need provider or device evidence.
 
 On November 17, 2026 the Grace Worker went live on
 [the app host](https://app.graceforseniors.com) and
@@ -156,11 +154,32 @@ Grace app origin and the account header and rejected an unrelated origin.
 [Grace guidance release](https://github.com/gracefultechnology/grace-new/pull/83)
 · [Eliza guidance revision](https://github.com/elizaOS/eliza/commit/3c79e5783167e5696378f3c5a1ae799c30b49d73)
 
+Worker `56286445-040c-4660-9418-81df3b0b4ef8` deployed Grace
+`76fb6fb` and Eliza `0fd4a74` on both production hosts. The dedicated
+Railway database advanced from 17 to 31 migrations. A fresh staging
+installation and a direct upgrade from the former release matched on tables,
+columns, constraints and indexes. Retrying the production migration applied
+zero changes. Chromium loaded the hosted app and account screen, and the API
+required authentication for inference and device reminders. [Grace reminder release](https://github.com/gracefultechnology/grace-new/pull/90)
+
+At this pin, a local Grace Worker redeemed a staged Android PKCE grant,
+required device acknowledgment, returned only the owner's reminders, and
+refused a revoked device. The Stripe sandbox exercised USD 30 monthly
+billing through Workerd. A replayed invoice preserved a single allowance,
+the owner opened the portal, and cancellation stopped funded inference.
+The same Cloud Worker entry point runs in production and under Wrangler.
+
+Grace builds its browser client, Worker, device Agent and OS modules through
+their own package entry points. The separate Eliza Node server still has
+incomplete models for native device keys and speech sessions, a missing
+grant-code service, and compile errors in its identity, Calendar and speech
+adapters. Those modules are outside the Grace deployment dependency graph.
+
 | Area | Observed result | Remaining launch work |
 | --- | --- | --- |
 | Browser guidance | Grace imports `@elizaos/cloud/clef-decisions` from its pinned Eliza checkout. The copied SDK was removed. A local Worker with real PostgreSQL and the real Workers AI binding returned 401 for an anonymous caller, 403 for an account mismatch, and selected the expected library-hours link for the signed-in account. The same signed-in account selected the expected link through the public production API after email verification. Chromium exercised account changes and stale page targets. The browser qualification also exercises the upstream staging API. [Browser qualification](specification-plan.md#release-qualification-and-remaining-work) | Exercise the signed tablet’s native credential, page highlight and manual tap together through the deployed Grace Worker. |
 | Account credits | Real PostgreSQL recorded one credit across an initial credit, an exact replay, a replay with a different amount and an invalid amount. [Worker funding decision](https://github.com/elizaOS/eliza/commit/dd0632672a9f2365ee66132d83d9252242266ca3) In the isolated Grace Stripe sandbox the Worker opened a USD 30/month Checkout session. Stripe's test payment method paid the subscription through its API. Signed webhooks granted the allowance once and revoked access after cancellation. The hosted Checkout page displayed Grace Plus and its price. | Finish a purchase through the hosted card form. Production checkout and subscription events need the live Grace credential and webhook in Eliza Labs. |
-| Android Node | Eliza published Node.js 26.13.1 for arm64-v8a and x86_64. Both downloaded archives matched their producer digests. Verification checked the original license, signed Node.js source checksum, binary hash, Android interpreter, system libraries and 16 KiB load alignment. Grace pins `56d0508`. Its Eliza source tree and lock match the revision used to build and verify both launcher and standalone debug APKs for both architectures. The ARM64 executable returned `v26.13.1` and `android/arm64` on an API 36 emulator. Grace also produced a release-signed ARM64 APK. [Runtime release](https://github.com/elizaOS/eliza/releases/tag/android-node-v26.13.1-ndk-29.0.14206865) · [Grace release pin](https://github.com/gracefultechnology/grace-new/pull/84) · [Upstream lock](https://github.com/elizaOS/eliza/pull/39874) | Confirm first draw and microphone operation on the installed release-signed tablet. |
+| Android Node | Eliza published Node.js 26.13.1 for arm64-v8a and x86_64. Both downloaded archives matched their producer digests. Verification checked the original license, signed Node.js source checksum, binary hash, Android interpreter, system libraries and 16 KiB load alignment. The published runtime lock in `56d0508` was used to build and verify launcher and standalone debug APKs on both architectures. The ARM64 executable returned `v26.13.1` and `android/arm64` on an API 36 emulator. Grace built both release-signed ARM64 flavors. Its signed launcher rendered Home on an API 36 tablet emulator and Android verified the Grace App Link. The Android process-owner repair let the official Node runtime open its private PGlite database and answer authenticated local requests. [Runtime release](https://github.com/elizaOS/eliza/releases/tag/android-node-v26.13.1-ndk-29.0.14206865) · [Grace release pin](https://github.com/gracefultechnology/grace-new/pull/84) · [Upstream lock](https://github.com/elizaOS/eliza/pull/39874) | Complete account sign-in, native browser pointing and microphone operation on the signed release. |
 | Full Grace check | Six simulations hit the 60-minute limit on the launch checkout. They cover Assistant, Execution, Workspace, Website Requests, Email and Setup. The run also reported pending spec and contract reviews. | Complete the simulations on the integrated source and reconcile the reviews for owner acceptance. |
 
 ## Decisions and their defaults
