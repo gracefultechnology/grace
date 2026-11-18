@@ -26,7 +26,23 @@ the released statement task. Fleet runs four deterministic shards against the
 same pinned 100-biller cohort. The aggregate requires all 100 distinct
 browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
 pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
-for a 25-biller run, or omit it to run the full cohort.
+for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
+for its result-directory lock and an unmodified tracked Grace checkout.
+
+To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
+`fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
+BillWorld checkout, and shard setting. Use the browser command with
+`--passWithNoTests` so an already complete shard can validate without
+opening pages. To resume in CI, dispatch on the original Grace commit and
+supply its workflow run ID in `billworld_resume_run`. Each shard must have
+uploaded its receipt directory in that run.
+
+Fleet preserves the initial cohort manifest and every completed receipt,
+including failed grades. It runs only billers without a receipt and
+rebuilds scores from the receipts. A stopped writer releases the directory
+lock when its process exits. A score without a final receipt is rerun.
+The final aggregate still requires 100 successful receipts from the
+declared cohort at the same Grace commit.
 
 The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
 CI checks out the public BillWorld revision

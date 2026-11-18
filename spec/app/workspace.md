@@ -94,6 +94,7 @@ type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effec
   | WakeFeedback({ signal: W::WakeSignal })
   | PreferenceFeedback({ revision: int, effect: R::PreferenceEffect })
 type WorkspaceResult = { state: Workspace, out: List[WorkspaceEffect] }
+type BrowserObservationChoice = { allowed: bool, deviceVersion: int, browserRevision: int }
 type Availability = {
   connection: S::Connectivity, reasoning: bool, microphone: bool, observation: bool
 }
@@ -346,7 +347,8 @@ pure def lawRestartKeepsPaymentRecords(w: Workspace, by: WorkspaceActor): bool =
     w.otherPayments.every(prior => after.otherPayments.some(restored => sameDurablePaymentRecord(prior, restored))) and
     after.otherPayments.every(p => p.result == p.durable.result and not(p.live) and not(p.fresh))
 pure def canSetAvailability(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
-  by == Host and (availability.connection != w.device.connectivity or
+  by == Host and (availability.observation implies w.device.observationAllowed) and
+  (availability.connection != w.device.connectivity or
     availability.reasoning != w.device.reasoningAvailable or
     availability.microphone != w.device.microphoneAllowed or
     availability.observation != w.device.observationAllowed)
@@ -355,6 +357,34 @@ pure def setAvailability(w: Workspace, availability: Availability, by: Workspace
   val reasoning = S::setReasoningAvailability(connected, availability.reasoning)
   val microphone = S::setMicrophonePermission(reasoning, availability.microphone)
   interrupted(S::setObservationPermission(microphone, availability.observation), w.browser, w)
+```
+
+### The person can allow Grace to read her browser and revoke that choice
+
+Browser reading starts off. The person may allow it from Grace's window on
+the Browser surface. They can turn it off from Grace's window on any
+surface. The choice applies to this Grace session. Restarting resets it.
+Only a current device and browser revision can change it. A change
+interrupts outstanding browser work and advances the device context.
+The host cannot grant this permission. Native surface refusals still apply.
+
+```quint
+pure def canSetBrowserObservation(w: Workspace, choice: BrowserObservationChoice, by: WorkspaceActor): bool =
+  by == Person and w.device.readiness == S::Ready and A::isVisible(w.assistant) and
+  choice.deviceVersion == w.device.contextVersion and choice.browserRevision == w.browser.revision and
+  choice.allowed != w.device.observationAllowed and (choice.allowed implies w.device.surface == S::Browser)
+pure def setBrowserObservation(w: Workspace, choice: BrowserObservationChoice, by: WorkspaceActor): Workspace =
+  interrupted(S::setObservationPermission(w.device, choice.allowed), w.browser, w)
+pure def lawOnlyPersonCanAllowBrowserObservation(w: Workspace, availability: Availability, by: WorkspaceActor): bool =
+  not(w.device.observationAllowed) and availability.observation implies not(canSetAvailability(w, availability, by))
+pure val choiceValues = Set(
+  { allowed: true, deviceVersion: 2, browserRevision: 0 },
+  { allowed: true, deviceVersion: 6, browserRevision: 0 },
+  { allowed: true, deviceVersion: 6, browserRevision: 1 },
+  { allowed: true, deviceVersion: 7, browserRevision: 1 },
+  { allowed: true, deviceVersion: 8, browserRevision: 1 },
+  { allowed: false, deviceVersion: 7, browserRevision: 0 },
+  { allowed: false, deviceVersion: 8, browserRevision: 1 })
 ```
 
 ### Home, native controls and Close have explicit interruption semantics
@@ -605,6 +635,10 @@ from reasoning availability. While a wake exchange or its silence notice is
 active, website execution is idle or paused. Starting or resuming website work
 cancels that wake exchange before its timer can hide Grace.
 
+When the silence notice restores a closed Grace window, it also quiets any
+retained payment. A proof witness showed that a live retained record could
+otherwise remain active after the window paused an unfinished task.
+
 ```quint
 pure def priorWindow(a: A::Assistant): W::PriorWindow =
   if (a.presentation == A::Closed) W::WasClosed else if (a.presentation == A::Compact) W::WasCompact else W::WasExpanded
@@ -644,7 +678,8 @@ pure def canWakeReturn(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): b
 pure def wakeReturn(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): Workspace = {
   ...w, wake: W::returnAfterSilence(w.wake, timer, W::WakeHost).state,
   assistant: if (w.wake.prior == W::WasClosed) A::close(w.assistant, C::ConversationUser)
-    else A::resize(w.assistant, w.wake.prior == W::WasExpanded, C::ConversationUser)
+    else A::resize(w.assistant, w.wake.prior == W::WasExpanded, C::ConversationUser),
+  payment: if (w.wake.prior == W::WasClosed) quietPayment(w.payment) else w.payment
 }
 pure def canCancelWake(w: Workspace, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.wake.phase != W::Dormant
@@ -767,7 +802,10 @@ The host identifies a document change caused by the currently dispatched
 ordinary operation or payment. It records that navigation in the actual
 browser and invalidates the old target. Fresh observation follows within
 the active task. A payment result page continues its existing outcome wait;
-it never becomes another submit. An unexpected change pauses instead.
+it never becomes another submit. An unexpected change pauses instead. A payment progress callback must belong
+to the attached task and an active execution. A proof witness showed that an
+unrelated retained payment could otherwise create ordinary website work inside
+an active guided plan.
 
 ```quint
 pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): bool =
@@ -777,6 +815,7 @@ pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: Workspac
   ((progress.kind == OrdinaryProgress and w.execution.phase == X::InFlight and
     progress.generation == w.execution.generation and progress.observation == w.execution.observation) or
    (progress.kind == PaymentProgress and w.assistant.activity == A::WebsiteWait and
+    w.paymentTask != "" and w.paymentTask == progress.task and X::canInvalidate(w.execution, X::BrowserBridge) and
     w.payment.stage == P::Checking and w.payment.dispatched and
     progress.paymentRevision == w.payment.revision and progress.attempt == w.payment.attempt))
 pure def receiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): Workspace = {
@@ -987,7 +1026,7 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
 ### A read plan offered in chat waits for the person to start it
 
 The conversation host validates the current human request before it offers
-an ordered set of reads of the items the person opens. The workspace
+a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. The workspace
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
 Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
@@ -998,6 +1037,8 @@ Grace to highlight a link on the loaded page. The host binds the
 highlighted destination to this step and its current page context. A
 highlight does not record a read or navigate the page. Visiting a
 different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+
+When the person permits observation and a secure site is loaded, the chat planner can see that the current tab already has a website open and the public hostname. The browser keeps the full address and document contents local when reporting that context.
 
 For a requested statement read, the host reads the current visible document locally. The amount due and due date each need a single distinct labeled value on the same statement. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
 
@@ -1048,7 +1089,7 @@ pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
 pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
   by == Host and w.paymentTask == "" and
   offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
-  offer.reads.length() > 0 and offer.reads.length() <= 4 and canBeginGuided(w, reviewedRequest(w, offer), Person)
+  offer.reads.length() > 0 and canBeginGuided(w, reviewedRequest(w, offer), Person)
 pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): Workspace = {
   ...w, review: { revision: w.review.revision + 1, generation: offer.generation,
     workVersion: offer.workVersion, request: reviewedRequest(w, offer) }

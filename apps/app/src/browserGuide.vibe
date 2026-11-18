@@ -101,10 +101,11 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
             const selected: typeof choices = []
             for (let index = 0; index < round.length; index += CLEF_DECISION_LIMITS.candidates) {
               const candidates = round.slice(index, index + CLEF_DECISION_LIMITS.candidates)
-              const answer = await decide({ kind: "choice", goal, candidates: candidates.map(({ id, description }) => ({ id, label: description })) }, signal)
+              const options = candidates.map(({ description }, index) => ({ id: String(index + 1), label: description }))
+              const answer = await decide({ kind: "choice", goal, candidates: options }, signal)
               if (answer.status === "unavailable") return { retry: answer.reason === "provider_error" }
               if (answer.status !== "ok" || answer.kind !== "choice") return { retry: false }
-              const choice = candidates.find(candidate => candidate.id === answer.choice)
+              const choice = candidates[options.findIndex(option => option.id === answer.choice)]
               if (choice !== undefined) selected.push(choice)
             }
             round = selected
