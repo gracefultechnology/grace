@@ -76,7 +76,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const canTalk = mayOfferTalk(workspace!);
   const talk = (acknowledged?: VoiceNotice) => {
     guide.stopListening();
-    void runtime.runPromise(Effect.flatMap(SpeechActions, (speech) => speech.talk(acknowledged))).then(setVoiceNotice);
+    if (acknowledged) setVoiceNotice(undefined);
+    runtime.runFork(Effect.flatMap(SpeechActions, (speech) =>
+      Effect.tap(speech.talk(acknowledged), (notice) => Effect.sync(() => setVoiceNotice(notice)))));
   };
   const listeningLocally = guide.mic === "GuideMicListening";
   const needsMicPermission = canTalk && !device.microphoneAllowed;

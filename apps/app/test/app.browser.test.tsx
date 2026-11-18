@@ -120,15 +120,19 @@ async function visitExampleSite(native: ReturnType<typeof fakePlugin>) {
   await native.report("tab-1", "https://example.org/", 100);
 }
 
-async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: string, secret: string) {
-  const view = tabletView(ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret })));
-  await view.render();
+function routedControls(native: ReturnType<typeof fakePlugin>) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
   const tap = async (target: Locator) => {
     await routeTo(target);
     await act(() => userEvent.click(target));
   };
-  return { routeTo, tap, dispose: view.dispose };
+  return { routeTo, tap };
+}
+
+async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: string, secret: string) {
+  const view = tabletView(ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret })));
+  await view.render();
+  return { ...routedControls(native), dispose: view.dispose };
 }
 
 tabletViewport();
@@ -889,16 +893,17 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
-  const microphone = new AudioContext({ sampleRate: 16_000 });
-  const source = microphone.createOscillator();
-  const inputMedia = microphone.createMediaStreamDestination();
-  source.connect(inputMedia);
-  source.start();
+  const microphones: AudioContext[] = [];
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
+    const microphone = new AudioContext({ sampleRate: 16_000 });
+    microphones.push(microphone);
+    const source = microphone.createOscillator();
+    const input = microphone.createMediaStreamDestination();
+    source.connect(input);
+    source.start();
     await microphone.resume();
-    const stream = inputMedia.stream.clone();
-    captures.push(...stream.getAudioTracks());
-    return stream;
+    captures.push(...input.stream.getAudioTracks());
+    return input.stream;
   });
   const originalFetch = window.fetch.bind(window);
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
@@ -1030,6 +1035,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     expect(calls).toEqual([]);
     await press(continueTalk);
     await act(async () => {
+      await expect.poll(() => recordedFrames).toBeGreaterThan(0);
       await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
       await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
       await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
@@ -1091,7 +1097,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
     localStorage.removeItem("grace/voice-disclosure/web/" + secondAccount);
-    await microphone.close();
+    await Promise.all(microphones.map((microphone) => microphone.close()));
     host.remove();
     request.mockRestore();
     audio.mockRestore();
@@ -2015,8 +2021,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
-  const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
-  const tap = async (target: Locator) => { await routeTo(target); await act(() => userEvent.click(target)); };
+  const { routeTo, tap } = routedControls(native);
   const send = async (message: string) => {
     const text = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(text);
