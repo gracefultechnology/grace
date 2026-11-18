@@ -56,7 +56,7 @@ type Site = { password?: string; amount?: keyof typeof amounts; date?: string; e
 
 const siteButton = "h-12 cursor-pointer rounded-tag border-0 bg-site-brand px-7 font-site text-label font-bold text-glass";
 
-const SiteLabel = ({ children }: { children: ReactNode }) => <label className="mt-3.5 mb-1.5 block text-base/[normal] text-site-muted">{children}</label>;
+const SiteLabel = ({ children }: { children: ReactNode }) => <label className="mt-3.5 mb-1.5 block text-caption text-site-muted">{children}</label>;
 
 const SiteRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex justify-between border-b border-site-line py-2 text-label">
@@ -71,7 +71,7 @@ const SiteField = ({ value = "", placeholder, focused = false, masked = false }:
     aria-label={placeholder}
     tabIndex={0}
     className={cn(
-      "box-border flex h-[46px] w-full cursor-text items-center rounded-tag border border-site-border bg-glass px-3 text-lg/[normal] text-site-ink",
+      "box-border flex h-[46px] w-full cursor-text items-center rounded-tag border border-site-border bg-glass px-3 text-label text-site-ink",
       focused && "border-site-brand shadow-site-focus",
     )}
   >
@@ -84,9 +84,9 @@ const SiteField = ({ value = "", placeholder, focused = false, masked = false }:
   </div>
 );
 
-const SiteError = ({ children }: { children?: string }) => (children ? <div className="mt-2.5 text-base/[normal] text-site-error">{children}</div> : null);
+const SiteError = ({ children }: { children?: string }) => (children ? <div className="mt-2.5 text-caption text-site-error">{children}</div> : null);
 
-const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindowProps> => {
+export const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindowProps> => {
   const amount = site.amount ? amounts[site.amount] : "not chosen";
   const card = "absolute top-[92px] left-10 box-border w-[560px] rounded-sm bg-glass px-6 py-5 shadow-site-card";
   return {
@@ -124,7 +124,7 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
               <SiteRow label="Minimum payment due" value="$35.00" />
               <SiteRow label="Payment due date" value="Nov 12, 2026" />
               <SiteRow label="Current balance" value="$112.55" />
-              <div className="pt-2.5 text-base/[normal] text-site-muted">No payment scheduled</div>
+              <div className="pt-2.5 text-caption text-site-muted">No payment scheduled</div>
             </div>
             <button type="button" className={cn(siteButton, "absolute top-[330px] left-10")}>
               Pay card
@@ -135,7 +135,7 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
           <div className={cn(card, "top-[84px] w-[520px]")}>
             <div className="text-body-lg font-bold">Pay your card</div>
             <SiteLabel>Pay from</SiteLabel>
-            <div className="box-border flex h-[46px] w-full cursor-default items-center rounded-tag border border-site-border bg-glass px-3 text-lg/[normal]">Checking ••4821</div>
+            <div className="box-border flex h-[46px] w-full cursor-default items-center rounded-tag border border-site-border bg-glass px-3 text-label">Checking ••4821</div>
             <SiteLabel>Amount</SiteLabel>
             <div>
               {(
@@ -189,10 +189,10 @@ const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindow
         {page === "done" && (
           <div className={cn(card, "top-[84px]")}>
             <div className="text-lead font-bold text-site-ok">Payment scheduled</div>
-            <p className="my-[18px] text-lg/[26px]">
+            <p className="my-[18px] text-label leading-[26px]">
               Thanks. Your payment of {amount} to card ••7731 is scheduled for {site.date}.
             </p>
-            <div className="inline-block text-lg/[normal]">
+            <div className="inline-block text-label">
               Confirmation <b>4F7K-22Q</b>
             </div>
           </div>

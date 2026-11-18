@@ -1,9 +1,9 @@
 import type { ComponentMeta } from "vibestack/stories";
-import { onChase, payPage } from "./GuideRing.meta.tsx";
+import { onChase } from "./GuideRing.meta.tsx";
 import type { GraceCursorProps } from "./GraceCursor.tsx";
 import { compactGrace } from "./Toast.meta.tsx";
 
-const onPay = onChase({ title: "Pay your card · Chase", address: "chase.com/pay", page: payPage });
+const onPay = onChase("pay");
 
 export const meta: ComponentMeta<GraceCursorProps> = {
   args: { x: 273, y: 620, className: "z-2" },

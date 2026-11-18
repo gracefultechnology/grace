@@ -4,6 +4,7 @@ import type { CaptionStripProps } from "./CaptionStrip.tsx";
 
 const show = fn();
 const showGuide = fn();
+const answer = fn();
 
 export const meta: ComponentMeta<CaptionStripProps> = {
   args: { who: "grace", activity: "speaking", text: "Tap the password box, then type your password.", onShowChat: show, onShowGuide: showGuide },
@@ -12,7 +13,7 @@ export const meta: ComponentMeta<CaptionStripProps> = {
     "Margaret, Grace thinking": { who: "you", activity: undefined, text: "Can you help me pay my Chase bill?" },
     Thinking: { activity: "thinking", text: "" },
     Working: { activity: "working", text: "Opening Chase for you." },
-    Answers: { activity: undefined, answers: ["Yes, carry on", "No, thanks"] },
+    Answers: { activity: undefined, answers: ["Yes, carry on", "No, thanks"], onAnswer: answer },
     "Show guidance": { showGuide: true },
     "Long line": { text: "Chase's sign-in page is open. I'll take you through it step by step. Tap the password box, then type your password." },
   },
@@ -26,6 +27,12 @@ export const meta: ComponentMeta<CaptionStripProps> = {
       show.mockClear();
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Show chat" }));
       await expect(show).toHaveBeenCalledTimes(1);
+    },
+    Answers: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      show.mockClear();
+      answer.mockClear();
+      await userEvent.click(within(canvasElement).getByRole("button", { name: "No, thanks" }));
+      await expect([answer.mock.calls, show.mock.calls.length]).toEqual([[["No, thanks"]], 0]);
     },
     "Show guidance": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       show.mockClear();
