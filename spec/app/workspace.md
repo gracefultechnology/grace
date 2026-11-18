@@ -149,8 +149,12 @@ pure val initial: Workspace = {
   preferences: R::initial, wake: W::initial,
   plan: emptyPlan, review: emptyReview(0), commitmentTask: "", observedDevice: 0, observedBrowser: 0
 }
+pure def privateSignInActive(w: Workspace): bool =
+  w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
+pure def privateSurfaceActive(w: Workspace): bool =
+  w.device.surface == S::Passwords or privateSignInActive(w)
 pure def mayAssist(w: Workspace): bool =
-  w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
+  not(privateSignInActive(w)) and w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
 pure def observationIsCurrent(w: Workspace): bool =
   w.observedDevice == w.device.contextVersion and w.observedBrowser == w.browser.revision
@@ -414,7 +418,7 @@ pure def canCloseBrowser(w: Workspace, by: WorkspaceActor): bool =
 pure def closeBrowser(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::openSurface(w.device, S::Home), B::closeBrowser(w.browser), w)
 pure def canOpenGrace(w: Workspace, by: WorkspaceActor): bool =
-  by == Person and w.device.readiness == S::Ready and A::canOpen(w.assistant, C::ConversationUser)
+  by == Person and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and A::canOpen(w.assistant, C::ConversationUser)
 pure def openGrace(w: Workspace, by: WorkspaceActor): Workspace =
   afterInteraction(A::open(w.assistant, C::ConversationUser), w.browser.editingAddress, false, w)
 pure def canCloseGrace(w: Workspace, by: WorkspaceActor): bool =
@@ -434,7 +438,7 @@ pure def abandonTask(w: Workspace, by: WorkspaceActor): Workspace = {
   wake: W::cancel(w.wake, W::WakeUser)
 }
 pure def canTalk(w: Workspace, by: WorkspaceActor): bool =
-  by == Person and S::mayRequestReasoning(w.device) and w.device.microphoneAllowed and
+  by == Person and not(privateSurfaceActive(w)) and S::mayRequestReasoning(w.device) and w.device.microphoneAllowed and
   A::canTalk(w.assistant, C::ConversationUser)
 pure def talk(w: Workspace, by: WorkspaceActor): Workspace =
   afterInteraction(A::talk(w.assistant, C::ConversationUser), w.assistant.keyboard != A::NoKeyboard or w.browser.editingAddress, false, w)
@@ -467,7 +471,7 @@ A fully classified payment approval uses its separate atomic route below.
 ```quint
 
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
-  (by == Person or by == Host) and w.device.readiness == S::Ready and
+  (by == Person or by == Host) and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
   (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
@@ -652,6 +656,7 @@ pure def listeningAfterWake(w: Workspace): A::Assistant =
   val opened = wakeWindow(paused, presentation)
   if (w.device.reasoningAvailable) A::talk(opened, C::ConversationUser) else opened
 pure def canDetectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActor): bool =
+  not(privateSurfaceActive(w)) and
   by == Host and W::canDetect(w.wake, detection, W::WakeHost) and
   w.preferences.session.wakeEnabled and w.device.microphoneAllowed and
   (w.device.readiness == S::Ready or w.device.readiness == S::Sleeping) and
@@ -776,7 +781,8 @@ pure def begin(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): Work
 }
 pure def canChangePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and w.device.surface == S::Browser and
-  BC::canControl(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost)
+  BC::canControl(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost) and
+  BC::requestMatchesTask(browserInput, w.execution.task, w.execution.origin)
 pure def changePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceActor): Workspace =
   val browser = BC::control(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost)
   val updated = if (browser.revision != w.browser.revision) interrupted(w.device, browser, w)
@@ -1118,11 +1124,11 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 ### Only a current observation of the next outcome advances the plan
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission, including checking a page the person opened manually. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
 
 ```quint
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  by == Host and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
+  by == Host and not(privateSurfaceActive(w)) and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
   A::isVisible(w.assistant) and w.device.readiness == S::Ready and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
   w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and

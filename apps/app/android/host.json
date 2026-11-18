@@ -12,11 +12,12 @@
   "modules": [
     { "name": "capacitor-android", "source": { "root": "dependencies", "path": "capacitor" } },
     { "name": "eliza-browser-surface", "source": { "root": "upstream", "path": "plugins/plugin-native-browser-surface/android" } },
-    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "plugins/plugin-native-wifi/android" } },
+    { "name": "elizaos-capacitor-secure-store-nativeonly", "source": { "root": "upstream", "path": "plugins/plugin-native-secure-store/android-nativeonly" } },
     { "name": "eliza-reminders", "source": { "root": "upstream", "path": "plugins/plugin-native-reminders/android" } },
     { "name": "eliza-cloud-speech", "source": { "root": "upstream", "path": "plugins/plugin-local-inference/native/android/cloud-speech-bridge" } },
     { "name": "eliza-auth-cloud", "source": { "root": "upstream", "path": "packages/auth/android" } },
-    { "name": "eliza-secure-store-nativeonly", "source": { "root": "upstream", "path": "plugins/plugin-native-secure-store/android-nativeonly" } }
+    { "name": "elizaos-capacitor-passwords", "source": { "root": "upstream", "path": "plugins/plugin-native-passwords/android" } },
+    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "plugins/plugin-native-wifi/android" } }
   ],
   "signing": { "storeFile": "GRACE_KEYSTORE", "storePassword": "GRACE_KEYSTORE_PASSWORD", "keyAlias": "GRACE_KEY_ALIAS", "keyPassword": "GRACE_KEY_PASSWORD" },
   "manifest": { "root": "consumer", "path": "android/AndroidManifest.xml" },

@@ -18,6 +18,10 @@ public class GraceAgentService extends EmbeddedAgentService {
 
  @Override protected String cloudCredential() throws Exception { return GraceCredentials.cloudKey(this); }
 
+ static boolean stopped() throws org.json.JSONException {
+  return statusFor(GraceAgentService.class, true, "").getString("state").equals("stopped");
+ }
+
  static void resume(Context context) {
   if (restartOwed) restart(context);
   else if (!alive) start(context, null);

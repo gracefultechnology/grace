@@ -2,14 +2,17 @@
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, ManagedRuntime, Schema } from "effect";
+import { PasswordsClientError } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/client.ts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it } from "vitest";
+import { afterAll, beforeAll, expect, inject, it, onTestFinished } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
+import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
+import type { PasswordVault } from "../src/passwords.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, reply, script, signIn, turns } from "./cloud.vibe";
 import "../src/main.css";
@@ -26,9 +29,10 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
  * the page starts what Grace asked only when the test says, and only what it asked last.
  */
-function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown) {
+function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false) {
   const calls: Call[] = [];
   const android = { allows: true };
+  const privateSignIn = { allows: true };
   const held = { starts: false };
   const starts: (() => Promise<void>)[] = [];
   const unanswered: (() => void)[] = [];
@@ -41,6 +45,9 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown)
         return Promise.resolve({ remove: () => Promise.resolve() });
       }
       calls.push({ method, options, graceShown: graceWindow() !== null });
+      if (method === "createSurface" && options.purpose === "manual-sign-in" && !privateSignIn.allows) {
+        return Promise.reject(new Error("Android private WebView unavailable"));
+      }
       if (method === "controlPage" && controlPage) return Promise.resolve(controlPage(options));
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
@@ -52,7 +59,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown)
         const start = () => emit("pageStarted", { id: options.id, url: options.url ?? "" });
         return Promise.resolve().then(() => held.starts ? void starts.push(start) : start());
       }
-      return method === "setOcclusionRects" ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
+      return method === "setOcclusionRects" && !autoRoute ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
     },
   }) as SurfacePlugin;
   /** A plugin event of this renderer's surfaces. */
@@ -64,6 +71,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown)
   return {
     plugin,
     android,
+    privateSignIn,
     held,
     /** The page starts what Grace asked last: a command superseded before it started never starts. */
     start: () => starts.splice(0).at(-1)?.(),
@@ -103,7 +111,17 @@ afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
 it("Use the website under Grace's controls", async () => {
   const native = fakePlugin();
   const runtime = ManagedRuntime.make(application(native.plugin));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  const enterAddress = async (url: string) => {
+    await act(() => page.getByRole("textbox", { name: "Address" }).fill(url));
+    await act(() => userEvent.keyboard("{Enter}"));
+  };
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
   /** A tab as the workspace holds it. */
   const tab = (id: number) => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs.find((t) => t.id === id)!;
@@ -121,7 +139,7 @@ it("Use the website under Grace's controls", async () => {
   await act(() => userEvent.click(volume.element().parentElement!, { position: { x: 1000, y: 700 } }));
   await expect.element(volume).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.com{Enter}"));
+  await enterAddress("example.com");
   // spec/app/surface.md, "The page layer holds its rect, the controls drawn over it and the rects the host routes by"
   await expect.poll(() => native.calls("createSurface")).toMatchObject([{ id: "tab-1", url: "https://example.com/", layer: "below-host", process: "isolated", storage: "isolated", profileKey: "grace", answersRequests: true }]);
   // spec/app/surface.md, "A new page waits for its first routing before it takes any touch"
@@ -344,7 +362,7 @@ it("Use the website under Grace's controls", async () => {
     await tapRouted("Internet");
   };
   await browse();
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.com{Enter}"));
+  await enterAddress("example.com");
   await expect.poll(() => native.calls("createSurface")).toHaveLength(2);
   await native.route();
   await native.started("tab-1");
@@ -391,7 +409,7 @@ it("Use the website under Grace's controls", async () => {
   await browse();
   await native.route();
   await act(() => userEvent.click(page.getByRole("button", { name: "Open a new tab" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.net{Enter}"));
+  await enterAddress("example.net");
   await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-2");
   await native.started("tab-2");
   await native.report("tab-2", "https://example.net/", 100);
@@ -410,9 +428,241 @@ it("Use the website under Grace's controls", async () => {
   await native.route();
   expect(native.calls("createSurface").at(-1)).toMatchObject({ id: "tab-2", url: "https://example.net/next" });
   expect(native.calls("setOcclusionRects")).toHaveLength(routing.length + 1);
+}, 120_000);
 
-  await act(() => Promise.resolve(root.unmount()));
-  await runtime.dispose();
+
+it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+  let locked = true;
+  let edited = false;
+  let shown = false;
+  let copied = false;
+  let phoneRevision: number | undefined;
+  let recoveryOpened = false;
+  let ownerAvailable = true;
+  let ownerChanged: (() => void) | undefined;
+  const vault: PasswordVault = {
+    status: () => Promise.resolve({
+      available: true, locked, unlockRemainingMs: locked ? 0 : 60_000, unlockSeconds: 60, biometric: false,
+      autofill: { supported: true, selected: "this-app" },
+    }),
+    lock: () => { locked = true; return Promise.resolve(); },
+    unlock: () => {
+      if (!ownerAvailable) return Promise.reject(new PasswordsClientError("not-admitted", "The account changed"));
+      locked = false;
+      return Promise.resolve({ unlockRemainingMs: 60_000 });
+    },
+    list: () => Promise.resolve([
+      { id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] },
+      ...(phoneRevision === undefined ? [] : [{ id: "phone", revision: phoneRevision, updatedAt: 2, label: "Phone account", username: phoneRevision === 1 ? "Original" : "Updated on Android", bindings: [] }]),
+    ]),
+    openEditor: (input) => {
+      if (input === undefined) {
+        phoneRevision = 1;
+        return Promise.resolve({ status: "saved", id: "phone", revision: 1 });
+      }
+      expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
+      edited = true;
+      return Promise.resolve({ status: "saved", id: "first-login", revision: 5 });
+    },
+    remove: (id, expectedRevision) => {
+      expect(id).toBe("phone");
+      if (expectedRevision !== undefined && expectedRevision !== phoneRevision) return Promise.reject(new PasswordsClientError("conflict", "Sign-in changed"));
+      phoneRevision = undefined;
+      return Promise.resolve();
+    },
+    reveal: (id, expectedRevision) => {
+      expect([id, expectedRevision]).toEqual(["first-login", 4]);
+      shown = true;
+      return Promise.resolve({ hidesAfterMs: 30_000 });
+    },
+    copy: (id, expectedRevision) => {
+      expect([id, expectedRevision]).toEqual(["first-login", 5]);
+      copied = true;
+      return Promise.resolve({ clearsAfterMs: 45_000 });
+    },
+    openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
+  };
+  const runtime = ManagedRuntime.make(application(undefined, undefined, undefined, vault, {
+    addListener: (_name, notify) => {
+      ownerChanged = notify;
+      return Promise.resolve({ remove: () => Promise.resolve() });
+    },
+    passwordBackupStatus: () => Promise.resolve({ ready: true }),
+    openBackupRecovery: () => { recoveryOpened = true; return Promise.resolve({ status: "opened" }); },
+  }));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  const unlock = page.getByRole("button", { name: "Unlock Passwords" });
+  await expect.element(unlock).toBeEnabled();
+  const guide = () => runtime.runSync(Effect.flatMap(Effect.service(PasswordViews), (machine) => machine.get())).guide;
+  expect(guide()).toBe("ShowPasswordGuide");
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.poll(guide).toBe("NoPasswordGuide");
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  await expect.poll(() => recoveryOpened).toBe(true);
+  expect(locked).toBe(true);
+  await act(() => userEvent.click(unlock));
+  const search = page.getByRole("searchbox", { name: "Find a saved password" });
+  const login = page.getByRole("button", { name: /Utility account/ });
+  await act(() => search.fill("missing"));
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => search.fill("utility"));
+  await act(() => userEvent.keyboard("{Tab}{Enter}"));
+  await expect.element(page.getByRole("heading", { name: "Utility account" })).toHaveFocus();
+  await act(() => userEvent.click(page.getByRole("button", { name: "All passwords" })));
+  await expect.element(login).toHaveFocus();
+  await act(() => userEvent.keyboard("{Enter}"));
+  expect(shown).toBe(false);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Show password" })));
+  await expect.poll(() => shown).toBe(true);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
+  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
+  await expect.poll(() => copied).toBe(true);
+  await act(() => userEvent.click(page.getByRole("button", { name: "All passwords" })));
+  await act(() => search.fill(""));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Add password" })));
+  const phone = page.getByRole("button", { name: /Phone account/ });
+  await act(() => userEvent.click(phone));
+  const remove = page.getByRole("button", { name: "Delete", exact: true });
+  const confirmRemove = page.getByRole("button", { name: "Delete saved password" });
+  await act(() => userEvent.click(remove));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Cancel", exact: true })));
+  expect(phoneRevision).toBe(1);
+  await act(() => userEvent.click(remove));
+  phoneRevision = 2;
+  await act(() => userEvent.click(confirmRemove));
+  await expect.element(page.getByText("This sign-in changed. Check its details and try again.")).toBeVisible();
+  await expect.element(page.getByText("Updated on Android", { exact: true })).toBeVisible();
+  await act(() => userEvent.click(remove));
+  await act(() => userEvent.click(confirmRemove));
+  await expect.element(phone).not.toBeInTheDocument();
+  await expect.element(page.getByText("Password deleted.")).toBeVisible();
+  await act(() => userEvent.click(login));
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
+  await expect.poll(() => locked).toBe(true);
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  ownerAvailable = false;
+  recoveryOpened = false;
+  await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
+  await act(() => userEvent.click(unlock));
+  await expect.element(unlock).not.toBeInTheDocument();
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  await expect.poll(() => recoveryOpened).toBe(true);
+  expect(locked).toBe(true);
+});
+
+it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
+  const native = fakePlugin(undefined, true);
+  const runtime = ManagedRuntime.make(application(native.plugin));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  await act(() => page.getByRole("textbox", { name: "Address" }).fill("https://utility.example/normal"));
+  await act(() => userEvent.keyboard("{Enter}"));
+  await expect.poll(() => native.calls("createSurface").length).toBe(1);
+  await native.started("tab-1");
+  await native.report("tab-1", "https://utility.example/normal", 100);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
+    url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
+  });
+  expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
+  await native.report("tab-2", "https://utility.example", 100);
+  const address = page.getByRole("textbox", { name: "Private website address" });
+  await act(() => address.fill("https://utility.example/enter/sample?ref=one-time"));
+  await act(() => userEvent.keyboard("{Enter}"));
+  await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
+    url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
+  });
+  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100);
+  const state = JSON.stringify(browserState());
+  expect(state).not.toContain("one-time");
+  expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await act(() => page.getByRole("textbox", { name: "Message to Grace" }).fill("sign me in to pay my bill"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
+    id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
+  });
+  expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
+  native.privateSignIn.allows = false;
+  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
+  await expect.element(unavailable).toBeVisible();
+  await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");
+  const retry = unavailable.getByRole("button", { name: "Try again" });
+  await expect.element(retry).toBeEnabled();
+  native.privateSignIn.allows = true;
+  await act(() => userEvent.click(retry));
+  const attempts = () => native.calls("createSurface").filter(({ id }) => id === "tab-4");
+  const privateAttempt = { url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated" };
+  await expect.poll(attempts).toMatchObject([privateAttempt, privateAttempt]);
+  await native.report("tab-4", "https://utility.example", 100);
+  await expect.element(unavailable).not.toBeInTheDocument();
+  expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+});
+
+it('Use only the current local speech for Passwords guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+  type Heard = { status: "complete"; text: string };
+  const requests: ((result: Heard) => void)[] = [];
+  const cancellations: string[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, undefined, undefined, undefined, {
+    listen: () => new Promise<Heard>((resolve) => requests.push(resolve)),
+    cancel: ({ id }) => { cancellations.push(id); return Promise.resolve(); },
+  }));
+  const element = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(element);
+  onTestFinished(async () => {
+    await act(() => Promise.resolve(root.unmount()));
+    element.remove();
+    await runtime.dispose();
+  });
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  const ask = page.getByRole("button", { name: "Ask Grace" });
+  const mic = () => page.getByRole("switch", { name: "Mic off" });
+  await act(() => userEvent.click(ask));
+  expect(requests).toHaveLength(0);
+  await act(() => userEvent.click(mic()));
+  await expect.poll(() => requests.length).toBe(1);
+  await act(() => userEvent.click(page.getByRole("textbox", { name: "Message to Grace" })));
+  await expect.poll(() => cancellations.length).toBe(1);
+  await act(() => { requests[0]?.({ status: "complete", text: "open passwords" }); return Promise.resolve(); });
+  await expect.element(page.getByRole("button", { name: "Close Passwords" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(mic()));
+  await expect.poll(() => requests.length).toBe(2);
+  await act(() => { requests[1]?.({ status: "complete", text: "sample secret words" }); return Promise.resolve(); });
+  await expect.element(mic()).toBeVisible();
+  await expect.element(page.getByText("sample secret words")).not.toBeInTheDocument();
+  await act(() => userEvent.click(mic()));
+  await expect.poll(() => requests.length).toBe(3);
+  await act(() => { requests[2]?.({ status: "complete", text: "Open passwords." }); return Promise.resolve(); });
+  await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
 });
 
 it("Talk or type without losing the conversation", async () => {

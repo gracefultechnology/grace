@@ -199,6 +199,7 @@
         "DEVICE_REMINDER_SNOOZE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
         "DEVICE_REMINDER_UPDATE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
         "DISABLE_AUTONOMOUS_MODE": "Grace acts only on the person's own turn, never on her own schedule.",
+        "DISCOVER_ACTIONS": "Grace offers the actions selected for her current task through the workspace policy.",
         "DOCUMENT": "The conversation is not kept after a restart, and saved details are kept only with the person's approval in Settings.",
         "EDIT": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "ENABLE_AUTONOMOUS_MODE": "Grace acts only on the person's own turn, never on her own schedule.",

@@ -4,6 +4,8 @@ lemma lawControlsPreserveBrowser_ensures(b: app__browser_Browser, browserInput: 
   if validBrowser(b) && canControl(b, browserInput, by_) {
     assert app__browser_inv(b);
     match browserInput {
+      case OpenPrivateSignIn(url) => app__browser_openPrivateSignIn_ensures(b, url);
+      case RequestPrivateSignIn(id, revision, origin) => app__browser_openPrivateSignIn_ensures(b, origin);
       case NewTab => app__browser_openTab_ensures(b);
       case SelectTab(id) => app__browser_selectTab_ensures(b, id);
       case CloseTab(id) => app__browser_closeTab_ensures(b, id);

@@ -464,3 +464,75 @@ pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) an
 pure def sometimesTalkTriedAloud(s: Setup): bool = outcomeOf(s.progress, TalkStep) == Done
 pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away and s.progress.step == HandOverStep and not(graceThinks(s.facts))
 ```
+
+## Story: Keep my passwords private when the tablet account changes
+
+> I can keep passwords on my own tablet, and I can choose to link them to my verified Grace account. Signing out closes private controls. Another account on this tablet cannot read or adopt the passwords I linked.
+
+### Only the device-only profile or the current verified owner can open the vault
+
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation in the same deployment environment. A debug tablet with two active environments must choose one account before opening the vault. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+
+```quint
+type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })
+type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ credentialId: str })
+pure def passwordAdmission(custody: PasswordCustody, account: PasswordAccount): bool =
+  match custody {
+    | DevicePasswordCustody => match account { | DevicePasswordAccount => true | _ => false }
+    | BoundPasswordCustody(owner) => match account {
+        | ActivePasswordAccount(active) => owner.scope != "" and owner.generationId != "" and owner.generationId == active.credentialId
+        | _ => false
+      }
+  }
+pure def lawSignedOutCannotOpenBoundPasswords(scope: str, generationId: str): bool =
+  not(passwordAdmission(BoundPasswordCustody({ scope: scope, generationId: generationId }), DevicePasswordAccount))
+```
+
+### Linking local passwords requires account verification and the person's approval
+
+The host verifies the current account and product scope before binding the current credential generation. Linking existing device-only entries additionally requires confirmation from the person after device authentication. The same owner may verify a renewed credential. A different owner cannot take over this vault.
+
+```quint
+pure def mayBindPasswords(custody: PasswordCustody, verifiedScope: str, activeId: str, hasEntries: bool, confirmedLink: bool): bool =
+  verifiedScope != "" and activeId != "" and
+  (match custody {
+    | DevicePasswordCustody => not(hasEntries) or confirmedLink
+    | BoundPasswordCustody(owner) => owner.scope == verifiedScope
+  })
+pure def lawCannotClaimAnotherPasswordOwner(scope: str, other: str, generationId: str): bool =
+  scope != other implies not(mayBindPasswords(BoundPasswordCustody({ scope: scope, generationId: generationId }), other, generationId, true, true))
+pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool =
+  not(mayBindPasswords(DevicePasswordCustody, scope, generationId, true, false))
+```
+
+## Story: Back up and recover my saved passwords
+
+> As a tablet owner, I can choose to save an encrypted copy of my passwords,
+> restore it on a replacement tablet with my recovery key, or remove it
+> from my cloud account.
+
+### A backup belongs to the signed-in owner and has its own approval
+
+Grace offers Backup and recovery when exactly one acknowledged native
+account, its screen lock and that account’s backup service are ready.
+Production is available in every build. Staging is available only in a
+debug build. A credential change closes the recovery screen and ends its
+pending operation. Each operation needs the same signed-in account
+and a new native account confirmation. Verifying ownership, saving and
+restoring require a fresh tablet unlock. A tablet with saved passwords asks
+the owner before linking those passwords to the account. The recovery key stays in a protected native screen,
+and Grace sends only the encrypted snapshot. Restore fills an empty vault
+in one step. Removing a cloud copy leaves local passwords available.
+
+```quint
+pure def passwordRecoveryOffered(acknowledgedAccounts: int, debugBuild: bool, staging: bool, screenSecure: bool, serviceReady: bool): bool =
+  acknowledgedAccounts == 1 and (not(staging) or debugBuild) and screenSecure and serviceReady
+pure def lawAmbiguousAccountCannotOpenPasswordRecovery(debugBuild: bool, staging: bool): bool =
+  not(passwordRecoveryOffered(2, debugBuild, staging, true, true))
+pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
+  not(passwordRecoveryOffered(1, false, true, screenSecure, serviceReady))
+pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
+pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, freshUnlock, recoveryKeyMatches, false))
+```

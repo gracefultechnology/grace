@@ -1,9 +1,14 @@
 package technology.graceful.grace;
 
 import ai.eliza.auth.cloud.CloudCredentialSlots;
+import ai.eliza.auth.cloud.CloudSignInFlow;
+import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.CredentialIntentFence;
+import ai.eliza.plugins.securestore.nativeonly.CredentialMutationConductor;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
 import android.content.Context;
+import android.content.Intent;
+import android.os.SystemClock;
 import java.io.File;
 import java.util.Objects;
 import java.util.concurrent.Callable;
@@ -13,8 +18,12 @@ import org.json.JSONTokener;
 final class GraceCredentials {
  private static final Object LIFECYCLE = new Object();
  private static final CredentialIntentFence INTENTS = new CredentialIntentFence(LIFECYCLE);
- private static final String KEY = GraceSignInPlugin.NATIVE.credentialSlot(GraceSignInPlugin.ENVIRONMENT);
- private static final String ACTIVATION = GraceSignInPlugin.NATIVE.receiptSlot(GraceSignInPlugin.ENVIRONMENT);
+ private static final String KEY = GraceSignInPlugin.NATIVE.credentialSlot(GraceSignInPlugin.PRODUCTION);
+ private static final String ACTIVATION = GraceSignInPlugin.NATIVE.receiptSlot(GraceSignInPlugin.PRODUCTION);
+ private static final String STAGING_KEY = GraceSignInPlugin.NATIVE.credentialSlot(GraceSignInPlugin.STAGING);
+ private static final String STAGING_ACTIVATION = GraceSignInPlugin.NATIVE.receiptSlot(GraceSignInPlugin.STAGING);
+ private static final String PENDING = GraceSignInPlugin.NATIVE.pendingSlot;
+ private static long lifecycleEpoch, mutationEpoch = -1;
 
  private GraceCredentials() {}
 
@@ -23,22 +32,59 @@ final class GraceCredentials {
  private static Runnable bound(long intent) { return () -> INTENTS.require(intent); }
 
  static <T> T withRead(Callable<T> read) throws Exception {
-  synchronized (LIFECYCLE) { synchronized (JsonCredentialSlots.LOCK) { return read.call(); } }
+  synchronized (LIFECYCLE) {
+   synchronized (JsonCredentialSlots.LOCK) {
+    if (mutationEpoch >= 0) throw new IllegalStateException("Credential change in progress");
+    return read.call();
+   }
+  }
  }
 
  static String cloudKey(Context context) throws Exception {
   JsonCredentialSlots store = store(context);
-  String saved = withRead(() -> agentKey(store));
+  String saved = withRead(() -> read(store, BuildConfig.DEBUG ? STAGING_ACTIVATION : ACTIVATION) == null ? read(store, BuildConfig.DEBUG ? STAGING_KEY : KEY) : null);
   if (saved == null) return null;
   JSONObject credential = new JSONObject(saved);
   return credential.getLong("expiresAt") > System.currentTimeMillis() ? credential.getString("token") : null;
+ }
+
+ record BackupAccount(String environment, String key) {
+  @Override public String toString() { return environment; }
+ }
+ record PasswordCredential(BackupAccount account, String id) {}
+
+ static PasswordCredential passwordCredential(Context context) throws Exception {
+  JsonCredentialSlots store = store(context);
+  if (read(store, PENDING) != null || read(store, ACTIVATION) != null || (BuildConfig.DEBUG && read(store, STAGING_ACTIVATION) != null)) {
+   throw new IllegalStateException("Account change in progress");
+  }
+  String production = read(store, KEY);
+  String staging = BuildConfig.DEBUG ? read(store, STAGING_KEY) : null;
+  if (production != null && staging != null) throw new IllegalStateException("Select one password account");
+  if (production == null && staging == null) return null;
+  JSONObject saved = new JSONObject(production != null ? production : staging);
+  String key = saved.getString("token");
+  String id = saved.getString("credentialId");
+  if (!CloudSignInFlow.validMobileSecret(key) || !CloudSignInFlow.validUuid(id) || saved.getLong("expiresAt") <= System.currentTimeMillis()) {
+   throw new IllegalStateException("Verify the account again");
+  }
+  return new PasswordCredential(new BackupAccount(production != null ? "production" : "staging", key), id);
+ }
+
+ static BackupAccount backupAccount(Context context) throws Exception {
+  return withRead(() -> {
+   PasswordCredential credential = passwordCredential(context);
+   return credential == null ? null : credential.account();
+  });
  }
 
  static CloudCredentialSlots slots(Context context, Runnable guard) {
   Context app = context.getApplicationContext();
   JsonCredentialSlots store = store(app);
   return new CloudCredentialSlots() {
-   @Override public String read(String slot) throws Exception { return withRead(() -> GraceCredentials.read(store, slot)); }
+   @Override public String read(String slot) throws Exception {
+    synchronized (LIFECYCLE) { synchronized (JsonCredentialSlots.LOCK) { return GraceCredentials.read(store, slot); } }
+   }
    @Override public void write(String slot, String value) throws Exception { change(app, store, guard, slot, false, null, value); }
    @Override public void remove(String slot) throws Exception { change(app, store, guard, slot, false, null, null); }
    @Override public boolean compareExchange(String slot, String expected, String value) throws Exception { return change(app, store, guard, slot, true, expected, value); }
@@ -57,32 +103,50 @@ final class GraceCredentials {
   return (String) value;
  }
 
- private static String agentKey(JsonCredentialSlots store) throws Exception {
-  return read(store, ACTIVATION) == null ? read(store, KEY) : null;
+ private static boolean change(Context context, JsonCredentialSlots store, Runnable guard, String slot, boolean compare, String expected, String value) throws Exception {
+  boolean bound = slot.equals(KEY) || slot.equals(ACTIVATION) || slot.equals(PENDING)
+    || (BuildConfig.DEBUG && (slot.equals(STAGING_KEY) || slot.equals(STAGING_ACTIVATION)));
+  return CredentialMutationConductor.mutate(host(context), guard, new CredentialMutationConductor.Mutation<Boolean>() {
+   @Override public boolean requiresShutdown() throws Exception {
+    String before = read(store, slot);
+    return bound && (!compare || Objects.equals(before, expected)) && !Objects.equals(before, value);
+   }
+   @Override public Boolean commit() throws Exception {
+    if (compare && !Objects.equals(read(store, slot), expected)) return false;
+    guard.run();
+    if (value == null) store.remove(slot);
+    else store.write(slot, JSONObject.quote(value));
+    if (!Objects.equals(value, read(store, slot))) throw new IllegalStateException("Credential commit unconfirmed");
+    return true;
+   }
+  });
  }
 
- private static boolean change(Context context, JsonCredentialSlots store, Runnable guard, String slot, boolean compare, String expected, String value) throws Exception {
-  boolean restart = false;
-  try {
-   synchronized (LIFECYCLE) {
-    synchronized (JsonCredentialSlots.LOCK) {
-     guard.run();
-     String before = read(store, slot);
-     if (compare && !Objects.equals(before, expected)) return false;
-     if (Objects.equals(before, value)) return true;
-     String agent = agentKey(store);
-     try {
-      if (value == null) store.remove(slot);
-      else store.write(slot, JSONObject.quote(value));
-      if (!Objects.equals(value, read(store, slot))) throw new IllegalStateException("Credential commit unconfirmed");
-     } finally {
-      restart = !Objects.equals(agent, agentKey(store));
-     }
-     return true;
-    }
+ private static CredentialMutationConductor.Host host(Context context) {
+  return new CredentialMutationConductor.Host() {
+   @Override public Object lifecycleLock() { return LIFECYCLE; }
+   @Override public Object credentialLock() { return JsonCredentialSlots.LOCK; }
+   @Override public long beginRetirement() { return mutationEpoch = ++lifecycleEpoch; }
+   @Override public void requireCurrent(long epoch) {
+    if (epoch != lifecycleEpoch || mutationEpoch != epoch) throw new IllegalStateException("Credential change superseded");
    }
-  } finally {
-   if (restart) GraceAgentService.restart(context);
-  }
+   @Override public long reserveStop() { return lifecycleEpoch; }
+   @Override public void requestStop(long request) throws Exception {
+    GraceSignInPlugin.passwordOwnerChanged(true);
+    PasswordVaultAccess.get(context).lockAndClose();
+    context.stopService(new Intent(context, GraceAgentService.class));
+   }
+   @Override public boolean stopped() throws Exception { return GraceAgentService.stopped(); }
+   @Override public boolean stopAcknowledged(long request) { return true; }
+   @Override public long elapsedRealtime() { return SystemClock.elapsedRealtime(); }
+   @Override public void sleep(long millis) throws InterruptedException { Thread.sleep(millis); }
+   @Override public <T> T commit(CredentialMutationConductor.Mutation<T> mutation) throws Exception { return mutation.commit(); }
+   @Override public void finishMutation(long epoch, long request, boolean attempted, boolean committed) {
+    if (mutationEpoch != epoch) return;
+    mutationEpoch = -1;
+    GraceSignInPlugin.passwordOwnerChanged(false);
+    if (request >= 0 && (!attempted || committed)) GraceAgentService.resume(context);
+   }
+  };
  }
 }
