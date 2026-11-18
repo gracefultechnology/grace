@@ -319,7 +319,8 @@
         "WORKFLOW": "Registered only by @elizaos/plugin-workflow, which this file refuses.",
         "WORKTREE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "WORK_THREAD": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
-        "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses."
+        "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
+        "DISCOVER_ACTIONS": "local run only"
       },
       "refusedSubactionsOf": [
         "BLOCK",

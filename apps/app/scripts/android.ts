@@ -29,6 +29,8 @@ const forbiddenEntry = new RegExp([
   String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
   String.raw`^assets/(?!public/)([^/]+/)*(tts|asr|models?)/`,
 ].join("|"), "i");
+const cloudSpeechClass = /^Lai\/eliza\/voice\/(cloud\/R|SpeechStreamBridgePlugin|CloudSpeechWire|AudioTrackSpeechOutput|SpeechAudioFocus|SpeechAudioFocusPolicy|SpeechPcmQueue|StreamingSpeechPlayback|VoiceLatencyTrials)[;$]/;
+const inferenceClass = /^L(ai\/eliza\/voice\/|ai\/onnxruntime\/|org\/tensorflow\/lite\/|org\/pytorch\/|com\/k2fsa\/|com\/google\/mediapipe\/|org\/vosk\/)/;
 
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, "utf8"));
 const writeJson = (file: string, value: unknown) => {
@@ -65,6 +67,10 @@ const AgentStatus = Schema.Struct({
   state: Schema.Literals(["unavailable", "stopped", "starting", "running", "failed"]),
   failure: Schema.optional(Schema.Literals(["payload", "storage", "config", "credential", "agent", "crashed", "runtime"])),
 });
+const PluginCall = {
+  call: Schema.String.check(Schema.isPattern(/^[A-Z]\w*\.[a-z]\w*$/)),
+  with: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+};
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
   Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString }),
@@ -74,9 +80,12 @@ const Step = Schema.Union([
   Schema.Struct({ signIn: Schema.Struct({ signedIn: Schema.Boolean, google: Schema.Boolean }) }),
   Schema.Struct({ service: Schema.String.check(Schema.isPattern(/^[A-Z]\w*$/)) }),
   Schema.Struct({ leaveFor: Schema.String.check(Schema.isPattern(/^android\.settings\.[A-Z_]+$/)) }),
+  Schema.Struct({ key: Schema.Literals(["VOLUME_UP", "VOLUME_DOWN"]) }),
+  Schema.Struct({ ...PluginCall, returns: Schema.Record(Schema.String, Schema.Unknown) }),
+  Schema.Struct({ ...PluginCall, refuses: Schema.NonEmptyString }),
 ]);
 type Step = typeof Step.Type;
-type OnDevice = Extract<Step, { service: string } | { leaveFor: string }>;
+type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string }>;
 const Benchmark = Schema.Struct({
   taskId: Schema.NonEmptyString,
   intent: Schema.NonEmptyString,
@@ -241,10 +250,15 @@ function writeApkManifest() {
       .map((line) => line.split("\t")).map(([kind, , , source]) => kind === "native" ? `lib/${abis[0]}/${source}` : `assets/${source}`);
     const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
     if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}; delete artifacts/agent-runtime to rebuild a payload staged by an older build`);
+    const classes = Array.from(execFileSync(buildTool("dexdump"), [file], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] })
+      .matchAll(/^  Class descriptor  : '([^']+)'$/gm), ([, descriptor]) => descriptor);
+    const inference = classes.filter((descriptor) => inferenceClass.test(descriptor) && !cloudSpeechClass.test(descriptor));
+    if (inference.length) throw new Error(`${name} carries local inference or voice model classes: ${inference.join(", ")}`);
+    if (!classes.includes("Lai/eliza/voice/SpeechStreamBridgePlugin;")) throw new Error(`${name} lacks the cloud speech bridge`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     const debuggable = execFileSync(buildTool("aapt"), ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
-    process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; its ${actions} actions declared by name are each allowed or refused\n`);
+    process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the cloud speech bridge and no inference class; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
@@ -396,6 +410,15 @@ async function devTools(url: string, signal: AbortSignal) {
           throw new Error(`The agent is ${JSON.stringify(status)}, not ${JSON.stringify(step.agent)}`);
         return;
       }
+      if ("call" in step) {
+        const [plugin, method] = step.call.split(".");
+        const expression = `Capacitor.Plugins[${JSON.stringify(plugin)}][${JSON.stringify(method)}](${JSON.stringify(step.with ?? {})}).then((value) => ({ value: value ?? null }), (error) => ({ refused: String(error.message) }))`;
+        const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const answer = Schema.decodeUnknownSync(Answer)(result.value);
+        const expected = "returns" in step ? { value: step.returns } : { refused: step.refuses };
+        if (!contains(answer, expected)) throw new Error(`${step.call} answered ${JSON.stringify(answer)}, not ${JSON.stringify(expected)}`);
+        return;
+      }
       if ("signIn" in step) {
         const expression = `(async () => { const signIn = Capacitor.Plugins.GraceSignIn; return JSON.stringify({ status: await signIn.status({ refreshNegative: true }), identity: await signIn.credentialIdentity({ environment: "production" }) }); })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
@@ -425,6 +448,12 @@ async function devTools(url: string, signal: AbortSignal) {
     close: () => socket.close(),
   };
 }
+
+const contains = (actual: unknown, expected: unknown): boolean =>
+  typeof expected === "object" && expected !== null && !Array.isArray(expected)
+    ? typeof actual === "object" && actual !== null && Object.entries(expected).every(([key, value]) => contains(Reflect.get(actual, key), value))
+    : JSON.stringify(actual) === JSON.stringify(expected);
+const Answer = Schema.Union([Schema.Struct({ value: Schema.Unknown }), Schema.Struct({ refused: Schema.String })]);
 
 const failing = (what: string) => (error: unknown) => { throw new Error(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); };
 
@@ -522,6 +551,10 @@ async function runBenchmark({ input, receipt }: BenchmarkRun, page: Awaited<Retu
 }
 
 async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: OnDevice) {
+  if ("key" in step) {
+    await shell(serial, `input keyevent KEYCODE_${step.key}`);
+    return;
+  }
   if ("service" in step) {
     const foreground = `dumpsys activity services ${identity.appId}/.${step.service} | grep -c isForeground=true`;
     await shell(serial, `until [ "$(${foreground})" -gt 0 ]; do sleep 1; done`, 120);
@@ -576,7 +609,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
         failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
       await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
       for (const step of exercise) {
-        await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
+        await ("service" in step || "leaveFor" in step || "key" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
       }
       if (benchmark) await runBenchmark(benchmark, page, listTargets);
