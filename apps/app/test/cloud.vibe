@@ -154,7 +154,8 @@ schema OtherConnect { address: string; password: string; incoming?: string; outg
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
 schema Outage { down: boolean }
-schema Scripted { said?: string; answer: string }
+schema ChatContext { includes: string[]; excludes: string[] }
+schema Scripted { said?: string; context?: ChatContext; answer: string }
 schema Script { replies: Scripted[] }
 schema SessionQuery { sessionId: string }
 schema GoogleAuthorization { state: Uuid; response_type: "code"; client_id: "grace-browser-fixture"; redirect_uri: Url; scope: Filled }
@@ -1020,7 +1021,10 @@ effect function store(site: string) {
     const { key, script: queued } = try signedIn()
     const { messages, stream } = try HttpServerRequest.schemaBodyJson(ChatRequest)
     const said = messages.findLast((m) => m.role === "user")?.content ?? ""
-    const chosen = queued.findIndex((s) => s.said === undefined || s.said === said)
+    const context = messages.find((m) => m.role === "system")?.content ?? ""
+    const chosen = queued.findIndex((s) => (s.said === undefined || s.said === said) &&
+      (s.context === undefined || (s.context.includes.every((value) => context.includes(value)) &&
+        s.context.excludes.every((value) => !context.includes(value)))))
     const answer = chosen < 0 ? reply(said) : queued[chosen].answer
     const id = try next()
     const settled = (outcome: Turn["outcome"]) => change(key, (a) => ({ ...a, turns: a.turns.map((t) => t.id === id ? { ...t, outcome } : t) }))

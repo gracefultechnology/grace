@@ -7,7 +7,8 @@ and the [validation record](docs/validation-status.md).
 
 Use Node 26, the repository's pinned pnpm, and PostgreSQL. Initialize the exact
 upstream commit before installing. The Worker imports the upstream cloud
-package. Grace supplies the origins, assets and provider bindings.
+package. Grace supplies the origins, assets and provider bindings. The root install
+generates Eliza’s Cloud decision model for the Worker and the browser client.
 
 ```sh
 git submodule update --init vendor/eliza
@@ -42,6 +43,11 @@ configuration. The migration refuses an occupied database on first install.
 | Browser guidance | Grace imports the decision client from `@elizaos/cloud/clef-decisions`. The signed-in browser or tablet sends page candidates to the Grace API at `POST /api/v1/decisions`. The upstream Worker uses Grace’s `AI` binding to select a candidate with Clef Flash. Grace checks the current page again and highlights the link for the person to tap. |
 | Speech | The Worker uses its Grace-specific `CARTESIA_API_KEY` in the Eliza organization and Julia – Gentle Guide, a stock English voice. The organization's Startup model overage costs USD 45 per million credits. At three credits per second of transcription and one per character of synthesis, Grace meters 135 and 45 microdollars respectively. Each account can start up to 120 one-minute speech sessions per rolling day, carrying forward the previous integration's 120-minute ceiling. Grace owns the `SPEECH_RELAY_SESSIONS` Durable Objects. |
 | Android | Register the Grace app package, release signer SHA-256 fingerprint, HTTPS return URLs and `credentialTtlMs: 604800000` (seven days) in `NATIVE_CLIENT_REGISTRY`, and select its `NATIVE_CLIENT_ID`. The app host serves the resulting Digital Asset Links document. Only the native app receives the inference credential. |
+
+For Grace’s restricted Stripe key, allow the Worker to create customers, Checkout sessions and
+customer portal sessions. It also retrieves Checkout sessions and reads prices and their
+products, subscriptions, invoices, invoice payments, PaymentIntents, charges and disputes.
+Stripe webhook reconciliation applies only to customers already bound to a Grace organization.
 
 Google identity sign-in requests basic identity scopes. The Gmail and Calendar
 consent screen lists the permissions the person chose. In Google’s testing mode, the designated

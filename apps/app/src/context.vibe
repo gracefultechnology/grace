@@ -13,6 +13,8 @@ import { Machine as Workspaces, privateSurfaceActive, type Workspace } from "../
 import type { Applied, Outcome } from "./agent.vibe"
 import type { MailContent } from "./connector.vibe"
 import { Instances, tablet } from "./instances.vibe"
+import type { GuidedManagedSelection } from "./managedReads.vibe"
+import { withhold } from "./private.ts"
 
 /** Everything on the tablet Grace's turn is decided on: the workspace, the accounts, each account's mailbox, each calendar, her waiting question. */
 export type Scene = {
@@ -287,19 +289,23 @@ export function screen(s: Scene): Part {
 }
 
 /** Everything Grace is shown with a turn at `now` (milliseconds since the epoch): the screen, the tablet, what of her last actions was not done, and what she was told since. */
-export function render(s: Scene, now: number, notDone: readonly Applied[], told: readonly string[]): Shown {
+export function render(s: Scene, now: number, notDone: readonly Applied[], told: readonly string[], selected: GuidedManagedSelection): Shown {
   const { device, assistant, preferences: { session } } = s.workspace
-  const part = screen(s)
+  const legacy = selected.kind === "legacy"
+  const visibleManaged = selected.kind === "mail" && device.surface === "Email" ? "Selected email subject: " + selected.subject
+    : selected.kind === "calendar" && device.surface === "Calendar" ? "Selected calendar appointment: " + selected.title : ""
+  const part = legacy || (device.surface !== "Email" && device.surface !== "Calendar") ? screen(s)
+    : { lines: visibleManaged === "" ? [] : [withhold({ text: visibleManaged, passwords: [] })], targets: [] }
   const lines = [
     `It is ${when(now)}.`,
     `On the screen: ${surfaces[device.surface]}. The internet is ${device.connectivity === "Online" ? "connected" : "not connected"}. Your window is ${assistant.presentation === "Expanded" ? "expanded" : "compact"}.`,
     ...part.lines,
     ...part.targets.length === 0 ? [] : [`Targets you may point at: ${part.targets.join(", ")}.`],
     `Settings: text size ${session.textSize}, volume ${session.muted ? "muted" : session.volume}, brightness ${session.brightness}, you ${session.voiceOutput ? "speak aloud" : "do not speak aloud"}, pace ${session.pace}.`,
-    ...always(s, now),
+    ...legacy ? always(s, now) : [],
     ...assistant.activity === "NoTask" ? [] : [`You are helping with: ${assistant.goal}.`],
     ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`),
-    ...told.length === 0 ? [] : [`What happened on the tablet since, as the tablet tells you (it asks nothing of you): ${told.join(" ")}`]
+    ...!legacy || told.length === 0 ? [] : [`What happened on the tablet since, as the tablet tells you (it asks nothing of you): ${told.join(" ")}`]
   ]
   return { text: lines.join("\n"), targets: new Set(part.targets) }
 }

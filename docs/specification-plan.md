@@ -2,7 +2,7 @@
 
 Up to [Guided tasks across applications](#guided-tasks-across-applications),
 this is the plan of the models-only phase, which ended on 15 November 2026;
-that section and its qualification of 17 November are current. The interface, the shell and the Android host are now being built from the
+that section includes the 17 and 18 November qualifications. The interface, the shell and the Android host are now being built from the
 spec, and the owner's directions in the
 [acceptance list](implementation-acceptance.md#owner-directions) replace the
 request below: bill payment is the first kind of a general task, set-up and
@@ -141,6 +141,16 @@ The serial GitHub Actions run passed on its first attempt at `29c41ed`, with Eli
 The application, tests, models and Eliza dependency at `29c41ed` match the versions used in the independent Shopping run at `cdab8fb` and the offline Google CI run at `992728b`. Shopping 260 passed once, and live-planned 261 passed three times with fresh shopper sessions. Both the official URL grader and Grace’s completion check passed in all four sessions. An earlier cold-store startup ended before authentication and scoring. All four offline Google and cross-app journeys passed in GitHub Actions. These results pin Eliza at `56d05088`. The later Android agent process-owner update in PR 88 has its own device qualification. [Google and cross-app CI](https://github.com/gracefultechnology/grace-new/actions/runs/44255219354) · [Pinned benchmark revision](https://github.com/gracefultechnology/grace-new/tree/29c41ed5f925ea159325b91635131ddc061e935d) · [Android agent update](https://github.com/gracefultechnology/grace-new/pull/88)
 
 The ordinary Linux `pnpm check` on `5b438b6` reached its two-hour limit with exit 124. All 38 model checks passed. At cutoff the runner had recorded 15 passing `always` checks, 123 passing `sometimes` checks and 15 passing replays. The searches for showing Done in Assistant and submitting a typed request in Workspace each hit Quint’s one-hour limit. Separate finite traces reached both states. Whole-repository verification remains open. The portable qualification archive includes the full check receipt, both witnesses, the four official Shopping trials and the original GitHub artifacts. Its SHA-256 is `05b4980e190241a57eca47c714378f1e4858317d9abc394df2fe4256e6360f16`.
+
+### Qualification on November 18
+
+The fresh run on `2df2dab` with Eliza `3423598f` followed Grace’s visible link guidance to the expected public help page at all 100 Fleet sites across 26 portal templates. The independent audit found 102 accepted hosted Clef selections and 200 distinct starting and landing document IDs. On the same source, a simulated person opened the Malden statement and the original `task_md9` grader accepted all six checks. The no-action control failed. These are separate tasks with separate evidence.
+
+The earlier Fleet aggregate accepted corrupted copies of a passing receipt after its hosted response was changed to HTTP 503 or its initial and landing document IDs were made equal. The new grader checks that Clef selected an offered candidate and that the browser’s independently observed landing, changed document and final checked hop agree. A failed or abstaining decision can precede a genuine successful choice. The tighter grader accepted the original 100 Fleet outcomes and rejected the corrupted controls.
+
+On `2df2dab`, WebArena’s official URL evaluator accepted four of four attempts across Shopping tasks 260 and 261. Grace confirmed three. In the fourth attempt Chromium reached Headphones and Grace kept the step open. A separate Chromium regression showed the previous implementation could decline a matching main heading when an unrelated part of the same page changed. A check now observes the visible main heading twice, keeps the same ready and unobstructed document and revalidates task, tab and account. On `45c81f0`, both graders accepted all four fresh attempts. Task 260 used one fixed chat plan and hosted link decisions. Task 261 used live upstream chat and hosted link decisions in three independent sessions. The remaining 810 official tasks were outside this cohort.
+
+Six offline Chromium journeys passed in GitHub Actions on `45c81f0`. They cover mock sign-in and Calendar persistence, native reply controls, an ordered browser/email/calendar plan, selecting distinct managed Google records, separately approving an appointment from the selected message, and reopening owned Google mail and calendar, including an exact reminder occurrence. The local test provider reset between runs. The signed-in managed test checks that the model request omits the hidden local mailbox and that a rotated grant cannot make a previously credited resource count again. The separately approved save uses the upstream connector exercised by the local provider. [Six Google and cross-app CI journeys](https://github.com/gracefultechnology/grace-new/actions/runs/44349559950) · [Qualified product source](https://github.com/gracefultechnology/grace-new/tree/45c81f0ac299b71fb48d9d1668a90c259cda3bd3)
 
 | Priority | Remaining work | Acceptance |
 |---|---|---|
