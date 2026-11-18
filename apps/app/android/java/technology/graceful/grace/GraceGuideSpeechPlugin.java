@@ -77,6 +77,7 @@ public final class GraceGuideSpeechPlugin extends Plugin {
  }
 
  private void start(PluginCall call) {
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) { finish(call, "unavailable", null); return; }
   try {
    recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(getContext());
    recognizer.setRecognitionListener(new RecognitionListener() {
