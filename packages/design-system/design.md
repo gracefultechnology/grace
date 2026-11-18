@@ -262,7 +262,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | Token | Value |
 | --- | --- |
 | `radius` | 0.75rem |
-| `font.sans` | "Figtree", Arial, sans-serif |
+| `font.sans` | "Figtree Variable", Arial, sans-serif |
 | `font.mono` | ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace |
 | `font.site` | Arial, Helvetica, sans-serif |
 | `shadow.sm` | 0 1px 2px color-mix(in srgb, var(--dim) 8%, transparent) |

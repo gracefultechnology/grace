@@ -38,7 +38,7 @@
     "tailwind-merge": "catalog:"
   },
   "devDependencies": {
-    "@fontsource/figtree": "catalog:",
+    "@fontsource-variable/figtree": "catalog:",
     "@repo/design-system": "workspace:*",
     "@storybook/addon-a11y": "catalog:",
     "@storybook/addon-vitest": "catalog:",
