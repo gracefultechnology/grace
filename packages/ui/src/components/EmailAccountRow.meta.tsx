@@ -12,6 +12,7 @@ export const meta: ComponentMeta<EmailAccountRowProps> = {
   examples: {
     "Needs sign in": { address: "margaret@outlook.com", provider: "outlook", colour: 2, status: "needsSignIn" },
     "Nothing turned on": { uses: { mail: false, calendar: false, contacts: false } },
+    "Grace points at it": { status: "needsSignIn", address: "margaret@outlook.com", provider: "outlook", colour: 2, guide: { kind: "instruction", title: "Tap your Outlook email", onClose: fn() } },
     "Other email": { address: "margaret@riverview.net", provider: "other", colour: 3, uses: { ...allUses, calendar: false } },
   },
   decorator: settingsPage,
