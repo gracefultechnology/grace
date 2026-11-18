@@ -9,7 +9,7 @@ import { emptyContent, type Mailbox, messageRecord, type Recipient } from "../ge
 import { mailContext, openSource, showsMail, startFrom, undoable, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { asking, Machine as Proposal } from "../gen/app__proposal.effect.vibe"
 import { mayAct, type Moment, type Request } from "../gen/app__request.effect.vibe"
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, namedPageStep, readStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied, type GraceAction, type Outcome, type Step, settingSteps, visitSteps, workspaceSteps } from "./agent.vibe"
 import type { Contact } from "./connector.vibe"
 import { looker, type Scene, screen } from "./context.vibe"
@@ -251,7 +251,9 @@ export const agent = Layer.effect(Agent, effect {
       if (words === undefined) return "NotHerTurn"
       const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
       if (!eligible) return "OwnerRefused"
-      const offer = { task: fresh, generation: request.generation, workVersion: request.workVersion, reads: [...action.steps] }
+      if (action.steps.some((step) => typeof step !== "string" && !words.includes(step.target))) return "OwnerRefused"
+      const steps = action.steps.map((step) => typeof step === "string" ? readStep(step) : namedPageStep(step.target))
+      const offer = { task: fresh, generation: request.generation, workVersion: request.workVersion, steps }
       return try sent(workspace.send({ type: "offerReadReview", offer }, "Host"))
     }
     const planned = try plan(action, s, request, fresh, helper)

@@ -62,7 +62,10 @@ export const Action = Schema.Union([
   action("cancelProposal", {}),
   action("findFile", { tab: of<FileTab>()(["Photos", "Documents"]), query: Words }),
   action("beginTask", { task: Schema.Literals(["PayBill", "BookAppointment"]) }),
-  action("proposeReadPlan", { steps: Schema.NonEmptyArray(of<GuidedRead>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadStatement", "ReadCalendar", "SaveMailAppointment"])) }),
+  action("proposeReadPlan", { steps: Schema.NonEmptyArray(Schema.Union([
+    of<GuidedRead>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadStatement", "ReadCalendar", "SaveMailAppointment"]),
+    action("ReachNamedPage", { target: Words.check(Schema.isMaxLength(128)) }),
+  ])) }),
   action("fill", {}),
 ])
 

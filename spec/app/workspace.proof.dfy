@@ -1497,6 +1497,45 @@ lemma beginGuided_ensures(w: Workspace, request: GuidedRequest, by_: WorkspaceAc
   }
 }
 
+lemma GuidedReceiptPreserves(w: Workspace, report: GuidedObservation, by_: WorkspaceActor)
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPaymentAssociation(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPausedPaymentCannotSubmit(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysOneTask(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPausedTogether(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysRecordingHasPermission(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysOperationHasVisibleTask(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysWakeRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPreferencesRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysDeviceRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysBrowserRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysAssistantRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysExecutionRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPaymentRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPaymentRegistryIsCanonical(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPaymentUsesCanonicalIdentity(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysCurrentBeforeAction(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> alwaysPaymentReviewUsesCurrentContext(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> stepInterruptionsKeepTask(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuided", confirmGuided(w, report, by_), []))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuided(w, report, by_), []))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> stepDepartureKeepsPaymentAttempt(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> guidedObservationCurrent(w, report, by_) ==> stepPaymentSwitchRetainsRecords(w, "confirmGuided", confirmGuided(w, report, by_)))
+{
+  if inv(w) && guidedObservationCurrent(w, report, by_) {
+    ComponentInvariants(w);
+    var after := confirmGuided(w, report, by_);
+    assert |after.plan.receipts| == |w.plan.receipts| + 1;
+    if hasNext(after.plan) {
+      assert nextOutcome(after.plan) in w.plan.steps;
+      assert nextOutcome(after.plan).outcome != "";
+    } else {
+      app__assistant_finishTask_ensures(w.assistant, report.task, report.version, app__assistant_TaskOutcome.Completed, report.evidence, app__conversation_ConversationActor.ConversationRuntime);
+    }
+  }
+}
+
 lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: WorkspaceActor)
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPaymentAssociation(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPausedPaymentCannotSubmit(confirmGuided(w, report, by_)))
@@ -1523,17 +1562,36 @@ lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: Worksp
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepDepartureKeepsPaymentAttempt(w, "confirmGuided", confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepPaymentSwitchRetainsRecords(w, "confirmGuided", confirmGuided(w, report, by_)))
 {
-  if inv(w) && canConfirmGuided(w, report, by_) {
-    ComponentInvariants(w);
-    var after := confirmGuided(w, report, by_);
-    assert |after.plan.receipts| == |w.plan.receipts| + 1;
-    if hasNext(after.plan) {
-      assert nextOutcome(after.plan) in w.plan.steps;
-      assert nextOutcome(after.plan).outcome != "";
-    } else {
-      app__assistant_finishTask_ensures(w.assistant, report.task, report.version, app__assistant_TaskOutcome.Completed, report.evidence, app__conversation_ConversationActor.ConversationRuntime);
-    }
-  }
+  GuidedReceiptPreserves(w, report, by_);
+}
+
+lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPaymentAssociation(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPausedPaymentCannotSubmit(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysOneTask(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPausedTogether(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysRecordingHasPermission(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysOperationHasVisibleTask(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysWakeRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPreferencesRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysDeviceRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysBrowserRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysAssistantRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysExecutionRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPaymentRules(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPaymentRegistryIsCanonical(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPaymentUsesCanonicalIdentity(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCurrentBeforeAction(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysPaymentReviewUsesCurrentContext(confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepInterruptionsKeepTask(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedNamedPage(w, pageCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepDepartureKeepsPaymentAttempt(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepPaymentSwitchRetainsRecords(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
+{
+  GuidedReceiptPreserves(w, pageCheck.report, by_);
 }
 
 lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
