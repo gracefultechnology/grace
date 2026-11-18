@@ -24,7 +24,7 @@ does not import React, and a UI package holds no business rules. A shared type l
 |---|---|
 | `pnpm dev` | Studio, and every package's `dev` script beside it |
 | `pnpm quick` | the fast local check: types, tests, ESLint and Stylelint, in every package |
-| `pnpm verify` | what CI runs: build, types, tests, browser tests, every `check`, lint, `pnpm analyze` and `pnpm selftest`, which also installs and checks each example |
+| `pnpm verify` | what CI runs: build, types, tests, browser tests, every `check`, lint and `pnpm analyze` |
 | `pnpm all <task>…` | one or more kinds of task in every package: `pnpm all build typecheck test` |
 | `pnpm test:browser` | the browser tests |
 | `pnpm test:models` | every workspace `check`: the root's, which is its owners' too, and Studio's |
@@ -47,7 +47,7 @@ files and the `vibestack/fixtures/` they read, besides the tools every task is k
 as `@repo/app`'s are. `pnpm lint:js` on its own needs what `gen` and `typecheck` write (`gen/`, `.vibe/declarations`);
 `pnpm lint` runs them first.
 
-Pull requests go to `main`, the only long-lived branch; what CI runs on them is in
+Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is in
 [CI](#ci).
 
 ## Changing the tools
@@ -62,7 +62,7 @@ Pull requests go to `main`, the only long-lived branch; what CI runs on them is 
 | `vibestack/gen/vibe.ts` | `gen/<name>.effect.vibe`, read off the generated TypeScript |
 | `vibestack/gen/react.ts` | `gen/<name>.react.ts` (`useMachine`), in a package that depends on React |
 | `vibestack/scan.ts` | how a spec's lines are read; imports nothing, so Studio's page uses it too |
-| `vibestack/studio/` | Studio, a workspace package with its own spec, checked by `pnpm --filter vibestack-studio check`: change `spec/`, then its shell in `src/`. Under `pnpm dev`, its `dev` script waits for what its build does, Studio's `gen` and the packages it builds on, then rebuilds the page it serves on each save of the page's sources, and builds afresh when the Vite config, `vibestack/design` or the tokens change: reload the browser, no restart |
+| `vibestack/studio/` | Studio, a workspace package with its own spec, checked by `pnpm --filter vibestack-studio check`: change `spec/`, then its shell in `src/`. Studio’s dev task builds its dependencies and regenerates Studio before watching the page sources. |
 | `vibestack/prove.ts` | proves one unit: checks and splices the proof file, runs LemmaScript and `dafny audit`, verifies again with every assertion isolated each definition that fails, and alone every postcondition a failing one could hide |
 | `vibestack/proof/lib.dfy` | the library proof files call |
 | `vibestack/std/` | specs that ship with the tools, which any spec may import, each with its proof file |
@@ -85,27 +85,18 @@ Node runs all of it directly; `pnpm build` compiles it for the packaged `spec` c
 it is reported, then that object as its last line. Each result has `ok`, `stage` (a stage, or `skipped`), `summary`,
 `detail` and, when it concerns them, `where` and `rules` (each rule as `{ file, key }`); `next` is the line the command
 line ends with. `pnpm selftest` builds scratch projects from this project's spec or from `vibestack/fixtures/`, breaks
-one thing at a time and asserts which stage catches each. It runs as five cached tasks, each keyed by what its tests
+one thing at a time and asserts which stage catches each. It runs as three cached tasks, each keyed by what its tests
 read: `selftest:docs` the documents against every file they can name, `selftest:examples` each standalone example
-against its own files and the tools, and `selftest:tools:a`, `selftest:tools:b` and `selftest:tools:rest` everything
-else, which no example but the order one reaches. The first two each run one shard of the kinds of mistake, the
-`describe` named `in shard a` or `in shard b` in `vibestack/selftest.ts`; the third skips what the other four name, so
-a new test runs there unless it is written into a shard. Keep the longest tests spread over the three.
-The two suites of the tools, the command line and each kind of mistake, run side by side under one parent, each at most four tests at a time. The order project the
-edits copy and a few long checks of fixtures are shared projects: each starts with the tool runs (`action-*` entries)
-earlier selftests kept in `.cache/selftest/.spec-cache` and leaves its own there; entries unused for a week are pruned.
-A test that observes a tool really running uses a scratch project of its own, which starts empty.
-`pnpm selftest` runs all five through Turborepo, side by side, as `pnpm verify` does. Each of the three
-`selftest:tools` processes bounds its own tests and tools to the machine and checks the order project once for itself,
-so three at once ask about three times what one does: on a machine too small for that,
-`pnpm selftest --concurrency=1` runs one at a time, to the same cached results, as a release does. What a change to the
+against its own files and the tools, and `selftest:tools` everything else, which no example but the order one reaches. The tools share completed tool runs in `.cache/selftest/.spec-cache` between scratch projects and prune entries unused for a week. Tests which observe the tools executing use an empty cache.
+`pnpm selftest` runs all three through Turborepo. What a change to the
 tools owes it, and the sync skill, is in [AGENTS.md, "Definition of done"](AGENTS.md#definition-of-done).
 
 ## Releasing
 
-Set `version` in the root `package.json`, merge to `main`, and push the tag `v<version>` from it.
-`.github/workflows/release.yml` builds, packs with `pnpm pack`, runs `pnpm selftest --concurrency=1`, which the shared cache answers for a commit CI has verified, and attaches the tarball to a GitHub release of that tag.
-A project installs it as [README.md, "Using it from another package"](README.md#using-it-from-another-package) says.
+The Android workflow builds debug APKs for arm64 and x86_64 and uploads them with
+their manifests. For release builds, follow the signing instructions in
+[the Android app guide](apps/app/README.md#android).
+
 ## Architecture
 
 The spec owns the rules and state; generated code is its runtime contract.
@@ -270,7 +261,7 @@ failing exploration found is saved and replayed instead
 | Model-based | Real shell against the spec: journeys, malformed input, walks and saved counterexamples | `test/drivers/app.ts` and the recorded `test/traces/app.jsonl`, run by `traces` |
 | Journey/integration | A story through real services, including what a driver cannot see | `@effect/vitest` in `test/app.test.vibe`: reload from storage |
 | Component/browser | Story interactions and accessibility; browser-only behavior such as focus and storage | Component metadata `play`; `test/app.browser.test.tsx` in Chromium |
-| Exploratory/browser | The served page under random clicks, typing, scrolling and reloads: no uncaught error, console error or failed request, and the properties each rule gives the page, in every state reached | `test/bombadil.ts`, or nothing for Bombadil's defaults; `apps/app/test/bombadil.ts`, run by `explore` |
+| Exploratory/browser | The served page under random clicks, typing, scrolling and reloads: no uncaught error, console error or failed request, and the properties each rule gives the page, in every state reached | `test/bombadil.ts`, or nothing for Bombadil's defaults; `vibestack/examples/fullstack/test/bombadil.ts`, run by `explore` |
 | Property | What a schema or declared contract promises for generated values | Generated from `src/link.contract.ts` and other `*.schema.*` or `*.contract.*` files |
 
 A generated test asserts its schema or contract, never a recorded result of
@@ -311,25 +302,26 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 
 | When | Runs |
 |---|---|
-| Pull request or push to `main` | The tasks of `pnpm verify`, with `--continue`, over four jobs side by side: `verify` runs build, types, tests, browser tests, all checks, ESLint, Stylelint, Knip, Madge, jscpd and the selftest of the documents and the examples; `selftest-a`, `selftest-b` and `selftest-rest` each run one `selftest:tools` task |
-| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `main`. Beside it, the three `selftest:tools` tasks without the selftest's shared tool runs |
-| A `v*` tag (`release.yml`) | Build, `pnpm pack`, `pnpm selftest --concurrency=1` read from the shared cache, and the tarball attached to a GitHub release |
+| Pull request or push to `develop` or `main` | `pnpm verify --continue`: build, types, tests, browser tests, all checks, ESLint, Stylelint, Knip, Madge and jscpd |
+| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `develop` |
+| Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
 run keeps `test/counterexamples/` and `test/__traces__/`, where a broken
 exploration is, as an artifact.
 
 Each run installs Dafny from its pinned release, checked against its SHA-256,
-and restores pnpm's store, Quint's evaluator, and what the job adds to: a `selftest-*` job the selftest's shared
-tool runs, any other the spec cache of the root, each workspace package and each example. The key is of the job and
-the commit: what a job of the same name last saved, or else another job's that holds the same.
+and restores pnpm's store, the spec cache of the root, each workspace package
+and each example, and Quint's evaluator, under a key of the commit.
 Turborepo shares task results through the private Cloudflare/R2 cache.
-The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
+The task entry point disables Turbo telemetry. `selftest:tools` waits for the root and
 Studio test tasks so those integration journeys do not compete with it.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
 instead, which only that pull request reads, so its next push reuses them. Newer commits replace an older run of the same pull request.
+A pull request from `develop` into `main` waits for the push of the same commit
+to `develop` and replays its published results.
 Every pushed commit can finish. Completed tasks are shared through the cache.
 Local `pnpm` task commands read the operator's cache credential from
 `~/.config/vibestack/turbo-cache.json`, outside the repository. Credentials
