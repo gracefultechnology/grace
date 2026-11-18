@@ -45,7 +45,7 @@ const Policy = Schema.Struct({
   plugins: Schema.Struct({ refuse: Reasons }),
   actions: Schema.Struct({
     grace: Schema.Record(Schema.String, Schema.Unknown),
-    upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
+    upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, plannerTools: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
   }),
 });
 const policy = Schema.decodeUnknownSync(Policy)(readJson(path.join(app, "agent/policy.json")));
@@ -214,8 +214,8 @@ function checkPolicy(bundle: string) {
   const known = checked.get(digest);
   if (known !== undefined) return known;
   const declared = declaredActions(bundle);
-  const { allow, refuse, refusedSubactionsOf } = policy.actions.upstream;
-  const unlisted = [...declared].filter((name) => !Object.hasOwn(allow, name) && !Object.hasOwn(refuse, name) && !Object.hasOwn(policy.actions.grace, name)
+  const { allow, refuse, plannerTools, refusedSubactionsOf } = policy.actions.upstream;
+  const unlisted = [...declared].filter((name) => ![allow, refuse, plannerTools, policy.actions.grace].some((listed) => Object.hasOwn(listed, name))
     && !refusedSubactionsOf.some((umbrella) => name.startsWith(`${umbrella}_`))).sort();
   if (unlisted.length) throw new Error(`The agent registers actions agent/policy.json neither allows nor refuses: ${unlisted.join(", ")}`);
   checked.set(digest, declared.size);
