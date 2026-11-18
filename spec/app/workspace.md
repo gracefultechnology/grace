@@ -1108,7 +1108,7 @@ pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
 pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
   by == Host and w.paymentTask == "" and
   offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
-  offer.steps.length() > 0 and offer.steps.every(item => guidedReadKind(item) != UnsupportedRead) and
+  offer.steps.length() > 0 and offer.steps.every(offeredOutcome => guidedReadKind(offeredOutcome) != UnsupportedRead) and
   canBeginGuided(w, reviewedRequest(w, offer), Person)
 pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): Workspace = {
   ...w, review: { revision: w.review.revision + 1, generation: offer.generation,
