@@ -17,7 +17,7 @@ schema Complete { t: "complete"; id: string }
 schema UnavailableEvent { t: "error"; code: string }
 
 error SpeechUnavailable
-type InputFrame = { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
+type InputFrame = { kind: "state" } | { kind: "open" } | { kind: "closed" } |
   { kind: "received"; payload: unknown } | { kind: "played"; token: number }
 
 export service SpeechActions {
@@ -108,6 +108,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   if (!speechWanted(current)) return
   const passwords = try Passwords
   const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
+  if (!speechWanted(try workspace.get())) return
   const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
     (connected) => Effect.ignore(timeout(tryPromise((signal) => releaseSpeechSocket(connected, signal)), "2 seconds")))
   const speaker = try acquireRelease(Effect.try(gracePlayback), (player) => Effect.ignore(tryPromise(() => player.close())))
@@ -131,7 +132,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   })), (remove) => Effect.ignore(Effect.try(remove))))
   const frames = Stream.mergeAll([
     fromSocket, Stream.fromQueue(notifications),
-    Stream.map(workspace.changes, (state): InputFrame => ({ kind: "state", workspace: state })),
+    Stream.map(workspace.changes, (): InputFrame => ({ kind: "state" })),
     Stream.filterMap(Stream.fromEventListener(webView.document, "visibilitychange"), () =>
       webView.hidden() ? Result.succeed({ kind: "closed" } as const) : Result.failVoid),
   ], { concurrency: "unbounded" })
@@ -187,13 +188,15 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   }
 
   try Stream.runForEach(frames, effect (frame) => {
+    if (frame.kind === "closed") throw new SpeechUnavailable()
+    const state = try workspace.get()
+    if (!canUseCloudSpeech(state)) return
     if (frame.kind === "open") {
       try wire(socket, { t: "hello", token: lease.token, errorReasons: true })
       return
     }
-    if (frame.kind === "closed") throw new SpeechUnavailable()
     if (frame.kind === "state") {
-      try update(frame.workspace)
+      try update(state)
       return
     }
     if (frame.kind === "played") {
@@ -203,7 +206,6 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       }
       return
     }
-    const state = try workspace.get()
     const { conversation } = state.assistant
     const token = conversation.generation
     const received = frame.payload
