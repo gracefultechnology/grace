@@ -608,9 +608,9 @@ pure def sentHistory(c: Conversation): List[Message] =
   c.messages.foldl(List(), (kept, m) => (if (kept.length() < historyMessages) kept else kept.tail()).append(m))
 pure def lawHistoryWindowIsBounded(c: Conversation): bool =
   val sent = sentHistory(c)
-  val all = c.messages.length()
-  sent.length() == (if (all < historyMessages) all else historyMessages) and
-  sent.nthOr(sent.length() - 1, emptyHumanMessage) == c.messages.nthOr(all - 1, emptyHumanMessage)
+  val count = c.messages.length()
+  sent.length() == (if (count < historyMessages) count else historyMessages) and
+  sent.nthOr(sent.length() - 1, emptyHumanMessage) == c.messages.nthOr(count - 1, emptyHumanMessage)
 ```
 
 ### A typed reply can be written and not spoken
