@@ -134,6 +134,8 @@ uploads its positive and no-action receipts. For manual runs in
 `GRACE_BILLWORLD_RUNNER` to a Linux x64 runner label shared by those jobs.
 Without the variable, the jobs use `ubuntu-latest`.
 
+The Fleet shards share one hosted decision credential. The first four-shard GitHub Actions run sent simultaneous requests and received HTTP 429 responses from staging. Fleet now schedules one shard at a time. Each shard retains its own receipts and the aggregate still requires all 100 successful browser outcomes. [Concurrent Fleet run](https://github.com/gracefultechnology/grace-new/actions/runs/44254873722)
+
 | Priority | Remaining work | Acceptance |
 |---|---|---|
 | 1 | Restore GitHub-hosted execution and compare it with the Linux benchmark receipts. | Dispatch `ci` with `billworld` and `webarena`. Preserve the four Fleet shards, aggregate, released statement control pair, both official Shopping receipts and the offline cross-app job log. |
