@@ -177,6 +177,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await tap(page.getByRole("button", { name: /St\. Mark’s Church Office/ }));
+  await tap(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Outlook needs you to sign in again")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
   await openEmailSettings();
