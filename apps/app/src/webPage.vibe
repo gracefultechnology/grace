@@ -49,6 +49,9 @@ export function webPage() {
 
     try addFinalizer(() => sync(() => { for (const id of [...frames.keys()]) remove(id) }))
     return {
+      observeLinks: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
+      pointAt: () => Effect.fail(new PageFailed({ cause: "This browser cannot annotate another website." })),
+      clearGuide: () => sync(() => undefined),
       claim: () => sync(() => { for (const left of document.querySelectorAll("iframe[data-page]")) left.remove() }),
       create: (id, url) => sync(() => {
         remove(id)

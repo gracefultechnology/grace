@@ -6,7 +6,7 @@ import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { BillOffer, type BillDetails, type BillOfferLabels } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
-import { MailActionStatus, appButton, headerPill, pendingMark, type MailPrintStatus, type MailSaveStatus } from "./MailActionStatus.tsx";
+import { MailActionStatus, appButton, headerPill, pendingMark, type MailSaveStatus } from "./MailActionStatus.tsx";
 import { MailAttachment } from "./MailAttachment.tsx";
 import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
 import { MailNotice } from "./MailNotice.tsx";
@@ -56,7 +56,6 @@ export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPho
 export type MailFile = {
   name: string;
   detail?: string;
-  printStatus?: MailPrintStatus;
 };
 
 export type MailReadStatus = "loading" | "failed" | "ready";
@@ -125,8 +124,6 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   onSaveAll?: () => void;
   /** Called with the index of the file to open. */
   onOpenFile?: (index: number) => void;
-  /** Called with the index of the file to print. */
-  onPrintFile?: (index: number) => void;
   /** `loading` shows placeholder words and holds Reply and Forward until every attachment is known; `failed` says so with Try again. */
   status?: MailReadStatus;
   /** Opens it again after it failed. */
@@ -137,8 +134,6 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   saveAllStatus?: MailSaveStatus;
   /** Tries saving the photos again. */
   onRetrySaveAll?: () => void;
-  /** Called with the index of the file whose print to try again. */
-  onRetryPrintFile?: (index: number) => void;
   /** A bill Grace found in it: "Is this your bill?", then Open bill. */
   bill?: BillDetails;
   /** The person says the bill is theirs; never a payment. */
@@ -180,13 +175,11 @@ export function MailMessageView({
   onOpenPhoto,
   onSaveAll,
   onOpenFile,
-  onPrintFile,
   status = "ready",
   onRetry,
   errorLabel,
   saveAllStatus,
   onRetrySaveAll,
-  onRetryPrintFile,
   bill,
   onConfirmBill,
   onDismissBill,
@@ -200,7 +193,7 @@ export function MailMessageView({
   const { targetId, ...pointing } = guide ?? {};
   const l = { ...viewLabels, ...labels };
   const held = status !== "ready";
-  const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (
+  const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (onClick || disabled) && (
     <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "disabled:text-primary-foreground disabled:opacity-100" : headerPill} disabled={disabled} onClick={onClick}>
       {icon}
       {label}
@@ -264,7 +257,7 @@ export function MailMessageView({
             <div className="mt-[22px] mb-3 flex items-center gap-3.5 text-foreground">
               <mailIcons.clip size={24} strokeWidth={2.2} aria-hidden />
               <span className="flex-1 text-body-lg leading-[30px] font-bold text-chrome">{l.photos(photos.length)}</span>
-              {saveAllStatus && <MailActionStatus action="save" status={saveAllStatus} onRetry={onRetrySaveAll} />}
+              {saveAllStatus && <MailActionStatus status={saveAllStatus} onRetry={onRetrySaveAll} />}
               <Button variant="capsule" size="pill" className={appButton} aria-busy={saveAllStatus === "saving" || undefined} disabled={saveAllStatus === "saving"} onClick={onSaveAll}>
                 {pendingMark(saveAllStatus === "saving", <mailIcons.down {...pill} />)}
                 {l.saveAll}
@@ -279,11 +272,8 @@ export function MailMessageView({
               key={file.name}
               name={file.name}
               detail={file.detail}
-              printStatus={file.printStatus}
               className="mt-[22px]"
               onOpen={() => onOpenFile?.(i)}
-              onPrint={() => onPrintFile?.(i)}
-              onRetry={() => onRetryPrintFile?.(i)}
             />
           ))}
       </article>

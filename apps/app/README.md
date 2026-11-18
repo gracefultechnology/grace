@@ -19,6 +19,59 @@ and traces (SPEC.md, "One spec tree").
 | `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
 
+## Browser qualification
+
+Dispatch the CI workflow with BillWorld enabled to run the Fleet cohorts and
+the released statement task. Fleet runs four deterministic shards against the
+same pinned 100-biller cohort. The aggregate requires all 100 distinct
+browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
+pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
+for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
+for its result-directory lock and an unmodified tracked Grace checkout.
+
+To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
+`fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
+BillWorld checkout, and shard setting. Use the browser command with
+`--passWithNoTests` so an already complete shard can validate without
+opening pages. To resume in CI, dispatch on the original Grace commit and
+supply its workflow run ID in `billworld_resume_run`. Each shard must have
+uploaded its receipt directory in that run.
+
+Fleet preserves the initial cohort manifest and every completed receipt,
+including failed grades. It runs only billers without a receipt and
+rebuilds scores from the receipts. A stopped writer releases the directory
+lock when its process exits. A score without a final receipt is rerun.
+The final aggregate still requires 100 successful receipts from the
+declared cohort at the same Grace commit.
+
+The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
+CI checks out the public BillWorld revision
+`f335b651f9820c3454f447e3d4722b78c5298a0b` and prepares the three public
+WVU Medicine PDFs required to boot its shared host. The versioned CI cache
+holds the original bytes. Preparation verifies the size and SHA-256 of each
+file on both cache hits and fresh public downloads against the pinned
+[upstream document manifest](https://github.com/gracefultechnology/billworld/blob/f335b651f9820c3454f447e3d4722b78c5298a0b/billworld/research/wvu-documents.json).
+The Malden journey uses the shipped portal routes.
+
+The simulated person uses the fixture account to sign in, opens the utility
+account and current bill, and presents that statement to Grace. They submit
+the released read-only question, review and start its read plan, and select
+**Read statement**. The planner reply is scripted at the test boundary.
+Grace reads the real fixture document and the upstream grader checks her
+visible answer. The job requires a rejected zero-action control and all six
+checks on the completed trial, including unchanged protected state and
+credentials. CI uploads asset provenance and both grader receipts as
+`billworld-released-task-md9`.
+
+The standard verification job also runs **Gmail signup to Calendar** in
+Chromium using the loopback Google provider. The simulated person grants
+consent to the fixture account, opens the clinic email, asks Grace to prepare
+its appointment, and separately approves the save. The test checks the
+saved appointment through the provider readback. It needs no real Google
+account, external provider login, or hosted model key. Run it locally after
+`pnpm gen` with
+`pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'`.
+
 ## Android
 
 Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
@@ -168,9 +221,10 @@ A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fr
 with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event. A run of `0f2a9c3` with
-`DISCOVER_ACTIONS` let past the action check by hand, at a load average near 320, built both APKs at
-113,483,881 bytes and passed the same walk.
+was left for Android's settings, and Grace raised no `am_anr` event. A plain build of `17fdcc3` with
+`DISCOVER_ACTIONS` under `plannerTools`, at a load average near 380, exited 0 in 2 minutes: both debug
+APKs at 113,631,337 bytes passed the action check with 68 actions seen, and `--verify` with
+`17fdcc3`'s own `policy.json` fails on the same APKs, naming `DISCOVER_ACTIONS`.
 
 The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
 (never committed), the service unpacked the payload and launched Bun under its musl loader
@@ -191,14 +245,17 @@ route the bridge relays, since the payload carries no gateway) with `agent/polic
 both cloud models; and
 `artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
 `ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
-`actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
+`actions.upstream.refuse` and denies the plugins it refuses. `actions.upstream.plannerTools` is not
+passed on: it names the planner's own tools, such as `DISCOVER_ACTIONS`, which the planner builds on
+each turn without registering them, so the allowlist cannot name them; that tool lists and loads only
+actions the allowlist admits. The `GRACE_*` actions are not allowed
 yet: no plugin in the payload registers them, and a name the agent does not register fails its boot. The
 route allowlist the APK ships is `android/agent.json`'s; nothing reads `agent/routes.json`, whose
 `stream/start`, `stream/pull` and `stream/cancel` routes are upstream's gateway's, not the embedded
 bridge's.
 `--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
-literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
-nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
+literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`),
+refused, nor a planner tool, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
 upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
 computed at run time (a parameter, a member, a call, or a variable also given other values) is not,
 nor is an action object with no `name` of its own, such as one a factory fills in, the `DEVICE_*`
