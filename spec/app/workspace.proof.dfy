@@ -506,8 +506,8 @@ lemma RegistryStoredExact(records: seq<app__payment_Payment>, p: app__payment_Pa
 }
 
 lemma RegistryQuietPayment(p: app__payment_Payment)
-  requires validPayment(p)
-  ensures validPayment(quietPayment(p))
+  requires app__payment_validPayment(p)
+  ensures app__payment_validPayment(quietPayment(p))
   ensures quietPayment(p).key == p.key && quietPayment(p).attempt == p.attempt &&
     quietPayment(p).durable == p.durable && quietPayment(p).result == p.result
   ensures !p.stage.Empty? ==> !quietPayment(p).stage.Empty? && !quietPayment(p).live && !quietPayment(p).fresh_ && !quietPayment(p).readBack
@@ -589,7 +589,7 @@ lemma RegistrySave(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
     assert after.payment.key == w.payment.key;
   } else {
     forall i | 0 <= i < |w.otherPayments|
-      ensures validPayment(after.otherPayments[i])
+      ensures app__payment_validPayment(after.otherPayments[i])
       ensures after.otherPayments[i].key == w.otherPayments[i].key
       ensures !after.otherPayments[i].stage.Empty? && !after.otherPayments[i].live &&
         !after.otherPayments[i].fresh_ && !after.otherPayments[i].readBack
@@ -620,7 +620,7 @@ lemma RegistryRestart(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
       app__payment_restart_ensures(w.payment, app__payment_PaymentActor.DurableStore);
     }
     forall i | 0 <= i < |w.otherPayments|
-      ensures validPayment(after.otherPayments[i])
+      ensures app__payment_validPayment(after.otherPayments[i])
       ensures after.otherPayments[i].key == w.otherPayments[i].key
       ensures !after.otherPayments[i].stage.Empty? && !after.otherPayments[i].live &&
         !after.otherPayments[i].fresh_ && !after.otherPayments[i].readBack

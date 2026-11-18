@@ -184,14 +184,8 @@ pure def alwaysExecutionRules(w: Workspace): bool =
   X::alwaysObservedContextExists(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
   X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
   X::alwaysNoExhaustedApproachQueued(w.execution)
-pure def validPayment(p: P::Payment): bool =
-  P::alwaysIdentity(p) and P::alwaysProposal(p) and P::alwaysCounters(p) and
-  P::alwaysWindow(p) and P::alwaysAuthorization(p) and P::alwaysResult(p) and
-  P::alwaysSubmissionStage(p) and P::alwaysResolved(p) and P::alwaysUnsubmittedStage(p) and
-  P::alwaysDurableWindow(p) and P::alwaysDurableConfirmation(p) and
-  P::alwaysReviewHasEvidence(p) and P::alwaysAttemptHasEvidence(p) and P::alwaysDurableOutcomeHasAttempt(p)
 pure def alwaysPaymentRules(w: Workspace): bool =
-  validPayment(w.payment) and w.otherPayments.every(p => validPayment(p))
+  P::validPayment(w.payment) and w.otherPayments.every(p => P::validPayment(p))
 pure def alwaysPaymentRegistryIsCanonical(w: Workspace): bool =
   w.otherPayments.every(p => p.stage != P::Empty and not(p.live) and not(p.fresh) and not(p.readBack) and
     (w.payment.stage == P::Empty or p.key != w.payment.key) and
@@ -483,9 +477,7 @@ pure def afterInteraction(changed: A::Assistant, geometry: bool, content: bool, 
     B::dismissAddress(w.browser) else w.browser
   {
     ...w,
-    assistant: if (fencesTask and A::unfinished(changed) and changed.activity != A::Paused and
-      (content or changed.activity != A::UserWait))
-      { ...changed, activity: A::Rechecking, operation: "", workVersion: changed.workVersion + 1 } else changed,
+    assistant: if (fencesTask) A::supersede(not(content), changed) else changed,
     execution: if (fencesTask and X::canInvalidate(w.execution, X::BrowserBridge))
       X::invalidate(w.execution, X::BrowserBridge) else w.execution,
     payment: if (fencesTask and P::canInvalidate(w.payment, P::BrowserHost))
@@ -1448,8 +1440,6 @@ pure def sometimesPaymentResultFinishesTask(w: Workspace): bool =
   w.assistant.activity == A::Finished and P::positiveOutcome(w.payment.result) and w.execution.phase == X::Idle
 ```
 
-### Finite exploration samples do not cap runtime identities or website values
-
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
@@ -1458,12 +1448,15 @@ an ordinary step has the weight of the other website callbacks: ordinary
 completion needs one exact eleven-event path, which a rarer preparation
 almost never completes within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
-a later visit advances the context. Separate guarded traces cover permission,
-startup-failure and restart variants.
+a later visit advances the context. Walks also go offline, lose the
+microphone, sleep, wake, restart, fail to start and retry, and open every
+application. The laws are checked on the states the walks reach.
 
 ```quint
 pure val availabilityValues = Set(
-  { connection: S::Online, reasoning: true, microphone: true, observation: true })
+  { connection: S::Online, reasoning: true, microphone: true, observation: true },
+  { connection: S::Offline, reasoning: true, microphone: true, observation: true },
+  { connection: S::Online, reasoning: true, microphone: false, observation: true })
 pure val aValues = Set(A::initial,
   A::pause(A::beginTask(A::open(A::initial, C::ConversationUser),
     "task", "Read the account", C::ConversationUser), C::ConversationUser))
@@ -1479,7 +1472,6 @@ pure val restoredPaymentValues = pValues
 pure val recordsValues = Set(List(), List(P::bind(P::initial, P::exampleKey, P::Person)))
 pure val deviceValues = Set(S::initial, S::finishStartup(S::initial, true))
 pure val browserValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
-pure val wValues = Set(initial)
 pure val detectionValues = Set(
   { ...W::exampleDetection, generation: 2, conversationVersion: 1 },
   { ...W::exampleDetection, generation: 3, conversationVersion: 1 },
@@ -1607,6 +1599,6 @@ pure val weight_detectWake = 8
 pure val weight_wakeNoSpeech = 8
 pure val weight_wakeReturn = 8
 pure val tokenValues = Set(-1, 2)
-pure val destinationValues = Set(S::Browser, S::Home, S::DeviceSettings)
-pure val lifecycleValues = Set(StartupSucceeded)
+pure val destinationValues = Set(S::Browser, S::Home, S::DeviceSettings, S::Calendar, S::Email, S::Files)
+pure val lifecycleValues = Set(StartupSucceeded, StartupFailed, RetryStartup, SleepDevice, WakeDevice, RestartDevice)
 ```
