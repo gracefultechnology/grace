@@ -47,7 +47,9 @@ import interaction as I from "./interaction"
 import browserControls as BC from "./browserControls"
 
 type WorkspaceActor = Person | Host | Store | Actuator
-type GuidedStep = { surface: S::Surface, subject: str, outcome: str }
+type StepDetails = { surface: S::Surface, subject: str, outcome: str }
+type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment
+  | ReachNamedPage({ subject: str }) | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
   task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
@@ -63,7 +65,6 @@ type GuidedObservation = {
   owner: str, task: str, version: int, deviceVersion: int, browserRevision: int,
   step: GuidedStep, sourceKey: str, evidence: str
 }
-type GuidedRead = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment | ReachNamedPage | UnsupportedRead
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
 type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
@@ -72,7 +73,7 @@ type GuidedLink = {
   task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
   stepIndex: int, url: str
 }
-type ReviewOffer = { task: str, generation: int, workVersion: int, steps: List[GuidedStep] }
+type ReviewOffer = { owner: str, task: str, generation: int, workVersion: int, steps: List[GuidedStep] }
 pure def emptyReview(revision: int): GuidedReview = {
   revision: revision, generation: -1, workVersion: -1, request: { owner: "", task: "", goal: "", steps: List() }
 }
@@ -85,7 +86,17 @@ pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
   mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: ""
 }
-pure val noGuidedStep: GuidedStep = { surface: S::Home, subject: "", outcome: "" }
+pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
+  | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
+  | ReadBrowser => { surface: S::Browser, subject: "Open website", outcome: "Open the page you want me to check." }
+  | ReadStatement => { surface: S::Browser, subject: "Current statement", outcome: "Check the statement amount due and its due date." }
+  | ReadChangedBrowser => { surface: S::Browser, subject: "Next website page", outcome: "Open the next page you want me to check." }
+  | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
+  | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
+  | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
+  | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
+}
+pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
 pure def nextOutcome(plan: GuidedPlan): GuidedStep = plan.steps.nthOr(plan.receipts.length(), noGuidedStep)
 type Workspace = {
@@ -231,7 +242,7 @@ pure def alwaysOneTask(w: Workspace): bool =
   (w.plan.owner != "" implies w.execution.phase == X::Idle and w.commitmentTask == "") and
   ((w.plan.owner == "") iff w.plan.steps.length() == 0) and
   w.plan.receipts.length() <= w.plan.steps.length() and
-  w.plan.steps.every(s => s.subject != "" and s.outcome != "") and
+  w.plan.steps.every(s => guidedDetails(s).subject != "" and guidedDetails(s).outcome != "") and
   (w.execution.phase != X::Idle implies w.execution.task == w.assistant.taskId)
 pure def alwaysPausedTogether(w: Workspace): bool =
   (w.assistant.activity == A::Paused) iff (w.execution.phase == X::Paused or (hasNext(w.plan) and w.assistant.activity == A::Paused))
@@ -1044,19 +1055,19 @@ pure def sometimesOrdinaryGoalCompletes(w: Workspace): bool =
 
 ### The person starts a sequence of outcomes without opening a website
 
-Each step names an app, a subject and an expected outcome. Its instruction can guide several interactions. A plan records references to observations in order. The next instruction follows the most recent confirmed outcome. The person chooses the plan and the host supplies the authenticated account. Starting or resuming a plan grants no authority to write to an app. A payment continues to use the payment ledger.
+Each step names an app, a subject and an expected outcome. The reviewed operation selects the evidence check. Its wording may change without authorizing another operation. A named browser destination carries the reviewed name. A custom outcome on another surface appears in the plan and needs its own evidence adapter before the conversation can offer it. Its instruction can guide several interactions. A plan records references to observations in order. The next instruction follows the most recent confirmed outcome. The person chooses the plan and the host supplies the authenticated account. Starting or resuming a plan grants no authority to write to an app. A payment continues to use the payment ledger.
 
 ```quint
 pure def canBeginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): bool =
   by == Person and w.device.readiness == S::Ready and w.execution.phase == X::Idle and
   A::canBeginTask(w.assistant, request.task, request.goal, C::ConversationUser) and
   request.owner != "" and request.steps.length() > 0 and
-  request.steps.every(s => s.subject != "" and s.outcome != "")
+  request.steps.every(s => guidedDetails(s).subject != "" and guidedDetails(s).outcome != "")
 pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): Workspace =
   val assistant = A::beginTask(w.assistant, request.task, request.goal, C::ConversationUser)
   val plan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps,
     openingBrowser: w.browser.revision, originalAsk: request.goal }
-  { ...w, plan: plan, review: emptyReview(w.review.revision + 1), assistant: { ...assistant, checkpoint: nextOutcome(plan).outcome },
+  { ...w, plan: plan, review: emptyReview(w.review.revision + 1), assistant: { ...assistant, checkpoint: guidedDetails(nextOutcome(plan)).outcome },
     commitmentTask: "", commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeUser) }
 ```
 
@@ -1066,7 +1077,7 @@ The conversation host validates the current human request before it offers
 a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. Each completed check keeps its local source identity and readable evidence. Different items may have the same displayed text. Reopening one unchanged item cannot satisfy a second check for another item. The workspace
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
-Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
+The host records the account and linked source that the offer uses. The person must still be under that same authority when accepting the review, resuming it or confirming a read. Reconnecting the same linked account can renew access without changing the owner. Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
 this plan. Opening the app does not approve an external change. The
 browser’s opening revision identifies a document loaded later in the plan.
 With permission and an active compact Browser step, the person can ask
@@ -1082,35 +1093,22 @@ name quoted from the current request. Checking a page opened along the way
 does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
-For a requested statement read, the host reads the current visible document locally. The amount due and due date each need a single distinct labeled value on the same statement. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
+For a requested statement read, the host reads the current visible document locally. The document must identify itself as the current or latest bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
 
 ```quint
 pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
   amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
-pure def namedPageStep(target: str): GuidedStep =
-  { surface: S::Browser, subject: target, outcome: "Find and check the named page." }
-pure def readStep(read: GuidedRead): GuidedStep = match read {
-  | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
-  | ReadBrowser => { surface: S::Browser, subject: "Open website", outcome: "Open the page you want me to check." }
-  | ReadStatement => { surface: S::Browser, subject: "Current statement", outcome: "Check the statement amount due and its due date." }
-  | ReadChangedBrowser => { surface: S::Browser, subject: "Next website page", outcome: "Open the next page you want me to check." }
-  | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
-  | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
-  | ReachNamedPage => noGuidedStep
-  | UnsupportedRead => noGuidedStep
+pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
+  | ReachNamedPage(_) => true
+  | _ => false
 }
-pure def guidedReadKind(guidedStep: GuidedStep): GuidedRead =
-  if (guidedStep == readStep(ReadMail)) ReadMail
-  else if (guidedStep == readStep(ReadBrowser)) ReadBrowser
-  else if (guidedStep == readStep(ReadStatement)) ReadStatement
-  else if (guidedStep == readStep(ReadChangedBrowser)) ReadChangedBrowser
-  else if (guidedStep == readStep(ReadCalendar)) ReadCalendar
-  else if (guidedStep == readStep(SaveMailAppointment)) SaveMailAppointment
-  else if (guidedStep.subject != "" and guidedStep == namedPageStep(guidedStep.subject)) ReachNamedPage
-  else UnsupportedRead
+pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
+  | SurfaceOutcome(_) => false
+  | _ => true
+}
 pure def mayGuideReadLink(w: Workspace): bool =
-  val read = guidedReadKind(nextOutcome(w.plan))
-  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser or read == ReadStatement or read == ReachNamedPage) and
+  val read = nextOutcome(w.plan)
+  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser or read == ReadStatement or isNamedDestination(read)) and
   w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
   w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
@@ -1130,12 +1128,12 @@ pure def guidedLinkObserved(w: Workspace): bool =
 pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
   val ask = w.assistant.conversation.messages.foldl("", (latest, message) =>
     if (message.author == C::HumanMessage) message.text else latest)
-  { owner: "tablet", task: offer.task, goal: ask, steps: offer.steps }
+  { owner: offer.owner, task: offer.task, goal: ask, steps: offer.steps }
 }
 pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
   by == Host and w.commitmentTask == "" and
   offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
-  offer.steps.length() > 0 and offer.steps.every(offeredOutcome => guidedReadKind(offeredOutcome) != UnsupportedRead) and
+  offer.steps.length() > 0 and offer.steps.every(offeredOutcome => hasGuidedAdapter(offeredOutcome)) and
   canBeginGuided(w, reviewedRequest(w, offer), Person)
 pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): Workspace = {
   ...w, review: { revision: w.review.revision + 1, generation: offer.generation,
@@ -1154,9 +1152,9 @@ pure def startReadReview(w: Workspace, reviewRevision: int, by: WorkspaceActor):
 pure def lawAnOldReadReviewCannotStart(w: Workspace, reviewRevision: int, by: WorkspaceActor): bool =
   reviewRevision != w.review.revision implies not(canStartReadReview(w, reviewRevision, by))
 pure val offerValues = Set(
-  { task: "read", generation: 1, workVersion: 0, steps: List(readStep(ReadMail)) },
-  { task: "read", generation: 2, workVersion: 0, steps: List(readStep(ReadChangedBrowser)) },
-  { task: "read", generation: 2, workVersion: 0, steps: List(namedPageStep("Support")) })
+  { owner: "tablet", task: "read", generation: 1, workVersion: 0, steps: List(ReadMail) },
+  { owner: "tablet", task: "read", generation: 2, workVersion: 0, steps: List(ReadChangedBrowser) },
+  { owner: "tablet", task: "read", generation: 2, workVersion: 0, steps: List(ReachNamedPage({ subject: "Support" })) })
 pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
   stepIndex: 0, url: "https://biller.example/help" })
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
@@ -1174,33 +1172,33 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
   report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and
-  report.step == nextOutcome(w.plan) and report.step.surface == w.device.surface and
-  (report.step.surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
+  report.step == nextOutcome(w.plan) and guidedDetails(report.step).surface == w.device.surface and
+  (guidedDetails(report.step).surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
   report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
-  (guidedReadKind(report.step) == SaveMailAppointment implies
+  (report.step == SaveMailAppointment implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  guidedReadKind(report.step) != ReachNamedPage and guidedObservationCurrent(w, report, by)
+  not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }) }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
-    if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: nextOutcome(plan).outcome,
+    if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
       workVersion: assistant.workVersion + 1 }
     else A::finishTask(assistant, report.task, report.version, A::Completed, report.evidence, C::ConversationRuntime) }
 pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
   val tab = B::activeTab(w.browser)
   guidedObservationCurrent(w, pageCheck.report, by) and
-  guidedReadKind(pageCheck.report.step) == ReachNamedPage and pageCheck.documentId != "" and
+  isNamedDestination(pageCheck.report.step) and pageCheck.documentId != "" and
   tab.load == B::Loaded and pageCheck.url != "" and pageCheck.url == B::tabUrl(tab) and
   pageCheck.loadVersion == tab.loadVersion and pageCheck.loadVersion > w.plan.openingBrowser and
-  pageCheck.heading == pageCheck.report.step.subject
+  pageCheck.heading == guidedDetails(pageCheck.report.step).subject
 pure def confirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): Workspace =
   confirmGuided(w, pageCheck.report, by)
 pure def lawNamedPageNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  guidedReadKind(report.step) == ReachNamedPage implies not(canConfirmGuided(w, report, by))
+  isNamedDestination(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawWrongNamedHeadingCannotFinish(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
-  pageCheck.heading != pageCheck.report.step.subject implies not(canConfirmGuidedNamedPage(w, pageCheck, by))
+  pageCheck.heading != guidedDetails(pageCheck.report.step).subject implies not(canConfirmGuidedNamedPage(w, pageCheck, by))
 pure def lawOtherOwnersCannotAdvanceAPlan(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   report.owner != w.plan.owner implies not(canConfirmGuided(w, report, by))
 pure def lawOldCallbacksCannotAdvanceAPlan(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
@@ -1209,13 +1207,13 @@ pure def lawPausedPlanCannotAdvance(w: Workspace, report: GuidedObservation, by:
   w.assistant.activity == A::Paused implies not(canConfirmGuided(w, report, by))
 pure def lawCommitmentCannotUsePlanReceipt(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   w.commitmentTask != "" implies not(canConfirmGuided(w, report, by))
-pure val sampleStep: GuidedStep = { surface: S::Home, subject: "appointment", outcome: "Read the appointment" }
+pure val sampleStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "appointment", outcome: "Read the appointment" })
 pure val requestValues = Set({ owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
   step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"
 }
-pure val namedReport = { ...sampleReport, step: namedPageStep("Support"), sourceKey: "help-page", evidence: "Support" }
+pure val namedReport = { ...sampleReport, step: ReachNamedPage({ subject: "Support" }), sourceKey: "help-page", evidence: "Support" }
 pure val samplePageCheck: GuidedNamedPageCheck = {
   report: namedReport, documentId: "help-document", loadVersion: 2, url: "https://example.org/help", heading: "Support"
 }
@@ -1239,14 +1237,14 @@ wrong source, or unsaved appointment cannot count as a save.
 
 ```quint
 pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
-  guidedReadKind(mailCheck.report.step) == ReadMail and canConfirmGuided(w, mailCheck.report, by) and
+  mailCheck.report.step == ReadMail and canConfirmGuided(w, mailCheck.report, by) and
   mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
   mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0
 pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
   val after = confirmGuided(w, mailCheck.report, by)
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
 pure def guidedSavePending(w: Workspace): bool =
-  hasNext(w.plan) and guidedReadKind(nextOutcome(w.plan)) == SaveMailAppointment and
+  hasNext(w.plan) and nextOutcome(w.plan) == SaveMailAppointment and
   w.execution.phase == X::Idle and w.commitmentTask == ""
 pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
@@ -1268,7 +1266,7 @@ pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCal
   (approval.sourceRef != w.plan.mail.ref or approval.account != w.plan.mail.account) implies
     not(canExpectGuidedCalendar(w, approval, by))
 pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  (guidedReadKind(report.step) == SaveMailAppointment and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
+  (report.step == SaveMailAppointment and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
 pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
   sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })

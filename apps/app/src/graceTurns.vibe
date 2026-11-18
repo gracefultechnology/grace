@@ -6,6 +6,8 @@ import { Agent } from "./agent.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { Conversation } from "./conversation.vibe"
 import { withhold } from "./private.ts"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { guidedAuthority } from "./managedReads.vibe"
 import { ReplyControls } from "./replyControls.vibe"
 import { Reply } from "./reply.schema.ts"
 import { webView } from "./surfacePlugin.ts"
@@ -86,6 +88,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
   const workspace = try Workspaces
   const controls = try ReplyControls
   const turns = try Conversation
+  const setup = try Setup
   const agent = try Agent
   const opened = try Ref.make<typeof Creation.Type.data.conversation | undefined>(undefined)
 
@@ -124,6 +127,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
     const scene = try workspace.get()
     if (!admitsTurn(scene, token)) return
     const request = try controls.capture()
+    const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const { messages } = scene.assistant.conversation
     const index = messages.length - 1
     const message = messages[index]
@@ -159,7 +163,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
           const words = offer ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
           const accepted = workspace.send({ type: "interact", input: { tag: "Respond", token, text: words,
             isQuestion: false, answers: [], audible: false } }, "Host") catch () => undefined
-          if (offer && accepted !== undefined) try agent.apply([plan], { generation: token, workVersion, origin })
+          if (offer && accepted !== undefined) try agent.apply([plan], { generation: token, workVersion, origin, authority })
           return
         }
         const response: Event = { type: "interact", input: { tag: "Respond", token, text: safe,
