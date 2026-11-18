@@ -1186,6 +1186,53 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   }
 });
 
+it('Restore the saved text size when Grace restarts (spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements")', async () => {
+  let stored: { revision: number; value?: string } = { revision: 0 };
+  let rejectNextWrite = true;
+  const options = {
+    native: true,
+    preferences: {
+      read: async () => stored,
+      write: async ({ revision, value }: { revision: number; value: string }) => {
+        expect(revision).toBe(stored.revision);
+        if (rejectNextWrite) {
+          rejectNextWrite = false;
+          throw new Error("Device storage unavailable");
+        }
+        stored = { revision: revision + 1, value };
+        return { revision: stored.revision };
+      },
+    },
+  };
+  const host = document.body.appendChild(document.createElement("div"));
+  let runtime = ManagedRuntime.make(application(undefined, undefined, options));
+  let root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  const mountSettings = async () => {
+    await act(() => root.render(<App runtime={runtime} />));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Settings", exact: true })));
+  };
+  const larger = page.getByRole("radio", { name: "Larger", exact: true });
+  await mountSettings();
+  await act(() => userEvent.click(larger));
+  await expect.element(larger).toHaveAttribute("aria-checked", "true");
+  await expect.element(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+  expect(stored.revision).toBe(0);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Try again", exact: true })));
+  await expect.poll(() => stored.revision).toBe(1);
+  await act(() => root.unmount());
+  await runtime.dispose();
+  root = createRoot(host);
+  runtime = ManagedRuntime.make(application(undefined, undefined, options));
+  await mountSettings();
+  await expect.element(larger).toHaveAttribute("aria-checked", "true");
+  expect(stored.revision).toBe(1);
+});
+
 it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share, print and remove the chosen file")', async () => {
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };

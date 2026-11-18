@@ -1,0 +1,54 @@
+// spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"
+import { initial, machine, Machine as Workspaces, canSavePreferences } from "../gen/app__workspace.effect.vibe"
+import { type DisplayPreferences, restart, validSettings } from "../gen/app__preferences.effect.vibe"
+import type { PreferenceRecords } from "./preferencesPlugin.ts"
+
+const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const StoredOptions = Schema.Struct({ revision: Revision, value: Schema.optional(Schema.NullOr(Schema.String)) })
+schema WrittenOptions { revision: Revision }
+const Options = Schema.fromJsonString(Schema.Struct({
+  voiceOutput: Schema.Boolean, pace: Schema.Literals(["Slower", "Normal", "Faster"]),
+  textSize: Schema.Literals(["Smaller", "StandardText", "Larger", "Largest"]),
+  volume: Schema.Int, muted: Schema.Boolean, brightness: Schema.Int,
+  nightDimming: Schema.Boolean, wakeEnabled: Schema.Boolean,
+}))
+
+effect function record(port: PreferenceRecords) {
+  return try Schema.decodeUnknownEffect(StoredOptions)(try timeout(tryPromise(() => port.read({ name: "preferences" })), "2 seconds"))
+}
+
+export const preferenceWorkspace = (port: PreferenceRecords | undefined) => port === undefined ? machine() : Layer.unwrap(effect {
+  const start = effect {
+    const { value } = try record(port)
+    if (!value) return initial
+    const saved: DisplayPreferences = try Schema.decodeUnknownEffect(Options)(value)
+    if (!validSettings(saved)) return initial
+    return { ...initial, preferences: restart({ ...initial.preferences, durable: saved }, "PreferenceStore") }
+  } catch () => initial
+  return machine(start)
+})
+
+export effect function retryPreferences() {
+  const workspace = try Workspaces
+  workspace.send({ type: "savePreferences" }, "Host") catch () => undefined
+}
+
+export const persistPreferences = (port: PreferenceRecords | undefined) => Layer.effectDiscard(effect {
+  if (!port) return
+  const workspace = try Workspaces
+  const choices = Stream.changes(Stream.map(workspace.changes, ({ preferences }) => preferences))
+  try fork.scoped Stream.runForEach(choices, effect () => {
+    const current = try workspace.get()
+    const { saving, session, snapshot } = current.preferences
+    if (saving !== "Saving" && (saving !== "SaveFailed" || session !== snapshot) && canSavePreferences(current, "Host")) try retryPreferences()
+    const { preferences } = try workspace.get()
+    if (preferences.saving !== "Saving") return
+    const succeeded = effect {
+      const { revision } = try record(port)
+      const request = { name: "preferences" as const, revision, value: JSON.stringify(preferences.snapshot) }
+      const receipt = try Schema.decodeUnknownEffect(WrittenOptions)(try timeout(tryPromise(() => port.write(request)), "4 seconds"))
+      return receipt.revision === revision + 1
+    } catch () => false
+    workspace.send({ type: "preferencesSaved", saveToken: preferences.requestedRevision, succeeded }, "Store") catch () => undefined
+  })
+})
