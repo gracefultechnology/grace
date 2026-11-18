@@ -27,6 +27,7 @@ const host = Layer.effect(NoticeHost, effect {
   const requests = try WebsiteRequests
   const replies = try PubSub.unbounded<Reply>()
   const lock = try Semaphore.make(1)
+  const serial = lock.withPermits(1)
 
   effect function report(left: readonly Notice[]) {
     try Effect.forEach(left, (notice) => PubSub.publish(replies, Reply.Closed({ notice })))
@@ -48,7 +49,7 @@ const host = Layer.effect(NoticeHost, effect {
     const elapsed = lifetimeMs(notice.offer)
     try sleep(elapsed)
     uninterruptible {
-      const sent = notices.send({ type: "expire", id: notice.id, elapsed }, "Host") catch () => undefined
+      const sent = serial(notices.send({ type: "expire", id: notice.id, elapsed }, "Host")) catch () => undefined
       if (sent !== undefined) try report([notice])
     }
   }
@@ -66,20 +67,20 @@ const host = Layer.effect(NoticeHost, effect {
     requests.changes,
     Stream.fromEventListener(webView.document, "visibilitychange")
   ], { concurrency: "unbounded" })
-  try fork.scoped Stream.runForEach(scene, () => lock.withPermits(1)(follow()))
+  try fork.scoped Stream.runForEach(scene, () => serial(follow()))
   const showing = Stream.changesWith(Stream.map(notices.changes, (n) => n.shown.at(0)), (a, b) => a?.id === b?.id)
   try fork.scoped Stream.runDrain(Stream.switchMap(showing, (x) => x === undefined ? Stream.empty : Stream.fromEffect(expireAfter(x))))
 
   return {
     effect raise(notice: Omit<Notice, "id">) {
-      return queued(try lock.withPermits(1)(notices.send({ type: "raise", ...notice }, "App"))).at(-1)?.id
+      return queued(try serial(notices.send({ type: "raise", ...notice }, "App"))).at(-1)?.id
     },
     effect act(id: number) {
-      const notice = try ended({ type: "act", id })
+      const notice = try serial(ended({ type: "act", id }))
       if (notice !== undefined) try PubSub.publish(replies, notice.offer === "Undo" ? Reply.Undo({ notice }) : Reply.SeeDetails({ reminder: notice.subject }))
     },
     effect close(id: number) {
-      const notice = try ended({ type: "closeToast", id })
+      const notice = try serial(ended({ type: "closeToast", id }))
       if (notice?.offer === "SeeDetails") try PubSub.publish(replies, Reply.Dismiss({ reminder: notice.subject }))
       else if (notice !== undefined) try report([notice])
     },
