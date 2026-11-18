@@ -192,7 +192,7 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
     description: expect.stringContaining("Visit form") });
   await click(page.getByRole("button", { name: "Close Grace", exact: true }));
   await click(page.getByRole("button", { name: "Close Email", exact: true }));
-  await click(page.getByRole("button", { name: /^Calendar/ }).getByText(title, { exact: true }));
+  await click(page.getByRole("group", { name: "Calendar", exact: true }).getByText(title, { exact: true }));
   await expect.element(page.getByText(/Visit form/)).toBeVisible();
   const requests = (await company()).googleRequests;
   expect(requests.slice(0, 4)).toEqual(["GET /o/oauth2/v2/auth", "POST /o/oauth2/v2/auth", "POST /token", "GET /oauth2/v3/userinfo"]);

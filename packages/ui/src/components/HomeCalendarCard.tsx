@@ -35,7 +35,7 @@ export function HomeCalendarCard({ title = "Calendar", weekday, day, events, com
     </LauncherRows>
   );
   return (
-    <div className={cn("relative", className)}>
+    <div role="group" aria-label={title} className={cn("relative", className)}>
       <LauncherCard
         compact={compact}
         title={title}

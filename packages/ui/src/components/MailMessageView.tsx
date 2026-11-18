@@ -253,7 +253,7 @@ export function MailMessageView({
             {errorLabel ?? l.failed}
           </MailNotice>
         ) : (
-          guided(guide, "mbody", <PageText className="max-w-[880px]">{body}</PageText>, { radius: 12, placement: "below", className: "flex max-w-[880px]" })
+          guided(guide, "mbody", <PageText asChild className="max-w-[880px]"><div>{body}</div></PageText>, { radius: 12, placement: "below", className: "flex max-w-[880px]" })
         )}
         {bill && !held && <BillOffer {...bill} onConfirm={onConfirmBill} onDismiss={onDismissBill} onOpen={onOpenBill} labels={billLabels} className="mt-[22px]" />}
         {!held && photos?.length ? (

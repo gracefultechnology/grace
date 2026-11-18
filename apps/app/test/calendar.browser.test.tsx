@@ -59,7 +59,7 @@ async function start(down = false) {
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
   const run = <A,>(effect: Effect.Effect<A, unknown, Workspaces | AccountsMachine | Proposal | Instances>) => act(() => runtime.runPromise(effect));
-  const card = page.getByRole("button", { name: /^Calendar/ });
+  const card = page.getByRole("group", { name: "Calendar", exact: true });
   running.push(async () => {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
