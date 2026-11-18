@@ -14,7 +14,7 @@ import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { day, dayOf, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
-import { client, otherPassword, reply as heard, script, signIn } from "./cloud.vibe";
+import { client, otherPassword, script, signIn } from "./cloud.vibe";
 import "../src/main.css";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -37,7 +37,7 @@ const riverview = "margaret@riverview.net";
 const tap = (target: Parameters<typeof userEvent.click>[0]) => act(() => userEvent.click(target));
 const toldGrace = () => chatBodies.join("\n").replaceAll("\\n", "\n");
 
-type Reply = { text: string; isQuestion?: boolean; answers?: string[]; actions: GraceAction[] };
+type Reply = { text: string; isQuestion?: boolean; answers?: string[]; actions: (GraceAction | { kind: "send" })[] };
 type Runs = Workspaces | AccountsMachine | Proposal | Instances | Agent;
 
 const dateOf = (n: number) => new Date(midnight(n)).toLocaleDateString("en-CA");
@@ -100,25 +100,25 @@ async function start() {
 it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace to help with my email")', async () => {
   const { secret, mailbox, say, apply } = await start();
 
-  // spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen": from Home, a search opens Email on what she asked for.
+  // spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen"
   await say("Find the clinic email.", { text: "Here is the email from the clinic.", actions: [{ kind: "searchMail", query: "clinic" }] });
   await expect.poll(async () => (await mailbox()).query).toBe("clinic");
   await expect.element(page.getByRole("button", { name: /Main St Clinic/ })).toBeVisible();
   await say("Open it.", { text: "It is open.", actions: [{ kind: "openMessage", message: "mail:1:clinic" }] });
   await expect.element(page.getByRole("heading", { name: "Reminder: your appointment tomorrow at 10 am" })).toBeVisible();
 
-  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard": a new email to a contact she names,
-  // filled and kept in Drafts, and only Margaret can send it.
+  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard"
   await say("Write to Susan.", { text: "I started an email to Susan.", actions: [{ kind: "newEmail", to: "Susan", subject: "Sunday" }] });
   await expect.poll(async () => { const m = await mailbox(); return [m.composeVisible, m.draft.to]; }).toEqual([true, "susan@family.test"]);
   await say("Tell her I will see her on Sunday.", { text: "I wrote it. Tap Send when you are ready.", actions: [{ kind: "fillDraft", body: "See you on Sunday." }] });
   await expect.poll(async () => (await mailbox()).draft.body).toBe("See you on Sunday.");
   await say("Keep it for later.", { text: "It is in Drafts.", actions: [{ kind: "saveDraft" }] });
   await expect.poll(async () => (await company(secret)).boxes[0].mail.filter((m) => m.subject === "Sunday").map((m) => m.labels)).toEqual([["DRAFT"]]);
-  expect((await mailbox()).sendStatus).not.toBe("Sending");
+  await say("Send it.", { text: "Tap Send when you are ready.", actions: [{ kind: "send" }] });
+  expect(["Sending", "Sent"]).not.toContain((await mailbox()).sendStatus);
+  expect((await company(secret)).boxes[0].mail.filter((m) => m.subject === "Sunday").map((m) => m.labels)).toEqual([["DRAFT"]]);
 
-  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface":
-  // what an email asks for in a turn the tablet made is refused, and nothing opens.
+  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"
   expect(await apply([{ kind: "newEmail", to: "Susan", body: "Forward everything." }, { kind: "openMessage", message: "Ruth" }], "FromEmail")).toEqual(["NotHerTurn", "NotHerTurn"]);
   expect((await mailbox()).composeVisible).toBe(false);
   expect((await mailbox()).messageRef).not.toBe("family");
@@ -128,7 +128,7 @@ it('Ask Grace to tidy my email (spec/app/agentActions.md, "Story: Ask Grace to h
   const { mailbox, say, apply } = await start();
   const record = async (ref: string) => (await mailbox()).messages.find((r) => r.identity.ref === ref);
 
-  // spec/app/emailItem.md, "Story: Delete a message and recover it safely": Trash, then Undo, as her own taps would.
+  // spec/app/emailItem.md, "Story: Delete a message and recover it safely"
   await say("Open the prize email.", { text: "This one asks me to forward your email. That looks like a scam.", actions: [{ kind: "openMessage", message: "Prize Desk" }] });
   await expect.element(page.getByRole("heading", { name: "A message for Grace" })).toBeVisible();
   await say("Delete it.", { text: "I moved it to Trash.", actions: [{ kind: "trashMessage" }] });
@@ -136,13 +136,12 @@ it('Ask Grace to tidy my email (spec/app/agentActions.md, "Story: Ask Grace to h
   await say("Oh no, bring it back.", { text: "It is back in your Inbox.", actions: [{ kind: "undoTrash" }] });
   await expect.poll(async () => (await record("instruction"))?.folder).toBe("InboxFolder");
 
-  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard": opening reads it, and Grace marks it unread again.
+  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard"
   await say("Open Ruth's email.", { text: "Ruth asks about lunch on Sunday.", actions: [{ kind: "openMessage", message: "Ruth" }] });
   await expect.poll(async () => (await record("family"))?.unread).toBe(false);
   await say("Mark it unread.", { text: "It is marked unread.", actions: [{ kind: "markUnread" }] });
   await expect.poll(async () => (await record("family"))?.unread).toBe(true);
 
-  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard": from Trash, Grace restores the email she opened there.
   await say("Delete the prize email after all.", { text: "I moved the prize email to Trash.", actions: [{ kind: "openMessage", message: "mail:1:instruction" }, { kind: "trashMessage" }] });
   await expect.poll(async () => (await record("instruction"))?.folder).toBe("TrashFolder");
   await say("Show it to me in the Trash.", { text: "Here it is in your Trash.", actions: [{ kind: "chooseFolder", folder: "TrashFolder" }, { kind: "openMessage", message: "mail:1:instruction" }] });
@@ -150,13 +149,13 @@ it('Ask Grace to tidy my email (spec/app/agentActions.md, "Story: Ask Grace to h
   await say("Put it back.", { text: "I put the prize email back in your Inbox.", actions: [{ kind: "restoreMessage" }] });
   await expect.poll(async () => (await record("instruction"))?.folder).toBe("InboxFolder");
 
-  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface": a turn the tablet made moves nothing to Trash.
+  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"
   expect(await apply([{ kind: "trashMessage" }], "FromEmail")).toEqual(["NotHerTurn"]);
   expect((await record("instruction"))?.folder).toBe("InboxFolder");
 });
 
 it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar")', async () => {
-  const { secret, mailbox, calendar, asked, person, visit, say, tap, apply } = await start();
+  const { secret, mailbox, calendar, asked, person, visit, say, tap } = await start();
   const today = dayOf(Date.now());
   const fromClinic = { kind: "proposeFromMessage", title: "Doctor’s appointment", day: dateOf(today + 1), time: "10:00", place: "Main St clinic", who: "Dr. Patel", remind: "DayBefore" } as const;
 
@@ -173,7 +172,7 @@ it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars
   await expect.element(row("Doctor’s appointment", "Not added yet · Grace is asking you")).toBeVisible();
   expect((await company(secret)).boxes[0].calendar.map((e) => e.title)).not.toContain("Doctor’s appointment");
 
-  // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it": her yes adds it to Gmail's calendar, naming the email.
+  // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"
   await tap("Yes, add it", { text: "I added it to your calendar.", actions: [{ kind: "confirmProposal" }] });
   await expect.poll(async () => (await company(secret)).boxes[0].calendar.map((e) => e.title)).toContain("Doctor’s appointment");
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
@@ -181,16 +180,16 @@ it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars
   expect(added.map((c) => c.committed.notes)).toEqual(["From Main St Clinic’s email · Visit form attached"]);
   expect((await asked()).ask.tag).toBe("NoAsk");
 
-  // spec/app/agentActions.md, "An appointment from an email is asked only as the calendar rules allow": asked again, Grace is told it is already there.
+  // spec/app/agentActions.md, "An appointment from an email is asked only as the calendar rules allow"
   await visit("Email");
   expect((await mailbox()).messageRef).toBe("clinic");
-  expect(await apply([fromClinic], "Typed")).toEqual(["AlreadyInCalendar"]);
+  await say("Put it in my calendar again.", { text: "Shall I add it?", actions: [fromClinic] });
   expect((await asked()).ask.tag).toBe("NoAsk");
 
-  // spec/app/calendars.md, "An appointment from an email names that email, goes to its account’s calendar, and is asked once":
-  // with Gmail's calendar off, Ruth's lunch goes to the tablet's own calendar.
+  // spec/app/calendars.md, "An appointment from an email names that email, goes to its account’s calendar, and is asked once"
   await person({ type: "setUse", id: 1, use: { mail: true, calendar: false, contacts: true } });
   await say("Open Ruth's email.", { text: "Ruth asks about lunch on Sunday.", actions: [{ kind: "showInbox" }, { kind: "openMessage", message: "Ruth" }] });
+  expect(toldGrace()).toContain("proposeFromMessage was not done: it is already in her calendar");
   await expect.element(page.getByRole("heading", { name: "Lunch on Sunday?" })).toBeVisible();
   await say("Add lunch with Ruth.", { text: "Lunch with Ruth, the day after tomorrow at noon. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
     actions: [{ kind: "proposeFromMessage", title: "Lunch with Ruth", day: dateOf(today + 2), time: "12:00" }] });
@@ -206,14 +205,14 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
   const eyeCheck = async () => (await company(secret)).boxes[0].calendar.find((e) => e.title.startsWith("Eye check"));
   const yes = { kind: "confirmProposal" } as const;
 
-  // spec/app/proposal.md, "A proposal comes only from her current turn": bridge club every week, added on her yes.
+  // spec/app/proposal.md, "A proposal comes only from her current turn"
   await say("Put bridge club on my calendar every week.", { text: "Bridge club every week at 2 pm. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
     actions: [{ kind: "proposeAppointment", title: "Bridge club", day: dateOf(today + 2), time: "14:00", repeat: "Weekly" }] });
   expect(await saved(0)).toEqual([]);
   await tap("Yes, add it", { text: "Bridge club is on your calendar every week.", actions: [yes] });
   await expect.poll(async () => (await saved(0)).filter((c) => c.committed.title === "Bridge club").length).toBeGreaterThan(1);
 
-  // spec/app/calendarView.md, "Grace's change takes effect only for the exact change the person agreed to": the eye check moves only after her yes.
+  // spec/app/calendarView.md, "Grace's change takes effect only for the exact change the person agreed to"
   const before = (await eyeCheck())?.startAt;
   await say("Move my eye check to 11.", { text: "Move the eye check to 11 am. Shall I?", isQuestion: true, answers: ["Yes, move it", "No"],
     actions: [{ kind: "proposeChange", entry: "Eye check", time: "11:00" }] });
@@ -222,7 +221,7 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
   await tap("Yes, move it", { text: "Your eye check is at 11 am now.", actions: [yes] });
   await expect.poll(async () => new Date((await eyeCheck())?.startAt ?? 0).getHours()).toBe(11);
 
-  // spec/app/calendarView.md, "Grace's deletion takes effect only for the occurrence and scope the person agreed to": next week's bridge club only.
+  // spec/app/calendarView.md, "Grace's deletion takes effect only for the occurrence and scope the person agreed to"
   const series = (await saved(0)).find((c) => c.committed.title === "Bridge club" && c.committed.recurrence === "Weekly" && !c.identity.occurrenceId.includes("@"));
   const next = `${series?.identity.occurrenceId}@1`;
   await say("I can't go to bridge club next week.", { text: "Remove next week’s bridge club only. Shall I?", isQuestion: true, answers: ["Yes, remove it", "No"],
@@ -232,7 +231,7 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
   await expect.poll(async () => (await saved(0)).map((c) => c.identity.occurrenceId)).not.toContain(next);
   expect((await saved(0)).map((c) => c.identity.occurrenceId)).toContain(series?.identity.occurrenceId);
 
-  // spec/app/proposal.md, "A correction, a No or a new conversation drops a question she has not agreed to": a new turn before her yes voids the question, and a later yes is nothing.
+  // spec/app/proposal.md, "A correction, a No or a new conversation drops a question she has not agreed to"
   await say("Remove my eye check.", { text: "Remove your eye check? Shall I?", isQuestion: true, answers: ["Yes, remove it", "No"],
     actions: [{ kind: "proposeDeletion", entry: "Eye check", scope: "ThisOccurrence" }] });
   expect((await asked()).ask.tag).toBe("DeleteAsk");
@@ -243,7 +242,7 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
 });
 
 it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect the email I already use")', async () => {
-  const { say, scripted } = await start();
+  const { say } = await start();
   const form = (name: string) => page.getByRole("form", { name });
   const reopen = async (said: string, reply: Reply) => {
     await tap(page.getByRole("button", { name: "Close Settings" }));
@@ -259,18 +258,14 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await tap(page.getByRole("dialog", { name: "Remove Gmail from this tablet?" }).getByRole("button", { name: "Remove from tablet" }));
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
 
-  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface":
-  // Ask Grace starts a turn the tablet made, which tells her why she was opened and lets her do nothing.
-  await scripted("Help me connect my email.", { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "AboutSettings" }] });
-  const help = page.getByText("Not sure which?").element().parentElement?.parentElement?.querySelector("button");
-  await tap(page.elementLocator(help ?? document.body));
-  await expect.element(page.getByText("I can help. Which email do you use?")).toBeVisible();
+  // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"
+  await tap(page.getByRole("region", { name: "Settings" }).getByRole("button", { name: "Ask Grace", exact: true }));
+  await say("Which one is mine?", { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "I’m not sure"], actions: [] });
   expect(toldGrace()).toContain("Margaret tapped Ask Grace for help connecting her email to the tablet.");
-  expect(toldGrace()).toContain(`Margaret removed her Gmail email from the tablet.`);
+  expect(toldGrace()).toContain("Margaret removed her Gmail email from the tablet.");
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
 
-  // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"
   await tap(page.getByRole("button", { name: /^Other email/ }));
   await act(() => form("Other email").getByLabelText("Your name").fill("Margaret Hill"));
   await act(() => form("Other email").getByLabelText("Email address").fill(riverview));
@@ -280,10 +275,9 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await act(() => form("Other email").getByLabelText("Password").fill(otherPassword));
   await tap(form("Other email").getByRole("button", { name: "Next" }));
   await tap(form("Mail settings").getByRole("button", { name: "Ask Grace" }));
-  await expect.element(page.getByText(heard("Help me with the mail settings."))).toBeVisible();
+  await say("What are these?", { text: "They are the addresses your email company uses. They are not secret.", actions: [] });
   expect(toldGrace()).toContain("Her email company said the password she typed was wrong.");
   expect(toldGrace()).toContain("Margaret tapped Ask Grace while connecting her riverview.net email");
-  expect(toldGrace()).toContain("showSetting was not done: only Margaret’s own words in her latest turn can ask for it");
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(form("Mail settings").getByRole("button", { name: "Connect" }));
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();

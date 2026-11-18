@@ -12,6 +12,7 @@ import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.eff
 import type { Applied, Outcome } from "./agent.vibe"
 import type { MailContent } from "./connector.vibe"
 import { Instances, tablet } from "./instances.vibe"
+import { withhold } from "./private.ts"
 import { Action } from "./reply.schema.ts"
 
 export type Scene = {
@@ -75,25 +76,29 @@ const outcomes: Record<Outcome, string> = {
   NotOnScreen: "was not done: that is not on the screen"
 }
 
-const Field = Schema.Struct({ type: Schema.optionalKey(Schema.String), enum: Schema.optionalKey(Schema.Array(Schema.String)), pattern: Schema.optionalKey(Schema.String) })
-const Kinds = Schema.Struct({ anyOf: Schema.Array(Schema.Struct({ properties: Schema.Record(Schema.String, Field), required: Schema.Array(Schema.String) })) })
+schema Field { type?: string; enum?: string[]; pattern?: string }
+schema Kind { properties: Record<string, Field>; required: string[] }
+schema Kinds { anyOf: Kind[] }
 
-function shape(f: typeof Field.Type): string {
+function shape(f: Field): string {
   if (f.enum !== undefined) return f.enum.join(" | ")
   if (f.pattern?.includes("\\d{4}") === true) return "YYYY-MM-DD"
   if (f.pattern?.includes("2[0-3]") === true) return "HH:MM"
   return f.type === "string" ? "words" : f.type ?? "words"
 }
 
-export const vocabulary = Option.match(Schema.decodeUnknownOption(Kinds)(Schema.toJsonSchemaDocument(Action).schema), {
-  onNone: () => "",
-  onSome: ({ anyOf }) => `Each action is one object in "actions": ${anyOf.map(({ properties, required }) =>
-    `{${Object.entries(properties).map(([name, f]) => name === "kind" ? `"kind": "${shape(f)}"` : `"${name}${required.includes(name) ? "" : "?"}": ${shape(f)}`).join(", ")}}`).join("; ")}. A field marked ? may be left out.`
-})
+const described = (kind: Kind) =>
+  `{${Object.entries(kind.properties).map(([name, f]) => name === "kind" ? `"kind": "${shape(f)}"` : `"${name}${kind.required.includes(name) ? "" : "?"}": ${shape(f)}`).join(", ")}}`
+
+export const vocabulary = match (Schema.decodeUnknownOption(Kinds)(Schema.toJsonSchemaDocument(Action).schema)) {
+  when Option.None: "";
+  when Option.Some(let kinds): `Each action is one object in "actions": ${kinds.anyOf.map(described).join("; ")}. A field marked ? may be left out.`;
+}
 
 export const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
 export const eventTarget = (key: number, id: string) => `event:${key}:${id}`
-export const unlinked = (text: string) => text.replace(/\b(https?:\/\/|www\.)\S+/gi, "[a link]")
+export const unlinked = (text: string) => text.replace(/\b(?:https?:\/\/|www\.)\S+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:[a-z]{2,}\/\S*|(?:com|net|org|info|biz|io|co|us|uk|ca|au)\b)/gi, "[a link]")
+const cleaned = (text: string) => unlinked(withhold({ text, passwords: [] }))
 const said = (text: string) => text.trim() === "" ? "(empty)" : `“${text}”`
 const quoted = (text: string) => `“${text}”`
 
@@ -120,7 +125,7 @@ function asked(s: Scene, ask: Ask): string {
 
 function sender(s: Scene, account: number, ref: string) {
   const c = s.content(account, ref)
-  return c === undefined ? "an email" : `${c.from}’s email ${quoted(unlinked(c.subject))}`
+  return c === undefined ? "an email" : `${cleaned(c.from)}’s email ${quoted(cleaned(c.subject))}`
 }
 
 function always(s: Scene, now: number): readonly string[] {
@@ -149,7 +154,7 @@ function reading(s: Scene, account: number, m: Mailbox): Part {
   const linked = c !== undefined && /https?:\/\//.test(c.body)
   return {
     lines: [
-      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "her"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(unlinked(c?.body ?? ""))}.`,
+      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "her"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(cleaned(c?.body ?? ""))}.`,
       ...files.length === 0 ? [] : [`Attached: ${files.join(", ")}.`],
       ...photos === 0 ? [] : [`${photos} photo${photos === 1 ? "" : "s"} attached.`],
       ...scam ? ["The caution strip says this email looks like a scam."] : []
@@ -163,7 +168,7 @@ function composing(s: Scene, account: number, m: Mailbox): Part {
   const several = fromChoices(s.registry, s.mail).length > 1
   return {
     lines: [
-      `Email: Margaret is writing ${m.replyTo === "" ? "a new email" : "a reply"} to ${m.draft.to === "" ? "nobody yet" : m.draft.to} from ${from}. Subject ${said(m.draft.subject)}. Message so far: ${said(m.draft.body)}.${m.draftAttachments.length === 0 ? "" : ` ${m.draftAttachments.length} attached.`}`,
+      `Email: Margaret is writing ${m.replyTo === "" ? "a new email" : "a reply"} to ${m.draft.to === "" ? "nobody yet" : m.draft.to} from ${from}. Subject ${said(cleaned(m.draft.subject))}. Message so far: ${said(cleaned(m.draft.body))}.${m.draftAttachments.length === 0 ? "" : ` ${m.draftAttachments.length} attached.`}`,
       "Only Margaret taps Send."
     ],
     targets: [...several ? ["from"] : [], "body", "send"]
@@ -238,7 +243,7 @@ function settingsScreen(s: Scene): Part {
 export function toldOfMail(s: Scene, news: MailTold): string {
   const name = s.registry.accounts.find((a) => a.id === news.account)?.name ?? "her email"
   return match (news.news) {
-    when "OpenedEmail": `Margaret opened ${sender(s, news.account, news.ref)}.`;
+    when "OpenedEmail": `${sender(s, news.account, news.ref)} was opened on the screen.`;
     when "SentEmail": `Margaret tapped Send, and her email from ${name} is sent.`;
     when "QueuedEmail": `Margaret tapped Send while the tablet is offline: her email from ${name} waits in Outbox and goes by itself when the tablet is back online.`;
     when "OutboxSent": `An email waiting in Outbox from ${name} was sent.`;
@@ -277,17 +282,11 @@ export function toldOfAccounts(before: Registry, after: Registry): string {
 
 export type Help = "connectEmail" | "mailServers"
 
-export function helpWith(need: Help, registry: Registry): { readonly said: string; readonly told: string } {
+export function helpWith(need: Help, registry: Registry): string {
   const d = registry.signIn.domain
   return match (need) {
-    when "connectEmail": {
-      said: "Help me connect my email.",
-      told: "Margaret tapped Ask Grace for help connecting her email to the tablet. She signs in herself on her email company’s own page; you never see or type passwords or codes. Ask which email she uses, with answers like Gmail, Outlook or Hotmail, Yahoo and I’m not sure. If she is not sure, ask her to read you the part of her address after the @."
-    };
-    when "mailServers": {
-      said: "Help me with the mail settings.",
-      told: `Margaret tapped Ask Grace while connecting her ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that her email company lists them on its help page.`
-    };
+    when "connectEmail": "Margaret tapped Ask Grace for help connecting her email to the tablet. She signs in herself on her email company’s own page; you never see or type passwords or codes. Ask which email she uses, with answers like Gmail, Outlook or Hotmail, Yahoo and I’m not sure. If she is not sure, ask her to read you the part of her address after the @.";
+    when "mailServers": `Margaret tapped Ask Grace while connecting her ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that her email company lists them on its help page.`;
   }
 }
 

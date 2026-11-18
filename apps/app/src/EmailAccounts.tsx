@@ -12,13 +12,14 @@ import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
 import type { Help } from "./context.vibe";
 import { Conversation } from "./conversation.vibe";
-import { type MailInstance, useAccounts, useRuntime, useSignIns, WithMailboxes } from "./useApp.ts";
+import { type MailInstance, useAccounts, useRuntime, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack">;
 
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
+const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
 const home = "Email & calendar";
 const add = "Add an email";
 const other = "Other email";
@@ -58,6 +59,7 @@ export function EmailAccounts(frame: Frame) {
 function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
   const { can, send } = useAccounts();
   const runtime = useRuntime();
+  const workspace = useWorkspace();
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -66,7 +68,13 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
 
-  const askGrace = (need: Help) => () => void runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
+  const opening = workspace.can({ type: "openGrace" });
+  const help = async (need: Help) => {
+    await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
+    if (opening) await workspace.send({ type: "openGrace" });
+    await workspace.send(compact);
+  };
+  const askGrace = (need: Help) => opening || workspace.can(compact) ? () => void help(need) : undefined;
   const choose = (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.();
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;

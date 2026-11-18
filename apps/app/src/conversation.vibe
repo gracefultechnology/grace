@@ -17,7 +17,7 @@ export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer
 
 export service Conversation {
   say(input: PersonTurn): boolean!!
-  help(need: Help): boolean!!
+  help(need: Help): void!!
 }
 
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
@@ -97,10 +97,12 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
       return
     }
-    const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), try Ref.getAndSet(told, [])).text}` }
+    const news = try Ref.get(told)
+    const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), news).text}` }
     const said = ask(link, [system, ...outgoing]) catch () => undefined
     const reply = try decoded(said)
     if (reply === undefined) return try fail(token)
+    try Ref.update(told, (all) => all.slice(news.length))
     try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply))
   }
 
@@ -110,13 +112,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const last = try Ref.get(asked)
     const applied = try agent.apply(actions, { generation: token, workVersion, origin: last.generation === token ? last.origin : "FromDevice" })
     try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
-  }
-
-  effect function typed(text: string, origin: Origin) {
-    if ((try workspace.get()).assistant.keyboard !== "ChatKeyboard") workspace.send({ type: "interact", input: { tag: "TypeIntoChat" } }, "Person") catch () => undefined
-    const edited = workspace.send({ type: "interact", input: { tag: "EditDraft", text } }, "Person") catch () => undefined
-    if (edited === undefined) return false
-    return try take({ tag: "SendDraft", revision: edited.state.assistant.conversation.draftRevision }, origin)
   }
 
   effect function take(input: PersonTurn, origin: Origin) {
@@ -136,13 +131,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
 
   return {
     say: (input) => take(input, origins[input.tag]),
-    help: effect (need) => {
-      if ((try workspace.get()).assistant.presentation === "Closed") workspace.send({ type: "openGrace" }, "Person") catch () => undefined
-      if ((try workspace.get()).assistant.presentation === "Expanded") workspace.send({ type: "interact", input: { tag: "Resize", expanded: false } }, "Person") catch () => undefined
-      const asking = helpWith(need, try registry.get())
-      try tell(asking.told)
-      if ((try workspace.get()).assistant.conversation.draft !== "") return false
-      return try typed(asking.said, "FromDevice")
-    }
+    help: effect (need) => { try tell(helpWith(need, try registry.get())) }
   }
 }).pipe(Layer.provide(client))

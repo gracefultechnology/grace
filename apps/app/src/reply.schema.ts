@@ -11,7 +11,7 @@ import type { FileTab } from "../gen/app__files.effect.vibe"
 const Words = Schema.Trimmed.check(Schema.isMinLength(1))
 const Day = Schema.String.check(
   Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/),
-  Schema.makeFilter((day: string) => String(new Date(`${day}T00:00:00Z`).toJSON()).startsWith(day)),
+  Schema.makeFilter((day: string) => Number(day.slice(0, 4)) >= 1970 && String(new Date(`${day}T00:00:00Z`).toJSON()).startsWith(day)),
 )
 const Clock = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
 const of = <T extends string>() => <const L extends readonly [T, ...T[]]>(literals: L) => Schema.Literals(literals)

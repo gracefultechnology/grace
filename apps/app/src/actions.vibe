@@ -1,7 +1,7 @@
 // spec/app/agentActions.md, "Story: Ask Grace to help with my email"; spec/app/agentActions.md, "Story: Ask Grace about my calendar"; spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen"; spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard"; spec/app/agentActions.md, "Grace only asks about a calendar that shows, with a question that calendar would take"; spec/app/agentActions.md, "An appointment from an email is asked only as the calendar rules allow"; spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"; spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import { type AgentAction, type Route, route, type World } from "../gen/app__agentActions.effect.vibe"
-import type { EntryDetails, Recurrence } from "../gen/app__calendar.effect.vibe"
+import { type EntryDetails, type Recurrence, withStart } from "../gen/app__calendar.effect.vibe"
 import { entryAt, type EntrySeed } from "../gen/app__calendarView.effect.vibe"
 import { calendarContext, sourceAt, targetCalendar } from "../gen/app__calendars.effect.vibe"
 import { emptyContent, type Mailbox, messageRecord, type Recipient } from "../gen/app__email.effect.vibe"
@@ -12,10 +12,11 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied, type GraceAction, type Outcome, type Step, settingSteps, visitSteps, workspaceSteps } from "./agent.vibe"
 import type { Contact } from "./connector.vibe"
 import { looker, type Scene, screen } from "./context.vibe"
-import { hour, day as dayLength } from "./calendar.vibe"
+import { dayOf, hour, day as dayLength, instant } from "./calendar.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { Mail } from "./mail.vibe"
 import type { Remind } from "./reply.schema.ts"
+import { dayNumber } from "./schedule.ts"
 
 type Planned = { readonly commands: readonly AgentAction[]; readonly showsEmail: boolean }
 type Plan = Planned | "NotFound" | "NotYetAvailable" | undefined
@@ -34,15 +35,24 @@ const selected = (m: Mailbox) => ({ ref: m.messageRef, revision: messageRecord(m
 const mail = (account: number, assist: Extract<AgentAction, { tag: "Mail" }>["assist"]): AgentAction => ({ tag: "Mail", account, assist })
 const plain = (commands: readonly AgentAction[], showsEmail = false): Planned => ({ commands, showsEmail })
 
-function at(day: string, time: string) {
-  const [y, m, d] = day.split("-").map(Number)
-  const [h, min] = time.split(":").map(Number)
-  return new Date(y, m - 1, d, h, min).getTime()
+function civil(day: string) {
+  const [year, month, date] = day.split("-").map(Number)
+  return dayNumber(year, month - 1, date)
+}
+
+function minutes(time: string) {
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + m
+}
+
+function clock(at: number) {
+  const d = new Date(at)
+  return d.getHours() * 60 + d.getMinutes()
 }
 
 function details(a: Appointment, recurrence: Recurrence, seriesId: string, timezone: string, notes: string): EntryDetails {
-  const startAt = at(a.day, a.time)
-  const until = a.until === undefined ? startAt + hour : at(a.day, a.until)
+  const startAt = instant(civil(a.day), minutes(a.time))
+  const until = a.until === undefined ? startAt : instant(civil(a.day), minutes(a.until))
   const lead = leads[a.remind ?? "HourBefore"]
   return {
     title: a.title, location: a.place ?? "", participant: a.who ?? "", notes, startAt, endAt: until > startAt ? until : startAt + hour, timezone,
@@ -101,7 +111,7 @@ function fromMessage(s: Scene, a: Appointment, fresh: string): Planned {
   const key = targetCalendar(s.registry, open.account)
   const c = s.content(open.account, open.mailbox.messageRef)
   const files = open.mailbox.assets.filter((f) => f.kind === "Pdf").map((f) => f.name.replace(/\.pdf$/i, ""))
-  const note = `From ${c?.from ?? "an"}’s email${files.length === 0 ? "" : ` · ${files.join(", ")} attached`}`
+  const note = `From ${c === undefined ? "an email" : `${c.from}’s email`}${files.length === 0 ? "" : ` · ${files.join(", ")} attached`}`
   const timezone = sourceAt(s.calendars, key).view.timezone || zone()
   return plain([{ tag: "ProposeFromMessage", account: open.account, seed: seed(s, key, id, open.mailbox.messageRef, details(a, "Once", "", timezone, note)) }])
 }
@@ -110,14 +120,13 @@ function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" 
   const found = appointmentNamed(s, action.entry)
   if (found === undefined) return "NotFound"
   const was = entryAt(sourceAt(s.calendars, found.key).view, found.id).committed
-  const dayOf = (at: number) => new Date(at).toLocaleDateString("en-CA")
-  const startAt = action.day === undefined && action.time === undefined ? was.startAt
-    : at(action.day ?? dayOf(was.startAt), action.time ?? new Date(was.startAt).toTimeString().slice(0, 5))
-  const endAt = action.until === undefined ? startAt + was.endAt - was.startAt : at(dayOf(startAt), action.until)
+  const day = action.day === undefined ? dayOf(was.startAt) : civil(action.day)
+  const moved = action.day === undefined && action.time === undefined ? was : withStart(was, instant(day, action.time === undefined ? clock(was.startAt) : minutes(action.time)))
+  const until = action.until === undefined ? moved.endAt : instant(day, minutes(action.until))
   const recurrence = action.repeat ?? was.recurrence
   const lead = action.remind === undefined ? undefined : leads[action.remind]
   return plain([{ tag: "ProposeChange", key: found.key, id: found.id, details: {
-    ...was, title: action.title ?? was.title, location: action.place ?? was.location, startAt, endAt: endAt > startAt ? endAt : startAt + hour, recurrence,
+    ...moved, title: action.title ?? was.title, location: action.place ?? was.location, endAt: until > moved.startAt ? until : moved.endAt, recurrence,
     seriesId: was.seriesId !== "" || recurrence === "Once" ? was.seriesId : found.id,
     reminderEnabled: lead === undefined ? was.reminderEnabled : lead > 0, leadTime: lead ?? was.leadTime
   } }])
@@ -234,7 +243,7 @@ export const agent = Layer.effect(Agent, effect {
 
   effect function settled(account: number) {
     const box = shelf.mail(account) catch () => undefined
-    if (box !== undefined) try Effect.ignore(Effect.timeout(Stream.runHead(Stream.filter(box.changes, (m) => m.readStatus !== "Reading" && m.messages.every((r) => r.status === "ChangeIdle"))), "10 seconds"))
+    if (box !== undefined) try Effect.ignore(Effect.timeout(Stream.runHead(Stream.filter(box.changes, (m) => m.readStatus !== "Reading" && !m.messages.some((r) => r.status === "ChangePending"))), "10 seconds"))
   }
 
   effect function listed(account: number, ref: string, request: Request) {
