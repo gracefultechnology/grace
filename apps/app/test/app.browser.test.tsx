@@ -1878,17 +1878,28 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const ask = "Check my two open emails and one calendar appointment.";
   const save = "Read this email and save its appointment.";
+  const browserAsk = "Check the website I have open.";
+  const newAppointment = "Check the open appointment on this account.";
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: ask, context: {
       includes: ["Selected email subject: Managed appointment details"],
       excludes: ["appointment with Dr. Patel", "Main St Clinic", "Eye check with Dr. Patel"],
     }, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: ["ReadMail", "ReadMail", "ReadCalendar"] }] }) },
+    { said: newAppointment, context: { includes: ["Selected calendar appointment: Account B appointment"], excludes: ["Managed appointment details"] },
+      answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadCalendar"] }] }) },
+    { said: browserAsk, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: ["ReadBrowser"] }] }) },
     { said: save, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: ["ReadMail", "SaveMailAppointment"] }] }) },
   ]), client));
 
-  const person = { id: "managed-plan-owner", email: "managed@grace.test" };
+  const firstOwner = { id: "managed-plan-owner", email: "managed-a@grace.test" };
+  const secondOwner = { id: "managed-plan-owner-b", email: "managed-b@grace.test" };
+  let person = firstOwner;
+  let browserCookieOwner: typeof firstOwner | undefined;
+  let ownerProbes = 0;
+  let hostedChoices = 0;
   const when = Date.now();
   const receivedAt = new Date(when).toISOString();
   const selected = { externalId: "mail-one", from: "Riverview Clinic", subject: "Managed appointment details", receivedAt,
@@ -1896,6 +1907,7 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
   const second = { ...selected, externalId: "mail-two", from: "Eastwood Clinic" };
   const appointment = { externalId: "event-one", title: "Managed calendar appointment", description: "", location: "Riverview",
     startAt: new Date(when + 3_600_000).toISOString(), endAt: new Date(when + 7_200_000).toISOString(), isAllDay: false, etag: "one" };
+  const otherAppointment = { ...appointment, externalId: "event-b", title: "Account B appointment" };
   const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
   const legacy = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.clear();
@@ -1911,7 +1923,14 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
     if (url.origin === new URL(cloud).origin) return fetch(input, options);
     const respond = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
     switch (url.pathname) {
-      case "/api/auth/session": return respond({ account: signedIn ? person : null });
+      case "/api/auth/session":
+        if (browserCookieOwner) ownerProbes++;
+        return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+      case "/api/v1/decisions":
+        hostedChoices++;
+        expect(new Headers(options?.headers).get("X-Eliza-Account")).toBe(secondOwner.id);
+        return respond({ kind: "choice", status: "ok", choice: "1", model: "clef-flash", confidence: 0.91,
+          probabilities: { "1": 0.91, none: 0.09 } });
       case "/api/auth/refresh": return respond({}, 401);
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
       case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
@@ -1931,11 +1950,23 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
       }
       case "/api/v1/eliza/google/calendar/feed":
         expect(url.searchParams.get("grantId")).toBe(grant);
-        return respond({ accountId: person.id, events: [appointment], nextPageToken: null });
+        return respond({ accountId: person.id, events: [person === firstOwner ? appointment : otherAppointment], nextPageToken: null });
       default: return fetch(input, options);
     }
   });
-  const native = fakePlugin();
+  const browserUrl = "https://example.org/";
+  const native = fakePlugin(({ command }) => {
+    if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      return { documentId: "owner-guide-page", frameScope: "main", result: {
+        snapshotId: "owner-guide-page", domRevision: 1, url: browserUrl, title: "Example",
+        text: "Example Help center", complete: true, readyState: "complete", blockers: [],
+        viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
+        elements: [{ id: "help", tag: "a", label: "Help center", href: browserUrl + "help", inViewport: true,
+          bounds: { x: 100, y: 80, width: 100, height: 32 } }],
+      } };
+    }
+    return { result: { accepted: true } };
+  });
   const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
@@ -1970,11 +2001,22 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
     await routeTo(page.getByText("Riverview Clinic message body"));
     await tap(button("Ask Grace"));
     await send(ask);
-    await routeTo(page.getByRole("region", { name: "Review read plan" }));
+    const review = page.getByRole("region", { name: "Review read plan" });
+    await routeTo(review);
+    const revision = await runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.review.revision)));
+    person = secondOwner;
+    await refresh();
+    expect(review.query()).toBeNull();
+    const staleStart = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.startReadReview(revision)));
+    await act(() => staleStart.then(() => undefined));
+    expect(await staleStart).toBe(false);
+    person = firstOwner;
+    await refresh();
+    await routeTo(review);
     await tap(button("Collapse"));
     await tap(button("Start read plan"));
 
-    await tap(button("Back to Inbox"));
+    await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
     expect(await check()).toBe(false);
     expect(await receipts()).toEqual([]);
 
@@ -2007,14 +2049,57 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
     await tap(button(/^Calendar/));
     await tap(button(/Managed calendar appointment/));
     await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
-    await tap(button("Resume Grace"));
+
+    person = secondOwner;
+    grant = "52c1abb1-6d1d-4ee4-8bd9-70e42a5d4458";
+    await refresh();
+    await tap(button(/Account B appointment/));
+    await routeTo(page.getByRole("heading", { name: otherAppointment.title, exact: true }));
+    const resumed = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.resumeReadPlan()));
+    await act(() => resumed.then(() => undefined));
+    expect(await resumed).toBe(false);
+    expect(await check()).toBe(false);
+    expect(await receipts()).toEqual([mailReceipt, mailReceipt]);
+    expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    await tap(button("End previous task"));
+
+    await send(newAppointment);
+    await routeTo(page.getByRole("region", { name: "Review read plan" }));
+    await tap(button("Start read plan"));
     await tap(button("Check appointment"));
     await routeTo(page.getByText("Read checks complete", { exact: true }));
-    expect(await receipts()).toEqual([mailReceipt, mailReceipt, expect.stringMatching(/^Managed calendar appointment · /)]);
+    expect(await receipts()).toEqual([expect.stringMatching(/^Account B appointment · /)]);
 
     await send(save);
     await routeTo(page.getByText("I can check your mail and calendar, but I can’t save an appointment from that plan.", { exact: true }));
     expect(page.getByRole("region", { name: "Review read plan" }).query()).toBeNull();
+
+    await tap(button("Close Calendar"));
+    await tap(button("Internet"));
+    const address = page.getByRole("textbox", { name: "Address" });
+    await routeTo(address);
+    await act(() => userEvent.type(address, "example.org{Enter}"));
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await native.started("tab-1");
+    await native.report("tab-1", browserUrl, 100);
+    await send(browserAsk);
+    await routeTo(page.getByRole("region", { name: "Review read plan" }));
+    if (button("Collapse").query()) await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await tap(button("Allow Grace to read this browser"));
+    await tap(button("Resume Grace"));
+
+    browserCookieOwner = firstOwner;
+    const guide = button("Show me the link");
+    await tap(guide);
+    await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
+    expect(ownerProbes).toBeGreaterThan(0);
+    expect(hostedChoices).toBe(0);
+
+    browserCookieOwner = undefined;
+    await tap(guide);
+    await routeTo(page.getByRole("status", { name: "Link guide result" }));
+    expect(hostedChoices).toBe(1);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
