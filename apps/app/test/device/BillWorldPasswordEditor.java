@@ -17,6 +17,7 @@ import android.view.inspector.WindowInspector;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
@@ -42,7 +43,14 @@ public final class BillWorldPasswordEditor extends Instrumentation {
       }
       JSONObject input;
       try (var stream = getContext().getAssets().open("synthetic-login.json")) {
-        input = new JSONObject(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int count;
+        while ((count = stream.read(buffer)) != -1) {
+          if (bytes.size() + count > 16_384) throw new IllegalArgumentException();
+          bytes.write(buffer, 0, count);
+        }
+        input = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
       }
       URI site = URI.create(input.getString("origin"));
       if (!"https".equals(site.getScheme()) || (!"localhost".equals(site.getHost()) && !"127.0.0.1".equals(site.getHost()))
