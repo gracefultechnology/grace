@@ -51,7 +51,7 @@ effect function pendingDevice() {
 
 const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeItem(deviceAttemptKey))
 
-type CodeProvider = "email" | "sms"
+export type CodeProvider = "email" | "sms"
 export type Operation =
   | { kind: "refresh" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
   | { kind: "signIn"; method?: "browser" }
@@ -101,6 +101,19 @@ function planFrom({ status, canManage, canCheckout }: typeof Subscription.Type):
   if (status === "active") return canManage ? "PlanActiveManaged" : "PlanActive"
   if (canManage) return canCheckout ? "PlanInactiveManagedCheckout" : "PlanInactiveManaged"
   return canCheckout ? "PlanInactive" : "PlanInactiveBlocked"
+}
+
+export type CodeSignIn = Extract<Operation, { kind: "sendCode" | "verifyCode" }>
+
+export effect function browserSignInProviders() {
+  return try decode(try accepted(webTransport, "/api/auth/providers", "GET"), Providers)
+}
+
+export effect function browserCodeSignIn(operation: CodeSignIn) {
+  const address: Record<string, string> = operation.provider === "email" ? { email: operation.address } : { phone: operation.address }
+  const phase = operation.kind === "sendCode" ? "send" : "verify"
+  const body = operation.kind === "sendCode" ? address : { ...address, code: operation.code }
+  try accepted(webTransport, `/api/auth/${operation.provider}/${phase}`, "POST", body)
 }
 
 effect function session(transport: Transport) {
@@ -237,13 +250,8 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     }
     if (operation.kind === "sendCode" || operation.kind === "verifyCode") {
       if (original.tag !== "GraceSignedOut" || !(operation.provider === "email" ? original.emailCode : original.smsCode)) return false
-      const body: Record<string, string | boolean> = operation.provider === "email" ? { email: operation.address } : { phone: operation.address }
-      if (operation.kind === "sendCode") {
-        try accepted(transport, `/api/auth/${operation.provider}/send`, "POST", body)
-        return true
-      }
-      try accepted(transport, `/api/auth/${operation.provider}/verify`, "POST", { ...body, code: operation.code })
-      return (try refresh()).tag === "GraceSignedIn"
+      try browserCodeSignIn(operation)
+      return operation.kind === "sendCode" || (try refresh()).tag === "GraceSignedIn"
     }
     const account = try refresh()
     if (original.tag !== "GraceSignedIn" || account.tag !== "GraceSignedIn" || account.accountId !== original.accountId) return false

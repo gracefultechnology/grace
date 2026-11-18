@@ -12,7 +12,14 @@ export default {
     const url = new URL(request.url)
     if (url.origin === env.WEB_ORIGIN && url.pathname === "/.well-known/assetlinks.json" && request.method === "GET") return nativeAssetLinks(env)
     if (url.origin === env.WEB_ORIGIN && env.ASSETS && !url.pathname.startsWith("/api/")) {
-      return env.ASSETS.fetch(request)
+      const page = await env.ASSETS.fetch(request)
+      if (url.pathname !== "/android/passwords/approve") return page
+      const response = HttpServerResponse.fromWeb(page)
+      return HttpServerResponse.toWeb(HttpServerResponse.setHeaders(response, {
+        "content-security-policy": "frame-ancestors 'none'",
+        "referrer-policy": "no-referrer",
+        "cache-control": "no-store",
+      }))
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
     return cloud.fetch(request, env)

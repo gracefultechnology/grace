@@ -5,12 +5,39 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Effect } from "effect";
 import type { ElizaSurfaceManagerPlugin } from "@elizaos/os/bridges/definitions/browser-surface";
 import type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
+import { createPasswordsClient } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
+import type { ElizaPasswordsPlugin } from "@elizaos/os/bridges/definitions/passwords";
 
 export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "@elizaos/os/bridges/definitions/browser-surface";
 export type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
 
 /** The plugin on Android; elsewhere (Vite in a browser) there is no native page under the interface. */
 export const devicePlugin = Capacitor.isNativePlatform() ? registerPlugin<ElizaSurfaceManagerPlugin>("ElizaSurfaceManager") : undefined;
+
+export const passwordClient = Capacitor.isPluginAvailable("ElizaPasswords")
+  ? createPasswordsClient(registerPlugin<ElizaPasswordsPlugin>("ElizaPasswords")) : undefined;
+
+type PrivateViewPlugin = {
+  protect(input: { view: "vault" | "browser"; active: boolean }): Promise<void>;
+  openLockSettings(): Promise<void>;
+  readHelp(): Promise<void>;
+  stopHelp(): Promise<void>;
+};
+
+export const androidHost = Capacitor.isNativePlatform();
+export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;
+
+export type GuideSpeechResult =
+  | { status: "complete"; text: string }
+  | { status: "cancelled" | "unavailable" | "no-match" };
+
+export type GuideSpeechPlugin = {
+  listen(input: { id: string }): Promise<GuideSpeechResult>;
+  cancel(input: { id: string }): Promise<void>;
+};
+
+export const guideSpeechPlugin = Capacitor.isPluginAvailable("GraceGuideSpeech")
+  ? registerPlugin<GuideSpeechPlugin>("GraceGuideSpeech") : undefined;
 
 /** The Wi-Fi plugin, which only the launcher registers; elsewhere the WebView's own online state is all there is. */
 export const wifiPlugin = Capacitor.isPluginAvailable("ElizaWiFi") ? registerPlugin<WiFiPlugin>("ElizaWiFi") : undefined;

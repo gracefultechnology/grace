@@ -1,12 +1,14 @@
+// spec/app/browser.md, "Story: Sign in privately on a website"
 // spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
-import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, NewTabPage } from "@repo/ui";
+import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, GuideRing, NewTabPage } from "@repo/ui";
+import { LockKeyhole } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 import type { BrowserInput } from "../gen/app__browserControls.ts";
 import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { Part } from "./page.vibe";
-import { useDraft, useWorkspace } from "./useApp.ts";
+import { useDraft, usePasswordGuide, useWorkspace } from "./useApp.ts";
 import { WebsiteRequests, site } from "./WebsiteRequests.tsx";
 
 const tabStrip = Part.Strip();
@@ -17,7 +19,7 @@ const emptyAddress = "Type a website or what you’re looking for.";
 
 const goWord = "Go";
 
-const tabItem = (tab: Tab) => ({ id: tab.id, title: tabUrl(tab) === "" ? "New tab" : site(tabUrl(tab)), initial: site(tabUrl(tab)).slice(0, 1).toUpperCase() || undefined, pageLoading: tab.load === "Loading" });
+const tabItem = (tab: Tab) => ({ id: tab.id, title: tab.manualSignIn ? "Private sign-in" : tabUrl(tab) === "" ? "New tab" : site(tabUrl(tab)), initial: site(tabUrl(tab)).slice(0, 1).toUpperCase() || undefined, pageLoading: tab.load === "Loading" });
 
 function typed(text: string): TypedAddress {
   const parsed = parseBrowserAddressInput(text, { defaultProtocol: "https:" });
@@ -41,10 +43,49 @@ function destination(text: string): string | undefined {
   }
 }
 
+function secureOrigin(address: string): string {
+  const parsed = URL.parse(address);
+  return parsed?.protocol === "https:" && !parsed.username && !parsed.password ? parsed.origin : "";
+}
+
+type PrivateToolbarProps = {
+  active: Tab;
+  edit(input: BrowserInput): void;
+  offered(input: BrowserInput): boolean;
+  navigate(tab: number, address: string): Promise<boolean>;
+};
+
+function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const go = () => {
+    if (draft === null || secureOrigin(draft) === "") {
+      setNotice("Enter a secure website address beginning with https://.");
+      return;
+    }
+    const address = draft;
+    setDraft(null);
+    setNotice(undefined);
+    void navigate(active.id, address).then(
+      (opened) => { if (!opened) setNotice("This private address couldn't open."); },
+      () => setNotice("This private address couldn't open."),
+    );
+  };
+  return (
+    <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
+      reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })}
+      onGo={go} trailing={<span className="flex items-center gap-2 whitespace-nowrap text-body"><LockKeyhole aria-hidden /> Private sign-in</span>}>
+      <AddressBar value={draft ?? tabUrl(active)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+        notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); }} onSubmit={go} />
+    </BrowserToolbar>
+  );
+}
+
 /** @model spec/app/browserControls.md */
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
-  const { workspace, can, send, closeBrowser } = useWorkspace();
+  const { guide, finish } = usePasswordGuide();
+  const { workspace, can, send, closeBrowser, navigatePrivate, supportsPrivateSignIn } = useWorkspace();
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
   const [address, setAddress] = useDraft(browser?.editingAddress ? browser.addressDraft : active ? tabUrl(active) : "", browser?.editingAddress ?? false);
@@ -65,6 +106,8 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   };
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const failure = failures[active.load];
+  const privateFailure = active.manualSignIn && active.load === "LoadFailed";
+  const privateInput = { tag: "OpenPrivateSignIn", url: secureOrigin(tabUrl(active)) } as const;
 
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
@@ -74,15 +117,21 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
-      toolbar={
+      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} edit={edit} offered={offered} navigate={navigatePrivate} /> : (
         <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
-          onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
-          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : undefined}
+          onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}
+          trailing={supportsPrivateSignIn() && offered(privateInput) ? (
+            <div className="relative">
+              {guide === "FillPasswordGuide" && <GuideRing motion="tap" tight />}
+              <Button variant="capsule" size="pill" onClick={() => { finish(); edit(privateInput); }}><LockKeyhole aria-hidden /> Private sign-in</Button>
+            </div>
+          ) : undefined}>
+          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : guide === "FillPasswordGuide" && !offered(privateInput) ? "Open a secure website first." : undefined}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>
-      }>
+      )}>
       <PageArea className="absolute inset-0 rounded-b-window" />
       {listingTabs && <OverPage className="absolute inset-0 rounded-b-window" />}
       {browser.emptyAddressNotice && <OverPage className="absolute inset-x-0 top-0 h-20" />}
@@ -96,11 +145,12 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
       )}
       {failure !== undefined && (
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
-          <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"} labels={{ failed: () => failure }}
+          <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"} labels={{ failed: () => privateFailure ? "Private sign-in couldn’t open" : failure }}
+            message={privateFailure ? "Check your internet connection. If it still won’t open, update Android System WebView in the Play Store." : undefined}
             onRetry={() => edit({ tag: "Reload" })} onFixWifi={() => { if (can(fixWifi)) void send(fixWifi); }} />
         </OverPage>
       )}
-      <WebsiteRequests />
+      {!active.manualSignIn && <WebsiteRequests />}
     </BrowserWindow>
   );
 }

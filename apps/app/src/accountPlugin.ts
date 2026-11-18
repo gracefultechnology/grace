@@ -7,6 +7,9 @@ interface AccountPlugin {
   status(): Promise<AccountStatus>;
   beginSignIn(options?: { method: "browser" }): Promise<void>;
   signOut(): Promise<void>;
+  passwordRecoveryStatus(): Promise<unknown>;
+  showPasswordRecovery(): Promise<void>;
+  dismissPasswordRecovery(): Promise<void>;
   manageAccount(): Promise<void>;
   openHostedView(options: { view: "email" | "calendar" }): Promise<void>;
   startSpeech(): Promise<unknown>;

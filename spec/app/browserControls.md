@@ -27,6 +27,8 @@ import browser as B from "./browser"
 type BrowserControlActor = BrowserControlUser | BrowserControlHost
 type BrowserInput = NewTab | Back | Forward | Reload | ExplainEmptyAddress | DismissAddress
   | RequestClearHistory
+  | OpenPrivateSignIn({ url: str })
+  | RequestPrivateSignIn({ id: int, revision: int, origin: str })
   | SelectTab({ id: int }) | CloseTab({ id: int }) | Navigate({ url: str })
   | EditAddress({ text: str }) | ZoomPage({ percent: int }) | RemoveRecent({ url: str })
   | AnswerClearHistory({ confirmed: bool })
@@ -41,6 +43,8 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
       (data.scroll != B::activeTab(b).scroll or data.pagePanel != B::activeTab(b).pagePanel) and
       B::canRememberPagePosition(b, data.scroll)
   | PageChanged(data) => by == BrowserControlHost and data.id == b.selected and data.revision == b.revision and B::canPageChanged(b)
+  | RequestPrivateSignIn(data) => by == BrowserControlUser and data.id == b.selected and data.revision == b.revision and B::canOpenPrivateSignIn(b, data.origin)
+  | OpenPrivateSignIn(data) => by == BrowserControlUser and B::canOpenPrivateSignIn(b, data.url)
   | NewTab => by == BrowserControlUser and B::canOpenTab(b)
   | SelectTab(data) => by == BrowserControlUser and data.id != b.selected and B::canSelectTab(b, data.id)
   | CloseTab(data) => by == BrowserControlUser and B::canCloseTab(b, data.id)
@@ -57,6 +61,8 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
   | AnswerClearHistory(data) => by == BrowserControlUser and B::canAnswerClearHistory(b)
 }
 pure def control(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): B::Browser = match browserInput {
+  | RequestPrivateSignIn(data) => B::openPrivateSignIn(b, data.origin)
+  | OpenPrivateSignIn(data) => B::openPrivateSignIn(b, data.url)
   | NewTab => B::openTab(b)
   | SelectTab(data) => B::selectTab(b, data.id)
   | CloseTab(data) => B::closeTab(b, data.id)
@@ -93,6 +99,8 @@ pure def lawRecentEditsKeepPage(b: B::Browser, browserInput: BrowserInput, by: B
 pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
 pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAddress, DismissAddress,
   RequestClearHistory, SelectTab({ id: 1 }), SelectTab({ id: 2 }), CloseTab({ id: 1 }),
+  OpenPrivateSignIn({ url: "https://utility.example" }),
+  RequestPrivateSignIn({ id: 1, revision: 0, origin: "https://utility.example" }),
   Navigate({ url: "https://utility.example" }), Navigate({ url: "https://credit.example" }), Navigate({ url: "" }),
   EditAddress({ text: "https://utility.example" }), EditAddress({ text: "" }),
   ZoomPage({ percent: 125 }), ZoomPage({ percent: 0 }), RemoveRecent({ url: "https://utility.example" }),
@@ -100,4 +108,30 @@ pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAdd
   ResizeTabs({ revision: 0, capacity: 2 }), ResizeTabs({ revision: 2, capacity: 2 }),
   RememberPage({ id: 1, revision: 2, scroll: 200, pagePanel: "details" }),
   PageChanged({ id: 1, revision: 2 }), PageChanged({ id: 1, revision: 0 }), PageChanged({ id: 2, revision: 2 }))
+```
+
+## Story: Ask Grace to start a private sign-in for my bill
+
+> When I ask Grace to sign me in on the bill website I have open, she can bring up private sign-in. I unlock the tablet, choose the login and decide whether to submit the form.
+
+### A direct request uses the selected page and revision
+
+The tablet receives a current request from the person and derives the HTTPS origin from the selected page. The browser refuses stale requests. For an active task the origin must match the task destination. Help questions show the relevant control. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
+
+```quint
+pure def directSignInRequest(words: str): bool =
+  words == "fill my password" or words == "use my saved password" or
+  words == "sign me in to pay my bill" or words == "sign in to pay my bill"
+pure def requestMatchesTask(browserInput: BrowserInput, task: str, origin: str): bool = match browserInput {
+  | RequestPrivateSignIn(request) => task == "" or request.origin == origin
+  | _ => true
+}
+pure def lawAnActiveBillCannotHandOffToAnotherOrigin(task: str, origin: str, other: str): bool =
+  (task != "" and origin != other) implies
+    not(requestMatchesTask(RequestPrivateSignIn({ id: 1, revision: 1, origin: other }), task, origin))
+pure def lawStaleSignInRequestIsIgnored(b: B::Browser, id: int, revision: int, origin: str): bool =
+  (id != b.selected or revision != b.revision) implies
+    not(canControl(b, RequestPrivateSignIn({ id: id, revision: revision, origin: origin }), BrowserControlUser))
+pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str): bool =
+  not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```

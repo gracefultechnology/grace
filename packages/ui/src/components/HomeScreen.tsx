@@ -5,6 +5,7 @@ import { FilesCard, type FilesCardProps } from "./FilesCard.tsx";
 import { HomeCalendarCard, type HomeCalendarCardProps } from "./HomeCalendarCard.tsx";
 import { HomeEmailCard, type HomeEmailCardProps } from "./HomeEmailCard.tsx";
 import { HomeGreeting } from "./HomeGreeting.tsx";
+import { LauncherCard, type LauncherCardProps } from "./LauncherCard.tsx";
 import { HomePager, type HomePagerProps } from "./HomePager.tsx";
 import { InternetCard, type InternetCardProps } from "./InternetCard.tsx";
 
@@ -29,6 +30,8 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
   internet: InternetCardProps;
   /** The Files card: the newest photos and document. */
   files: FilesCardProps;
+  /** Opens Passwords from the second Home page without previewing any sign-ins. */
+  passwords?: Pick<LauncherCardProps, "disabled" | "onClick">;
   /** How Home fills its space; give a `compact` or `greeting` Home a `bottom` that clears Grace's window. */
   layout?: HomeLayout;
   /** The page in view. */
@@ -94,7 +97,7 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
  * @design packages/design-system/design.md#glass
  * @design packages/design-system/design.md#screens
  */
-export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
+export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, passwords, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
   const full = layout === "full";
   const compact = !full;
   const [measure, measured] = useSize<HTMLDivElement>();
@@ -172,7 +175,12 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
             {place("calendar", (turn) => <HomeCalendarCard {...calendar} compact={compact} turn={turn} className={cn("size-full", calendar.className)} />)}
             {place("email", (turn) => <HomeEmailCard {...email} compact={compact} turn={turn} className={cn("size-full", email.className)} />)}
             {place("internet", (turn) => <InternetCard {...internet} compact={compact} turn={turn} className={cn("size-full", internet.className)} />)}
-            {place("files", (turn) => <FilesCard {...files} compact={compact} turn={turn} className={cn("size-full", files.className)} />)}
+            {place("files", (turn) => passwords ? (
+              <div className="flex size-full flex-col gap-4">
+                <FilesCard {...files} compact={compact} turn={turn} className={cn("min-h-0 flex-1", files.className)} />
+                <LauncherCard {...passwords} inert={nearest !== "files"} title="Passwords" size="medium" compact={compact} turn={turn} className="h-24 w-full shrink-0" />
+              </div>
+            ) : <FilesCard {...files} compact={compact} turn={turn} className={cn("size-full", files.className)} />)}
           </div>
         )}
         <HomePager data-home-pager page={pages.indexOf(nearest)} count={pages.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(pages[i] ?? "main")} {...pager} />

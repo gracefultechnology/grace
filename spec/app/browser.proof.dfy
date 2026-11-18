@@ -14,6 +14,22 @@ lemma openTab_ensures(b: Browser)
   }
 }
 
+lemma openPrivateSignIn_ensures(b: Browser, url: string)
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> alwaysTabsAreWellFormed(openPrivateSignIn(b, url)))
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> alwaysTabIdentifiersAreUnique(openPrivateSignIn(b, url)))
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> alwaysBrowserCountersAreValid(openPrivateSignIn(b, url)))
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> alwaysSelectedTabExists(openPrivateSignIn(b, url)))
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> alwaysOnlyALoadedPageIsSecure(openPrivateSignIn(b, url)))
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> alwaysRecentDestinationsAreDistinct(openPrivateSignIn(b, url)))
+  ensures (inv(b) ==> canOpenPrivateSignIn(b, url) ==> stepRevisionNeverMovesBack(b, openPrivateSignIn(b, url)))
+{
+  if inv(b) && canOpenPrivateSignIn(b, url) {
+    TabKeysBridge(b);
+    TabKeysBridge(openPrivateSignIn(b, url));
+    assert forall i :: 0 <= i < |b.tabs| ==> b.tabs[i] in b.tabs;
+  }
+}
+
 lemma closeBrowser_ensures(b: Browser)
   ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysTabsAreWellFormed(closeBrowser(b)))
   ensures (inv(b) ==> canCloseBrowser(b) ==> alwaysTabIdentifiersAreUnique(closeBrowser(b)))
@@ -225,7 +241,7 @@ lemma finishPageLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load
     var after := finishPageLoad(b, id, loadVersion, result, secure);
     MappedTabKeys(b, after); RecentBridge(b); RecentBridge(after); FinishRecentFilter(b, id, loadVersion, result, secure);
     var url := tabUrl(tabById(b, id));
-    if result.Loaded? && url != "" {
+    if result.Loaded? && url != "" && !tabById(b, id).manualSignIn {
       var kept := ProofLib.Filter((visit: string) => (visit != url), b.recent);
       ProofLib.FilterKeepsDistinctBy((visit: string) => (visit != url), b.recent, (url: string) => url);
       forall visit | visit in kept ensures visit != "" && visit != url
@@ -352,7 +368,7 @@ lemma RemoveRecentFilter(b: Browser, url: string)
 }
 
 lemma FinishRecentFilter(b: Browser, id: int, loadVersion: int, result: Load, secure: bool)
-  ensures finishPageLoad(b, id, loadVersion, result, secure).recent == (if result.Loaded? && tabUrl(tabById(b, id)) != "" then [tabUrl(tabById(b, id))] + ProofLib.Filter((visit: string) => (visit != tabUrl(tabById(b, id))), b.recent) else b.recent)
+  ensures finishPageLoad(b, id, loadVersion, result, secure).recent == (if result.Loaded? && tabUrl(tabById(b, id)) != "" && !tabById(b, id).manualSignIn then [tabUrl(tabById(b, id))] + ProofLib.Filter((visit: string) => (visit != tabUrl(tabById(b, id))), b.recent) else b.recent)
 {
 }
 

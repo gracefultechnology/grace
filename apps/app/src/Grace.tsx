@@ -1,14 +1,15 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
+import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
-import { useDraft, useKeyboardHeight, useRuntime, useWorkspace } from "./useApp.ts";
+import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
@@ -16,6 +17,7 @@ const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => contro
 
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, current } = useWorkspace();
+  const guide = usePasswordGuide();
   const runtime = useRuntime();
   const { assistant, device } = workspace!;
   const conversation = assistant.conversation;
@@ -40,7 +42,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
   const canTalk = mayOfferTalk(workspace!);
-  const talk = () => { void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
+  const talk = () => { guide.stopListening(); void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
   const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
     : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
@@ -61,19 +63,31 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
-            quiet={!device.reasoningAvailable || conversation.turn === "Thinking"}
-            micUnavailable={micUnavailable}
-            onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
-            onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}
-            onFieldFocus={(event) => { fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
-            onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
-            onSend={() => {
-              const revision = current().assistant.conversation.draftRevision;
-              void send({ type: "interact", input: { tag: "SendDraft", revision } }).then((result) => {
-                if (Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
-              });
-            }} />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="capsule" size="pill"
+                onClick={guide.mic === "GuideMicListening" ? guide.stopListening : guide.listen}>
+                {guide.mic === "GuideMicListening" ? "Stop listening for Passwords" : "Say a Passwords command"}
+              </Button>
+              {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
+              {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
+            </div>
+            <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
+              quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
+              micUnavailable={micUnavailable}
+              onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
+              onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}
+              onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
+              onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
+              onSend={() => {
+                const revision = current().assistant.conversation.draftRevision;
+                void guide.request(revision).then(async (guided) => {
+                  if (guided) { setDraft(""); return; }
+                  const result = await send({ type: "interact", input: { tag: "SendDraft", revision } });
+                  if (result !== undefined && Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
+                });
+              }} />
+          </div>
         }>
         <GraceMessages>
           {conversation.messages.map((message, index) =>
