@@ -755,7 +755,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     const plan = page.getByRole("region", { name: "Task plan" });
     const target = "Help center";
     const namedPage: GraceAction = { kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }] };
-    const offer = async (words: string, actions: readonly GraceAction[]) => {
+    const offer = async (words: string, actions: readonly unknown[]) => {
       const count = requests.length;
       await act(() => userEvent.type(input, words + "{Enter}"));
       await expect.poll(() => requests[count]?.body).toEqual({ text: words });
@@ -786,7 +786,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     expect(review.query()).toBeNull();
     expect(plan.query()).toBeNull();
 
-    await offer(askForPage, [namedPage]);
+    await offer(askForPage, [{ kind: "ReachNamedPage", target }]);
     await expect.element(review.getByText(askForPage, { exact: true })).toBeVisible();
     await act(() => userEvent.click(review.getByRole("button", { name: "Start read plan" })));
     await expect.element(plan).toBeVisible();

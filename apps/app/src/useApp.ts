@@ -29,7 +29,7 @@ import { Passwords } from "./passwords.vibe";
 import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
-import { BrowserGuide } from "./browserGuide.vibe";
+import { BrowserGuide, type BrowserGuidance } from "./browserGuide.vibe";
 import { settled } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
 import type { Contact } from "./connector.vibe";
@@ -84,7 +84,7 @@ export function useWorkspace() {
     /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */
     say: (input: PersonTurn) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.say(input))),
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
-    pointAtReadLink: () => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point())),
+    pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
     /** The person's Close browser, which the page host also tells what websites asked. */
     supportsPrivateSignIn: () => runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.privateSignIn)),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),

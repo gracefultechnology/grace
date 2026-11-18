@@ -279,6 +279,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const continuing = page.getByRole("status", { name: "Page check result" });
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
+    const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
     const visited = new Set([initial.url]);
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
@@ -298,20 +299,29 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         throw error;
       }
       if (named) {
-        await expect.poll(() => menuGuidance.query() !== null || linkGuidance.query() !== null, { timeout: 45_000 }).toBe(true);
+        await expect.poll(() => menuGuidance.query() !== null || linkGuidance.query() !== null || guidanceFailure.query() !== null, { timeout: 45_000 }).toBe(true);
+        if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The link could not be highlighted");
         if (menuGuidance.query() !== null) {
           expect(disclosed.has(previous.documentId)).toBe(false);
+          outcome.menuInstruction = menuGuidance.query()?.textContent
+          await expect.poll(async () => {
+            const result = await transport({ kind: "hoverGuide" })
+            outcome.menuInteraction = result
+            if (result.reason) throw new Error(String(result.reason))
+            return result.disclosed === true
+          }, { timeout: 15000 }).toBe(true)
           const evidence = Schema.decodeUnknownSync(Schema.Struct({
             disclosed: Schema.Literal(true), url: Schema.NonEmptyString, documentId: Schema.NonEmptyString,
             snapshotId: Schema.NonEmptyString, pointer: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
             before: Schema.Int, after: Schema.Int,
-          }))(await transport({ kind: "hoverGuide" }));
+          }))(outcome.menuInteraction);
           expect(evidence.url).toBe(previous.url);
           expect(evidence.documentId).toBe(previous.documentId);
           expect(evidence.after).toBeGreaterThan(evidence.before);
           disclosed.add(evidence.documentId);
           disclosures.push(evidence);
-          continue;
+          await expect.poll(() => linkGuidance.query() !== null || guidanceFailure.query() !== null, { timeout: 50_000 }).toBe(true);
+          if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The submenu link could not be highlighted");
         }
       }
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
