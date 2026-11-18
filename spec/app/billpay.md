@@ -115,7 +115,7 @@ While sign-in is required, the bill preparation has no bill facts, confirmed amo
 ```quint
 pure def alwaysPrivateLoginHasNoPaymentAuthority(b: BillPreparation): bool =
   b.phase == NeedsLogin implies
-    (not(b.factsConfirmed) and b.fillBy == NotAsked and b.choice == P::emptyProposal and b.facts == noFacts)
+    (not(b.factsConfirmed) and b.fillBy == NotAsked and b.choice == noChoice and b.facts == noFacts)
 ```
 
 ### Current bill facts distinguish payment choices, no payment due and an existing payment

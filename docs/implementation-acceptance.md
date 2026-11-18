@@ -136,10 +136,11 @@ standard key, stock English voice and metering configuration.
 
 Grace [PR 52](https://github.com/gracefultechnology/grace-new/pull/52) merged
 into `develop`. The merged tree depends on Eliza `3570d7d` for private
-Passwords, browser sign-in and encrypted recovery. That revision still needs
-to reach Eliza’s `vibestack` branch through
-[the Passwords integration](https://github.com/elizaOS/eliza/pull/39861).
-The production Worker remains on the verified revision recorded above.
+Passwords, browser sign-in and encrypted recovery. Eliza `vibestack` at
+`84fbeb6` includes both `3570d7d` and the shared account-credit repair.
+The [Passwords review](https://github.com/elizaOS/eliza/pull/39861) also
+contains Android test-host adjustments. The production Worker remains on
+the verified revision recorded above.
 
 | Area | Observed result | Remaining launch work |
 | --- | --- | --- |
