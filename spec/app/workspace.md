@@ -417,10 +417,10 @@ pure val choiceValues = Set(
 
 Home retains all browser tabs. Close browser resets the tabs and returns Home.
 Close Grace hides its window and retains the website. All three preserve the
-task, transcript and draft while pausing unfinished work and stopping speech.
+task and transcript while pausing unfinished work and stopping speech.
 Returning to an application or reopening Grace reveals that same paused task.
-Leaving the surface or sleeping dismisses keyboard focus while retaining the
-draft. Opening Grace ends an active address-editor focus; browser address entry
+Leaving the surface or sleeping dismisses keyboard focus. An interruption
+keeps the draft unless it crosses into or out of local Passwords commands. Opening Grace ends an active address-editor focus; browser address entry
 still works independently while Grace is closed.
 Choosing Home or Settings moves expanded chat into the lower pane, including
 when the selected surface is already open. Compact chat stays compact and
@@ -662,7 +662,8 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
   implies after.assistant.taskId == before.assistant.taskId and
     after.assistant.goal == before.assistant.goal and after.assistant.checkpoint == before.assistant.checkpoint and
     after.assistant.conversation.messages == before.assistant.conversation.messages and
-    after.assistant.conversation.draft == before.assistant.conversation.draft and
+    after.assistant.conversation.draft == (if (localPasswordCommands(before.device) != localPasswordCommands(after.device))
+      "" else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
 ```
 
