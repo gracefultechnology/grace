@@ -22,11 +22,8 @@ export const billCheckLabels: OutcomeCheckLabels = {
 };
 
 export const bookingCheckLabels: OutcomeCheckLabels = {
-  title: "Let’s check whether it went through",
+  ...billCheckLabels,
   message: "Please don’t book again until you’ve checked {site}.",
-  check: "Check again",
-  open: "Open {site}",
-  retrySave: "Try saving again",
   status: bookingStatusLabels,
 };
 

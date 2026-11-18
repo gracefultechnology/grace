@@ -116,6 +116,7 @@ export * from "./components/Skeleton.tsx";
 export * from "./components/SleepScreen.tsx";
 export * from "./components/Slider.tsx";
 export * from "./components/Spinner.tsx";
+export * from "./components/StatusTag.tsx";
 export * from "./components/SplitView.tsx";
 export * from "./components/StartupScreen.tsx";
 export * from "./components/SuggestionOffer.tsx";

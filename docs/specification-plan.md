@@ -1,5 +1,15 @@
 # Grace specification rebuild
 
+Up to [Guided tasks across applications](#guided-tasks-across-applications),
+this is the plan of the models-only phase, which ended on 15 November 2026;
+that section and its qualification of 17 November are current. The interface, the shell and the Android host are now being built from the
+spec, and the owner's directions in the
+[acceptance list](implementation-acceptance.md#owner-directions) replace the
+request below: bill payment is the first kind of a general task, set-up and
+one Google sign-in are in scope, speech runs through Eliza Cloud with no model
+on the tablet, and no wake detector is installed (decision 5). The template's
+greeter it kept as a scaffold has been removed.
+
 ## Goal and source precedence
 
 Specify the complete email, calendar, Files, browser and calendar-launched bill-payment MVP before migrating application code. `spec/` is the executable product contract; `prototype/Grace Prototype.html` is the new visual reference. The current rebuild request takes precedence over older delivery phases, including their exclusions of email, calendar and websites other than Chase.
@@ -11,9 +21,9 @@ Source order for this rebuild:
 3. The latest requirements and dated decisions in `prototype/prd.md` for behavioral controls and recovery. This file contains historical versions as well as the November 5 MVP PRD and November 9 amendments; old and new sections must not be combined indiscriminately.
 4. Legacy product vision, helper PRD, exploration plan, wireframes and formal models for requirements and reusable invariants that do not conflict with the above.
 
-The legacy source snapshot is `gracefultechnology/grace` at `c6e3fbbc38028ccb53ce05817e06c671d9e21642`, verified against remote `main`. The working checkout at `~/Documents/senior-care` is a different branch and is not modified. The snapshot contains 32 Quint files, including a generated capture graph and diagnostic variants that deliberately fail. Their intended safety properties are migration inputs; their failing behavior and fixed simulation bounds are not product requirements.
+The legacy source snapshot is `gracefultechnology/grace` at `c6e3fbbc38028ccb53ce05817e06c671d9e21642`, verified against remote `main`. The legacy working checkout is a different branch and is not modified. The snapshot contains 32 Quint files, including a generated capture graph and diagnostic variants that deliberately fail. Their intended safety properties are migration inputs; their failing behavior and fixed simulation bounds are not product requirements.
 
-The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa9454443482d38f5af2d7f4760f31694a9ef4d5ab64f843144294e` (2,401 lines). The PRD remains 2,345 lines, SHA-256 `1dec011b43682026f75525783ceb92758ef6e7ecb76c8f4ff0ae3fe62c030510`.
+The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa9454443482d38f5af2d7f4760f31694a9ef4d5ab64f843144294e` (2,401 lines); commit `7007516` replaced it with the updated prototype on November 16. The PRD remains 2,345 lines, SHA-256 `1dec011b43682026f75525783ceb92758ef6e7ecb76c8f4ff0ae3fe62c030510`.
 
 ## Decisions established by the research
 
@@ -24,9 +34,8 @@ The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa945444
 - Missing confirmation is uncertainty, never verified failure. Pending or unknown submissions block a new attempt. Scheduled and accepted results are distinguished from completed settlement. Later verified returns/reversals replace historical positive status while retaining the attempt and requiring durable evidence plus a new user decision before retry.
 - Resume observes the current site and account before continuing; it never replays a saved click queue. Stop, corrections, navigation and changes to remembered facts invalidate stale work.
 - Sleep and ordinary departures retain a paused session. Crash/Restart follows ANDROID 09 and the prototype reset at lines 1765–1767: clear the active assistance task, transient chat/draft/guidance and browser page session, advancing callback versions. Confirmed preferences, personal memory, saved application data and canonical payment evidence retain their separate lifecycles. A new request must reobserve before using an existing bill record; restart is never permission to resubmit.
-- The user's November 13 decision includes the prototype's enabled-by-default “Hey Grace” feature, including wake from sleep; it supersedes the old no-wake-word exclusion. Native local wake detection is separate from conversation recording. A current human phrase starts listening, pauses old website work and grants no transaction authority. Opening Grace, typed exchanges, touch wake and navigation do not automatically activate conversation capture. Private passwords, verification codes and payment credentials are not model state or stored personal facts.
+- The user's November 13 decision included the prototype's enabled-by-default “Hey Grace” feature, including wake from sleep. The later direction of no models on the tablet overrides it for the MVP: the wake rules stay and no detector is installed. Native local wake detection is separate from conversation recording. A current human phrase starts listening, pauses old website work and grants no transaction authority. Opening Grace, typed exchanges, touch wake and navigation do not automatically activate conversation capture. Private passwords, verification codes and payment credentials are not model state or stored personal facts.
 - Wake is not device authentication. The native host must retain the lock screen and withhold an admitted wake/ready report until OS authentication permits the application. A locked-device wake may illuminate the native lock screen without exposing Grace, file previews or a task.
-- Keep the template's existing greeter as an explicitly identified validation scaffold during this models-only phase. Grace models do not import it. Replacing its UI, source, tests and driver belongs to the subsequent implementation phase.
 
 ## Implementation sequence
 
@@ -39,7 +48,7 @@ The replacement prototype reviewed on November 13 has SHA-256 `968731aa2fa945444
 
 ## Validation and acceptance boundary
 
-The target is passing model, invariant simulation, event/goal reachability, TypeScript replay, generated types and Dafny proof stages for every Grace module. Existing template tests continue to run. This phase adds no tests that merely reassert generated transitions; those are checked by the formal pipeline. Runtime journeys and drivers must be added when the VibeLang shell, React UI and real services are implemented.
+The target is passing model, invariant simulation, event/goal reachability, TypeScript replay, generated types and Dafny proof stages for every Grace module. This phase adds no tests that merely reassert generated transitions; those are checked by the formal pipeline. Runtime journeys and drivers must be added when the VibeLang shell, React UI and real services are implemented.
 
 Static requirements and formal proof cannot certify that Chromium observes arbitrary websites correctly, that a provider accepts a payment, that a visual layout works on hardware, or that a senior completes a task independently. The specification must define those interfaces and acceptance exercises explicitly without presenting model evidence as runtime evidence.
 
@@ -55,7 +64,7 @@ On the legacy host, goal interpretation preserves the whole request as requireme
 |---|---|
 | Review and present a task | A person starts a plan with a goal, owner and ordered outcomes. Each outcome names the surface, subject and expected result. Show the current instruction compactly and the sequence in expanded Grace. Retain progress across an app switch, pause and explicit Resume. |
 | Connect the planner | Let the planner propose a plan from the original request, keeping prohibitions and unresolved choices. Preview it before accepting it as a person event. Replanning must preserve verified results, invalidate outstanding callbacks and require fresh review when scope changes. Apply the same rule to requests initiated by voice, typing and a selected message. |
-| Bind provider evidence | Each adapter must resolve its subject under the active account, observe the expected result and supply an opaque receipt for the current task and context. Bind a later step's input to the earlier observed value. Prove the link with two similar messages, tabs or calendar entries, a switched account and a stale response. A host-labelled synthetic observation exercises the model contract only. |
+| Bind provider evidence | Each adapter must resolve its subject under the active account, observe the expected result and supply an opaque receipt for the current task and context. Bind a later step to its source by provider resource ID and revision. Two distinct messages or pages can share a subject or title. Qualify both those collisions and a repeated read of the same source, plus a switched account and a stale response. A host-labelled synthetic observation exercises the model contract only. |
 | Guide website actions | Rebuild a table of supported operations and visible controls for each document. Preserve disabled, selected, expanded and private-input state. Refresh after user input, tab changes and navigation. Offer manual help if no suitable control is visible. The actuator validates the current target immediately before acting. |
 | Route hosted decisions | Keep Clef on Workers AI behind the upstream Eliza Cloud Decisions API. The product client can rank visible candidates and raise a suggestion to ask. Keep credentials, consent, final commits and receipt verification in their current owners. Record model, result and unavailable cases for qualification. Authenticate the same interface in the future Grace cloud. |
 | Qualify billing environments | Pin BillWorld and the private grader. Run a no-action negative control. Sample at least 100 distinct Fleet billers across observed, documented and inferred families. Report changed-page navigation, authenticated reads, and each graded payment workflow separately. Cover sign-in handoff, fees, scheduled/declined outcomes, duplicate protection, blocked portals and restart in the hand-built sites. Keep fixture setup, simulated-person actions and every failed attempt visible. |
@@ -67,15 +76,17 @@ The reference implementations suggest three parts of the browser design. Jev con
 
 The billpay research catalog supplies biller identities, categories and varying levels of evidence about their portals. BillWorld's Fleet renders those identities with shared templates and a simulated account engine. The separate hand-built environments and their released tasks have their own coverage. Westvale is a small public smoke site. Use each environment's own grader and report the observations that qualified a pass. [Billpay research](https://github.com/gracefultechnology/billpay-research) · [BillWorld](https://github.com/gracefultechnology/billworld) · [Westvale Electric](https://westvaleelectric.com/) · [WebArena setup and evaluation](https://github.com/web-arena-x/webarena#end-to-end-evaluation)
 
-The previously surveyed BillWorld revision exposes 142 released Infinity tasks across 17 hand-built sites. Its Fleet sample exercises 100 distinct biller identities across 25 portal templates. For public support navigation, require a real browser interaction and a new visible document at the environment's expected destination. For balance lookup, require the private grader to accept both the amount owed on the statement and its due date. A seeded signed-in account is a separate precondition. Archive the original cohort, attempt counts and provider-rate-limit responses before running any retries. Publish route-based rescoring as a separate evaluation of the original observations. [Pinned Infinity mapping](https://github.com/gracefultechnology/billworld/blob/44e6fa006cffb1f7829797da2d6d6ee707f996c5/billworld/infinity/app/harness.py)
+The pinned BillWorld release provides 142 authored Infinity tasks across 17 hand-built sites. The published Fleet cohort manifest identifies 100 distinct billers across 26 portal templates. For public support navigation, require a real browser interaction and a new visible document at the environment's expected destination. For balance lookup, require the private grader to accept both the amount owed on the statement and its due date. A seeded signed-in account is a separate precondition. Archive the original cohort, attempt counts and provider-rate-limit responses before running any retries. Publish route-based rescoring as a separate evaluation of the original observations. [Pinned Infinity mapping](https://github.com/gracefultechnology/billworld/blob/44e6fa006cffb1f7829797da2d6d6ee707f996c5/billworld/infinity/app/harness.py)
 
-The separate connector integration already has an account registry, per-account mailbox and calendar machines, and an immutable appointment proposal. Its calendar adapter checks the message open on screen and the destination account. Reuse these owners when connecting guided plans. A chat reply can propose outcomes. The person reviews them. The mail adapter can establish that the selected provider message was opened at a particular revision. The calendar adapter can establish that the approved event was saved and read back under its provider ID. Browser evidence must bind the active tab and document generation as well as the URL. Include a typed completion condition with each adapter-backed step so a successful read cannot complete a requested deletion. A change in the plan must keep its original request and the user's prohibitions accessible. The connector work is on a separate local branch and needs integration against the shipping revision.
+The connector integration is on `develop`. The account registry owns account identity, each mailbox and calendar owns its provider state, and the appointment proposal owns the separate approval. The guided plan retains the original request and constraints, ordered outcomes, current task version and verified receipts. A read checks the open message, browser document or selected calendar occurrence. A saved appointment also needs the reviewed source message, exact approval, provider occurrence identity and a fresh provider read. Plan review, an app switch and Resume each have distinct effects. Files, multi-tab workflows and other provider writes still need their own outcome adapters and independent acceptance cases.
 
 The first two qualification journeys use different ownership boundaries. In one, the person opens a library invitation, follows the reviewed website link, and saves the event's actual room and times. In the other, the person opens a clinic message and asks Grace to add the appointment to its account's calendar. Verify that the provider holds no new appointment while the proposal is waiting, receives only one after approval, and that the second account receives none. Keep deterministic provider tests in ordinary CI and run hosted model qualification separately.
 
 ### Grace-new qualification, November 17
 
-The Grace-new Eliza SDK authenticated to the upstream staging Decisions API using a dedicated evaluation principal created by normal wallet sign-in. Hosted clef-flash chose “Opening hours” over “Make a payment.” A separate Cloudflare Worker with the pinned upstream provider and a Workers AI binding produced the same choice and rejected an unsigned request with HTTP 401. The temporary Worker was then removed. The staging origin and test key are configured in Grace-new Actions. Grace now sends the model selected by its agent policy when it requests streamed chat. Staging accepted the request format and returned HTTP 402 for the unfunded test principal. The offline planner fixture and live decision-model checks can run independently.
+The Grace-new Eliza SDK authenticated to the upstream staging Decisions API using a dedicated evaluation principal created by normal wallet sign-in. Hosted clef-flash chose “Opening hours” over “Make a payment.” A separate Cloudflare Worker with the pinned upstream provider and a Workers AI binding produced the same choice and rejected an unsigned request with HTTP 401. The temporary Worker was then removed. The staging origin and test key are configured in Grace-new Actions. Grace now sends the model selected by its agent policy when it requests streamed chat. After a $5 Stripe Sandbox credit settled in staging, qwen-3.8-27b returned a reviewed Email → Browser → Calendar plan with the requested step order. The browser qualification records whether a fixture or upstream chat supplied the plan. Its hosted Clef call selects among links actually observed in Chromium.
+
+The released BillWorld statement test exercised `task_md9` on Malden. A simulated person signed in and opened the statement. Grace read the amount and due date through its native document adapter, and the original private grader accepted all six checks. The no-action control failed the required view and both answer checks. Fleet is a separate 100-biller qualification for finding a public help index across portal families. Each biller needs a visible destination and a completed Grace step. Testing 100 such billers provides one navigation task per site. The remaining released workflows, including payment, each require a matching grader and receipt.
 
 The connector integration supplies the actual application composition and its synthetic external accounts. The browser harness drives the Grace UI, presents a real top-level Chromium site through the native plugin boundary, and uses a simulated person's mouse input on the visible guide ring. Each hosted receipt states the chat planner, decision provider, initial and destination documents, and Grace's verdict. The site grader records its own verdict. For WebArena use the pinned official task and evaluator. A score from another product revision or a manually solved control belongs to that revision or operator.
 
@@ -85,3 +96,104 @@ The connector integration supplies the actual application composition and its sy
 | 100 Fleet billers | Check out the public BillWorld fixture at `f335b651f9820c3454f447e3d4722b78c5298a0b`. Set `GRACE_BILLWORLD_DIR` to its absolute path, `GRACE_BILLWORLD_RESULTS` to an output directory, and provide the benchmark's upstream-compatible Clef origin and test key as `GRACE_BENCHMARK_CLEF_ORIGIN` and `GRACE_BENCHMARK_CLEF_KEY`. Run `pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'`. The manual `ci` workflow accepts the `billworld` input and checks out the public fixture at that commit with the workflow’s built-in token. The Fleet fixture samples distinct billers across portal families before any decision, starts a loopback HTTPS site and grades the destination from Chromium. Each run writes its own cohort and receipts. This cohort qualifies public support-page navigation. Full billing operations need the task's private state grader. |
 | WebArena browser baseline | Set `GRACE_BROWSER_BENCHMARK_FILE` to a sealed list of public task IDs, intents, loopback HTTPS start URLs and fresh receipt paths. Use the same browser command. For official cases include `evaluator: "webarena"`, `GRACE_WEBARENA_UPSTREAM` pointing to a clean checkout at `dce04686a56253aefba7b18a4fa0937cf1dc987b`, and `GRACE_WEBARENA_PYTHON` pointing to its prepared Python. Supply synthetic seeded site login where the task requires it. Set `chat: "upstream"` in a sealed case to exercise the live planner with a funded test tenant. Score the landing URL independently of Grace’s verdict. Include failed attempts and manual controls in separate counts. |
 | Full model and installed device | Run `pnpm check`. Inspect `review` separately from simulation and proof. The existing Android runner can record sealed benchmark interactions on a dedicated emulator. Record an installed, signed-in run independently of desktop Chromium. |
+
+### WebArena Shopping on x86 Linux
+
+The manual `ci` workflow accepts the optional `webarena` input. Turn off `billworld` to run only the Shopping benchmark in addition to the normal repository verification. The job uses the configured `GRACE_BENCHMARK_CLEF_ORIGIN` variable and `GRACE_BENCHMARK_CLEF_KEY` secret. A pass requires `officialScore: 1` and `qualifiedHostedGuidance: true` in Grace's browser receipt. The job uploads the image identity, browser log and scoring receipt. The synthetic account state, browser setup inputs and local CA stay under the runner's private directory. [Manual workflow](../.github/workflows/ci.yml)
+
+Standard Linux GitHub-hosted runners list 14 GB of SSD storage. The manual job measures Docker's volume and releases unused preinstalled Android and .NET SDKs when the isolated hosted runner is short on space. Set the optional `GRACE_WEBARENA_RUNNER` repository variable to an existing x86-64 Linux runner label when you need a larger disk. [GitHub runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+
+For local reproduction, use an x86-64 Linux host with Docker or Podman, Caddy, Python 3.10, Node 26, pnpm and jq. The pinned compatibility image has about 5.4 GB of compressed layers. Leave room for the expanded image and database working files. Task 260 comes from the original WebArena catalog. Its checkout and URL evaluator are pinned independently of the container. [WebArena-Verified Shopping and published test login](https://servicenow.github.io/webarena-verified/v1.2.3/environments/shopping/) · [Pinned WebArena source](https://github.com/web-arena-x/webarena/tree/dce04686a56253aefba7b18a4fa0937cf1dc987b)
+
+Run these commands from the Grace-new repository root.
+
+```sh
+fx="$(mktemp -d "${TMPDIR:-/tmp}/grace-webarena.XXXXXX")"
+image=docker.io/am1n3e/webarena-verified-shopping@sha256:3e8cb9b945ea9b1c94ab26dba53e8d12dd0406abbf4bf686fd3bb2b6a5908feb
+docker pull --platform linux/amd64 "$image"
+docker image inspect "$image" --format '{{json .RepoDigests}}'
+docker run -d --name grace-webarena-shopping --platform linux/amd64 \
+  -p 127.0.0.1:17771:80 -e WA_ENV_CTRL_EXTERNAL_SITE_URL=https://127.0.0.1:7770/ "$image"
+cat > "$fx/Caddyfile" <<'CADDY'
+{
+  admin off
+  auto_https disable_redirects
+  skip_install_trust
+}
+https://127.0.0.1:7770 {
+  bind 127.0.0.1
+  tls internal
+  reverse_proxy http://127.0.0.1:17771
+}
+CADDY
+XDG_DATA_HOME="$fx/caddy-data" XDG_CONFIG_HOME="$fx/caddy-config" \
+  caddy start --config "$fx/Caddyfile" --adapter caddyfile
+```
+
+Wait for seeded MariaDB and Elasticsearch in `docker logs grace-webarena-shopping`. Configure the synthetic fixture's Magento address after the dependencies start, then confirm the real home page returns HTTP 200. Cold-start requests may take time while the database recovers.
+
+```sh
+docker exec grace-webarena-shopping sh -ec '
+  cd /var/www/magento2
+  php bin/magento config:set web/unsecure/base_url https://127.0.0.1:7770/
+  php bin/magento config:set web/secure/base_url https://127.0.0.1:7770/
+  php bin/magento config:set web/secure/use_in_frontend 1
+  php bin/magento cache:flush
+'
+curl -k --fail --max-time 90 https://127.0.0.1:7770/ -o "$fx/home.html"
+git clone https://github.com/web-arena-x/webarena "$fx/upstream"
+git -C "$fx/upstream" checkout --detach dce04686a56253aefba7b18a4fa0937cf1dc987b
+python3.10 -m venv "$fx/evaluator"
+"$fx/evaluator/bin/pip" install -r "$fx/upstream/requirements.txt"
+git submodule update --init --recursive vendor/eliza
+pnpm install --frozen-lockfile
+pnpm --filter @repo/app exec playwright install --with-deps chromium
+pnpm gen
+```
+
+Export `WA_SHOPPING_FIXTURE_LOGIN` with the published synthetic `email:password` from the Shopping environment documentation. The browser sends the published login header on local navigation and saves a private storage-state file after the real account page is visible. [Shopping auto-login](https://servicenow.github.io/webarena-verified/v1.2.3/environments/shopping/#auto-login)
+
+```sh
+(
+  cd apps/app
+  umask 077
+  node --input-type=module - "$fx/shopping-state.json" <<'JS'
+import { chromium } from "playwright";
+const origin = "https://127.0.0.1:7770";
+const browser = await chromium.launch();
+try {
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  await context.route("**/*", (route) => {
+    const request = route.request();
+    if (new URL(request.url()).origin !== origin) return route.abort();
+    return request.isNavigationRequest()
+      ? route.continue({ headers: { ...request.headers(), "x-m2-customer-auto-login": process.env.WA_SHOPPING_FIXTURE_LOGIN } })
+      : route.continue();
+  });
+  const page = await context.newPage();
+  const response = await page.goto(origin + "/customer/account/", { waitUntil: "domcontentloaded", timeout: 120000 });
+  if (!response?.ok()) throw new Error("The seeded Shopping account request failed");
+  await page.getByRole("heading", { name: "My Account", exact: true }).first().waitFor({ timeout: 120000 });
+  await context.storageState({ path: process.argv[2] });
+} finally {
+  await browser.close();
+}
+JS
+)
+unset WA_SHOPPING_FIXTURE_LOGIN
+```
+
+Provide the authorized hosted decision origin and key in the environment. Generate the case from the pinned public intent, run it, then check both independent scoring fields. The grader's expected URL stays in the upstream evaluator fixture. The shopper storage file and the fixture input that points to it stay local.
+
+```sh
+git -C "$fx/upstream" show HEAD:config_files/test.raw.json |
+  jq -e --arg receipt "$fx/task-260.json" --arg state "$fx/shopping-state.json" \
+    '.[] | select(.task_id == 260) | {taskId:(.task_id|tostring), intent, startUrl:"https://127.0.0.1:7770/", receipt:$receipt, siteStorageState:$state, evaluator:"webarena"}' \
+    > "$fx/task-260-input.json"
+GRACE_WEBARENA_UPSTREAM="$fx/upstream" GRACE_WEBARENA_PYTHON="$fx/evaluator/bin/python" \
+GRACE_BROWSER_BENCHMARK_FILE="$fx/task-260-input.json" \
+  pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 260'
+jq -e '.webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true' "$fx/task-260.json"
+```
+
+For offline preparation, prefetch the pinned OCI image, upstream checkout and Python wheels, the application's Chromium binary and its Linux system packages, the Eliza submodule and pnpm dependencies. The pinned Python venv supplies the URL grader's dependencies. Hosted qualification needs access to the configured Decisions API.
