@@ -625,9 +625,10 @@ pure def togglePopover(w: Workspace, popover: S::RailPopover, by: WorkspaceActor
   makeRoomForRail(popover == S::WifiPopover, interrupted(S::togglePopover(w.device, popover), w.browser, w))
 pure def lawRailChoicesRevealTheirControls(w: Workspace): bool =
   val expected = if (w.assistant.presentation == A::Expanded) A::Compact else w.assistant.presentation
-  (canVisit(w, S::Home, Person) implies visit(w, S::Home, Person).assistant.presentation == expected) and
-  (canVisit(w, S::DeviceSettings, Person) implies visit(w, S::DeviceSettings, Person).assistant.presentation == expected) and
-  (canTogglePopover(w, S::WifiPopover, Person) implies togglePopover(w, S::WifiPopover, Person).assistant.presentation == expected)
+  w.device.readiness == S::Ready implies
+    visit(w, S::Home, Person).assistant.presentation == expected and
+    visit(w, S::DeviceSettings, Person).assistant.presentation == expected and
+    togglePopover(w, S::WifiPopover, Person).assistant.presentation == expected
 pure def canDismissPopover(w: Workspace, by: WorkspaceActor): bool = by == Person and S::canDismissPopover(w.device)
 pure def dismissPopover(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::dismissPopover(w.device), w.browser, w)
