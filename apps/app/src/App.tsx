@@ -176,8 +176,8 @@ function Screen() {
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
               }}
               internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
-              page={device.homePage === "FilesCard" ? "files" : "main"}
-              onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
+              page={device.homePage}
+              onPageChange={(page) => { const event = { type: "chooseHomePage", page } as const; if (can(event)) void send(event); }} />
             )}</WithCalendars>
           )}</WithMailboxes>
         </OverPage>
