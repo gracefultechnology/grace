@@ -202,19 +202,25 @@ const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(k
 
 function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[]): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
-  const unlisted = own.filter((c) => c.phase === "Saved" && c.identity.kind === "Appointment" && c.committed.seriesId === "" && !events.some((e) => e.externalId === c.identity.occurrenceId))
+  const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
+  const unlisted = own.filter((c) => c.phase === "Saved" && c.identity.kind === "Appointment" && c.committed.seriesId === "" && !listed(c))
+  const writing = own.filter((c) => c.phase === "Editing" && !c.hasSaved && c.approvedRevision === c.revision)
   const taken = new Set<Calendar>()
+  const kept = new Set<Calendar>()
   const changed = events.flatMap((e) => {
     const known = own.find((c) => c.identity.occurrenceId === e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
-    const created = known !== undefined ? undefined : unlisted.find((c) => !taken.has(c) && c.committed.title.trim() === e.title.trim() && c.committed.startAt === startAt && c.committed.endAt === endAt && c.committed.allDay === e.isAllDay)
+    const copies = (d: EntryDetails) => d.title.trim() === e.title.trim() && d.startAt === startAt && d.endAt === endAt && d.allDay === e.isAllDay
+    if (known === undefined && writing.some((c) => copies(c.draft))) return []
+    const created = known !== undefined ? undefined : unlisted.find((c) => !taken.has(c) && copies(c.committed))
     if (created !== undefined) taken.add(created)
     const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
     const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created?.identity.sourceRef ?? "") : undefined
+    if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
   })
-  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !events.some((e) => e.externalId === c.identity.occurrenceId))
+  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c) && !kept.has(c))
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 
@@ -258,7 +264,11 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
   const inSheet: SignInPage.Shape = { open: (url) => showing(url, true), close: () => SubscriptionRef.set(shown, undefined) }
   const handedOff: SignInPage.Shape = {
     open: (url) => Effect.andThen(showing(url, false), page.open(url)),
-    close: (url) => Effect.andThen(page.close(url), SubscriptionRef.set(shown, undefined))
+    close: (url) => ensuring(page.close(url), SubscriptionRef.set(shown, undefined))
+  }
+  const framable = (url: string) => {
+    const at = URL.parse(url)
+    return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
   }
   const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
@@ -295,7 +305,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   effect function visit({ provider, attempt, renewing }: SignInRequest) {
     const session = try fetched(post(`/api/v1/eliza/connections/${routes[provider].slug}/sessions`, { loginHint: renewing }), Session)
-    const where = session.embeddable === true ? inSheet : handedOff
+    const where = session.embeddable === true && framable(session.pageUrl) ? inSheet : handedOff
     const waited = ensuring(effect {
       try where.open(session.pageUrl)
       return try fetched(get(`/api/v1/eliza/connections/sessions/${session.sessionId}`, {}), SessionOutcome)
