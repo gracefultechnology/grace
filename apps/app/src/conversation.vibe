@@ -1,6 +1,7 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
+import { Digest } from "effect/crypto"
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
@@ -59,11 +60,11 @@ type GuidedReadSource =
   | { tag: "CurrentDocument"; tab: number; loadVersion: number }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; revision: number }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
-type GuidedReadReceipt = { source: GuidedReadSource; text: string }
+type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
 
 effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage.Shape): (GuidedReadReceipt | undefined)!! {
   const { registry, workspace } = scene
-  function receipt(source: GuidedReadSource, text: string): GuidedReadReceipt { return { source, text } }
+  function receipt(source: GuidedReadSource, identity: readonly string[], text: string): GuidedReadReceipt { return { source, identity, text } }
   switch (step) {
     case "ReadMail": {
       const account = openSource(registry, scene.mail)
@@ -77,7 +78,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
           identity.ref !== box.messageRef || content === undefined) return undefined
       return receipt({ tag: "CurrentMessage", account, owner: identity.owner, address: identity.account,
         ref: identity.ref, generation: box.generation, revision, version: content.version },
-        content.subject === "" ? "The open message has no subject." : "Open message: " + content.subject)
+        [identity.provider, identity.owner, identity.account, identity.ref], content.subject === "" ? "The open message has no subject." : "Open message: " + content.subject)
     }
     case "ReadStatement": {
       if (!mayGuideReadLink(workspace)) return undefined
@@ -86,7 +87,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
       const facts = snapshot === undefined ? undefined : statementFacts(snapshot, tabUrl(tab))
       if (facts === undefined) return undefined
       return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: facts.document, revision: facts.revision },
-        "Statement amount due: " + facts.amount + ". Due date: " + facts.due + ".")
+        [tabUrl(tab).replace(/#.*$/u, "")], "Statement amount due: " + facts.amount + ". Due date: " + facts.due + ".")
     }
     case "ReadBrowser":
     case "ReadChangedBrowser": {
@@ -94,7 +95,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
       if (tab.load !== "Loaded" || (step === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
       const url = try Effect.option(Effect.try(() => new URL(tabUrl(tab))))
       if (Option.isNone(url) || (url.value.protocol !== "https:" && url.value.protocol !== "http:")) return undefined
-      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion }, "Open page: " + url.value.origin + url.value.pathname)
+      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion }, [url.value.origin + url.value.pathname + url.value.search], "Open page: " + url.value.origin + url.value.pathname)
     }
     case "ReadCalendar": {
       const key = openSelected(registry, scene.calendars)
@@ -107,7 +108,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
       const time = try Effect.option(Effect.try(() => new Date(committed.startAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })))
       if (Option.isNone(time)) return undefined
       return receipt({ tag: "CurrentAppointment", key, owner: identity.owner, calendarId: identity.calendarId,
-        occurrence: identity.occurrenceId, generation: view.generation, revision }, committed.title + " · " + time.value)
+        occurrence: identity.occurrenceId, generation: view.generation, revision }, [step, identity.owner, identity.calendarId, identity.occurrenceId], committed.title + " · " + time.value)
     }
     case "SaveMailAppointment": {
       const { calendarApproval, savedOccurrence } = workspace.plan
@@ -121,7 +122,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedRead, native: NativePage
           committed.title !== calendarApproval.title || committed.startAt !== calendarApproval.starts || committed.endAt !== calendarApproval.ends ||
           committed.timezone !== calendarApproval.timezone || committed.location !== calendarApproval.location || committed.notes !== calendarApproval.notes) return undefined
       return receipt({ tag: "CurrentAppointment", key: account.id, owner: identity.owner, calendarId: identity.calendarId,
-        occurrence: identity.occurrenceId, generation: view.generation, revision }, "Saved appointment: " + committed.title)
+        occurrence: identity.occurrenceId, generation: view.generation, revision }, [step, identity.owner, identity.calendarId, identity.occurrenceId], "Saved appointment: " + committed.title)
     }
     case "UnsupportedRead": return undefined
   }
@@ -140,6 +141,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const shelf = try Instances
   const news = try CalendarNews
   const scope = try Scope.Scope
+  const digest = try Digest.Digest
 
   effect function tell(words: string) {
     if (words !== "") try Ref.update(told, (all) => [...all, words])
@@ -212,7 +214,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const scene = try look()
       const current = scene.workspace
       const step = nextOutcome(current.plan)
-      if (!hasNext(current.plan) || step.surface !== current.device.surface || current.assistant.conversation.turn !== "Ready" ||
+      if (!hasNext(current.plan) || step.surface !== current.device.surface || (step.surface === "Browser" && !current.device.observationAllowed) ||
+          current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
       const read = guidedReadKind(step)
       const found = try guidedReceipt(scene, read, native)
@@ -223,6 +226,9 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         const view = sourceAt(scene.calendars, key).view
         if (!(try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed))) return false
       }
+      const keyBytes = new TextEncoder().encode(JSON.stringify([found.source.tag, ...found.identity]))
+      const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
+      if (sourceKey === "") return false
       const confirmed = try look()
       const rechecked = try guidedReceipt(confirmed, read, native)
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
@@ -235,6 +241,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         deviceVersion: current.device.contextVersion,
         browserRevision: current.browser.revision,
         step,
+        sourceKey,
         evidence
       }
       if (found.source.tag === "CurrentMessage") {
@@ -260,4 +267,4 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       return true
     }
   }
-}).pipe(Layer.provide(client))
+}).pipe(Layer.provide(Layer.merge(client, Digest.layerWebCrypto)))

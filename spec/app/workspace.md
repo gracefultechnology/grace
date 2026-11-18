@@ -50,14 +50,15 @@ type GuidedCalendarApproval = {
   task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
   title: str, starts: int, ends: int, timezone: str, location: str, notes: str
 }
+type GuidedReceipt = { sourceKey: str, evidence: str }
 type GuidedPlan = {
-  owner: str, steps: List[GuidedStep], receipts: List[str], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
+  owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
   mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
   owner: str, task: str, version: int, deviceVersion: int, browserRevision: int,
-  step: GuidedStep, evidence: str
+  step: GuidedStep, sourceKey: str, evidence: str
 }
 type GuidedRead = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment | UnsupportedRead
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
@@ -1034,7 +1035,7 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
 ### A read plan offered in chat waits for the person to start it
 
 The conversation host validates the current human request before it offers
-a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. The workspace
+a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. Each completed check keeps its local source identity and readable evidence. Different items may have the same displayed text. Reopening one unchanged item cannot satisfy a second check for another item. The workspace
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
 Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
@@ -1124,7 +1125,7 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 ### Only a current observation of the next outcome advances the plan
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission, including checking a page the person opened manually. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
 
 ```quint
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
@@ -1134,12 +1135,13 @@ pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: Workspace
   w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
   report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and
-  report.step == nextOutcome(w.plan) and report.step.surface == w.device.surface and guidedLinkObserved(w) and
-  report.evidence != "" and not(w.plan.receipts.includes(report.evidence)) and
+  report.step == nextOutcome(w.plan) and report.step.surface == w.device.surface and
+  (report.step.surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
+  report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
   (guidedReadKind(report.step) == SaveMailAppointment implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
-  val plan = { ...w.plan, receipts: w.plan.receipts.append(report.evidence) }
+  val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }) }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
     if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: nextOutcome(plan).outcome,
@@ -1157,7 +1159,7 @@ pure val sampleStep: GuidedStep = { surface: S::Home, subject: "appointment", ou
 pure val requestValues = Set({ owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
-  step: sampleStep, evidence: "appointment-receipt"
+  step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"
 }
 pure val reportValues = Set(sampleReport, { ...sampleReport, deviceVersion: 2 })
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
