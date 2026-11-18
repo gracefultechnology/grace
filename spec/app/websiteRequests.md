@@ -75,7 +75,7 @@ on its own tab.
 type WebsiteActor = WebsitePerson | WebsiteHost
 type MessageKind = AlertMessage | ConfirmMessage | PromptMessage | LeavePageMessage
 type Kinds = { camera: bool, microphone: bool, location: bool }
-type AppHandoff = SendToApp | DialApp | ViewInApp | RefusedLink
+type AppHandoff = SendToApp | DialApp | ViewInApp | ComposeEmail | RefusedLink
 type Ask = WebsiteMessage({ dialog: MessageKind }) | DownloadOffer({ fileName: str })
   | FileChoice | SitePermission({ origin: str, kinds: Kinds })
   | OtherApp({ handoff: AppHandoff }) | BlockedSignIn({ provider: str })
@@ -184,19 +184,19 @@ pure val clinicCamera: Kinds = { camera: true, microphone: false, location: fals
 pure val clinicCall: Kinds = { camera: true, microphone: true, location: false }
 pure val whereIAm: Kinds = { camera: false, microphone: false, location: true }
 pure val noKinds: Kinds = { camera: false, microphone: false, location: false }
-pure val exampleShown: WebsiteRequests = { ...initial, shown: true, tabs: Set(1) }
-pure val exampleDecided: WebsiteRequests = { ...exampleShown,
-  decisions: List({ origin: "https://clinic.example", kinds: clinicCamera, allowed: true }) }
-pure val exampleTwoAsk: WebsiteRequests = { ...exampleShown, nextId: 4, tabs: Set(1, 2),
-  requests: List({ id: 1, tab: 1, ask: SitePermission({ origin: "https://clinic.example", kinds: clinicCamera }) },
-    { id: 2, tab: 1, ask: SitePermission({ origin: "https://clinic.example", kinds: clinicCamera }) },
-    { id: 3, tab: 2, ask: BlockedSignIn({ provider: "Google" }) }) }
-pure val exampleAsking: WebsiteRequests = { ...exampleShown, nextId: 3,
-  asking: List({ id: 1, tab: 1, ask: SitePermission({ origin: "https://clinic.example", kinds: clinicCamera }) },
-    { id: 2, tab: 1, ask: SitePermission({ origin: "https://clinic.example", kinds: clinicCamera }) }) }
-pure val examplePaused: WebsiteRequests = { ...exampleShown, paused: true }
-pure val sValues = Set(initial, exampleShown, exampleDecided, exampleTwoAsk, exampleAsking, examplePaused)
 pure val reportedOnFirstPage: HostReport = { tab: 1, ask: FileChoice, fromTap: true, topFrame: true }
+pure val clinicAsks: HostReport = { ...reportedOnFirstPage, ask: SitePermission({ origin: "https://clinic.example", kinds: clinicCamera }) }
+pure val allow: Choice = { accept: true, text: "" }
+pure val exampleShown: WebsiteRequests =
+  followView(pageStarted(initial, 1, WebsiteHost).state, { shown: true, selected: 1, paused: false }, WebsiteHost).state
+pure val exampleDecided: WebsiteRequests = androidAnswered(
+  answer(raise(exampleShown, clinicAsks, WebsiteHost).state, 1, allow, WebsitePerson).state, 1, AndroidGranted, WebsiteHost).state
+pure val exampleTwoAsk: WebsiteRequests = raise(raise(raise(pageStarted(exampleShown, 2, WebsiteHost).state,
+  clinicAsks, WebsiteHost).state, clinicAsks, WebsiteHost).state,
+  { ...reportedOnFirstPage, tab: 2, ask: BlockedSignIn({ provider: "Google" }) }, WebsiteHost).state
+pure val exampleAsking: WebsiteRequests = answer(exampleTwoAsk, 1, allow, WebsitePerson).state
+pure val examplePaused: WebsiteRequests = followView(exampleShown, { shown: true, selected: 1, paused: true }, WebsiteHost).state
+pure val sValues = Set(initial, exampleShown, exampleDecided, exampleTwoAsk, exampleAsking, examplePaused)
 pure val reportValues = Set(
   { ...reportedOnFirstPage, ask: WebsiteMessage({ dialog: AlertMessage }) },
   { ...reportedOnFirstPage, ask: WebsiteMessage({ dialog: ConfirmMessage }), fromTap: false },
@@ -215,6 +215,7 @@ pure val reportValues = Set(
   { ...reportedOnFirstPage, ask: OtherApp({ handoff: DialApp }) },
   { ...reportedOnFirstPage, ask: OtherApp({ handoff: SendToApp }), fromTap: false },
   { ...reportedOnFirstPage, ask: OtherApp({ handoff: ViewInApp }) },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: ComposeEmail }) },
   { ...reportedOnFirstPage, ask: OtherApp({ handoff: RefusedLink }) },
   { ...reportedOnFirstPage, ask: BlockedSignIn({ provider: "Google" }) },
   { ...reportedOnFirstPage, ask: BlockedSignIn({ provider: "Facebook" }) },
@@ -404,10 +405,10 @@ navigation, Back, Forward or reload: Grace's own navigation waits on it like
 the page's. OK (Leave) lets that navigation go on, and the page start that
 follows ends the tab's other requests. Cancel (Stay) keeps the page, and the
 surface drops the navigation: no page start and no finished load follow. This
-module changes no tab record, so after Stay on a navigation Grace started,
-Grace's tab still names the address Grace was sending it to and still shows
-it loading, while the page stays where the person kept it; bringing that tab
-back to the kept page is the [browser](./browser.md)'s to do.
+module changes no tab record: Grace's load for that navigation never ends, so
+the [browser](./browser.md) shows it as a page that did not open, with
+Reload, once its wait has passed ("A load that never starts or never ends
+becomes the failure view with Reload").
 
 ```quint
 pure def messageFits(dialog: MessageKind, choice: Choice): bool =
@@ -419,10 +420,31 @@ pure def sometimesAWebsiteMessageIsHeld(s: WebsiteRequests): bool = isMessage(pr
 pure def sometimesALeavePageWarningIsAsked(s: WebsiteRequests): bool = isLeavePage(presented(s).ask)
 ```
 
+### What a website asks during a task is mine to answer, and the task waits for it
+
+A website can ask in the middle of Grace's work on it: a confirm box such as
+"Submit this request?" at the point of commitment, a file to upload, the
+camera, microphone or location, or another app. While the page in view holds
+such a question for the person (`holdsThePerson`: one is presented, or a
+site permission she allowed is waiting for Android), it is hers alone to
+answer, as every rule above says, and Grace answers none of it. Holding the
+task while the page holds the person, so that nothing is prepared or done on
+that page until she has answered, is the [workspace](./workspace.md)'s to
+do. Answering a website message that was the only thing the page held
+releases it; an allowed permission still holds her until Android answers.
+
+```quint
+pure def holdsThePerson(s: WebsiteRequests): bool = presented(s).id > 0 or s.asking.length() > 0
+pure def lawAnsweringTheOnlyMessageReleasesThePage(s: WebsiteRequests, id: int, choice: Choice, by: WebsiteActor): bool =
+  canAnswer(s, id, choice, by) and isMessage(presented(s).ask) and s.requests.length() == 1 and s.asking.length() == 0
+    implies not(holdsThePerson(answer(s, id, choice, by).state))
+pure def sometimesAWebsiteQuestionHoldsThePerson(s: WebsiteRequests): bool = holdsThePerson(s) and isMessage(presented(s).ask)
+```
+
 ## Story: Save a file a website offers
 
 > As an older adult, when a website offers me a statement or a form, I can
-> save it to my phone and see whether it was saved, or decline it.
+> save it to my tablet and see whether it was saved, or decline it.
 
 ### A download is saved with a visible status or visibly not saved
 
@@ -473,7 +495,7 @@ pure def sometimesADownloadIsDeclined(s: WebsiteRequests): bool = s.downloads.so
 ## Story: Choose a file to send to a website
 
 > As an older adult, when I tap a website's upload button, I can pick a photo
-> or document from my phone, or change my mind.
+> or document from my tablet, or change my mind.
 
 ### The file picker opens only after my tap and my choice to choose a file
 
@@ -729,7 +751,12 @@ Cancel leaves them on the page. A tapped one that can never open, such as an
 `intent:` link aimed at Grace itself, is explained plainly with only a button
 to close the notice, never a Continue that would fail. A tab holds one such
 link at a time: a later one replaces an earlier one still waiting, which is
-closed, as the surface keeps only the last.
+closed, as the surface keeps only the last. On the tablet Grace's own Email
+is the mail app: while a mailbox is connected, the host reports a tapped
+`mailto:` link as one that writes an email in Grace (`ComposeEmail`), and
+Continue opens Grace's Email with a new, unsent draft to that address, the
+website kept in its tab; with no mailbox connected it is an ordinary link to
+another app.
 
 ```quint
 pure def isOtherApp(ask: Ask): bool = match ask { | OtherApp(o) => true | _ => false }
@@ -740,6 +767,7 @@ pure def lawALinkThatCannotOpenOffersNoContinue(ask: Ask, choice: Choice): bool 
     (not(choice.accept) and answerFor(ask, choice) == Declined)
 pure val askValues = Set(OtherApp({ handoff: DialApp }), OtherApp({ handoff: RefusedLink }), FileChoice)
 pure def sometimesAnotherAppIsConfirmed(s: WebsiteRequests): bool = appOpens(presented(s).ask)
+pure def sometimesAnEmailLinkIsConfirmed(s: WebsiteRequests): bool = presented(s).ask == OtherApp({ handoff: ComposeEmail })
 pure def sometimesALinkThatCannotOpenIsExplained(s: WebsiteRequests): bool =
   isOtherApp(presented(s).ask) and not(appOpens(presented(s).ask))
 ```
@@ -749,7 +777,7 @@ pure def sometimesALinkThatCannotOpenIsExplained(s: WebsiteRequests): bool =
 Choose for a file request, and Continue for another app or for a refused
 sign-in, is a call Grace makes, which Android can still fail: another file
 picker is already open (`FILE_CHOOSER_BUSY`) or none is available
-(`FILE_CHOOSER_UNAVAILABLE`), no app on the phone opens the link, no other
+(`FILE_CHOOSER_UNAVAILABLE`), no app on the tablet opens the link, no other
 browser is installed, Android refuses the launch, or the page moved on first.
 The host reports how that call ended for the request it answered. When it
 opened, nothing more is said; when it did not, the person is told plainly
@@ -780,13 +808,19 @@ pure val weight_finishOpening = 2
 ## Story: Sign in with Google or Facebook on a website
 
 > As an older adult, when a website's "Sign in with Google" will not work
-> inside Grace, I am told why and can continue in my phone's browser.
+> inside Grace, I am told why and can continue in my tablet's browser.
 
-### A refused sign-in is explained with the option to continue in the phone's browser
+### A refused sign-in is explained with the option to continue in the tablet's browser
 
 The sign-in page is not loaded inside Grace. The request always waits for the
-person, on its own tab, and is never refused for them: Continue opens it in
-the system browser; Cancel keeps the person on the website. Selecting another
+person, on its own tab, and is never refused for them: Continue hands it to
+the tablet's own browser (Chrome on the tablet user QA runs on), where she
+signs in; Cancel keeps the person on the website. Continue is offered only
+when the tablet has such a browser: without one the host reports the sign-in
+as a link that cannot open (`RefusedLink`), explained with only a button to
+close the notice. This is a website's own sign-in, separate from Grace's
+Google sign-in for her mail and her Eliza Cloud account, which never goes
+through a website. Selecting another
 tab or hiding the browser keeps it, as the surface does: no new view ends
 it. Only a page start or
 close of its tab, a later sign-in on the same tab (which replaces it, as the
@@ -814,7 +848,7 @@ pure def sometimesASignInWaitsOnAnotherTab(s: WebsiteRequests): bool =
 ## Story: Stay signed in to my websites
 
 > As an older adult, once I sign in to my bank or clinic website, I stay
-> signed in when I open another tab, close the browser or restart my phone,
+> signed in when I open another tab, close the browser or restart my tablet,
 > until I choose to clear my browsing data.
 
 ### Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation

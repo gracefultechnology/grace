@@ -24,6 +24,7 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onCreate(Bundle state) {
   registerPlugin(EmbeddedAgentPlugin.class);
+  registerPlugin(GraceSignInPlugin.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
   super.onCreate(state);
@@ -46,7 +47,11 @@ public class MainActivity extends ElizaBridgeActivity {
     });
    }
   });
-  startForegroundService(new Intent(this, GraceAgentService.class));
+ }
+
+ @Override public void onStart() {
+  super.onStart();
+  GraceAgentService.resume(this);
  }
 
  private void leave(OnBackPressedCallback callback) {

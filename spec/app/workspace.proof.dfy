@@ -1,4 +1,3 @@
-
 lemma ComponentInvariants(w: Workspace)
   requires inv(w)
   ensures app__shell_inv(w.device)
@@ -67,6 +66,8 @@ lemma CloseQuietWorkspace(w: Workspace)
 }
 
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentAssociation(openGrace(w, by_)))
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedCommitmentCannotSubmit(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysOneTask(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedTogether(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysRecordingHasPermission(openGrace(w, by_)))
@@ -81,10 +82,8 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysExecutionRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentRegistryIsCanonical(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentAssociation(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedCommitmentCannotSubmit(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCurrentBeforeAction(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(openGrace(w, by_)))
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCurrentBeforeAction(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> stepInterruptionsKeepTask(w, "openGrace", openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "openGrace", openGrace(w, by_), []))
@@ -100,6 +99,8 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentAssociation(closeGrace(w, by_)))
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedCommitmentCannotSubmit(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysOneTask(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedTogether(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysRecordingHasPermission(closeGrace(w, by_)))
@@ -114,10 +115,8 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysExecutionRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentRegistryIsCanonical(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentAssociation(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysPausedCommitmentCannotSubmit(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCurrentBeforeAction(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(closeGrace(w, by_)))
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCurrentBeforeAction(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> stepInterruptionsKeepTask(w, "closeGrace", closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "closeGrace", closeGrace(w, by_), []))
@@ -134,6 +133,8 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentAssociation(talk(w, by_)))
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedCommitmentCannotSubmit(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysOneTask(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedTogether(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysRecordingHasPermission(talk(w, by_)))
@@ -148,10 +149,8 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysExecutionRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentRegistryIsCanonical(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentAssociation(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysPausedCommitmentCannotSubmit(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCurrentBeforeAction(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(talk(w, by_)))
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCurrentBeforeAction(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> stepInterruptionsKeepTask(w, "talk", talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "talk", talk(w, by_), []))
@@ -167,6 +166,8 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDraft: bool, by_: WorkspaceActor)
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentAssociation(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedCommitmentCannotSubmit(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysOneTask(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedTogether(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysRecordingHasPermission(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
@@ -181,10 +182,8 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysExecutionRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentRegistryIsCanonical(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentAssociation(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysPausedCommitmentCannotSubmit(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCurrentBeforeAction(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentUsesCanonicalIdentity(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCurrentBeforeAction(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentReviewUsesCurrentContext(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> stepInterruptionsKeepTask(w, "purgePrivate", purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> stepWakeNeverDispatchesWebsite(w, "purgePrivate", purgePrivate(w, token, messageIndex, purgeDraft, by_), []))
@@ -201,6 +200,8 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
 }
 
 lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentAssociation(cancelWake(w, by_)))
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedCommitmentCannotSubmit(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysOneTask(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedTogether(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysRecordingHasPermission(cancelWake(w, by_)))
@@ -215,10 +216,8 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysExecutionRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentRegistryIsCanonical(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentAssociation(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysPausedCommitmentCannotSubmit(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCurrentBeforeAction(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(cancelWake(w, by_)))
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCurrentBeforeAction(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> stepInterruptionsKeepTask(w, "cancelWake", cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "cancelWake", cancelWake(w, by_), []))
@@ -233,6 +232,8 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma changePreferences_ensures(w: Workspace, settings: app__preferences_DisplayPreferences, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentAssociation(changePreferences(w, settings, by_)))
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedCommitmentCannotSubmit(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysOneTask(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedTogether(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysRecordingHasPermission(changePreferences(w, settings, by_)))
@@ -247,10 +248,8 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysExecutionRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentRegistryIsCanonical(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentAssociation(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysPausedCommitmentCannotSubmit(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCurrentBeforeAction(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentUsesCanonicalIdentity(changePreferences(w, settings, by_)))
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCurrentBeforeAction(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentReviewUsesCurrentContext(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> stepInterruptionsKeepTask(w, "changePreferences", changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> stepWakeNeverDispatchesWebsite(w, "changePreferences", changePreferences(w, settings, by_), []))
@@ -266,6 +265,8 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
 }
 
 lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentAssociation(savePreferences(w, by_)))
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedCommitmentCannotSubmit(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysOneTask(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedTogether(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysRecordingHasPermission(savePreferences(w, by_)))
@@ -280,10 +281,8 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysExecutionRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentRegistryIsCanonical(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentAssociation(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysPausedCommitmentCannotSubmit(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCurrentBeforeAction(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(savePreferences(w, by_)))
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCurrentBeforeAction(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> stepInterruptionsKeepTask(w, "savePreferences", savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "savePreferences", savePreferences(w, by_), []))
@@ -298,6 +297,8 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by_: WorkspaceActor)
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentAssociation(preferencesSaved(w, saveToken, succeeded, by_)))
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedCommitmentCannotSubmit(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysOneTask(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedTogether(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysRecordingHasPermission(preferencesSaved(w, saveToken, succeeded, by_)))
@@ -312,10 +313,8 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysExecutionRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentRegistryIsCanonical(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentAssociation(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysPausedCommitmentCannotSubmit(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCurrentBeforeAction(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentUsesCanonicalIdentity(preferencesSaved(w, saveToken, succeeded, by_)))
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCurrentBeforeAction(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentReviewUsesCurrentContext(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> stepInterruptionsKeepTask(w, "preferencesSaved", preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> stepWakeNeverDispatchesWebsite(w, "preferencesSaved", preferencesSaved(w, saveToken, succeeded, by_), []))
@@ -331,6 +330,8 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
 }
 
 lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: WorkspaceActor)
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentAssociation(wakeNoSpeech(w, timer, by_).state))
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedCommitmentCannotSubmit(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysOneTask(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedTogether(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysRecordingHasPermission(wakeNoSpeech(w, timer, by_).state))
@@ -345,10 +346,8 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysExecutionRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentRegistryIsCanonical(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentAssociation(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysPausedCommitmentCannotSubmit(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentUsesCanonicalIdentity(wakeNoSpeech(w, timer, by_).state))
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentReviewUsesCurrentContext(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> stepInterruptionsKeepTask(w, "wakeNoSpeech", wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> stepWakeNeverDispatchesWebsite(w, "wakeNoSpeech", wakeNoSpeech(w, timer, by_).state, wakeNoSpeech(w, timer, by_).out))
@@ -364,6 +363,8 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
 }
 
 lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: WorkspaceActor)
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentAssociation(wakeReturn(w, timer, by_)))
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedCommitmentCannotSubmit(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysOneTask(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedTogether(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysRecordingHasPermission(wakeReturn(w, timer, by_)))
@@ -378,10 +379,8 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysExecutionRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentRegistryIsCanonical(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentAssociation(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysPausedCommitmentCannotSubmit(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentUsesCanonicalIdentity(wakeReturn(w, timer, by_)))
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentReviewUsesCurrentContext(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> stepInterruptionsKeepTask(w, "wakeReturn", wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> stepWakeNeverDispatchesWebsite(w, "wakeReturn", wakeReturn(w, timer, by_), []))
@@ -392,12 +391,18 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
   if inv(w) && canWakeReturn(w, timer, by_) {
     ComponentInvariants(w);
     app__wake_returnAfterSilence_ensures(w.wake, timer, app__wake_WakeActor.WakeHost);
-    if w.wake.prior.WasClosed? { app__assistant_close_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser); }
-    else { app__assistant_resize_ensures(w.assistant, w.wake.prior.WasExpanded?, app__conversation_ConversationActor.ConversationUser); }
+    if w.wake.prior.WasClosed? {
+      QuietComponents(w);
+      app__assistant_close_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
+    } else {
+      app__assistant_resize_ensures(w.assistant, w.wake.prior.WasExpanded?, app__conversation_ConversationActor.ConversationUser);
+    }
   }
 }
 
 lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentAssociation(stop(w, by_)))
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedCommitmentCannotSubmit(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysOneTask(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedTogether(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysRecordingHasPermission(stop(w, by_)))
@@ -412,10 +417,8 @@ lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysExecutionRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentRegistryIsCanonical(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentAssociation(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysPausedCommitmentCannotSubmit(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysCurrentBeforeAction(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(stop(w, by_)))
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysCurrentBeforeAction(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> stepInterruptionsKeepTask(w, "stop", stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "stop", stop(w, by_), []))
@@ -634,6 +637,8 @@ lemma RegistryRestart(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
 }
 
 lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentAssociation(newConversation(w, by_)))
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedCommitmentCannotSubmit(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysOneTask(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedTogether(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysRecordingHasPermission(newConversation(w, by_)))
@@ -648,10 +653,8 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysExecutionRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentRegistryIsCanonical(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentAssociation(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysPausedCommitmentCannotSubmit(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCurrentBeforeAction(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(newConversation(w, by_)))
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCurrentBeforeAction(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> stepInterruptionsKeepTask(w, "newConversation", newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "newConversation", newConversation(w, by_), []))
@@ -667,6 +670,8 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedGoal: string, by_: WorkspaceActor)
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentAssociation(requestReplacement(w, requestedTask, requestedGoal, by_)))
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedCommitmentCannotSubmit(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysOneTask(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedTogether(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysRecordingHasPermission(requestReplacement(w, requestedTask, requestedGoal, by_)))
@@ -681,10 +686,8 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysExecutionRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentRegistryIsCanonical(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentAssociation(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysPausedCommitmentCannotSubmit(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCurrentBeforeAction(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentUsesCanonicalIdentity(requestReplacement(w, requestedTask, requestedGoal, by_)))
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCurrentBeforeAction(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentReviewUsesCurrentContext(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> stepInterruptionsKeepTask(w, "requestReplacement", requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> stepWakeNeverDispatchesWebsite(w, "requestReplacement", requestReplacement(w, requestedTask, requestedGoal, by_), []))
@@ -701,6 +704,8 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
 }
 
 lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentAssociation(keepTask(w, by_)))
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedCommitmentCannotSubmit(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysOneTask(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedTogether(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysRecordingHasPermission(keepTask(w, by_)))
@@ -715,10 +720,8 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysExecutionRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentRegistryIsCanonical(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentAssociation(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysPausedCommitmentCannotSubmit(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCurrentBeforeAction(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(keepTask(w, by_)))
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCurrentBeforeAction(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> stepInterruptionsKeepTask(w, "keepTask", keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "keepTask", keepTask(w, by_), []))
@@ -734,6 +737,8 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentAssociation(continueTask(w, by_)))
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedCommitmentCannotSubmit(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysOneTask(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedTogether(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysRecordingHasPermission(continueTask(w, by_)))
@@ -748,10 +753,8 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysExecutionRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentRegistryIsCanonical(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentAssociation(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysPausedCommitmentCannotSubmit(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCurrentBeforeAction(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(continueTask(w, by_)))
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCurrentBeforeAction(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> stepInterruptionsKeepTask(w, "continueTask", continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "continueTask", continueTask(w, by_), []))
@@ -771,6 +774,8 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentAssociation(completeOrdinary(w, completion, by_)))
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedCommitmentCannotSubmit(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysOneTask(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedTogether(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysRecordingHasPermission(completeOrdinary(w, completion, by_)))
@@ -785,10 +790,8 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysExecutionRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentRegistryIsCanonical(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentAssociation(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysPausedCommitmentCannotSubmit(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCurrentBeforeAction(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentUsesCanonicalIdentity(completeOrdinary(w, completion, by_)))
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCurrentBeforeAction(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentReviewUsesCurrentContext(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> stepInterruptionsKeepTask(w, "completeOrdinary", completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> stepWakeNeverDispatchesWebsite(w, "completeOrdinary", completeOrdinary(w, completion, by_), []))
@@ -804,6 +807,8 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
 }
 
 lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by_: WorkspaceActor)
+  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentAssociation(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
+  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysPausedCommitmentCannotSubmit(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysOneTask(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysPausedTogether(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysRecordingHasPermission(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
@@ -818,10 +823,8 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysExecutionRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentRegistryIsCanonical(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentAssociation(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysPausedCommitmentCannotSubmit(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCurrentBeforeAction(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentUsesCanonicalIdentity(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
+  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCurrentBeforeAction(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentReviewUsesCurrentContext(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> stepInterruptionsKeepTask(w, "approveSpokenCommitment", approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> stepWakeNeverDispatchesWebsite(w, "approveSpokenCommitment", approveSpokenCommitment(w, commitmentTokens, spoken, by_), []))
@@ -838,6 +841,8 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
 }
 
 lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: WorkspaceActor)
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentAssociation(interact(w, input, by_)))
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedCommitmentCannotSubmit(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysOneTask(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedTogether(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysRecordingHasPermission(interact(w, input, by_)))
@@ -852,10 +857,8 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysExecutionRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentRegistryIsCanonical(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentAssociation(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysPausedCommitmentCannotSubmit(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCurrentBeforeAction(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentUsesCanonicalIdentity(interact(w, input, by_)))
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCurrentBeforeAction(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentReviewUsesCurrentContext(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> stepInterruptionsKeepTask(w, "interact", interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> stepWakeNeverDispatchesWebsite(w, "interact", interact(w, input, by_), []))
@@ -872,6 +875,8 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
 }
 
 lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentAssociation(bindCommitment(w, key, by_)))
+  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysPausedCommitmentCannotSubmit(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysOneTask(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysPausedTogether(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysRecordingHasPermission(bindCommitment(w, key, by_)))
@@ -886,10 +891,8 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysExecutionRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentRegistryIsCanonical(bindCommitment(w, key, by_)))
-  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentAssociation(bindCommitment(w, key, by_)))
-  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysPausedCommitmentCannotSubmit(bindCommitment(w, key, by_)))
-  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCurrentBeforeAction(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentUsesCanonicalIdentity(bindCommitment(w, key, by_)))
+  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCurrentBeforeAction(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentReviewUsesCurrentContext(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> stepInterruptionsKeepTask(w, "bindCommitment", bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> stepWakeNeverDispatchesWebsite(w, "bindCommitment", bindCommitment(w, key, by_), []))
@@ -904,6 +907,8 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
 }
 
 lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentAssociation(saveCommitment(w, saveReport, by_)))
+  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysPausedCommitmentCannotSubmit(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysOneTask(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysPausedTogether(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysRecordingHasPermission(saveCommitment(w, saveReport, by_)))
@@ -918,10 +923,8 @@ lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: Workspac
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysExecutionRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentRegistryIsCanonical(saveCommitment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentAssociation(saveCommitment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysPausedCommitmentCannotSubmit(saveCommitment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCurrentBeforeAction(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentUsesCanonicalIdentity(saveCommitment(w, saveReport, by_)))
+  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCurrentBeforeAction(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentReviewUsesCurrentContext(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepInterruptionsKeepTask(w, "saveCommitment", saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepWakeNeverDispatchesWebsite(w, "saveCommitment", saveCommitment(w, saveReport, by_), []))
@@ -985,6 +988,8 @@ lemma InteractionFrame(a: app__assistant_Assistant, input: app__interaction_Inte
 }
 
 lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentAssociation(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedCommitmentCannotSubmit(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysOneTask(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedTogether(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysRecordingHasPermission(begin(w, taskRequest, by_)))
@@ -999,10 +1004,8 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysExecutionRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentRegistryIsCanonical(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentAssociation(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysPausedCommitmentCannotSubmit(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentUsesCanonicalIdentity(begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentReviewUsesCurrentContext(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepInterruptionsKeepTask(w, "begin", begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepWakeNeverDispatchesWebsite(w, "begin", begin(w, taskRequest, by_), []))
@@ -1021,6 +1024,8 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
 }
 
 lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentAssociation(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedCommitmentCannotSubmit(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysOneTask(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedTogether(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysRecordingHasPermission(replaceTask(w, taskRequest, by_)))
@@ -1035,10 +1040,8 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysExecutionRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentRegistryIsCanonical(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentAssociation(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysPausedCommitmentCannotSubmit(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentUsesCanonicalIdentity(replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentReviewUsesCurrentContext(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepInterruptionsKeepTask(w, "replaceTask", replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepWakeNeverDispatchesWebsite(w, "replaceTask", replaceTask(w, taskRequest, by_), []))
@@ -1051,14 +1054,20 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
     QuietComponents(w);
     app__browser_navigate_ensures(w.browser, taskRequest.origin);
     app__assistant_chooseReplacement_ensures(w.assistant, true, app__conversation_ConversationActor.ConversationUser);
-    app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.User);
-    var retired := app__execution_retire(w.execution, app__execution_ExecutionActor.User);
-    app__execution_start_ensures(retired, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    if hasNext(w.plan) {
+      app__execution_start_ensures(w.execution, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    } else {
+      app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.User);
+      var retired := app__execution_retire(w.execution, app__execution_ExecutionActor.User);
+      app__execution_start_ensures(retired, taskRequest.owner, taskRequest.task, taskRequest.origin, app__execution_ExecutionActor.User);
+    }
     app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
 }
 
 lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentAssociation(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedCommitmentCannotSubmit(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysOneTask(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedTogether(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysRecordingHasPermission(closeBrowser(w, by_)))
@@ -1073,10 +1082,8 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysExecutionRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentRegistryIsCanonical(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentAssociation(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysPausedCommitmentCannotSubmit(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCurrentBeforeAction(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCurrentBeforeAction(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepInterruptionsKeepTask(w, "closeBrowser", closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "closeBrowser", closeBrowser(w, by_), []))
@@ -1093,6 +1100,8 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentAssociation(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedCommitmentCannotSubmit(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysOneTask(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedTogether(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unexpectedPage(w, unexpected, by_)))
@@ -1107,10 +1116,8 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysExecutionRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentRegistryIsCanonical(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentAssociation(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysPausedCommitmentCannotSubmit(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentUsesCanonicalIdentity(unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentReviewUsesCurrentContext(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepInterruptionsKeepTask(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepWakeNeverDispatchesWebsite(w, "unexpectedPage", unexpectedPage(w, unexpected, by_), []))
@@ -1126,6 +1133,8 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
 }
 
 lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentAssociation(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedCommitmentCannotSubmit(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysOneTask(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedTogether(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysRecordingHasPermission(unwatchedPage(w, unexpected, by_)))
@@ -1140,10 +1149,8 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysExecutionRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentRegistryIsCanonical(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentAssociation(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedCommitmentCannotSubmit(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentUsesCanonicalIdentity(unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentReviewUsesCurrentContext(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepInterruptionsKeepTask(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepWakeNeverDispatchesWebsite(w, "unwatchedPage", unwatchedPage(w, unexpected, by_), []))
@@ -1159,6 +1166,8 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
 }
 
 lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentAssociation(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedCommitmentCannotSubmit(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysOneTask(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedTogether(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysRecordingHasPermission(receiveLoad(w, loadReport, by_)))
@@ -1173,10 +1182,8 @@ lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceAc
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysExecutionRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentRegistryIsCanonical(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentAssociation(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysPausedCommitmentCannotSubmit(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCurrentBeforeAction(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentUsesCanonicalIdentity(receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCurrentBeforeAction(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentReviewUsesCurrentContext(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepInterruptionsKeepTask(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepWakeNeverDispatchesWebsite(w, "receiveLoad", receiveLoad(w, loadReport, by_), []))
@@ -1197,6 +1204,8 @@ if inv(w) && canReceiveLoad(w, loadReport, by_) {
 }
 
 lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentAssociation(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedCommitmentCannotSubmit(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysOneTask(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedTogether(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysRecordingHasPermission(receiveProgress(w, progress, by_)))
@@ -1211,10 +1220,8 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysExecutionRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentRegistryIsCanonical(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentAssociation(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysPausedCommitmentCannotSubmit(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCurrentBeforeAction(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentUsesCanonicalIdentity(receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCurrentBeforeAction(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentReviewUsesCurrentContext(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepInterruptionsKeepTask(w, "receiveProgress", receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepWakeNeverDispatchesWebsite(w, "receiveProgress", receiveProgress(w, progress, by_), []))
@@ -1240,6 +1247,8 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
 }
 
 lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentAssociation(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedCommitmentCannotSubmit(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysOneTask(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedTogether(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysRecordingHasPermission(changePage(w, browserInput, by_)))
@@ -1254,10 +1263,8 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysExecutionRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentRegistryIsCanonical(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentAssociation(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedCommitmentCannotSubmit(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCurrentBeforeAction(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentUsesCanonicalIdentity(changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCurrentBeforeAction(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentReviewUsesCurrentContext(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepInterruptionsKeepTask(w, "changePage", changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepWakeNeverDispatchesWebsite(w, "changePage", changePage(w, browserInput, by_), []))
@@ -1381,6 +1388,8 @@ lemma lawRestartKeepsCommitmentRecords_ensures(w: Workspace, by_: WorkspaceActor
 }
 
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentAssociation(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedCommitmentCannotSubmit(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysOneTask(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedTogether(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysRecordingHasPermission(changeLifecycle(w, lifecycle, by_)))
@@ -1395,10 +1404,8 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysExecutionRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentRegistryIsCanonical(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentAssociation(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysPausedCommitmentCannotSubmit(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCurrentBeforeAction(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentUsesCanonicalIdentity(changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCurrentBeforeAction(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentReviewUsesCurrentContext(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepInterruptionsKeepTask(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepWakeNeverDispatchesWebsite(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_), []))
@@ -1450,5 +1457,117 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
       var after := changeLifecycle(w, lifecycle, by_);
       assert inv(after);
     }
+  }
+}
+
+lemma beginGuided_ensures(w: Workspace, request: GuidedRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentAssociation(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPausedCommitmentCannotSubmit(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysOneTask(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPausedTogether(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysRecordingHasPermission(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysOperationHasVisibleTask(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysEvidenceVersionsAreNonnegative(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysWakeRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysActiveWakePausesWebsiteWork(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysPreferencesRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysDeviceRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysBrowserRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysAssistantRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysExecutionRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentRules(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentRegistryIsCanonical(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentUsesCanonicalIdentity(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCurrentBeforeAction(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentReviewUsesCurrentContext(beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepInterruptionsKeepTask(w, "beginGuided", beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepWakeNeverDispatchesWebsite(w, "beginGuided", beginGuided(w, request, by_), []))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepEffectsRequireCurrentContext(w, beginGuided(w, request, by_), []))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "beginGuided", beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepCommitmentSwitchRetainsRecords(w, "beginGuided", beginGuided(w, request, by_)))
+{
+  if inv(w) && canBeginGuided(w, request, by_) {
+    ComponentInvariants(w);
+    QuietComponents(w);
+    app__assistant_beginTask_ensures(w.assistant, request.task, request.goal, app__conversation_ConversationActor.ConversationUser);
+    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
+  }
+}
+
+lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentAssociation(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPausedCommitmentCannotSubmit(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysOneTask(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPausedTogether(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysRecordingHasPermission(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysOperationHasVisibleTask(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysWakeRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysPreferencesRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysDeviceRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysBrowserRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysAssistantRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysExecutionRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentRules(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCurrentBeforeAction(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepInterruptionsKeepTask(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuided", confirmGuided(w, report, by_), []))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuided(w, report, by_), []))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuided", confirmGuided(w, report, by_)))
+{
+  if inv(w) && canConfirmGuided(w, report, by_) {
+    ComponentInvariants(w);
+    var after := confirmGuided(w, report, by_);
+    assert |after.plan.receipts| == |w.plan.receipts| + 1;
+    if hasNext(after.plan) {
+      assert nextOutcome(after.plan) in w.plan.steps;
+      assert nextOutcome(after.plan).outcome != "";
+    } else {
+      app__assistant_finishTask_ensures(w.assistant, report.task, report.version, app__assistant_TaskOutcome.Completed, report.evidence, app__conversation_ConversationActor.ConversationRuntime);
+    }
+  }
+}
+
+lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentAssociation(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPausedCommitmentCannotSubmit(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysOneTask(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPausedTogether(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysRecordingHasPermission(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysOperationHasVisibleTask(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysEvidenceVersionsAreNonnegative(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysWakeRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysActiveWakePausesWebsiteWork(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysPreferencesRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysDeviceRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysBrowserRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysAssistantRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysExecutionRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentRules(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentRegistryIsCanonical(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCurrentBeforeAction(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepInterruptionsKeepTask(w, "resume", resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepWakeNeverDispatchesWebsite(w, "resume", resume(w, by_), []))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepEffectsRequireCurrentContext(w, resume(w, by_), []))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "resume", resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "resume", resume(w, by_)))
+{
+  if inv(w) && canResume(w, by_) {
+    ComponentInvariants(w);
+    app__assistant_resume_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
+    if !hasNext(w.plan) {
+      app__execution_resume_ensures(w.execution, app__execution_ExecutionActor.User);
+      if app__commitment_canResume(w.commitment, app__task_TaskActor.Person) {
+        app__commitment_resume_ensures(w.commitment, app__task_TaskActor.Person);
+      }
+    }
+    app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
 }

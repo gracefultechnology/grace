@@ -1,25 +1,40 @@
 # Email and calendar requirement mapping
 
-The replacement `prototype/Grace Prototype.html` is authoritative for these
-application flows. It supersedes the older bill-pay-only file, whose Email and
-Calendar cards were placeholders. Source ranges below refer to the replacement
-file. This phase implements models and specifications, not UI/provider code.
+`prototype/Grace Prototype.html` is authoritative for these application
+flows. Its 13 November version superseded the older bill-pay-only file, whose
+Email and Calendar cards were placeholders.
+
+This mapping dates from the models-only phase and was last changed on 14
+November 2026. Its HTML ranges point into the prototype of 13 November (2,401
+lines, which `git show "7007516^:prototype/Grace Prototype.html"` prints); an
+updated prototype replaced it on 16 November 2026. The email and calendar
+build rebuilt these flows from the updated prototype: one account per provider
+([accounts](../spec/app/accounts.md)), a mailbox and calendar view per account
+([mailboxes](../spec/app/mailboxes.md), [calendars](../spec/app/calendars.md)),
+Grace's mail and calendar actions through one request and consent model
+([agentActions](../spec/app/agentActions.md), [request](../spec/app/request.md),
+[proposal](../spec/app/proposal.md)), and no Print. Every formal home below
+still names a rule or event of the specs. The owner's
+decisions in the [acceptance list](implementation-acceptance.md#decisions-and-their-defaults)
+win where they differ: Grace dismisses a reminder but never snoozes one
+(decision 19), and Email and Calendar act from any screen (decisions 17
+and 19).
 The explicit user requirement for Calendar → bill payment remains an extension:
 the replacement Calendar JavaScript has no payment action.
 
 | ID | Requirement and source | Formal home |
 |---|---|---|
 | EMAIL-01 | Official provider/account choice, verified callback, separate read/send grants, revoke/expire/cancel and stale callback fencing. Legacy ACC-01–06 and current INV 01. | `email.md`: `connect`, `authorize`, `endConnection`, account/generation invariants |
-| EMAIL-02 | Home opens Email; Inbox, Sent, Drafts and Trash; unread badges, current-folder search over sender/subject/body, distinct empty-folder/no-match states. HTML 1942–1971, 2179–2180, 2235. | `email.md` mailbox read/view state; `emailItem.md` `visibleMessages`, `unreadCount`, `searchMessages`, identity/query laws |
+| EMAIL-02 | Home opens Email; Inbox, Sent, Drafts and Trash; unread badges, current-folder search over sender/subject/body, distinct empty-folder/no-match states. HTML 1942–1971, 2179–2180, 2235. | `email.md` mailbox read/view state; `emailItem.md` `visibleMessages`, `unreadCount` and the scoped folder and search results; the current search text is the mailbox's `query`, bound into each listing's `ListingScope` |
 | EMAIL-03 | Open only the selected current account's returned message/attachment; read errors retry without invented content. HTML 1945–1951, 1964–1971, 2180–2187. | `readMail`, `receiveMessage`, atomic `ReadReceipt`/`readResult`, source/generation/selection invariants |
-| EMAIL-04 | Photo gallery Back/Previous/Next at actual bounds; PDF Back/Open/Print; Save photo, Save all photos, Save PDF; no fixed page count or filename identity. HTML 1945–1951, 1965–1967, 2182–2187. | `photoAssets`, `photoPosition`, `movePhoto`, `backToMessage`, `selectedAssets`, `mayExportAttachments`; `files.md` content/save/print outcomes |
+| EMAIL-04 | Photo gallery Back/Previous/Next at actual bounds; PDF Back/Open; Save photo, Save all photos, Save PDF; no fixed page count or filename identity. The prototype's Print is not built. HTML 1945–1951, 1965–1967, 2182–2187. | `photoAssets`, `photoPosition`, `movePhoto`, `backToMessage`, `selectedAssets`, `mayExportAttachments`; `files.md` content and save outcomes |
 | EMAIL-05 | New email starts with recipient choice; To/Cc/Bcc add/remove; subject/body edit; attach via camera/photos/file picker; remove attachment; arbitrary real contacts. HTML 1953–1963, 2191–2204. | `DraftContent`, `startDraft`, `editDraft`, `attachAsset`, `removeAsset`; all changes invalidate revision approval |
 | EMAIL-06 | Reply remains bound to source; Forward and individual-photo forwarding produce an editable draft, never send; Files photo sharing uses the exact asset. HTML 1955–1967, 2184, 2189, 2197–2198. | `replyTo`, `forwardMessage`, `draftAttachments`, `attachAsset`; Files `SharePhoto` owner/asset contract |
 | EMAIL-07 | Back/app close preserve draft, reopening retains recipients/content/attachments; Discard removes only that draft. HTML 1943, 2156, 2180, 2199–2200. | `preserveDraft`, `draftStoreResult`, `restoreDraft`, `discardDraft`; draft versions, retirement registry, stale/newer snapshot laws, explicit storage failure recovery |
 | EMAIL-08 | Manual Send uses the visible exact draft; no additional review dialog. Assisted send requires explicit exact-content approval. Empty body/subject and attachment-only messages work. HTML 1960–1963, 2204 and current INV 02/04/06. | `confirmVisibleSend`, `reviewDraft`, `approveDraft`, `alwaysSendHasRecipient`, revision/asset preservation invariants |
 | EMAIL-09 | Fresh persisted operation ID; provider acceptance, verified failure and uncertain outcome distinguished; unknown sends cannot retry/change content. Prototype 2204 is a simulated success, current INV 07 supplies production requirement. | `sendDraft`, `sendResult`, `persistSendResult`, `restartMailbox`, `issuedSends`, `stepUnresolvedDraftIsFixed`; known outcome/save-failed distinction and durable retirement |
 | EMAIL-10 | Delete moves selected message to Trash, Undo targets that exact mutation, Restore uses prior folder, Delete forever is irreversible; read/unread and provider mutation failures do not fake success. HTML 1964, 1970, 2205–2208. | `email.md`: canonical `messages` registry, `changeSelectedMessage`, `undoMessageTrash`, `completeMessageChange`; these apply `emailItem.md` reducers to the actual selected/provider-addressed record |
-| EMAIL-11 | Bill extraction carries independently verified invoice/account. The person confirms the exact displayed mailbox message, read generation and provider bill identity before opening its record. Explicit user scope, legacy connector requirements, current INV 01/06. | `receiveBill`, `billSelection`, `confirmBill`, `billReady`; canonical `handoffs.md` and `payment.md` |
+| EMAIL-11 | Bill extraction carries independently verified invoice/account. The person confirms the exact displayed mailbox message, read generation and provider bill identity before opening its record. Explicit user scope, legacy connector requirements, current INV 01/06. | `receiveBill`, `billSelection`, `confirmBill`, `billReady`; canonical `handoffs.md` and `commitment.md` |
 | CAL-01 | Week/Month, Today, prior/next period, month-day → Week, selected day, upcoming rows and exact detail identity. HTML 1895–1918, 2157–2163. | `calendarView.md`: `openCalendar`, `navigate`, `openOccurrence`, `selectedOccurrence`, `visibleOccurrences` |
 | CAL-02 | Add/Edit/Cancel/Save title/day/time/location; detail includes participant, notes, reminder and repeat. Visible Save approves the current revision. Grace can propose and confirm an appointment without opening Calendar. HTML 1904–1907, 1921–1931, 2133–2136, 2164–2173. | `calendarView.md`: `createOccurrence`, `changeOccurrence`, `confirmAppointment` use the owned `calendar.md` lifecycle |
 | CAL-03 | Real timezone/date intervals and duration, all-day support; Never/weekly/monthly recurrence; No/Day before/1 hour before reminder choices. Editing a repetition edits its series through the existing form. HTML 1894, 1924–1928, 2165, 2171 plus legacy recurrence. | `EntryDetails`, `Recurrence`, `SeriesDefinition`, `saveSeries`, complete version-bound schedules; validated calendar adapter boundary |
@@ -32,8 +47,8 @@ the replacement Calendar JavaScript has no payment action.
 
 ## Prototype corrections and explicit extensions
 
-- Prototype arrays report Sent/Saved/Printed immediately. The model requires
-  authenticated provider/store/printer results and represents failure or
+- Prototype arrays report Sent/Saved immediately. The model requires
+  authenticated provider/store results and represents failure or
   uncertainty. This is a required production completion, not evidence of a
   working provider integration.
 - Monthly recurrence uses the original day of the month and skips months
@@ -190,7 +205,7 @@ discard, replacement or another edit is rejected and cannot attach to the new
 composer; the user can select again.
 
 Implementation-stage journeys must exercise Home → each app, folder/search →
-message → photo/PDF → Save/Print/Forward, compose/recipient/attachment → Back →
+message → photo/PDF → Save/Forward, compose/recipient/attachment → Back →
 Drafts → restore → Send → provider outcome plus local save failure/retry,
 restart → unknown → reconciliation, stale/newer draft-version restoration, and
 Delete/Undo/Restore/Delete forever. Calendar journeys must cover Week/Month/Today, create/edit/
