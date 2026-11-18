@@ -531,8 +531,19 @@ function deviceNodes(xml: string) {
 }
 
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi) {
+  const installedApk = async () => {
+    const packages = (await shell(serial, `cmd package list packages -f ${identity.appId}`)).trim();
+    if (!packages) return undefined;
+    const entry = packages.split("\n").find((line) => line.endsWith(`=${identity.appId}`));
+    if (!entry) throw new Error("Unexpected Android package state");
+    const file = entry.slice("package:".length, -identity.appId.length - 1);
+    if (!entry.startsWith("package:") || !/^\/data\/app\/[A-Za-z0-9_~+=/.-]+\/base\.apk$/.test(file)) throw new Error("Unexpected installed APK path");
+    const result = (await shell(serial, `sha256sum '${file}'`, 120)).split(/\s/)[0];
+    if (!result || !/^[0-9a-f]{64}$/.test(result)) throw new Error("Android could not identify the installed APK");
+    return result;
+  };
   if ((await shell(serial, "getprop ro.kernel.qemu")).trim() !== "1" ||
-      (await shell(serial, `pm path ${identity.appId}`).catch(() => "")).trim() !== "") {
+      await installedApk() !== undefined) {
     throw new Error("BillWorld requires an emulator with no existing Grace installation");
   }
   const fixture = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
@@ -600,12 +611,33 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await adb(["-s", serial, "reverse", "--no-rebind", `tcp:${port}`, `tcp:${port}`]);
           cleanup.push(() => adb(["-s", serial, "reverse", "--remove", `tcp:${port}`]));
         }
-        await adb(["-s", serial, "install", path.join(app, output, "standalone-debug.apk")], 300);
-        cleanup.push(() => adb(["-s", serial, "uninstall", identity.appId], 120));
-        const set = await shell(serial, `locksettings set-pin ${pin}`);
-        if (!set.includes("Pin set")) throw new Error("The fixture device needs a fresh screen lock");
-        cleanup.push(() => shell(serial, `locksettings clear --old ${pin}`));
+        step = "install the episode-specific signed APK";
+        const apk = path.join(app, output, "standalone-debug.apk");
+        const digest = createHash("sha256").update(readFileSync(apk)).digest("hex");
+        const remote = `/data/local/tmp/grace-billworld-${runId}.apk`;
+        cleanup.push(() => shell(serial, `rm -f ${remote}`));
+        await adb(["-s", serial, "push", apk, remote], 180);
+        cleanup.push(async () => {
+          const installed = await installedApk();
+          if (!installed) return;
+          if (installed !== digest) throw new Error("The installed app changed during the episode");
+          await adb(["-s", serial, "uninstall", identity.appId], 180);
+        });
+        await shell(serial, `pm install -t ${remote}`, 300).catch(() => undefined);
+        if (await installedApk() !== digest) throw new Error("Android did not install the episode APK");
+        step = "configure the disposable screen lock";
+        const verified = /credential verified successfully|no credential (?:is )?set/i;
+        if (!verified.test(await shell(serial, "locksettings verify", 120))) throw new Error("The fixture requires an empty screen lock");
+        cleanup.push(async () => {
+          if (verified.test(await shell(serial, "locksettings verify", 120).catch(() => ""))) return;
+          const cleared = await shell(serial, `locksettings clear --old ${pin}`, 120);
+          if (!/cleared/i.test(cleared)) throw new Error("Android did not clear the fixture lock");
+        });
+        await shell(serial, `locksettings set-pin ${pin}`, 180).catch(() => undefined);
+        if (!verified.test(await shell(serial, `locksettings verify --old ${pin}`, 120)) ||
+            verified.test(await shell(serial, "locksettings verify", 120).catch(() => ""))) throw new Error("Android did not set the fixture lock");
         cleanup.push(() => shell(serial, `rm -f ${screenFile}`));
+        step = "select Grace as the disposable autofill provider";
         const autofill = `${identity.appId}/ai.eliza.plugins.passwords.ElizaPasswordAutofillService`;
         const previous = (await shell(serial, "settings get secure autofill_service")).trim();
         const noProvider = previous === "null" || previous === "";
