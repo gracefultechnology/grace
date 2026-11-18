@@ -18,11 +18,11 @@ export async function mount(runtime: Runtime) {
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   onTestFinished(async () => {
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     host.remove();
     await runtime.dispose();
   });
-  await act(() => root.render(<App runtime={runtime} />));
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
 }
 
 export async function signInToGrace(runtime: Runtime) {
