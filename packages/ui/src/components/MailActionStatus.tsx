@@ -6,18 +6,12 @@ import { Spinner } from "./Spinner.tsx";
 
 export type MailSaveStatus = "saving" | "saved" | "failed";
 
-export type MailPrintStatus = "pending" | "accepted" | "failed" | "unknown";
-
-export type MailActionStatusLabels = Record<`save-${MailSaveStatus}` | `print-${MailPrintStatus}`, string> & { retry: string };
+export type MailActionStatusLabels = Record<MailSaveStatus, string> & { retry: string };
 
 export const mailActionStatusLabels: MailActionStatusLabels = {
-  "save-saving": "Saving to Files…",
-  "save-saved": "Saved to Files",
-  "save-failed": "Couldn’t save. Try again.",
-  "print-pending": "Sending to the printer…",
-  "print-accepted": "Sent to the printer",
-  "print-failed": "Couldn’t print. Try again.",
-  "print-unknown": "Still checking the printer…",
+  saving: "Saving to Files…",
+  saved: "Saved to Files",
+  failed: "Couldn’t save. Try again.",
   retry: "Try again",
 };
 
@@ -30,10 +24,8 @@ export const headerPill = cn(press, "text-grace-ink active:scale-97 active:bg-tr
 export const pendingMark = (pending: boolean, icon: ReactNode) => (pending ? <Spinner size="md" aria-hidden /> : icon);
 
 export type MailActionStatusProps = Omit<ComponentProps<"div">, "children"> & {
-  /** Which action it reports. */
-  action: "save" | "print";
-  /** What actually happened to it. */
-  status: MailSaveStatus | MailPrintStatus;
+  /** What saving actually did. */
+  status: MailSaveStatus;
   /** Tries again after a failure, by the Try again its words offer. */
   onRetry?: () => void;
   /** Its words, for another language. */
@@ -41,16 +33,15 @@ export type MailActionStatusProps = Omit<ComponentProps<"div">, "children"> & {
 };
 
 /**
- * What saving an attachment to Files or printing it actually did, in place of the prototype's always-successful toast
- * (`axToast('Saved to Files')`, `'Sent to the printer'`): working, done in green, or failed in red with Try again.
+ * What saving an attachment to Files actually did, in place of the prototype's always-successful toast
+ * (`axToast('Saved to Files')`): working, done in green, or failed in red with Try again.
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
  */
-export function MailActionStatus({ action, status, onRetry, labels, className, ...props }: MailActionStatusProps) {
+export function MailActionStatus({ status, onRetry, labels, className, ...props }: MailActionStatusProps) {
   const l = { ...mailActionStatusLabels, ...labels };
-  const text = l[`${action}-${status}` as keyof MailActionStatusLabels];
   const failed = status === "failed";
-  const done = status === "saved" || status === "accepted";
+  const done = status === "saved";
   return (
     <div
       role={failed ? "alert" : "status"}
@@ -58,7 +49,7 @@ export function MailActionStatus({ action, status, onRetry, labels, className, .
       {...props}
     >
       {failed ? <TriangleAlert size={22} strokeWidth={2.2} aria-hidden /> : done ? <Check size={22} strokeWidth={2.6} aria-hidden /> : <Spinner size="md" aria-hidden />}
-      {text}
+      {l[status]}
       {failed && (
         <Button variant="capsule" size="compact" className={cn(appButton, "ml-1.5 h-12 px-5 text-grace-ink")} onClick={onRetry}>
           {l.retry}

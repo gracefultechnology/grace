@@ -1,13 +1,13 @@
 # Grace legacy research and migration evidence
 
-Research date: November 13, 2026. New repository work is requirements/models only.
+Research date: November 13, 2026, during the models-only phase. The provenance below still holds; where its scope differs from the owner's directions in the [acceptance list](implementation-acceptance.md#owner-directions), the directions win.
 
 ## Sources and authority
 
-- The user-provided `/Users/shawwalters/Documents/senior-care` exists, but its working branch is `shaw/updates`, at `48b43b9ca6ade7b72c6488f92bee6d4a3ddcf154`; this checkout lacks `design/` and contains TLA+ rather than Quint. It was not modified.
+- The user-provided local checkout of the legacy repository exists, but its working branch is `shaw/updates`, at `48b43b9ca6ade7b72c6488f92bee6d4a3ddcf154`; this checkout lacks `design/` and contains TLA+ rather than Quint. It was not modified.
 - `git ls-remote origin refs/heads/main` and `git rev-parse origin/main` both gave **c6e3fbbc38028ccb53ce05817e06c671d9e21642**, current main at research time, merge of PR #335 recovering Quint. Its relevant immutable tree was extracted to `/tmp/grace-legacy-source` using `git archive` for review. All legacy references below mean this commit, not the stale working branch.
 - GitHub connector `github.fetch` was advertised but returned Unknown tool; Git read operations provided the fallback. Source links: [legacy product sources](https://github.com/gracefultechnology/grace/tree/c6e3fbbc38028ccb53ce05817e06c671d9e21642/design/sources) and [formal models](https://github.com/gracefultechnology/grace/tree/c6e3fbbc38028ccb53ce05817e06c671d9e21642/apps/app/formal).
-- Explicit current user scope wins: email, calendar, browser and billpay in calendar; generic websites, models only. New `prototype/Grace Prototype.html` wins for new appearance and demonstrated interactions. The latest dated MVP/DEC requirements within `prototype/prd.md` win over its earlier documents where consistent with current scope. Legacy PRD fills gaps only.
+- Explicit current user scope won at the time: email, calendar, browser and billpay in calendar; generic websites, models only. The owner's later directions widen it: bill payment is one kind of a general task, and set-up, one Google sign-in and cloud speech are in scope. New `prototype/Grace Prototype.html` wins for new appearance and demonstrated interactions. The latest dated MVP/DEC requirements within `prototype/prd.md` win over its earlier documents where consistent with current scope. Legacy PRD fills gaps only.
 - The first audit used the now-removed bill-pay-only HTML. The replacement `Grace Prototype.html` includes actual Email, Calendar, Files and settings flows; it supersedes the former placeholder finding. Its current application behavior is now the design reference, while the immutable legacy sources below remain useful for provenance and safety requirements.
 
 ## Critical supersessions to retain explicitly
@@ -22,7 +22,7 @@ Research date: November 13, 2026. New repository work is requirements/models onl
 
 Legacy PRD anchors: source `design/sources/on-screen-helper-prd.md`, sections 3–13, IDs below.
 
-- **Onboarding/profile (ONB 01–03)**: confirmed name/language/pace/text preferences, no email prerequisite, preview immediately, persist confirmed choices, learn Close/reopen. Current full onboarding scope needs separation from email connector sign-in, since latest Phase 1 deferred onboarding.
+- **Onboarding/profile (ONB 01–03)**: confirmed name/language/pace/text preferences, no email prerequisite, preview immediately, persist confirmed choices, learn Close/reopen. Set-up is back in scope under the owner's directions and has its own spec, `setup`, with the order of acceptance list decision 10; its email step connects an email account, or Not now.
 - **Continuity (SUR 01–03, REC 04–07; current INT)**. One conversation spans surfaces. Close, sleep and browser reload pause work and retain its checkpoint. Explicit Resume requires current evidence. Current ANDROID 09 and the replacement prototype reset the active task on process or device restart. Durable payment evidence survives, and no interruption replays a write. The provider effect and local receipt storage are separate facts.
 - **Conversation (CON 01–03, TURN 01–09)**: at most one meaningful question; answer belongs to newest visible question; tap/typed/voice committed input share logical semantics; reading scroll does not jump; draft survives mode switches. Busy reasoning is distinct from external work. Type suppresses automatic mic reopening. Two unusable utterances end listening; silence/ambiguous consent is not agreement. Own audio cannot become consent.
 - **Observation/actuation (HLP 01–07, ACT 01–05)**: versioned origin/page/target/viewport evidence; current targets; one guidance target; hide stale guidance during motion; personal input invalidates conflicting fill offer. Exact proposal binding; one operation in flight; pause revokes queued work; unknown writes are investigated before retry. Website/email content is data, never authority.

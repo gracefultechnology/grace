@@ -11,6 +11,7 @@ export const meta: ComponentMeta<MailMessageRowProps> = {
     Clinic: { ...inbox[1], onOpen: open },
     Read: { ...inbox[2], onOpen: open },
     Replied: { from: people.susan, subject: "You replied: “See you on Sunday! Love, Mo…”", time: "2:15 PM", onOpen: open },
+    "With account": { ...inbox[1], account: "Gmail", onOpen: open },
   },
   decorator: (story) => <div className="w-[852px] bg-background p-6">{story()}</div>,
   play: {

@@ -46,9 +46,8 @@ public final class GraceSignInPlugin extends CloudSignInPlugin {
    .receiptSlotPrefix("grace-signin:v1:ack:")
    .retiringSlotPrefix("grace-signin:v1:retire:")
    .credentialSlotPrefix("grace-signin:v1:key:")
-   .environment(PRODUCTION);
+   .environment(BuildConfig.DEBUG ? STAGING : PRODUCTION);
   for (String scope : scopes) builder.googleScope(scope);
-  if (BuildConfig.DEBUG) builder.environment(STAGING);
   return builder.build();
  }
 

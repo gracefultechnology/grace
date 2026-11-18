@@ -1,5 +1,5 @@
 // spec/app/handoffs.md, "One provider bill resolves to exactly one payment record across all entry points"
-lemma LookupBindings(xs: seq<Binding>, key: app__payment_BillKey, acc: Binding)
+lemma LookupBindings(xs: seq<Binding>, key: app__task_Subject, acc: Binding)
   requires acc == noBinding || (acc.key == key && acc.recordRef != "")
   requires forall row :: row in xs ==> row.recordRef != ""
   ensures (Std.Collections.Seq.FoldLeft((found: Binding, row: Binding) => (if (row.key == key) then row else found), acc, xs).recordRef == "") <==>

@@ -42,7 +42,7 @@ final class GraceCredentials {
 
  static String cloudKey(Context context) throws Exception {
   JsonCredentialSlots store = store(context);
-  String saved = withRead(() -> read(store, ACTIVATION) == null ? read(store, KEY) : null);
+  String saved = withRead(() -> read(store, BuildConfig.DEBUG ? STAGING_ACTIVATION : ACTIVATION) == null ? read(store, BuildConfig.DEBUG ? STAGING_KEY : KEY) : null);
   if (saved == null) return null;
   JSONObject credential = new JSONObject(saved);
   return credential.getLong("expiresAt") > System.currentTimeMillis() ? credential.getString("token") : null;
@@ -145,7 +145,7 @@ final class GraceCredentials {
     if (mutationEpoch != epoch) return;
     mutationEpoch = -1;
     GraceSignInPlugin.passwordOwnerChanged(false);
-    if (request >= 0 && (!attempted || committed)) GraceAgentService.start(context);
+    if (request >= 0 && (!attempted || committed)) GraceAgentService.resume(context);
    }
   };
  }

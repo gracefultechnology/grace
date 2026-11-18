@@ -15,15 +15,23 @@ The caller identity comes from the authenticated shell, separately from event JS
 ```quint
 type ExecutionActor = User | BrowserBridge | Planner | Dispatcher
 type OperationPhase = Idle | NeedObservation | Observed | Queued | InFlight | Verified | Blocked | Paused
-type OperationKind = ReadPage | Navigate | FillOrdinary | FillSignInIdentifier | PrivateEntry | FinalSubmit | ConsentChoice | UnknownControl
-type ObservationReport = { owner: str, task: str, origin: str, generation: int, contextRef: str, originVerified: bool, matchedAccount: str, privateInput: bool, redactionReady: bool }
+type OperationKind = ReadPage | Navigate | Choose | FillOrdinary | FillSignInIdentifier | PrivateEntry | FinalSubmit | ConsentChoice | UnknownControl
+type Consequence = Routine | AskFirst | PersonOnly | Commit
+type Tapper = ByPerson | ByGrace
+type PageFact = { name: str, valueRef: str, quoteRef: str }
+type PageTarget = { id: str, consequence: Consequence, inReach: bool }
+type ObservationReport = {
+  owner: str, task: str, origin: str, generation: int, contextRef: str, originVerified: bool, matchedAccount: str, privateInput: bool, redactionReady: bool,
+  facts: List[PageFact], targets: List[PageTarget]
+}
 type VerificationReport = { owner: str, task: str, generation: int, observation: int, matches: bool, reason: str }
 type Approach = { contextRef: str, target: str, valueRef: str, kind: OperationKind }
 type Execution = {
   owner: str, task: str, origin: str, phase: OperationPhase, generation: int,
   observation: int, contextRef: str, target: str, valueRef: str, kind: OperationKind,
   failedApproach: Approach, failures: int,
-  originVerified: bool, matchedAccount: str, privateInput: bool, redactionReady: bool, reason: str
+  originVerified: bool, matchedAccount: str, privateInput: bool, redactionReady: bool, reason: str,
+  facts: List[PageFact], targets: List[PageTarget]
 }
 type WebsiteEffect = Operate({ owner: str, task: str, origin: str, generation: int, observation: int, target: str, valueRef: str, kind: OperationKind })
 type ExecutionResult = { state: Execution, out: List[WebsiteEffect] }
@@ -31,18 +39,27 @@ pure val noApproach: Approach = { contextRef: "", target: "", valueRef: "", kind
 pure val initial: Execution = {
   owner: "", task: "", origin: "", phase: Idle, generation: 0, observation: 0,
   contextRef: "", target: "", valueRef: "", kind: UnknownControl, failedApproach: noApproach, failures: 0,
-  originVerified: false, matchedAccount: "", privateInput: false, redactionReady: false, reason: ""
+  originVerified: false, matchedAccount: "", privateInput: false, redactionReady: false, reason: "",
+  facts: List(), targets: List()
 }
 pure val ownerValues = Set("owner", "")
 pure val taskValues = Set("task", "")
 pure val originValues = Set("https://utility.example", "https://credit.example", "")
-pure val targetValues = Set("control", "other", "")
+pure val targetValues = Set("control", "name-field", "password", "submit", "booking-frame", "other", "")
 pure val valueRefValues = Set("value", "")
 pure val reasonValues = Set("unsupported", "changed", "")
 pure val expectedGenerationValues = Set(0, 1, 2, 3)
 pure val expectedObservationValues = Set(0, 1, 2, 3)
-pure val goodObservation: ObservationReport = { owner: "owner", task: "task", origin: "https://utility.example", generation: 1, contextRef: "page-facts", originVerified: true, matchedAccount: "account", privateInput: false, redactionReady: true }
+pure val goodObservation: ObservationReport = {
+  owner: "owner", task: "task", origin: "https://utility.example", generation: 1, contextRef: "page-facts", originVerified: true, matchedAccount: "account", privateInput: false, redactionReady: true,
+  facts: List({ name: "balance", valueRef: "balance-value", quoteRef: "balance-quote" }),
+  targets: List({ id: "control", consequence: Routine, inReach: true }, { id: "name-field", consequence: AskFirst, inReach: true },
+    { id: "password", consequence: PersonOnly, inReach: true }, { id: "submit", consequence: Commit, inReach: true },
+    { id: "booking-frame", consequence: Routine, inReach: false })
+}
 pure val observationReportValues = Set(
+  { ...goodObservation, facts: List({ name: "confirmed", valueRef: "confirmation-value", quoteRef: "confirmation-quote" }) },
+  { ...goodObservation, facts: List({ name: "confirmed", valueRef: "confirmation-value", quoteRef: "" }) },
   goodObservation, { ...goodObservation, generation: 2 }, { ...goodObservation, generation: 3 },
   { ...goodObservation, generation: 4 }, { ...goodObservation, generation: 5 }, { ...goodObservation, generation: 6 },
   { ...goodObservation, origin: "https://credit.example" }, { ...goodObservation, owner: "other" },
@@ -65,6 +82,8 @@ pure val weight_observe = 10
 pure val weight_prepare = 10
 pure val weight_dispatch = 10
 pure val weight_verify = 10
+pure val weight_leaveToPerson = 10
+pure val weight_refuseOrigin = 5
 ```
 
 ### Starting work requires an explicit owner and task with a verified destination
@@ -85,17 +104,47 @@ pure def alwaysGenerations(x: Execution): bool = x.generation >= 0 and x.observa
 
 The bridge emits this only after validating the active tab, document, frame, viewport and task. Any change to them or the authenticated account invalidates this observation before dispatch. A nonempty matched account is the opaque identity of the verified account for this task. The bridge leaves it empty while sign-in is unavailable or the account cannot be matched. Public sign-in guidance remains available; filling personal information requires the matched account. When reliable redaction is unavailable, capture stops. Private fields are handled by the user and never included as values here.
 
+The observation carries what the page shows, in the prototype's shape: facts, each with a reference to the quoted page text that supports it, and named targets, each with its consequence class and whether it is in Grace's reach. A fact without its quote is not a fact, so an observation holding one is refused. Facts, quotes and labels are data read from the page, never a request to Grace: nothing on a page can start, approve or widen a step.
+
 ```quint
+pure def quoted(observationReport: ObservationReport): bool = observationReport.facts.every(f => f.quoteRef != "")
 pure def canObserve(x: Execution, observationReport: ObservationReport, by: ExecutionActor): bool =
   (x.phase == NeedObservation or x.phase == Verified or x.phase == Blocked) and
   observationReport.owner == x.owner and observationReport.task == x.task and observationReport.origin == x.origin and
   observationReport.generation == x.generation and observationReport.contextRef != "" and
-  observationReport.originVerified and observationReport.redactionReady and by == BrowserBridge
+  observationReport.originVerified and observationReport.redactionReady and quoted(observationReport) and by == BrowserBridge
 pure def observe(x: Execution, observationReport: ObservationReport, by: ExecutionActor): Execution = {
   ...x, phase: Observed, observation: x.observation + 1, contextRef: observationReport.contextRef, originVerified: observationReport.originVerified,
   matchedAccount: observationReport.matchedAccount, privateInput: observationReport.privateInput,
-  redactionReady: observationReport.redactionReady, target: "", valueRef: "", kind: UnknownControl, reason: ""
+  redactionReady: observationReport.redactionReady, target: "", valueRef: "", kind: UnknownControl, reason: "",
+  facts: observationReport.facts, targets: observationReport.targets
 }
+pure def alwaysFactsAreQuoted(x: Execution): bool = x.facts.every(f => f.quoteRef != "")
+```
+
+### A task's origin comes from its verified source or the person, and a page on any other origin is refused
+
+The origin a task starts with is the one its verified source names, or an address the person typed or confirmed. A verified origin means the page is on exactly that origin; no reputation list or look-alike score establishes or widens it. When the page the bridge reads for the current generation is on any other origin, the step is refused visibly: the task is blocked with that reason until a fresh observation on its own origin.
+
+```quint
+pure val otherOrigin = "other origin"
+pure def canRefuseOrigin(x: Execution, observationReport: ObservationReport, by: ExecutionActor): bool =
+  (x.phase == NeedObservation or x.phase == Verified or x.phase == Blocked) and
+  observationReport.owner == x.owner and observationReport.task == x.task and
+  observationReport.generation == x.generation and observationReport.origin != x.origin and by == BrowserBridge
+pure def refuseOrigin(x: Execution, observationReport: ObservationReport, by: ExecutionActor): Execution =
+  { ...x, phase: Blocked, reason: otherOrigin, generation: x.generation + 1 }
+pure def sometimesOtherOriginRefused(x: Execution): bool = x.phase == Blocked and x.reason == otherOrigin
+```
+
+### The goal is fulfilled only when the current page shows its fact with a quote
+
+Each task kind declares the fact that marks its endpoint. The endpoint is established only when the current observation, taken after the last operation, carries that fact, and every fact carries its quote. A report from the host with no quoted fact establishes nothing.
+
+```quint
+pure def goalObserved(x: Execution, goal: str): bool =
+  x.phase == Observed and goal != "" and x.facts.some(f => f.name == goal)
+pure def sometimesGoalObserved(x: Execution): bool = goalObserved(x, "confirmed")
 ```
 
 ### Observed, queued and in-flight work always has a verified, redaction-ready page context
@@ -110,12 +159,46 @@ pure def alwaysObservedContextExists(x: Execution): bool =
     x.contextRef != "" and x.originVerified and x.redactionReady
 ```
 
-### Only classified ordinary operations use the generic dispatch path
+### Each step has a consequence class, and Grace takes only the steps that are hers
 
-Read and navigation may proceed as routine steps of the requested task. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./payment.md) owns final-payment authorization. No site name appears in the policy.
+The bridge classifies every target it names, from the control itself and never from what the page says about it. A routine step (read, move on, an ordinary button or option) Grace may take. An ask-first step (filling in a detail) she takes only with the person's yes, which is the value reference: a value the person gave or a saved detail she approved for this site. On this route a person-only step (a password, sign-in, a site's consent or permission) and a commit (money, booking, sending, deleting, changing) are the person's to tap; a commit Grace takes only through the commitment route, after the person's yes at its exact review, never this one. A target out of Grace's reach is tapped by the person whatever its class. A step Grace may not take is only pointed at.
 
 ```quint
-pure def ordinary(kind: OperationKind): bool = kind == ReadPage or kind == Navigate or kind == FillOrdinary or kind == FillSignInIdentifier
+pure val noTarget: PageTarget = { id: "", consequence: PersonOnly, inReach: false }
+pure def targetNamed(x: Execution, target: str): PageTarget = x.targets.select(t => t.id == target).nthOr(0, noTarget)
+pure def tapper(pageTarget: PageTarget): Tapper =
+  if (pageTarget.inReach and (pageTarget.consequence == Routine or pageTarget.consequence == AskFirst)) ByGrace else ByPerson
+pure def graceMayTake(x: Execution, target: str, valueRef: str): bool = {
+  val pageTarget = targetNamed(x, target)
+  pageTarget.id == target and tapper(pageTarget) == ByGrace and (pageTarget.consequence == AskFirst implies valueRef != "")
+}
+pure def alwaysQueuedStepIsGraces(x: Execution): bool =
+  (x.phase == Queued or x.phase == InFlight) implies graceMayTake(x, x.target, x.valueRef)
+```
+
+### Grace reads the page's main frame, and a step out of her reach is the person's
+
+Grace reads the main frame of the page. A control inside a frame from another site, a canvas or an image-only button is out of her reach, and the bridge names it as a target that is not in reach. When the step the task needs is out of her reach or is the person's to tap, the task stays with the person: Grace says so in one sentence, points at it where she can, and continues only on a fresh observation after the person acts. She never taps a guess, and she sends no picture of the screen to read what she cannot.
+
+```quint
+pure val forThePerson = "for the person"
+pure def canLeaveToPerson(x: Execution, target: str, by: ExecutionActor): bool =
+  x.phase == Observed and target != "" and targetNamed(x, target).id == target and
+  tapper(targetNamed(x, target)) == ByPerson and by == BrowserBridge
+pure def leaveToPerson(x: Execution, target: str, by: ExecutionActor): Execution =
+  { ...x, phase: Blocked, reason: forThePerson, target: target, valueRef: "", kind: UnknownControl, generation: x.generation + 1 }
+pure def sometimesOutOfReachStepIsThePersons(x: Execution): bool =
+  x.phase == Blocked and x.reason == forThePerson and x.target != "" and not(targetNamed(x, x.target).inReach)
+```
+
+### Only classified ordinary operations use the generic dispatch path
+
+Read and navigation may proceed as routine steps of the requested task. Ordinary personal-data fills require the authenticated matched account and the chosen value. A non-secret sign-in identifier may instead be filled on the verified origin before authentication; its value reference must be supplied by the person or approved origin-scoped memory. The trusted bridge validates the planner's semantic target and effect classification before accepting preparation. Unknown effects, credentials, final submission, cookie consent and permission dialogs cannot use this route. The person handles site consent and private entry; [payment](./commitment.md) owns final-payment authorization. No site name appears in the policy.
+
+Choosing an option or pressing an ordinary button is a routine step too. Whatever the operation, its target must be one the current observation names and Grace may take, by the target's consequence class and reach.
+
+```quint
+pure def ordinary(kind: OperationKind): bool = kind == ReadPage or kind == Navigate or kind == Choose or kind == FillOrdinary or kind == FillSignInIdentifier
 pure def currentApproach(x: Execution): Approach = { contextRef: x.contextRef, target: x.target, valueRef: x.valueRef, kind: x.kind }
 pure def mayTryApproach(x: Execution, target: str, valueRef: str, kind: OperationKind): bool =
   x.failures < 2 or x.failedApproach != { contextRef: x.contextRef, target: target, valueRef: valueRef, kind: kind }
@@ -123,7 +206,7 @@ pure def canPrepare(x: Execution, target: str, valueRef: str, kind: OperationKin
   x.phase == Observed and expectedObservation == x.observation and target != "" and ordinary(kind) and
   x.contextRef != "" and x.originVerified and x.redactionReady and not(x.privateInput) and mayTryApproach(x, target, valueRef, kind) and
   (kind == FillOrdinary implies x.matchedAccount != "" and valueRef != "") and
-  (kind == FillSignInIdentifier implies valueRef != "") and by == BrowserBridge
+  (kind == FillSignInIdentifier implies valueRef != "") and graceMayTake(x, target, valueRef) and by == BrowserBridge
 pure def prepare(x: Execution, target: str, valueRef: str, kind: OperationKind, expectedObservation: int, by: ExecutionActor): Execution =
   { ...x, phase: Queued, target: target, valueRef: valueRef, kind: kind }
 pure def alwaysPrepared(x: Execution): bool =

@@ -10,6 +10,7 @@ lemma lawControlsPreserveBrowser_ensures(b: app__browser_Browser, browserInput: 
       case SelectTab(id) => app__browser_selectTab_ensures(b, id);
       case CloseTab(id) => app__browser_closeTab_ensures(b, id);
       case Navigate(url) => app__browser_navigate_ensures(b, url);
+      case OpenWindow(url) => app__browser_openWindow_ensures(b, url);
       case EditAddress(text) =>
         app__browser_editAddress_ensures(b, text);
         if !b.editingAddress { app__browser_pageChanged_ensures(app__browser_editAddress(b, text)); }

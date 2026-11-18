@@ -1,6 +1,6 @@
 # Prepare a bill payment on any supported website
 
-The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./payment.md) owns authorization and durable outcomes. This preparation model cannot submit money.
+The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./commitment.md) owns authorization and durable outcomes. This preparation model cannot submit money.
 
 Sources: new prototype's sign-in, account, payment, review and outcome views; PRD JOURNEY 01–09, HELP 01–12 and U01–12. Demo values, account suffixes, website names, synthetic credentials and synthetic success are not requirements. The same contract accepts any origin for which the integration can establish the required evidence; unsupported sites stop truthfully.
 
@@ -13,7 +13,8 @@ Sources: new prototype's sign-in, account, payment, review and outcome views; PR
 Unknown balances and fees are represented explicitly rather than treated as zero. Credit balances may be negative; an observed fee is nonnegative. The provider's bill identity is independent of the calendar entry used to open it. No balance is interpreted as proof of affordability or available bank funds. Each trusted access, fact or form report carries its identity and revision together; representative report samples include accepted, stale and invalid evidence without imposing a runtime bound.
 
 ```quint
-import payment as P from "./payment"
+import commitment as CM from "./commitment"
+import task as T from "./task"
 type BillPhase = NoBill | NeedsLogin | ReadBill | ChoosePayment | PreparePayment | ReadyForReview | HandedOff | NoPaymentDue | ConflictingPayment | BillBlocked
 type Access = SignedOut | Challenge | SignedIn | WrongAccount | AccessDenied
 type FillBy = NotAsked | GraceFills | PersonFills
@@ -23,21 +24,27 @@ type BillFacts = {
   statement: Balance, minimum: Balance, current: Balance, fee: Balance,
   dueDay: int, currency: str, scheduled: bool, nothingDue: bool, paymentAllowed: bool, funding: List[str]
 }
-type AccessReport = { key: P::BillKey, version: int, access: Access }
-type FactReport = { key: P::BillKey, facts: BillFacts, evidence: str, version: int }
+type AccessReport = { key: T::Subject, version: int, access: Access }
+type FactReport = { key: T::Subject, facts: BillFacts, evidence: str, version: int }
 type BillPreparation = {
-  key: P::BillKey, phase: BillPhase, facts: BillFacts,
-  factsConfirmed: bool, choice: P::Proposal, fillBy: FillBy, evidence: str, version: int, live: bool, reason: str
+  key: T::Subject, phase: BillPhase, facts: BillFacts,
+  factsConfirmed: bool, choice: T::Proposal, fillBy: FillBy, evidence: str, version: int, live: bool, reason: str
 }
-type BillEffect = ReviewPayment({ key: P::BillKey, proposal: P::Proposal, evidence: str, version: int })
+type BillEffect = ReviewPayment({ key: T::Subject, proposal: T::Proposal, evidence: str, version: int })
 type BillResult = { state: BillPreparation, out: List[BillEffect] }
 pure val noFacts: BillFacts = {
   statement: { known: false, amount: 0 }, minimum: { known: false, amount: 0 },
   current: { known: false, amount: 0 }, fee: { known: false, amount: 0 }, dueDay: 0, currency: "", scheduled: false, nothingDue: false,
   paymentAllowed: false, funding: List()
 }
+pure val noChoice: T::Proposal = { amount: 0, fee: 0, currency: "", day: 0, funding: "" }
+pure def payOf(terms: T::Terms): T::Proposal = match terms {
+  | NoTerms => noChoice
+  | PayTerms(x) => x.pay
+  | BookTerms(x) => noChoice
+}
 pure val initial: BillPreparation = {
-  key: P::emptyKey, phase: NoBill, facts: noFacts, factsConfirmed: false, choice: P::emptyProposal, fillBy: NotAsked,
+  key: T::emptyKey, phase: NoBill, facts: noFacts, factsConfirmed: false, choice: noChoice, fillBy: NotAsked,
   evidence: "", version: 0, live: true, reason: ""
 }
 pure def validFacts(facts: BillFacts): bool =
@@ -55,20 +62,21 @@ pure val factsValues = Set(
   noFacts
 )
 pure val accessReportValues = Set(
-  { key: P::exampleKey, version: 1, access: SignedIn },
-  { key: P::exampleKey, version: 1, access: SignedOut },
-  { key: P::exampleKey, version: 1, access: Challenge },
-  { key: P::exampleKey, version: 1, access: WrongAccount },
-  { key: P::exampleKey, version: 1, access: AccessDenied },
-  { key: P::exampleKey, version: 2, access: SignedIn },
-  { key: P::exampleKey, version: 3, access: SignedIn },
-  { key: P::exampleKey, version: 4, access: SignedIn },
-  { key: P::exampleKey, version: 5, access: SignedIn },
-  { key: P::emptyKey, version: 1, access: SignedIn })
-pure val factReportValues = factsValues.map(f => { key: P::exampleKey, facts: f, evidence: "source", version: 2 })
-  .union(factsValues.map(f => { key: P::exampleKey, facts: f, evidence: "source", version: 3 }))
-  .union(Set({ key: P::emptyKey, facts: noFacts, evidence: "", version: 2 }))
-pure val formReportValues = P::reviewReportValues.union(Set(4, 5).map(v => { ...P::exampleReview, proposal: { ...P::exampleProposal, amount: 3500 }, revision: v }))
+  { key: CM::exampleKey, version: 1, access: SignedIn },
+  { key: CM::exampleKey, version: 1, access: SignedOut },
+  { key: CM::exampleKey, version: 1, access: Challenge },
+  { key: CM::exampleKey, version: 1, access: WrongAccount },
+  { key: CM::exampleKey, version: 1, access: AccessDenied },
+  { key: CM::exampleKey, version: 2, access: SignedIn },
+  { key: CM::exampleKey, version: 3, access: SignedIn },
+  { key: CM::exampleKey, version: 4, access: SignedIn },
+  { key: CM::exampleKey, version: 5, access: SignedIn },
+  { key: T::emptyKey, version: 1, access: SignedIn })
+pure val factReportValues = factsValues.map(f => { key: CM::exampleKey, facts: f, evidence: "source", version: 2 })
+  .union(factsValues.map(f => { key: CM::exampleKey, facts: f, evidence: "source", version: 3 }))
+  .union(Set({ key: T::emptyKey, facts: noFacts, evidence: "", version: 2 }))
+pure val formReportValues = CM::reviewReportValues.union(Set(4, 5).map(v => { ...CM::exampleReview, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, amount: 3500 } }), revision: v }))
+pure val proposalValues = Set(CM::exampleProposal, { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" }, noChoice)
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 2
@@ -84,18 +92,18 @@ pure val weight_handOff = 2
 The source link is evidence of the requested bill, not authority for website actions. The trusted bridge verifies the official origin and actual authenticated account. Passwords and codes are entered privately on the site; wrong credentials, CAPTCHA, unavailable verification and session expiry are explained rather than bypassed. A push approval waits for the resulting browser state; Grace never controls the phone.
 
 ```quint
-pure def canBegin(b: BillPreparation, key: P::BillKey, evidence: str, by: P::PaymentActor): bool =
-  b.phase == NoBill and P::validKey(key) and evidence != "" and by == P::Person
-pure def begin(b: BillPreparation, key: P::BillKey, evidence: str, by: P::PaymentActor): BillPreparation =
+pure def canBegin(b: BillPreparation, key: T::Subject, evidence: str, by: T::TaskActor): bool =
+  b.phase == NoBill and T::validKey(key) and evidence != "" and by == T::Person
+pure def begin(b: BillPreparation, key: T::Subject, evidence: str, by: T::TaskActor): BillPreparation =
   { ...initial, key: key, phase: NeedsLogin, evidence: evidence, version: b.version + 1 }
-pure def canInspectAccess(b: BillPreparation, accessReport: AccessReport, by: P::PaymentActor): bool =
-  b.phase != NoBill and b.phase != HandedOff and b.live and accessReport.key == b.key and accessReport.version == b.version and by == P::BrowserHost
-pure def inspectAccess(b: BillPreparation, accessReport: AccessReport, by: P::PaymentActor): BillPreparation = {
+pure def canInspectAccess(b: BillPreparation, accessReport: AccessReport, by: T::TaskActor): bool =
+  b.phase != NoBill and b.phase != HandedOff and b.live and accessReport.key == b.key and accessReport.version == b.version and by == T::Host
+pure def inspectAccess(b: BillPreparation, accessReport: AccessReport, by: T::TaskActor): BillPreparation = {
   ...b, phase: if (accessReport.access == SignedIn) ReadBill else if (accessReport.access == SignedOut or accessReport.access == Challenge) NeedsLogin else BillBlocked,
   reason: if (accessReport.access == WrongAccount) "The account does not match" else if (accessReport.access == AccessDenied) "Sign-in is unavailable" else "",
-  choice: P::emptyProposal, fillBy: NotAsked, facts: noFacts, factsConfirmed: false, version: b.version + 1
+  choice: noChoice, fillBy: NotAsked, facts: noFacts, factsConfirmed: false, version: b.version + 1
 }
-pure def alwaysBoundBill(b: BillPreparation): bool = b.phase == NoBill or P::validKey(b.key)
+pure def alwaysBoundBill(b: BillPreparation): bool = b.phase == NoBill or T::validKey(b.key)
 pure def alwaysVersion(b: BillPreparation): bool = b.version >= 0
 pure def sometimesPrivateSignIn(b: BillPreparation): bool = b.phase == NeedsLogin
 ```
@@ -115,12 +123,12 @@ pure def alwaysPrivateLoginHasNoPaymentAuthority(b: BillPreparation): bool =
 Statement balance, minimum due, current balance, fees, due date and existing payment status are shown only when observed for this exact bill key and current preparation revision; a callback for another bill cannot populate its facts. A scheduled/pending existing payment is investigated before a new proposal. No payment due requires the provider's explicit status; a zero or negative balance alone does not establish it. A positive statement balance or new current charges can coexist with no payment due, but a positive minimum due contradicts that status and requires reobservation or an explained block. Missing or unsupported payment methods produce an honest block. The person can ask about any fact without changing the choice.
 
 ```quint
-pure def canReadFacts(b: BillPreparation, factReport: FactReport, by: P::PaymentActor): bool =
+pure def canReadFacts(b: BillPreparation, factReport: FactReport, by: T::TaskActor): bool =
   (b.phase == ReadBill or b.phase == ConflictingPayment or b.phase == NoPaymentDue) and b.live and factReport.key == b.key and validFacts(factReport.facts) and
-  factReport.evidence != "" and factReport.version == b.version and by == P::BrowserHost
-pure def lawDifferentBillFactsAreRejected(b: BillPreparation, factReport: FactReport, by: P::PaymentActor): bool =
+  factReport.evidence != "" and factReport.version == b.version and by == T::Host
+pure def lawDifferentBillFactsAreRejected(b: BillPreparation, factReport: FactReport, by: T::TaskActor): bool =
   factReport.key != b.key implies not(canReadFacts(b, factReport, by))
-pure def readFacts(b: BillPreparation, factReport: FactReport, by: P::PaymentActor): BillPreparation = {
+pure def readFacts(b: BillPreparation, factReport: FactReport, by: T::TaskActor): BillPreparation = {
   ...b, facts: factReport.facts, factsConfirmed: false, evidence: factReport.evidence, version: b.version + 1,
   phase: if (factReport.facts.scheduled) ConflictingPayment else if (factReport.facts.nothingDue) NoPaymentDue
     else if (not(factReport.facts.paymentAllowed) or factReport.facts.funding.length() == 0) BillBlocked else ChoosePayment,
@@ -130,10 +138,10 @@ pure def readFacts(b: BillPreparation, factReport: FactReport, by: P::PaymentAct
 pure def defaultAvailable(b: BillPreparation, today: int): bool =
   b.phase == ChoosePayment and b.live and b.facts.statement.known and b.facts.statement.amount > 0 and
   b.facts.fee.known and b.facts.fee.amount >= 0 and today > 0 and b.facts.funding.length() == 1
-pure def suggestedPayment(b: BillPreparation, today: int): P::Proposal = if (defaultAvailable(b, today)) {
+pure def suggestedPayment(b: BillPreparation, today: int): T::Proposal = if (defaultAvailable(b, today)) {
   amount: b.facts.statement.amount, fee: b.facts.fee.amount, currency: b.facts.currency,
   day: today, funding: b.facts.funding.nthOr(0, "")
-} else P::emptyProposal
+} else noChoice
 pure def alwaysObservedFeeIsNonnegative(b: BillPreparation): bool = b.facts.fee.known implies b.facts.fee.amount >= 0
 pure def alwaysNoDueIsConsistent(b: BillPreparation): bool = b.facts.nothingDue implies not(b.facts.minimum.known and b.facts.minimum.amount > 0)
 pure def sometimesNoPaymentDue(b: BillPreparation): bool = b.phase == NoPaymentDue
@@ -146,19 +154,19 @@ pure def sometimesFeeStillNeedsObservation(b: BillPreparation): bool = b.phase =
 Grace states the bill and asks "Does that look right to you?" with the answers "Yes, that's right" and "That doesn't look right", and asks about paying only in the next turn (prototype/Grace Prototype.html:1512, 1516). This follows the prototype rather than the single combined proposal question of PRD JOURNEY 06-07 (prototype/prd.md:1879-1880). "Yes, that's right" is its own answer, recorded before any choice: no amount, date or funding method is accepted for the bill until the person has confirmed the facts read for the current version, and every new reading of the facts needs a new yes. When the person says the facts look wrong, Grace slows down, asks what seems different and says that nothing has been paid: the shown facts and any choice are discarded, the preparation version advances so that a report about the disputed reading cannot return, and no choice can be made until the facts are read again for the new version. Disputing never prepares, fills or hands off a payment.
 
 ```quint
-pure def canConfirmFacts(b: BillPreparation, by: P::PaymentActor): bool =
-  b.phase == ChoosePayment and b.live and not(b.factsConfirmed) and by == P::Person
-pure def confirmFacts(b: BillPreparation, by: P::PaymentActor): BillPreparation = { ...b, factsConfirmed: true }
+pure def canConfirmFacts(b: BillPreparation, by: T::TaskActor): bool =
+  b.phase == ChoosePayment and b.live and not(b.factsConfirmed) and by == T::Person
+pure def confirmFacts(b: BillPreparation, by: T::TaskActor): BillPreparation = { ...b, factsConfirmed: true }
 pure def alwaysChoiceFollowsConfirmedFacts(b: BillPreparation): bool =
   (b.phase == PreparePayment or b.phase == ReadyForReview or b.phase == HandedOff) implies b.factsConfirmed
-pure def canDisputeFacts(b: BillPreparation, by: P::PaymentActor): bool =
-  (b.phase == ChoosePayment or b.phase == NoPaymentDue or b.phase == ConflictingPayment) and b.live and by == P::Person
-pure def disputeFacts(b: BillPreparation, by: P::PaymentActor): BillPreparation =
-  { ...b, phase: ReadBill, facts: noFacts, factsConfirmed: false, choice: P::emptyProposal, fillBy: NotAsked, reason: "", version: b.version + 1 }
-pure def lawDisputingFactsPaysNothing(b: BillPreparation, by: P::PaymentActor): bool =
+pure def canDisputeFacts(b: BillPreparation, by: T::TaskActor): bool =
+  (b.phase == ChoosePayment or b.phase == NoPaymentDue or b.phase == ConflictingPayment) and b.live and by == T::Person
+pure def disputeFacts(b: BillPreparation, by: T::TaskActor): BillPreparation =
+  { ...b, phase: ReadBill, facts: noFacts, factsConfirmed: false, choice: noChoice, fillBy: NotAsked, reason: "", version: b.version + 1 }
+pure def lawDisputingFactsPaysNothing(b: BillPreparation, by: T::TaskActor): bool =
   canDisputeFacts(b, by) implies
     disputeFacts(b, by).phase == ReadBill and disputeFacts(b, by).key == b.key and
-    disputeFacts(b, by).choice == P::emptyProposal and disputeFacts(b, by).fillBy == NotAsked and
+    disputeFacts(b, by).choice == noChoice and disputeFacts(b, by).fillBy == NotAsked and
     disputeFacts(b, by).version > b.version and not(canChoose(disputeFacts(b, by), b.choice, by))
 ```
 
@@ -167,15 +175,15 @@ pure def lawDisputingFactsPaysNothing(b: BillPreparation, by: P::PaymentActor): 
 The default is one understandable proposal only when its facts, including the fee, are observed; it is never silently selected. An unknown fee does not mean free. Otherwise ask one missing choice at a time. Any supported amount, date and existing funding method may be selected, not only the prototype's two radio choices. Relative or ambiguous dates must be resolved by the person before an exact day enters this model. Fees are part of the proposal and must be reviewed against the final form because they may depend on the chosen date or funding method.
 
 ```quint
-pure def canChoose(b: BillPreparation, proposal: P::Proposal, by: P::PaymentActor): bool =
+pure def canChoose(b: BillPreparation, proposal: T::Proposal, by: T::TaskActor): bool =
   (b.phase == ChoosePayment or b.phase == PreparePayment or b.phase == ReadyForReview) and b.live and b.factsConfirmed and
-  not(b.facts.scheduled) and b.facts.paymentAllowed and P::validProposal(proposal) and
-  proposal.currency == b.facts.currency and b.facts.funding.includes(proposal.funding) and by == P::Person
-pure def choose(b: BillPreparation, proposal: P::Proposal, by: P::PaymentActor): BillPreparation =
+  not(b.facts.scheduled) and b.facts.paymentAllowed and T::validProposal(proposal) and
+  proposal.currency == b.facts.currency and b.facts.funding.includes(proposal.funding) and by == T::Person
+pure def choose(b: BillPreparation, proposal: T::Proposal, by: T::TaskActor): BillPreparation =
   { ...b, choice: proposal, phase: PreparePayment, fillBy: NotAsked, version: b.version + 1 }
 pure def alwaysChoiceMatchesBill(b: BillPreparation): bool =
   (b.phase == PreparePayment or b.phase == ReadyForReview or b.phase == HandedOff) implies
-    P::validProposal(b.choice) and b.choice.currency == b.facts.currency and b.facts.funding.includes(b.choice.funding) and
+    T::validProposal(b.choice) and b.choice.currency == b.facts.currency and b.facts.funding.includes(b.choice.funding) and
     b.facts.paymentAllowed and not(b.facts.scheduled)
 ```
 
@@ -186,9 +194,9 @@ Grace offers to fill in only values the person already chose, the amount and the
 A fill carries only an amount and a day. `graceMayFill` holds for a fill only while the form is being prepared, the preparation is live, the answer is "Yes, fill it in", and the fill's amount and day are those of the current choice. This model dispatches no website operation, so it records the answer and defines `graceMayFill` but cannot itself stop a fill. The owner that dispatches website operations must refuse Grace's fill of a payment form unless `graceMayFill` holds for exactly the values it would type.
 
 ```quint
-pure def canDecideFill(b: BillPreparation, fillBy: FillBy, by: P::PaymentActor): bool =
-  b.phase == PreparePayment and b.live and fillBy != NotAsked and by == P::Person
-pure def decideFill(b: BillPreparation, fillBy: FillBy, by: P::PaymentActor): BillPreparation = { ...b, fillBy: fillBy }
+pure def canDecideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): bool =
+  b.phase == PreparePayment and b.live and fillBy != NotAsked and by == T::Person
+pure def decideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): BillPreparation = { ...b, fillBy: fillBy }
 pure def chosenFill(b: BillPreparation): FormFill = { amount: b.choice.amount, day: b.choice.day }
 pure def graceMayFill(b: BillPreparation, fill: FormFill): bool =
   b.phase == PreparePayment and b.live and b.fillBy == GraceFills and fill == chosenFill(b)
@@ -209,13 +217,13 @@ pure def sometimesPersonFills(b: BillPreparation): bool = b.phase == PreparePaym
 Populate and re-find actual semantic controls through the execution policy, then read them back. If a fee or other value differs, return to a choice or explain the mismatch; a stale or mismatched callback cannot advance. No payment is submitted by this preparation step.
 
 ```quint
-pure def canVerifyForm(b: BillPreparation, formReport: P::ReviewReport, by: P::PaymentActor): bool =
-  b.phase == PreparePayment and b.live and formReport.key == b.key and formReport.proposal == b.choice and formReport.evidence != "" and
-  formReport.revision == b.version and by == P::BrowserHost
-pure def verifyForm(b: BillPreparation, formReport: P::ReviewReport, by: P::PaymentActor): BillPreparation =
+pure def canVerifyForm(b: BillPreparation, formReport: T::ReviewReport, by: T::TaskActor): bool =
+  b.phase == PreparePayment and b.live and formReport.key == b.key and formReport.proposal == T::PayTerms({ pay: b.choice }) and formReport.evidence != "" and
+  formReport.revision == b.version and by == T::Host
+pure def verifyForm(b: BillPreparation, formReport: T::ReviewReport, by: T::TaskActor): BillPreparation =
   { ...b, phase: ReadyForReview, evidence: formReport.evidence }
-pure def canHandOff(b: BillPreparation, by: P::PaymentActor): bool = b.phase == ReadyForReview and b.live and by == P::Executor
-pure def handOff(b: BillPreparation, by: P::PaymentActor): BillResult = {
+pure def canHandOff(b: BillPreparation, by: T::TaskActor): bool = b.phase == ReadyForReview and b.live and by == T::Actuator
+pure def handOff(b: BillPreparation, by: T::TaskActor): BillResult = {
   state: { ...b, phase: HandedOff },
   out: List(ReviewPayment({ key: b.key, proposal: b.choice, evidence: b.evidence, version: b.version }))
 }
@@ -230,20 +238,20 @@ pure def sometimesReviewHandedOff(b: BillPreparation): bool = b.phase == HandedO
 The person may pick an amount or type a date on the website instead of saying it (prototype/Grace Prototype.html:1038, 1683). The trusted host reports what the form now holds for this bill and the current preparation version, and whether the change came from the person's own taps or typing on the page, as the prototype tells her own input apart from Grace's (prototype/Grace Prototype.html:1038, 1683). Only a change the host attributes to the person can become the choice: Grace's own fill, a value the website prefilled or selected by default, and a value the website changed by itself never replace the choice the person made. A valid proposal from the person's own change that differs from the current choice, in the bill's currency and with one of its funding methods, becomes the choice. The preparation goes back to preparing the form under a new version, whether or not the earlier form had been verified, so the review never goes ahead with the old choice: only a form that matches the new choice can be verified for review. Any other difference leaves the form unverifiable until it matches the choice or the preparation is blocked. Because the person filled the values herself, Grace does not offer to fill them again.
 
 ```quint
-pure def canAdoptFormChoice(b: BillPreparation, formReport: P::ReviewReport, personEdited: bool, by: P::PaymentActor): bool =
+pure def canAdoptFormChoice(b: BillPreparation, formReport: T::ReviewReport, personEdited: bool, by: T::TaskActor): bool =
   (b.phase == PreparePayment or b.phase == ReadyForReview) and b.live and personEdited and formReport.key == b.key and
-  formReport.proposal != b.choice and P::validProposal(formReport.proposal) and
-  formReport.proposal.currency == b.facts.currency and b.facts.funding.includes(formReport.proposal.funding) and
-  formReport.evidence != "" and formReport.revision == b.version and by == P::BrowserHost
-pure def adoptFormChoice(b: BillPreparation, formReport: P::ReviewReport, personEdited: bool, by: P::PaymentActor): BillPreparation =
-  { ...b, choice: formReport.proposal, phase: PreparePayment, fillBy: PersonFills, version: b.version + 1 }
-pure def lawPageChoiceIsCheckedAgain(b: BillPreparation, formReport: P::ReviewReport, personEdited: bool, by: P::PaymentActor): bool =
+  formReport.proposal != T::PayTerms({ pay: b.choice }) and T::validTerms(T::BillPay, formReport.proposal) and
+  payOf(formReport.proposal).currency == b.facts.currency and b.facts.funding.includes(payOf(formReport.proposal).funding) and
+  formReport.evidence != "" and formReport.revision == b.version and by == T::Host
+pure def adoptFormChoice(b: BillPreparation, formReport: T::ReviewReport, personEdited: bool, by: T::TaskActor): BillPreparation =
+  { ...b, choice: payOf(formReport.proposal), phase: PreparePayment, fillBy: PersonFills, version: b.version + 1 }
+pure def lawPageChoiceIsCheckedAgain(b: BillPreparation, formReport: T::ReviewReport, personEdited: bool, by: T::TaskActor): bool =
   canAdoptFormChoice(b, formReport, personEdited, by) implies
     adoptFormChoice(b, formReport, personEdited, by).phase == PreparePayment and
-    adoptFormChoice(b, formReport, personEdited, by).choice == formReport.proposal and
+    T::PayTerms({ pay: adoptFormChoice(b, formReport, personEdited, by).choice }) == formReport.proposal and
     adoptFormChoice(b, formReport, personEdited, by).choice != b.choice and
     adoptFormChoice(b, formReport, personEdited, by).version > b.version
-pure def lawOnlyThePersonsEditReplacesTheChoice(b: BillPreparation, formReport: P::ReviewReport, by: P::PaymentActor): bool =
+pure def lawOnlyThePersonsEditReplacesTheChoice(b: BillPreparation, formReport: T::ReviewReport, by: T::TaskActor): bool =
   not(canAdoptFormChoice(b, formReport, false, by))
 ```
 
@@ -252,15 +260,15 @@ pure def lawOnlyThePersonsEditReplacesTheChoice(b: BillPreparation, formReport: 
 After explicit Resume, recheck sign-in, account, current bill and possible existing payment. Never replay a saved click or assume an old form survived. The payment ledger independently retains any possible submission, including after this preparation has handed off. A new preparation never resets that ledger.
 
 ```quint
-pure def canPause(b: BillPreparation, by: P::PaymentActor): bool = b.phase != NoBill and b.live and (by == P::Person or by == P::BrowserHost)
-pure def pause(b: BillPreparation, by: P::PaymentActor): BillPreparation =
+pure def canPause(b: BillPreparation, by: T::TaskActor): bool = b.phase != NoBill and b.live and (by == T::Person or by == T::Host)
+pure def pause(b: BillPreparation, by: T::TaskActor): BillPreparation =
   { ...b, live: false, version: b.version + 1 }
-pure def canResume(b: BillPreparation, by: P::PaymentActor): bool = b.phase != NoBill and not(b.live) and by == P::Person
-pure def resume(b: BillPreparation, by: P::PaymentActor): BillPreparation =
-  { ...b, live: true, phase: NeedsLogin, facts: noFacts, factsConfirmed: false, choice: P::emptyProposal, fillBy: NotAsked, reason: "", version: b.version + 1 }
-pure def canBlock(b: BillPreparation, reason: str, expectedVersion: int, by: P::PaymentActor): bool =
-  b.phase != NoBill and b.phase != HandedOff and reason != "" and expectedVersion == b.version and by == P::BrowserHost
-pure def block(b: BillPreparation, reason: str, expectedVersion: int, by: P::PaymentActor): BillPreparation =
+pure def canResume(b: BillPreparation, by: T::TaskActor): bool = b.phase != NoBill and not(b.live) and by == T::Person
+pure def resume(b: BillPreparation, by: T::TaskActor): BillPreparation =
+  { ...b, live: true, phase: NeedsLogin, facts: noFacts, factsConfirmed: false, choice: noChoice, fillBy: NotAsked, reason: "", version: b.version + 1 }
+pure def canBlock(b: BillPreparation, reason: str, expectedVersion: int, by: T::TaskActor): bool =
+  b.phase != NoBill and b.phase != HandedOff and reason != "" and expectedVersion == b.version and by == T::Host
+pure def block(b: BillPreparation, reason: str, expectedVersion: int, by: T::TaskActor): BillPreparation =
   { ...b, phase: BillBlocked, reason: reason, fillBy: NotAsked, version: b.version + 1 }
 pure def alwaysBlockExplained(b: BillPreparation): bool = b.phase == BillBlocked implies b.reason != ""
 pure def stepBillIdentityPersists(before: BillPreparation, after: BillPreparation): bool = before.phase != NoBill implies after.key == before.key

@@ -19,6 +19,59 @@ and traces (SPEC.md, "One spec tree").
 | `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
 
+## Browser qualification
+
+Dispatch the CI workflow with BillWorld enabled to run the Fleet cohorts and
+the released statement task. Fleet runs four deterministic shards against the
+same pinned 100-biller cohort. The aggregate requires all 100 distinct
+browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
+pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
+for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
+for its result-directory lock and an unmodified tracked Grace checkout.
+
+To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
+`fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
+BillWorld checkout, and shard setting. Use the browser command with
+`--passWithNoTests` so an already complete shard can validate without
+opening pages. To resume in CI, dispatch on the original Grace commit and
+supply its workflow run ID in `billworld_resume_run`. Each shard must have
+uploaded its receipt directory in that run.
+
+Fleet preserves the initial cohort manifest and every completed receipt,
+including failed grades. It runs only billers without a receipt and
+rebuilds scores from the receipts. A stopped writer releases the directory
+lock when its process exits. A score without a final receipt is rerun.
+The final aggregate still requires 100 successful receipts from the
+declared cohort at the same Grace commit.
+
+The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
+CI checks out the public BillWorld revision
+`f335b651f9820c3454f447e3d4722b78c5298a0b` and prepares the three public
+WVU Medicine PDFs required to boot its shared host. The versioned CI cache
+holds the original bytes. Preparation verifies the size and SHA-256 of each
+file on both cache hits and fresh public downloads against the pinned
+[upstream document manifest](https://github.com/gracefultechnology/billworld/blob/f335b651f9820c3454f447e3d4722b78c5298a0b/billworld/research/wvu-documents.json).
+The Malden journey uses the shipped portal routes.
+
+The simulated person uses the fixture account to sign in, opens the utility
+account and current bill, and presents that statement to Grace. They submit
+the released read-only question, review and start its read plan, and select
+**Read statement**. The planner reply is scripted at the test boundary.
+Grace reads the real fixture document and the upstream grader checks her
+visible answer. The job requires a rejected zero-action control and all six
+checks on the completed trial, including unchanged protected state and
+credentials. CI uploads asset provenance and both grader receipts as
+`billworld-released-task-md9`.
+
+The standard verification job also runs **Gmail signup to Calendar** in
+Chromium using the loopback Google provider. The simulated person grants
+consent to the fixture account, opens the clinic email, asks Grace to prepare
+its appointment, and separately approves the save. The test checks the
+saved appointment through the provider readback. It needs no real Google
+account, external provider login, or hosted model key. Run it locally after
+`pnpm gen` with
+`pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'`.
+
 ## Android
 
 Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
@@ -51,7 +104,11 @@ inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
 `llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
-`assets/` outside the web UI's `assets/public/`. Upstream's payload still carries
+`assets/` outside the web UI's `assets/public/`. It also lists every class in the APK's dex
+(`dexdump`) and fails on any `ai.eliza.voice` class other than the cloud speech bridge's own
+(`SpeechStreamBridgePlugin`, `CloudSpeechWire` and the playback, audio focus and output classes) and
+on any class of ONNX Runtime, TensorFlow Lite, PyTorch, sherpa-onnx, MediaPipe or Vosk, and fails
+when the cloud speech bridge is missing. Upstream's payload still carries
 `assets/agent/llama-kernel-diagnostic.mjs`, a 3 KB script that only lists which llama.cpp files and
 kernels a directory holds; it loads no model or library, and the check lets it pass. Both flavors'
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
@@ -67,6 +124,40 @@ never a copy of a developer's own `~/.android/debug.keystore`; its SHA-1 is
 build copies it into `android/generated/android-user/` and points Gradle's `ANDROID_USER_HOME` there.
 Anyone holding the repository can sign a debug build with it, which is why no production registration
 may list it.
+
+A release APK is the one handed to user QA. R8 shrinks and optimizes its Java (`releaseMinify` in
+`android/host.json`; Capacitor's own keep rules keep every plugin and its methods), and it is not
+debuggable, so no computer on USB can read or drive Grace's page, which holds her email, calendar
+and bank sessions; the content check fails a release APK that is debuggable, and
+`apk-manifest.json` records `debuggable` for each APK. The repository holds no release key and none
+has been made: whoever makes it keeps it and its passwords outside the repository and gives them to
+the build in the four variables. Built from `84a7a00` with a throwaway key, both release APKs were
+102,042,101 bytes against 113,479,785 for debug, their code 1.15 MB of dex against 10.3 MB, and
+`aapt` reported neither debuggable.
+
+### On the tablet
+
+User QA runs the launcher release APK on the Lenovo TB336FU's own Android, which has Google Play
+services and Chrome: the native Google account picker signs her in, and a website's own Google
+sign-in opens in Chrome. The Grace image (`aosp/README.md`) is staged, not built. The person
+preparing the tablet does this by hand; Grace's scripts refuse any serial that is not an emulator's.
+
+1. In Android's Settings, About tablet, tap Build number seven times; in System, Developer options,
+   turn on USB debugging, connect the tablet and allow the computer.
+2. `adb -s <serial> install -r artifacts/launcher-release.apk`, with the serial `adb devices` lists. A
+   tablet holding Grace signed by another key refuses it: `adb -s <serial> uninstall
+   technology.graceful.grace` first, which deletes her data.
+3. Make Grace Home: press Home and choose Grace, Always, or Settings, Apps, Default apps, Home app,
+   Grace. A sideloaded launcher never asks to be Home, and only the Grace image makes her Home by
+   itself. The stock launcher stays installed as the way back.
+4. Android asks for the microphone at her first Talk; Settings, Apps, Grace, Permissions, Microphone
+   grants or removes it.
+5. Turn USB debugging off.
+
+No model runs on the tablet, so the old minimums sized for models no longer apply: Grace needs what
+her process and her agent hold (about 270 MB and 170 MB resident, measured below) and the storage
+for the APK and what it unpacks (the 102 MB APK and a 202 MB agent payload on the build host; not yet
+measured on a tablet); a 4 GB tablet such as the TB336FU has room.
 
 ### On the emulator
 
@@ -97,13 +188,22 @@ emulator that exits before it boots fails the command with its log. An emulator 
 is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
 `--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the
 same on an emulator that is already running and never stops it; it refuses any serial that is not an
-emulator's, so a tablet on USB is never touched.
+emulator's, so a tablet on USB is never touched. With `--release` the signed launcher release APK is
+installed instead and the walk ends once Grace's process is running as Home; it needs the four
+signing variables, and `--exercise` is refused, since a release build's page has no debugging
+socket. An emulator holding Grace signed by another key (debug after release, or the reverse) has
+her uninstalled, data and all, before the install.
 
 `--exercise <name>` then walks `test/device/<name>.json` in Grace's WebView over its debugging
 socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
 "<accessible name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two
 minutes; a step with any other key or an empty name is refused before the build, and a tap fails
-when no visible thing or more than one has that name. Three steps check the agent: `{ "agent": {
+when no visible thing or more than one has that name. `{ "call": "<Plugin>.<method>", "with": {
+… }, "returns": { … } }` calls that native plugin's method in the page and fails unless it resolves
+with a value holding everything `returns` names (nested objects compared the same way, other values
+exactly); with `"refuses": "<message>"` in place of `returns` it fails unless the call rejects with
+that message. `{ "key": "VOLUME_UP" }` or `"VOLUME_DOWN"` presses that hardware key (`input
+keyevent`). Three steps check the agent: `{ "agent": {
 "state": "<state>", "failure": "<cause>" } }` waits up to five minutes for the `EmbeddedAgent`
 bridge's status to have that state (and cause), and fails at once when the status is `failed` with
 another cause; the state is one of upstream's `unavailable`, `stopped`, `starting`, `running` and
@@ -114,11 +214,18 @@ and saved identity, prints the status, and fails when either differs or when the
 `eliza_mobile_` key; `{ "service": "<class>" }` waits up to two minutes
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
-background processes (`am kill`), fails unless her process is the same one, and opens her again. A
+background processes (`am kill`), fails unless her process is the same one, and opens her again.
+Five steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
+expression in Grace's page and fails unless its value is that JSON, and `{ "evaluate": "<expression>",
+"rejects": "<code>" }` unless it rejects with that code; `{ "grant": "android.permission.<NAME>" }`
+grants Grace that permission, as the person's Allow would; `{ "notification": "<title>" }` opens
+Android's settings over Grace, waits up to five minutes for a notification of hers with that title, and
+opens her again; `{ "restart": "force-stop" }` force-stops Grace, opens Home and walks on in her new
+process. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-`agent.json` the agent service below and `signin-status.json` the sign-in below.
+`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, and `records.json` the record store, reminders and file library.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
@@ -136,7 +243,8 @@ emulator it had started; a plain build has no handler and dies on the signal.
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
-manifests, `MainActivity.java`, `GraceAgentService.java`, `agent.json` and `res/`. Both flavors may
+manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceSpeechPlugin.java`,
+`GraceDevicePlugin.java`, `agent.json` and `res/`. Both flavors may
 ask for location and the camera, for a website, after the person's Allow.
 
 | Flavor | Is | `BuildConfig.IS_LAUNCHER` |
@@ -168,9 +276,10 @@ A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fr
 with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event. A run of `0f2a9c3` with
-`DISCOVER_ACTIONS` let past the action check by hand, at a load average near 320, built both APKs at
-113,483,881 bytes and passed the same walk.
+was left for Android's settings, and Grace raised no `am_anr` event. A plain build of `17fdcc3` with
+`DISCOVER_ACTIONS` under `plannerTools`, at a load average near 380, exited 0 in 2 minutes: both debug
+APKs at 113,631,337 bytes passed the action check with 68 actions seen, and `--verify` with
+`17fdcc3`'s own `policy.json` fails on the same APKs, naming `DISCOVER_ACTIONS`.
 
 The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
 (never committed), the service unpacked the payload and launched Bun under its musl loader
@@ -191,14 +300,17 @@ route the bridge relays, since the payload carries no gateway) with `agent/polic
 both cloud models; and
 `artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
 `ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
-`actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
+`actions.upstream.refuse` and denies the plugins it refuses. `actions.upstream.plannerTools` is not
+passed on: it names the planner's own tools, such as `DISCOVER_ACTIONS`, which the planner builds on
+each turn without registering them, so the allowlist cannot name them; that tool lists and loads only
+actions the allowlist admits. The `GRACE_*` actions are not allowed
 yet: no plugin in the payload registers them, and a name the agent does not register fails its boot. The
 route allowlist the APK ships is `android/agent.json`'s; nothing reads `agent/routes.json`, whose
 `stream/start`, `stream/pull` and `stream/cancel` routes are upstream's gateway's, not the embedded
 bridge's.
 `--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
-literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
-nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
+literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`),
+refused, nor a planner tool, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
 upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
 computed at run time (a parameter, a member, a call, or a variable also given other values) is not,
 nor is an action object with no `name` of its own, such as one a factory fills in, the `DEVICE_*`
@@ -214,6 +326,85 @@ gateway, without the packages `stubPlugins` in `scripts/android.ts` names (`@eli
 list, and reused by every later build. It refuses a `vendor/eliza` with local changes. Bun and its
 libraries go in as native libraries only: the inventory leaves out the payload's `agent/<abi>/`
 copy, which the generated host drops from the assets.
+
+### Records, reminders and files
+
+Three bridges of Grace's own keep what must outlive her page and her process, in her app-private
+storage (`no backup`, as `res/xml/data_extraction_rules.xml` says), registered by `MainActivity`:
+
+| Bridge | Class | Keeps |
+|---|---|---|
+| `GraceRecords` | `GraceRecordStorePlugin` | the named durable records: `commitments`, `preferences`, `setup`, `memory` and `calendar`, each one file under `files/records/` |
+| `GraceReminders` | `GraceRemindersPlugin` | upstream's reminder engine (`plugin-native-reminders`, the `eliza-reminders` module) |
+| `GraceFiles` | `GraceFilesPlugin` | Grace's library of photos and PDFs, `files/library/` |
+
+`GraceRecords.read({ name })` gives `{ revision, value }` (revision 0 and no value before the first
+write). `write({ name, revision, value })` commits only when the record is still at the revision the
+caller read, under a lock on the record's file that holds across processes, and rejects with `stale`
+otherwise, so a late or concurrent write never replaces a newer one; the commit is Android's
+`AtomicFile`, synced to disk before the rename, so a record is whole after a crash and readable
+whatever happens to the WebView. This is the storage `spec/app/payment.md`, "A durable unresolved
+window exists before either submission route is enabled", asks for. The page's own storage is not
+used for any of them; the workspace itself stays in memory.
+
+`GraceReminders` posts a reminder at its time on its own `grace-reminders-due` channel with Grace's
+G, while her page, or her whole process, is gone. It holds `USE_EXACT_ALARM` (calendar reminders),
+so Android 13 and later ring it on time; on Android 12 it asks for `SCHEDULE_EXACT_ALARM`, and without
+it the engine falls back to an inexact alarm. Its receiver re-arms every reminder after a boot, an
+update, or a change of time or time zone, and nothing else; it starts no activity and no agent.
+Notifications need `POST_NOTIFICATIONS`, which the engine asks for at the first reminder. The engine
+keeps its reminders, with their revisions, in its own preferences file; the routes of notification
+taps, which upstream asks a host to keep in its own storage, go to `files/reminders/` through the same
+atomic file write.
+
+`GraceFiles.list()` gives each photo and PDF with its `name`, `kind` (`photo` or `pdf`), `path`
+(for `Capacitor.convertFileSrc`), `size`, `savedAt` and PDF `pages`; `save({ name, data })` keeps
+base64 bytes (an email attachment) under a free name; `page({ name, page, width })` renders one PDF
+page natively (`PdfRenderer`) as a PNG; `remove({ name })` deletes one. `choose({ kind })` opens
+Android's photo picker (`photo`) or document picker for a PDF and copies the choice into the library;
+`capture()` asks for the camera, opens Android's camera app (`IMAGE_CAPTURE`, with a `FileProvider`
+over the library, `res/xml/library_paths.xml`) and keeps the photo it returns. None of these need a
+storage permission.
+
+Upstream's camera, media and filesystem modules are not used: the camera module is an in-app CameraX
+recorder and the media module a 13,000-line library with Media3 video editing, both far beyond
+taking one photo and keeping a few files; the filesystem module is the agent's FILE action, with no
+Android library. Upstream's notifications module mirrors other apps' and mail notices, which Grace
+does not do. There is no printing: the product has none.
+
+Grace starts with the tablet as Home: on the launcher flavor Android opens her at boot and
+`MainActivity` starts the agent service, so no boot receiver starts anything. The standalone flavor
+starts only when opened.
+
+### Speech and the device
+
+Speech is Cartesia through Eliza Cloud in both directions, with no model on the tablet.
+`GraceSpeech` (`GraceSpeechPlugin`) is Grace's subclass of upstream's `SpeechStreamBridgePlugin`,
+compiled from `plugin-local-inference/native/android/cloud-speech-bridge` (`eliza-cloud-speech` in
+`host.json`): the bridge with its playback, audio focus and output classes and OkHttp, and none of
+the module's inference session, JNI bridge, native library or model asset. Its methods and events are
+upstream's (`startCloudSpeech`, `setCloudSpeechMuted`, `speakCloudSpeech`, `cancelCloudSpeech`,
+`stopCloudSpeech`, `cloudSpeechEvent`; `plugin-local-inference/native/android/README.md`). The Eliza
+Cloud origin is fixed (`https://api.eliza.app`), whatever environment the page names. The microphone
+is Capacitor's `microphone` permission alias of `GraceSpeech`: `checkPermissions` reports it and
+`requestPermissions` shows Android's own prompt. The bridge captures the microphone natively; Grace's
+WebView never opens it, and the manifest leaves out `MODIFY_AUDIO_SETTINGS`, without which
+Capacitor's WebView client refuses any audio capture the page asks for. No credential reaches the
+speech bridge yet: until the Google sign-in stores one, every start is refused with "Cloud account
+unavailable" before anything is sent.
+
+`GraceDevice` (`GraceDevicePlugin`) changes the tablet itself, with no permission:
+
+| Call or event | Does |
+|---|---|
+| `getDevice()` | `{ volume: { step, min, max }, brightness: { percent }, battery: { percent, charging }, screenOn }`; `brightness.percent` is absent until Grace sets it, and `battery.percent` when Android does not report it |
+| `setVolume({ step })` | sets media volume to that step of the device's own (`min` to `max`, typically 0 to 15 or 25), with no Android volume panel, and resolves with the volume read back |
+| `setBrightness({ percent })` | sets the brightness of Grace's window (0 to 100, applied while her window shows), no system setting, and resolves with it read back |
+| `volume` event | the volume read back after a hardware volume key, which `MainActivity` turns into one step with no volume panel, and on every resume |
+| `screen` event | `{ on }` when the screen sleeps or wakes |
+
+Speech plays with the assistant usage, which AOSP maps to the media volume. Mapping the percent the
+Settings show to a device step is the page's work.
 
 ### Sign-in
 
@@ -307,15 +498,16 @@ and the Steward client.
   animation redraws the window at the display's full rate: about 1.4 cores at 90 Hz on a 3.9 GB
   tablet. Where the display has a 60 Hz mode at its current resolution the window asks for it, again
   after a configuration change; elsewhere it clears its request.
-- `RECORD_AUDIO` is for spoken replies and Talk, asked for at first use. A website's camera and
+- `RECORD_AUDIO` is for Talk, asked for natively through `GraceSpeech`. A website's camera and
   location are asked for after the person's Allow and Android's own prompt
   (`spec/app/websiteRequests.md`); the launcher's Wi-Fi scan needs location too. Grace opts out of
   Android's camera compatibility rotation, which turned the display to portrait when a website opened
-  the camera. `CHANGE_NETWORK_STATE`, which `ElizaWiFi`'s library manifest asks for, is removed:
+  the camera. Grace's own Take a photo needs `CAMERA` granted too, since Android refuses its camera app
+  to an app that declares the permission and lacks it. `CHANGE_NETWORK_STATE`, which `ElizaWiFi`'s library manifest asks for, is removed:
   nothing in Grace requests a network; the standalone flavor removes its Wi-Fi permissions too, and
   `android.hardware.wifi` is not required (without it Grace's Wi-Fi settings say Wi-Fi is unavailable).
 - The `<queries>` list the apps `openExternalLink` can resolve on API 30+: mail and text compose, the
   dial pad, maps, the store and apps with an https link filter; any other app is refused as
-  `EXTERNAL_APP_UNAVAILABLE`.
+  `EXTERNAL_APP_UNAVAILABLE`. The camera app (`IMAGE_CAPTURE`) is listed for Take a photo.
 - `app_icon.xml` is the logotype's G on a paper tile, 60 of 108 tall so the splash screen's circular
   crop keeps the whole letter.
