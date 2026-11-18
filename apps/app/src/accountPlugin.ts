@@ -5,7 +5,7 @@ type AccountStatus = { kind: "signedIn" | "signedOut" };
 
 interface AccountPlugin {
   status(): Promise<AccountStatus>;
-  beginSignIn(): Promise<void>;
+  beginSignIn(options?: { method: "browser" }): Promise<void>;
   signOut(): Promise<void>;
   manageAccount(): Promise<void>;
   openHostedView(options: { view: "email" | "calendar" }): Promise<void>;

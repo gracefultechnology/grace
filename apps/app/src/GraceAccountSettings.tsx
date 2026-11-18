@@ -95,7 +95,10 @@ export function GraceAccountSettings() {
       ))}
       {canRetry && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>}
       {snapshot?.tag === "GraceDeviceSignedOut" && (
-        <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in to Grace</Button>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in to Grace</Button>
+          <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
+        </div>
       )}
       {setup?.tabletSignIn && (
         <>

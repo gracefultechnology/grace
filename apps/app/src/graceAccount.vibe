@@ -53,7 +53,8 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 
 type CodeProvider = "email" | "sms"
 export type Operation =
-  | { kind: "refresh" | "signIn" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
@@ -200,7 +201,8 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       const plugin = accountPlugin
       if (plugin === undefined) return false
       const current = try refresh()
-      if (operation.kind === "signIn" && current.tag === "GraceDeviceSignedOut") try tryPromise(() => plugin.beginSignIn())
+      if (operation.kind === "signIn" && current.tag === "GraceDeviceSignedOut") try tryPromise(() =>
+        operation.method === "browser" ? plugin.beginSignIn({ method: "browser" }) : plugin.beginSignIn())
       else if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
       else if (operation.kind === "signOut" && current.tag === "GraceDeviceSignedIn") {
         try tryPromise(() => plugin.signOut())

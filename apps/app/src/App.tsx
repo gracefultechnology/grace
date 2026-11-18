@@ -2,7 +2,7 @@
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, Stream } from "effect";
-import { CalendarDays, Folder, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { CalendarDays, House, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
@@ -13,6 +13,7 @@ import { Browser } from "./Browser.tsx";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { ManagedReads } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
+import { Files, useFilesHome } from "./Files.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { Settings } from "./Settings.tsx";
@@ -22,7 +23,6 @@ import { RuntimeContext, type Runtime, useKeyboardHeight, useRuntime, useWebsite
 const apps: Partial<Record<Surface, { name: string; icon: ReactNode }>> = {
   Calendar: { name: "Calendar", icon: <CalendarDays size={26} /> },
   Email: { name: "Email", icon: <Mail size={26} /> },
-  Files: { name: "Files", icon: <Folder size={26} /> },
 };
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": the two that end what websites ask,
@@ -80,6 +80,7 @@ const wifiWords: Record<Connectivity, string> = {
 
 function Screen() {
   const cards = useHomeCards();
+  const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
   const website = useWebsiteRequests();
   const now = useMinute();
@@ -162,13 +163,18 @@ function Screen() {
             }), ...visit("Calendar") }}
             email={{ messages: (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
               name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })),
-              ...visit("Email") }} internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
+              ...visit("Email") }} internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }}
             page={device.homePage === "FilesCard" ? "files" : "main"}
             onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
         </OverPage>
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
+      {surface === "Files" && (
+        <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
+          <Files {...under(covered)} onClose={() => { if (can({ type: "visit", destination: "Home" })) void send({ type: "visit", destination: "Home" }); }} />
+        </OverPage>
+      )}
       {app && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title={app.name} icon={app.icon} closeLabel={`Close ${app.name}`} onClose={visit("Home").onClick}>

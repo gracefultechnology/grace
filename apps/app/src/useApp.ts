@@ -9,6 +9,7 @@ import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequ
 import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
 import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
+import type { FileLibrary } from "./fileLibrary.vibe";
 import type { ManagedReads } from "./managedReads.vibe";
 import type { AccountActions } from "./graceAccount.vibe";
 import type { ReplyControls } from "./replyControls.vibe";
@@ -17,7 +18,7 @@ import { Keyboard } from "./app.vibe";
 import { PageHost } from "./page.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | SpeechActions | ReplyControls, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | ReplyControls, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 

@@ -11,7 +11,7 @@ import { Skeleton } from "./Skeleton.tsx";
 
 export interface FilesPhoto {
   id: string;
-  src: string;
+  src?: string;
   label: string;
 }
 
@@ -182,7 +182,7 @@ export function FilesApp({
                     detail={document.detail}
                     aria-current={document.id === highlightId || undefined}
                     onOpen={() => onOpenDocument?.(document.id)}
-                    onPrint={() => onPrintDocument?.(document.id)}
+                    onPrint={onPrintDocument ? () => onPrintDocument(document.id) : undefined}
                     printStatus={document.printStatus}
                     onRetryPrint={() => onPrintDocument?.(document.id)}
                   />

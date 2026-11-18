@@ -3,7 +3,7 @@ import { cn, focusRing } from "../lib/cn.ts";
 
 export type FileTileProps = Omit<ComponentProps<"button">, "children"> & {
   /** The photo. */
-  src: string;
+  src?: string;
   /** The tile's accessible name, such as "Photo 2" or what the photo shows. */
   label: string;
 };
@@ -25,7 +25,7 @@ export function FileTile({ src, label, type = "button", className, ...props }: F
       )}
       {...props}
     >
-      <img alt="" src={src} className="block size-full object-cover" />
+      {src ? <img alt="" src={src} className="block size-full object-cover" /> : <span className="p-3">{label}</span>}
     </button>
   );
 }

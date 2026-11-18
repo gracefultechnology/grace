@@ -28,6 +28,7 @@ public class MainActivity extends ElizaBridgeActivity {
   if (accountCallback != null) setIntent(new Intent(getIntent()).setData(null));
   registerPlugin(EmbeddedAgentPlugin.class);
   registerPlugin(GraceAccount.class);
+  registerPlugin(GraceFiles.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
   super.onCreate(state);

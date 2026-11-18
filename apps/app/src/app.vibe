@@ -4,6 +4,8 @@
 import type { Connectivity } from "../gen/app__shell.effect.vibe"
 import { machine as setup } from "../gen/app__setup.effect.vibe"
 import { graceAccount } from "./graceAccount.vibe"
+import { fileLibrary } from "./fileLibrary.vibe"
+import { type FilesPort, filesPlugin } from "./filesPlugin.ts"
 import { managedReads } from "./managedReads.vibe"
 import { replyControls } from "./replyControls.vibe"
 import { graceTurns } from "./graceTurns.vibe"
@@ -67,9 +69,9 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
 })
 
 /** Everything the interface runs on, over `plugin`, the native page's, and `wifi`, where the platform has them. */
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, platform: { native: boolean; agent?: EmbeddedAgent } = { native: false }) {
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, platform: { native: boolean; agent?: EmbeddedAgent; files?: FilesPort } = { native: false }) {
   const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), graceAccount(platform.native), graceSpeech(platform.native)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), setup()))
-  const managed = Layer.provideMerge(managedReads(platform.native), shell)
+  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
   const controlled = Layer.provideMerge(replyControls(platform.native), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)
 }
