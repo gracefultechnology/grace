@@ -49,7 +49,7 @@ const noteFor = "2600 millis"
 
 export const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).trim().toLowerCase()
 
-export function nameFor(a: Registry, provider: Provider, address: string): string {
+function nameFor(a: Registry, provider: Provider, address: string): string {
   const known = accountWith(a, address)
   if (known.id !== 0) return known.name
   const domain = domainOf(address)

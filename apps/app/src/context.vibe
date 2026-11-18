@@ -95,20 +95,20 @@ const known = new Set(kinds.anyOf.flatMap((kind) => kind.properties.kind?.enum ?
 
 export const vocabulary = `Each action is one object in "actions": ${kinds.anyOf.map(described).join("; ")}. A field marked ? may be left out. An action written any other way is not done.`
 
-export const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
-export const eventTarget = (key: number, id: string) => `event:${key}:${id}`
-export const unlinked = (text: string) => text.replace(/\b(?:https?:\/\/|www\.)\S+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:[a-z]{2,}\/\S*|(?:com|net|org|info|biz|io|co|us|uk|ca|au)\b)/gi, "[a link]")
+const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
+const eventTarget = (key: number, id: string) => `event:${key}:${id}`
+const unlinked = (text: string) => text.replace(/\b(?:https?:\/\/|www\.)\S+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:[a-z]{2,}\/\S*|(?:com|net|org|info|biz|io|co|us|uk|ca|au)\b)/gi, "[a link]")
 const cleaned = (text: string) => unlinked(withhold({ text, passwords: [] }))
 const said = (text: string) => text.trim() === "" ? "(empty)" : `“${text}”`
 const quoted = (text: string) => `“${text}”`
 
-export const when = (at: number) =>
+const when = (at: number) =>
   new Date(at).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
 
 const today = (at: number) =>
   `${new Date(at).toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}; as an action date today is ${new Date(at).toLocaleDateString("en-CA")}`
 
-export function calendarName(registry: Registry, key: number) {
+function calendarName(registry: Registry, key: number) {
   return key === tablet ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "a calendar no longer on the tablet"
 }
 

@@ -2,7 +2,7 @@
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, afterEach, beforeAll, expect, inject, it } from "vitest";
+import { afterEach, expect, inject, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { allowedUse, chooseProvider, initial, sheetResult } from "../gen/app__accounts.ts";
@@ -15,11 +15,10 @@ import { application } from "../src/app.vibe";
 import { day, dayOf, hour, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, outage, signIn } from "./cloud.vibe";
+import { actOnScreen } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
-afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
+actOnScreen();
 
 const running: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(running.splice(0).map((stop) => stop())); });

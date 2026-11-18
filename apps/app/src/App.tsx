@@ -183,7 +183,7 @@ function Screen() {
           )}</WithMailboxes>
         </OverPage>
       )}
-      {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
+      {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
       {!useManaged && accounts && surface !== "Home" && surface !== "Calendar" && device.readiness !== "Sleeping" && (
         <WithCalendars keys={calendarKeys(accounts)}>{(calendars) => reminderToast(accounts, calendars, now.getTime(), bottom)}</WithCalendars>

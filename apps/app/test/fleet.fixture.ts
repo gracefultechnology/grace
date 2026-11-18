@@ -2,11 +2,11 @@ import { execFileSync, spawn } from "node:child_process";
 import { linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { Server } from "node:http";
 import { createServer } from "node:https";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
+import { selfSigned } from "./tls.ts";
 import { hasHostedNavigation } from "./browser-receipt.ts";
 
 const revision = "f335b651f9820c3454f447e3d4722b78c5298a0b";
@@ -86,19 +86,11 @@ async function openFleetServer(tree: string, loginPaths?: Set<string>) {
     const publicSite = fleet.publicServer;
     publicSite.unref();
     fleet.adminServer.unref();
-    const temporary = mkdtempSync(join(tmpdir(), "grace-new-fleet-tls-"));
-    const cert = join(temporary, "cert.pem");
-    const key = join(temporary, "key.pem");
-    tls = (() => {
-      try {
-        execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1", "-keyout", key, "-out", cert], { stdio: "ignore" });
-        return createServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
-          const login = request.method === "POST" && request.url !== undefined && loginPaths?.has(request.url);
-          if (request.method !== "GET" && request.method !== "HEAD" && !login) { response.writeHead(405).end(); return; }
-          publicSite.emit("request", request, response);
-        });
-      } finally { rmSync(temporary, { recursive: true, force: true }); }
-    })();
+    tls = createServer(selfSigned("127.0.0.1"), (request, response) => {
+        const login = request.method === "POST" && request.url !== undefined && loginPaths?.has(request.url);
+        if (request.method !== "GET" && request.method !== "HEAD" && !login) { response.writeHead(405).end(); return; }
+        publicSite.emit("request", request, response);
+    });
     const server = tls;
     await new Promise<void>((ready, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", ready); });
     server.unref();

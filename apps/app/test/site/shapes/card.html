@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Card details</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 12px; }
+  form { display: flex; flex-direction: column; gap: 8px; }
+</style>
+<form action="topic.html" method="get">
+  <label>Card number <input name="card" autocomplete="cc-number" inputmode="numeric"></label>
+  <label>Expiration <input name="expiry" autocomplete="cc-exp"></label>
+  <label>Security code <input name="code" autocomplete="cc-csc" inputmode="numeric"></label>
+  <button>Pay $84.12</button>
+</form>
+<p><a href="topic.html?cvv" target="_top">Where is my security code?</a></p>
