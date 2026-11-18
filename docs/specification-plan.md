@@ -121,6 +121,19 @@ The predeclared Shopping cohort on `5b438b6` passed the official grader and Grac
 
 The same release passed all 100 Fleet billers across 26 template families. The audit found 200 distinct starting and landing document IDs, 102 accepted hosted `clef-flash` choices, and zero failed billers. It verified 115 files against archive SHA-256 `3a85cfcfecf77d104aa25959ac57c17bb324dfe23279d8136bb8a13eca429b19`. All six Linux checks passed, including the four-test offline Chromium command used in CI. A focused Dafny run on the same revision verified the two named-page guards and the completion transition, 122 assertions total. The run used the ordinary check's staged Workspace input and its imported assumptions. The whole-repository result is tracked separately.
 
+The four offline Google and cross-app Chromium journeys passed in GitHub
+Actions on a temporary self-hosted Linux runner at workflow commit `00db25d`.
+To repeat them, dispatch `ci` with `cross_app_only` enabled.
+[Offline GitHub Actions run](https://github.com/gracefultechnology/grace-new/actions/runs/44253536091)
+
+To reproduce the BillWorld jobs on their own, dispatch `ci` with `billworld`
+and `benchmarks_only` enabled, and leave `webarena` disabled. The four Fleet
+shards upload receipts for the aggregate job, and the released statement job
+uploads its positive and no-action receipts. For manual runs in
+`gracefultechnology/grace-new`, an administrator can set the repository variable
+`GRACE_BILLWORLD_RUNNER` to a Linux x64 runner label shared by those jobs.
+Without the variable, the jobs use `ubuntu-latest`.
+
 | Priority | Remaining work | Acceptance |
 |---|---|---|
 | 1 | Restore GitHub-hosted execution and compare it with the Linux benchmark receipts. | Dispatch `ci` with `billworld` and `webarena`. Preserve the four Fleet shards, aggregate, released statement control pair, both official Shopping receipts and the offline cross-app job log. |
