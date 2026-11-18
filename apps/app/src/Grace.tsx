@@ -194,7 +194,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
           {namedCheck?.pending === false && (
-            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{currentStep?.subject}” on this page. Try another link.</GraceBubble>
+            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{currentStep?.subject}” on this page. Check the page again or try another link.</GraceBubble>
           )}
           {canCheck && <AnswerChips>
             {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}

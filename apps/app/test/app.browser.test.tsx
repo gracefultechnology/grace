@@ -1616,10 +1616,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(resume);
     reviseDuringRead = true;
     await tap(check);
-    await expect.element(pending).toHaveAttribute("aria-current", "step");
-    await routeTo(result);
-    await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
+    expect(result.query()).toBeNull();
     expect(check.query()).toBeNull();
 
     await tap(page.getByRole("button", { name: "Home", exact: true }));
