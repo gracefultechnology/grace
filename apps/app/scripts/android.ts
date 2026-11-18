@@ -1212,7 +1212,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   }
   let clean = true;
   for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
-  await episode?.close().catch(() => { clean = false; });
+  try { await episode?.close(); } catch { clean = false; }
   if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.", { cause: journeyFailure });
   if (journeyFailure) throw journeyFailure;
 }
