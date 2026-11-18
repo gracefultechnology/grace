@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       cross_app_only:
-        description: Run only the four offline Google and cross-app Chromium journeys
+        description: Run the offline Google and cross-app Chromium journeys
         type: boolean
         default: false
       billworld:
@@ -46,7 +46,7 @@ permissions:
 jobs:
   webarena:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.webarena
-    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     defaults:
       run:
@@ -197,7 +197,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -247,7 +247,7 @@ jobs:
   billworld-aggregate:
     if: always() && github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     needs: billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -270,6 +270,7 @@ jobs:
           product_revision = os.environ["GRACE_PRODUCT_REVISION"]
           cohort = None
           verified = {}
+          documents = set()
 
           def load(path):
               if not path.is_file():
@@ -279,6 +280,16 @@ jobs:
           def require(condition, message):
               if not condition:
                   raise SystemExit(message)
+
+          def selected_candidate(decision):
+              result = decision.get("result") or {}
+              choice = result.get("choice")
+              candidates = decision.get("candidates")
+              confidence = result.get("confidence")
+              return (decision.get("http") == 200 and result.get("status") == "ok" and
+                      result.get("model") == "clef-flash" and type(candidates) is int and 1 <= candidates <= 16 and
+                      isinstance(choice, str) and choice in map(str, range(1, candidates + 1)) and
+                      type(confidence) in (int, float) and 0 <= confidence <= 1)
 
           def loopback(value):
               url = urlsplit(value)
@@ -320,19 +331,30 @@ jobs:
                   require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
                   receipt = load(directory / f"{task_id}.json")
                   grade = receipt["grade"]
+                  outcome = receipt["outcome"]
+                  opened = outcome["start"]
+                  landed = outcome["destination"]
+                  last = (outcome["hops"] or [{}])[-1]
+                  ids = (opened["documentId"], landed["documentId"])
+                  decisions = receipt["decisionResults"]
                   start = loopback(receipt["startUrl"])
                   destination = loopback(grade["destination"])
                   require(task_id not in verified and scores["cases"][task_id] is True and
                           receipt["surface"] == "desktop-chromium" and receipt["taskId"] == task_id and
                           start[2:] == loopback(task["startUrl"])[2:] and
                           destination[2:] == loopback(task["expected"])[2:] and start[:2] == destination[:2] and
-                          receipt["decisionProvider"] == "hosted" and receipt["decisionRequests"] > 0 and
-                          isinstance(receipt["outcome"]["graceTerminal"], str) and receipt["outcome"]["ringTap"] is True and
-                          not receipt["outcome"].get("failure") and
+                          receipt["decisionProvider"] == "hosted" and receipt["decisionRequests"] == len(decisions) and
+                          any(selected_candidate(d) for d in decisions) and
+                          all(isinstance(doc, str) and doc and doc not in documents for doc in ids) and ids[0] != ids[1] and
+                          opened["url"] == receipt["startUrl"] and landed["url"] == grade["destination"] and
+                          (last.get("url"), last.get("documentId")) == (landed["url"], ids[1]) and last.get("checked") is True and
+                          isinstance(outcome["graceTerminal"], str) and outcome["graceTerminal"] and
+                          outcome["ringTap"] is True and outcome.get("failure") is None and
                           grade["passed"] is True and grade["visible"] is True and
                           grade["expected"] == grade["destination"] != receipt["startUrl"],
                           f"Duplicate or failed Fleet browser receipt for {task_id}")
                   verified[task_id] = shard
+                  documents.update(ids)
 
           require(len(verified) == 100, "Expected 100 distinct verified Fleet browser receipts")
           require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
@@ -349,7 +371,7 @@ jobs:
           if-no-files-found: error
   billworld-released:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
       GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
@@ -473,7 +495,7 @@ jobs:
           if-no-files-found: error
   verify:
     if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)
-    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
@@ -489,7 +511,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
-          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply'
+          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar'
       - if: ${{ !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm verify --continue --summarize
       - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''

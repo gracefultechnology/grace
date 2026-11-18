@@ -76,6 +76,15 @@ export type ManagedSnapshot =
 
 type Command = { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string }
 
+export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
+  { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
+  ({ kind: "mail"; subject: string } | { kind: "calendar"; title: string; startAt: string })
+)
+
+export function usesManagedSurfaces(account: SetupState["graceAccount"] | undefined, hash: string): boolean {
+  return account?.tag === "GraceSignedIn" || account?.tag === "GraceDeviceSignedIn" || viewOf(hash) !== undefined
+}
+
 export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[]; events: readonly EventRow[] }
 
 export service ManagedReads {
@@ -83,6 +92,8 @@ export service ManagedReads {
   readonly home: Stream.Stream<HomeCards | undefined>
   homeCards(): (HomeCards | undefined)!!
   get(): ManagedSnapshot!!
+  ownsSurfaces(): boolean!!
+  guidedSelection(): GuidedManagedSelection!!
   send(command: Command): boolean!!
   stage(proposal: ProposedWork): boolean!!
   series(scope: WriteScope, occurrenceId: string): (EventRow | undefined)!!
@@ -203,6 +214,34 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     return current.kind === "ready" && current.view === scope.view && current.accountId === scope.accountId && current.grant === scope.grant
   }
 
+  effect function ownsSurfaces(): boolean!! {
+    return usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
+  }
+
+  effect function guidedSelection(): GuidedManagedSelection!! {
+    const account = try setup.get()
+    if (!usesManagedSurfaces(account.graceAccount, webView.window.location.hash)) return { kind: "legacy" }
+    const scope = try activeScope()
+    const shown = try SubscriptionRef.get(latest)
+    if (scope.kind !== "ready" || account.graceAccount.tag !== "GraceSignedIn" ||
+        account.googleLink.tag !== "GoogleLinkConnected" || account.graceAccount.accountId !== scope.accountId ||
+        account.googleLink.grant !== scope.grant ||
+        (shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
+        (shown.kind === "mail") !== (scope.view === "Email")) return { kind: "unavailable" }
+    const googleEmail = account.googleLink.email.trim().toLowerCase()
+    if (googleEmail === "" || scope.grant === "") return { kind: "unavailable" }
+    const ownership = { accountId: scope.accountId, grant: scope.grant, googleEmail }
+    if (shown.kind === "mail") {
+      const selected = shown.selected
+      const version = selected?.message.metadata?.historyId
+      if (!selected || !version || selected.accountId !== scope.accountId) return { kind: "unavailable" }
+      return { ...ownership, kind: "mail", id: selected.message.externalId, version, subject: selected.message.subject }
+    }
+    const selected = shown.selected
+    if (!selected?.etag) return { kind: "unavailable" }
+    return { ...ownership, kind: "calendar", id: selected.externalId, version: selected.etag, title: selected.title, startAt: selected.startAt }
+  }
+
   effect function fetchPage(scope: ReadyScope, prior?: Mail | Calendar, next?: string) {
     const paging = { pageToken: next, grantId: scope.grant }
     if (scope.view === "Email") {
@@ -226,7 +265,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const result = fetchPage(scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
     const intent = try Ref.get(pending)
     if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
-      const selected = query("calendar/reminder/event", { occurrenceId: intent.occurrence, grantId: scope.grant },
+      const occurrence = intent.occurrence
+      const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
         Schema.Struct({ accountId: idField, event: EventRow }), authorization) catch () => undefined
       if (try still(scope)) {
         try saveIntent({ ...intent, occurrence: undefined })
@@ -465,6 +505,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     home: SubscriptionRef.changes(cards),
     homeCards: () => SubscriptionRef.get(cards),
     get: () => SubscriptionRef.get(latest),
+    ownsSurfaces,
+    guidedSelection,
     send: effect (command) => gate.withPermit(send(command)) catch () => false,
     stage: effect (proposal) => gate.withPermit(stage(proposal)) catch () => false,
     series: effect (scope, occurrenceId) => gate.withPermit(series(scope, occurrenceId)) catch () => undefined,

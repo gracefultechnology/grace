@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
 import { selfSigned } from "./tls.ts";
+import { hasHostedNavigation } from "./browser-receipt.ts";
 
 const revision = "f335b651f9820c3454f447e3d4722b78c5298a0b";
 const Biller = Schema.Struct({ id: Schema.NonEmptyString, template: Schema.NonEmptyString, signal: Schema.String, brand: Schema.Struct({ shortName: Schema.NonEmptyString }) });
@@ -172,14 +173,13 @@ export async function fleetFixture(directory: string, results: string, shardSett
     const receiptResult = (taskId: string, input: unknown) => {
       const receipt = decodeReceipt(input);
       const task = expected.get(taskId);
-      const { startUrl, grade, outcome } = receipt;
+      const { startUrl, grade } = receipt;
       if (!task || receipt.taskId !== taskId || receipt.intent !== Intent ||
           localRoute(startUrl) !== localRoute(task.startUrl) ||
           localRoute(grade.expected) !== localRoute(task.expected) || !sameOrigin(startUrl, grade.expected))
         throw new Error("Fleet receipt does not match its declared task");
       const arrived = grade.destination === grade.expected && grade.destination !== startUrl;
-      const passed = receipt.decisionRequests > 0 && typeof outcome.graceTerminal === "string" &&
-        outcome.ringTap === true && !outcome.failure && arrived && grade.visible;
+      const passed = arrived && grade.visible && hasHostedNavigation(input, grade.destination);
       if (grade.passed !== passed || (grade.visible && !arrived))
         throw new Error("Fleet receipt grade contradicts its observed outcome");
       return passed;

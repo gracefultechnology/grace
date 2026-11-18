@@ -63,7 +63,7 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
     const fixture = JSON.stringify(hits[0]).replaceAll("__SHOPPING__", origin);
     const unused = "http://127.0.0.1:1";
     const env = { SHOPPING: origin, SHOPPING_ADMIN: unused, REDDIT: unused, GITLAB: unused, WIKIPEDIA: unused, MAP: unused, HOMEPAGE: unused };
-    return async (observed: unknown, decision: { provider: "fixture" | "hosted"; requests: number; authenticatedFixture?: boolean }) => {
+    return async (observed: unknown, evidence: { guided: boolean; authenticatedFixture: boolean }) => {
       const outcome = Schema.decodeUnknownSync(Outcome)(observed);
       const { destination } = outcome;
       const initial = outcome.start;
@@ -85,9 +85,8 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
       }
       return {
         evaluatorRevision: revision, catalogSha256, officialScore, groundedNavigation,
-        qualifiedHostedGuidance: officialScore === 1 && groundedNavigation && outcome.ringTap === true &&
-          Boolean(outcome.graceTerminal) && outcome.failure === undefined && decision.provider === "hosted" && decision.requests > 0 &&
-          (!task.require_login || decision.authenticatedFixture === true),
+        qualifiedHostedGuidance: officialScore === 1 && groundedNavigation && evidence.guided &&
+          (!task.require_login || evidence.authenticatedFixture),
       };
     };
   };

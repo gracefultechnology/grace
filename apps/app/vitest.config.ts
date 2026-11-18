@@ -10,6 +10,7 @@ import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
+import { hasHostedNavigation } from "./test/browser-receipt.ts";
 import { fleetFixture } from "./test/fleet.fixture.ts";
 import { webArena } from "./test/webarena.ts";
 
@@ -150,24 +151,26 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   if (action.kind === "receipt") {
     try {
       const decisionProvider = definition.fixtureChoice === undefined ? "hosted" : "fixture";
-      const grade = await fleet?.grade(definition.taskId, run.site?.page, run.decisions > 0 &&
-        typeof action.outcome.graceTerminal === "string" && action.outcome.ringTap === true && !action.outcome.failure);
-      const webArenaGrade = await officialGrades.get(definition.taskId)?.(action.outcome, {
-        provider: decisionProvider, requests: run.decisions, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
-      })
-        .catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
-      const receipt = {
+      const observation = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
         decisionServiceOrigin: decisionProvider === "hosted" && process.env.GRACE_BENCHMARK_CLEF_ORIGIN
           ? new URL(process.env.GRACE_BENCHMARK_CLEF_ORIGIN).origin : undefined,
         outcome: { ...action.outcome, chatProvider: definition.chat ?? "fixture" }, chatStatus: run.chatStatus,
-        grade, webArena: webArenaGrade, decisionResults: run.decisionResults,
+        decisionResults: run.decisionResults,
       };
+      const guided = hasHostedNavigation(observation, run.site?.page.url());
+      const grade = await fleet?.grade(definition.taskId, run.site?.page, guided);
+      const webArenaGrade = await officialGrades.get(definition.taskId)?.(action.outcome, {
+        guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
+      }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
+      const receipt = { ...observation, grade, webArena: webArenaGrade };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
       if (webArenaGrade && (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore !== 1))
         throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
+      if (webArenaGrade && decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
+        throw new Error("The WebArena landing has no verified hosted guidance");
     } finally {
       activeRuns.delete(context.page);
       if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
