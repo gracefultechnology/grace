@@ -50,7 +50,7 @@ pure val initial: Browser = {
 }
 pure def hasTab(b: Browser, id: int): bool = b.tabs.some(t => t.id == id)
 pure def activeTab(b: Browser): Tab = tabById(b, b.selected)
-pure def tabUrl(tab: Tab): str = tab.history.nthOr(tab.cursor, "")
+pure def tabUrl(browserTab: Tab): str = browserTab.history.nthOr(browserTab.cursor, "")
 pure def alwaysTabsAreWellFormed(b: Browser): bool =
   b.tabs.length() > 0 and b.tabs.every(t =>
     t.id > 0 and t.id < b.nextId and t.recency >= 0 and t.recency <= b.serial
@@ -186,8 +186,8 @@ recently used others, breaking equal recency by newer ID. Both visible and
 overflow lists preserve opening order. A width change never closes a tab.
 
 ```quint
-pure def moreRecent(tab: Tab, candidate: Tab): bool =
-  tab.recency > candidate.recency or (tab.recency == candidate.recency and tab.id > candidate.id)
+pure def moreRecent(browserTab: Tab, candidate: Tab): bool =
+  browserTab.recency > candidate.recency or (browserTab.recency == candidate.recency and browserTab.id > candidate.id)
 pure def tabVisible(b: Browser, candidate: Tab): bool =
   candidate.id == b.selected or
     b.tabs.select(t => t.id != b.selected and moreRecent(t, candidate)).length() < b.capacity - 1
@@ -202,8 +202,8 @@ pure def lawSelectedTabIsVisible(b: Browser, candidate: Tab): bool =
   candidate.id == b.selected implies tabVisible(b, candidate)
 pure def sometimesOverflowIsNeeded(b: Browser): bool = b.tabs.length() > b.capacity
 pure val candidateValues = Set(blankTab(1, 0), blankTab(2, 1))
-pure val tabValues = candidateValues
-pure val tValues = tabValues.union(Set(
+pure val browserTabValues = candidateValues
+pure val tValues = browserTabValues.union(Set(
   { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 1 },
   { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 0 },
   { ...blankTab(1, 0), history: List("first", "middle", "last"), cursor: 1 },
@@ -233,11 +233,11 @@ pure def editAddress(b: Browser, text: str): Browser = {
 pure def canExplainEmptyAddress(b: Browser): bool = not(b.emptyAddressNotice)
 pure def explainEmptyAddress(b: Browser): Browser = { ...b, emptyAddressNotice: true }
 pure def dismissAddress(b: Browser): Browser = { ...b, editingAddress: false }
-pure def navigated(tab: Tab, url: str, loadVersion: int): Tab = {
-  ...tab,
-  history: tab.history.foldl(List(), (kept, visit) =>
-    if (kept.length() <= tab.cursor) kept.append(visit) else kept).append(url),
-  cursor: tab.cursor + 1, scroll: 0, pagePanel: "", load: Loading, loadVersion: loadVersion, secure: false
+pure def navigated(browserTab: Tab, url: str, loadVersion: int): Tab = {
+  ...browserTab,
+  history: browserTab.history.foldl(List(), (kept, visit) =>
+    if (kept.length() <= browserTab.cursor) kept.append(visit) else kept).append(url),
+  cursor: browserTab.cursor + 1, scroll: 0, pagePanel: "", load: Loading, loadVersion: loadVersion, secure: false
 }
 pure def canNavigate(b: Browser, url: str): bool = url != ""
 pure def navigate(b: Browser, url: str): Browser =
