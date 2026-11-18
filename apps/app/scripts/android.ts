@@ -426,15 +426,12 @@ const SignInReport = Schema.Struct({
   google: Schema.Boolean,
 });
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
-const secondHomePage = `document.querySelector('button[aria-label="Page 2"][aria-current=true]') !== null`;
-const passwordCardReady = `(() => {
-  const card = [...document.querySelectorAll("button:enabled")].find((control) => control.textContent.trim() === "Passwords");
-  if (!card || card.closest("[inert]")) return false;
-  for (let element = card; element; element = element.parentElement) {
-    if (element.getAnimations().some((animation) => animation instanceof CSSTransition && animation.playState === "running")) return false;
-  }
-  const { left, top, width, height } = card.getBoundingClientRect();
-  return card.contains(document.elementFromPoint(left + width / 2, top + height / 2));
+const homeControlReady = (controlName: { label: string } | { text: string }) => `(() => {
+  const control = [...document.querySelectorAll("button:enabled")].find((button) =>
+    ${"label" in controlName ? `button.getAttribute("aria-label") === ${JSON.stringify(controlName.label)}` : `button.textContent.trim() === ${JSON.stringify(controlName.text)}`});
+  if (!control || control.closest("[inert]")) return false;
+  const { left, top, width, height } = control.getBoundingClientRect();
+  return control.contains(document.elementFromPoint(left + width / 2, top + height / 2));
 })()`;
 const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
 const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
@@ -1064,12 +1061,14 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           step = "wait for interactive Grace Home";
           await page.until(selectedHome, AbortSignal.timeout(180_000));
           process.stdout.write("The installed Grace Home is ready.\n");
-          step = "select the second Grace Home page";
+          step = "wait for the Page 2 control on Grace Home";
+          await page.until(homeControlReady({ label: "Page 2" }), AbortSignal.timeout(120_000));
+          step = "tap Page 2 on Grace Home";
           await page.step({ tap: "Page 2" });
-          await page.until(secondHomePage, AbortSignal.timeout(30_000));
-          process.stdout.write("The second Grace Home page is selected.\n");
+          step = "wait for the Passwords card on Grace Home";
+          await page.until(homeControlReady({ text: "Passwords" }), AbortSignal.timeout(120_000));
+          process.stdout.write("The Passwords card is ready on the second Grace Home page.\n");
           step = "open Passwords from the second Grace Home page";
-          await page.until(passwordCardReady, AbortSignal.timeout(30_000));
           await page.step({ tap: "Passwords" });
           step = "request Passwords unlock";
           await page.step({ tap: "Unlock Passwords" });
