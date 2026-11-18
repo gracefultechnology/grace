@@ -428,7 +428,7 @@ Browser opens it in a new tab after the others, selected and loading, and the
 device shows the Browser. The pages already open stay in their tabs. A held
 link, a link Email did not release, a different link, a message no longer
 on screen, or a message covered by a composer opens nothing and leaves all three as they were. If the browser’s next tab identifier is already in use, the handoff also declines. Opening a link
-never sends mail and leaves the messages and the outbox as they were.
+never sends mail and leaves the messages and the outbox as they were. With a ready device and a fresh browser, a person reading a flagged message can tap its link, confirm the warning and open that link.
 
 ```quint
 type LinkHandoff = LinkDeclined | OpenedLink({ device: S::Shell, mail: E::Mailbox, browser: B::Browser })
@@ -472,6 +472,15 @@ pure val readerMailbox: E::Mailbox = { ...photoMailbox, connection: E::Connected
       folder: I::InboxFolder, unread: false, answered: false }, I::MessageProvider)),
   view: E::Message, messageRef: "message", messageRefs: Set("message") }
 pure val flaggedMailbox: E::Mailbox = { ...readerMailbox, warning: { ref: "message", generation: 0, evidence: "classifierScam" } }
+pure def lawConfirmingAFlaggedMessageLinkCanReachTheBrowser(link: str): bool =
+  val device = { ...S::initial, readiness: S::Ready, surface: S::Email }
+  val held = E::openLink(flaggedMailbox, link, E::MailUser)
+  val confirmed = E::confirmLink(held, link, true, E::MailUser)
+  link != "" implies (
+    E::canOpenLink(flaggedMailbox, link, E::MailUser) and
+    not(mayOpenEmailLink(device, held, B::initial, link)) and
+    E::canConfirmLink(held, link, true, E::MailUser) and
+    mayOpenEmailLink(device, confirmed, B::initial, link))
 pure val emailLink: str = "https://utility.example/statement"
 pure val readerValues = Set(readerMailbox,
   E::openLink(readerMailbox, emailLink, E::MailUser),
