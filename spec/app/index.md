@@ -154,12 +154,12 @@ If another native action updates the sign-in first, Passwords shows the
 current details and asks the person to choose again. Cancel keeps the entry.
 
 ~~~quint
-pure def mayUseChosenLogin(chosen: LoginSummary, current: LoginSummary): bool =
-  chosen.id == current.id and chosen.revision == current.revision
-pure def lawChangedLoginNeedsANewChoice(chosen: LoginSummary, current: LoginSummary): bool =
-  chosen.revision != current.revision implies not(mayUseChosenLogin(chosen, current))
+pure def mayUseChosenLogin(chosen: LoginSummary, latest: LoginSummary): bool =
+  chosen.id == latest.id and chosen.revision == latest.revision
+pure def lawChangedLoginNeedsANewChoice(chosen: LoginSummary, latest: LoginSummary): bool =
+  chosen.revision != latest.revision implies not(mayUseChosenLogin(chosen, latest))
 pure val chosenValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
-pure val currentValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
+pure val latestValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
 ~~~
 
 ### Grace can describe private sign-in without operating the vault
