@@ -186,7 +186,7 @@ const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "
 
 function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent, entry: EntryDetails): Calendar | undefined {
   if (known === undefined) {
-    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
   }
   if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined

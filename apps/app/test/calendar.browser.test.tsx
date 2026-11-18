@@ -110,7 +110,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const gmailView = await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get()));
   const startAt = midnight(eyeDay) + 15 * hour;
   const entry = {
-    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
+    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
     details: {
       title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached",
       startAt, endAt: startAt + hour, timezone: gmailView.timezone, allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: true, leadTime: day, important: false,

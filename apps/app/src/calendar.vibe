@@ -130,7 +130,7 @@ function removed(v: CalendarView) {
 }
 
 const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(approveSave(create(noEntry, {
-  owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", kind: "Appointment", billRef: "", billOrigin: "", billAccount: ""
+  owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", sourceAccount: 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: ""
 }, details, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
 
 function repetitions(v: CalendarView, span: Reach): Published[] {
@@ -166,7 +166,7 @@ export service CalendarNews {
 function matchesGuidedApproval(key: number, c: Calendar, approval: GuidedCalendarApproval): boolean {
   const { identity, draft } = c
   return key === approval.account && identity.owner === approval.owner && identity.calendarId === approval.calendar &&
-    identity.sourceRef === approval.sourceRef && draft.title === approval.title && draft.startAt === approval.starts &&
+    identity.sourceAccount === approval.account && identity.sourceRef === approval.sourceRef && draft.title === approval.title && draft.startAt === approval.starts &&
     draft.endAt === approval.ends && draft.timezone === approval.timezone && draft.location === approval.location && draft.notes === approval.notes
 }
 

@@ -6,9 +6,12 @@ import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
+import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
+import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
+import { Instances } from "../src/instances.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
 import { tabletViewport } from "./tablet.fixture.tsx";
 import "../src/main.css";
@@ -48,9 +51,14 @@ function kept(): Accounts {
   return connected(addAccount(goBack(connected(initial, "Gmail", gmail, "Gmail"), "AccountPerson"), "AccountPerson"), "Outlook", outlook, "Outlook");
 }
 
-async function start(withAccounts = true) {
+async function start(withAccounts = true, tabletCalendar?: CalendarView) {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud, withAccounts), client));
   localStorage.clear();
+  if (tabletCalendar) {
+    localStorage.setItem("accounts", JSON.stringify({ ...initial, nextId: 3 }));
+    localStorage.setItem("calendar/0", JSON.stringify(tabletCalendar, (key: string, value: unknown) =>
+      key === "sourceAccount" && value === 0 ? undefined : value));
+  }
   if (withAccounts) {
     await allowOutlook(secret);
     localStorage.setItem("accounts", JSON.stringify(kept()));
@@ -65,6 +73,11 @@ async function start(withAccounts = true) {
   });
   return {
     secret,
+    appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
+      const shelf = yield* Instances;
+      const calendar = yield* shelf.calendar(key);
+      return (yield* calendar.get()).entries;
+    })),
     host: (availability: "Online" | "Offline") => act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
       w.send({ type: "setAvailability", availability: { connection: availability, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed } }, "Host"))))),
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
@@ -96,7 +109,16 @@ const GoogleCalendarFeed = Schema.Struct({
 });
 
 it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar")', async () => {
-  const { secret, company } = await start(false);
+  const existing = create(emptyOccurrence, {
+    ...noIdentity, owner: "tablet", calendarId: "tablet", occurrenceId: "outlook-visit", sourceRef: "clinic", sourceAccount: 2,
+  }, { ...noDetails, title: "Outlook follow-up", timezone: "UTC", startAt: 1, endAt: 2 }, "CalendarUser");
+  const prior = save(approveSave(existing, existing.revision, "CalendarUser"), existing.revision, true, "CalendarStore");
+  const bound = bindCalendar(emptyCalendar, "tablet", "tablet", "UTC", "ViewStore");
+  const withOutlook = publishOccurrence(bound, prior, 0, true, "ViewStore");
+  const legacyDetails = { ...prior.committed, title: "Earlier appointment" };
+  const legacy = { ...prior, identity: { ...prior.identity, occurrenceId: "legacy-visit", sourceAccount: 0 }, committed: legacyDetails, draft: legacyDetails };
+  const tablet = publishOccurrence(withOutlook, legacy, 0, true, "ViewStore");
+  const { secret, company, appointments } = await start(false, tablet);
   const headers = { authorization: `Bearer ${secret}` };
   const grants = async () => Schema.decodeUnknownSync(GoogleGrants)(await (await fetch(`${cloud}/api/v1/eliza/google/accounts?side=owner`, { headers })).json());
   const openedProvider = vi.spyOn(window, "open");
@@ -168,6 +190,9 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   expect(saved).toMatchObject({ title, startAt: tomorrow.toISOString() });
   expect(saved.externalId).toMatch(/^appointment/);
   expect(saved.description).toContain("Visit form");
+  const sources = async () => (await Promise.all([appointments(0), appointments(3)])).flat()
+    .filter((entry) => entry.hasSaved && entry.phase !== "Deleted" && entry.identity.sourceRef === "clinic").map((entry) => [entry.identity.sourceAccount, entry.committed.title]);
+  await expect.poll(sources).toEqual([[2, "Outlook follow-up"], [0, "Earlier appointment"], [3, title]]);
   await click(page.getByRole("button", { name: "Close Grace", exact: true }));
   await click(page.getByRole("button", { name: "Close Email", exact: true }));
   await click(page.getByRole("button", { name: /^Calendar/ }).getByText(title, { exact: true }));

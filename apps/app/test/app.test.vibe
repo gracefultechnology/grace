@@ -355,7 +355,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const found = (id: string) => imported.find((p) => p.incoming.identity.occurrenceId === id)
       const eyeCheck = found("eye-check")?.incoming ?? noEntry
       const start = now + day
-      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
       const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + hour, reminderEnabled: true, leadTime: day }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
       const added = try calendar.write(fresh, view([eyeCheck]))
@@ -376,7 +376,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const birthday = seen?.incoming ?? noEntry
       const renamed = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, title: "Joan’s 80th birthday" }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
       const shifted = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, startAt: birthday.committed.startAt + day, endAt: birthday.committed.endAt + day }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
-      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "" }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
+      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "", sourceAccount: 0 }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
       const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
       const removed = [try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(eyeCheck.identity, "EntireSeries")]
       const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
