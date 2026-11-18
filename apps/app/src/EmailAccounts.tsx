@@ -126,13 +126,13 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   };
 
   const company = emailProviders[providers[signIn.provider]].name;
-  const framed = signIn.stage === "ProviderPage" ? flows.page : undefined;
+  const provider = signIn.stage === "ProviderPage" ? flows.page : undefined;
   return (
     <SettingsApp {...frame} {...header(page, registry, shown)} onBack={offer({ type: "goBack" })}>
       {content()}
-      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} host={framed && new URL(framed).host} onCancel={offer({ type: "cancelSignIn" })}>
-        {framed ? (
-          <iframe src={framed} title={`${company}’s own sign-in page`} sandbox="allow-forms allow-scripts" referrerPolicy="no-referrer" className="block size-full border-0" />
+      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
+        {provider?.inSheet ? (
+          <iframe src={provider.url} title={`${company}’s own sign-in page`} sandbox="allow-forms allow-scripts" referrerPolicy="no-referrer" className="block size-full border-0" />
         ) : (
           <div className="m-auto flex max-w-[460px] flex-col items-center gap-6 p-8 text-center text-body">
             <Spinner />

@@ -2,7 +2,7 @@
 import { accountAt, accountWith, freshName, Machine as Accounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type OtherReport, type Provider, type SheetReport } from "../gen/app__accounts.effect.vibe"
 import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { Connector, type OtherForm, type SecretPassword } from "./connector.vibe"
+import { Connector, type OtherForm, type SecretPassword, type ShownPage } from "./connector.vibe"
 import { Instances } from "./instances.vibe"
 
 const restarted = Layer.effectDiscard(effect {
@@ -21,7 +21,7 @@ export service SignIns {
   other(details: OtherDetails): void!!
   servers(servers: MailServers): void!!
   readonly notes: Watched<Note | undefined>
-  readonly page: Watched<string | undefined>
+  readonly page: Watched<ShownPage | undefined>
 }
 
 function watched<A>(initial: A) {
@@ -83,7 +83,7 @@ export const signIns = Layer.effect(SignIns, effect {
   const connector = Option.getOrUndefined(try Effect.serviceOption(Connector))
   const held = try Ref.make<Held | undefined>(undefined)
   const notes = watched<Note | undefined>(undefined)
-  const page = watched<string | undefined>(undefined)
+  const page = watched<ShownPage | undefined>(undefined)
   const counter = { next: 1 }
 
   effect function show(text: string) {
@@ -93,7 +93,7 @@ export const signIns = Layer.effect(SignIns, effect {
     try notes.set(undefined)
   }
 
-  if (connector !== undefined) try fork.scoped Stream.runForEach(connector.framed, page.set)
+  if (connector !== undefined) try fork.scoped Stream.runForEach(connector.shown, page.set)
 
   effect function renew(id: number) {
     const box = try shelf.mail(id)

@@ -106,6 +106,7 @@ it("Connect the email I already use", async () => {
   await tap(tile("Outlook"));
   await expect.element(sheet("Outlook")).toBeVisible();
   await providerPage();
+  await expect.element(sheet("Outlook").getByText(`Outlook’s own sign-in page · ${new URL(cloud).host}`)).toBeVisible();
   await tap(sheet("Outlook").getByRole("button", { name: "Cancel" }));
   await expect.element(sheet("Outlook")).not.toBeInTheDocument();
   await expect.element(caution()).not.toBeInTheDocument();

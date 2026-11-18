@@ -11,8 +11,8 @@ const cloud = inject("cloud")
 const site = inject("site")
 const framedVisits = Layer.effectDiscard(effect {
   const page = try SignInPage
-  const { framed } = try Connector
-  try fork.scoped Stream.runForEach(framed, (url) => url === undefined ? Effect.void : page.open(url))
+  const { shown } = try Connector
+  try fork.scoped Stream.runForEach(shown, (at) => at?.inSheet === true ? page.open(at.url) : Effect.void)
 })
 const connectorAt = (key: string, visits: readonly Visit[] = [], opened?: Deferred.Deferred<string>) =>
   Layer.provideMerge(framedVisits, Layer.provideMerge(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits, opened))))
