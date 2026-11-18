@@ -50,6 +50,8 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
   | OpenPrivateSignIn(data) => by == BrowserControlUser and B::canOpenPrivateSignIn(b, data.url)
   | OpenWindow(data) => by == BrowserControlHost and B::canOpenWindow(b, data.url)
   | ZoomPage(data) => by == BrowserControlHost and data.percent != B::activeTab(b).zoomPercent and B::canZoomPage(b, data.percent)
+  | RequestPrivateSignIn(data) => by == BrowserControlUser and data.id == b.selected and data.revision == b.revision and B::canOpenPrivateSignIn(b, data.origin)
+  | OpenPrivateSignIn(data) => by == BrowserControlUser and B::canOpenPrivateSignIn(b, data.url)
   | NewTab => by == BrowserControlUser
   | SelectTab(data) => by == BrowserControlUser and data.id != b.selected and B::canSelectTab(b, data.id)
   | CloseTab(data) => by == BrowserControlUser and B::canCloseTab(b, data.id)

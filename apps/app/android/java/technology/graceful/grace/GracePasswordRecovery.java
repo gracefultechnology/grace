@@ -1,6 +1,6 @@
 package technology.graceful.grace;
 
-import ai.eliza.auth.cloud.CloudPasswordBackup;
+import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import ai.eliza.plugins.passwords.PasswordSurfaces;
 import ai.eliza.plugins.passwords.PasswordUnlock;
 import ai.eliza.plugins.passwords.PasswordVaultAccess;
@@ -24,7 +24,7 @@ import javax.crypto.AEADBadTagException;
 
 final class GracePasswordRecovery implements Application.ActivityLifecycleCallbacks {
  private final Activity activity;
- private final GraceSignInPlugin signIn;
+ private final GraceAccount signIn;
  private AlertDialog active;
  private volatile Operation operation;
  private volatile boolean destroyed;
@@ -32,17 +32,22 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  static final class Operation {
   final CloudPasswordBackup.Purpose purpose;
   volatile CompletableFuture<?> pending;
+  volatile boolean waitingForBrowser = true;
   Operation(CloudPasswordBackup.Purpose purpose) { this.purpose = purpose; }
  }
 
- GracePasswordRecovery(Activity activity, GraceSignInPlugin signIn) {
+ GracePasswordRecovery(Activity activity, GraceAccount signIn) {
   this.activity = activity;
   this.signIn = signIn;
   activity.getApplication().registerActivityLifecycleCallbacks(this);
  }
 
  boolean open() {
-  if (destroyed || operation != null || active != null) return false;
+  if (destroyed || active != null) return false;
+  if (operation != null) {
+   if (!operation.waitingForBrowser) return false;
+   accountChanged();
+  }
   show(new AlertDialog.Builder(activity)
    .setTitle("Backup and recovery")
    .setItems(new String[]{"Back up passwords", "Restore passwords", "Remove cloud backup", "Verify this tablet"},
@@ -62,9 +67,15 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   signIn.authorizePasswordBackup(this, started);
  }
 
+ Operation pending() { return operation; }
+
  boolean isCurrent(Operation expected) { return !destroyed && operation == expected; }
 
- void run(Operation expected, CloudPasswordBackup.Approval approval, String expectedCloudKey, Runnable account) {
+ void run(Operation expected, CloudPasswordBackup.Approval approval) {
+  expected.waitingForBrowser = false;
+  Runnable account = () -> {
+   if (!approval.current()) throw new IllegalStateException("Password backup approval expired");
+  };
   CloudPasswordBackup.Purpose purpose = expected.purpose;
   byte[] recoveryKey = null;
   try {
@@ -101,7 +112,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
      return;
     }
     account.run();
-    GracePasswordsOwner.bindVerified(activity, approval.scope(), expectedCloudKey, linkExisting);
+    GracePasswordsOwner.bindVerified(activity, approval, linkExisting);
     if (!GracePasswordsOwner.admitted(activity)) {
      failed(expected, "These saved passwords belong to another Grace account.");
      return;
@@ -111,9 +122,9 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
      return;
     }
     if (purpose == CloudPasswordBackup.Purpose.SAVE) {
-     byte[] encrypted = GraceCredentials.withRead(() -> {
+     byte[] encrypted = vault.use(ticket, store -> {
       account.run();
-      return vault.use(ticket, store -> store.encryptBackup(approval.scope(), key));
+      return store.encryptBackup(approval.scope(), key);
      });
      try {
       account.run();
@@ -129,13 +140,11 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
      byte[] encrypted = backup.ciphertext();
      try {
       if (!approval.revision().equals(backup.revision())) { failed(expected, cloudMessage(412)); return; }
-      boolean restored = GraceCredentials.withRead(() -> {
+      boolean restored = vault.use(ticket, store -> {
        account.run();
-       return vault.use(ticket, store -> {
-        if (store.entries().length() != 0) return false;
-        store.restoreBackup(approval.scope(), key, encrypted);
-        return true;
-       });
+       if (store.entries().length() != 0) return false;
+       store.restoreBackup(approval.scope(), key, encrypted);
+       return true;
       });
       failed(expected, restored ? "Passwords restored." : "Restore needs an empty password vault. Your saved passwords are still here.");
      } finally {
@@ -284,14 +293,12 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  }
 
  void accountChanged() {
-  activity.runOnUiThread(() -> {
-   Operation pending = operation;
-   operation = null;
-   CompletableFuture<?> answer = pending == null ? null : pending.pending;
-   if (answer != null) answer.cancel(false);
-   signIn.cancelPasswordBackup();
-   dismiss();
-  });
+  Operation pending = operation;
+  operation = null;
+  CompletableFuture<?> answer = pending == null ? null : pending.pending;
+  if (answer != null) answer.cancel(false);
+  signIn.cancelPasswordBackup();
+  activity.runOnUiThread(this::dismiss);
  }
 
  private AlertDialog show(AlertDialog.Builder builder, Runnable cleanup) {

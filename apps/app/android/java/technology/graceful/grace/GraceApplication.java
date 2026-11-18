@@ -8,5 +8,4 @@ public final class GraceApplication extends Application {
   super.onCreate();
   PasswordVaultAccess.setAdmission(GracePasswordsOwner::admitted);
  }
-
 }

@@ -502,10 +502,11 @@ effect function store(site: string) {
   }
 
   effect function googleStatus() {
-    const google = (try signedIn()).boxes.find((b) => b.provider === "google")
+    const account = try signedIn()
+    const google = account.boxes.find((b) => b.provider === "google")
     const connected = google !== undefined && !google.expired
     return try HttpServerResponse.json({
-      provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected,
+      accountId: account.key, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected,
       reason: connected ? "connected" : google ? "reauth_required" : "disconnected", identity: google ? { email: google.address } : null,
       grantedCapabilities: connected ? capabilities : [], grantedScopes: connected ? scopes : [], expiresAt: null,
       hasRefreshToken: connected, connectionId: google?.grantId ?? null, linkedAt: null, lastUsedAt: null

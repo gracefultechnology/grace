@@ -1,9 +1,8 @@
 [
-  { "call": "GraceSpeech.checkPermissions", "returns": { "microphone": "prompt" } },
+  { "call": "GraceGuideSpeech.checkPermissions", "returns": { "microphone": "prompt" } },
   {
-    "call": "GraceSpeech.startCloudSpeech",
-    "with": { "sessionId": "6f1c2a9e-4b7d-4c1e-9a3f-2d8e5b0c7a14", "environment": "production", "credentialId": "eliza-cloud", "muted": true },
-    "refuses": "Cloud account unavailable"
+    "call": "GraceAccount.startSpeech",
+    "refuses": "Speech is unavailable"
   },
   { "call": "GraceDevice.setVolume", "with": { "step": 5 }, "returns": { "step": 5 } },
   { "key": "VOLUME_UP" },

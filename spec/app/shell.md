@@ -5,7 +5,7 @@ Email, Internet, Files and Passwords cards, persistent Ask Grace, and clearly se
 Home and Close browser controls. Two Home pages have arrow, dot and swipe
 navigation; the final prototype uses the progressive-blur carousel and icon
 app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
-Email & calendar and About this tablet; Volume and Wi-Fi also open rail
+Account, Email & calendar and About this tablet; Volume and Wi-Fi also open rail
 popovers over the current app.
 
 This module owns device readiness and the selected surface. The assistant
@@ -34,7 +34,7 @@ type Surface = Home | Calendar | Email | Browser | Files | Passwords | DeviceSet
 type Connectivity = Offline | Scanning | NoNetworks | Connecting | Online | CaptivePortal | WrongPassword | ConnectionFailed
 type HomePage = MainCards | FilesCard
 type RailPopover = NoPopover | WifiPopover | VolumePopover
-type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | EmailCalendarSettings | AboutSettings
+type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | EmailCalendarSettings | AccountSettings | AboutSettings
 type Shell = {
   readiness: Readiness,
   surface: Surface,

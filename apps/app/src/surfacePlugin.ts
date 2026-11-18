@@ -1,15 +1,17 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
 // The Capacitor bindings of the plugins MainActivity registers. Their types are the plugins' own
 // (definitions.ts); none of their runtime code is bundled. Beside them, what the WebView itself knows of the network.
-import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
-import { Effect } from "effect";
-import type { ElizaSurfaceManagerPlugin } from "../../../vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts";
-import { createPasswordsClient } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/client.ts";
-import type { ElizaPasswordsPlugin } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/definitions.ts";
-import type { WiFiPlugin } from "../../../vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Effect, Schema } from "effect";
+import type { PluginListenerHandle } from "@capacitor/core";
+import { accountPlugin } from "./accountPlugin.ts";
+import type { ElizaSurfaceManagerPlugin } from "@elizaos/os/bridges/definitions/browser-surface";
+import type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
+import { createPasswordsClient } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
+import type { ElizaPasswordsPlugin } from "@elizaos/os/bridges/definitions/passwords";
 
-export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "../../../vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts";
-export type { WiFiPlugin } from "../../../vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts";
+export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "@elizaos/os/bridges/definitions/browser-surface";
+export type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
 
 /** The plugin on Android; elsewhere (Vite in a browser) there is no native page under the interface. */
 export const devicePlugin = Capacitor.isNativePlatform() ? registerPlugin<ElizaSurfaceManagerPlugin>("ElizaSurfaceManager") : undefined;
@@ -24,6 +26,9 @@ type PrivateViewPlugin = {
   stopHelp(): Promise<void>;
 };
 
+export const androidHost = Capacitor.isNativePlatform();
+export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;
+
 export type GuideSpeechResult =
   | { status: "complete"; text: string }
   | { status: "cancelled" | "unavailable" | "no-match" };
@@ -36,17 +41,20 @@ export type GuideSpeechPlugin = {
 export const guideSpeechPlugin = Capacitor.isPluginAvailable("GraceGuideSpeech")
   ? registerPlugin<GuideSpeechPlugin>("GraceGuideSpeech") : undefined;
 
-export const androidHost = Capacitor.isNativePlatform();
-export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;
-
 export type PasswordBackupPlugin = {
-  addListener(event: "passwordOwnerChanged", listener: () => void): Promise<PluginListenerHandle>;
+  addListener(event: "passwordOwnerChanged", changed: () => void): Promise<PluginListenerHandle>;
   passwordBackupStatus(): Promise<{ ready: boolean }>;
   openBackupRecovery(): Promise<{ status: "opened" | "unavailable" }>;
+  dismissPasswordRecovery?(): Promise<void>;
 };
 
-export const passwordBackupPlugin = Capacitor.isPluginAvailable("GraceSignIn")
-  ? registerPlugin<PasswordBackupPlugin>("GraceSignIn") : undefined;
+const backupReady = Schema.decodeUnknownSync(Schema.Struct({ ready: Schema.Boolean }));
+export const passwordBackupPlugin: PasswordBackupPlugin | undefined = accountPlugin && {
+  addListener: (_event, changed) => accountPlugin.addListener("sessionChanged", changed),
+  passwordBackupStatus: async () => backupReady(await accountPlugin.passwordRecoveryStatus()),
+  openBackupRecovery: async () => { await accountPlugin.showPasswordRecovery(); return { status: "opened" }; },
+  dismissPasswordRecovery: () => accountPlugin.dismissPasswordRecovery(),
+};
 
 /** The Wi-Fi plugin, which only the launcher registers; elsewhere the WebView's own online state is all there is. */
 export const wifiPlugin = Capacitor.isPluginAvailable("ElizaWiFi") ? registerPlugin<WiFiPlugin>("ElizaWiFi") : undefined;

@@ -1,8 +1,62 @@
-This checkout contains the Grace MVP specification rebuild. Start with the
-[product contract](spec/index.md), [requirements coverage](docs/requirements-coverage.md)
-and [validation status](docs/validation-status.md). The current phase specifies
-and verifies the product before application implementation. The Vibestack
-reference documentation follows.
+Grace is a tablet assistant with a Grace-owned interface, on-device agent and
+dedicated cloud. Start with the [product contract](spec/index.md), the
+[Eliza integration inventory and launch criteria](docs/implementation-acceptance.md)
+and the [validation record](docs/validation-status.md).
+
+## Run Grace Cloud
+
+Use Node 26, the repository's pinned pnpm, and PostgreSQL. Initialize the exact
+upstream commit before installing. The Worker imports the upstream cloud
+package. Grace supplies the origins, assets and provider bindings.
+
+```sh
+git submodule update --init vendor/eliza
+pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
+pnpm install --frozen-lockfile
+```
+
+Create an empty local PostgreSQL database for Grace and set its connection
+string as `DATABASE_URL` in the ignored file `apps/cloud/.dev.vars`.
+Initialize it and start the local Worker. Run Vite in a second terminal.
+
+```sh
+pnpm --filter @grace/cloud migrate
+pnpm --filter @grace/cloud dev
+# Second terminal
+pnpm --filter @repo/app dev
+```
+
+Open `http://localhost:5173` for Grace. The Worker serves
+`http://localhost:8787/health`. The upstream migration and the Worker read
+the database identity for the selected environment from the Grace Wrangler
+configuration. The migration refuses an occupied database on first install.
+
+| Capability | Deployment bindings and registration |
+| --- | --- |
+| Database | The production `HYPERDRIVE` binding points to a dedicated PostgreSQL service in [Grace’s Railway project](https://railway.com/project/9ef3865f-1538-44d7-aa1f-6734e2c2caac). The runtime uses its own non-admin role. Hyperdrive checks the database’s private CA and has query caching disabled. Run migrations with the Railway owner connection and `CLOUD_ENVIRONMENT=production`. |
+| Google sign-in | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. The production configuration pins the public ID of the existing Eliza Google OAuth web client for Grace sign-in and managed connections. The project owner supplies its matching secret to the Worker. Register both `https://api.graceforseniors.com/api/auth/google/callback` and `https://api.graceforseniors.com/api/v1/eliza/google/connect/callback` on that client. |
+| Email and SMS | The production `SIGN_IN_EMAIL` binding sends codes from `signin@auth.graceforseniors.com`. Local tests can use a Resend test project via `RESEND_API_KEY` and `EMAIL_FROM`. Set `EMAIL_CODE_SECRET` to at least 32 random characters. Grace SMS uses a dedicated `BLOOIO_API_KEY` and the approved sender’s `BLOOIO_SMS_CHANNEL_ID`. A Twilio Verify deployment can use `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_VERIFY_SERVICE_SID` instead. Both transports enforce `SMS_ALLOWED_COUNTRY_CODES` and `SMS_HOURLY_BUDGET`. |
+| Gmail and Calendar | A new 32-byte hex `GOOGLE_CONNECT_TOKEN_KEY` for this deployment. Grace currently uses the sign-in client for managed access as well. Optional `GOOGLE_CONNECT_CLIENT_ID` and `GOOGLE_CONNECT_CLIENT_SECRET` apply when a deployment has a separate managed-data client. Users choose Gmail read, send and Trash permissions and Calendar read and owned-event edits separately. |
+| Subscriptions | Grace Plus costs USD 30 per month. The production configuration maps `plus_monthly` to its dedicated live product and price in Eliza Labs. Bind `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to Grace and enable the hosted customer portal. Register `https://api.graceforseniors.com/api/v1/billing/webhook` for checkout completion, subscription changes, paid invoices, refunds and dispute changes. The Worker verifies the event signature, retrieves the customer's current subscription and applies each paid invoice once. [Grace Plus in Stripe](https://dashboard.stripe.com/acct_1SRAVOJjh0QG9ZAX/products/prod_VeHYVJT4exsbJE) |
+| Inference | The production Worker uses its own `AI` binding in Grace’s Cloudflare account. The profile maps Grace’s `qwen-3.8-27b` to `@cf/qwen/qwen3.8-27b` and selects BGE Base English for embeddings. Model identifiers, response limits and prices in microdollars per 1,000 tokens are in `apps/cloud/wrangler.jsonc`. [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) |
+| Speech | The Worker uses its Grace-specific `CARTESIA_API_KEY` in the Eliza organization and Julia – Gentle Guide, a stock English voice. The organization's Startup model overage costs USD 45 per million credits. At three credits per second of transcription and one per character of synthesis, Grace meters 135 and 45 microdollars respectively. Each account can start up to 120 one-minute speech sessions per rolling day, carrying forward the previous integration's 120-minute ceiling. Grace owns the `SPEECH_RELAY_SESSIONS` Durable Objects. |
+| Android | Register the Grace app package, release signer SHA-256 fingerprint, HTTPS return URLs and `credentialTtlMs: 604800000` (seven days) in `NATIVE_CLIENT_REGISTRY`, and select its `NATIVE_CLIENT_ID`. The app host serves the resulting Digital Asset Links document. Only the native app receives the inference credential. |
+
+Google identity sign-in requests basic identity scopes. The Gmail and Calendar
+consent screen lists the permissions the person chose. In Google’s testing mode, the designated
+test users can consent to those scopes, with authorizations expiring after
+seven days. Production use of restricted Gmail data through the Worker requires Google
+verification and a security assessment.
+[Google sign-in](https://developers.google.com/identity/verification/authentication-policy-compliance)
+· [Testing limits](https://support.google.com/cloud/answer/15549945)
+· [Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes).
+
+The deployment targets `app.graceforseniors.com` for Grace and
+`api.graceforseniors.com` for its API. The marketing site retains the apex.
+Use `pnpm --filter @grace/cloud bundle` to build the UI and dry-run the Worker.
+The production command is `pnpm --filter @grace/cloud deploy` after the Grace
+database, Cloudflare bindings, provider registrations and launch journeys are ready.
+The reference documentation for Vibestack follows.
 
 <div align="center">
 

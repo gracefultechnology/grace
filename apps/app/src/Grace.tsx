@@ -1,12 +1,18 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
-// right of the rail. A sent draft or a tapped answer is the person's turn, which Grace answers.
-import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
-import { useState } from "react";
+// right of the rail. The workspace owns the composer and its active turn.
+import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { Effect, Stream } from "effect";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
-import { useDraft, useKeyboardHeight, usePasswordGuide, useWorkspace } from "./useApp.ts";
+import { passwordDirection } from "./passwords.vibe";
+import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
+import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
+
+const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
 const checkLabels: Record<GuidedRead, string> = {
   ReadMail: "Check email",
@@ -20,11 +26,28 @@ const checkLabels: Record<GuidedRead, string> = {
 };
 
 /** @model spec/app/assistant.md */
+
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
-  const { workspace, can, send, say, checkGuidedRead, pointAtReadLink } = useWorkspace();
+  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink } = useWorkspace();
   const guide = usePasswordGuide();
+  const runtime = useRuntime();
   const { assistant, plan, review, device, browser } = workspace!;
   const conversation = assistant.conversation;
+  const [unavailable, setUnavailable] = useState<number>();
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(replyOffers, () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  const offered = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ReplyControls, (controls) => controls.get())));
+  const currentOffer = workspace && offered && replyOfferIsVisible(workspace, offered) ? offered : undefined;
+  const choose = (id: number, index: number) => {
+    void runtime.runPromise(Effect.flatMap(ReplyControls, (controls) => controls.choose(id, index))).then((accepted) => {
+      if (!accepted) setUnavailable(current().assistant.conversation.generation);
+      else if (current().assistant.presentation === "Expanded" && can({ type: "interact", input: { tag: "Resize", expanded: false } }))
+        void send({ type: "interact", input: { tag: "Resize", expanded: false } });
+    });
+  };
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [pageCheck, setPageCheck] = useState<{ key: string; pending: boolean }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; words?: string }>();
@@ -32,8 +55,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const keyboard = useKeyboardHeight();
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
+  const canTalk = mayOfferTalk(workspace!);
+  const talk = () => { guide.stopListening(); void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
+  const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
+    : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
+  const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
+  const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
-  const answers = conversation.answers.filter((text) => can({ type: "interact", input: { tag: "ChooseAnswer", token: conversation.generation, text } }));
   const start = { type: "startReadReview", reviewRevision: review.revision } as const;
   const showReview = can(start);
   const next = plan.receipts.length;
@@ -87,39 +115,48 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
         style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={
-          <GraceHeader pause={paused ? "paused" : pausable ? "live" : "idle"} onPause={() => void send(stop)}
-            onResume={() => void send(resume)} expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
+          <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
+            onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void send(resume) : interact({ tag: "ResumeSpeech" })}
+            expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4}
-            mic={conversation.voice || guide.microphone === "GuideMicListening"}
-            quiet={conversation.turn === "Thinking"}
-            listening={guide.microphone === "GuideMicListening"}
-            placeholder={guide.microphone === "GuideMicUnavailable" ? "Voice help is unavailable. You can type to Grace." :
-              guide.microphone === "GuideMicNoMatch" ? "Try saying “Open Passwords”, or type to Grace." : undefined}
-            onMicChange={(on) => {
-              if (on) guide.listen();
-              else {
-                guide.stopMic();
-                interact({ tag: "StopVoice" });
-              }
-            }}
-            onFieldFocus={() => { guide.stopMic(); interact({ tag: "TypeIntoChat" }); }}
-            onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
-            onSend={() => {
-              const revision = conversation.draftRevision;
-              void guide.request(revision).then(async (guided) => {
-                if (guided) setDraft("");
-                const sent = guided || await say({ tag: "SendDraft", revision });
-                if (sent && document.activeElement instanceof HTMLElement) document.activeElement.blur();
-              });
-            }} />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="capsule" size="pill"
+                onClick={guide.mic === "GuideMicListening" ? guide.stopListening : guide.listen}>
+                {guide.mic === "GuideMicListening" ? "Stop listening for Passwords" : "Say a Passwords command"}
+              </Button>
+              {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
+              {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
+            </div>
+            <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || guide.mic === "GuideMicListening"} listening={guide.mic === "GuideMicListening"}
+              quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
+              micUnavailable={canTalk ? micUnavailable : undefined}
+              onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
+              onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
+              onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
+              onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
+              onSend={() => {
+                const revision = current().assistant.conversation.draftRevision;
+                void guide.request(revision).then(async (guided) => {
+                  if (guided) { setDraft(""); return; }
+                  const sent = await say({ tag: "SendDraft", revision });
+                  if (sent && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
+                });
+              }} />
+          </div>
         }>
         <GraceMessages>
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
+          {currentOffer && currentOffer.labels.length > 0 && (
+            <AnswerChips>{currentOffer.labels.map((label, index) =>
+              <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>
+          )}
+          {(currentOffer?.blocked || unavailable === conversation.generation) &&
+            <PageText role="status">Grace can’t complete that action here.</PageText>}
           {observation && can(observation) && (
             <AnswerChips>
               <AnswerChip onClick={() => void send(observation)}>
