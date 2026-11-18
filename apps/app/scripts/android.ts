@@ -4,7 +4,7 @@ import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, 
 import { createRequire } from "node:module";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
-import { parseArgs, promisify } from "node:util";
+import { isDeepStrictEqual, parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
 import { buildConsumerAndroidRuntime } from "../../../vendor/eliza/packages/app/scripts/lib/consumer-android-runtime.mjs";
@@ -83,9 +83,16 @@ const Step = Schema.Union([
   Schema.Struct({ key: Schema.Literals(["VOLUME_UP", "VOLUME_DOWN"]) }),
   Schema.Struct({ ...PluginCall, returns: Schema.Record(Schema.String, Schema.Unknown) }),
   Schema.Struct({ ...PluginCall, refuses: Schema.NonEmptyString }),
+  Schema.Struct({ evaluate: Schema.NonEmptyString, returns: Schema.Unknown }),
+  Schema.Struct({ evaluate: Schema.NonEmptyString, rejects: Schema.NonEmptyString }),
+  Schema.Struct({ grant: Schema.String.check(Schema.isPattern(/^android\.permission\.[A-Z_]+$/)) }),
+  Schema.Struct({ notification: Schema.String.check(Schema.isPattern(/^[\w ,.-]+$/)) }),
+  Schema.Struct({ restart: Schema.Literal("force-stop") }),
 ]);
 type Step = typeof Step.Type;
-type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string }>;
+type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string } | { grant: string } | { notification: string }>;
+type InSession = Exclude<Step, { restart: string }>;
+const isOnDevice = (step: InSession): step is OnDevice => "service" in step || "leaveFor" in step || "key" in step || "grant" in step || "notification" in step;
 const Benchmark = Schema.Struct({
   taskId: Schema.NonEmptyString,
   intent: Schema.NonEmptyString,
@@ -401,13 +408,21 @@ async function devTools(url: string, signal: AbortSignal) {
       const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal });
       return Schema.decodeUnknownSync(GraceReadback)(result.value);
     },
-    async step(step: Exclude<Step, OnDevice>, signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000)) {
+    async step(step: Exclude<InSession, OnDevice>, signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000)) {
       if ("agent" in step) {
         const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && Promise.resolve(listening).then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
         const status = Schema.decodeUnknownSync(Schema.Struct({ ...AgentStatus.fields, error: Schema.optional(Schema.String) }))(result.value);
         if (status.state !== step.agent.state || status.failure !== step.agent.failure)
           throw new Error(`The agent is ${JSON.stringify(status)}, not ${JSON.stringify(step.agent)}`);
+        return;
+      }
+      if ("evaluate" in step) {
+        const expression = `Promise.resolve().then(() => (${step.evaluate})).then((value) => JSON.stringify({ returns: value ?? null }), (error) => JSON.stringify({ rejects: String(error?.code ?? error) }))`;
+        const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        const outcome: unknown = JSON.parse(String(result.value));
+        const expected = "returns" in step ? { returns: step.returns } : { rejects: step.rejects };
+        if (!isDeepStrictEqual(outcome, expected)) throw new Error(`${step.evaluate} gave ${JSON.stringify(outcome)}`);
         return;
       }
       if ("call" in step) {
@@ -560,6 +575,17 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
     await shell(serial, `until [ "$(${foreground})" -gt 0 ]; do sleep 1; done`, 120);
     return;
   }
+  if ("grant" in step) {
+    await shell(serial, `pm grant ${identity.appId} ${step.grant}`);
+    return;
+  }
+  if ("notification" in step) {
+    await shell(serial, "am start -W -a android.settings.SETTINGS", 120);
+    const posted = `dumpsys notification --noredact | grep -A60 "pkg=${identity.appId}" | grep -qF "android.title=String (${step.notification})"`;
+    await shell(serial, `until ${posted}; do sleep 1; done`, 300);
+    await shell(serial, `am start -W -n ${activity}`, 120);
+    return;
+  }
   await shell(serial, `am start -W -a ${step.leaveFor}`, 120);
   await shell(serial, `am kill ${identity.appId}`);
   const survivor = (await shell(serial, `pidof ${identity.appId}`).catch(() => "")).trim();
@@ -568,11 +594,11 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
 }
 
 async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
-  await adb(["-s", serial, "install", "-r", apk], 300).catch(async (error: unknown) => {
+  await adb(["-s", serial, "install", "-r", apk], 1800).catch(async (error: unknown) => {
     if (!(error instanceof Error && String(error.cause).includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE"))) throw error;
     process.stdout.write(`${serial} holds Grace signed by another key; uninstalling her and her data\n`);
     await adb(["-s", serial, "uninstall", identity.appId], 120);
-    await adb(["-s", serial, "install", apk], 300);
+    await adb(["-s", serial, "install", apk], 1800);
   });
 }
 
@@ -582,10 +608,26 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
     .catch(async (error: unknown) => failing(`Waiting for Home to resolve to Grace rather than ${(await shell(serial, resolveHome).catch(String)).trim()}`)(error));
-  const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
-  if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   const webView = /Current WebView package \(name, version\): \((.*)\)/.exec(await shell(serial, "dumpsys webviewupdate"))?.[1];
   process.stdout.write(`${serial} ${webView ?? "WebView unknown"}\n`);
+  let segment: InSession[] = [];
+  const segments = [segment];
+  for (const step of exercise) {
+    if ("restart" in step) segments.push(segment = []);
+    else segment.push(step);
+  }
+  for (const [index, steps] of segments.entries()) {
+    if (index > 0) {
+      await shell(serial, `am force-stop ${identity.appId}`);
+      process.stdout.write(`${JSON.stringify({ restart: "force-stop" })} ok\n`);
+    }
+    await visit(serial, steps, release, benchmark);
+  }
+}
+
+async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<InSession>, release: boolean, benchmark?: BenchmarkRun) {
+  const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
+  if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   if (release) {
     const running = (await shell(serial, `for i in $(seq 120); do pidof ${identity.appId} && exit; sleep 1; done`, 180)).trim();
     if (!/^\d+$/.test(running)) throw new Error(`Expected one process of Grace's release build on ${serial}, found "${running}"`);
@@ -609,7 +651,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
         failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
       await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
       for (const step of exercise) {
-        await ("service" in step || "leaveFor" in step || "key" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
+        await (isOnDevice(step) ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
         process.stdout.write(`${JSON.stringify(step)} ok\n`);
       }
       if (benchmark) await runBenchmark(benchmark, page, listTargets);

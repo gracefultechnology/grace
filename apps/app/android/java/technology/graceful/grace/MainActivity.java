@@ -30,6 +30,9 @@ public class MainActivity extends ElizaBridgeActivity {
   registerPlugin(GraceSpeechPlugin.class);
   registerPlugin(GraceDevicePlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
+  registerPlugin(GraceRecordStorePlugin.class);
+  registerPlugin(GraceRemindersPlugin.class);
+  registerPlugin(GraceFilesPlugin.class);
   super.onCreate(state);
   preferSixtyHertz();
   findViewById(android.R.id.content).setBackgroundResource(R.color.paper);
