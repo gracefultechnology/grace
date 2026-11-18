@@ -1456,7 +1456,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await native.report("tab-1", origin + about.path, 100);
     await tap(resume);
     await tap(check);
-    await expect.element(page.getByRole("status", { name: "Page check result" })).toHaveTextContent(/Help center/);
+    const result = page.getByRole("status", { name: "Page check result" });
+    await expect.poll(() => result.query()?.textContent).toContain(target);
     await expect.element(pending).toHaveAttribute("aria-current", "step");
     expect(plan.getByText(/^Open page:/).query()).toBeNull();
     expect(plan.getByText("Read checks complete").query()).toBeNull();
