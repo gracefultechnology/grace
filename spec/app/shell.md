@@ -1,10 +1,11 @@
 # Grace device and Home
 
-The Home and system rail follow `prototype/Grace Prototype.html`: Calendar,
-Email, Internet, Files and Passwords cards, persistent Ask Grace, and clearly separate
-Home and Close browser controls. Two Home pages have arrow and swipe
-navigation, with page dots when Home fills the screen; the final prototype uses the progressive-blur carousel and icon
-app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
+Home uses the progressive-blur carousel from `prototype/Grace Prototype.html`.
+Calendar, Email and Internet share the main page. Files comes next, then
+Passwords. The person can move through these pages with arrows or horizontal
+swipes, and with page dots when Home fills the screen. The rail keeps Ask
+Grace available and provides separate Home and Close browser controls. Apps
+use icon headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
 Account, Email & calendar and About this tablet; Volume and Wi-Fi also open rail
 popovers over the current app.
 
@@ -23,9 +24,11 @@ References: PRD MVP01–06, ANDROID01–10, ENG02–03; prototype 1847–1882, 2
 
 ## Story: Reach everyday tasks from Home
 
-> As a person using Grace, I can open my calendar, email or the internet from
-> Home and return without losing the separate conversation or provider data.
-> With Grace open at the bottom, I can use either page of Home. The cards fill
+> As a person using Grace, I can open Calendar, Email or Internet from the
+> main Home cards. I can use the next arrow or swipe left to reach Files,
+> then Passwords, and use the previous arrow or swipe right to go back.
+> Returning Home preserves my conversation and provider data.
+> With Grace open at the bottom, I can use every page of Home. The cards fill
 > the pane above Grace, aligned to her window, with the same gap above chat as
 > between chat and the rail. The greeting and bottom page dots yield that space
 > to the cards. In Settings, I can scroll the list to About this tablet and
@@ -37,7 +40,7 @@ References: PRD MVP01–06, ANDROID01–10, ENG02–03; prototype 1847–1882, 2
 type Readiness = Starting | Ready | StartupFailed | Sleeping
 type Surface = Home | Calendar | Email | Browser | Files | Passwords | DeviceSettings
 type Connectivity = Offline | Scanning | NoNetworks | Connecting | Online | CaptivePortal | WrongPassword | ConnectionFailed
-type HomePage = MainCards | FilesCard
+type HomePage = MainCards | FilesCard | PasswordsCard
 type RailPopover = NoPopover | WifiPopover | VolumePopover
 type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | EmailCalendarSettings | AccountSettings | AboutSettings
 type Shell = {
@@ -78,7 +81,9 @@ pure def sometimesStartupCanFail(s: Shell): bool = s.readiness == StartupFailed
 Calendar displays real upcoming occurrences, Email displays real unread
 messages, and Internet previews the retained browser state. Sample names,
 dates, messages and balances from the prototype are not product defaults.
-Changing surfaces changes only navigation context, not the permissions.
+The Files and Passwords cards open from their own Home pages. Paging keeps
+the person on Home. Opening a card changes the navigation context and
+preserves permissions.
 
 ```quint
 pure def isTaskSurface(destination: Surface): bool =
@@ -100,6 +105,7 @@ pure def chooseHomePage(s: Shell, page: HomePage): Shell = {
   ...s, homePage: page, contextVersion: s.contextVersion + 1
 }
 pure def sometimesFilesCardIsReachable(s: Shell): bool = s.surface == Home and s.homePage == FilesCard
+pure def sometimesPasswordsCardIsReachable(s: Shell): bool = s.surface == Home and s.homePage == PasswordsCard
 ```
 
 ### Settings and rail popovers preserve the surface underneath
