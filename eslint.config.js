@@ -34,19 +34,24 @@ const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", "vibestack/studi
 const design = "packages/design-system"
 const writing = 'AGENTS.md, "Writing code"'
 const citation = String.raw`spec\/\S+\.md, "[^"]+"`
-const directives = [new RegExp(String.raw`^\s*${citation}(?:; ${citation})*\s*$`), /^@/, /^\/ <reference /, /^ @vitest-environment /, /^ eslint-(?:disable|enable)/]
+const suppressible = String.raw`(?!grace\/|no-console\b)[\w@/-]+`
+const directives = {
+  Line: [new RegExp(String.raw`^\s*${citation}(?:; ${citation})*\s*$`), /^@ (?:backend|requires|ensures|invariant|decreases|assert|pure|type)\b/, /^\/ <reference /, /^ @vitest-environment [\w-]+$/],
+  Block: [/^ eslint-enable\b/],
+}
+const suppression = new RegExp(String.raw`^ eslint-disable(?:-next-line|-line)? ${suppressible}(?:, ${suppressible})* -- \S`)
 const comments = {
   meta: { type: "problem", schema: [{ type: "object", properties: { jsdoc: { type: "boolean" } }, additionalProperties: false }] },
   create: (context) => ({
     Program: () => context.sourceCode.getAllComments()
-      .filter((comment) => comment.type !== "Shebang" && !directives.some((directive) => directive.test(comment.value)) && !(context.options[0]?.jsdoc && comment.type === "Block" && comment.value.startsWith("*")))
+      .filter((comment) => comment.type !== "Shebang" && !suppression.test(comment.value) && !directives[comment.type].some((directive) => directive.test(comment.value)) && !(context.options[0]?.jsdoc && comment.type === "Block" && comment.value.startsWith("*")))
       .forEach((comment) => context.report({ loc: comment.loc, message: `No code comments: only spec citations and tool directives (${writing}).` })),
   }),
 }
-const calls = (names) => `CallExpression:matches([callee.name=${names}], [callee.property.name=${names}])`
+const uses = (names) => `:matches(CallExpression[callee.name=${names}], CallExpression[callee.property.name=${names}], ImportSpecifier[imported.name=${names}])`
 const scheduling = {
-  [calls(/^use(?:Layout|Insertion)?Effect$/)]: `No effect hooks: shared state lives in the spec-backed Machine (${writing}).`,
-  [calls(/^(?:setTimeout|setInterval|requestAnimationFrame|requestIdleCallback)$/)]: `No timers: wait with Effect in VibeLang, or let the Machine say when (${writing}).`,
+  [uses(/^use(?:Layout|Insertion)?Effect$/)]: `No effect hooks: shared state lives in the spec-backed Machine (${writing}).`,
+  [uses(/^(?:setTimeout|setInterval|requestAnimationFrame|requestIdleCallback)$/)]: `No timers: wait with Effect in VibeLang, or let the Machine say when (${writing}).`,
 }
 const effects = {
   meta: { type: "problem", schema: [] },
@@ -55,6 +60,7 @@ const effects = {
 const grace = { rules: { comments, effects } }
 const own = ["apps/**", "packages/**"]
 const commented = ["apps/app/src/{App,Browser,Grace,PageLayer,Settings,WebsiteRequests}.tsx", "apps/app/src/{app.vibe,surfacePlugin.ts,useApp.ts}", "apps/app/test/app.browser.test.tsx", "packages/ui/src/icons.tsx", "packages/ui/src/lib/facts.tsx", "packages/ui/{vite,vitest}.config.ts"]
+const suppressing = ["apps/app/src/Grace.tsx", "packages/ui/src/components/{LauncherCard.tsx,WifiSignInSheet.meta.tsx}"]
 const scheduled = ["apps/app/src/{App.tsx,page.vibe,useApp.ts}", "apps/app/test/app.browser.test.tsx"]
 
 // The tool reads Quint's JSON and the TypeScript compiler API as `any` at its boundaries; packages and apps stay strict.
@@ -155,8 +161,9 @@ export default defineConfig(
       "no-restricted-syntax": ["error", { selector: "JSXOpeningElement[name.name=/^(input|textarea)$/]", message: "Use Input, Textarea or Checkbox from @repo/ui." }],
     },
   },
+  { files: own, ignores: suppressing, linterOptions: { noInlineConfig: true } },
   { files: own, plugins: { grace }, rules: { "no-console": "error" } },
   { files: own, ignores: commented, rules: { "grace/comments": "error" } },
-  { files: ["packages/ui/src/components/**"], rules: { "grace/comments": ["error", { jsdoc: true }] } },
+  { files: ["packages/ui/src/components/**"], ignores: ["**/*.meta.tsx"], rules: { "grace/comments": ["error", { jsdoc: true }] } },
   { files: own, ignores: scheduled, rules: { "grace/effects": "error" } },
 )
