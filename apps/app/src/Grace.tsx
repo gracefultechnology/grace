@@ -1,12 +1,11 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Stream } from "effect";
-import { KeyRound } from "lucide-react";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
+import { guidedDetails, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
@@ -14,9 +13,12 @@ import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
+
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
-const checkLabels: Record<GuidedRead, string> = {
+const checkLabels: Record<GuidedStep["tag"], string> = {
   ReadMail: "Check email",
   ReadBrowser: "Check page",
   ReadChangedBrowser: "Check page",
@@ -24,17 +26,18 @@ const checkLabels: Record<GuidedRead, string> = {
   ReadStatement: "Read statement",
   ReadCalendar: "Check appointment",
   SaveMailAppointment: "Check saved appointment",
-  UnsupportedRead: "",
+  SurfaceOutcome: "",
 };
 
 /** @model spec/app/assistant.md */
 
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
-  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink } = useWorkspace();
+  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink, startReadReview, resumeReadPlan } = useWorkspace();
   const guide = usePasswordGuide();
   const runtime = useRuntime();
   const { assistant, plan, review, device, browser } = workspace!;
   const conversation = assistant.conversation;
+  const authority = guidedAuthority(useSetup(runtime).state, window.location.hash);
   const [unavailable, setUnavailable] = useState<number>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(replyOffers, () => Effect.sync(changed)));
@@ -58,31 +61,33 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
   const canTalk = mayOfferTalk(workspace!);
-  const listeningForPasswords = guide.mic === "GuideMicListening";
-  const passwordMicLabel = listeningForPasswords ? "Stop listening for Passwords" : "Say a Passwords command";
+  const listeningLocally = guide.mic === "GuideMicListening";
   const talk = () => { guide.stopListening(); void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
-  const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
-    : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
+  const needsMicPermission = canTalk && !device.microphoneAllowed;
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
   const start = { type: "startReadReview", reviewRevision: review.revision } as const;
-  const showReview = can(start);
+  const showReview = can(start) && review.request.owner === guidedOwner(authority, review.request.steps);
   const next = plan.receipts.length;
   const currentStep = plan.steps[next];
   const hasPlan = plan.steps.length > 0;
-  const savePlan = plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment");
+  const owner = guidedOwner(authority, plan.steps);
+  const ownsPlan = plan.owner === owner;
+  const abandon = { type: "abandonTask" } as const;
+  const savePlan = plan.steps.some((step) => step.tag === "SaveMailAppointment");
   const status = assistant.activity === "Paused" ? "Paused" : assistant.outcome === "Completed"
     ? savePlan ? "Planned checks complete" : "Read checks complete"
     : null;
   const stop = { type: "stop" } as const;
   const resume = { type: "resume" } as const;
-  const paused = hasPlan && can(resume);
-  const pausable = hasPlan && assistant.activity !== "Paused" && can(stop);
-  const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
+  const paused = hasPlan && ownsPlan && can(resume);
+  const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
+  const stepKind = currentStep?.tag ?? "SurfaceOutcome";
+  const details = currentStep && guidedDetails(currentStep);
   const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
-  const canCheck = label && (currentStep?.surface !== "Browser" || workspace?.device.observationAllowed) &&
-    currentStep?.surface === workspace?.device.surface &&
+  const canCheck = ownsPlan && label && (details?.surface !== "Browser" || workspace?.device.observationAllowed) &&
+    details?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
   const observation = workspace && {
@@ -92,7 +97,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     },
   } as const;
   const scopeKey = [assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision].join(":");
-  const guideKey = workspace && mayGuideReadLink(workspace) ? scopeKey : "";
+  const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const namedCheck = stepKind === "ReachNamedPage" && canCheck && pageCheck?.key === scopeKey ? pageCheck : undefined;
   const check = () => {
     if (stepKind !== "ReachNamedPage") {
@@ -120,22 +125,15 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
-            onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void send(resume) : interact({ tag: "ResumeSpeech" })}
+            onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}
             expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningForPasswords} listening={listeningForPasswords}
-            attach={
-              <Button variant="plain" size="pill" aria-label={passwordMicLabel} aria-pressed={listeningForPasswords}
-                onClick={listeningForPasswords ? guide.stopListening : guide.listen}>
-                <KeyRound size={24} aria-hidden />
-                <span className="hidden lg:inline">{passwordMicLabel}</span>
-              </Button>
-            }
+          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningLocally} listening={listeningLocally}
             quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
-            micUnavailable={canTalk ? micUnavailable : undefined}
-            onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
+            micUnavailable={needsMicPermission ? "Allow the microphone to talk to Grace" : undefined}
+            onFixMic={talk} fixMicLabel="Allow mic"
             onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
             onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
@@ -152,8 +150,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
-          {guide.mic === "GuideMicUnavailable" && <PageText role="status">On-device voice is unavailable. You can type a Passwords command.</PageText>}
-          {guide.mic === "GuideMicNoMatch" && <PageText role="status">Try saying “open passwords” or “fill my password”.</PageText>}
+          {!canTalk && guide.mic === "GuideMicUnavailable" && <PageText role="status">The microphone is unavailable. You can type your request.</PageText>}
+          {!canTalk && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that request. Try typing it.</PageText>}
           {currentOffer && currentOffer.labels.length > 0 && (
             <AnswerChips>{currentOffer.labels.map((label, index) =>
               <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>
@@ -172,29 +170,32 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <blockquote className="text-body">{review.request.goal}</blockquote>
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
-                {review.request.steps.map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
+                {review.request.steps.map(guidedDetails).map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
               </ol>
-              <AnswerChips><AnswerChip onClick={() => void send(start)}>Start read plan</AnswerChip></AnswerChips>
+              <AnswerChips><AnswerChip onClick={() => void startReadReview(review.revision)}>Start read plan</AnswerChip></AnswerChips>
             </section>
           )}
-          {hasPlan && (
+          {hasPlan && !ownsPlan && can(abandon) && (
+            <AnswerChips><AnswerChip onClick={() => void send(abandon)}>End previous task</AnswerChip></AnswerChips>
+          )}
+          {hasPlan && ownsPlan && (
             <section aria-label="Task plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
               {status && <p className="text-body font-medium">{status}</p>}
               {expanded ? (
                 <>
                   <blockquote className="text-body">{plan.originalAsk}</blockquote>
                   <ol className="flex flex-col gap-2">
-                    {plan.steps.map((step, index) => <li key={`${step.subject}-${index}`} aria-current={index === next ? "step" : undefined}>
-                      {index < next ? plan.receipts[index]?.evidence : guidedReadKind(step) === "ReachNamedPage" ? `Find and check “${step.subject}”.` : step.outcome}
+                    {plan.steps.map((step, index) => <li key={`${step.tag}-${index}`} aria-current={index === next ? "step" : undefined}>
+                      {index < next ? plan.receipts[index]?.evidence : step.tag === "ReachNamedPage" ? `Find and check “${step.subject}”.` : guidedDetails(step).outcome}
                     </li>)}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${currentStep?.subject}”.` : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
             </section>
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
           {namedCheck?.pending === false && (
-            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{currentStep?.subject}” on this page. Check the page again or try another link.</GraceBubble>
+            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{details?.subject}” on this page. Check the page again or try another link.</GraceBubble>
           )}
           {canCheck && <AnswerChips>
             {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
