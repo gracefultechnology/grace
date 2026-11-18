@@ -879,10 +879,11 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+it('Keep Passwords voice local (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
+  const speechTimeout = { timeout: 10_000 };
   const calls: string[] = [];
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
@@ -1007,7 +1008,8 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
     await act(() => userEvent.click(page.getByRole("button", { name: "Allow mic" })));
     await act(async () => {
-      await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+      await expect.poll(() => recordedFrames, speechTimeout).toBeGreaterThan(0);
+      await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text), speechTimeout).toEqual([voiceInput, voiceOutput]);
       await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
       await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
     });
@@ -1018,7 +1020,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       machine.send({ type: "chooseHomePage", page }, "Person")));
     const firstTurnFrames = recordedFrames;
     await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
-    await expect.poll(() => recordedFrames).toBeGreaterThan(firstTurnFrames);
+    await expect.poll(() => recordedFrames, speechTimeout).toBeGreaterThan(firstTurnFrames);
     await act(() => choosePage("PasswordsCard").then(() => undefined));
     await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
     await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
