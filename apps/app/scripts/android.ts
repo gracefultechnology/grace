@@ -313,8 +313,8 @@ async function devTools(url: string, signal: AbortSignal) {
     let reply: typeof Reply.Type;
     try {
       reply = Schema.decodeUnknownSync(Reply)(JSON.parse(String(message.data)));
-    } catch (error) {
-      return rejectAll(new Error(`Grace's WebView sent an unreadable reply: ${String(message.data).slice(0, 200)}`, { cause: error }));
+    } catch {
+      return rejectAll(new Error("Grace's WebView sent an unreadable reply"));
     }
     const waiter = reply.id === undefined ? undefined : pending.get(reply.id);
     if (reply.error) waiter?.reject(new Error(reply.error.message));
@@ -369,7 +369,7 @@ async function devTools(url: string, signal: AbortSignal) {
   };
 
   const describe = async () => {
-    const expression = `(async () => JSON.stringify({ url: location.href, visibility: document.visibilityState, current: [...document.querySelectorAll("[aria-current=true]")].map((e) => e.textContent.trim()), text: document.body.innerText.slice(0, 300), agent: await Capacitor.Plugins.EmbeddedAgent.getStatus().catch(String) }))()`;
+    const expression = `(async () => JSON.stringify({ origin: location.origin, visibility: document.visibilityState, agent: await Capacitor.Plugins.EmbeddedAgent.getStatus().then(({state}) => state).catch(() => "unavailable") }))()`;
     const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal: AbortSignal.timeout(30_000) });
     return String(result.value);
   };
@@ -454,8 +454,9 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
       failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
     await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
     for (const step of exercise) {
-      await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(JSON.stringify(step)));
-      process.stdout.write(`${JSON.stringify(step)} ok\n`);
+      const description = "into" in step ? `Enter text in ${step.into}` : JSON.stringify(step);
+      await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(description));
+      process.stdout.write(`${description} ok\n`);
     }
   });
 }
