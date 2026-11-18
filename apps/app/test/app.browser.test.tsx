@@ -5,7 +5,7 @@ import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vitest";
-import { type Locator, page, userEvent } from "vitest/browser";
+import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { Machine as Setup } from "../gen/app__setup.effect.vibe";
@@ -458,7 +458,9 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Home");
   await expect.element(button("Expand")).toBeVisible();
   await tap("More apps");
-  await tap("Back to the first page");
+  await tap("More apps");
+  await tap("Previous page");
+  await tap("Previous page");
   await tap("Close Grace");
   await tap("Ask Grace");
   await expect.element(button("Expand")).toBeVisible();
@@ -603,8 +605,15 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
   ownerAvailable = false;
   recoveryOpened = false;
-  await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
+  const nextPage = page.getByRole("button", { name: "More apps" });
+  await act(() => userEvent.click(nextPage));
+  const passwordsCard = page.getByRole("button", { name: "Passwords", exact: true });
+  await expect.element(passwordsCard).not.toBeInTheDocument();
+  await act(() => userEvent.click(nextPage));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Previous page" })));
+  await expect.element(passwordsCard).not.toBeInTheDocument();
+  await act(() => userEvent.click(nextPage));
+  await act(() => userEvent.click(passwordsCard));
   await act(() => userEvent.click(unlock));
   await expect.element(unlock).not.toBeInTheDocument();
   await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
@@ -857,7 +866,9 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const calls: string[] = [];
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
-  let microphoneFrames = 0;
+  let nextTranscript = voiceInput;
+  const captures: MediaStreamTrack[] = [];
+  const turns: unknown[] = [];
   const phrases: string[] = [];
   const microphone = new AudioContext({ sampleRate: 16_000 });
   const source = microphone.createOscillator();
@@ -866,7 +877,9 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   source.start();
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
     await microphone.resume();
-    return inputMedia.stream;
+    const stream = inputMedia.stream.clone();
+    captures.push(...stream.getAudioTracks());
+    return stream;
   });
   const originalFetch = window.fetch.bind(window);
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
@@ -908,10 +921,10 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     send(value: string | ArrayBuffer) {
       if (value instanceof ArrayBuffer) {
         expect(value.byteLength % 2).toBe(0);
-        microphoneFrames += 1;
-        if (microphoneFrames === 1) {
+        if (nextTranscript) {
           this.receive({ t: "stt", event: { type: "start-of-turn", transcript: "" } });
-          this.receive({ t: "stt", event: { type: "end-of-turn", transcript: voiceInput } });
+          this.receive({ t: "stt", event: { type: "end-of-turn", transcript: nextTranscript } });
+          nextTranscript = "";
         }
         return;
       }
@@ -947,7 +960,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     getStatus: () => Promise.resolve({ state: "running" }),
     request: () => Promise.resolve({ status: 201, data: { conversation: { id: "voice", roomId: "room" } } }),
     requestStream: ({ id, body }) => {
-      expect(body).toEqual({ text: voiceInput });
+      turns.push(body);
       queueMicrotask(() => {
         listeners.get("streamData")?.({ id, data: JSON.stringify({ type: "done", fullText: voiceOutput }) });
         listeners.get("streamEnd")?.({ id, status: 200 });
@@ -972,11 +985,19 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     await act(async () => {
       await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
       await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
-      await expect.poll(() => inputMedia.stream.getAudioTracks()[0].readyState).toBe("ended");
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
     });
-    expect(microphoneFrames).toBeGreaterThan(0);
+    const speechSession = [speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"];
+    await expect.poll(() => calls).toEqual(speechSession);
+
+    nextTranscript = "Where can I find my saved passwords?";
+    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+    await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+    expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+    expect(turns).toEqual([{ text: voiceInput }]);
     expect(phrases).toEqual([voiceOutput]);
-    await expect.poll(() => calls).toEqual([speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
@@ -1477,12 +1498,28 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await expect.poll(() => locked).toBe(true);
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
+  const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
+  const swipe = (direction: "left" | "right") => act(async () => {
+    const session = cdp();
+    const cards = filesPage.element().parentElement!.getBoundingClientRect();
+    const [from, to] = direction === "left" ? [0.85, 0.2] : [0.2, 0.85];
+    const point = (across: number) => [{ x: cards.left + cards.width * across, y: innerHeight * 0.4 }];
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(from) });
+    await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: point(to) });
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  });
+  await swipe("left");
+  await expect.element(filesPage).toHaveAttribute("aria-current", "true");
+  await swipe("left");
+  await expect.element(page.getByRole("button", { name: "Page 3", exact: true })).toHaveAttribute("aria-current", "true");
+  await swipe("right");
+  await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
   await expect.element(unlock).toBeEnabled();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Say a Passwords command" })));
+  await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
   await expect.poll(() => typeof finishSpeech).toBe("function");
   await act(async () => { finishSpeech?.({ status: "complete", text: "Open passwords" }); });
   await expect.element(unlock).toBeEnabled();

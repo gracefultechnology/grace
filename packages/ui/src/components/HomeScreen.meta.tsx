@@ -14,7 +14,7 @@ import { TabletScreen } from "./TabletScreen.tsx";
 
 const onPageChange = fn();
 
-const home: HomeScreenProps = { greeting: "Good evening", name: "Margaret", line: "Here’s your day", calendar, email, internet, files, onPageChange };
+const home: HomeScreenProps = { greeting: "Good evening", name: "Margaret", line: "Here’s your day", calendar, email, internet, files, passwords: { onClick: fn() }, onPageChange };
 
 const offline: HomeScreenProps = {
   ...home,
@@ -30,7 +30,7 @@ export const meta: ComponentMeta<HomeScreenProps> = {
   args: home,
   examples: {
     "Layout Compact": compact,
-    "Compact Page Files": { ...compact, page: "files" },
+    "Compact Page Files": { ...compact, page: "FilesCard" },
     "Layout Greeting": { ...home, layout: "greeting", className: "grace-compact bottom-[578px]" },
     Reminder: {
       ...home,
@@ -49,7 +49,7 @@ export const meta: ComponentMeta<HomeScreenProps> = {
     </TabletScreen>
   ),
   play: {
-    Default: tapCalls("More apps", onPageChange, { args: ["files"], rest: true }),
-    "Compact Page Files": tapCalls("Back to the first page", onPageChange, { args: ["main"], rest: true }),
+    Default: tapCalls("More apps", onPageChange, { args: ["FilesCard"], rest: true }),
+    "Compact Page Files": tapCalls("Previous page", onPageChange, { args: ["MainCards"], rest: true }),
   },
 };
