@@ -6,7 +6,9 @@ tombstones. Settings lists the saved ones, each with Delete, and Clear all.
 Her name from set-up is the fact under the key `name`; Home's greeting and
 Grace's opening line read it here. A form or sign-up that needs
 a saved detail is filled through the queued fill below, checked again at
-dispatch by [the saved-value check](./memoryActuation.md).
+dispatch by [the saved-value check](./memoryActuation.md). Sources: MEM 01–04,
+DATA 01 and the prototype's Home greeting and Grace's opening line, which
+greet her by her name.
 
 ## Story: See, change and delete what Grace remembers
 
@@ -77,9 +79,9 @@ pure def forgetDetail(d: SavedDetails, factKey: str, version: int, by: M::Memory
 
 ### Clear all deletes every detail at once and keeps each key
 
-Only she can clear the list. Every key, a proposal waiting for her yes and a
-queued fill included, becomes a tombstone with a newer revision, as approved
-memory's Clear all says.
+Only she can clear the list, and only while it holds a detail. Every key, a
+proposal waiting for her yes and a queued fill included, becomes a tombstone
+with a newer revision, as approved memory's Clear all says.
 
 ```quint
 pure def canForgetAll(d: SavedDetails, by: M::MemoryActor): bool = by == M::MemoryUser and d.facts.length() > 0
@@ -104,8 +106,8 @@ pure def lawForgetDetailChangesOnlyThatDetail(d: SavedDetails, factKey: str, ver
 
 A fill of a form or sign-up field is queued against the detail's current
 revision for one task and verified destination, and dispatched once, with the
-same checks as approved memory. Any change to the detail first, a correction,
-a deletion or Clear all, drops the queued fill.
+same checks as approved memory. A correction or a deletion of the detail
+first drops its queued fill, and so does Clear all.
 
 ```quint
 pure def canQueueDetailFill(d: SavedDetails, factKey: str, fillRequest: M::FillRequest, by: M::MemoryActor): bool =
@@ -121,6 +123,14 @@ pure def canCancelDetailFill(d: SavedDetails, factKey: str, by: M::MemoryActor):
   factKey != "" and M::canCancelFill(detailAt(d, factKey), by)
 pure def cancelDetailFill(d: SavedDetails, factKey: str, by: M::MemoryActor): SavedDetails =
   { facts: withDetail(d.facts, M::cancelFill(detailAt(d, factKey), by)) }
+pure def lawChangedDetailDropsItsFill(d: SavedDetails, proposedFact: M::FactProposal): bool =
+  canProposeDetail(d, proposedFact, M::MemoryUser) implies
+    not(detailAt(proposeDetail(d, proposedFact, M::MemoryUser), proposedFact.factKey).queued)
+pure def lawDeletedDetailDropsItsFill(d: SavedDetails, factKey: str, version: int): bool =
+  canForgetDetail(d, factKey, version, M::MemoryUser) implies
+    not(detailAt(forgetDetail(d, factKey, version, M::MemoryUser), factKey).queued)
+pure def lawClearAllDropsEveryFill(d: SavedDetails): bool =
+  forgetAll(d, M::MemoryUser).facts.every(f => not(f.queued) or f.factKey == "")
 pure def stepDetailFillUsesCurrentApproval(before: SavedDetails, after: SavedDetails, out: List[M::MemoryEffect]): bool =
   out.every(e => match e {
     | FillAuthorized(x) => detailAt(before, x.factKey).status == M::Stored and not(detailAt(before, x.factKey).proposed) and
@@ -163,6 +173,8 @@ pure def lawGreetingNameIsSaved(d: SavedDetails): bool =
   greetingName(d) != "" implies d.facts.some(f => f.kind == M::Name and f.status == M::Stored and f.value == greetingName(d))
 pure def lawForgottenNameIsNotGreeted(d: SavedDetails, version: int): bool =
   canForgetDetail(d, nameKey, version, M::MemoryUser) implies greetingName(forgetDetail(d, nameKey, version, M::MemoryUser)) == ""
+pure def lawClearedNameIsNotGreeted(d: SavedDetails): bool =
+  greetingName(forgetAll(d, M::MemoryUser)) == ""
 ```
 
 ### A detail is saved, changed, deleted, cleared, greeted and filled
@@ -183,6 +195,6 @@ pure def sometimesDetailFillQueued(d: SavedDetails): bool = d.facts.some(f => f.
 pure val savedName: M::PersonalFact = M::exampleSavedFact
 pure val dValues = Set(initial, { facts: List(savedName) }, { facts: List(savedName, M::exampleProposedFact) },
   { facts: List(M::exampleQueuedFact, M::exampleProposedFact) }, { facts: List(M::forget(savedName, 2, M::MemoryUser)) },
-  { facts: List({ ...M::exampleProposedFact, factKey: "name" }) })
+  { facts: List({ ...M::exampleProposedFact, factKey: "name", kind: M::Name, proposal: "Grace" }) })
 pure val versionValues = Set(0, 1, 2, 3, 4)
 ```

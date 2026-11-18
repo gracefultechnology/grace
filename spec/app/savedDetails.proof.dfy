@@ -269,3 +269,41 @@ lemma lawClearedDetailIsNotSaved_ensures(d: SavedDetails, factKey: string)
   }
   DetailAtIsMember(after, factKey);
 }
+
+lemma lawChangedDetailDropsItsFill_ensures(d: SavedDetails, proposedFact: app__memory_FactProposal)
+  ensures (lawChangedDetailDropsItsFill(d, proposedFact) == true)
+{
+  DetailAfterChange(d.facts, app__memory_propose(detailAt(d, proposedFact.factKey), proposedFact, app__memory_MemoryActor.MemoryUser));
+}
+
+lemma lawDeletedDetailDropsItsFill_ensures(d: SavedDetails, factKey: string, version: int)
+  ensures (lawDeletedDetailDropsItsFill(d, factKey, version) == true)
+{
+  if canForgetDetail(d, factKey, version, app__memory_MemoryActor.MemoryUser) {
+    DetailAtIsMember(d, factKey);
+    DetailAfterChange(d.facts, app__memory_forget(detailAt(d, factKey), version, app__memory_MemoryActor.MemoryUser));
+  }
+}
+
+lemma lawClearAllDropsEveryFill_ensures(d: SavedDetails)
+  ensures (lawClearAllDropsEveryFill(d) == true)
+{
+  var after := forgetAll(d, app__memory_MemoryActor.MemoryUser);
+  forall h | h in after.facts
+    ensures h.factKey == "" || !h.queued
+  {
+    var i :| 0 <= i < |after.facts| && after.facts[i] == h;
+  }
+}
+
+lemma lawClearedNameIsNotGreeted_ensures(d: SavedDetails)
+  ensures (lawClearedNameIsNotGreeted(d) == true)
+{
+  var after := forgetAll(d, app__memory_MemoryActor.MemoryUser);
+  forall h | h in after.facts
+    ensures h.factKey == "" || h.status.Deleted?
+  {
+    var i :| 0 <= i < |after.facts| && after.facts[i] == h;
+  }
+  DetailAtIsMember(after, nameKey);
+}
