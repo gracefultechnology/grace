@@ -1929,7 +1929,8 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
       case "/api/v1/decisions":
         hostedChoices++;
         expect(new Headers(options?.headers).get("X-Eliza-Account")).toBe(secondOwner.id);
-        return respond({ kind: "choice", status: "ok", choice: "1", model: "clef-flash", confidence: 0.91 });
+        return respond({ kind: "choice", status: "ok", choice: "1", model: "clef-flash", confidence: 0.91,
+          probabilities: { "1": 0.91, none: 0.09 } });
       case "/api/auth/refresh": return respond({}, 401);
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
       case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
@@ -2097,7 +2098,8 @@ it('Follow one reviewed plan across apps with signed-in managed selections (spec
 
     browserCookieOwner = undefined;
     await tap(guide);
-    await expect.poll(() => hostedChoices).toBe(1);
+    await routeTo(page.getByRole("status", { name: "Link guide result" }));
+    expect(hostedChoices).toBe(1);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
