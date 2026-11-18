@@ -73,6 +73,17 @@ managed data and voice controls from its own React app. The old policy's
 refusal list records disallowed capabilities. The current plugin load list
 is empty.
 
+The signed launcher consumes OS’s Android consumer host and APK distribution
+tools. The overlay stages that APK for the stock Cuttlefish product through
+`@elizaos/os/aosp/stage-launcher-overlay.ts`. At Eliza `febdeaf`, full OS
+model generation succeeds. The aggregate OS package build still reports
+absent image assembly, owned Chromium, update publication, signing and OTA
+operator modules, and enum-set type errors in the generated APK model.
+Those modules are outside the launcher's imported dependency graph. A
+complete custom OS image or OTA service needs separate implementation.
+The current Eliza Cloud Worker has no Maps service; Grace’s launcher and
+account services make no Maps requests.
+
 The compiled Node 26 device CLI completed a turn through the private socket,
 Eliza Core, an owner-bound PGlite database and the Grace Worker with a real
 Cloudflare Qwen response. A local Cloudflare Worker with the remote Workers
