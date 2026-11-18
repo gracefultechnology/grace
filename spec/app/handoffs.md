@@ -426,15 +426,17 @@ then hands that one released link to the Browser while the message it came
 from is still the one on screen in Email. Email marks the link opened, the
 Browser opens it in a new tab after the others, selected and loading, and the
 device shows the Browser. The pages already open stay in their tabs. A held
-link, a link Email did not release, a different link, or a message no longer
-on screen opens nothing and leaves all three as they were. Opening a link
+link, a link Email did not release, a different link, a message no longer
+on screen, or a message covered by a composer opens nothing and leaves all three as they were. If the browser’s next tab identifier is already in use, the handoff also declines. Opening a link
 never sends mail and leaves the messages and the outbox as they were.
 
 ```quint
 type LinkHandoff = LinkDeclined | OpenedLink({ device: S::Shell, mail: E::Mailbox, browser: B::Browser })
 pure def mayOpenEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
   device.surface == S::Email and S::canOpenSurface(device, S::Browser) and
-  E::canLinkOpened(reader, link, E::MailHost) and E::selectedMessageIsCurrent(reader) and B::canNavigate(browser, link)
+  reader.view == E::Message and not(reader.composeVisible) and reader.link.ref == reader.messageRef and
+  E::canLinkOpened(reader, link, E::MailHost) and E::selectedMessageIsCurrent(reader) and
+  not(B::hasTab(browser, browser.nextId)) and B::canNavigate(browser, link)
 pure def openEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): LinkHandoff =
   if (mayOpenEmailLink(device, reader, browser, link)) OpenedLink({
     device: S::openSurface(device, S::Browser),
@@ -443,7 +445,8 @@ pure def openEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser
   }) else LinkDeclined
 pure def lawOnlyAReleasedLinkOpens(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
   val handoff = openEmailLink(device, reader, browser, link)
-  (reader.link.status != E::LinkReleased or reader.link.link != link) implies (match handoff {
+  (reader.link.status != E::LinkReleased or reader.link.link != link or reader.view != E::Message or
+    reader.composeVisible or reader.link.ref != reader.messageRef) implies (match handoff {
     | LinkDeclined => true
     | OpenedLink(_) => false
   })
@@ -474,7 +477,9 @@ pure val readerValues = Set(readerMailbox,
   E::openLink(readerMailbox, emailLink, E::MailUser),
   E::openLink(flaggedMailbox, emailLink, E::MailUser),
   E::confirmLink(E::openLink(flaggedMailbox, emailLink, E::MailUser), emailLink, true, E::MailUser),
-  { ...E::openLink(readerMailbox, emailLink, E::MailUser), view: E::Inbox })
+  { ...E::openLink(readerMailbox, emailLink, E::MailUser), view: E::Inbox },
+  { ...E::openLink(readerMailbox, emailLink, E::MailUser), view: E::Attachment },
+  { ...E::openLink(readerMailbox, emailLink, E::MailUser), composeVisible: true })
 pure val linkValues = Set(emailLink, "https://elsewhere.example", "")
 ```
 
