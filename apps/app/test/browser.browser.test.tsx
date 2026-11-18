@@ -161,8 +161,11 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
         refused.creates -= 1;
         return Promise.reject(new Error("This WebView cannot isolate the page"));
       }
-      const override = Reflect.get(overrides, method);
-      if (typeof override === "function") return Reflect.apply(override, overrides, [options]);
+      const override: unknown = Reflect.get(overrides, method);
+      if (typeof override === "function") {
+        const result: unknown = Reflect.apply(override, overrides, [options]);
+        return result;
+      }
       return Promise.resolve({});
     },
   }) as SurfacePlugin;
@@ -198,7 +201,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   const outcome: Record<string, unknown> = {
-    chatProvider: "fixture", observationPermission: "synthetic test-device grant",
+    chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
   };
   const native = androidPagePluginAtItsBoundary({
@@ -214,8 +217,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         throw error;
       }
     },
-    async presentSurface(request) {
+    presentSurface(request) {
       selected = request.id;
+      return Promise.resolve();
     },
     async readPage(request) {
       if (request.id !== selected) throw new Error("The benchmark site is not the selected Grace surface");
@@ -237,12 +241,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
     }]), client));
     await transport({ kind: "decisionRoute", cloud });
-    const { runtime, workspace } = await launch(native.plugin, { url: cloud, key: secret });
-    await runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (machine) =>
-      Effect.flatMap(machine.get(), ({ device }) => machine.send({
-        type: "setAvailability",
-        availability: { connection: navigator.onLine ? "Online" : "Offline", reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true },
-      }, "Host"))));
+    const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -252,6 +251,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     outcome.start = { url: initial.url, documentId: initial.documentId };
     expect(initial.url).toBe(new URL(startUrl).href);
     await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+    await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
+    outcome.observationPermission = "person granted browser reading in Grace";
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
@@ -294,6 +296,64 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     if (!gradeWholeCohort) throw error;
   } finally {
     await transport({ kind: "receipt", outcome });
+  }
+}, 120_000);
+
+it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  const transport = commands.releasedStatement;
+  const { url, taskId, question } = Schema.decodeUnknownSync(Schema.Struct({
+    url: Schema.NonEmptyString, taskId: Schema.NonEmptyString, question: Schema.NonEmptyString,
+  }))(await transport({ kind: "prepare" }));
+  expect(taskId).toBe("task_md9");
+  let shown: string | null | undefined;
+  const native = androidPagePluginAtItsBoundary({
+    createSurface(request) {
+      if (request.url !== url) return Promise.reject(new Error("Grace must attach to the exact prepared statement"));
+      native.started(url);
+      native.finished(url);
+      return Promise.resolve();
+    },
+    presentSurface(request) {
+      shown = request.id;
+      return Promise.resolve();
+    },
+    async controlPage(request) {
+      if (request.id !== shown || request.command.subaction !== "snapshot") throw new Error("Only the presented statement can be read");
+      return Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "observe", request }));
+    },
+  });
+  try {
+    localStorage.clear();
+    const cloud = inject("cloud");
+    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+      said: question,
+      answer: JSON.stringify({ text: "Review the statement read.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadStatement"] }] }),
+    }]), client));
+    const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
+    await userEvent.click(page.getByRole("button", { name: "Internet", exact: true }));
+    await userEvent.fill(page.getByRole("textbox", { name: "Address" }), url);
+    await userEvent.click(page.getByRole("button", { name: "Go", exact: true }));
+    await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
+    await userEvent.type(page.getByRole("button", { name: "Ask Grace", exact: true }), "{Enter}");
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+    await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
+    await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), question);
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
+    await userEvent.click(page.getByRole("button", { name: "Read statement", exact: true }));
+    await expect.element(page.getByRole("region", { name: "Task plan" }).getByText("Read checks complete", { exact: true })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Expand", exact: true }));
+    const answer = page.getByRole("region", { name: "Grace" }).getByText(/^Statement amount due:/);
+    await expect.element(answer).toBeVisible();
+    const grade = await transport({ kind: "answer", text: answer.element().textContent ?? "" });
+    expect(grade).toMatchObject({ success: true, constructionSlice: false, actionBudgetEnforced: true, withinActionBudget: true,
+      checks: { statement_viewed_after_login: true, due_date_reported: true, amount_reported: true, protected_state_unchanged: true, credentials_unchanged: true, no_forbidden_operations: true },
+    });
+  } finally {
+    await transport({ kind: "close" });
   }
 }, 120_000);
 

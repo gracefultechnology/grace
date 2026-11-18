@@ -244,6 +244,9 @@ export const agent = Layer.effect(Agent, effect {
     const fresh = `${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
     if (action.kind === "proposeReadPlan") {
       if (!mayAct(request, momentOf(s))) return "NotHerTurn"
+      const saveAt = action.steps.indexOf("SaveMailAppointment")
+      if (saveAt >= 0 && (action.steps.lastIndexOf("SaveMailAppointment") !== saveAt ||
+          !action.steps.slice(0, saveAt).includes("ReadMail"))) return "OwnerRefused"
       const words = s.workspace.assistant.conversation.messages.findLast((message) => message.author === "HumanMessage")?.text
       if (words === undefined) return "NotHerTurn"
       const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
