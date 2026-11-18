@@ -6,7 +6,7 @@ import { type Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, 
 import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
-import type { Note, Notes } from "./accounts.vibe"
+import type { Note, Watched } from "./accounts.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
@@ -190,7 +190,7 @@ export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
   publish(report: CalendarReport): void!!
   verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): boolean!!
-  readonly notes: { readonly subscribe: Notes["subscribe"]; readonly current: () => CalendarNote | undefined }
+  readonly notes: Watched<CalendarNote | undefined>
 }
 
 const noteFor = "2600 millis"

@@ -95,11 +95,11 @@ function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot): Contro
     }
     case "newEmail":
     case "draftMessage":
-      return managed.kind === "mail" && safeText(action.to, 254) && safeText(action.subject ?? "", 120) && safeText(action.body, 8192)
+      return managed.kind === "mail" && safeText(action.to, 254) && safeText(action.subject ?? "", 120) && safeText(action.body ?? "", 8192)
         ? { kind: "managed", title: "Review email draft", proposed: { kind: "draft", accountId: managed.accountId, grant: managed.grant,
-          recipient: action.to, subject: action.subject ?? "", text: action.body } } : undefined
+          recipient: action.to, subject: action.subject ?? "", text: action.body ?? "" } } : undefined
     case "draftReply":
-      return managed.kind === "mail" && managed.selected?.reply && safeText(action.body, 8192)
+      return managed.kind === "mail" && managed.selected?.reply && safeText(action.body ?? "", 8192)
         ? { kind: "managed", title: "Review reply draft", proposed: { kind: "draft", accountId: managed.accountId, grant: managed.grant,
           ...managed.selected.reply, text: action.body, replyTo: managed.selected.message.externalId } } : undefined
     case "openMessage": {

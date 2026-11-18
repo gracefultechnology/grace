@@ -652,42 +652,6 @@ effect function store(site: string) {
     })
   }
 
-  effect function attachment(fixed?: Slug) {
-    const { messageId, partId, historyId, grantId } = try HttpServerRequest.schemaSearchParams(AttachmentQuery)
-    const { box } = try connection(fixed, grantId, true)
-    const found = box.mail.find((m) => m.externalId === messageId)
-    if (!found || found.metadata.historyId !== historyId) throw new StaleRevision()
-    const part = found.attachments.find((a) => a.partId === partId)
-    if (!part) throw new Missing()
-    if (!servable[part.mimeType]?.test(part.filename) || part.size > 5 * 1024 * 1024) throw new Unsupported()
-    const dataBase64 = part.mimeType === "application/pdf" ? pdf : photos[part.filename]
-    if (dataBase64 === undefined) throw new Missing()
-    return try HttpServerResponse.json({ version: 1, messageId, partId, historyId, name: part.filename, mimeType: part.mimeType, dataBase64, size: sizeOf(dataBase64), sha256: digestOf(dataBase64) })
-  }
-
-  effect function draftList(fixed?: Slug) {
-    const { grantId } = try HttpServerRequest.schemaSearchParams(DraftsQuery)
-    const { box } = try connection(fixed, grantId, true)
-    const drafts = box.mail.filter((m) => m.labels.includes("DRAFT")).map((m) => ({
-      draftId: draftIdOf(m.externalId), messageId: m.externalId, subject: m.subject, to: m.to.map(bare), snippet: m.snippet, updatedAt: m.receivedAt
-    }))
-    return try HttpServerResponse.json({ version: 1, drafts, nextPageToken: null })
-  }
-
-  effect function draftContent(fixed?: Slug) {
-    const { draftId, grantId } = try HttpServerRequest.schemaSearchParams(DraftQuery)
-    const { box } = try connection(fixed, grantId, true)
-    const found = box.mail.find((m) => draftIdOf(m.externalId) === draftId && m.labels.includes("DRAFT"))
-    if (!found) throw new Missing()
-    return try HttpServerResponse.json({
-      id: draftId, messageId: found.externalId, providerDigest: digestOf(JSON.stringify(found)),
-      content: {
-        to: found.to.map(bare), cc: found.cc.map(bare), bcc: found.bcc.map(bare), subject: found.subject, bodyText: found.bodyText, plainText: true,
-        threaded: (found.metadata.referencesHeader ?? "") !== "", attachmentCount: found.attachments.length
-      }
-    })
-  }
-
   effect function reviewedChange(found: Box, proposal: typeof Change.Type) {
     const message = found.mail.find((m) => m.externalId === proposal.messageId)
     if (!message) throw new Missing()

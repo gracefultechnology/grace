@@ -132,7 +132,7 @@ function searchOf(folder: string, text: string) {
   return [folder, ...text.split(/\s+/).map((w) => w.replace(/"/g, "")).filter((w) => w !== "").map((w) => `"${w}"`)].join(" ")
 }
 
-const shown: Record<string, { readonly kind: "Photo" | "Pdf"; readonly name: RegExp; readonly magic: string }> = {
+const served: Record<string, { readonly kind: "Photo" | "Pdf"; readonly name: RegExp; readonly magic: string }> = {
   "application/pdf": { kind: "Pdf", name: /\.pdf$/i, magic: "JVBERi0" },
   "image/png": { kind: "Photo", name: /\.png$/i, magic: "iVBORw0KGgo" },
   "image/jpeg": { kind: "Photo", name: /\.jpe?g$/i, magic: "/9j/" },
@@ -143,7 +143,7 @@ const byteLength = (base64: string) => Math.floor(base64.length * 3 / 4) - (base
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
 
 function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment): SavedFile[] {
-  const type = shown[a.mimeType]
+  const type = served[a.mimeType]
   const kind = type !== undefined && type.name.test(a.filename) && a.size <= attachmentLimit ? type.kind : undefined
   const pages = kind === "Pdf" ? a.pages ?? 0 : 0
   return kind === undefined || a.filename === "" || (kind === "Pdf" && pages < 1) ? [] : [{
@@ -424,7 +424,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       },
       attachment: effect (file, version) => {
         const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
-        const type = shown[got.mimeType]
+        const type = served[got.mimeType]
         if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
         return { mimeType: got.mimeType, data: got.dataBase64 }
       },
