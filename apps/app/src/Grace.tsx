@@ -46,7 +46,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const pausable = hasPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
   const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
-  const canCheck = label && (stepKind !== "ReadStatement" || workspace?.device.observationAllowed) &&
+  const canCheck = label && (currentStep?.surface !== "Browser" || workspace?.device.observationAllowed) &&
     currentStep?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;

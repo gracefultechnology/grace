@@ -1125,7 +1125,7 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 ### Only a current observation of the next outcome advances the plan
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission, including checking a page the person opened manually. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place.
 
 ```quint
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
@@ -1135,7 +1135,8 @@ pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: Workspace
   w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
   report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and
-  report.step == nextOutcome(w.plan) and report.step.surface == w.device.surface and guidedLinkObserved(w) and
+  report.step == nextOutcome(w.plan) and report.step.surface == w.device.surface and
+  (report.step.surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
   report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
   (guidedReadKind(report.step) == SaveMailAppointment implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))

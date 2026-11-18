@@ -508,6 +508,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const showLink = page.getByRole("button", { name: "Show me the link" });
     expect(showLink.query()).toBeNull();
     await tap(page.getByRole("button", { name: "Start read plan" }));
+    expect(check.query()).toBeNull();
     expect(showLink.query()).toBeNull();
     const allowReading = page.getByRole("button", { name: "Allow Grace to read this browser", exact: true });
     const resumeReading = page.getByRole("button", { name: "Resume Grace" });
@@ -515,6 +516,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(resumeReading);
     await routeTo(showLink);
     await tap(page.getByRole("button", { name: "Turn off browser reading", exact: true }));
+    expect(check.query()).toBeNull();
     expect(showLink.query()).toBeNull();
     await tap(allowReading);
     await tap(resumeReading);
@@ -637,6 +639,7 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await native.started("tab-1");
     await native.report("tab-1", "https://example.org/", 100);
     await tap(button("Ask Grace"));
+    await tap(button("Allow Grace to read this browser"));
     await say(start);
     await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(start, { exact: true }));
     await tap(button("Collapse"));

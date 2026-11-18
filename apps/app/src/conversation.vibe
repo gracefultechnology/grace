@@ -212,7 +212,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const scene = try look()
       const current = scene.workspace
       const step = nextOutcome(current.plan)
-      if (!hasNext(current.plan) || step.surface !== current.device.surface || current.assistant.conversation.turn !== "Ready" ||
+      if (!hasNext(current.plan) || step.surface !== current.device.surface || (step.surface === "Browser" && !current.device.observationAllowed) ||
+          current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
       const read = guidedReadKind(step)
       const found = try guidedReceipt(scene, read, native)
