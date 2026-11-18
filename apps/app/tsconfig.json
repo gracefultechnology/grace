@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "allowArbitraryExtensions": true,
+    "customConditions": ["eliza-source"],
     "jsx": "react-jsx",
     "lib": [
       "es2023",
