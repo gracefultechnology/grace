@@ -30,6 +30,7 @@ export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer
 export service Conversation {
   /** Takes the person's turn when the workspace allows it; Grace then answers it. */
   say(input: PersonTurn): boolean!!
+  turnOrigin(generation: number): Origin!!
   checkGuidedRead(): boolean!!
 }
 
@@ -212,6 +213,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply))
   }
 
+  effect function turnOrigin(generation: number): Origin!! {
+    const last = try Ref.get(asked)
+    return last.generation === generation ? last.origin : "FromDevice"
+  }
+
   effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type) {
     const offeredRead = actions.some((action) => action.kind === "proposeReadPlan")
     const response = offeredRead
@@ -219,8 +225,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       : { text, isQuestion, answers: [...answers] }
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: false } }, "Host") catch () => undefined
     if (responded === undefined) return
-    const last = try Ref.get(asked)
-    const origin = last.generation === token ? last.origin : "FromDevice"
+    const origin = try turnOrigin(token)
     const applied = try agent.apply(actions, { generation: token, workVersion, origin })
     try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
   }
@@ -234,6 +239,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   }
 
   return {
+    turnOrigin,
     checkGuidedRead: effect () => {
       const scene = try look()
       const current = scene.workspace

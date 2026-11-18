@@ -15,6 +15,7 @@ import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
+import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, reply, script, signIn, turns } from "./cloud.vibe";
 import "../src/main.css";
@@ -668,7 +669,7 @@ it('Use only the current local speech for Passwords guidance (spec/app/index.md,
 });
 
 
-it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
+it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps")`, async () => {
   const listeners = new Map<string, (input: unknown) => void>();
   const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
   const stopped: string[] = [];
@@ -748,6 +749,48 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await act(() => userEvent.click(page.getByRole("button", { name: "Wake Grace" })));
     await expect.element(page.getByRole("button", { name: "Ask Grace" })).toBeVisible();
     expect(runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.surface).toBe("Calendar");
+
+    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+    const review = page.getByRole("region", { name: "Review read plan" });
+    const plan = page.getByRole("region", { name: "Task plan" });
+    const target = "Help center";
+    const namedPage: GraceAction = { kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }] };
+    const offer = async (words: string, actions: readonly GraceAction[]) => {
+      const count = requests.length;
+      await act(() => userEvent.type(input, words + "{Enter}"));
+      await expect.poll(() => requests[count]?.body).toEqual({ text: words });
+      expect(review.query()).toBeNull();
+      expect(plan.query()).toBeNull();
+      await act(() => {
+        const next = requests[count].id;
+        data(next, { type: "done", fullText: JSON.stringify({ text: "I can help with that.", isQuestion: false, answers: [], actions }) });
+        listeners.get("streamEnd")?.({ id: next, status: 200 });
+        return Promise.resolve();
+      });
+    };
+    const askForPage = 'Check the browser page named "Help center".';
+    const refusal = page.getByText("I can’t prepare that read plan on this tablet.");
+    await offer(askForPage, [namedPage, { kind: "open", surface: "Email" }]);
+    await expect.element(refusal).toBeVisible();
+    expect(review.query()).toBeNull();
+    expect(page.getByRole("button", { name: "Open Email" }).query()).toBeNull();
+    await offer("Check my managed email and calendar.", [{ kind: "proposeReadPlan", steps: ["ReadMail", "ReadCalendar"] }]);
+    await expect.poll(() => refusal.elements().length).toBe(2);
+    expect(review.query()).toBeNull();
+
+    await offer(askForPage, [namedPage]);
+    await expect.element(review.getByText(target, { exact: true })).toBeVisible();
+    expect(plan.query()).toBeNull();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+    expect(review.query()).toBeNull();
+    expect(plan.query()).toBeNull();
+
+    await offer(askForPage, [namedPage]);
+    await expect.element(review.getByText(askForPage, { exact: true })).toBeVisible();
+    await act(() => userEvent.click(review.getByRole("button", { name: "Start read plan" })));
+    await expect.element(plan).toBeVisible();
+    expect(review.query()).toBeNull();
 
   } finally {
     await act(() => Promise.resolve(root.unmount()));
