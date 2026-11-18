@@ -5,6 +5,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Display;
+import android.view.KeyEvent;
 import android.view.WindowManager;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.content.ContextCompat;
@@ -17,6 +18,7 @@ import ai.eliza.plugins.agent.embedded.EmbeddedAgentPlugin;
 import ai.eliza.plugins.browsersurface.ElizaBridgeActivity;
 import ai.eliza.plugins.browsersurface.ElizaSurfaceManagerPlugin;
 import ai.eliza.plugins.wifi.WiFiPlugin;
+import ai.eliza.plugins.passwords.PasswordsPlugin;
 
 public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
@@ -24,8 +26,17 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onCreate(Bundle state) {
   registerPlugin(EmbeddedAgentPlugin.class);
+  registerPlugin(GraceSignInPlugin.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
+  registerPlugin(PasswordsPlugin.class);
+  registerPlugin(PrivateViewPlugin.class);
+  registerPlugin(GraceGuideSpeechPlugin.class);
+  registerPlugin(GraceSpeechPlugin.class);
+  registerPlugin(GraceDevicePlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
+  registerPlugin(GraceRecordStorePlugin.class);
+  registerPlugin(GraceRemindersPlugin.class);
+  registerPlugin(GraceFilesPlugin.class);
   super.onCreate(state);
   preferSixtyHertz();
   findViewById(android.R.id.content).setBackgroundResource(R.color.paper);
@@ -46,7 +57,11 @@ public class MainActivity extends ElizaBridgeActivity {
     });
    }
   });
-  startForegroundService(new Intent(this, GraceAgentService.class));
+ }
+
+ @Override public void onStart() {
+  super.onStart();
+  GraceAgentService.resume(this);
  }
 
  private void leave(OnBackPressedCallback callback) {
@@ -74,6 +89,13 @@ public class MainActivity extends ElizaBridgeActivity {
   WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
   bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
   bars.hide(WindowInsetsCompat.Type.systemBars());
+ }
+
+ @Override public boolean dispatchKeyEvent(KeyEvent event) {
+  int key = event.getKeyCode();
+  if (key != KeyEvent.KEYCODE_VOLUME_UP && key != KeyEvent.KEYCODE_VOLUME_DOWN) return super.dispatchKeyEvent(event);
+  if (event.getAction() == KeyEvent.ACTION_DOWN) ((GraceDevicePlugin) getBridge().getPlugin("GraceDevice").getInstance()).stepVolume(key == KeyEvent.KEYCODE_VOLUME_UP);
+  return true;
  }
 
  @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); preferSixtyHertz(); }

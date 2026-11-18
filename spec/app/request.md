@@ -14,7 +14,7 @@ void a consent: Email's `alwaysApprovalIsCurrent`,
 ([email](./email.md)), Calendar's `alwaysSaveApprovalIsCurrent`
 ([calendar](./calendar.md)) and its whole-entry comparison in
 [calendarView](./calendarView.md), payment's `stepOnlyApprovedSubmission`
-([payment](./payment.md)), memory's `stepFillUsesCurrentApproval`
+([payment](./commitment.md)), memory's `stepFillUsesCurrentApproval`
 ([memory](./memory.md)), and the workspace's `lawCorrectedSpeechCannotApprove`
 and `lawLateSpeechCannotApprove` ([workspace](./workspace.md)). No shared
 pending-request, saving or outcome record is built here.

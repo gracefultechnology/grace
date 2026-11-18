@@ -32,6 +32,37 @@ const untyped = ["*.{js,ts}", "apps/app/scripts/**", "**/.storybook/**", "packag
 // Every React interface: Studio's page is built on the same theme (vibestack/studio/vite.config.ts).
 const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", "vibestack/studio/src/page/**/*.{ts,tsx}"]
 const design = "packages/design-system"
+const writing = 'AGENTS.md, "Writing code"'
+const citation = String.raw`spec\/\S+\.md, "[^"]+"`
+const suppressible = String.raw`(?!code\/|no-console\b)[\w@/-]+`
+const cited = new RegExp(String.raw`^\s*${citation}(?:; ${citation})*\s*$`)
+const suppression = new RegExp(String.raw`^ eslint-disable(?:-next-line|-line)? ${suppressible}(?:, ${suppressible})* -- \S`)
+const directives = {
+  Line: [cited, suppression, /^@ (?:backend|requires|ensures|invariant|decreases|assert|pure|type|ghost)(?: |$)/, /^\/ <reference /, /^ @vitest-environment [\w-]+$/],
+  Block: [cited, suppression, /^ eslint-enable\b/],
+  Shebang: [/^/],
+}
+const comments = {
+  meta: { type: "problem", schema: [{ type: "object", properties: { jsdoc: { type: "boolean" } }, additionalProperties: false }] },
+  create: (context) => ({
+    Program: () => context.sourceCode.getAllComments()
+      .filter((comment) => !directives[comment.type].some((directive) => directive.test(comment.value)) && !(context.options[0]?.jsdoc && comment.type === "Block" && comment.value.startsWith("*")))
+      .forEach((comment) => context.report({ loc: comment.loc, message: `No code comments: only spec citations and tool directives (${writing}).` })),
+  }),
+}
+const uses = (names) => `:matches(CallExpression[callee.name=${names}], CallExpression[callee.property.name=${names}], ImportSpecifier[imported.name=${names}])`
+const scheduling = {
+  [uses(/^use(?:Layout|Insertion)?Effect$/)]: `No effect hooks: shared state lives in the spec-backed Machine (${writing}).`,
+  [uses(/^(?:setTimeout|setInterval|requestAnimationFrame|requestIdleCallback)$/)]: `No timers: wait with Effect in VibeLang, or let the Machine say when (${writing}).`,
+}
+const effects = {
+  meta: { type: "problem", schema: [] },
+  create: (context) => Object.fromEntries(Object.entries(scheduling).map(([selector, message]) => [selector, (node) => context.report({ node, message })])),
+}
+const code = { rules: { comments, effects } }
+const own = ["apps/**", "packages/**"]
+const commented = ["apps/app/src/{App,Browser,Calendar,Email,EmailAccounts,EmailCompose,Grace,PageLayer,Settings,WebsiteRequests}.tsx", "apps/app/src/{actions,agent,app,context,conversation,google,providers}.vibe", "apps/app/src/{surfacePlugin,useApp}.ts", "apps/app/test/app.browser.test.tsx", "packages/ui/src/icons.tsx", "packages/ui/src/lib/facts.tsx", "packages/ui/{vite,vitest}.config.ts"]
+const scheduled = ["apps/app/src/{App.tsx,page.vibe,useApp.ts}", "apps/app/test/app.browser.test.tsx"]
 
 // The tool reads Quint's JSON and the TypeScript compiler API as `any` at its boundaries; packages and apps stay strict.
 const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-unsafe-assignment", "no-unsafe-call", "no-unsafe-member-access", "no-unsafe-return"].map((rule) => [`@typescript-eslint/${rule}`, "off"]))
@@ -131,4 +162,8 @@ export default defineConfig(
       "no-restricted-syntax": ["error", { selector: "JSXOpeningElement[name.name=/^(input|textarea)$/]", message: "Use Input, Textarea or Checkbox from @repo/ui." }],
     },
   },
+  { files: own, plugins: { code }, rules: { "no-console": "error" } },
+  { files: own, ignores: commented, rules: { "code/comments": "error" } },
+  { files: ["packages/ui/src/components/**"], ignores: ["**/*.meta.tsx", ...commented], rules: { "code/comments": ["error", { jsdoc: true }] } },
+  { files: own, ignores: scheduled, rules: { "code/effects": "error" } },
 )

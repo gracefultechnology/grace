@@ -1,19 +1,22 @@
+// spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, WifiSlash, cn } from "@repo/ui";
-import { Folder, House, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { Folder, House, KeyRound, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, Suspense, useEffect, useState } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
-import { canChangeLifecycle, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
+import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { mailAccounts } from "../gen/app__accounts.ts";
 import { Browser } from "./Browser.tsx";
 import { Calendar, calendarKeys, homeCalendar, nextAppointment } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
+import { Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
+import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
 import { RuntimeContext, type Runtime, useAccounts, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
 
@@ -110,20 +113,22 @@ function Screen() {
   // spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone": zero volume is muted, and Unmute at zero chooses 50.
   const choose = (settings: typeof volume) => fire({ type: "changePreferences", settings });
   // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses": what Grace's window covers.
-  const covered = assistant.presentation === "Expanded";
-  const bottom = keyboard + (assistant.presentation === "Compact" ? 6 + graceHeight + 6 : 6);
+  const privateSurface = privateSurfaceActive(workspace);
+  const covered = !privateSurface && assistant.presentation === "Expanded";
+  const bottom = keyboard + (!privateSurface && assistant.presentation === "Compact" ? 6 + graceHeight + 6 : 6);
   const clock = Object.fromEntries(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
-    <div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+    <div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none"
+      data-benchmark-observable={!privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
         status={<RailButton icon={online ? <Wifi {...tile} /> : <WifiSlash />} label="Wi-Fi" aria-label={online ? "Wi-Fi" : "Wi-Fi, not connected"} {...toggle("WifiPopover")} />}
         footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={surface === "DeviceSettings"} {...visit("DeviceSettings")} />}
-        ask={<AskGraceButton selected={assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
+        ask={privateSurface ? undefined : <AskGraceButton selected={assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
         <RailButton icon={<House {...tile} />} label="Home" selected={surface === "Home"} {...visit("Home")} />
         <RailButton icon={volume.muted ? <VolumeX {...tile} /> : <Volume2 {...tile} />} label="Volume" {...toggle("VolumePopover")} />
       </Rail>
@@ -139,7 +144,7 @@ function Screen() {
                 messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
               }}
-              internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
+              internet={visit("Browser")} files={{ photos: [], ...visit("Files") }} passwords={visit("Passwords")}
               page={device.homePage === "FilesCard" ? "files" : "main"}
               onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
             )}</WithCalendars>
@@ -150,6 +155,13 @@ function Screen() {
       {surface === "Calendar" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
       {surface === "Email" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
+      {surface === "Passwords" && (
+        <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
+          <AppWindow {...under(covered)} title="Passwords" icon={<KeyRound size={26} aria-hidden />} closeLabel="Close Passwords" onClose={visit("Home").onClick}>
+            <PasswordsApp />
+          </AppWindow>
+        </OverPage>
+      )}
       {app && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title={app.name} icon={app.icon} closeLabel={`Close ${app.name}`} onClose={visit("Home").onClick}>
@@ -174,7 +186,8 @@ function Screen() {
           )}
         </OverPage>
       )}
-      <Grace onHeightChange={setGraceHeight} />
+      <Notices above={bottom - 6} />
+      {!privateSurface && <Grace onHeightChange={setGraceHeight} />}
       {device.readiness === "Sleeping" && (
         <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
           <SleepScreen time={`${clock.hour}:${clock.minute}`} date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}

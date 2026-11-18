@@ -6,7 +6,7 @@ import { useState } from "react";
 import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
-import { useDraft, useKeyboardHeight, useWorkspace } from "./useApp.ts";
+import { useDraft, useKeyboardHeight, usePasswordGuide, useWorkspace } from "./useApp.ts";
 
 const checkLabels: Record<GuidedRead, string> = {
   ReadMail: "Check email",
@@ -22,6 +22,7 @@ const checkLabels: Record<GuidedRead, string> = {
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, say, checkGuidedRead, pointAtReadLink } = useWorkspace();
+  const guide = usePasswordGuide();
   const { assistant, plan, review, device, browser } = workspace!;
   const conversation = assistant.conversation;
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
@@ -91,17 +92,29 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice} quiet={conversation.turn === "Thinking"}
+          <GraceDock value={draft} maxLines={expanded ? 6 : 4}
+            mic={conversation.voice || guide.microphone === "GuideMicListening"}
+            quiet={conversation.turn === "Thinking"}
+            listening={guide.microphone === "GuideMicListening"}
+            placeholder={guide.microphone === "GuideMicUnavailable" ? "Voice help is unavailable. You can type to Grace." :
+              guide.microphone === "GuideMicNoMatch" ? "Try saying “Open Passwords”, or type to Grace." : undefined}
             onMicChange={(on) => {
-              if (!on) interact({ tag: "StopVoice" });
-              else if (can({ type: "talk" })) void send({ type: "talk" });
+              if (on) guide.listen();
+              else {
+                guide.stopMic();
+                interact({ tag: "StopVoice" });
+              }
             }}
-            onFieldFocus={() => interact({ tag: "TypeIntoChat" })}
+            onFieldFocus={() => { guide.stopMic(); interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
-            onSend={() => void say({ tag: "SendDraft", revision: conversation.draftRevision }).then((sent) => {
-              // spec/app/assistant.md, sendDraft: Send closes the chat keyboard, so the field gives up its focus with it.
-              if (sent && document.activeElement instanceof HTMLElement) document.activeElement.blur();
-            })} />
+            onSend={() => {
+              const revision = conversation.draftRevision;
+              void guide.request(revision).then(async (guided) => {
+                if (guided) setDraft("");
+                const sent = guided || await say({ tag: "SendDraft", revision });
+                if (sent && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+              });
+            }} />
         }>
         <GraceMessages>
           {conversation.messages.map((message, index) =>
