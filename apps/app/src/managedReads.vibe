@@ -128,8 +128,8 @@ effect function ownerHash(owner: string) {
 }
 
 const google = apiOrigin + "/api/v1/eliza/google/"
-type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series"
-type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change"
+type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series" | "calendar/reminder/event"
+type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change" | "calendar/reminder"
 
 effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
   const params = new URLSearchParams(Object.entries(search).flatMap(([name, value]) => value ? [[name, value]] : []))
@@ -227,10 +227,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const intent = try Ref.get(pending)
     if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
       const occurrence = intent.occurrence
-      const selected = effect {
-        const route = "google/calendar/reminder/event?occurrenceId=" + encodeURIComponent(occurrence) + "&grantId=" + encodeURIComponent(scope.grant)
-        return try query(route, Schema.Struct({ accountId: idField, event: EventRow }), authorization)
-      } catch () => undefined
+      const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
+        Schema.Struct({ accountId: idField, event: EventRow }), authorization) catch () => undefined
       if (try still(scope)) {
         try saveIntent({ ...intent, occurrence: undefined })
         if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
