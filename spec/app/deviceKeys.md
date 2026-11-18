@@ -26,8 +26,8 @@ browser's address editor is
 dismissed; Grace's own keyboard (chat or website typing) is dismissed;
 expanded Grace collapses to compact, never closing it; the selected tab goes
 back in its history while the browser is shown; any other surface, Settings
-included, goes Home, which hides the browser and keeps its tabs; Home's
-second page, the Files card, returns to the main Home cards. Going Home or
+included, goes Home, which hides the browser and keeps its tabs; Back from
+either the Files or Passwords launcher page returns to the main Home cards. Going Home or
 returning to the main cards always lands on a resting Home, so the Back after
 it leaves. The address editor counts only while the Browser surface is shown:
 on any other surface it is hidden and Back passes over it. A website's
@@ -85,6 +85,7 @@ pure def lawShellBackRestsAtHome(shell: S::Shell, a: A::Assistant, b: B::Browser
     backAction(S::chooseHomePage(shell, S::MainCards), a, b, r) == Unconsumed)
 pure val shellValues = Set(S::initial, S::finishStartup(S::initial, false), S::finishStartup(S::initial, true),
   S::chooseHomePage(S::finishStartup(S::initial, true), S::FilesCard),
+  S::chooseHomePage(S::finishStartup(S::initial, true), S::PasswordsCard),
   S::togglePopover(S::chooseHomePage(S::finishStartup(S::initial, true), S::FilesCard), S::VolumePopover),
   S::togglePopover(S::finishStartup(S::initial, true), S::VolumePopover),
   S::openSurface(S::finishStartup(S::initial, true), S::Browser),
