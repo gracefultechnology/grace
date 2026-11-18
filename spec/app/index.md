@@ -43,7 +43,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 
 Personal memory, task state and provider records have distinct lifecycles. Deleting a calendar item or remembered fact never cancels a payment or removes unresolved evidence. New sessions and different surfaces cannot create a new identity for the same provider bill. Scheduled and accepted are not settlement. Unsupported sites, missing evidence, unavailable sign-in challenges and privacy failures stop with an explanation and a usable manual path.
 
-The application in `apps/app` is a Capacitor Android application. The MVP ships the Home launcher APK, built on the shared Android host, browser surface and AOSP staging of the pinned `vendor/eliza`. The formal checks establish these models and their generated contracts; storage durability, provider integrations, speech capture, visual fidelity and senior usability still need the acceptance exercises on the device, listed in the [implementation acceptance checklist](../../docs/implementation-acceptance.md).
+The application in `apps/app` is a Capacitor Android application. The MVP ships the Home launcher APK, built on the shared Android host, browser surface and AOSP staging of the pinned `vendor/eliza`. The formal checks establish these models and their generated contracts; storage durability, provider integrations, speech capture, visual fidelity and senior usability still need the acceptance exercises on the device, listed in the checklist in `docs/implementation-acceptance.md`.
 
 ## Story: Manage my saved passwords privately
 
