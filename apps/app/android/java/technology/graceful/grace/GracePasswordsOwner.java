@@ -3,6 +3,7 @@ package technology.graceful.grace;
 import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
 import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
+import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
 import java.io.File;
 import java.nio.file.Files;
@@ -28,10 +29,18 @@ final class GracePasswordsOwner {
     && Files.notExists(directory.resolve("local-runtime").resolve("verified-account"), LinkOption.NOFOLLOW_LINKS);
  }
 
- static boolean admitted(Context context) {
+ static synchronized CloudDeviceAccount.Session stableSession(Context context) throws Exception {
+  var account = GraceAccount.account(context);
+  if (changingAccount || account.awaitingAcknowledgment()) throw new IllegalStateException("Account change in progress");
+  return account.session();
+ }
+
+ static boolean accountChanging() { return changingAccount; }
+
+ static synchronized boolean admitted(Context context) {
   if (changingAccount || !hasNoPriorOwner(context)) return false;
   try {
-   var current = GraceAccount.account(context).session();
+   var current = stableSession(context);
    String stored = custody(context).read(OWNER);
    if (stored == null) return current == null && !changingAccount;
    var owner = new JSONObject(stored);
@@ -44,7 +53,7 @@ final class GracePasswordsOwner {
 
  static synchronized void bindVerified(Context context, CloudPasswordBackup.Approval approval, boolean linkExisting) throws Exception {
   if (changingAccount || !hasNoPriorOwner(context) || !approval.current()) throw new IllegalStateException("Account verification changed");
-  var current = GraceAccount.account(context).session();
+  var current = stableSession(context);
   if (current == null || !current.accountId().equals(approval.ownerId())) throw new IllegalStateException("Account verification changed");
   var store = custody(context);
   String existing = store.read(OWNER);
@@ -63,10 +72,9 @@ final class GracePasswordsOwner {
     .put("organizationId", current.organizationId()).put("scope", approval.scope()).toString());
  }
 
- static void enteringAccountChange(Context context) {
+ static void enteringAccountChange(Context context) throws Exception {
   synchronized (GracePasswordsOwner.class) { changingAccount = true; }
-  try { PasswordVaultAccess.get(context).lockAndClose(); }
-  catch (Exception unavailable) { }
+  PasswordVaultAccess.get(context).lockAndClose();
  }
 
  static synchronized void leavingAccountChange() {

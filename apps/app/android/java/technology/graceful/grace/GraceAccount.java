@@ -23,6 +23,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -39,12 +40,12 @@ public final class GraceAccount extends Plugin {
  }
 
  @PluginMethod public void passwordRecoveryStatus(PluginCall call) {
-  RECOVERY.execute(() -> call.resolve(new JSObject().put("ready", passwordBackup.available())));
+  RECOVERY.execute(() -> call.resolve(new JSObject().put("ready", recoveryAccountReady() && passwordBackup.available())));
  }
 
  @PluginMethod public void showPasswordRecovery(PluginCall call) {
   getActivity().runOnUiThread(() -> {
-   if (getActivity().isFinishing() || getActivity().isDestroyed() || !recovery.open()) {
+   if (GracePasswordsOwner.accountChanging() || getActivity().isFinishing() || getActivity().isDestroyed() || !recovery.open()) {
     call.reject("Password recovery is unavailable");
    } else call.resolve();
   });
@@ -59,9 +60,10 @@ public final class GraceAccount extends Plugin {
   RECOVERY.execute(() -> {
    if (!controller.isCurrent(request)) return;
    try {
+    if (!recoveryAccountReady()) throw new IllegalStateException("Account verification required");
     Uri address = passwordBackup.begin(request.purpose);
     getActivity().runOnUiThread(() -> {
-     if (!controller.isCurrent(request)) return;
+     if (!controller.isCurrent(request) || GracePasswordsOwner.accountChanging()) return;
      try { getActivity().startActivity(new Intent(Intent.ACTION_VIEW, address)); }
      catch (Exception unavailable) { controller.failed(request, "Couldn't open secure password backup approval."); }
     });
@@ -78,12 +80,17 @@ public final class GraceAccount extends Plugin {
   if (operation == null || !passwordBackup.accepts(data)) return;
   RECOVERY.execute(() -> {
    try {
-    var approval = passwordBackup.exchange(data, operation.purpose, () -> recovery.isCurrent(operation));
+    var approval = passwordBackup.exchange(data, operation.purpose, () -> recovery.isCurrent(operation) && recoveryAccountReady());
     recovery.run(operation, approval);
    } catch (Exception unavailable) {
     recovery.failed(operation, "This password backup approval has ended. Try again.");
    }
   });
+ }
+
+ private boolean recoveryAccountReady() {
+  try { return GracePasswordsOwner.stableSession(getContext()) != null; }
+  catch (Exception unavailable) { return false; }
  }
 
  private record Picker(CloudDeviceAccount.NativeGoogleAttempt attempt, CancellationSignal signal, PluginCall call) {}
@@ -97,8 +104,8 @@ public final class GraceAccount extends Plugin {
   ACCOUNT.execute(() -> {
    try {
     CloudDeviceAccount account = account(getContext());
-    boolean signedIn = account.credential() != null;
-    if (!signedIn && finishAcknowledgment(account)) { didSignIn(); signedIn = true; }
+    if (finishAcknowledgment(account)) didSignIn();
+    boolean signedIn = GracePasswordsOwner.stableSession(getContext()) != null;
     if (signedIn) GracePasswordsOwner.confirmVerifiedAccount(getContext());
     call.resolve(projection(signedIn));
    }
@@ -166,12 +173,12 @@ public final class GraceAccount extends Plugin {
         || !GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(custom.getType()))
      throw new IllegalStateException("Invalid Google credential type");
     String idToken = GoogleIdTokenCredential.createFrom(custom.getData()).getIdToken();
-    try {
-     GracePasswordsOwner.enteringAccountChange(getContext());
+    changeAccount(() -> {
      if (!account.finishNativeGoogle(pending.attempt(), idToken)) throw new IllegalStateException("Google sign-in expired");
      GracePasswordsOwner.confirmVerifiedAccount(getContext());
-     didSignIn();
-    } finally { GracePasswordsOwner.leavingAccountChange(); }
+     return null;
+    });
+    didSignIn();
     pending.call().resolve();
    } else if (error instanceof NoCredentialException || error instanceof GetCredentialProviderConfigurationException
        || error instanceof GetCredentialUnsupportedException) {
@@ -223,14 +230,13 @@ public final class GraceAccount extends Plugin {
   recovery.accountChanged();
   ACCOUNT.execute(() -> {
    try {
-    try {
-     GracePasswordsOwner.enteringAccountChange(getContext());
+    changeAccount(() -> {
      CloudDeviceAccount account = account(getContext());
      closePicker(account);
      account.clear();
-    } finally { GracePasswordsOwner.leavingAccountChange(); }
+     return null;
+    });
     getActivity().runOnUiThread(() -> {
-     getContext().stopService(new Intent(getContext(), GraceAgentService.class));
      notifyListeners("sessionChanged", projection(false));
      call.resolve();
     });
@@ -243,33 +249,43 @@ public final class GraceAccount extends Plugin {
   if (CloudPasswordBackup.isBackupReturn(data)) { acceptPasswordBackup(data); return; }
   ACCOUNT.execute(() -> {
    try {
-    try {
-     GracePasswordsOwner.enteringAccountChange(getContext());
-     if (account(getContext()).exchange(data)) {
-      GracePasswordsOwner.confirmVerifiedAccount(getContext());
-      didSignIn();
-     }
-    } finally { GracePasswordsOwner.leavingAccountChange(); }
+    var account = account(getContext());
+    if (!account.handles(data)) return;
+    if (changeAccount(() -> {
+     if (!account.exchange(data)) return false;
+     GracePasswordsOwner.confirmVerifiedAccount(getContext());
+     return true;
+    })) didSignIn();
    } catch (Exception unavailable) { }
   });
  }
 
  private boolean finishAcknowledgment(CloudDeviceAccount account) throws Exception {
   if (!account.awaitingAcknowledgment()) return false;
-  try {
-   GracePasswordsOwner.enteringAccountChange(getContext());
+  return changeAccount(() -> {
    if (!account.finishAcknowledgment()) return false;
    GracePasswordsOwner.confirmVerifiedAccount(getContext());
    return true;
-  } finally { GracePasswordsOwner.leavingAccountChange(); }
+  });
+ }
+
+ private <T> T changeAccount(Callable<T> change) throws Exception {
+  Context context = getContext().getApplicationContext();
+  try {
+   GracePasswordsOwner.enteringAccountChange(context);
+   recovery.accountChanged();
+   GraceAgentService.retire();
+   return change.call();
+  } finally {
+   GracePasswordsOwner.leavingAccountChange();
+   GraceAgentService.finishAccountChange(context);
+  }
  }
 
  private void didSignIn() {
-  recovery.accountChanged();
   getActivity().runOnUiThread(() -> {
    if (getActivity().isFinishing() || getActivity().isDestroyed()) return;
    notifyListeners("sessionChanged", projection(true));
-   GraceAgentService.restart(getContext());
   });
  }
 
