@@ -267,6 +267,9 @@ importers:
       '@capacitor/core':
         specifier: 8.5.2
         version: 8.5.2
+      '@elizaos/cloud':
+        specifier: link:../../vendor/eliza/packages/cloud
+        version: link:../../vendor/eliza/packages/cloud
       '@elizaos/os':
         specifier: link:../../vendor/eliza/packages/os
         version: link:../../vendor/eliza/packages/os

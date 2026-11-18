@@ -27,6 +27,7 @@ import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,6 +41,8 @@ public final class GraceAccount extends Plugin {
  private static final String CLOUD_ORIGIN = "https://api.graceforseniors.com";
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
+ private record GuideLease(String id, CloudDeviceAccount.Session owner) {}
+ private GuideLease guideLease;
 
  @Override public void load() {
   passwordBackup = new CloudPasswordBackup(account(getContext()), "technology.graceful.grace", "production");
@@ -214,19 +217,30 @@ public final class GraceAccount extends Plugin {
   });
  }
 
- @PluginMethod public void chooseBrowserLink(PluginCall call) {
+ @PluginMethod public void browserGuideLease(PluginCall call) {
+  CHOICES.execute(() -> {
+   var lease = currentGuideLease();
+   call.resolve(new JSObject().put("id", lease == null ? JSONObject.NULL : lease.id()));
+  });
+ }
+
+ private synchronized GuideLease currentGuideLease() {
   CloudDeviceAccount.Session owner;
   try { owner = GracePasswordsOwner.stableSession(getContext()); }
   catch (Exception unavailable) { owner = null; }
-  if (owner == null) {
-   call.resolve(choiceUnavailable("disabled"));
-   return;
-  }
-  chooseBrowserLink(call, owner);
+  if (owner == null) guideLease = null;
+  else if (guideLease == null || !owner.equals(guideLease.owner())) guideLease = new GuideLease(UUID.randomUUID().toString(), owner);
+  return guideLease;
  }
 
- private void chooseBrowserLink(PluginCall call, CloudDeviceAccount.Session owner) {
+ @PluginMethod public void chooseBrowserLink(PluginCall call) {
   CHOICES.execute(() -> {
+   var lease = currentGuideLease();
+   if (lease == null || !lease.id().equals(call.getString("lease"))) {
+    call.resolve(choiceUnavailable("disabled"));
+    return;
+   }
+   var owner = lease.owner();
    try {
     String goal = call.getString("goal");
     var candidates = call.getArray("candidates");
@@ -355,6 +369,7 @@ public final class GraceAccount extends Plugin {
   Context context = getContext().getApplicationContext();
   try {
    GracePasswordsOwner.enteringAccountChange(context);
+   synchronized (this) { guideLease = null; }
    recovery.accountChanged();
    GraceAgentService.retire();
    return change.call();

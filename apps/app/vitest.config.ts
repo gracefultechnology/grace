@@ -129,7 +129,9 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       run.decisions++;
       if (definition.fixtureChoice !== undefined) {
         const selected = choice.candidates.find(({ label }) => label === definition.fixtureChoice);
-        return route.fulfill({ headers, json: { status: "ok", kind: "choice", choice: selected?.id ?? null } });
+        const id = selected?.id ?? "none";
+        return route.fulfill({ headers, json: { status: "ok", kind: "choice", choice: selected?.id ?? null,
+          model: "fixture", confidence: 1, probabilities: Object.fromEntries([...choice.candidates.map(({ id }) => id), "none"].map((option) => [option, option === id ? 1 : 0])) } });
       }
       const origin = process.env.GRACE_BENCHMARK_CLEF_ORIGIN;
       const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
