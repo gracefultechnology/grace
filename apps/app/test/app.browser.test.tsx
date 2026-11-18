@@ -523,7 +523,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
     const check = page.getByRole("button", { name: "Check page" });
     const plan = page.getByRole("region", { name: "Task plan" });
-    const pending = plan.getByText(`Find and check “${target}”.`, { exact: true });
+    const pending = plan.locator('[aria-current="step"]');
     expect(check.query()).toBeNull();
     const showLink = page.getByRole("button", { name: "Show me the link" });
     expect(showLink.query()).toBeNull();
@@ -543,22 +543,23 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(check);
     await expect.element(pending).toBeVisible();
 
-    await tap(showLink);
-    await routeTo(page.getByText("Look for “Help center” on example.org."));
-    expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: "example-home", command: {
-      subaction: "guide", guidance: { kind: "show", nodeId: "help" },
-    } });
-    await expect.element(pending).toBeVisible();
-
     const resume = page.getByRole("button", { name: "Resume Grace" });
     currentPage = about;
     await native.report("tab-1", origin + about.path, 100);
     await tap(resume);
     await tap(check);
-    await expect.element(page.getByRole("status", { name: "Page check result" })).toHaveTextContent("I couldn’t verify “Help center” on this page.");
+    await expect.element(page.getByRole("status", { name: "Page check result" })).toHaveTextContent(target);
     await expect.element(pending).toBeVisible();
+    expect(plan.getByText(/^Open page:/).query()).toBeNull();
     expect(plan.getByText("Read checks complete").query()).toBeNull();
-    expect(plan.getByText(/^Open the email you want me to read/).query()).toBeNull();
+    await routeTo(check);
+
+    await tap(showLink);
+    await routeTo(page.getByText("Look for “Help center” on example.org."));
+    expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
+      subaction: "guide", guidance: { kind: "show", nodeId: "help" },
+    } });
+    await expect.element(pending).toBeVisible();
 
     currentPage = help;
     await native.report("tab-1", origin + help.path, 100);
