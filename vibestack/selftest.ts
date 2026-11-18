@@ -2867,6 +2867,16 @@ describe("the documents name what exists", () => {
   const manifest = (dir: string): Record<string, Record<string, string> | undefined> => JSON.parse(read(path.join(dir, "package.json")));
   const within = (dir: string) => fs.readdirSync(path.join(project, dir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => `${dir}/${e.name}`);
 
+  const trackedEntries = async () => {
+    const listed = await exec("git", ["ls-files", "--stage", "-z"], project);
+    assert.equal(listed.status, 0, listed.stderr);
+    return listed.stdout.split("\0").filter(Boolean).map((entry) => {
+      const tab = entry.indexOf("\t");
+      const [mode, object] = entry.slice(0, tab).split(" ");
+      return { mode, object, file: entry.slice(tab + 1) };
+    });
+  };
+
   test("every repository path, pnpm script and link in the documents and skills leads somewhere", () => {
     // What pnpm itself provides, and what a document proposes rather than names.
     const scripts = new Set(["install", "exec", "add", "pack", ...["", "vibestack/studio", ...["packages", "apps", "vibestack/examples"].flatMap(within)].flatMap((dir) => Object.keys(manifest(dir).scripts ?? {}))]);
@@ -2910,7 +2920,8 @@ describe("the documents name what exists", () => {
     const plan: { globalCacheInputs: { files: Record<string, string> }; tasks: { taskId: string; inputs: Record<string, string> }[] } = JSON.parse(dry.stdout);
     const global = Object.keys(plan.globalCacheInputs.files);
     const [tools, docs, examples] = ["tools", "docs", "examples"].map((task) => new Set([...global, ...Object.keys(plan.tasks.find((t) => t.taskId === `//#selftest:${task}`)!.inputs)]));
-    const tracked = (await exec("git", ["ls-files"], project)).stdout.trim().split("\n").filter((file) => !fs.lstatSync(path.join(project, file)).isSymbolicLink());
+    const tracked = (await trackedEntries()).filter(({ mode, file }) =>
+      mode !== "160000" && fs.lstatSync(path.join(project, file), { throwIfNoEntry: false })?.isFile()).map(({ file }) => file);
     const missed = (hashed: Set<string>, read: (file: string) => boolean) => tracked.filter((file) => read(file) && !hashed.has(file));
     assert.deepEqual({
       docs: missed(docs, () => true),
@@ -2930,11 +2941,21 @@ describe("the documents name what exists", () => {
 
   test("a task waits for the root's gen unless its package can never own a root spec; prose, the selftest and a failed run's leftovers rerun no Studio task, and the fixtures its tests read do", async () => {
     const root = scratch({ "spec/kit/index.md": "# Kit\n", "packages/kit/package.json": JSON.stringify({ name: "@repo/kit", scripts: Object.fromEntries(["build", "typecheck", "test", "test:browser"].map((task) => [task, "true"])) }) });
-    for (const file of (await exec("git", ["ls-files"], project)).stdout.trim().split("\n")) {
-      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
-      fs.cpSync(path.join(project, file), path.join(root, file), { verbatimSymlinks: true });
+    const initialized = await exec("git", ["init", "-q"], root);
+    assert.equal(initialized.status, 0, initialized.stderr);
+    for (const { mode, object, file } of await trackedEntries()) {
+      const destination = path.join(root, file);
+      if (mode === "160000") {
+        fs.mkdirSync(destination, { recursive: true });
+        const indexed = await exec("git", ["update-index", "--add", "--cacheinfo", mode, object, file], root);
+        assert.equal(indexed.status, 0, indexed.stderr);
+      } else if (fs.lstatSync(path.join(project, file), { throwIfNoEntry: false })) {
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.cpSync(path.join(project, file), destination, { verbatimSymlinks: true });
+      }
     }
-    await exec("git", ["init", "-q"], root);
+    const staged = await exec("git", ["add", "-A"], root);
+    assert.equal(staged.status, 0, staged.stderr);
     const turbo = path.join(nodeModules, ".bin", process.platform === "win32" ? "turbo.cmd" : "turbo");
     const plan = async () => {
       const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools", "//#selftest:docs", "//#selftest:examples", "--dry=json"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
