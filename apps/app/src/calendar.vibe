@@ -2,12 +2,12 @@
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { type Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval } from "../gen/app__workspace.effect.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
-import { Instances, tablet } from "./instances.vibe"
+import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 
 export const day = 24 * 60 * 60 * 1000
@@ -333,7 +333,6 @@ export const calendarFeeds = Layer.effectDiscard(effect {
   const news = try CalendarNews
   const workspace = try Workspaces
   const lead = try Effect.orDie(shelf.calendar(tablet))
-  const watched = try Ref.make(new Map<number, Fiber.Fiber<void>>())
 
   effect function watch(account: Account, box: CalendarMachine.Shape) {
     if ((try box.get()).owner === "") box.send({ type: "bindCalendar", owner: account.address, calendarId: "primary", timezone: zone() }, "ViewStore") catch () => undefined
@@ -356,21 +355,6 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace), fill], { concurrency: "unbounded" }))
   }
 
-  effect function follow(a: Registry) {
-    const wanted = a.accounts.filter((x) => x.use.calendar)
-    for (const account of wanted) {
-      if ((try Ref.get(watched)).has(account.id)) continue
-      const box = shelf.calendar(account.id) catch () => undefined
-      if (box === undefined) continue
-      const fiber = try watch(account, box)
-      try Ref.update(watched, (all) => new Map(all).set(account.id, fiber))
-    }
-    for (const [id, fiber] of try Ref.get(watched)) {
-      if (wanted.some((x) => x.id === id)) continue
-      try Fiber.interrupt(fiber)
-      try Ref.update(watched, (all) => new Map([...all].filter(([k]) => k !== id)))
-    }
-  }
-
-  try fork.scoped Stream.runForEach(registry.changes, follow)
+  const selections = Stream.map(registry.changes, ({ accounts }) => accounts.filter((account) => account.use.calendar))
+  try fork.scoped followAccounts(selections, effect (account) => try watch(account, try shelf.calendar(account.id)))
 })

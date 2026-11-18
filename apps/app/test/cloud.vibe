@@ -1,7 +1,14 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 
+import { CLEF_DECISION_TIMEOUT_MS, createClefDecisionsClient } from "@elizaos/cloud/clef-decisions"
+import type { application } from "../src/app.vibe"
 import { Base64Url } from "effect/encoding"
 import policy from "../agent/policy.json" with { type: "json" }
+
+export effect function decisionCloud(url: string, key: string): { host: NonNullable<Parameters<typeof application>[2]>; deadlineMs: number }!unknown {
+  const choose = try Effect.try(() => createClefDecisionsClient({ baseUrl: url, headers: () => ({ Authorization: `Bearer ${key}` }) }))
+  return { host: { url, key, guideDecision: (request, signal) => runPromise(tryPromise(() => choose(request, signal))) }, deadlineMs: CLEF_DECISION_TIMEOUT_MS }
+}
 
 type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number }
 

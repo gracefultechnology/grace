@@ -23,6 +23,22 @@ schema Held { readonly content: HeldContent; readonly assets?: readonly HeldFile
 export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
 export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>
 
+export effect function followAccounts<R>(selections: Stream.Stream<readonly Account[]>, start: (account: Account) => Fiber.Fiber<void>!NotAnAccount!R) {
+  const active = new Map<number, Fiber.Fiber<void>>()
+  try Stream.runForEach(selections, effect (wanted) => {
+    for (const account of wanted) {
+      if (active.has(account.id)) continue
+      const fiber = start(account) catch () => undefined
+      if (fiber !== undefined) active.set(account.id, fiber)
+    }
+    for (const [id, fiber] of active) {
+      if (wanted.some((account) => account.id === id)) continue
+      try Fiber.interrupt(fiber)
+      active.delete(id)
+    }
+  })
+}
+
 export service Instances {
   mail(id: number): MailMachine.Shape!NotAnAccount
   calendar(key: number): CalendarMachine.Shape!NotAnAccount

@@ -2,13 +2,6 @@ import { ExperimentalNodeHttpServer } from "vibelang-runtime/experimental/platfo
 import type { TestProject } from "vitest/node"
 import { answered, cloud } from "./cloud.vibe"
 
-declare module "vitest" {
-  export interface ProvidedContext {
-    site: string
-    cloud: string
-  }
-}
-
 const Amount = Schema.String.check(Schema.isPattern(/^\d+\.\d{2}$/))
 const Time = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/))
 

@@ -2,14 +2,13 @@
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
-import { CLEF_DECISION_TIMEOUT_MS, createClefDecisionsClient } from "@elizaos/cloud/clef-decisions";
 import { commands, page, userEvent } from "vitest/browser";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { guidedReadKind, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, script, signIn } from "./cloud.vibe";
+import { client, decisionCloud, script, signIn } from "./cloud.vibe";
 import "../src/main.css";
 
 const topmost = (element: Element) => {
@@ -18,6 +17,16 @@ const topmost = (element: Element) => {
 };
 const onTop = (element: Element | null) => element !== null && element.contains(topmost(element));
 const typedAddress = () => document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value;
+
+async function proposeRead(said: string, text: string, step: "ReadChangedBrowser" | "ReadStatement") {
+  localStorage.clear();
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said, answer: JSON.stringify({ text, isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [step] }] }),
+  }]), client));
+  return { cloud, secret };
+}
 
 async function launch(plugin?: SurfacePlugin, cloud?: Parameters<typeof application>[2]) {
   await page.viewport(1280, 800);
@@ -238,18 +247,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     },
   });
   try {
-    localStorage.clear();
-    const cloud = inject("cloud");
-    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
-      said: intent,
-      answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
-    }]), client));
-    await transport({ kind: "decisionRoute", cloud, deadlineMs: CLEF_DECISION_TIMEOUT_MS });
-    const guideDecision = createClefDecisionsClient({
-      baseUrl: cloud, headers: () => ({ Authorization: `Bearer ${secret}` }),
-    });
-    const { workspace } = await launch(native.plugin, { url: cloud, key: secret, guideDecision });
+    const { cloud, secret } = await proposeRead(intent, "Review the browser step.", "ReadChangedBrowser");
+    const decisions = await Effect.runPromise(decisionCloud(cloud, secret));
+    await transport({ kind: "decisionRoute", cloud, deadlineMs: decisions.deadlineMs });
+    const { workspace } = await launch(native.plugin, decisions.host);
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -309,7 +310,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           await expect.poll(async () => {
             const result = await transport({ kind: "hoverGuide" })
             outcome.menuInteraction = result
-            if (result.reason) throw new Error(String(result.reason))
+            if (result.reason) throw new Error(typeof result.reason === "string" ? result.reason : JSON.stringify(result.reason))
             return result.disclosed === true
           }, { timeout: 15000 }).toBe(true)
           const evidence = Schema.decodeUnknownSync(Schema.Struct({
@@ -390,13 +391,7 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
     },
   });
   try {
-    localStorage.clear();
-    const cloud = inject("cloud");
-    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
-      said: question,
-      answer: JSON.stringify({ text: "Review the statement read.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadStatement"] }] }),
-    }]), client));
+    const { cloud, secret } = await proposeRead(question, "Review the statement read.", "ReadStatement");
     const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet", exact: true }));
     await userEvent.fill(page.getByRole("textbox", { name: "Address" }), url);

@@ -83,36 +83,36 @@ it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A du
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     reminders: {
-      enableManagedReminders: async () => undefined,
-      managedDue: async () => ({ reminders: entries }),
-      openManagedDue: async ({ id: selected }) => { actions.push("open:" + selected); },
-      dismissManagedDue: async ({ id: selected }) => {
+      enableManagedReminders: () => Promise.resolve(),
+      managedDue: () => Promise.resolve({ reminders: entries }),
+      openManagedDue: ({ id: selected }) => { actions.push("open:" + selected); return Promise.resolve(); },
+      dismissManagedDue: ({ id: selected }) => {
         actions.push("dismiss:" + selected);
-        if (!accept) throw new Error("Calendar could not save dismissal");
+        if (!accept) return Promise.reject(new Error("Calendar could not save dismissal"));
         entries = [];
-        return { id: selected };
+        return Promise.resolve({ id: selected });
       },
-      addListener: async (_event, listener) => {
+      addListener: (_event, listener) => {
         changed = listener;
-        return { remove: async () => { changed = undefined; } };
+        return Promise.resolve({ remove: () => { changed = undefined; return Promise.resolve(); } });
       },
     },
   }));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   onTestFinished(async () => {
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
     host.remove();
   });
-  await act(() => root.render(<App runtime={runtime} />));
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
   await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
   await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
     report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
   const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await click("Settings");
   entries = reminders;
-  await act(() => changed?.());
+  await act(() => Promise.resolve(changed?.()));
   const toast = page.getByText(/^Reminder: Library visit/);
   await expect.element(toast).toBeVisible();
   await click("See details");

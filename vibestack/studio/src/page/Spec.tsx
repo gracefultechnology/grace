@@ -89,7 +89,7 @@ function MoveMenu({ id, kind }: { id: string; kind: "story" | "rule" }) {
 /** A text box that grows with what it holds; in code, Tab indents. */
 const TextBox = ({ value, onChange, code = false, placeholder, label }: { value: string; onChange: (v: string) => void; code?: boolean; placeholder?: string; label: string }) => (
   <Textarea value={value} rows={1} spellCheck={!code} placeholder={placeholder} aria-label={label}
-    className={cn("min-h-10", code && "bg-muted font-mono text-xs leading-relaxed")}
+    className={cn("min-h-10", code && "bg-muted font-mono text-mark leading-relaxed")}
     onChange={(e) => onChange(e.target.value)}
     onKeyDown={(e) => {
       if (!code || e.key !== "Tab" || e.shiftKey) return;
@@ -108,7 +108,7 @@ const Done = ({ id, children }: { id: string; children?: ReactNode }) => (
   <div className="flex items-center gap-2">{children}<span className="flex-1" /><Button variant="outline" size="sm" onClick={() => doneEditing(id)}><Icon name="check" />Done</Button></div>
 );
 const Status = ({ mark, children }: { mark: "review" | "bad"; children: ReactNode }) => (
-  <div className={cn("text-xs", mark === "review" ? "text-warn" : "text-destructive")}>{children}</div>
+  <div className={cn("text-mark", mark === "review" ? "text-warn" : "text-destructive")}>{children}</div>
 );
 
 /** A failing check result: its stage and summary, and what it found, such as a counterexample trace. */
@@ -142,7 +142,7 @@ function StoryCard({ spec, story, s, byKey }: { spec: Working; story: Story; s: 
             <MoveMenu id={id} kind="story" />
             <IconButton name="trash" label="Delete story and its rules" danger onClick={() => removeNode(id)} />
           </>}>
-          <span title="rules" className="text-xs font-normal text-muted-foreground tabular-nums">{story.rules.length}</span>
+          <span title="rules" className="text-mark font-normal text-muted-foreground tabular-nums">{story.rules.length}</span>
           <Dot mark={mark} label={label} />
         </Row>
       </div>
@@ -187,7 +187,7 @@ function RuleItem({ spec, story, rule, r, byKey }: { spec: Working; story: Story
           <MoveMenu id={id} kind="rule" />
           <IconButton name="trash" label="Delete rule" danger onClick={() => removeNode(id)} />
         </>}>
-        {!items.some((i) => i.quint) && <span role="img" aria-label="no Quint" title="no Quint" className="font-mono text-xs text-warn">∅</span>}
+        {!items.some((i) => i.quint) && <span role="img" aria-label="no Quint" title="no Quint" className="font-mono text-mark text-warn">∅</span>}
         <Dot mark={mark} label={label} />
       </Row>
       {open && (editing ? <RuleEditor id={id} rule={rule} /> : (
@@ -270,7 +270,7 @@ export function Spec({ spec }: { spec: Working }) {
           </div>
         ) : (
           <>
-            <h1 onDoubleClick={() => editNode(headId)} className="mb-2 flex items-center gap-2 text-2xl font-semibold">
+            <h1 onDoubleClick={() => editNode(headId)} className="mb-2 flex items-center gap-2 text-lead font-semibold">
               {o.title || specLabel(spec.file)}<IconButton name="edit" label="Edit title and introduction" onClick={() => editNode(headId)} />
             </h1>
             {o.body.trim() && <Markdown text={o.body} file={spec.file} className="text-muted-foreground" />}

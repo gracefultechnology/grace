@@ -2,7 +2,7 @@
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
@@ -10,11 +10,10 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
+import { tabletViewport } from "./tablet.fixture.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
-afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
+tabletViewport();
 
 const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";
@@ -100,22 +99,17 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   const { secret, company } = await start(false);
   const headers = { authorization: `Bearer ${secret}` };
   const grants = async () => Schema.decodeUnknownSync(GoogleGrants)(await (await fetch(`${cloud}/api/v1/eliza/google/accounts?side=owner`, { headers })).json());
-  const providerPages: string[] = [];
-  const open = window.open;
-  window.open = (...args) => {
-    providerPages.push(String(args[0]));
-    return open.apply(window, args);
-  };
-  onTestFinished(() => { window.open = open; });
+  const openedProvider = vi.spyOn(window, "open");
+  onTestFinished(() => { openedProvider.mockRestore(); });
 
   await click(page.getByRole("button", { name: "Settings", exact: true }));
   await click(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" }));
   await click(page.getByRole("button", { name: /^Gmail/ }));
   const pending = page.getByRole("dialog", { name: "Gmail sign-in page" });
   await expect.element(pending).toBeVisible();
-  await expect.poll(() => providerPages.length).toBe(1);
+  await expect.poll(() => openedProvider.mock.calls.length).toBe(1);
   expect(await grants()).toEqual([]);
-  const provider = new URL(providerPages[0]);
+  const provider = new URL(String(openedProvider.mock.calls[0][0]));
   expect(provider.origin).toBe(new URL(cloud).origin);
   expect(provider.pathname).toBe("/o/oauth2/v2/auth");
   expect(provider.searchParams.get("response_type")).toBe("code");
@@ -126,8 +120,8 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   await expect.element(pending).not.toBeInTheDocument();
   await expect.element(page.getByText("Gmail · Connected")).toBeVisible();
   const [grant] = await grants();
-  expect(grant).toMatchObject({ connected: true, identity: { email: gmail },
-    grantedScopes: expect.arrayContaining(["gmail.readonly", "calendar.events"]) });
+  expect(grant).toMatchObject({ connected: true, identity: { email: gmail } });
+  expect(grant.grantedScopes).toEqual(expect.arrayContaining(["gmail.readonly", "calendar.events"]));
   expect(grant.connectionId).not.toBe("");
   expect((await fetch(`${cloud}/gmail/v1/users/me/messages`, { headers })).status).toBe(401);
   await click(page.getByRole("button", { name: "Close Settings", exact: true }));
@@ -171,8 +165,9 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   await click(yes);
   await expect.poll(visits, { timeout: 10000 }).toHaveLength(1);
   const [saved] = await visits();
-  expect(saved).toMatchObject({ externalId: expect.stringMatching(/^appointment/), title, startAt: tomorrow.toISOString(),
-    description: expect.stringContaining("Visit form") });
+  expect(saved).toMatchObject({ title, startAt: tomorrow.toISOString() });
+  expect(saved.externalId).toMatch(/^appointment/);
+  expect(saved.description).toContain("Visit form");
   await click(page.getByRole("button", { name: "Close Grace", exact: true }));
   await click(page.getByRole("button", { name: "Close Email", exact: true }));
   await click(page.getByRole("button", { name: /^Calendar/ }).getByText(title, { exact: true }));
@@ -357,6 +352,13 @@ it("Delete a message and recover it safely", async () => {
   const { company } = await start();
   const prize = email(/Prize Desk/);
   const undo = page.getByRole("button", { name: "Undo" });
+  const openDeletedMessage = async () => {
+    await opened(/Prize Desk/, "A message for Grace");
+    await click(page.getByRole("button", { name: "Delete" }));
+    await expect.element(undo).toBeVisible();
+    await click(row("Trash"));
+    await opened(/Prize Desk/, "A message for Grace");
+  };
   const labels = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction").map((m) => m.labels.filter((l) => l !== "UNREAD")));
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(prize).toBeVisible();
@@ -369,20 +371,12 @@ it("Delete a message and recover it safely", async () => {
   await expect.poll(labels).toEqual([["INBOX"]]);
   await expect.element(prize).toBeVisible();
 
-  await opened(/Prize Desk/, "A message for Grace");
-  await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(undo).toBeVisible();
-  await click(row("Trash"));
-  await opened(/Prize Desk/, "A message for Grace");
+  await openDeletedMessage();
   await click(page.getByRole("button", { name: "Restore" }));
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(labels).toEqual([["INBOX"]]);
   await click(row("All inboxes"));
-  await opened(/Prize Desk/, "A message for Grace");
-  await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(undo).toBeVisible();
-  await click(row("Trash"));
-  await opened(/Prize Desk/, "A message for Grace");
+  await openDeletedMessage();
   await click(page.getByRole("button", { name: "Delete forever" }));
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction"))).toEqual([]);

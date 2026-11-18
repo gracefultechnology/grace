@@ -255,6 +255,42 @@ effect function step(native: NativePage.Shape, page: Page, tab: Tab, close: (tab
   command catch effect (cause) => { try warn("follow", id, cause); try close(tab.id) }
 }
 
+effect function originOf(address: string | undefined) {
+  if (address === undefined) return undefined
+  const url = Effect.try(() => new URL(address)) catch () => undefined
+  return url?.protocol === "https:" ? Url.make(url.origin) : undefined
+}
+
+const numberOf = (requests: ReadonlyMap<number, Request>, page: PageId, key: RequestKey) => [...requests].find(([, r]) => r.page === page && r.key === key)?.[0]
+
+effect function navigatePrivate(workspace: Workspaces.Shape, native: NativePage.Shape, pages: ReadonlyMap<PageId, Page>, tab: number, address: string) {
+  const w = try workspace.get()
+  const id = pageOf(tab)
+  if (w.device.surface !== "Browser" || w.browser.selected !== tab || pages.get(id)?.tab.manualSignIn !== true || (try sync(() => webView.hidden()))) return false
+  const url = Effect.try(() => new URL(address)) catch () => undefined
+  if (url === undefined || url.protocol !== "https:" || url.username !== "" || url.password !== "") return false
+  return Effect.as(native.navigate(id, url.href), true) catch () => false
+}
+
+effect function listenForPageSignals(workspace: Workspaces.Shape, native: NativePage.Shape, signals: Queue.Queue<Signal>) {
+  native.claim() catch effect (cause) => try warn("claim", undefined, cause)
+  const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
+  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
+  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
+  try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
+}
+
+function browserProtection() {
+  const privacy = privateViewPlugin
+  let privateWindow = false
+  return effect (active: boolean) => {
+    if (privacy === undefined || privateWindow === active) return true
+    const protectedWindow = Effect.as(tryPromise(() => privacy.protect({ view: "browser", active })), true) catch () => false
+    if (protectedWindow) privateWindow = active
+    return protectedWindow
+  }
+}
+
 export const pageHost = Layer.effect(PageHost, effect {
   const workspace = try Workspaces
   const layer = try PageLayers
@@ -270,8 +306,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   const unmade = new Map<number, number>()
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
   let presented: PageId | null | undefined = null
-  const privacy = privateViewPlugin
-  let privateWindow = false
+  const protectBrowser = browserProtection()
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
 
@@ -346,13 +381,6 @@ export const pageHost = Layer.effect(PageHost, effect {
       if (!clean) for (const id of former) native.destroy(id) catch effect (cause) => try warn("destroy", id, cause)
       try Queue.offer(signals, Signal.Purged({ clean }))
     }
-  }
-
-  effect function protectBrowser(active: boolean) {
-    if (privacy === undefined || privateWindow === active) return true
-    const protectedWindow = Effect.as(tryPromise(() => privacy.protect({ view: "browser", active })), true) catch () => false
-    if (protectedWindow) privateWindow = active
-    return protectedWindow
   }
 
   effect function open(tab: Tab, shown: boolean) {
@@ -437,8 +465,6 @@ export const pageHost = Layer.effect(PageHost, effect {
     native.reply({ id: event.id, key: event.key, ask: event.ask, answer: "Refused", text: "" }) catch effect (cause) => try warn("refuse", event.id, cause)
   }
 
-  const numberOf = (requests: ReadonlyMap<number, Request>, page: PageId, key: RequestKey) => [...requests].find(([, r]) => r.page === page && r.key === key)?.[0]
-
   effect function started(page: Page, tab: number, url: string | undefined) {
     const unasked = page.asked.length === 0
     const at = page.asked.findLastIndex((a) => a.url === url)
@@ -447,12 +473,6 @@ export const pageHost = Layer.effect(PageHost, effect {
     const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
     if (now !== undefined && now.loadVersion !== page.tab.loadVersion) try step(native, page, now, close)
     try website({ type: "pageStarted", tab }, "WebsiteHost")
-  }
-
-  effect function originOf(address: string | undefined) {
-    if (address === undefined) return undefined
-    const url = Effect.try(() => new URL(address)) catch () => undefined
-    return url?.protocol === "https:" ? Url.make(url.origin) : undefined
   }
 
   effect function hear(event: PageEvent) {
@@ -510,11 +530,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
 
-  native.claim() catch effect (cause) => try warn("claim", undefined, cause)
-  const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
-  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
-  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
-  try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
+  try listenForPageSignals(workspace, native, signals)
   try fork.scoped effect {
     while (true) {
       for (const signal of try Queue.takeAll(signals)) try apply(signal)
@@ -522,14 +538,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
   return {
-    effect navigatePrivate(tab: number, address: string) {
-      const w = try workspace.get()
-      const id = pageOf(tab)
-      if (w.device.surface !== "Browser" || w.browser.selected !== tab || pages.get(id)?.tab.manualSignIn !== true || (try sync(() => webView.hidden()))) return false
-      const url = Effect.try(() => new URL(address)) catch () => undefined
-      if (url === undefined || url.protocol !== "https:" || url.username !== "" || url.password !== "") return false
-      return Effect.as(native.navigate(id, url.href), true) catch () => false
-    },
+    navigatePrivate: (tab, address) => navigatePrivate(workspace, native, pages, tab, address),
     effect website(event: WebsiteEvent) {
       try Queue.offer(signals, Signal.Person({ event }))
     },

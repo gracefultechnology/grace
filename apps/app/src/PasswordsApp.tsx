@@ -29,17 +29,17 @@ const noticeText: Record<VaultNotice, string> = {
 type OpenLoginsProps = {
   entries: LoginSummary[];
   selected: string;
-  choose(id: string): void;
-  act(action: PasswordAction): void;
+  choose: (id: string) => void;
+  act: (action: PasswordAction) => void;
   guide: PasswordGuide;
-  finishGuide(): void;
+  finishGuide: () => void;
 };
 
 const focusEntryHeading = (heading: HTMLHeadingElement | null) => { heading?.focus(); };
 
 function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: OpenLoginsProps) {
   const [query, setQuery] = useState("");
-  const returnFocus = useRef<string | undefined>(undefined);
+  const returnFocusRef = useRef<string | undefined>(undefined);
   const entry = entries.find((row) => row.id === selected);
   const search = query.trim().toLocaleLowerCase();
   const matching = entries.filter(({ label, username, bindings }) =>
@@ -48,7 +48,7 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
   if (entry) {
     return (
       <div className="flex flex-col items-start gap-4">
-        <Button variant="capsule" size="pill" onClick={() => { returnFocus.current = entry.id; choose(""); }}>All passwords</Button>
+        <Button variant="capsule" size="pill" onClick={() => { returnFocusRef.current = entry.id; choose(""); }}>All passwords</Button>
         <h2 ref={focusEntryHeading} tabIndex={-1} className="text-title-lg font-bold">{entry.label}</h2>
         {entry.username && <p className="text-body-lg">{entry.username}</p>}
         <ul aria-label="Websites and apps" className="text-body text-muted-foreground">
@@ -98,8 +98,8 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
           {matching.map(({ id, label, username, bindings }) => (
             <li key={id}>
               <Button ref={(control) => {
-                if (control && returnFocus.current === id) {
-                  returnFocus.current = undefined;
+                if (control && returnFocusRef.current === id) {
+                  returnFocusRef.current = undefined;
                   control.focus();
                 }
               }} variant="capsule" size="pill" className="w-full justify-start" onClick={() => choose(id)}>

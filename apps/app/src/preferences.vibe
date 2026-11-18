@@ -55,7 +55,7 @@ export const persistPreferences = (port: PreferenceRecords | undefined) => Layer
 })
 
 schema DeviceVolume { step: Schema.Int; min: Schema.Int; max: Schema.Int; muted: boolean }
-const DeviceBrightness = Schema.Struct({ percent: Schema.optional(Schema.Int) })
+schema DeviceBrightness { percent?: Schema.Int }
 schema DeviceSettings { volume: DeviceVolume; brightness: DeviceBrightness }
 
 type DeviceChoice = Pick<DisplayPreferences, "brightness" | "volume" | "muted">

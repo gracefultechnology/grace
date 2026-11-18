@@ -6,7 +6,7 @@ import { Effect, Stream } from "effect";
 import { KeyRound } from "lucide-react";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
+import { guidedReadKind, mayGuideReadLink, type GuidedRead, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
@@ -15,6 +15,16 @@ import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
+
+function keyedSteps(steps: readonly GuidedStep[]) {
+  const occurrences = new Map<string, number>();
+  return steps.map((step) => {
+    const content = JSON.stringify([step.surface, step.subject, step.outcome]);
+    const occurrence = occurrences.get(content) ?? 0;
+    occurrences.set(content, occurrence + 1);
+    return { step, key: `${content}:${occurrence}` };
+  });
+}
 
 const checkLabels: Record<GuidedRead, string> = {
   ReadMail: "Check email",
@@ -172,7 +182,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <blockquote className="text-body">{review.request.goal}</blockquote>
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
-                {review.request.steps.map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
+                {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{step.subject}</li>)}
               </ol>
               <AnswerChips><AnswerChip onClick={() => void send(start)}>Start read plan</AnswerChip></AnswerChips>
             </section>
@@ -184,7 +194,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                 <>
                   <blockquote className="text-body">{plan.originalAsk}</blockquote>
                   <ol className="flex flex-col gap-2">
-                    {plan.steps.map((step, index) => <li key={`${step.subject}-${index}`} aria-current={index === next ? "step" : undefined}>
+                    {keyedSteps(plan.steps).map(({ step, key }, index) => <li key={key} aria-current={index === next ? "step" : undefined}>
                       {index < next ? plan.receipts[index]?.evidence : guidedReadKind(step) === "ReachNamedPage" ? `Find and check “${step.subject}”.` : step.outcome}
                     </li>)}
                   </ol>

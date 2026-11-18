@@ -52,7 +52,7 @@ export type ProposedWork = { accountId: string; grant: string } & (
   | { kind: "removeAppointment"; id: string; version: string; series: boolean }
   | { kind: "trash"; id: string; version: string }
 )
-export type StagedWork = { number: number; proposal: ProposedWork }
+type StagedWork = { number: number; proposal: ProposedWork }
 schema Series { accountId: idField; occurrenceId: idField; event: EventRow }
 schema ActionReceipt { accountId: idField; operationId: idField; itemId: idField; version?: string }
 export type WriteReceipt = typeof ActionReceipt.Type
@@ -128,8 +128,8 @@ effect function ownerHash(owner: string) {
 }
 
 const google = apiOrigin + "/api/v1/eliza/google/"
-type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series"
-type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change"
+type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series" | "calendar/reminder/event"
+type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change" | "calendar/reminder"
 
 effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
   const params = new URLSearchParams(Object.entries(search).flatMap(([name, value]) => value ? [[name, value]] : []))
@@ -157,45 +157,94 @@ function range(now: number) {
   return { from: new Date(now).toISOString(), until: new Date(now + 30 * 86400000).toISOString() }
 }
 
+effect function scopeOf(native: boolean, view: ReadView, account: SetupState, intent: Intent | undefined): Scope!! {
+  if (native) return { kind: "waiting", view, reason: "native" }
+  if (account.graceAccount.tag === "CheckingAccount") return { kind: "waiting", view, reason: "checking" }
+  if (account.graceAccount.tag === "AccountUnavailable") return { kind: "waiting", view, reason: "unavailable" }
+  if (account.graceAccount.tag !== "GraceSignedIn") return { kind: "waiting", view, reason: "signedOut" }
+  const accountId = account.graceAccount.accountId
+  if (intent?.owner !== undefined) {
+    const hash = ownerHash(accountId) catch () => ""
+    if (hash !== intent.owner) return { kind: "waiting", view, reason: "mismatch" }
+  }
+  if (account.googleLink.tag === "GoogleLinkUnavailable") return { kind: "waiting", view, reason: "connectorUnavailable" }
+  if (!mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar")) {
+    return { kind: "waiting", view, reason: "connect" }
+  }
+  return { kind: "ready", view, accountId, grant: account.googleLink.tag === "GoogleLinkConnected" ? account.googleLink.grant : "" }
+}
+
+effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope, prior?: Mail | Calendar, next?: string) {
+  const paging = { pageToken: next, grantId: scope.grant }
+  if (scope.view === "Email") {
+    const loaded = try query("gmail/triage", { maxResults: "20", ...paging }, MailPage, authorization)
+    if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
+    const existing = prior?.kind === "mail" ? prior.rows : []
+    const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
+    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken }
+  }
+  const window = prior?.kind === "calendar" ? { from: prior.from, until: prior.until } : range(try Clock.currentTimeMillis)
+  const loaded = try query("calendar/feed", { timeMin: window.from, timeMax: window.until, ...paging }, CalendarPage, authorization)
+  if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
+  const existing = prior?.kind === "calendar" ? prior.rows : []
+  const rows = [...new Map([...existing, ...loaded.events].map((row) => [row.externalId, row])).values()]
+  return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, ...window }
+}
+
+effect function watchHomeCards(native: boolean, pending: Ref.Ref<Intent | undefined>) {
+  const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
+  const authorization = try AccountActions
+  const setup = try Setup
+  const desk = try Workspaces
+  if (!native) {
+    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes),
+      effect ([workspace, account]) => {
+        if (workspace.device.surface !== "Home" || workspace.device.readiness !== "Ready") return undefined
+        const intent = try Ref.get(pending)
+        return [try scopeOf(native, "Email", account, intent), try scopeOf(native, "Calendar", account, intent)]
+          .filter((scope): scope is ReadyScope => scope.kind === "ready")
+      }), (a, b) => JSON.stringify(a) === JSON.stringify(b))
+    try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
+      try SubscriptionRef.set(cards, undefined)
+      const one = selected?.[0]
+      if (!one || !selected) return
+      const loaded = try Effect.forEach(selected, effect (scope) => {
+        return fetchPage(authorization, scope) catch () => undefined
+      }, { concurrency: 2 })
+      const account = try setup.get()
+      if (account.graceAccount.tag !== "GraceSignedIn" || account.graceAccount.accountId !== one.accountId ||
+        account.googleLink.tag !== "GoogleLinkConnected" || account.googleLink.grant !== one.grant ||
+        (try desk.get()).device.surface !== "Home") return
+      try SubscriptionRef.set(cards, { accountId: one.accountId, grant: one.grant,
+        mail: loaded.find((page) => page?.kind === "mail")?.rows ?? [],
+        events: loaded.find((page) => page?.kind === "calendar")?.rows ?? [] })
+    })))
+  }
+  return cards
+}
+
+effect function saveIntent(pending: Ref.Ref<Intent | undefined>, intent: Intent | undefined) {
+  try Ref.set(pending, intent)
+  Effect.try(() => {
+    if (intent === undefined) webView.window.sessionStorage.removeItem(retained)
+    else webView.window.sessionStorage.setItem(retained, JSON.stringify(intent))
+  }) catch () => undefined
+}
+
 export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effect {
   const desk = try Workspaces
   const setup = try Setup
   const authorization = try AccountActions
   const pending = try Ref.make(native ? undefined : (try intentOfPage()))
   const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
-  const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
+  const cards = try watchHomeCards(native, pending)
   const gate = try Semaphore.make(1)
   const proposedNumber = try Ref.make(0)
-
-  effect function saveIntent(intent: Intent | undefined) {
-    try Ref.set(pending, intent)
-    Effect.try(() => {
-      if (intent === undefined) webView.window.sessionStorage.removeItem(retained)
-      else webView.window.sessionStorage.setItem(retained, JSON.stringify(intent))
-    }) catch () => undefined
-  }
-
-  effect function scopeOf(view: ReadView, account: SetupState, intent: Intent | undefined): Scope!! {
-    if (native) return { kind: "waiting", view, reason: "native" }
-    if (account.graceAccount.tag === "CheckingAccount") return { kind: "waiting", view, reason: "checking" }
-    if (account.graceAccount.tag === "AccountUnavailable") return { kind: "waiting", view, reason: "unavailable" }
-    if (account.graceAccount.tag !== "GraceSignedIn") return { kind: "waiting", view, reason: "signedOut" }
-    const accountId = account.graceAccount.accountId
-    if (intent?.owner !== undefined) {
-      const hash = ownerHash(accountId) catch () => ""
-      if (hash !== intent.owner) return { kind: "waiting", view, reason: "mismatch" }
-    }
-    if (account.googleLink.tag === "GoogleLinkUnavailable") return { kind: "waiting", view, reason: "connectorUnavailable" }
-    if (!mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar")) {
-      return { kind: "waiting", view, reason: "connect" }
-    }
-    return { kind: "ready", view, accountId, grant: account.googleLink.tag === "GoogleLinkConnected" ? account.googleLink.grant : "" }
-  }
 
   effect function activeScope(): Scope!! {
     const surface = (try desk.get()).device.surface
     if (surface !== "Email" && surface !== "Calendar") return { kind: "closed" }
-    return try scopeOf(surface, try setup.get(), try Ref.get(pending))
+    return try scopeOf(native, surface, try setup.get(), try Ref.get(pending))
   }
 
   effect function still(scope: ReadyScope): boolean!! {
@@ -203,36 +252,17 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     return current.kind === "ready" && current.view === scope.view && current.accountId === scope.accountId && current.grant === scope.grant
   }
 
-  effect function fetchPage(scope: ReadyScope, prior?: Mail | Calendar, next?: string) {
-    const paging = { pageToken: next, grantId: scope.grant }
-    if (scope.view === "Email") {
-      const loaded = try query("gmail/triage", { maxResults: "20", ...paging }, MailPage, authorization)
-      if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
-      const existing = prior?.kind === "mail" ? prior.rows : []
-      const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
-      return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken }
-    }
-    const window = prior?.kind === "calendar" ? { from: prior.from, until: prior.until } : range(try Clock.currentTimeMillis)
-    const loaded = try query("calendar/feed", { timeMin: window.from, timeMax: window.until, ...paging }, CalendarPage, authorization)
-    if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
-    const existing = prior?.kind === "calendar" ? prior.rows : []
-    const rows = [...new Map([...existing, ...loaded.events].map((row) => [row.externalId, row])).values()]
-    return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, ...window }
-  }
-
   effect function refresh(scope: Scope) {
     if (scope.kind !== "ready") return try SubscriptionRef.set(latest, scope)
     try SubscriptionRef.set(latest, { kind: "loading", view: scope.view, accountId: scope.accountId })
-    const result = fetchPage(scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
+    const result = fetchPage(authorization, scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
     const intent = try Ref.get(pending)
     if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
       const occurrence = intent.occurrence
-      const selected = effect {
-        const route = "google/calendar/reminder/event?occurrenceId=" + encodeURIComponent(occurrence) + "&grantId=" + encodeURIComponent(scope.grant)
-        return try query(route, Schema.Struct({ accountId: idField, event: EventRow }), authorization)
-      } catch () => undefined
+      const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
+        Schema.Struct({ accountId: idField, event: EventRow }), authorization) catch () => undefined
       if (try still(scope)) {
-        try saveIntent({ ...intent, occurrence: undefined })
+        try saveIntent(pending, { ...intent, occurrence: undefined })
         if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
           return try SubscriptionRef.set(latest, { ...result, selected: selected.event })
       }
@@ -258,7 +288,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (command.kind === "account") {
       if (scope.kind !== "waiting" || !["signedOut", "connect", "mismatch"].includes(scope.reason)) return false
       const kept = try Ref.get(pending)
-      try saveIntent({ view: scope.view, owner: kept?.owner, occurrence: kept?.occurrence, returning: true })
+      try saveIntent(pending, { view: scope.view, owner: kept?.owner, occurrence: kept?.occurrence, returning: true })
       try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
       return true
     }
@@ -293,7 +323,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     }
     if (command.kind === "more") {
       if (shown.next === null) return false
-      const page = try fetchPage(scope, shown, shown.next)
+      const page = try fetchPage(authorization, scope, shown, shown.next)
       if (!(try still(scope))) return false
       try SubscriptionRef.set(latest, page)
       return true
@@ -418,7 +448,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   if (!native) {
     const onOpening = try Ref.get(pending)
     if (onOpening !== undefined && viewOf(webView.window.location.hash) !== undefined) {
-      try saveIntent(onOpening)
+      try saveIntent(pending, onOpening)
       try fork.scoped effect {
         try Stream.runHead(Stream.filter(desk.changes, (w) => w.device.readiness === "Ready"))
         desk.send({ type: "visit", destination: onOpening.view }, "Person") catch () => undefined
@@ -427,36 +457,12 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     try fork.scoped Stream.runForEach(Stream.zipLatest(desk.changes, setup.changes), effect ([workspace, account]) => {
       const next = try Ref.get(pending)
       if (next?.returning && workspace.device.surface === "DeviceSettings" && workspace.device.settingsPage === "AccountSettings") {
-        const scope = try scopeOf(next.view, account, next)
+        const scope = try scopeOf(native, next.view, account, next)
         if (scope.kind !== "ready" && (scope.kind !== "waiting" || scope.reason !== "connectorUnavailable")) return
         const opened = desk.send({ type: "visit", destination: next.view }, "Person") catch () => undefined
-        if (opened !== undefined) try saveIntent({ ...next, returning: false })
+        if (opened !== undefined) try saveIntent(pending, { ...next, returning: false })
       }
     })
-  }
-  if (!native) {
-    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes),
-      effect ([workspace, account]) => {
-        if (workspace.device.surface !== "Home" || workspace.device.readiness !== "Ready") return undefined
-        const intent = try Ref.get(pending)
-        return [try scopeOf("Email", account, intent), try scopeOf("Calendar", account, intent)]
-          .filter((scope): scope is ReadyScope => scope.kind === "ready")
-      }), (a, b) => JSON.stringify(a) === JSON.stringify(b))
-    try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
-      try SubscriptionRef.set(cards, undefined)
-      const one = selected?.[0]
-      if (!one || !selected) return
-      const loaded = try Effect.forEach(selected, effect (scope) => {
-        return fetchPage(scope) catch () => undefined
-      }, { concurrency: 2 })
-      const account = try setup.get()
-      if (account.graceAccount.tag !== "GraceSignedIn" || account.graceAccount.accountId !== one.accountId ||
-        account.googleLink.tag !== "GoogleLinkConnected" || account.googleLink.grant !== one.grant ||
-        (try desk.get()).device.surface !== "Home") return
-      try SubscriptionRef.set(cards, { accountId: one.accountId, grant: one.grant,
-        mail: loaded.find((page) => page?.kind === "mail")?.rows ?? [],
-        events: loaded.find((page) => page?.kind === "calendar")?.rows ?? [] })
-    })))
   }
   const scopes = Stream.changesWith(
     Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes), () => activeScope()),

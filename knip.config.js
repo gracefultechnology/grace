@@ -75,10 +75,13 @@ export default {
         "tailwindcss"
       ]
     },
-    "apps/*": {
+    "apps/cloud": {
+      "entry": ["src/migrate.vibe", "src/worker.vibe"]
+    },
+    "apps/app": {
+      "ignoreBinaries": ["openssl"],
       "entry": [
         "test/**/*.test.{ts,tsx,vibe}",
-        "test/drivers/*.ts",
         "src/**/*.{schema,contract}.{ts,vibe}"
       ],
       "project": [

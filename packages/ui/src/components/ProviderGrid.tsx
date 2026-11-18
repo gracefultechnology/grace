@@ -25,7 +25,7 @@ const allProviders = Object.keys(emailProviders) as EmailProvider[];
 export function ProviderTile({ provider, className, ...props }: ComponentProps<"span"> & { provider: EmailProvider }) {
   const { mark } = emailProviders[provider];
   return (
-    <span aria-hidden className={cn("flex size-[52px] flex-none items-center justify-center rounded-tile bg-accent text-[24px] font-extrabold text-primary", className)} {...props}>
+    <span aria-hidden className={cn("flex size-[52px] flex-none items-center justify-center rounded-tile bg-accent text-lead font-extrabold text-primary", className)} {...props}>
       {mark ?? <Mail size={26} strokeWidth={2} />}
     </span>
   );
@@ -73,7 +73,7 @@ export function ProviderGrid({ providers = allProviders, onChoose, bare = false,
       {!bare && (
         <Panel className="mt-[18px] flex items-center gap-4 px-5 py-4">
           <div className="flex-1">
-            <p className="m-0 text-[20px] leading-[30px] font-bold text-chrome">{words.helpTitle}</p>
+            <p className="m-0 text-body leading-[30px] font-bold text-chrome">{words.helpTitle}</p>
             <p className="m-0 text-body leading-[26px] font-medium text-muted-foreground">{words.helpText}</p>
           </div>
           <Button variant="capsule" size="pill" onClick={onAskGrace}>{words.askGrace}</Button>

@@ -48,7 +48,7 @@ function inline(s: string, file: string): ReactNode[] {
   for (const m of s.matchAll(/`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g)) {
     out.push(s.slice(end, m.index));
     const k = m.index;
-    if (m[1]) out.push(<code key={k} className="rounded-sm bg-muted px-1 font-mono text-[0.9em]">{m[1]}</code>);
+    if (m[1]) out.push(<code key={k} className="rounded-sm bg-muted px-1 font-mono">{m[1]}</code>);
     else if (m[2]) {
       let link: URL | undefined;
       try { link = new URL(m[3], new URL(file, "https://spec.invalid/")); } catch { link = undefined; }
@@ -96,5 +96,5 @@ export function Quint({ code }: { code: string }) {
 }
 
 export const Code = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <pre className={cn("m-0 overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs leading-relaxed", className)}>{children}</pre>
+  <pre className={cn("m-0 overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-mark leading-relaxed", className)}>{children}</pre>
 );

@@ -12,7 +12,7 @@ export const meta: ComponentMeta<TextFieldProps> = {
       readOnly: true,
       defaultValue: "Friday, November 13",
       icon: <Calendar size={24} strokeWidth={2} aria-hidden className="shrink-0" />,
-      action: <Button variant="capsule" size="compact" className="h-12 px-[18px] text-lg">Change</Button>,
+      action: <Button variant="capsule" size="compact" className="h-12 px-[18px] text-control">Change</Button>,
     },
   },
   decorator: (story) => <div className="w-[575px] bg-background p-6">{story()}</div>,

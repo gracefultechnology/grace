@@ -402,6 +402,8 @@ declare module "vitest/browser" {
 }
 declare module "vitest" {
   interface ProvidedContext {
+    site: string;
+    cloud: string;
     browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
     releasedBillworldEnabled: boolean;
   }

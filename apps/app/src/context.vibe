@@ -78,16 +78,16 @@ const outcomes: Record<Outcome, string> = {
   NotOnScreen: "was not done: that is not on the screen"
 }
 
-export const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
-export const eventTarget = (key: number, id: string) => `event:${key}:${id}`
-export const unlinked = (text: string) => text.replace(/https?:\/\/\S+/g, "[a link]")
+const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
+const eventTarget = (key: number, id: string) => `event:${key}:${id}`
+const unlinked = (text: string) => text.replace(/https?:\/\/\S+/g, "[a link]")
 const said = (text: string) => text.trim() === "" ? "(empty)" : `“${text}”`
 const quoted = (text: string) => `“${text}”`
 
-export const when = (at: number) =>
+const when = (at: number) =>
   new Date(at).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
 
-export function calendarName(registry: Registry, key: number) {
+function calendarName(registry: Registry, key: number) {
   return key === tablet ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "a calendar no longer on the tablet"
 }
 
@@ -238,10 +238,10 @@ export function toldOfMail(s: Scene, news: MailTold): string {
 /** What Grace is told of a calendar that changed, or of a yes the calendar could not take. */
 export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold } | { readonly refused: Ask }): string {
   if ("refused" in report) return "Margaret said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if she still wants it."
-  const { news, key, id } = report.told
+  const { key, id } = report.told
   const c = entryAt(sourceAt(s.calendars, key).view, id)
   const what = appointment(s.registry, key, c.committed)
-  return match (news) {
+  return match (report.told.news) {
     when "AddedAppointment": `${what} was added to the calendar.`;
     when "ChangedAppointment": `${what} was changed in the calendar.`;
     when "DeletedAppointment": `${quoted(c.committed.title)} was removed from the calendar.`;
