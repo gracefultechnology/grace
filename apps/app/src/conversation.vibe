@@ -1,6 +1,7 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
+import { Digest } from "effect/crypto"
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
@@ -140,6 +141,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const shelf = try Instances
   const news = try CalendarNews
   const scope = try Scope.Scope
+  const digest = try Digest.Digest
 
   effect function tell(words: string) {
     if (words !== "") try Ref.update(told, (all) => [...all, words])
@@ -225,9 +227,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         if (!(try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed))) return false
       }
       const keyBytes = new TextEncoder().encode(JSON.stringify([found.source.tag, ...found.identity]))
-      const digest = try Effect.option(Effect.tryPromise(() => crypto.subtle.digest("SHA-256", keyBytes)))
-      if (Option.isNone(digest)) return false
-      const sourceKey = Array.from(new Uint8Array(digest.value), byte => byte.toString(16).padStart(2, "0")).join("")
+      const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
+      if (sourceKey === "") return false
       const confirmed = try look()
       const rechecked = try guidedReceipt(confirmed, read, native)
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
@@ -266,4 +267,4 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       return true
     }
   }
-}).pipe(Layer.provide(client))
+}).pipe(Layer.provide(Layer.merge(client, Digest.layerWebCrypto)))

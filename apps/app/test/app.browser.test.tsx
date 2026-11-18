@@ -559,10 +559,13 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
+    await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
     await tap(page.getByRole("button", { name: "Back to Inbox" }));
     await tap(page.getByRole("button", { name: /Westside Reception/ }));
     await expect.element(page.getByText("Your appointment is at our Westside office.")).toBeVisible();
-    if (resume.query() !== null) await tap(resume);
+    await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
+    await tap(page.getByRole("button", { name: "Collapse", exact: true }));
+    await tap(resume);
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
 
