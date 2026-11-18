@@ -1019,6 +1019,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
+  const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
   events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
@@ -1087,6 +1088,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         trashed = !trashed;
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId: mail.externalId, version: "9" });
       }
+      case "/api/v1/eliza/google/calendar/reminder/event":
+        expect(options?.method).toBe("GET");
+        expect(Object.fromEntries(api.searchParams)).toEqual({ occurrenceId: reminderEvent.externalId, grantId: grant });
+        return reply({ accountId: person.id, event: reminderEvent });
       case "/api/v1/eliza/google/calendar/reminder": {
         const input = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
           accountId: Schema.String, grantId: Schema.String, occurrenceId: Schema.String,
@@ -1137,9 +1142,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     }
   });
 
-  const runtime = ManagedRuntime.make(application(undefined));
+  let runtime = ManagedRuntime.make(application(undefined));
   const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
+  let root = createRoot(host);
   const tap = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   try {
     await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
@@ -1243,6 +1248,17 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Close Calendar");
     await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
     await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
+    await act(() => root.unmount());
+    await runtime.dispose();
+    const reminderUrl = new URL(oldURL);
+    reminderUrl.hash = "calendar";
+    reminderUrl.searchParams.set("owner_hint", ownerHint);
+    reminderUrl.searchParams.set("occurrence", reminderEvent.externalId);
+    window.history.replaceState(undefined, "", reminderUrl);
+    runtime = ManagedRuntime.make(application(undefined));
+    root = createRoot(host);
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await expect.element(page.getByText(reminderEvent.description, { exact: true })).toBeVisible();
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
