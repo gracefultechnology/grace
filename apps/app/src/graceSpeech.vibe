@@ -1,5 +1,5 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"
-import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, localPasswordCommands, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
 import { Passwords } from "./passwords.vibe"
@@ -25,7 +25,11 @@ export service SpeechActions {
 }
 
 export function mayOfferTalk(state: Workspace) {
-  return state.device.surface !== "Browser" && state.device.reasoningAvailable && state.device.connectivity === "Online"
+  return canUseCloudSpeech(state) && state.device.surface !== "Browser" && state.device.reasoningAvailable && state.device.connectivity === "Online"
+}
+
+function canUseCloudSpeech(state: Workspace) {
+  return !privateSurfaceActive(state) && !localPasswordCommands(state.device)
 }
 
 effect function cloudPost(path: string, body: object) {
@@ -75,7 +79,7 @@ effect function checkedLease(native: boolean) {
 
 function speechWanted(workspace: Workspace) {
   const { assistant, device } = workspace
-  return assistant.presentation !== "Closed" && device.reasoningAvailable && device.connectivity === "Online" &&
+  return canUseCloudSpeech(workspace) && assistant.presentation !== "Closed" && device.reasoningAvailable && device.connectivity === "Online" &&
     ((assistant.conversation.voice && device.surface !== "Browser") || assistant.conversation.turn === "Speaking" || assistant.conversation.turn === "Paused")
 }
 
@@ -100,6 +104,8 @@ function phrases(text: string) {
 }
 
 effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>) {
+  const current = try workspace.get()
+  if (!speechWanted(current)) return
   const passwords = try Passwords
   const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
   const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
@@ -148,7 +154,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     if (conversation.voice && mayOfferTalk(state)) {
       const device = try Ref.get(mic)
       if (device) try Effect.try(() => device.attach((pcm) => {
-        if (socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
+        const latest = Effect.runSync(workspace.get())
+        if (latest.assistant.conversation.voice && latest.assistant.conversation.generation === conversation.generation &&
+          mayOfferTalk(latest) && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
       }))
     }
     if (!prefs.voiceOutput || prefs.muted || prefs.volume === 0) {

@@ -12,7 +12,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedReadKind, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedReadKind, hasNext, localPasswordCommands, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
@@ -234,7 +234,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   effect function answer(link: CloudLink, token: number) {
     const scene = try look()
     const w = scene.workspace
-    if (privateSurfaceActive(w)) return
+    if (privateSurfaceActive(w) || localPasswordCommands(w.device) ||
+      w.assistant.conversation.turn !== "Thinking" || w.assistant.conversation.generation !== token) return
     const { messages } = w.assistant.conversation
     const latest = messages.length - 1
     const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))

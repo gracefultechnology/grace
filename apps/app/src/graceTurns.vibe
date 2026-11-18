@@ -1,7 +1,7 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import { audible } from "../gen/app__preferences.effect.vibe"
 import { fromPerson } from "../gen/app__request.effect.vibe"
-import { Machine as Workspaces, enabled, privateSurfaceActive, replyControlContext, step, type Event, type ReplyControlContext } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, enabled, localPasswordCommands, privateSurfaceActive, replyControlContext, step, type Event, type ReplyControlContext, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { Conversation } from "./conversation.vibe"
@@ -110,13 +110,19 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
   })
   try fork.scoped Stream.runForEach(statuses, setReady)
 
+  function admitsTurn(state: Workspace, token: number) {
+    const { conversation } = state.assistant
+    return !privateSurfaceActive(state) && !localPasswordCommands(state.device) &&
+      conversation.generation === token && conversation.turn === "Thinking"
+  }
+
   const thinking = Stream.changes(Stream.map(workspace.changes, (state) => {
     const conversation = state.assistant.conversation
     return state.device.reasoningAvailable && conversation.turn === "Thinking" ? conversation.generation : -1
   }))
   try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(effect {
     const scene = try workspace.get()
-    if (privateSurfaceActive(scene)) return
+    if (!admitsTurn(scene, token)) return
     const request = try controls.capture()
     const { messages } = scene.assistant.conversation
     const index = messages.length - 1
@@ -131,6 +137,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       const current = try Ref.get(opened)
       const conversation = current ?? (try createConversation(plugin))
       if (current === undefined) try Ref.set(opened, conversation)
+      if (!admitsTurn(try workspace.get(), token)) return
       const raw = try finalReply(plugin, conversation, text)
       const reply = try Schema.decodeUnknownEffect(Reply)(raw)
       const safe = try Effect.orDie(Effect.try(() => withhold({ text: reply.text, passwords: [] })))
@@ -138,7 +145,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       const shouldSpeak = audible((try workspace.get()).preferences.session)
       try Effect.uninterruptible(effect {
         const before = try workspace.get()
-        if (privateSurfaceActive(before)) return
+        if (!admitsTurn(before, token)) return
         const plan = reply.actions.find((action) => action.kind === "proposeReadPlan")
         if (plan !== undefined) {
           const workVersion = scene.assistant.workVersion

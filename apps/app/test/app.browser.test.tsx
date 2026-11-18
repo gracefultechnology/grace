@@ -859,7 +859,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
@@ -973,7 +973,11 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
     },
   };
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
+  const localRequests: ((result: GuideSpeechResult) => void)[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }, undefined, undefined, {
+    listen: () => new Promise<GuideSpeechResult>((resolve) => { localRequests.push(resolve); }),
+    cancel: () => Promise.resolve(),
+  }));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   try {
@@ -990,6 +994,27 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const speechSession = [speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"];
     await expect.poll(() => calls).toEqual(speechSession);
 
+    const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "chooseHomePage", page }, "Person")));
+    await act(() => choosePage("PasswordsCard").then(() => undefined));
+    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+    await expect.poll(() => localRequests.length).toBe(1);
+    await act(async () => { localRequests[0]?.({ status: "complete", text: "fixture spoken credential" }); });
+    await expect.element(page.getByText("I couldn’t recognize that request. Try typing it.")).toBeVisible();
+    const draft = page.getByRole("textbox", { name: "Message to Grace" });
+    await act(() => userEvent.type(draft, "fixture arbitrary credential"));
+    const revision = workspace().assistant.conversation.draftRevision;
+    await expect(runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "interact", input: { tag: "SendDraft", revision } }, "Person")))).rejects.toBeDefined();
+    await expect.element(page.getByRole("button", { name: "Send", exact: true })).not.toBeInTheDocument();
+    await act(() => userEvent.keyboard("{Enter}"));
+    expect(calls).toEqual(speechSession);
+    expect(captures).toHaveLength(1);
+    expect(turns).toEqual([{ text: voiceInput }]);
+    await act(() => choosePage("MainCards").then(() => undefined));
+    await expect.element(draft).toHaveValue("");
+    expect(workspace().assistant.conversation.draft).toBe("");
+
     nextTranscript = "Where can I find my saved passwords?";
     await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
     await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
@@ -998,6 +1023,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
     expect(turns).toEqual([{ text: voiceInput }]);
     expect(phrases).toEqual([voiceOutput]);
+    await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).not.toBeInTheDocument();
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();

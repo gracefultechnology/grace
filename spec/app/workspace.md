@@ -156,6 +156,8 @@ pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
 pure def privateSurfaceActive(w: Workspace): bool =
   w.device.surface == S::Passwords or privateSignInActive(w)
+pure def localPasswordCommands(device: S::Shell): bool =
+  device.surface == S::Home and device.homePage == S::PasswordsCard
 pure def mayAssist(w: Workspace): bool =
   not(privateSignInActive(w)) and w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
@@ -171,7 +173,11 @@ pure def quietCommitment(p: CM::Commitment): CM::Commitment =
   else if (CM::canInvalidate(p, T::Host)) CM::invalidate(p, T::Host) else p
 pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Workspace =
   val leavesSurface = device.surface != w.device.surface or device.readiness != S::Ready
-  val assistant = quietAssistant(w.assistant)
+  val quiet = quietAssistant(w.assistant)
+  val crossesPasswordCommands = localPasswordCommands(device) != localPasswordCommands(w.device)
+  val assistant = if (crossesPasswordCommands) {
+    ...quiet, conversation: C::editDraft(quiet.conversation, "", C::ConversationUser), keyboard: A::NoKeyboard
+  } else quiet
   {
     ...w, device: device,
     browser: if (leavesSurface and browser.editingAddress) B::dismissAddress(browser) else browser,
@@ -447,7 +453,7 @@ pure def abandonTask(w: Workspace, by: WorkspaceActor): Workspace = {
   wake: W::cancel(w.wake, W::WakeUser)
 }
 pure def canTalk(w: Workspace, by: WorkspaceActor): bool =
-  by == Person and not(privateSurfaceActive(w)) and S::mayRequestReasoning(w.device) and w.device.microphoneAllowed and
+  by == Person and not(privateSurfaceActive(w)) and not(localPasswordCommands(w.device)) and S::mayRequestReasoning(w.device) and w.device.microphoneAllowed and
   A::canTalk(w.assistant, C::ConversationUser)
 pure def talk(w: Workspace, by: WorkspaceActor): Workspace =
   afterInteraction(A::talk(w.assistant, C::ConversationUser), w.assistant.keyboard != A::NoKeyboard or w.browser.editingAddress, false, w)
@@ -481,10 +487,13 @@ A fully classified payment approval uses its separate atomic route below.
 
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
-  (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
+  (I::needsReasoning(input) implies (not(localPasswordCommands(w.device)) and S::mayRequestReasoning(w.device))) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
   I::canInteract(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime)
+pure def lawPasswordsCardKeepsCommandsLocal(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
+  localPasswordCommands(w.device) implies
+    (not(canTalk(w, by)) and (I::needsReasoning(input) implies not(canInteract(w, input, by))))
 pure def afterInteraction(changed: A::Assistant, geometry: bool, content: bool, w: Workspace): Workspace = {
   val fencesTask = content or geometry
   val browser = if (geometry and w.browser.editingAddress and changed.keyboard != A::WebsiteKeyboard)
@@ -609,6 +618,8 @@ pure val guidanceReportValues = Set(
 
 Choosing Wi-Fi on the rail moves expanded chat into the lower pane, just as
 Home and Settings do. The Wi-Fi popover still toggles on each tap.
+Entering or leaving the Passwords card discards the draft and stops the current
+voice turn. On that card Ask Grace accepts only local Passwords commands.
 
 ```quint
 pure def canChooseHomePage(w: Workspace, page: S::HomePage, by: WorkspaceActor): bool =
