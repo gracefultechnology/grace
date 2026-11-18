@@ -8,3 +8,12 @@ export interface PreferenceRecords {
 
 export const preferenceRecords = Capacitor.isPluginAvailable("GraceRecords")
   ? registerPlugin<PreferenceRecords>("GraceRecords") : undefined;
+
+export interface PreferenceDevice {
+  getDevice(): Promise<unknown>;
+  setBrightness(input: { percent: number }): Promise<unknown>;
+  setVolume(input: { step: number; muted: boolean }): Promise<unknown>;
+}
+
+export const preferenceDevice = Capacitor.isPluginAvailable("GraceDevice")
+  ? registerPlugin<PreferenceDevice>("GraceDevice") : undefined;

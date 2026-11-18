@@ -1225,6 +1225,49 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   }
 });
 
+it('Check the Android readback for brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
+  const audio = { step: 0, min: 0, max: 15, muted: false };
+  let brightness = 20;
+  let denyBrightness = false;
+  const readback: { brightness: number; muted: boolean; step: number }[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    display: {
+      getDevice: async () => {
+        readback.push({ brightness, muted: audio.muted, step: audio.step });
+        return { volume: { ...audio }, brightness: { percent: brightness } };
+      },
+      setBrightness: async ({ percent }) => { if (!denyBrightness) brightness = percent; },
+      setVolume: async ({ step, muted }) => { Object.assign(audio, { step, muted }); },
+    },
+  }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await act(() => root.render(<App runtime={runtime} />));
+  await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: false, step: 9 });
+  await tap("Volume");
+  await tap("Mute");
+  await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: true, step: 9 });
+  await tap("Unmute");
+  await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: false, step: 9 });
+  await tap("Volume");
+  await tap("Settings");
+  await tap("Brightness");
+  await tap("Dimmer");
+  await expect.poll(() => readback.at(-1)?.brightness).toBeLessThan(100);
+  const applied = brightness;
+  denyBrightness = true;
+  await tap("Dimmer");
+  await expect.element(page.getByText("The tablet couldn’t apply that setting.")).toBeVisible();
+  expect(brightness).toBe(applied);
+});
+
 it('Restore the saved text size when Grace restarts (spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements")', async () => {
   let stored: { revision: number; value?: string } = { revision: 0 };
   let rejectNextWrite = true;

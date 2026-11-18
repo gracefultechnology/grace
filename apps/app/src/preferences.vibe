@@ -1,7 +1,8 @@
 // spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"
 import { initial, machine, Machine as Workspaces, canSavePreferences } from "../gen/app__workspace.effect.vibe"
 import { type DisplayPreferences, restart, validSettings } from "../gen/app__preferences.effect.vibe"
-import type { PreferenceRecords } from "./preferencesPlugin.ts"
+import type { PreferenceDevice, PreferenceRecords } from "./preferencesPlugin.ts"
+import { NoticeHost } from "./notices.vibe"
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const StoredOptions = Schema.Struct({ revision: Revision, value: Schema.optional(Schema.NullOr(Schema.String)) })
@@ -50,5 +51,51 @@ export const persistPreferences = (port: PreferenceRecords | undefined) => Layer
       return receipt.revision === revision + 1
     } catch () => false
     workspace.send({ type: "preferencesSaved", saveToken: preferences.requestedRevision, succeeded }, "Store") catch () => undefined
+  })
+})
+
+schema DeviceVolume { step: Schema.Int; min: Schema.Int; max: Schema.Int; muted: boolean }
+const DeviceBrightness = Schema.Struct({ percent: Schema.optional(Schema.Int) })
+schema DeviceSettings { volume: DeviceVolume; brightness: DeviceBrightness }
+
+type DeviceChoice = Pick<DisplayPreferences, "brightness" | "volume" | "muted">
+const sameChoice = (a: DeviceChoice, b: DeviceChoice) =>
+  a.brightness === b.brightness && a.volume === b.volume && a.muted === b.muted
+
+effect function deviceSettings(port: PreferenceDevice) {
+  return try Schema.decodeUnknownEffect(DeviceSettings)(try timeout(tryPromise(() => port.getDevice()), "2 seconds"))
+}
+
+export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.effectDiscard(effect {
+  if (!port) return
+  const workspace = try Workspaces
+  const notices = try NoticeHost
+  const ready = Stream.filter(workspace.changes, ({ device }) => device.readiness === "Ready")
+  const choices = Stream.changesWith(Stream.map(ready, ({ preferences }) => preferences.session), sameChoice)
+  let previous: DeviceChoice | undefined
+  try fork.scoped Stream.runForEach(choices, effect (choice) => {
+    const watchBrightness = previous === undefined || previous.brightness !== choice.brightness
+    const watchVolume = previous === undefined || previous.volume !== choice.volume || previous.muted !== choice.muted
+    if ((try workspace.get()).device.readiness !== "Ready") return
+    previous = choice
+    if (!watchBrightness && !watchVolume) return
+    const applied = effect {
+      const before = try deviceSettings(port)
+      const { min, max } = before.volume
+      if (min < 0 || max <= min || before.volume.step < min || before.volume.step > max) return false
+      const step = min + Math.round(choice.volume / 100 * (max - min))
+      try all([
+        watchBrightness && before.brightness.percent !== choice.brightness
+          ? timeout(tryPromise(() => port.setBrightness({ percent: choice.brightness })), "2 seconds") : Effect.void,
+        watchVolume && (before.volume.step !== step || before.volume.muted !== choice.muted)
+          ? timeout(tryPromise(() => port.setVolume({ step, muted: choice.muted })), "2 seconds") : Effect.void,
+      ])
+      const reported = try deviceSettings(port)
+      return (!watchBrightness || reported.brightness.percent === choice.brightness) &&
+        (!watchVolume || (reported.volume.muted === choice.muted && (choice.muted || reported.volume.step === step)))
+    } catch () => false
+    if (!applied && sameChoice((try workspace.get()).preferences.session, choice)) {
+      notices.raise({ source: "Settings", offer: "NoOffer", subject: "The tablet couldn’t apply that setting." }) catch () => undefined
+    }
   })
 })

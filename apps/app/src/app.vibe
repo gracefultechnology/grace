@@ -5,8 +5,8 @@ import { machine as passwordViews } from "../gen/app.effect.vibe"
 import { passwords, type PasswordVault } from "./passwords.vibe"
 import type { Connectivity } from "../gen/app__shell.effect.vibe"
 import { machine as setup } from "../gen/app__setup.effect.vibe"
-import { persistPreferences, preferenceWorkspace } from "./preferences.vibe"
-import { preferenceRecords, type PreferenceRecords } from "./preferencesPlugin.ts"
+import { applyDeviceChoices, persistPreferences, preferenceWorkspace } from "./preferences.vibe"
+import { preferenceDevice, preferenceRecords, type PreferenceDevice, type PreferenceRecords } from "./preferencesPlugin.ts"
 import { graceAccount } from "./graceAccount.vibe"
 import { fileLibrary } from "./fileLibrary.vibe"
 import { type FilesPort, filesPlugin } from "./filesPlugin.ts"
@@ -102,7 +102,7 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
   : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
 
-type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; vault?: PasswordVault; backup?: PasswordBackupPlugin; guideSpeech?: GuideSpeechPlugin }
+type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; vault?: PasswordVault; backup?: PasswordBackupPlugin; guideSpeech?: GuideSpeechPlugin }
 
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin, speech?: GuideSpeechPlugin) {
   const platform = "native" in host ? host : { native: false }
@@ -112,7 +112,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const machines = Layer.mergeAll(preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
   const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi), grace, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech)), machines)
-  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
+  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
   const controlled = Layer.provideMerge(replyControls(platform.native), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)
 }
