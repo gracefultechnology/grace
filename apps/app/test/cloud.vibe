@@ -144,6 +144,7 @@ schema Boxes { boxes: SentBox[] }
 schema SessionStart { loginHint?: string }
 schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
+schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
 schema Outage { down: boolean }
 schema Scripted { said?: string; answer: string }
@@ -237,9 +238,9 @@ const scripted: readonly Scripted[] = [
     text: "I made the text larger. Is that easier to read?", isQuestion: true, answers: ["Yes, thanks", "A bit bigger"],
     actions: [{ kind: "setTextSize", size: "Larger" }, { kind: "searchMail", query: "clinic" }]
   }) },
-  { said: "Check the help page on this website, then read my open email and saved appointment. Don't move or change anything.", answer: JSON.stringify({
+  { said: "Check the help page on this website, then read my two appointment emails and saved appointment. Don't move or change anything.", answer: JSON.stringify({
     text: "Review and start the read plan.", isQuestion: false, answers: [],
-    actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser", "ReadMail", "ReadCalendar"] }]
+    actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser", "ReadMail", "ReadMail", "ReadCalendar"] }]
   }) },
   { said: "Say nothing.", answer: JSON.stringify({ actions: [] }) }
 ]
@@ -973,6 +974,16 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ outcome, address })
   }
 
+  effect function receiveMail() {
+    const account = try signedIn()
+    const incoming = try HttpServerRequest.schemaBodyJson(IncomingMail)
+    const box = account.boxes.find(b => b.provider === "google" && b.address === incoming.to && !b.expired)
+    if (box === undefined) throw new Missing()
+    const message = letter(uuid(try next()), box.address, try Clock.currentTimeMillis, incoming.from, incoming.fromEmail, incoming.subject, incoming.body)
+    try changeBox(account.key, box.grantId, b => ({ ...b, mail: [message, ...b.mail] }))
+    return try HttpServerResponse.json({ id: message.externalId })
+  }
+
   effect function expire() {
     const { key, sessions } = try signedIn()
     const { address } = try HttpServerRequest.schemaBodyJson(Expiry)
@@ -1157,6 +1168,7 @@ effect function store(site: string) {
     HttpRouter.route("POST", `${googleCalendar}/:calendar/events`, answered(googleCalendarInsert())),
     HttpRouter.route("GET", "/fake/signin/:sessionId", answered(signInPage())),
     HttpRouter.route("POST", "/fake/signin/:sessionId", answered(choose())),
+    HttpRouter.route("POST", "/fake/gmail/incoming", answered(receiveMail())),
     HttpRouter.route("POST", "/fake/expire", answered(expire())),
     HttpRouter.route("POST", "/fake/outage", answered(outage())),
     HttpRouter.route("POST", "/fake/chat/script", answered(script())),

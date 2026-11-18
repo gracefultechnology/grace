@@ -74,10 +74,15 @@ export const LinkObservation = Schema.Struct({
     title: Schema.optional(Schema.NullOr(Schema.String)),
     text: Schema.optional(Schema.NullOr(Schema.String)),
     domRevision: Schema.optional(Schema.Int),
+    viewport: Schema.optional(Schema.Struct({
+      width: Schema.Finite, height: Schema.Finite, scale: Schema.Number,
+      offsetLeft: Schema.Finite, offsetTop: Schema.Finite
+    })),
     blockers: Schema.Array(Schema.Struct({ kind: Schema.String, covers: Schema.String })),
     elements: Schema.Array(Schema.Struct({
       id: Schema.NonEmptyString, tag: Schema.String, label: Schema.NullOr(Schema.String),
       href: Schema.NullOr(Schema.String), disabled: Schema.optional(Schema.Boolean),
+      bounds: Schema.optional(Schema.Struct({ x: Schema.Finite, y: Schema.Finite, width: Schema.Finite, height: Schema.Finite })),
       sensitive: Schema.optional(Schema.NullOr(Schema.String)), inViewport: Schema.Boolean
     }))
   })

@@ -359,7 +359,11 @@ export default defineConfig(async (env) => {
   const config = await base(env);
   const projects = config.test?.projects?.map((entry) =>
     typeof entry === "object" && "test" in entry && entry.test?.browser
-      ? { ...entry, test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } } }
+      ? {
+          ...entry,
+          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto"] },
+          test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
+        }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl }) => ({ taskId, intent, startUrl, gradeWholeCohort: Boolean(fleet) }));
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
