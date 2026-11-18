@@ -140,8 +140,7 @@ pure def canReceive(n: NetworkJoin, report: JoinReport, by: NetworkActor): bool 
   (report.result == RejectedCredentials or report.result == Unavailable implies report.explanation != "")
 pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJoin = {
   val result = report.result
-  if (result == Declined) cleared(n.version, n) else {
-  ...n, phase: match result {
+  val nextPhase = match result {
     | Joined => JoinComplete
     | RejectedCredentials => PrivateEntry
     | Unavailable => JoinFailed
@@ -149,7 +148,9 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
     | Unverified => JoinUnconfirmed
     | CertificateRequired => CertificateDecision
     | PortalRequired => PortalEntry
-  },
+  }
+  if (nextPhase == Selecting) cleared(n.version, n) else {
+  ...n, phase: nextPhase,
   errors: if (report.result == RejectedCredentials) n.errors + 1 else n.errors,
   certificate: if (report.result == CertificateRequired) report.certificate else "",
   explanation: report.explanation, entryReady: false, privateVisible: false
