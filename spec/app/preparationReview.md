@@ -33,10 +33,12 @@ performed equivalent provider-form/choice verification, not an alternative BP ha
 
 ```quint
 import billpay as BP from "./billpay"
+import billKind as BK from "./billKind"
 import commitment as CM from "./commitment"
 import task as T from "./task"
 import taskKinds as K from "./taskKinds"
 import workspace as W from "./workspace"
+import interaction as I from "./interaction"
 import shell as S from "./shell"
 import browser as B from "./browser"
 import browserControls as BC from "./browserControls"
@@ -132,18 +134,24 @@ pure val preparationValues = {
 }
 pure val wValues = {
   val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
-  val available = W::setAvailability(started,
+  val opened = W::openGrace(W::visit(started, S::Browser, W::Person), W::Person)
+  val allowed = W::setBrowserObservation(opened, { allowed: true,
+    deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, W::Person)
+  val available = W::setAvailability(allowed,
     { connection: S::Online, reasoning: true, microphone: true, observation: true }, W::Host)
-  val opened = W::openGrace(W::visit(available, S::Browser, W::Person), W::Person)
-  val begun = W::begin(opened,
+  val compact = W::interact(available, I::Resize({ expanded: false }), W::Person)
+  val begun = W::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, W::Person)
-  val loaded = W::receiveLoad(begun, { id: 1, version: 1, result: B::Loaded }, W::Host)
-  val observed = W::observe(loaded, { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  val loaded = W::receiveLoad(begun, { id: begun.browser.selected,
+    version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded }, W::Host)
+  val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
+    browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
   val bound = W::bindCommitment(observed, CM::exampleKey, W::Person)
   val reviewed = W::reviewCommitment(bound,
-    { deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: CM::exampleReview }, W::Host)
-  val changed = W::changePage(bound, BC::PageChanged({ id: 1, revision: 2 }), W::Host)
+    { deviceVersion: bound.device.contextVersion, browserRevision: bound.browser.revision,
+      taskVersion: bound.assistant.workVersion, review: CM::exampleReview }, W::Host)
+  val changed = W::changePage(bound, BC::PageChanged({ id: bound.browser.selected, revision: bound.browser.revision }), W::Host)
   val resumed = W::resume(changed, W::Person)
   val other = W::observe(resumed, {
     deviceVersion: resumed.device.contextVersion, browserRevision: resumed.browser.revision,
@@ -153,7 +161,7 @@ pure val wValues = {
   Set(W::initial, bound, reviewed, changed, other)
 }
 pure val transferValues = {
-  val captured = { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 0, attempt: 0 }
+  val captured = { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 0, attempt: 0 }
   val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
   val valid = { handoff: BP::ReviewPayment(details), captured: captured }
   Set(valid,
