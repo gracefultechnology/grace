@@ -3,7 +3,7 @@ import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNoti
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout } from "../gen/app__setup.ts";
+import { managesOnTheWeb, mayCheckAccountAgain, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -42,7 +42,7 @@ export function GraceAccountSettings() {
     else setFailed(true);
   });
   const signedIn = snapshot?.tag === "GraceSignedIn";
-  const canRetry = snapshot?.tag === "AccountUnavailable" || (signedIn && snapshot.plan === "PlanUnknown");
+  const canRetry = snapshot !== undefined && mayCheckAccountAgain(snapshot);
   const active = signedIn && (snapshot.plan === "PlanActive" || snapshot.plan === "PlanActiveManaged");
   return (
     <section data-sensitive="true" aria-busy={pending || undefined} className="flex flex-col items-start gap-5">
@@ -67,7 +67,7 @@ export function GraceAccountSettings() {
           <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
         </div>
       )}
-      {setup?.tabletSignIn && (
+      {setup && setup.tabletSignIn.tag !== "NoTabletSignIn" && (
         <>
           <PageText>Sign in on your tablet{signedIn && snapshot.email ? ` as ${snapshot.email}` : ""}?</PageText>
           <div className="flex flex-wrap gap-3">
@@ -76,7 +76,7 @@ export function GraceAccountSettings() {
           </div>
         </>
       )}
-      {snapshot?.tag === "GraceDeviceSignedIn" && (
+      {snapshot !== undefined && managesOnTheWeb(snapshot) && (
         <>
           <PageText role="status">This tablet is signed in.</PageText>
           <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "manageAccount" })}>Manage Grace account</Button>

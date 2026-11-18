@@ -51,7 +51,7 @@ type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
 type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
 type StepOutcome = Pending | Done | PutOff
 type SetupProgress = { step: SetupStage, outcomes: int -> StepOutcome }
-type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int, graceAccount: GraceAccount, tabletSignIn: bool, googleLink: GoogleLink }
+type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int, graceAccount: GraceAccount, tabletSignIn: TabletSignIn, googleLink: GoogleLink }
 type SetupEffect = | AskWhatToDo
 type SetupResult = { state: Setup, out: List[SetupEffect] }
 pure val allSetupSteps: List[SetupStage] = List(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, ReopenStep, HandOverStep)
@@ -79,7 +79,7 @@ show from that report on.
 ```quint
 pure val initial: Setup = {
   phase: Unstarted, progress: { step: WifiStep, outcomes: Map() },
-  facts: noFacts, wentAway: false, endToken: 0, graceAccount: CheckingAccount, tabletSignIn: false, googleLink: GoogleLinkUnknown
+  facts: noFacts, wentAway: false, endToken: 0, graceAccount: CheckingAccount, tabletSignIn: NoTabletSignIn, googleLink: GoogleLinkUnknown
 }
 pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending or s.phase == EndFailed
 ```
@@ -485,9 +485,34 @@ its own session and opens Grace's web account to manage the subscription.
 A web session authorizes a tablet only after the person confirms the tablet
 sign-in in the browser.
 
+Each report names where it came from. The tablet's own Grace session reports
+only whether this tablet is signed in, and the Grace service's authenticated
+response only the web account, its plan and its Google connection; either may
+report that the account could not be checked. Only a signed-in web account
+carries any Google link state. Every change to the account shown comes from one
+of these two reports, and another service, a checkout return or a browser
+tab's sign-in is never the source of a signed-in report, so none of them
+establishes a session, and with it a plan. A tablet
+asking to sign in is confirmed only by the person's own choice, while a web
+account is signed in, and the confirmation holds only while the reports name
+that signed-in account: any other report, even one that the account could
+not be checked, asks her again.
+
+A check that fails, or a web account whose plan could not be read, offers to
+check again. The sign-in methods the web page shows are the ones the Grace
+service's signed-out report lists, which only that service reports. A tablet
+signed in with its own session never offers checkout or the payment provider:
+it opens Grace's web account to manage the subscription. That Settings opens
+Account without a network connection is [the device shell](./shell.md)'s
+"Settings and rail popovers preserve the surface underneath": no connectivity
+check gates opening Settings. Keeping account details out of captures is the
+Settings account page's sensitive marking, which no rule checks yet.
+
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
 type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+type AccountSource = TabletSession | GraceService | OtherService | CheckoutReturn | BrowserTab
+type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
   | GraceSignedIn(info) => info.plan == PlanInactive or info.plan == PlanInactiveManagedCheckout
   | _ => false
@@ -496,8 +521,73 @@ pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
   | GraceSignedIn(info) => info.plan == PlanInactiveManaged or info.plan == PlanInactiveManagedCheckout or info.plan == PlanActiveManaged
   | _ => false
 }
-pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup = { ...s, graceAccount: report, googleLink: link }
-pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: waiting }
+pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match report {
+  | GraceDeviceSignedIn => source == TabletSession
+  | GraceDeviceSignedOut => source == TabletSession
+  | GraceSignedIn(_) => source == GraceService
+  | GraceSignedOut(_) => source == GraceService
+  | AccountUnavailable => source == TabletSession or source == GraceService
+  | CheckingAccount => false
+}
+pure def establishesASession(source: AccountSource, report: GraceAccount): bool =
+  reportedBy(source, report) and match report {
+    | GraceDeviceSignedIn => true
+    | GraceSignedIn(_) => true
+    | _ => false
+  }
+pure def lawNoOtherServiceCheckoutReturnOrBrowserTabEstablishesASession(report: GraceAccount): bool =
+  not(establishesASession(OtherService, report)) and not(establishesASession(CheckoutReturn, report)) and
+  not(establishesASession(BrowserTab, report))
+pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
+  | AccountUnavailable => true
+  | GraceSignedIn(info) => info.plan == PlanUnknown
+  | _ => false
+}
+pure def lawAFailedCheckOffersToCheckAgain(accountId: str, email: str): bool =
+  mayCheckAccountAgain(AccountUnavailable) and mayCheckAccountAgain(GraceSignedIn({ accountId: accountId, email: email, plan: PlanUnknown }))
+pure def managesOnTheWeb(account: GraceAccount): bool = account == GraceDeviceSignedIn
+pure def lawATabletManagesItsSubscriptionOnTheWeb(account: GraceAccount): bool =
+  managesOnTheWeb(account) implies (not(mayStartCheckout(account)) and not(mayOpenBillingPortal(account)))
+pure def webAccountId(account: GraceAccount): str = match account {
+  | GraceSignedIn(person) => person.accountId
+  | _ => ""
+}
+pure def keptTabletSignIn(t: TabletSignIn, report: GraceAccount): TabletSignIn = match t {
+  | TabletSignInConfirmed(c) => if (c.accountId == webAccountId(report)) TabletSignInConfirmed({ accountId: c.accountId }) else TabletSignInAsked
+  | _ => t
+}
+pure def withAccountReport(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
+  { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
+pure def canReportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): bool =
+  reportedBy(TabletSession, report) and link == GoogleLinkUnknown
+pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup = withAccountReport(s, report, link)
+pure def canReportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): bool =
+  reportedBy(GraceService, report) and (link == GoogleLinkUnknown or webAccountId(report) != "")
+pure def reportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): Setup = withAccountReport(s, report, link)
+pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: if (waiting) TabletSignInAsked else NoTabletSignIn }
+pure def canConfirmTabletSignIn(s: Setup): bool = s.tabletSignIn == TabletSignInAsked and webAccountId(s.graceAccount) != ""
+pure def confirmTabletSignIn(s: Setup): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: webAccountId(s.graceAccount) }) }
+pure def tabletSignInConfirmed(s: Setup): bool =
+  val t = s.tabletSignIn
+  match t {
+    | TabletSignInConfirmed(c) => c.accountId != "" and c.accountId == webAccountId(s.graceAccount)
+    | _ => false
+  }
+pure def alwaysATabletSignInIsConfirmedForTheSignedInAccount(s: Setup): bool =
+  val t = s.tabletSignIn
+  match t {
+    | TabletSignInConfirmed(_) => tabletSignInConfirmed(s)
+    | _ => true
+  }
+pure def stepOnlyThePersonConfirmsATabletSignIn(before: Setup, via: str, after: Setup): bool =
+  (tabletSignInConfirmed(after) and not(tabletSignInConfirmed(before))) implies
+    (via == "confirmTabletSignIn" and before.tabletSignIn == TabletSignInAsked)
+pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after: Setup): bool =
+  after.graceAccount != before.graceAccount implies
+    ((via == "reportGraceAccount" and reportedBy(TabletSession, after.graceAccount)) or
+     (via == "reportGraceService" and reportedBy(GraceService, after.graceAccount)))
+pure def alwaysOnlyAWebAccountCarriesAGoogleConnection(s: Setup): bool =
+  s.googleLink == GoogleLinkUnknown or webAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
   CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignedIn, AccountUnavailable,
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
@@ -515,6 +605,9 @@ pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
     | GraceSignedIn(info) => (info.plan == PlanActive or info.plan == PlanActiveManaged) implies not(mayStartCheckout(account))
     | _ => true
   }
+pure def lawAReturningCustomerMayManageAndSubscribeAgain(accountId: str, email: str): bool =
+  val returning = GraceSignedIn({ accountId: accountId, email: email, plan: PlanInactiveManagedCheckout })
+  mayStartCheckout(returning) and mayOpenBillingPortal(returning)
 ```
 
 
@@ -617,6 +710,22 @@ calendar. For a repeating appointment, the person chooses a single occurrence
 or reviews and confirms the entire series separately. Grace checks provider
 evidence before showing success.
 
+Set-up's part is who may change anything: only the signed-in web account
+named by the change, through its current grant, and a device session alone
+never. Trash needs mail with Trash enabled, and an appointment change needs
+the calendar with changes enabled, so enabling one never enables the other.
+The rest is the mail and calendar rules': Undo only after the provider's
+confirmation is [Email](./email.md)'s "Selected-message changes update the
+same canonical record and invalidate stale actions"; the read-back and the
+selected version are [Calendar view](./calendarView.md)'s "Grace's change
+takes effect only for the exact change the person agreed to" and "The
+deletion question binds its selected occurrence and explicit scope", which
+also has a repeating appointment's one-or-all choice and the stored evidence
+before success; the first of these also has the review naming a change's
+complete new details, a new series' frequency and time zone among them; and
+skipped months and time zones are [Calendar](./calendar.md)'s "Recurrence
+creates another occurrence rather than changing an existing identity".
+
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
 pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
@@ -627,6 +736,21 @@ pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: st
       | _ => false
     }
     | _ => false
+  }
+pure def grantOf(link: GoogleLink): str = match link {
+  | GoogleLinkConnected(g) => g.grant
+  | _ => ""
+}
+pure def lawAManagedChangeNeedsTheNamedAccountAndItsCurrentGrant(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
+  not(mayChangeManaged(GraceDeviceSignedIn, link, accountId, grant, request)) and
+  (mayChangeManaged(account, link, accountId, grant, request) implies
+    (grant != "" and webAccountId(account) == accountId and grantOf(link) == grant))
+pure def lawTrashAndAppointmentChangesAreEnabledSeparately(account: GraceAccount, link: GoogleLink, accountId: str, grant: str): bool =
+  match link {
+    | GoogleLinkConnected(g) =>
+      (mayChangeManaged(account, link, accountId, grant, ManagedTrash) implies (g.mail and g.trashMail)) and
+      (mayChangeManaged(account, link, accountId, grant, ManagedAppointmentChange) implies (g.calendar and g.writeCalendar))
+    | _ => true
   }
 ```
 
@@ -647,9 +771,30 @@ approval without issuing it. The return to the tablet carries a single-use
 code bound to the native request. The browser never handles the recovery
 key or password data.
 
+The approval page is this application's own: it reads the native request's
+one action and the browser's signed-in account, and offers Approve only when
+the request is valid for the registered page and a signed-in account is
+shown that has not been reported changed or in need of a fresh sign-in.
+Approve sends that action with the shown account's identity in one request;
+the Grace service refuses it when the browser account is no longer that one,
+or the sign-in is not recent, and the page then asks her to sign in and
+choose again. Nothing is approved on a page that is not the registered one,
+after Cancel, for an account other than the one shown, or without a recent
+sign-in. The single-use return and keeping the recovery key and passwords on
+the tablet are the [Grace MVP product contract](./index.md)'s "Backup and
+recovery uses a fresh approval".
+
 ```quint
+pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
+  registered and recentSignIn and sameAccount
 pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
-  registered and recentSignIn and sameAccount and confirmed
+  mayOfferBackupApproval(registered, recentSignIn, sameAccount) and confirmed
+pure def lawOnlyTheRegisteredPageApprovesABackup(recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
+  not(mayApprovePasswordBackup(false, recentSignIn, sameAccount, confirmed))
+pure def lawCancelApprovesNoBackup(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
+  not(mayApprovePasswordBackup(registered, recentSignIn, sameAccount, false))
+pure def lawAChangedOrStaleAccountMustChooseAgain(registered: bool, confirmed: bool): bool =
+  not(mayApprovePasswordBackup(registered, true, false, confirmed)) and not(mayApprovePasswordBackup(registered, false, true, confirmed))
 ```
 
 ## Story: Keep my passwords private when the tablet account changes
