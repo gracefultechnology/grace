@@ -59,7 +59,7 @@ type SiteAction =
   | { kind: "read"; selector?: string }
   | { kind: "tapGuide" }
   | { kind: "hoverGuide" }
-  | { kind: "decisionRoute"; cloud: string }
+  | { kind: "decisionRoute"; cloud: string; deadlineMs: number }
   | { kind: "receipt"; outcome: Record<string, unknown> }
   | { kind: "control"; request: Command };
 
@@ -129,14 +129,16 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       run.decisions++;
       if (definition.fixtureChoice !== undefined) {
         const selected = choice.candidates.find(({ label }) => label === definition.fixtureChoice);
-        return route.fulfill({ headers, json: { status: "ok", kind: "choice", choice: selected?.id ?? null } });
+        const id = selected?.id ?? "none";
+        return route.fulfill({ headers, json: { status: "ok", kind: "choice", choice: selected?.id ?? null,
+          model: "fixture", confidence: 1, probabilities: Object.fromEntries([...choice.candidates.map(({ id }) => id), "none"].map((option) => [option, option === id ? 1 : 0])) } });
       }
       const origin = process.env.GRACE_BENCHMARK_CLEF_ORIGIN;
       const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
       const response = await fetch(new URL("/api/v1/decisions", origin), {
         method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(20000),
+        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(action.deadlineMs),
       }).catch(() => new Response('{"status":"unavailable","reason":"provider_error"}', { status: 503 }));
       const body = await response.text();
       const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);

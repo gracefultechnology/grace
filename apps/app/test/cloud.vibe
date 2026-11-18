@@ -1036,9 +1036,9 @@ effect function store(site: string) {
       candidates: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String }))
     }))
     const choice = body.goal.includes("help page") ? body.candidates.find((candidate) => candidate.label === "Help center")?.id ?? null : null
-    const winner = choice ?? "__none__"
-    return try HttpServerResponse.json({ status: "ok", kind: "choice", model: "fixture", choice, confidence: 1,
-      probabilities: { [winner]: 1 } })
+    const winner = choice ?? "none"
+    const probabilities = Object.fromEntries([...body.candidates.map(({ id }) => id), "none"].map(id => [id, id === winner ? 1 : 0]))
+    return try HttpServerResponse.json({ status: "ok", kind: "choice", model: "fixture", choice, confidence: 1, probabilities })
   }
 
   effect function speechConsent() {

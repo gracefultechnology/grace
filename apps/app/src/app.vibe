@@ -20,7 +20,7 @@ import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { accounts, signIns } from "./accounts.vibe"
 import { calendarFeeds, calendars } from "./calendar.vibe"
 import { agent } from "./actions.vibe"
-import { browserGuide } from "./browserGuide.vibe"
+import { browserGuide, type GuideDecision } from "./browserGuide.vibe"
 import { connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
 import { instances, reading } from "./instances.vibe"
@@ -102,13 +102,13 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
 
 type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; vault?: PasswordVault; backup?: PasswordBackupPlugin; guideSpeech?: GuideSpeechPlugin }
 
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: TabletPlatform | CloudLink = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin, speech?: GuideSpeechPlugin) {
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin, speech?: GuideSpeechPlugin) {
   const platform = "native" in host ? host : { native: false }
   const cloud = "url" in host ? host : undefined
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), notices(wifi), grace, browserGuide(cloud), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech)), machines)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), notices(wifi), grace, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech)), machines)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
   const controlled = Layer.provideMerge(replyControls(platform.native), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)
