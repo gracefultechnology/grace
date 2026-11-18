@@ -16,24 +16,23 @@ const nearby = (ssid: string, rssi: number, security: NonNullable<WiFiNetwork["s
 function android() {
   const tablet = { location: "prompt" as "prompt" | "granted", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0 };
   const plugin: WiFiPlugin = {
-    checkPermissions: async () => ({ location: tablet.location }),
-    requestPermissions: async () => { tablet.location = "granted"; return { location: "granted" }; },
-    getCapabilities: async () => ({ sdk: 34, approvedJoin: true, internetPanel: true }),
-    openInternetPanel: async () => { tablet.panels += 1; },
-    getWifiState: async () => ({ enabled: true, connected: tablet.ssid !== null, rssi: null }),
-    getConnectedNetwork: async () => ({ network: tablet.ssid === null ? null : nearby(tablet.ssid, -50, "wpa2") }),
-    listAvailableNetworks: async () => {
-      if (tablet.location !== "granted") throw Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" });
-      return { networks: [nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] };
-    },
-    connectToNetwork: async () => ({ success: false }),
-    disconnectFromNetwork: async () => ({ success: true }),
-    getConnectivity: async () => ({ online: tablet.ssid !== null, validated: tablet.ssid !== null, captivePortal: false, ssid: tablet.ssid }),
-    addNetworkWithApproval: async (options) => {
+    checkPermissions: () => Promise.resolve({ location: tablet.location }),
+    requestPermissions: () => { tablet.location = "granted"; return Promise.resolve({ location: "granted" }); },
+    getCapabilities: () => Promise.resolve({ sdk: 34, approvedJoin: true, internetPanel: true }),
+    openInternetPanel: () => { tablet.panels += 1; return Promise.resolve(); },
+    getWifiState: () => Promise.resolve({ enabled: true, connected: tablet.ssid !== null, rssi: null }),
+    getConnectedNetwork: () => Promise.resolve({ network: tablet.ssid === null ? null : nearby(tablet.ssid, -50, "wpa2") }),
+    listAvailableNetworks: () => tablet.location === "granted"
+      ? Promise.resolve({ networks: [nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] })
+      : Promise.reject(Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" })),
+    connectToNetwork: () => Promise.resolve({ success: false }),
+    disconnectFromNetwork: () => Promise.resolve({ success: true }),
+    getConnectivity: () => Promise.resolve({ online: tablet.ssid !== null, validated: tablet.ssid !== null, captivePortal: false, ssid: tablet.ssid }),
+    addNetworkWithApproval: (options) => {
       tablet.joins.push(options);
-      if (options.password === "wrong") return { status: "wrongPassword" };
+      if (options.password === "wrong") return Promise.resolve({ status: "wrongPassword" });
       tablet.ssid = options.ssid;
-      return { status: "connected" };
+      return Promise.resolve({ status: "connected" });
     },
   };
   return { tablet, plugin };
@@ -46,13 +45,13 @@ describe('Join the network I choose (spec/app/network.md, "Story: Join the netwo
     const host = document.body.appendChild(document.createElement("div"));
     const root = createRoot(host);
     onTestFinished(async () => {
-      await act(() => root.unmount());
+      await act(() => Promise.resolve(root.unmount()));
       await runtime.dispose();
       host.remove();
     });
     const state = () => runtime.runPromise(Effect.flatMap(Effect.service(Machine), (m) => m.get()));
     const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name })));
-    await act(() => root.render(<Wifi runtime={runtime} />));
+    await act(() => Promise.resolve(root.render(<Wifi runtime={runtime} />)));
 
     await tap("Look for networks");
     expect(tablet.location).toBe("prompt");
@@ -78,7 +77,7 @@ describe('Join the network I choose (spec/app/network.md, "Story: Join the netwo
     await tap("Sunrise Community Center");
     await expect.poll(() => tablet.panels).toBe(1);
     tablet.ssid = "Sunrise Community Center";
-    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
     await expect.poll(async () => (await state()).phase).toBe("JoinComplete");
     expect(tablet.joins).toHaveLength(3);
   });

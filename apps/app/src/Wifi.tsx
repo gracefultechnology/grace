@@ -27,7 +27,6 @@ const reasons: Readonly<Partial<Record<Discovery, string>>> = {
 const actionLabels: Readonly<Record<ListAction, string>> = { NoAction: "", OpenPanel: "Open Android’s Wi-Fi", Explain: "Look for networks", Allow: "Allow", Rescan: "Look again" };
 const fixSteps = "Check the password on the internet box; capitals count. If it still won’t join, ask whoever looks after this network.";
 
-/** Settings' Wi-Fi page: the networks Android lists and the one join; where Grace does not own Wi-Fi, whether the tablet is online. */
 export function Wifi({ runtime = device }: { runtime?: WifiRuntime }) {
   return runtime ? <Networks runtime={runtime} /> : <Connection />;
 }
