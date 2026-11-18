@@ -169,6 +169,32 @@ billing through Workerd. A replayed invoice preserved a single allowance,
 the owner opened the portal, and cancellation stopped funded inference.
 The same Cloud Worker entry point runs in production and under Wrangler.
 
+Worker `4840f124-da1a-4e18-b6a6-a61815bcf548` deployed Grace `ace4d8e` and
+Eliza `3423598` to both production hosts. The hosted browser loaded the release,
+and the existing email-verified account could read its session, subscription status
+and managed Google status after the upgrade. Anonymous inference and device reminders
+required authentication. Production provider discovery offered email sign-in.
+
+On the local Worker, one staged Android account completed device enrollment, received
+its allowance through a paid Stripe sandbox invoice, used Workers AI for chat and used
+Cartesia for speech synthesis and transcription. Cancellation removed funded access and
+device revocation invalidated the credential. A separate account signed in to the normal
+Grace UI against the local Worker and opened Subscribe. Chrome submitted Stripe’s sandbox
+card through hosted Checkout. Stripe signed the events and recorded a paid USD 30 invoice.
+Checkout returned to the same Grace account, which immediately displayed Active and Manage
+subscription. The test subscription was canceled.
+
+Both signed ARM64 APKs contained the verified Node.js 26.13.1 runtime and the same
+device agent. Android installed the exact launcher APK on an API 35 tablet emulator and
+launched its MainActivity. The agent bundle booted and reported its three registered
+actions through its child process. Both x86_64 debug APKs passed their inventory checks.
+The Cuttlefish overlay staged its launcher and pinned Chromium after checking Chromium’s
+package, version, signer and SHA-256. The released BillWorld statement journey passed
+its independent grader. Grace read the amount and due date, left the account unchanged
+and stayed within its action budget. The grader rejected a run with zero actions.
+[Grace Android CI](https://github.com/gracefultechnology/grace-new/pull/91)
+· [Eliza runtime inputs](https://github.com/elizaOS/eliza/commit/3423598f92e1b87072ed991689d9e906902c4431)
+
 Grace builds its browser client, Worker, device Agent and OS modules through
 their own package entry points. The separate Eliza Node server still has
 incomplete models for native device keys and speech sessions, a missing
@@ -178,7 +204,7 @@ adapters. Those modules are outside the Grace deployment dependency graph.
 | Area | Observed result | Remaining launch work |
 | --- | --- | --- |
 | Browser guidance | Grace imports `@elizaos/cloud/clef-decisions` from its pinned Eliza checkout. The copied SDK was removed. A local Worker with real PostgreSQL and the real Workers AI binding returned 401 for an anonymous caller, 403 for an account mismatch, and selected the expected library-hours link for the signed-in account. The same signed-in account selected the expected link through the public production API after email verification. Chromium exercised account changes and stale page targets. The browser qualification also exercises the upstream staging API. [Browser qualification](specification-plan.md#release-qualification-and-remaining-work) | Exercise the signed tablet’s native credential, page highlight and manual tap together through the deployed Grace Worker. |
-| Account credits | Real PostgreSQL recorded one credit across an initial credit, an exact replay, a replay with a different amount and an invalid amount. [Worker funding decision](https://github.com/elizaOS/eliza/commit/dd0632672a9f2365ee66132d83d9252242266ca3) In the isolated Grace Stripe sandbox the Worker opened a USD 30/month Checkout session. Stripe's test payment method paid the subscription through its API. Signed webhooks granted the allowance once and revoked access after cancellation. On Grace `ace4d8e`, a signed-in test user opened the Stripe-hosted card form from Grace and submitted a sandbox payment. Stripe reported a completed checkout and paid invoice. Grace returned the user to the same account with the subscription active. The test subscription was then cancelled. | Production checkout and subscription events need the live Grace credential and webhook in Eliza Labs. |
+| Account credits | Real PostgreSQL recorded one credit across an initial credit, an exact replay, a replay with a different amount and an invalid amount. [Worker funding decision](https://github.com/elizaOS/eliza/commit/dd0632672a9f2365ee66132d83d9252242266ca3) In the isolated Grace Stripe sandbox the Worker opened a USD 30/month Checkout session. Stripe's test payment method paid the subscription through its API. Signed webhooks granted the allowance once and revoked access after cancellation. On Grace `ace4d8e`, a signed-in test user opened the Stripe-hosted card form from Grace and submitted a sandbox payment. Stripe reported a completed checkout and paid invoice. Grace returned the user to the same account with the subscription active. The test subscription was then cancelled. | Production checkout, subscription events and the portal need the live Grace credential, webhook and portal configuration in Eliza Labs. |
 | Android Node | Eliza published Node.js 26.13.1 for arm64-v8a and x86_64. Both downloaded archives matched their producer digests. Verification checked the original license, signed Node.js source checksum, binary hash, Android interpreter, system libraries and 16 KiB load alignment. The published runtime lock in `56d0508` was used to build and verify launcher and standalone debug APKs on both architectures. The ARM64 executable returned `v26.13.1` and `android/arm64` on an API 36 emulator. Grace built both release-signed ARM64 flavors. On the `d270a80` Eliza pin both packages contained the verified Node executable and agent bundle. Android recorded the signed standalone app’s first draw on an API 37.2 emulator. Its signed launcher rendered Home on an API 36 tablet emulator and Android verified the Grace App Link. The Android process-owner repair let the official Node runtime open its private PGlite database and answer authenticated local requests. [Runtime release](https://github.com/elizaOS/eliza/releases/tag/android-node-v26.13.1-ndk-29.0.14206865) · [Grace release pin](https://github.com/gracefultechnology/grace-new/pull/84) · [Upstream lock](https://github.com/elizaOS/eliza/pull/39874) · [Android process owner](https://github.com/gracefultechnology/grace-new/pull/88) | Complete account sign-in, native browser pointing and microphone operation on the signed release. |
 | Full Grace check | Six simulations hit the 60-minute limit on the launch checkout. They cover Assistant, Execution, Workspace, Website Requests, Email and Setup. The run also reported pending spec and contract reviews. | Complete the simulations on the integrated source and reconcile the reviews for owner acceptance. |
 
@@ -207,7 +233,8 @@ otherwise.
 7. Tablet and sign-in route: the launcher APK on the stock Android of the
    Lenovo TB336FU, with Google Play services and Chrome. Sign-in is the native
    Google account picker plus one permission sheet; the browser route is the
-   fallback. The AOSP image is staged, not built.
+   fallback. The AOSP proof is one recorded Cuttlefish build and boot of the
+   image; no image goes on the Lenovo tablet for the MVP.
 8. The permission sheet: Gmail (read, send, move to Trash) and Google Calendar
    (read and change events). The calendar is her Google Calendar, cached on
    the tablet.
@@ -274,6 +301,33 @@ otherwise.
     keys are made by the owner or an operator from the app's README checklist.
 32. Each feature keeps its journey in its own test file until the last wave
     moves them into one file per runner.
+33. Grace's own wallpaper may keep a clear area where the website shows. It
+    is not a cut in either WebView, `surface.md` records it, and it is
+    derived from the same measurement that places the page, in the same
+    frame.
+34. The hosted web app shows websites as an iframe under Grace's UI, the same
+    model as the tablet. The build that draws websites above the UI with holes
+    is not deployed.
+35. Upstream draws the link guide inside the page, so it stays put when the
+    page scrolls, with Grace's lilac ring and label as its options.
+    `surface.md` says so, and Grace's unused guide components are deleted.
+36. A website's fullscreen video may cover Grace. Back leaves fullscreen, and
+    Grace speaking or a tap on Ask Grace ends it first.
+37. No kiosk: the tablet is not locked to Grace. Home always brings her back
+    and the stock launcher stays as a way to recover (decision 27);
+    `deviceKeys.md` says so.
+38. The launcher APK is the only Android build; the standalone APK flavor
+    and its build flag are dropped. Standalone Grace, the dedicated Grace
+    Cloud deployment and account, stays.
+39. Hosted CI: GitHub billing is restored and every job runs on
+    `ubuntu-24.04`. Until then decision 30 applies.
+40. The benchmark harness (BillWorld, WebArena, their variables, Python and
+    hosted key) moves out of the app into its own package that imports Grace.
+41. Sign-in on debug builds: one shared debug signing key is registered as a
+    development sign-in client, so emulator walks can sign in. The image
+    stays signed out until it is signed by a release signer.
+42. The microphone is asked for at first use, matching decision 11. The
+    image grants nothing at first boot.
 
 ### Gates that follow this delivery
 
@@ -547,9 +601,9 @@ no rule states it.
 
 | ID | Requirement | Story | Rule | Journey | Exercise | Status |
 |---|---|---|---|---|---|---|
-| ENG 01 | AOSP fork, launcher and custom Chromium | n/a | n/a | n/a | `agent` | superseded by decisions 3 and 7: the launcher APK on stock Android with the embedded Eliza runtime; the AOSP image is staged, not built (android-release-and-image) |
+| ENG 01 | AOSP fork, launcher and custom Chromium | n/a | n/a | n/a | `agent` | superseded by decisions 3 and 7: the launcher APK on stock Android with the embedded Eliza runtime; the AOSP proof is one recorded Cuttlefish build and boot, and no image goes on the Lenovo tablet for the MVP (android-release-and-image) |
 | ENG 02 | The shell works without inference | `shell.md` "Keep control through interruptions" | "Network and service failures remain distinct from a failed device shell" | `home`, `chat` | `wifi` | open (ws-device-availability, availability-and-failures-shell); offline: decision 6 |
-| ENG 03 | Staff-provisioned services without customer accounts | n/a | n/a | n/a | n/a | superseded by DIR 04 and decision 9: she signs in with Google; pilot accounts are funded outside the app; registrations per decision 31 |
+| ENG 03 | Staff-provisioned services without customer accounts | n/a | n/a | n/a | n/a | superseded by DIR 04 and decision 9: she signs in to her own Grace account and can subscribe through account settings. External pilot funding is also supported. Provider registrations are in decision 31 |
 | ENG 04 | Policy enforced outside the model | planned `agentActions.md` | `execution.md` "The effect boundary checks both generations and dispatches a prepared operation once" | `actions` | `actions` | open (agent-actions-spec, agent-actions-shell); typed actions only (decision 29) |
 | ENG 05 | Redacted, correlated diagnostics | n/a | not met: no rule and no package of the plan | n/a | n/a | open: no package owns it; the owner decides whether it is in the MVP, and until then this list cannot read done |
 | DATA 01 | Private capture and accidental dictation | `conversation.md` "Talk or type without losing the conversation" | "Detected private content is removed before the conversation continues"; `execution.md` "Observation is fresh, origin-bound and privacy-filtered" | `chat`, `app` | `page` | open (private-text-contract, page-actuation-shell) |
