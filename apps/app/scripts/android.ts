@@ -754,15 +754,16 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         if (await installedApk() !== digest) throw new Error("Android did not install the episode APK");
         step = "configure the disposable screen lock";
         const verified = /credential verified successfully|no credential (?:is )?set/i;
-        if (!verified.test(await shell(serial, "locksettings verify", 120))) throw new Error("The fixture requires an empty screen lock");
+        if (!verified.test(await shell(serial, "locksettings verify", 180))) throw new Error("The fixture requires an empty screen lock");
         cleanup.push(async () => {
-          if (verified.test(await shell(serial, "locksettings verify", 120).catch(() => ""))) return;
-          const cleared = await shell(serial, `locksettings clear --old ${pin}`, 120);
-          if (!/cleared/i.test(cleared)) throw new Error("Android did not clear the fixture lock");
+          await shell(serial, `locksettings clear --old ${pin}`, 180).catch(() => undefined);
+          if (!verified.test(await shell(serial, "locksettings verify", 180))) throw new Error("Android still reports a screen lock after fixture cleanup");
         });
-        await shell(serial, `locksettings set-pin ${pin}`, 180).catch(() => undefined);
-        if (!verified.test(await shell(serial, `locksettings verify --old ${pin}`, 120)) ||
-            verified.test(await shell(serial, "locksettings verify", 120).catch(() => ""))) throw new Error("Android did not set the fixture lock");
+        step = "set the disposable PIN";
+        const set = await shell(serial, `locksettings set-pin ${pin}`, 180);
+        if (!/pin set to/i.test(set)) throw new Error("Android did not set the fixture lock");
+        step = "confirm the disposable PIN was set";
+        if (!verified.test(await shell(serial, `locksettings verify --old ${pin}`, 180))) throw new Error("Android did not confirm the fixture lock");
         cleanup.push(() => shell(serial, `rm -f ${screenFile}`));
         step = "select Grace as the disposable autofill provider";
         const autofill = `${identity.appId}/ai.eliza.plugins.passwords.ElizaPasswordAutofillService`;
