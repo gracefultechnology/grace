@@ -1,12 +1,7 @@
 {
-  "pin": "ca8823de9098f5274b9ad3d97afddbdc0e71cc00",
   "model": "qwen-3.8-27b",
   "plugins": {
-    "load": {
-      "@elizaos/plugin-assistant": "Installs the message service, so a turn can be answered at all; its actions are narrowed by this file.",
-      "@elizaos/plugin-elizacloud": "Reaches the cloud model through her Eliza Cloud account; no model runs on the tablet.",
-      "@elizaos/plugin-sql": "Holds the running conversation for the agent while it runs."
-    },
+    "load": {},
     "refuse": {
       "@elizaos/plugin-agent-orchestrator": "Not part of Grace: it adds abilities the spec does not guard.",
       "@elizaos/plugin-anthropic": "The model is reached only through her Eliza Cloud account.",
@@ -139,6 +134,7 @@
         "DISCOVER_ACTIONS": "The planner's own tool, built on each turn and never registered, so it can be neither allowed nor refused; it lists and loads only the actions allowed here, and does nothing itself."
       },
       "refuse": {
+        "DISCOVER_ACTIONS": "local run only",
         "ASSERT_MEETING_MOCK_LEDGER": "Registered only by @elizaos/plugin-meetings, which this file refuses.",
         "ATTACHMENT": "Attachments are opened by the person in Email or Files.",
         "ATTACH_TO_CHAT": "Attachments are opened by the person in Email or Files.",
@@ -198,6 +194,7 @@
         "DEVICE_REMINDER_SNOOZE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
         "DEVICE_REMINDER_UPDATE": "Reminders are calendar entries, shown and dismissed through spec/app/calendarView.md; GRACE_CALENDAR acts instead.",
         "DISABLE_AUTONOMOUS_MODE": "Grace acts only on the person's own turn, never on her own schedule.",
+        "DISCOVER_ACTIONS": "Grace offers the actions selected for her current task through the workspace policy.",
         "DOCUMENT": "The conversation is not kept after a restart, and saved details are kept only with the person's approval in Settings.",
         "EDIT": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "ENABLE_AUTONOMOUS_MODE": "Grace acts only on the person's own turn, never on her own schedule.",
@@ -319,7 +316,8 @@
         "WORKFLOW": "Registered only by @elizaos/plugin-workflow, which this file refuses.",
         "WORKTREE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "WORK_THREAD": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
-        "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses."
+        "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
+        "DISCOVER_ACTIONS": "local run only"
       },
       "refusedSubactionsOf": [
         "BLOCK",

@@ -1,7 +1,7 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { Machine as Workspaces, mayGuideReadLink, type Workspace } from "../gen/app__workspace.effect.vibe"
-import { CLEF_DECISION_LIMITS, createClefDecisionsClient } from "../../../vendor/eliza/packages/cloud/sdk/native-host/clef-decisions.mjs"
+import { CLEF_DECISION_LIMITS, createClefDecisionsClient } from "../../../vendor/eliza-cloud-sdk/clef-decisions.mjs"
 import type { CloudLink } from "./conversation.vibe"
 import { NativePage } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"

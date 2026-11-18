@@ -173,7 +173,6 @@ lemma hideBrowser_ensures(s: WebsiteRequests, by_: WebsiteActor)
   if inv(s) && canHideBrowser(s, by_) { Follows(s, viewOf(s).(shown := false), by_); }
 }
 
-// A new view ends, in one step, every request it no longer holds, as the transitions that end requests do.
 lemma Follows(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
   requires inv(s)
   ensures inv(followView(s, view, by_).state)
@@ -685,7 +684,6 @@ lemma RaiseToAndroid(s: WebsiteRequests, report: HostReport, by_: WebsiteActor)
   }
 }
 
-// A request that joins a website's wait is behind its earliest; one that starts it is called.
 lemma RaiseCalls(s: WebsiteRequests, report: HostReport, by_: WebsiteActor)
   requires inv(s) && canRaise(s, report, by_) && toAndroid(s, report)
   ensures stepOneAndroidCallPerWebsite(s, raise(s, report, by_).state, raise(s, report, by_).out)
@@ -720,7 +718,6 @@ lemma RaiseCalls(s: WebsiteRequests, report: HostReport, by_: WebsiteActor)
   }
 }
 
-// Membership in the filters the transitions apply, so the per-request rules carry over.
 lemma Members(p: WebsiteRequest -> bool, xs: seq<WebsiteRequest>)
   ensures forall x :: x in ProofLib.Filter(p, xs) <==> x in xs && p(x)
 {
@@ -745,8 +742,6 @@ lemma DecisionMembers(p: SiteDecision -> bool, xs: seq<SiteDecision>)
   forall x ensures x in ProofLib.Filter(p, xs) <==> x in xs && p(x) { ProofLib.FilterMember(p, xs, x); }
 }
 
-// Ending requests: what is kept stays as it was, what is ended is told Cancelled, offered downloads are recorded, and
-// the earliest kept request of a website whose earlier one ended is told AskAndroid.
 lemma Ended(goneA: seq<WebsiteRequest>, keptA: seq<WebsiteRequest>, gone: seq<WebsiteRequest>, kept: seq<WebsiteRequest>, s: WebsiteRequests)
   requires alwaysDownloadsAreRecorded(s)
   requires forall r :: r in gone ==> r.id > 0 && r.id < s.nextId && askIsWellFormed(r.ask)
@@ -794,7 +789,6 @@ lemma Ended(goneA: seq<WebsiteRequest>, keptA: seq<WebsiteRequest>, gone: seq<We
   }
 }
 
-// The step rules about Android's calls and what the person grants, for a transition that ends requests.
 lemma EndedRules(goneA: seq<WebsiteRequest>, keptA: seq<WebsiteRequest>, gone: seq<WebsiteRequest>, kept: seq<WebsiteRequest>, s: WebsiteRequests, after: WebsiteRequests)
   requires inv(s)
   requires forall r :: r in gone ==> r.id > 0 && r.id < s.nextId && askIsWellFormed(r.ask)
@@ -817,7 +811,6 @@ lemma EndedRules(goneA: seq<WebsiteRequest>, keptA: seq<WebsiteRequest>, gone: s
   }
 }
 
-// A website's earliest waiting request is one of the list, of that website, or none.
 lemma FirstIs(xs: seq<WebsiteRequest>, a: Ask)
   ensures (exists x :: x in xs && sameSite(x.ask, a)) ==> firstWaiting(xs, a) in xs && sameSite(firstWaiting(xs, a).ask, a)
   ensures !(exists x :: x in xs && sameSite(x.ask, a)) ==> firstWaiting(xs, a) == noRequest
@@ -851,7 +844,6 @@ lemma FilterConcat(p: WebsiteRequest -> bool, xs: seq<WebsiteRequest>, ys: seq<W
   }
 }
 
-// Appending keeps each website's earliest waiting request; one with none waiting before gets the first appended.
 lemma FirstConcat(xs: seq<WebsiteRequest>, ys: seq<WebsiteRequest>, a: Ask)
   ensures firstWaiting(xs + ys, a) == (if exists x :: x in xs && sameSite(x.ask, a) then firstWaiting(xs, a) else firstWaiting(ys, a))
 {
@@ -874,7 +866,6 @@ lemma FirstHead(xs: seq<WebsiteRequest>, a: Ask)
   ProofLib.FilterCons((q: WebsiteRequest) => sameSite(q.ask, a), xs);
 }
 
-// Filtering a list keeps a website's earliest waiting request first, when it keeps that request.
 lemma FirstKept(p: WebsiteRequest -> bool, xs: seq<WebsiteRequest>, a: Ask)
   requires forall x :: x in xs ==> isPermission(x.ask)
   requires firstWaiting(xs, a) in ProofLib.Filter(p, xs)
@@ -920,7 +911,6 @@ lemma Stable(p: WebsiteRequest -> bool, xs: seq<WebsiteRequest>)
   { FirstKept(p, xs, a); }
 }
 
-// Bridges from the generated filters to ProofLib.Filter, so membership lemmas apply.
 lemma PresentedFilter(s: WebsiteRequests)
   ensures presented(s) == (if s.shown && |ProofLib.Filter((r: WebsiteRequest) => (r.tab == s.selected), s.requests)| > 0
     then ProofLib.Filter((r: WebsiteRequest) => (r.tab == s.selected), s.requests)[0] else noRequest)
@@ -970,7 +960,6 @@ lemma AnswerFilter(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActo
 {
 }
 
-// What answering leaves waiting and what it records.
 lemma AnswerState(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor)
   ensures answer(s, id, choice, by_).state == (var rest := s.(requests := ProofLib.Filter((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests));
     if replyFor(presented(s), choice).answer.AskAndroid?
@@ -980,7 +969,6 @@ lemma AnswerState(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor
   AnswerFilter(s, id, choice, by_);
 }
 
-// Allowing calls Android for the presented request alone; the others for that website wait behind it.
 lemma AnswerCalls(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor)
   requires inv(s) && canAnswer(s, id, choice, by_) && replyFor(presented(s), choice).answer.AskAndroid?
   ensures stepOneAndroidCallPerWebsite(s, answer(s, id, choice, by_).state, answer(s, id, choice, by_).out)
@@ -1025,7 +1013,6 @@ lemma AnswerCalls(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor
   assert calledFor(s, r.ask) == noRequest;
 }
 
-// Every reply answering sends: the presented request's, and one per waiting request for the same website and devices.
 lemma AnswerOut(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor)
   ensures forall x :: x in answer(s, id, choice, by_).out ==> (x == replyFor(presented(s), choice) ||
     exists q :: q in s.requests && sameSite(q.ask, presented(s).ask) && x == replyFor(presented(s), choice).(request := q.id, ask := q.ask))
@@ -1081,7 +1068,6 @@ lemma WithdrawRecords(gone: seq<WebsiteRequest>, kept: seq<WebsiteRequest>, s: W
   }
 }
 
-// Every reply withdrawing sends is a cancellation.
 lemma WithdrawCancels(gone: seq<WebsiteRequest>, kept: seq<WebsiteRequest>, s: WebsiteRequests)
   ensures forall o :: o in withdraw(gone, kept, s).out ==> o.answer == Answer.Cancelled
 {
@@ -1098,7 +1084,6 @@ lemma HoldFilter(r: WebsiteRequest, s: WebsiteRequests)
 {
 }
 
-// Holding a request replaces the tab's waiting request of the same kind and keeps the rest.
 lemma HoldMembers(r: WebsiteRequest, s: WebsiteRequests)
   ensures forall x :: x in hold(r, s).state.requests <==> (x in s.requests && !(x.tab == r.tab && sameSlot(x.ask, r.ask))) || x == r
   ensures hold(r, s).state == s.(requests := hold(r, s).state.requests, downloads := hold(r, s).state.downloads)
@@ -1113,7 +1098,6 @@ lemma HoldMembers(r: WebsiteRequest, s: WebsiteRequests)
   WithdrawFilter(gone, kept, s);
 }
 
-// What holding records of the requests it replaces.
 lemma HoldRecords(r: WebsiteRequest, s: WebsiteRequests)
   requires alwaysDownloadsAreRecorded(s)
   requires forall x :: x in s.requests ==> x.id > 0 && x.id < s.nextId && askIsWellFormed(x.ask)
@@ -1139,4 +1123,23 @@ lemma DismissOpeningFilter(s: WebsiteRequests, id: int, by_: WebsiteActor)
 lemma DismissFilter(s: WebsiteRequests, id: int, by_: WebsiteActor)
   ensures dismissDownload(s, id, by_).downloads == ProofLib.Filter((d: DownloadRecord) => (d.id != id), s.downloads)
 {
+}
+
+lemma lawAnsweringTheOnlyMessageReleasesThePage_ensures(s: WebsiteRequests, id: int, choice: Choice, by_: WebsiteActor)
+  ensures (lawAnsweringTheOnlyMessageReleasesThePage(s, id, choice, by_) == true)
+{
+  if canAnswer(s, id, choice, by_) && isMessage(presented(s).ask) && |s.requests| == 1 && |s.asking| == 0 {
+    PresentedIsWaiting(s);
+    AnswerState(s, id, choice, by_);
+    var r := presented(s);
+    assert s.requests == [r];
+    var kept := ProofLib.Filter((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests);
+    forall q | q in kept ensures false
+    { ProofLib.FilterMember((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests, q); }
+    assert kept == [];
+    var after := answer(s, id, choice, by_).state;
+    assert after.requests == [] && after.asking == [];
+    PresentedFilter(after);
+    assert ProofLib.Filter((r: WebsiteRequest) => (r.tab == after.selected), after.requests) == [];
+  }
 }

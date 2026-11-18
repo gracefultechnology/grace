@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { defaultClientConditions } from "vite";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -219,21 +220,26 @@ async function observeSite(existing: Site, action: SiteObservation) {
     return { url, documentId: loaderId, ...Schema.decodeUnknownSync(PageText)(content) };
   }
   if (action.kind === "tapGuide") {
-    const visible = await evaluate("globalThis.__elizaPageGuidanceV1?.visible === true");
-    if (!visible) return { tapped: false, url };
-    const { root } = await session.send("DOM.getDocument", { depth: -1, pierce: true });
-    const rings: number[] = [];
-    function find(node: typeof root, inClosedRoot = false) {
-      if (inClosedRoot && node.attributes?.some((value, index) => index % 2 === 0 && value === "class" && node.attributes?.[index + 1].split(" ").includes("ring")))
-        rings.push(node.nodeId);
-      for (const child of node.children ?? []) find(child, inClosedRoot);
-      for (const child of node.shadowRoots ?? []) find(child, child.shadowRootType === "closed");
-    }
-    find(root);
-    if (rings.length !== 1) return { tapped: false, url };
-    const { model: { border } } = await session.send("DOM.getBoxModel", { nodeId: rings[0] });
     await page.bringToFront();
-    await page.mouse.click((border[0] + border[4]) / 2, (border[1] + border[5]) / 2);
+    const point = Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ x: Schema.Finite, y: Schema.Finite })))(await evaluate(`(() => {
+      const guide = globalThis.__elizaPageGuidanceV1;
+      const snapshot = globalThis.__elizaBrowserControlV1;
+      if (!guide?.visible || guide.invalidated || guide.paused || !guide.host.isConnected ||
+          snapshot?.document !== document || snapshot.url !== location.href || snapshot.snapshotId !== guide.id) return null;
+      const node = snapshot.nodes.get(guide.nodeId)?.node;
+      const ring = guide.shadow.querySelector(".ring");
+      if (!node?.isConnected || !ring || ring.hidden || !ring.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return null;
+      const rect = ring.getBoundingClientRect();
+      const view = visualViewport;
+      if (!view || rect.width <= 0 || rect.height <= 0 || rect.left < view.offsetLeft || rect.top < view.offsetTop ||
+          rect.right > view.offsetLeft + view.width || rect.bottom > view.offsetTop + view.height) return null;
+      const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+      return node.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+    })()`));
+    if (!point) return { tapped: false, url };
+    const { frameTree: current } = await session.send("Page.getFrameTree");
+    if (current.frame.loaderId !== loaderId || current.frame.url !== url) return { tapped: false, url };
+    await page.mouse.click(point.x, point.y);
     return { tapped: true, url };
   }
   const { request } = action;
@@ -367,5 +373,5 @@ export default defineConfig(async (env) => {
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl }) => ({ taskId, intent, startUrl, gradeWholeCohort: Boolean(fleet) }));
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
-  return { ...config, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, releasedBillworldEnabled: releasedDirectory !== undefined }, globalSetup: ["test/setup.vibe"] } };
+  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, releasedBillworldEnabled: releasedDirectory !== undefined }, globalSetup: ["test/setup.vibe"] } };
 });

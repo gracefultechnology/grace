@@ -1,3 +1,4 @@
+// spec/app/browser.md, "Story: Sign in privately on a website"
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"
 import type { Rect } from "../gen/app__surface.effect.vibe"
 import type { Load } from "../gen/app__browser.effect.vibe"
@@ -28,11 +29,12 @@ export type Reply = { id: PageId; key: RequestKey; ask: Ask; answer: Answer; tex
 export type LinkPointer = Extract<NonNullable<Parameters<SurfacePlugin["controlPage"]>[0]["command"]["guidance"]>, { kind: "show" }>
 
 export service NativePage {
+  readonly privateSignIn: boolean
   observeLinks(id: PageId): LinkObservation!PageFailed
   pointAt(id: PageId, documentId: string, guidance: LinkPointer): boolean!PageFailed
   clearGuide(id: PageId): void!PageFailed
   claim(): void!PageFailed
-  create(id: PageId, url: string): void!PageFailed
+  create(id: PageId, url: string, manualSignIn: boolean): void!PageFailed
   place(id: PageId, page: Rect, corners: Corners): void!PageFailed
   route(id: PageId, rects: Rect[]): void!PageFailed
   present(id: PageId | null): void!PageFailed
@@ -128,13 +130,29 @@ function devicePage(plugin: SurfacePlugin) {
     Effect.flatMap(tryPromise({ try: () => run(plugin), catch: (cause) => new PageFailed({ cause }) }),
       (answer) => Effect.mapError(Schema.decodeUnknownEffect(schema)(answer), (cause) => new PageFailed({ cause })))
   const own = (id: PageId) => ({ ...identity, id })
+  const observablePages = new Set<PageId>()
+  const observe = <A>(id: PageId, run: () => A!PageFailed): A!PageFailed => Effect.suspend(() =>
+    observablePages.has(id) ? run() : Effect.fail(new PageFailed({ cause: "This page does not permit website observation." })))
   return Layer.succeed(NativePage, {
-    observeLinks: (id) => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } })),
-    pointAt: (id, documentId, guidance) => Effect.map(ask(PointResult, (p) =>
-      p.controlPage({ ...own(id), documentId, command: { subaction: "guide", guidance } })), (reply) => reply.result.accepted === true),
-    clearGuide: (id) => call((p) => p.controlPage({ ...own(id), command: { subaction: "guide", guidance: { kind: "hide" } } })),
-    claim: () => call((p) => p.reconcileOwner({ ...identity, desiredIds: [] })),
-    create: (id, url) => call((p) => p.createSurface({ ...own(id), url, process: "isolated", storage: "isolated", profileKey, layer: "below-host", answersRequests: true })),
+    privateSignIn: true,
+    observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
+    pointAt: (id, documentId, guidance) => observe(id, () => Effect.map(ask(PointResult, (p) =>
+      p.controlPage({ ...own(id), documentId, command: { subaction: "guide", guidance } })), (reply) => reply.result.accepted === true)),
+    clearGuide: effect (id) => {
+      if (observablePages.has(id)) try call((p) => p.controlPage({ ...own(id), command: { subaction: "guide", guidance: { kind: "hide" } } }))
+    },
+    claim: effect () => {
+      observablePages.clear()
+      try call((p) => p.reconcileOwner({ ...identity, desiredIds: [] }))
+    },
+    create: effect (id, url, manualSignIn) => {
+      observablePages.delete(id)
+      const options = { ...own(id), url, process: "isolated", storage: "isolated", layer: "below-host" } as const
+      try call((p) => manualSignIn
+        ? p.createSurface({ ...options, purpose: "manual-sign-in" })
+        : p.createSurface({ ...options, profileKey, answersRequests: true }))
+      if (!manualSignIn) observablePages.add(id)
+    },
     place: (id, page, corners) => call((p) => p.setBounds({ ...own(id), ...page, outerClip: { ...page, cornerRadii: corners } })),
     route: (id, rects) => call((p) => p.setOcclusionRects({ ...own(id), rects: rects.map((r) => ({ ...r, cornerRadius: 0 })) })),
     present: (id) => call((p) => p.presentSurface({ ...identity, id })),
@@ -144,7 +162,10 @@ function devicePage(plugin: SurfacePlugin) {
     back: (id) => call((p) => p.goBack(own(id))),
     forward: (id) => call((p) => p.goForward(own(id))),
     reload: (id) => call((p) => p.reloadSurface(own(id))),
-    destroy: (id) => call((p) => p.destroySurface(own(id))),
+    destroy: effect (id) => {
+      observablePages.delete(id)
+      try call((p) => p.destroySurface(own(id)))
+    },
     reply: (reply) => call((p) => answerPage(p, own(reply.id), reply)),
     grant: (id, key) => Effect.catch(
       Effect.map(ask(SitePermissionAnswer, (p) => p.answerSitePermission({ ...own(id), requestId: key, grant: true })), (r) => outcomes[r.outcome]),

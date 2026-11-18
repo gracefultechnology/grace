@@ -17,6 +17,15 @@ import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/a
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
 import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
+import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
+import type { FileLibrary } from "./fileLibrary.vibe";
+import type { ManagedReads } from "./managedReads.vibe";
+import type { AccountActions } from "./graceAccount.vibe";
+import type { ReplyControls } from "./replyControls.vibe";
+import type { SpeechActions } from "./graceSpeech.vibe";
+import type { Machine as PasswordView } from "../gen/app.effect.vibe";
+import { useMachine as usePasswordView } from "../gen/app.react.ts";
+import { Passwords } from "./passwords.vibe";
 import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
@@ -27,9 +36,10 @@ import type { Contact } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
 import { type Board, Mail } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
+import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -41,6 +51,19 @@ export function useRuntime(): Runtime {
 
 const keyboardHeights = Stream.unwrap(Effect.map(Effect.service(Keyboard), (k) => k.height));
 
+export function usePasswordGuide() {
+  const runtime = useRuntime();
+  const { state } = usePasswordView(runtime);
+  return {
+    guide: state?.guide,
+    mic: state?.guideMic,
+    listen: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.listenForGuide())),
+    stopListening: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.stopGuideMic())),
+    request: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Passwords), (service) => service.guideTyped(revision))),
+    finish: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide())),
+  };
+}
+
 /** The workspace, what the rules allow the person, and sending an event; by the person unless the host measured it. */
 export function useWorkspace() {
   const runtime = useRuntime();
@@ -48,7 +71,14 @@ export function useWorkspace() {
   return {
     workspace,
     can: (event: Event) => can(event, "Person"),
-    send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
+    send: async (event: Event, by: WorkspaceActor = "Person") => {
+      if (by === "Host" && event.type === "interact" && event.input.tag === "Hear") {
+        const heard = { ...event.input, complete: true };
+        const guided = await runtime.runPromise(Effect.flatMap(Effect.service(Passwords), (service) => service.guideSpeech(heard)));
+        if (guided) return;
+      }
+      return send(event, by);
+    },
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
     current: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())),
     /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */
@@ -56,6 +86,8 @@ export function useWorkspace() {
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: () => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point())),
     /** The person's Close browser, which the page host also tells what websites asked. */
+    supportsPrivateSignIn: () => runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.privateSignIn)),
+    navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
 }

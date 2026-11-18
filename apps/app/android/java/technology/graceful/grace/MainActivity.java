@@ -3,8 +3,10 @@ package technology.graceful.grace;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Display;
+import android.view.KeyEvent;
 import android.view.WindowManager;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.content.ContextCompat;
@@ -17,15 +19,26 @@ import ai.eliza.plugins.agent.embedded.EmbeddedAgentPlugin;
 import ai.eliza.plugins.browsersurface.ElizaBridgeActivity;
 import ai.eliza.plugins.browsersurface.ElizaSurfaceManagerPlugin;
 import ai.eliza.plugins.wifi.WiFiPlugin;
+import ai.eliza.plugins.passwords.PasswordsPlugin;
 
 public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
  @Override public void onCreate(Bundle state) {
+  Uri accountCallback = accountCallback(getIntent());
+  if (accountCallback != null) setIntent(new Intent(getIntent()).setData(null));
   registerPlugin(EmbeddedAgentPlugin.class);
+  registerPlugin(GraceAccount.class);
+  registerPlugin(GraceFiles.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
+  registerPlugin(PasswordsPlugin.class);
+  registerPlugin(GraceGuideSpeechPlugin.class);
+  registerPlugin(PrivateViewPlugin.class);
+  registerPlugin(GraceDevicePlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
+  registerPlugin(GraceRecordStorePlugin.class);
+  registerPlugin(GraceRemindersPlugin.class);
   super.onCreate(state);
   preferSixtyHertz();
   findViewById(android.R.id.content).setBackgroundResource(R.color.paper);
@@ -46,7 +59,12 @@ public class MainActivity extends ElizaBridgeActivity {
     });
    }
   });
-  startForegroundService(new Intent(this, GraceAgentService.class));
+  acceptAccountCallback(accountCallback);
+ }
+
+ @Override public void onStart() {
+  super.onStart();
+  GraceAgentService.resume(this);
  }
 
  private void leave(OnBackPressedCallback callback) {
@@ -76,10 +94,31 @@ public class MainActivity extends ElizaBridgeActivity {
   bars.hide(WindowInsetsCompat.Type.systemBars());
  }
 
+ @Override public boolean dispatchKeyEvent(KeyEvent event) {
+  int key = event.getKeyCode();
+  if (key != KeyEvent.KEYCODE_VOLUME_UP && key != KeyEvent.KEYCODE_VOLUME_DOWN) return super.dispatchKeyEvent(event);
+  if (event.getAction() == KeyEvent.ACTION_DOWN) ((GraceDevicePlugin) getBridge().getPlugin("GraceDevice").getInstance()).stepVolume(key == KeyEvent.KEYCODE_VOLUME_UP);
+  return true;
+ }
+
  @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); preferSixtyHertz(); }
 
+ private Uri accountCallback(Intent intent) {
+  if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return null;
+  Uri data = intent.getData();
+  return GraceAccount.account(this).handles(data) ? data : null;
+ }
+
+ private void acceptAccountCallback(Uri data) {
+  if (data == null || getBridge() == null) return;
+  var handle = getBridge().getPlugin("GraceAccount");
+  if (handle != null && handle.getInstance() instanceof GraceAccount account) account.acceptCallback(data);
+ }
+
  @Override public void onNewIntent(Intent intent) {
-  super.onNewIntent(intent);
+  Uri accountCallback = accountCallback(intent);
+  super.onNewIntent(accountCallback == null ? intent : new Intent(intent).setData(null));
+  acceptAccountCallback(accountCallback);
   if (!isRendererGone() && intent.hasCategory(Intent.CATEGORY_HOME)) getBridge().getWebView().evaluateJavascript(LAUNCHER_HOME, null);
  }
 }

@@ -30,3 +30,7 @@ debug-storybook.log
 **/test/__traces__/bombadil/
 test/__traces__/
 .DS_Store
+
+.wrangler/
+.dev.vars
+.dev.vars.*

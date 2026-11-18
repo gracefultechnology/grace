@@ -53,8 +53,6 @@ jobs:
           submodules: true
           persist-credentials: false
       - uses: ./.github/actions/setup
-        with:
-          verification: "false"
       - uses: actions/checkout@v7
         with:
           repository: web-arena-x/webarena
@@ -64,7 +62,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Prepare evaluator and Chromium
+      - name: Prepare the WebArena evaluator
         run: |
           private_dir="$RUNNER_TEMP/grace-webarena-private"
           results_dir="$RUNNER_TEMP/grace-webarena-results"
@@ -77,7 +75,6 @@ jobs:
             echo "GRACE_WEBARENA_PYTHON=$private_dir/venv/bin/python"
             echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/task-260-input.json"
           } >> "$GITHUB_ENV"
-          pnpm --filter @repo/app exec playwright install --with-deps chromium
           pnpm gen
       - name: Start the pinned Shopping storefront
         run: |

@@ -1,0 +1,146 @@
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+import { audible } from "../gen/app__preferences.effect.vibe"
+import { Machine as Workspaces, enabled, replyControlContext, step, type Event, type ReplyControlContext } from "../gen/app__workspace.effect.vibe"
+import type { EmbeddedAgent } from "./agentPlugin.ts"
+import { withhold } from "./private.ts"
+import { ReplyControls } from "./replyControls.vibe"
+import { Reply } from "./reply.schema.ts"
+import { webView } from "./surfacePlugin.ts"
+
+const ConversationId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{1,80}$/))
+const Creation = Schema.Struct({ status: Schema.Int, data: Schema.Struct({ conversation: Schema.Struct({ id: ConversationId, roomId: ConversationId }) }) })
+schema Status { state: "unavailable" | "stopped" | "starting" | "running" | "failed" }
+schema StreamData { id: string; data: string }
+const StreamEnd = Schema.Struct({ id: Schema.String, status: Schema.optionalKey(Schema.Int), aborted: Schema.optionalKey(Schema.Boolean), error: Schema.optionalKey(Schema.String) })
+const ResponseEvent = Schema.fromJsonString(Schema.Struct({
+  type: Schema.String,
+  fullText: Schema.optionalKey(Schema.String),
+}))
+type BridgeEvent = { kind: "data" | "end"; payload: unknown }
+type DecodedEvent = { kind: "data"; value: typeof StreamData.Type } | { kind: "end"; value: typeof StreamEnd.Type }
+
+error TurnUnavailable
+
+function sameContext(a: ReplyControlContext, b: ReplyControlContext) {
+  return a.generation === b.generation && a.device === b.device && a.browser === b.browser && a.preferences === b.preferences
+}
+
+effect function createConversation(plugin: EmbeddedAgent) {
+  const raw = try tryPromise(() => plugin.request({ method: "POST", path: "/api/conversations", body: {} }))
+  const created = try Schema.decodeUnknownEffect(Creation)(raw)
+  if (created.status < 200 || created.status >= 300) throw new TurnUnavailable()
+  return created.data.conversation
+}
+
+effect function finalReply(plugin: EmbeddedAgent, conversation: typeof Creation.Type.data.conversation, text: string) {
+  const id = try Effect.try(() => webView.window.crypto.randomUUID())
+  const input = Stream.callback<BridgeEvent, unknown>((queue) => effect {
+    try acquireRelease(
+      tryPromise(() => plugin.addListener("streamData", (payload) => { Queue.offerUnsafe(queue, { kind: "data", payload }) })),
+      (handle) => Effect.ignore(tryPromise(() => handle.remove())),
+    )
+    try acquireRelease(
+      tryPromise(() => plugin.addListener("streamEnd", (payload) => { Queue.offerUnsafe(queue, { kind: "end", payload }) })),
+      (handle) => Effect.ignore(tryPromise(() => handle.remove())),
+    )
+    try acquireRelease(
+      tryPromise(() => plugin.requestStream({
+        id, method: "POST", path: `/api/conversations/${conversation.id}/messages/stream`, body: { text },
+      })),
+      () => Effect.ignore(tryPromise(() => plugin.abort({ id }))),
+    )
+  })
+  const relevant = Stream.filterMap(input, (event): Result.Result<DecodedEvent, void> => {
+    if (event.kind === "data") {
+      const parsed = Schema.decodeUnknownOption(StreamData)(event.payload)
+      if (Option.isSome(parsed) && parsed.value.id === id) return Result.succeed({ kind: "data" as const, value: parsed.value })
+    } else {
+      const parsed = Schema.decodeUnknownOption(StreamEnd)(event.payload)
+      if (Option.isSome(parsed) && parsed.value.id === id) return Result.succeed({ kind: "end" as const, value: parsed.value })
+    }
+    return Result.failVoid
+  })
+  const finished = Stream.takeUntil(relevant, (event) => event.kind === "end")
+  const collect = Stream.runFoldEffect(finished, () => "", effect (said, event) => {
+    if (event.kind === "end") {
+      if (event.value.aborted || event.value.error || event.value.status === undefined || event.value.status < 200 || event.value.status >= 300) throw new TurnUnavailable()
+      return said
+    }
+    const payload = Schema.decodeUnknownEffect(ResponseEvent)(event.value.data) catch () => undefined
+    if (payload?.type === "error") throw new TurnUnavailable()
+    if (payload?.type !== "done") return said
+    if (payload.fullText === undefined || payload.fullText.trim() === "" || payload.fullText.length > 32768) throw new TurnUnavailable()
+    return payload.fullText
+  })
+  const cancelTurn = () => Effect.ignore(timeout(tryPromise(() => plugin.request({ method: "POST", path: `/api/turns/${conversation.roomId}/abort` })), "2 seconds"))
+  const final = try timeout(onInterrupt(collect, cancelTurn), "60 seconds")
+  if (final === "") throw new TurnUnavailable()
+  return final
+}
+
+export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDiscard(effect {
+  if (plugin === undefined) return
+  const workspace = try Workspaces
+  const controls = try ReplyControls
+  const opened = try Ref.make<typeof Creation.Type.data.conversation | undefined>(undefined)
+
+  effect function setReady(raw: unknown) {
+    const status = Schema.decodeUnknownEffect(Status)(raw) catch () => undefined
+    const ready = status?.state === "running"
+    if (!ready) try Ref.set(opened, undefined)
+    const { device } = try workspace.get()
+    if (device.reasoningAvailable !== ready) {
+      const availability = { connection: device.connectivity, reasoning: ready, microphone: device.microphoneAllowed, observation: device.observationAllowed }
+      workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined
+    }
+  }
+
+  const statuses = Stream.callback<unknown>((queue) => effect {
+    try acquireRelease(
+      Effect.orDie(tryPromise(() => plugin.addListener("status", (status) => { Queue.offerUnsafe(queue, status) }))),
+      (handle) => Effect.ignore(tryPromise(() => handle.remove())),
+    )
+    const initial = tryPromise(() => plugin.getStatus()) catch () => undefined
+    Queue.offerUnsafe(queue, initial)
+  })
+  try fork.scoped Stream.runForEach(statuses, setReady)
+
+  const thinking = Stream.changes(Stream.map(workspace.changes, (state) => {
+    const conversation = state.assistant.conversation
+    return state.device.reasoningAvailable && conversation.turn === "Thinking" ? conversation.generation : -1
+  }))
+  try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(effect {
+    const scene = try workspace.get()
+    const request = try controls.capture()
+    const { messages } = scene.assistant.conversation
+    const index = messages.length - 1
+    const message = messages[index]
+    if (message === undefined || message.author !== "HumanMessage") return
+    const text = try Effect.orDie(Effect.try(() => withhold({ text: message.text, passwords: [] })))
+    if (text !== message.text) {
+      workspace.send({ type: "purgePrivate", token, messageIndex: index, purgeDraft: false }, "Host") catch () => undefined
+      return
+    }
+    effect {
+      const current = try Ref.get(opened)
+      const conversation = current ?? (try createConversation(plugin))
+      if (current === undefined) try Ref.set(opened, conversation)
+      const raw = try finalReply(plugin, conversation, text)
+      const reply = try Schema.decodeUnknownEffect(Reply)(raw)
+      const safe = try Effect.orDie(Effect.try(() => withhold({ text: reply.text, passwords: [] })))
+      const choicesSafe = try Effect.orDie(Effect.try(() => reply.answers.every((answer) => withhold({ text: answer, passwords: [] }) === answer)))
+      const shouldSpeak = audible((try workspace.get()).preferences.session)
+      try Effect.uninterruptible(effect {
+        const before = try workspace.get()
+        const response: Event = { type: "interact", input: { tag: "Respond", token, text: safe,
+          isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak } }
+        if (safe === reply.text && sameContext(replyControlContext(before), request.context) && enabled(before, response, "Host")) {
+          try controls.offer(request, step(before, response, "Host").state, reply.actions)
+        }
+        try workspace.send(response, "Host")
+      })
+    } catch effect () => {
+      workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: "Grace couldn’t answer just now. Please try again." } }, "Host") catch () => undefined
+    }
+  })))
+})

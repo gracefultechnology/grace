@@ -51,7 +51,7 @@ type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
 type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
 type StepOutcome = Pending | Done | PutOff
 type SetupProgress = { step: SetupStage, outcomes: int -> StepOutcome }
-type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int }
+type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int, graceAccount: GraceAccount, tabletSignIn: bool, googleLink: GoogleLink }
 type SetupEffect = | AskWhatToDo
 type SetupResult = { state: Setup, out: List[SetupEffect] }
 pure val allSetupSteps: List[SetupStage] = List(WifiStep, AccountStep, NameStep, PaceStep, TextSizeStep, ExplainStep, TalkStep, TypeStep, CloseStep, ReopenStep, HandOverStep)
@@ -79,7 +79,7 @@ show from that report on.
 ```quint
 pure val initial: Setup = {
   phase: Unstarted, progress: { step: WifiStep, outcomes: Map() },
-  facts: noFacts, wentAway: false, endToken: 0
+  facts: noFacts, wentAway: false, endToken: 0, graceAccount: CheckingAccount, tabletSignIn: false, googleLink: GoogleLinkUnknown
 }
 pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending or s.phase == EndFailed
 ```
@@ -463,4 +463,261 @@ pure def sometimesResumed(s: Setup): bool = s.phase == Answering and s.wentAway 
 pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and outcomeOf(s.progress, WifiStep) == Done and s.phase == Answering
 pure def sometimesTalkTriedAloud(s: Setup): bool = outcomeOf(s.progress, TalkStep) == Done
 pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away and s.progress.step == HandOverStep and not(graceThinks(s.facts))
+```
+
+
+## Story: Sign in to Grace and manage my subscription
+
+> As a person using Grace, I can sign in to my own Grace account, see my
+> subscription, manage it with the payment provider, or sign out from Settings.
+
+### Subscription actions belong to the Grace account that is signed in
+
+Settings opens Account even without a network connection. The device uses
+the Grace service's authenticated account and subscription response. An
+account from another service, a checkout return, or a browser tab's sign-in
+does not establish a Grace session or an active subscription. If the check
+fails, offer to check again. Account details are private to the device UI. A current subscription never
+offers checkout. A previously registered customer may both manage their
+account and subscribe again when the service reports checkout is available.
+The web page shows the sign-in methods Grace offers. The Android app checks
+its own session and opens Grace's web account to manage the subscription.
+A web session authorizes a tablet only after the person confirms the tablet
+sign-in in the browser.
+
+```quint
+type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+pure def mayStartCheckout(account: GraceAccount): bool = match account {
+  | GraceSignedIn(info) => info.plan == PlanInactive or info.plan == PlanInactiveManagedCheckout
+  | _ => false
+}
+pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
+  | GraceSignedIn(info) => info.plan == PlanInactiveManaged or info.plan == PlanInactiveManagedCheckout or info.plan == PlanActiveManaged
+  | _ => false
+}
+pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup = { ...s, graceAccount: report, googleLink: link }
+pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: waiting }
+pure val reportValues: Set[GraceAccount] = Set(
+  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignedIn, AccountUnavailable,
+  GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManagedCheckout }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveBlocked }),
+  GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanUnknown }),
+  GraceSignedIn({ accountId: "other", email: "", plan: PlanActive }),
+  GraceSignedIn({ accountId: "other", email: "", plan: PlanActiveManaged })
+)
+pure val accountValues: Set[GraceAccount] = reportValues
+pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
+  match account {
+    | GraceSignedIn(info) => (info.plan == PlanActive or info.plan == PlanActiveManaged) implies not(mayStartCheckout(account))
+    | _ => true
+  }
+```
+
+
+### Google mail and calendar access requires separate consent for the Grace account
+
+Grace shows Google connection controls only in a signed-in Grace web
+account when the cloud reports the connector is available. The person
+chooses mail, calendar or both. On a phone-only Grace account the person
+names the Google address to connect. The cloud checks the confirmed Google
+identity against the Grace account and discloses only the resulting connection.
+
+```quint
+type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool, grant: str, sendMail: bool, trashMail: bool, writeCalendar: bool })
+pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false, grant: "linked", sendMail: true, trashMail: true, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }))
+pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
+  match account {
+    | GraceSignedIn(_) => match link {
+      | GoogleLinkReady => true
+      | GoogleLinkConnected(_) => true
+      | _ => false
+    }
+    | _ => false
+  }
+pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
+  not(mayOfferGoogleLink(GraceDeviceSignedIn, link))
+```
+
+
+## Story: Read the Google mail and calendar I connected
+
+> As a person using Grace, I can open my managed Google inbox or upcoming
+> calendar in Grace, including when I start from the tablet and sign in on
+> Grace's web page. I choose the message or appointment I want to open.
+
+### Managed reads show only the matching signed-in account and the capability it granted
+
+The hosted read views show the Inbox and upcoming primary calendar, with
+read access by default. A message opens into a
+plain-text preview for the chosen reference, never executable HTML.
+A preview carries no authority to inspect attachments, reply or forward.
+The application checks the account bound to each provider result. A
+tablet's hosted handoff retains the selected view through sign-in, and
+uses the browser account matching that tablet when there is a bound owner.
+On Home the signed-in web account can see the first two recently loaded Inbox
+messages and the next three appointments for its current grant. The cards
+open their named surfaces. If the account or grant changes, old summaries
+disappear.
+
+```quint
+type ManagedReadView = ManagedEmail | ManagedCalendar
+pure def mayReadManaged(account: GraceAccount, link: GoogleLink, view: ManagedReadView): bool =
+  match account {
+    | GraceSignedIn(_) => match link {
+      | GoogleLinkConnected(g) => if (view == ManagedEmail) g.mail else g.calendar
+      | _ => false
+    }
+    | _ => false
+  }
+pure def managedReadMatches(accountId: str, receiptAccountId: str, wanted: str, received: str): bool =
+  accountId != "" and accountId == receiptAccountId and wanted == received
+pure def lawADeviceSessionAloneDoesNotReadGoogle(link: GoogleLink, view: ManagedReadView): bool =
+  not(mayReadManaged(GraceDeviceSignedIn, link, view))
+pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: str, ref: str): bool =
+  accountId != receiptAccountId implies not(managedReadMatches(accountId, receiptAccountId, ref, ref))
+```
+
+### A managed draft can be sent only through the current owner grant
+
+The person reviews the exact address, subject and draft text before sending.
+A reply attaches to the selected message's thread. Its address and subject
+come from the selected message and stay fixed through review.
+Send requires a separate opt-in. Grace submits the confirmed draft only for the
+current account and grant. A stale or uncertain attempt cannot be submitted again
+as a new draft automatically.
+
+```quint
+pure def maySendManagedMail(account: GraceAccount, link: GoogleLink, accountId: str, grant: str): bool =
+  match account {
+    | GraceSignedIn(person) => match link {
+      | GoogleLinkConnected(g) => person.accountId == accountId and g.grant == grant and grant != "" and g.mail and g.sendMail
+      | _ => false
+    }
+    | _ => false
+  }
+pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: str, grant: str): bool =
+  not(maySendManagedMail(GraceDeviceSignedIn, link, accountId, grant))
+```
+
+### Trash and Calendar changes use the exact selected version
+
+The owner may separately enable Trash and Undo, and appointment changes. Undo
+is available only once the provider confirms moving the selected message to
+Trash. Appointments are read back to the person before confirmation. For a
+new weekly or monthly appointment, the review includes its frequency and
+time zone. A monthly series skips months without the selected day. Edits and
+removals apply to the selected version of an appointment in the primary
+calendar. For a repeating appointment, the person chooses a single occurrence
+or reviews and confirms the entire series separately. Grace checks provider
+evidence before showing success.
+
+```quint
+type ManagedChange = ManagedTrash | ManagedAppointmentChange
+pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
+  match account {
+    | GraceSignedIn(person) => match link {
+      | GoogleLinkConnected(g) => person.accountId == accountId and g.grant == grant and grant != "" and
+        (if (request == ManagedTrash) g.mail and g.trashMail else g.calendar and g.writeCalendar)
+      | _ => false
+    }
+    | _ => false
+  }
+```
+
+## Story: Approve a password backup in my browser
+
+> As the person using Grace Passwords on my tablet, I can see which Grace
+> account is approving my request, finish sign-in if needed, and choose
+> whether Grace should continue with the requested backup action.
+
+### Browser approval needs an explicit choice for the shown account
+
+Grace opens its registered Cloud approval page in a browser. The page shows
+one requested action and the account that will approve it. Approve sends
+that account and action together. If the browser account changes or needs
+fresh sign-in, the person uses one of the deployment's available account
+sign-in methods and chooses again. Cancel closes the
+approval without issuing it. The return to the tablet carries a single-use
+code bound to the native request. The browser never handles the recovery
+key or password data.
+
+```quint
+pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
+  registered and recentSignIn and sameAccount and confirmed
+```
+
+## Story: Keep my passwords private when the tablet account changes
+
+> I can keep passwords on my own tablet, and I can choose to link them to my verified Grace account. Signing out closes private controls. Another account on this tablet cannot read or adopt the passwords I linked.
+
+### Only the device-only profile or the current verified owner can open the vault
+
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation in the same deployment environment. A debug tablet with two active environments must choose one account before opening the vault. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+
+```quint
+type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })
+type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ credentialId: str })
+pure def passwordAdmission(custody: PasswordCustody, account: PasswordAccount): bool =
+  match custody {
+    | DevicePasswordCustody => match account { | DevicePasswordAccount => true | _ => false }
+    | BoundPasswordCustody(owner) => match account {
+        | ActivePasswordAccount(active) => owner.scope != "" and owner.generationId != "" and owner.generationId == active.credentialId
+        | _ => false
+      }
+  }
+pure def lawSignedOutCannotOpenBoundPasswords(scope: str, generationId: str): bool =
+  not(passwordAdmission(BoundPasswordCustody({ scope: scope, generationId: generationId }), DevicePasswordAccount))
+```
+
+### Linking local passwords requires account verification and the person's approval
+
+The host verifies the current account and product scope before binding the current credential generation. Linking existing device-only entries additionally requires confirmation from the person after device authentication. The same owner may verify a renewed credential. A different owner cannot take over this vault.
+
+```quint
+pure def mayBindPasswords(custody: PasswordCustody, verifiedScope: str, activeId: str, hasEntries: bool, confirmedLink: bool): bool =
+  verifiedScope != "" and activeId != "" and
+  (match custody {
+    | DevicePasswordCustody => not(hasEntries) or confirmedLink
+    | BoundPasswordCustody(owner) => owner.scope == verifiedScope
+  })
+pure def lawCannotClaimAnotherPasswordOwner(scope: str, other: str, generationId: str): bool =
+  scope != other implies not(mayBindPasswords(BoundPasswordCustody({ scope: scope, generationId: generationId }), other, generationId, true, true))
+pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool =
+  not(mayBindPasswords(DevicePasswordCustody, scope, generationId, true, false))
+```
+
+## Story: Back up and recover my saved passwords
+
+> As a tablet owner, I can choose to save an encrypted copy of my passwords,
+> restore it on a replacement tablet with my recovery key, or remove it
+> from my cloud account.
+
+### A backup belongs to the signed-in owner and has its own approval
+
+Grace offers Backup and recovery when exactly one acknowledged native
+account, its screen lock and that account’s backup service are ready.
+Production is available in every build. Staging is available only in a
+debug build. A credential change closes the recovery screen and ends its
+pending operation. Each operation needs the same signed-in account
+and a new native account confirmation. Verifying ownership, saving and
+restoring require a fresh tablet unlock. A tablet with saved passwords asks
+the owner before linking those passwords to the account. The recovery key stays in a protected native screen,
+and Grace sends only the encrypted snapshot. Restore fills an empty vault
+in one step. Removing a cloud copy leaves local passwords available.
+
+```quint
+pure def passwordRecoveryOffered(acknowledgedAccounts: int, debugBuild: bool, staging: bool, screenSecure: bool, serviceReady: bool): bool =
+  acknowledgedAccounts == 1 and (not(staging) or debugBuild) and screenSecure and serviceReady
+pure def lawAmbiguousAccountCannotOpenPasswordRecovery(debugBuild: bool, staging: bool): bool =
+  not(passwordRecoveryOffered(2, debugBuild, staging, true, true))
+pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
+  not(passwordRecoveryOffered(1, false, true, screenSecure, serviceReady))
+pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
+pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, freshUnlock, recoveryKeyMatches, false))
 ```

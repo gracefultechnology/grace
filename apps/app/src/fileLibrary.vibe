@@ -1,0 +1,231 @@
+// spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share, print and remove the chosen file"
+import { type Files, type SavedFile, type FileActor, type Event, captureFile, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import type { FilesPort } from "./filesPlugin.ts"
+
+const idFormat = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/))
+const displayName = Schema.NonEmptyString.check(Schema.isMaxLength(180))
+const timestamp = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(8640000000000000))
+const picture = Schema.String.check(Schema.isMaxLength(1_000_035), Schema.isPattern(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/))
+schema Lease { lease: idFormat }
+schema Entry { id: idFormat; name: displayName; kind: "photo" | "pdf"; savedAt: timestamp; pages: Schema.Int }
+schema Catalog { entries: Entry[] }
+schema Preview { id: idFormat; page: Schema.Int; image: picture }
+schema Completion { id: idFormat }
+
+type Closed = { kind: "out" | "signedOut" | "opening" | "unavailable" | "unsupported" }
+type Ready = { kind: "ready"; lease: string; model: Files; thumbs: Readonly<Record<string, string>>; image?: string; busy: boolean; issue: boolean }
+export type FileSnapshot = Closed | Ready
+export type FileHome = { photos: { src: string; alt: string }[]; document?: { name: string } }
+type Command =
+  | { kind: "open"; id: string }
+  | { kind: "tab"; tab: "Photos" | "Documents" }
+  | { kind: "photo" | "page"; direction: -1 | 1 }
+  | { kind: "search"; query: string }
+  | { kind: "pick"; file: "photo" | "pdf" }
+  | { kind: "retry" | "back" | "capture" | "account" }
+
+export service FileLibrary {
+  readonly changes: Stream.Stream<FileSnapshot>
+  readonly home: Stream.Stream<FileHome | undefined>
+  get(): FileSnapshot!!
+  getHome(): (FileHome | undefined)!!
+  run(command: Command): boolean!!
+}
+
+error FilesRejected
+
+function localFile(entry: Entry, lease: string): SavedFile {
+  return captureFile({ owner: lease, session: lease, captureId: entry.id, contentRef: entry.id,
+    name: entry.name, kind: entry.kind === "pdf" ? "Pdf" : "Photo", takenAt: entry.savedAt, pages: entry.pages })
+}
+
+export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLibrary, effect {
+  const desk = try Workspaces
+  const setup = try Setup
+  const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
+  const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
+  const serial = try Semaphore.make(1)
+
+  effect function admitted() {
+    const w = try desk.get()
+    return w.device.readiness === "Ready" && w.device.surface === "Files" && (try setup.get()).graceAccount.tag === "GraceDeviceSignedIn"
+  }
+
+  effect function keep(ready: Ready) {
+    const current = try SubscriptionRef.get(latest)
+    if (current.kind !== "ready" || current.lease !== ready.lease || !(try admitted())) throw new FilesRejected()
+    try SubscriptionRef.set(latest, ready)
+  }
+
+  effect function advance(ready: Ready, event: Event, actor: FileActor) {
+    if (!enabled(ready.model, event, actor)) throw new FilesRejected()
+    const result = step(ready.model, event, actor)
+    const next = { ...ready, model: result.state }
+    try keep(next)
+    return { ready: next, out: result.out }
+  }
+
+  effect function image(lease: string, id: string, page: number, small: boolean) {
+    if (!port) throw new FilesRejected()
+    const preview = try Schema.decodeUnknownEffect(Preview)(try tryPromise(() => port.preview({ lease, id, page, small })))
+    if (preview.id !== id || preview.page !== page) throw new FilesRejected()
+    return preview.image
+  }
+
+  effect function exposeCatalog(ready: Ready) {
+    const photos = ready.model.entries.filter((entry) => entry.kind === "Photo")
+    const document = ready.model.entries.find((entry) => entry.kind === "Pdf")
+    const thumbnails = try Effect.forEach(photos.slice(0, 40), effect (entry) => {
+      const preview = image(ready.lease, entry.id, 0, true) catch () => undefined
+      return [entry.id, preview] as const
+    }, { concurrency: 3 })
+    const thumbs = Object.fromEntries(thumbnails.flatMap(([id, preview]) => preview ? [[id, preview]] : []))
+    const projected = photos.slice(0, 3).flatMap((entry) => thumbs[entry.id] ? [{ src: thumbs[entry.id], alt: entry.name }] : [])
+    try keep({ ...ready, thumbs })
+    try SubscriptionRef.set(home, { photos: projected, document: document ? { name: document.name } : undefined })
+  }
+
+  effect function load(ready: Ready) {
+    if (!port) throw new FilesRejected()
+    const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
+    if (loading.model.pending !== "ReadingCatalog") return
+    const catalog = Schema.decodeUnknownEffect(Catalog)(try tryPromise(() => port.list({ lease: ready.lease }))) catch () => undefined
+    const entries = catalog?.entries.slice(0, 250).map((entry) => localFile(entry, ready.lease)) ?? []
+    const { ready: loaded } = try advance(loading, { type: "loadCatalog", catalogReport: {
+      owner: ready.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
+    } }, "FileStore")
+    if (loaded.model.loaded) try exposeCatalog(loaded)
+  }
+
+  effect function openLibrary() {
+    if (!port || !(try admitted())) return
+    try SubscriptionRef.set(latest, { kind: "opening" })
+    const opened = Schema.decodeUnknownEffect(Lease)(try tryPromise(() => port.open())) catch () => undefined
+    if (!opened) {
+      if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
+      return
+    }
+    if (!(try admitted())) {
+      tryPromise(() => port.close(opened)) catch () => undefined
+      return
+    }
+    const ready: Ready = { kind: "ready", lease: opened.lease, model: initial, thumbs: {}, busy: false, issue: false }
+    try SubscriptionRef.set(latest, ready)
+    load(ready) catch effect () => {
+      if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
+      tryPromise(() => port.close(opened)) catch () => undefined
+    }
+  }
+
+  effect function readSelected(ready: Ready) {
+    const { model } = ready
+    if (!model.selected) return false
+    const result = image(ready.lease, model.selected, model.page, false) catch () => undefined
+    const current = { ...ready, image: result, issue: !result }
+    if (model.pending === "ReadingFile") {
+      try advance(current, { type: "contentResult", fileReceipt: {
+        owner: ready.lease, generation: model.generation, id: model.selected, succeeded: result !== undefined, evidence: "device-preview",
+      } }, "FileHost")
+    } else try keep(current)
+    return result !== undefined
+  }
+
+  effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" }) {
+    if (!port || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || ready.model.selected !== "") return false
+    const input = { lease: ready.lease }
+    try keep({ ...ready, busy: true, issue: false })
+    const entry = Schema.decodeUnknownEffect(Entry)(try tryPromise(() =>
+      command.kind === "capture" ? port.capture(input) : port.pick({ ...input, kind: command.file }))) catch () => undefined
+    if (!entry) {
+      try keep({ ...ready, busy: false })
+      return false
+    }
+    const file = localFile(entry, ready.lease)
+    const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
+      owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
+    } }, "FileHost")
+    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => port.commit({ ...input, id: entry.id }))) catch () => undefined
+    const success = stored?.id === entry.id
+    const { ready: after } = try advance(storing, { type: "writeResult", fileReceipt: {
+      owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
+    } }, "FileStore")
+    if (success) try exposeCatalog(after)
+    return success
+  }
+
+  effect function run(command: Command) {
+    if (command.kind === "account") {
+      try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
+      return true
+    }
+    if (!(try admitted())) return false
+    const current = try SubscriptionRef.get(latest)
+    if (command.kind === "retry" && current.kind === "unavailable") {
+      try openLibrary()
+      return true
+    }
+    if (current.kind !== "ready" || current.busy) return false
+    switch (command.kind) {
+      case "retry":
+        if (current.model.selected) {
+          if (fileAt(current.model, current.model.selected).kind === "Pdf" && current.model.contentReady) return try readSelected(current)
+          const loading = (try advance({ ...current, image: undefined, issue: false }, { type: "openFile", id: current.model.selected }, "FileUser")).ready
+          return try readSelected(loading)
+        }
+        try load(current)
+        return true
+      case "capture": return try importOwner(current, { kind: "capture" })
+      case "pick": return try importOwner(current, command)
+      case "tab":
+        try advance(current, { type: "chooseTab", tab: command.tab }, "FileUser")
+        return true
+      case "back":
+        try advance({ ...current, image: undefined, issue: false }, { type: "backToFiles" }, "FileUser")
+        return true
+      case "open":
+      case "photo":
+      case "page": {
+        const event: Event = command.kind === "open" ? { type: "openFile", id: command.id } :
+          command.kind === "photo" ? { type: "movePhoto", direction: command.direction } : { type: "movePage", direction: command.direction }
+        const target = (try advance({ ...current, image: undefined, issue: false }, event, "FileUser")).ready
+        return try readSelected(target)
+      }
+      case "search": {
+        const query = command.query.trim()
+        if (!query || query.length > 120) return false
+        const { ready: finding } = try advance({ ...current, image: undefined, issue: false },
+          { type: "findFiles", owner: current.lease, query }, "FileUser")
+        if (finding.model.pending !== "Locating") return false
+        try advance(finding, { type: "locate", locateReport: {
+          owner: current.lease, generation: finding.model.generation, query,
+          ids: finding.model.entries.filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase())).map((entry) => entry.id),
+        } }, "FileHost")
+        return true
+      }
+    }
+    return false
+  }
+
+  const contexts = Stream.changes(Stream.map(Stream.zipLatest(desk.changes, setup.changes), ([w, account]) =>
+    account.graceAccount.tag !== "GraceDeviceSignedIn" ? w.device.surface === "Files" ? "signedOut" : "outSignedOut" :
+    w.device.surface === "Files" && w.device.readiness === "Ready" ? "files" : "out"))
+  try fork.scoped Stream.runForEach(contexts, effect (context) => {
+    const prior = try SubscriptionRef.get(latest)
+    if (context === "signedOut" || context === "outSignedOut") try SubscriptionRef.set(home, undefined)
+    if (context === "files" && port) {
+      try fork.scoped serial.withPermit(openLibrary())
+    } else {
+      try SubscriptionRef.set(latest, { kind: context === "signedOut" || context === "files" ? !port ? "unsupported" : "signedOut" : "out" })
+      if (prior.kind === "ready" && port) tryPromise(() => port.close({ lease: prior.lease })) catch () => undefined
+    }
+  })
+  return {
+    changes: SubscriptionRef.changes(latest),
+    home: SubscriptionRef.changes(home),
+    get: () => SubscriptionRef.get(latest),
+    getHome: () => SubscriptionRef.get(home),
+    run: effect (command) => serial.withPermit(run(command)) catch () => false,
+  }
+})

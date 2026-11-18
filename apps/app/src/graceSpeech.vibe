@@ -1,0 +1,301 @@
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { accountPlugin } from "./accountPlugin.ts"
+import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
+import { webView } from "./surfacePlugin.ts"
+
+const route = "/api/v1/voice/speech"
+const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
+
+schema Consent { consentNonce: string }
+schema Lease { version: 1; sessionId: string; token: string; expiresAt: string; wsUrl: string }
+schema Transcript { type: string; transcript?: string }
+schema Ready { t: "ready"; version: 1; sampleRate: 16000; channels: 1 }
+schema Input { t: "stt"; event: Transcript }
+schema Complete { t: "complete"; id: string }
+schema UnavailableEvent { t: "error"; code: string }
+
+error SpeechUnavailable
+type InputFrame = { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
+  { kind: "received"; payload: unknown } | { kind: "played"; token: number }
+
+export service SpeechActions {
+  talk(): void!!
+}
+
+export function mayOfferTalk(state: Workspace) {
+  return state.device.surface !== "Browser" && state.device.reasoningAvailable && state.device.connectivity === "Online"
+}
+
+effect function cloudPost(path: string, body: object) {
+  const response = try timeout(tryPromise((signal) => webView.window.fetch(apiOrigin + path, {
+    method: "POST", credentials: "include", cache: "no-store",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal
+  })), "10 seconds")
+  if (!response.ok) throw new SpeechUnavailable()
+  return try tryPromise(() => response.json())
+}
+
+effect function mint(native: boolean) {
+  if (native) {
+    if (!accountPlugin) throw new SpeechUnavailable()
+    const plugin = accountPlugin
+    return try Schema.decodeUnknownEffect(Lease)(try timeout(tryPromise(() => plugin.startSpeech()), "20 seconds"))
+  }
+  const consent = try Schema.decodeUnknownEffect(Consent)(try cloudPost(route + "/consent", {}))
+  return try Schema.decodeUnknownEffect(Lease)(try cloudPost(route + "/session", { consentNonce: consent.consentNonce }))
+}
+
+function revoke(native: boolean, lease: typeof Lease.Type) {
+  if (native && accountPlugin) {
+    const plugin = accountPlugin
+    return Effect.ignore(timeout(tryPromise(() => plugin.stopSpeech({ sessionId: lease.sessionId })), "3 seconds"))
+  }
+  return Effect.ignore(timeout(cloudPost(route + "/session/" + encodeURIComponent(lease.sessionId) + "/revoke", {}), "3 seconds"))
+}
+
+effect function checkedLease(native: boolean) {
+  const lease = try mint(native)
+  const verified = effect {
+    const url = try Effect.try(() => new URL(lease.wsUrl))
+    const expected = try Effect.try(() => new URL(import.meta.env.DEV ? "http://localhost:8787" : apiOrigin))
+    if (url.hostname !== expected.hostname || url.port !== expected.port || url.protocol !== (expected.protocol === "https:" ? "wss:" : "ws:") ||
+      url.username || url.password || url.hash || url.pathname !== route + "/ws" ||
+      url.searchParams.size !== 1 || url.searchParams.get("sessionId") !== lease.sessionId ||
+      !/^[a-f0-9-]{36}$/i.test(lease.sessionId) || !/^[a-f0-9]{64}$/.test(lease.token) ||
+      !(Date.parse(lease.expiresAt) > (try Clock.currentTimeMillis))) throw new SpeechUnavailable()
+    return lease
+  }
+  return verified catch effect (failure) => {
+    try revoke(native, lease)
+    throw failure
+  }
+}
+
+function speechWanted(workspace: Workspace) {
+  const { assistant, device } = workspace
+  return assistant.presentation !== "Closed" && device.reasoningAvailable && device.connectivity === "Online" &&
+    ((assistant.conversation.voice && device.surface !== "Browser") || assistant.conversation.turn === "Speaking" || assistant.conversation.turn === "Paused")
+}
+
+effect function wire(socket: WebSocket, payload: object) {
+  if (socket.readyState !== 1) throw new SpeechUnavailable()
+  try Effect.try(() => socket.send(JSON.stringify(payload)))
+}
+
+function phrases(text: string) {
+  const rest = text.trim().slice(0, 4096)
+  const chunks: string[] = []
+  let at = 0
+  while (at < rest.length) {
+    const maximum = Math.min(rest.length, at + 900)
+    const split = maximum < rest.length ? rest.lastIndexOf(" ", maximum) : maximum
+    const end = split > at ? split : maximum
+    const phrase = rest.slice(at, end).trim()
+    if (phrase) chunks.push(phrase)
+    at = end
+  }
+  return chunks
+}
+
+effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>) {
+  const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
+  const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
+    (connected) => Effect.ignore(timeout(tryPromise((signal) => releaseSpeechSocket(connected, signal)), "2 seconds")))
+  const speaker = try acquireRelease(Effect.try(gracePlayback), (player) => Effect.ignore(tryPromise(() => player.close())))
+  const notifications = try Queue.unbounded<InputFrame>()
+  const fromSocket = Stream.callback<InputFrame>((queue) => acquireRelease(Effect.orDie(Effect.try(() => {
+    const open = () => { Queue.offerUnsafe(queue, { kind: "open" }) }
+    const end = () => { Queue.offerUnsafe(queue, { kind: "closed" }) }
+    const message = (event: MessageEvent) => { Queue.offerUnsafe(queue, { kind: "received", payload: event.data }) }
+    socket.addEventListener("open", open)
+    socket.addEventListener("error", end)
+    socket.addEventListener("close", end)
+    socket.addEventListener("message", message)
+    if (socket.readyState === 1) open()
+    if (socket.readyState > 1) end()
+    return () => {
+      socket.removeEventListener("open", open)
+      socket.removeEventListener("error", end)
+      socket.removeEventListener("close", end)
+      socket.removeEventListener("message", message)
+    }
+  })), (remove) => Effect.ignore(Effect.try(remove))))
+  const frames = Stream.mergeAll([
+    fromSocket, Stream.fromQueue(notifications),
+    Stream.map(workspace.changes, (state): InputFrame => ({ kind: "state", workspace: state })),
+    Stream.filterMap(Stream.fromEventListener(webView.document, "visibilitychange"), () =>
+      webView.hidden() ? Result.succeed({ kind: "closed" } as const) : Result.failVoid),
+  ], { concurrency: "unbounded" })
+  let ready = false
+  let speaking: number | null = null
+  let paused = false
+
+  effect function stopPlayback() {
+    if (speaking === null) return
+    wire(socket, { t: "cancel", id: String(speaking) }) catch () => undefined
+    speaking = null
+    try Effect.try(() => speaker.cancel())
+  }
+
+  effect function update(state: Workspace) {
+    if (!ready) return
+    const { conversation } = state.assistant
+    const prefs = state.preferences.session
+    try Effect.try(() => speaker.volume(prefs.muted || !prefs.voiceOutput ? 0 : prefs.volume / 100))
+    if (conversation.voice && mayOfferTalk(state)) {
+      const device = try Ref.get(mic)
+      if (device) try Effect.try(() => device.attach((pcm) => {
+        if (socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
+      }))
+    }
+    if (!prefs.voiceOutput || prefs.muted || prefs.volume === 0) {
+      try stopPlayback()
+      workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: conversation.generation } }, "Host") catch () => undefined
+      return
+    }
+    if (conversation.turn !== "Speaking" && conversation.turn !== "Paused") {
+      try stopPlayback()
+      return
+    }
+    const shouldPause = conversation.turn === "Paused"
+    if (shouldPause !== paused || speaking === null) {
+      paused = shouldPause
+      try timeout(tryPromise(() => speaker.paused(paused)), "2 seconds")
+    }
+    if (conversation.turn !== "Speaking" || speaking === conversation.generation) return
+    try stopPlayback()
+    const last = conversation.messages.at(-1)
+    if (last?.author !== "GraceMessage") return
+    const output = phrases(last.text)
+    if (output.length === 0) return
+    speaking = conversation.generation
+    const id = String(speaking)
+    try wire(socket, { t: "prepare", id })
+    for (const text of output) try wire(socket, { t: "tts", id, text, flush: true })
+    try wire(socket, { t: "finish", id })
+  }
+
+  try Stream.runForEach(frames, effect (frame) => {
+    if (frame.kind === "open") {
+      try wire(socket, { t: "hello", token: lease.token, errorReasons: true })
+      return
+    }
+    if (frame.kind === "closed") throw new SpeechUnavailable()
+    if (frame.kind === "state") {
+      try update(frame.workspace)
+      return
+    }
+    if (frame.kind === "played") {
+      if (speaking === frame.token) {
+        speaking = null
+        workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: frame.token } }, "Host") catch () => undefined
+      }
+      return
+    }
+    const state = try workspace.get()
+    const { conversation } = state.assistant
+    const token = conversation.generation
+    const received = frame.payload
+    if (received instanceof ArrayBuffer) {
+      const sample = try Effect.try(() => speechFrame(received))
+      const prefs = state.preferences.session
+      if (sample?.context === String(speaking) && token === speaking) {
+        try Effect.try(() => speaker.play(sample.pcm, prefs.volume / 100, prefs.pace === "Slower" ? 0.85 : prefs.pace === "Faster" ? 1.15 : 1))
+      }
+      return
+    }
+    if (typeof received !== "string" || received.length > 64_000) throw new SpeechUnavailable()
+    const payload: unknown = try Effect.try(() => JSON.parse(received))
+    if (Option.isSome(Schema.decodeUnknownOption(UnavailableEvent)(payload))) throw new SpeechUnavailable()
+    if (!ready) {
+      if (Option.isNone(Schema.decodeUnknownOption(Ready)(payload))) throw new SpeechUnavailable()
+      ready = true
+      try update(state)
+      return
+    }
+    const completed = Schema.decodeUnknownOption(Complete)(payload)
+    if (Option.isSome(completed) && speaking === token && completed.value.id === String(token)) {
+      try Effect.try(() => speaker.whenDrained(() => { Queue.offerUnsafe(notifications, { kind: "played", token }) }))
+      return
+    }
+    const recognized = Schema.decodeUnknownOption(Input)(payload)
+    if (Option.isNone(recognized) || !conversation.voice || !mayOfferTalk(state)) return
+    const event = recognized.value.event
+    if (event.type === "start-of-turn" && conversation.turn === "Speaking") {
+      try stopPlayback()
+      workspace.send({ type: "interact", input: { tag: "BargeIn", token, spoken: 0, owner: "HumanAudio" } }, "Host") catch () => undefined
+    }
+    if (event.type === "end-of-turn") {
+      const text = event.transcript?.trim().slice(0, 8_192) ?? ""
+      if (text) {
+        try stopPlayback()
+        workspace.send({ type: "interact", input: { tag: "Hear", token, text, owner: "HumanAudio" } }, "Host") catch () => undefined
+      } else {
+        workspace.send({ type: "interact", input: { tag: "UnusableSpeech", token, owner: "HumanAudio" } }, "Host") catch () => undefined
+      }
+    }
+  })
+}
+
+export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effect {
+  const workspace = try Workspaces
+  const mic = try Ref.make<Microphone | null>(null)
+  const opening = try Semaphore.make(1)
+  effect function closeMic() {
+    const current = try Ref.getAndSet(mic, null)
+    if (current) try Effect.ignore(tryPromise(() => current.close()))
+  }
+  effect function reportMic(allowed: boolean) {
+    const { device } = try workspace.get()
+    if (device.microphoneAllowed !== allowed) {
+      const availability = { connection: device.connectivity, reasoning: device.reasoningAvailable, observation: device.observationAllowed, microphone: allowed }
+      workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined
+    }
+  }
+  const changed = Stream.changes(Stream.map(workspace.changes, speechWanted))
+  try fork.scoped Stream.runDrain(Stream.switchMap(changed, (wanted) => wanted ? Stream.fromEffect(effect {
+    const captureReady = opening.withPermits(1)(Effect.void)
+    try captureReady
+    scoped(runSpeech(native, workspace, mic)) catch effect () => {
+      const { assistant } = try workspace.get()
+      const token = assistant.conversation.generation
+      workspace.send({ type: "interact", input: { tag: "FinishSpeech", token } }, "Host") catch () => undefined
+      try reportMic(false)
+    }
+  }) : Stream.empty))
+  try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
+    if (!state.assistant.conversation.voice) try closeMic()
+    else if (!mayOfferTalk(state)) {
+      try closeMic()
+      try reportMic(false)
+    }
+  })
+  try fork.scoped Stream.runForEach(Stream.fromEventListener(webView.document, "visibilitychange"), effect () => {
+    if ((Effect.try(() => webView.hidden()) catch () => true)) {
+      try closeMic()
+      try reportMic(false)
+    }
+  })
+  try addFinalizer(() => closeMic())
+  return {
+    talk: () => opening.withPermits(1)(effect {
+      const state = try workspace.get()
+      if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return
+      const opened = tryPromise((signal) => openMicrophone(signal)) catch () => null
+      if (opened === null) {
+        try reportMic(false)
+        return
+      }
+      const current = try workspace.get()
+      if (!mayOfferTalk(current) || current.assistant.presentation === "Closed") {
+        try Effect.ignore(tryPromise(() => opened.close()))
+        return
+      }
+      try reportMic(true)
+      const accepted = (workspace.send({ type: "talk" }, "Person") |> Effect.as(%, true)) catch () => false
+      if (accepted) try Ref.set(mic, opened)
+      else try Effect.ignore(tryPromise(() => opened.close()))
+    })
+  }
+})

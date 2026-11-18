@@ -10,7 +10,7 @@ import { Skeleton } from "./Skeleton.tsx";
 
 export interface FilesPhoto {
   id: string;
-  src: string;
+  src?: string;
   label: string;
 }
 

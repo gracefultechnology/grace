@@ -44,7 +44,7 @@ export type TaskReviewCardProps = Omit<PanelProps, "variant" | "children" | "tit
  * The review shown before Margaret approves a task by voice or tap: "Pay Chase" or "Book with Main St Clinic", then each
  * detail, the same that Grace reads aloud. Its answers, naming the whole action ("Yes, pay it", "Yes, book it",
  * "Change something"), are `AnswerChip`s after it, and her own tap on the website's button approves as well.
- * @model spec/app/payment.md
+ * @model spec/app/commitment.md
  * @design packages/design-system/design.md#grace
  */
 export function TaskReviewCard({ who, rows, stale = false, reading = false, labels, className, ...props }: TaskReviewCardProps) {
