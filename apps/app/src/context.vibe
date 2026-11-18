@@ -250,7 +250,8 @@ export function toldOfMail(s: Scene, news: MailTold): string {
 export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold } | { readonly refused: Ask }): string {
   if ("refused" in report) return "Margaret said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if she still wants it."
   const { key, id } = report.told
-  const c = entryAt(sourceAt(s.calendars, key).view, id)
+  const view = sourceAt(s.calendars, key).view
+  const c = report.told.news === "DeletedAppointment" ? view.entries.find((e) => e.identity.occurrenceId === id && e.phase === "Deleted") ?? entryAt(view, id) : entryAt(view, id)
   const what = appointment(s.registry, key, c.committed)
   return match (report.told.news) {
     when "AddedAppointment": `${what} was added to the calendar.`;

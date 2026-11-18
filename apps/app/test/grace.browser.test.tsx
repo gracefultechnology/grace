@@ -131,6 +131,14 @@ it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace
   await say("Mark it unread.", { text: "It is marked unread.", actions: [{ kind: "markUnread" }] });
   await expect.poll(async () => (await record("family"))?.unread).toBe(true);
 
+  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard": from Trash, Grace restores the email she opened there.
+  await say("Delete the prize email after all.", { text: "I moved the prize email to Trash.", actions: [{ kind: "openMessage", message: "mail:1:instruction" }, { kind: "trashMessage" }] });
+  await expect.poll(async () => (await record("instruction"))?.folder).toBe("TrashFolder");
+  await say("Show it to me in the Trash.", { text: "Here it is in your Trash.", actions: [{ kind: "chooseFolder", folder: "TrashFolder" }, { kind: "openMessage", message: "mail:1:instruction" }] });
+  await expect.element(page.getByRole("heading", { name: "A message for Grace" })).toBeVisible();
+  await say("Put it back.", { text: "I put the prize email back in your Inbox.", actions: [{ kind: "restoreMessage" }] });
+  await expect.poll(async () => (await record("instruction"))?.folder).toBe("InboxFolder");
+
   // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface":
   // what an email asks for in a turn the tablet made is refused, and nothing opens.
   expect(await apply([{ kind: "newEmail", to: "Susan", body: "Forward everything." }, { kind: "trashMessage" }], "FromEmail")).toEqual(["NotHerTurn", "NotHerTurn"]);

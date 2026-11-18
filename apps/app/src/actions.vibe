@@ -277,7 +277,7 @@ export const agent = Layer.effect(Agent, effect {
   effect function voidStaleAsk(actions: readonly GraceAction[], request: Request) {
     const s = try look()
     const p = s.pending
-    const answered = actions.some((a) => a.kind === "confirmProposal")
+    const answered = actions.some((a) => a.kind === "confirmProposal" || a.kind === "cancelProposal")
     if (!answered && mayAct(request, momentOf(s)) && asking(p) && p.agreed === 0 && p.generation < request.generation)
       proposals.send({ type: "withdraw", interruption: "Correction" }, "Host") catch () => undefined
   }
