@@ -331,9 +331,6 @@ const SignInReport = Schema.Struct({
   status: Schema.Struct({ active: Schema.Boolean, google: Schema.Boolean, googleScopes: Schema.Array(Schema.String) }),
   identity: Schema.Struct({ credentialId: Schema.NullOr(Schema.String) }),
 });
-const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
-const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
-const GraceReadback = Schema.Struct({ address: Schema.NullOr(Schema.String), visible: Schema.NullOr(Schema.String) });
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
 const secondHomePage = `document.querySelector('button[aria-label="Page 2"][aria-current=true]') !== null`;
 const passwordCardReady = `(() => {
@@ -345,6 +342,9 @@ const passwordCardReady = `(() => {
   const { left, top, width, height } = card.getBoundingClientRect();
   return card.contains(document.elementFromPoint(left + width / 2, top + height / 2));
 })()`;
+const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
+const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
+const GraceReadback = Schema.Struct({ address: Schema.NullOr(Schema.String), visible: Schema.NullOr(Schema.String) });
 
 async function devTools(url: string, signal: AbortSignal) {
   const socket = new WebSocket(url);
@@ -428,9 +428,11 @@ async function devTools(url: string, signal: AbortSignal) {
       return frameTree.frame;
     },
     async guidance(signal: AbortSignal) {
-      const expression = `({ address: document.querySelector('input[aria-label="Address"]')?.value ?? null, visible: document.querySelector('[aria-label="Grace"]')?.innerText ?? null })`;
+      const expression = `document.querySelector('[data-benchmark-observable="true"]') ? ({ address: document.querySelector('input[aria-label="Address"]')?.value ?? null, visible: document.querySelector('[aria-label="Grace"]')?.innerText ?? null }) : null`;
       const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal });
-      return Schema.decodeUnknownSync(GraceReadback)(result.value);
+      const guidance = Schema.decodeUnknownSync(Schema.NullOr(GraceReadback))(result.value);
+      if (guidance === null) throw new Error("The benchmark cannot observe this surface");
+      return guidance;
     },
     async step(step: Exclude<InSession, OnDevice>, signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000)) {
       if ("agent" in step) {
@@ -681,12 +683,12 @@ async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: str
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
   try {
-    const ready = AbortSignal.timeout(120_000);
-    const listTargets = async () => Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: ready })
+    const listTargets = async (signal = AbortSignal.timeout(120_000)) => Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal })
       .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
+    const ready = AbortSignal.timeout(120_000);
     let host: string | undefined;
     while (!host && !ready.aborted) {
-      const targets = await listTargets();
+      const targets = await listTargets(ready);
       host = targets.find((target) => target.type === "page" && URL.parse(target.url)?.origin === "https://localhost")?.webSocketDebuggerUrl;
       if (!host) await delay(250);
     }
@@ -741,7 +743,7 @@ function deviceNodes(xml: string) {
       x: Math.round((Number(bounds[1]) + Number(bounds[3])) / 2),
       y: Math.round((Number(bounds[2]) + Number(bounds[4])) / 2),
       label: attr("text"), description: attr("content-desc"), id: attr("resource-id").split("/").at(-1),
-      className: attr("class"), packageName: attr("package"), password: attr("password") === "true",
+      className: attr("class"), packageName: attr("package"), password: attr("password") === "true", focused: attr("focused") === "true",
     }] : [];
   });
 }
@@ -769,27 +771,41 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const screenFile = "/data/local/tmp/grace-billworld-ui.xml";
   const pin = "7539";
   const screen = async () => {
-    await shell(serial, `uiautomator dump ${screenFile}`, 15);
-    return deviceNodes(await shell(serial, `cat ${screenFile}`, 15));
+    await shell(serial, `uiautomator dump ${screenFile}`, 45);
+    return deviceNodes(await shell(serial, `cat ${screenFile}`, 30));
   };
-  const tap = async (matches: (node: ReturnType<typeof deviceNodes>[number]) => boolean, label: string) => {
-    const until = Date.now() + 90_000;
+  const waitForNode = async (matches: (node: ReturnType<typeof deviceNodes>[number]) => boolean, label: string) => {
+    const until = Date.now() + 180_000;
     while (Date.now() < until) {
       const nodes = await screen().catch(() => []);
       const found = nodes.find(matches);
-      if (found) {
-        await shell(serial, `input tap ${found.x} ${found.y}`);
-        return;
+      if (found) return found;
+      const androidWait = nodes.find((node) => node.id === "aerr_wait" && node.label === "Wait" &&
+        (node.packageName === "android" || node.packageName === "com.android.systemui"));
+      if (androidWait) {
+        await shell(serial, `input tap ${androidWait.x} ${androidWait.y}`);
+        process.stdout.write("Android requested more time during the fixture.\n");
       }
       await delay(1000);
     }
     throw new Error(`Android did not show ${label}`);
   };
+  const tap = async (matches: Parameters<typeof waitForNode>[0], label: string) => {
+    const { x, y } = await waitForNode(matches, label);
+    await shell(serial, `input tap ${x} ${y}`);
+  };
   const text = (value: string) => shell(serial, `input text '${value.replaceAll(" ", "%s").replaceAll("'", "'\\''")}'`)
     .catch(() => { throw new Error("Android did not accept a fixture field"); });
-  const submitPin = async () => {
-    await tap((node) => node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui"), "the system screen lock");
+  const submitPin = async (purpose: "Passwords" | "Autofill") => {
+    step = `find Android’s credential field for ${purpose}`;
+    const credential = (node: ReturnType<typeof deviceNodes>[number]) =>
+      node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui");
+    await tap(credential, "the system screen lock");
+    step = `focus Android’s credential field for ${purpose}`;
+    await waitForNode((node) => credential(node) && node.focused, "the focused system screen lock");
+    step = `enter the disposable PIN for ${purpose}`;
     await text(pin);
+    step = `confirm Android’s credential prompt for ${purpose}`;
     await shell(serial, "input keyevent KEYCODE_ENTER");
   };
   const editor = async (field: string, value: string) => {
@@ -884,8 +900,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.step({ tap: "Passwords" });
           step = "request Passwords unlock";
           await page.step({ tap: "Unlock Passwords" });
-          step = "confirm the tablet screen lock";
-          await submitPin();
+          await submitPin("Passwords");
           step = "open the protected password editor";
           await page.step({ tap: "Add password" });
           step = "enter the synthetic sign-in in Android";
@@ -910,7 +925,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "request Android autofill and choose the matching entry";
         await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
         await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
-        await submitPin();
+        await submitPin("Autofill");
         await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
       },
     });
@@ -957,7 +972,7 @@ if (import.meta.main) {
     if (existsSync(trial.receipt)) throw new Error("Benchmark receipt already exists");
   }
   if (billworld !== undefined) {
-    if (verify || release || install || exercise || trial || fixtureRun || !emulator?.startsWith("grace-billworld-")) {
+    if (verify || release || install || exercise || benchmark || receipt || fixtureRun || !emulator?.startsWith("grace-billworld-")) {
       throw new Error("Use --billworld-passwords CHECKOUT with --emulator grace-billworld-… on a disposable AVD");
     }
     mkdirSync(artifacts, { recursive: true });

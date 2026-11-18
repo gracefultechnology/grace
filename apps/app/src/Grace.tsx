@@ -21,8 +21,8 @@ const checkLabels: Record<GuidedRead, string> = {
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, say, checkGuidedRead, pointAtReadLink } = useWorkspace();
-  const { assistant, plan, review } = workspace!;
   const guide = usePasswordGuide();
+  const { assistant, plan, review } = workspace!;
   const conversation = assistant.conversation;
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; words?: string }>();
@@ -81,7 +81,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         }
         dock={
           <GraceDock value={draft} maxLines={expanded ? 6 : 4}
-            quiet={conversation.turn === "Thinking"} mic={conversation.voice || guide.microphone === "GuideMicListening"}
+            mic={conversation.voice || guide.microphone === "GuideMicListening"}
+            quiet={conversation.turn === "Thinking"}
             listening={guide.microphone === "GuideMicListening"}
             placeholder={guide.microphone === "GuideMicUnavailable" ? "Voice help is unavailable. You can type to Grace." :
               guide.microphone === "GuideMicNoMatch" ? "Try saying “Open Passwords”, or type to Grace." : undefined}
@@ -95,10 +96,11 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onFieldFocus={() => { guide.stopMic(); interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
-              const { draftRevision } = conversation;
-              void guide.request(draftRevision).then(async (guided) => {
+              const revision = conversation.draftRevision;
+              void guide.request(revision).then(async (guided) => {
                 if (guided) setDraft("");
-                else if (await say({ tag: "SendDraft", revision: draftRevision }) && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+                const sent = guided || await say({ tag: "SendDraft", revision });
+                if (sent && document.activeElement instanceof HTMLElement) document.activeElement.blur();
               });
             }} />
         }>

@@ -2,12 +2,12 @@
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, ManagedRuntime, Schema } from "effect";
+import { PasswordsClientError } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/client.ts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, inject, it, onTestFinished } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
-import { PasswordsClientError } from "../../../vendor/eliza/plugins/plugin-native-passwords/src/client.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";

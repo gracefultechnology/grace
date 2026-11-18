@@ -121,7 +121,8 @@ function Screen() {
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
-    <div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+    <div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none"
+      data-benchmark-observable={!privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
@@ -143,7 +144,7 @@ function Screen() {
                 messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
               }}
-              passwords={visit("Passwords")} internet={visit("Browser")} files={{ photos: [], ...visit("Files") }}
+              internet={visit("Browser")} files={{ photos: [], ...visit("Files") }} passwords={visit("Passwords")}
               page={device.homePage === "FilesCard" ? "files" : "main"}
               onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
             )}</WithCalendars>

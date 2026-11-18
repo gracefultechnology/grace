@@ -1,6 +1,4 @@
 // spec/app/workspace.md, "Story: Leave and return without hidden work"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
-// The application: the workspace as its one state, the page layer and what the page's website asks
-// beside it on the host's side, the native page under both, what the device reports, and the conversation with Grace's agent.
 import { machine as passwordViews } from "../gen/app.effect.vibe"
 import { passwords, type PasswordVault } from "./passwords.vibe"
 import type { Connectivity } from "../gen/app__shell.effect.vibe"
