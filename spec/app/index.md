@@ -16,6 +16,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Hey Grace, sleep wake and unanswered listening](./wake.md)
 - [One assistance task, compact and expanded presentation](./assistant.md)
 - [Shared conversation controls and service-result routing](./interaction.md)
+- [Toasts, banners and Android notifications](./notices.md)
 - [Approved personal memory and deletion](./memory.md)
 - [Saved details: the list she approves, sees and deletes](./savedDetails.md)
 - [Voice output, pace and readable text preferences](./preferences.md)
@@ -30,6 +31,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Calendars together, tags, the connect banner and an appointment from an email](./calendars.md)
 - [What Grace may do with email and the calendar, each action routed to its guarded event](./agentActions.md)
 - [Saved photos, documents and Email sharing](./files.md)
+- [The vocabulary of a task: its kind, subject and terms](./task.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
@@ -41,7 +43,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 
 Personal memory, task state and provider records have distinct lifecycles. Deleting a calendar item or remembered fact never cancels a payment or removes unresolved evidence. New sessions and different surfaces cannot create a new identity for the same provider bill. Scheduled and accepted are not settlement. Unsupported sites, missing evidence, unavailable sign-in challenges and privacy failures stop with an explanation and a usable manual path.
 
-The application in `apps/app` is a Capacitor Android APK, in a launcher (Home) and a standalone flavor, built on the shared Android host, browser surface and AOSP staging of the pinned `vendor/eliza`. The formal checks establish these models and their generated contracts; storage durability, provider integrations, speech capture, visual fidelity and senior usability still need the acceptance exercises on the device.
+The application in `apps/app` is a Capacitor Android application. The MVP ships the Home launcher APK, built on the shared Android host, browser surface and AOSP staging of the pinned `vendor/eliza`. The formal checks establish these models and their generated contracts; storage durability, provider integrations, speech capture, visual fidelity and senior usability still need the acceptance exercises on the device, listed in the checklist in `docs/implementation-acceptance.md`.
 
 ## Story: Manage my saved passwords privately
 
@@ -59,14 +61,7 @@ clipboard, with best-effort expiration. Grace displays a list of
 sign-in names and account names for the active unlocked view. Leaving
 Passwords, backgrounding Grace, or expiration drops those details. Web
 previews describe unavailability. The vault and its summaries are excluded
-from the transcript, memory, cloud and agent tools. The device vault belongs
-to this Android user. A prior hosted account or account-bound vault is not
-opened by the device-only flow; when the app cannot verify ownership it
-leaves those records sealed.
-
-Showing, copying and deleting a saved sign-in require the same revision the
-person chose. If another native action updates it first, Passwords shows the
-current details and asks the person to choose again. Cancel keeps the entry.
+from the transcript, memory, cloud and agent tools.
 
 ~~~quint
 type VaultActor = PasswordsPerson | PasswordsHost
@@ -153,6 +148,20 @@ pure val reasonValues = Set(NoDeviceLock, UnsupportedVault, LostVaultKey, VaultC
 pure val idValues = Set("", "saved", "unknown")
 ~~~
 
+### Showing, copying and deleting a sign-in use the revision the person chose
+
+If another native action updates the sign-in first, Passwords shows the
+current details and asks the person to choose again. Cancel keeps the entry.
+
+~~~quint
+pure def mayUseChosenLogin(chosen: LoginSummary, latest: LoginSummary): bool =
+  chosen.id == latest.id and chosen.revision == latest.revision
+pure def lawChangedLoginNeedsANewChoice(chosen: LoginSummary, latest: LoginSummary): bool =
+  chosen.revision != latest.revision implies not(mayUseChosenLogin(chosen, latest))
+pure val chosenValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
+pure val latestValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
+~~~
+
 ### Grace can describe private sign-in without operating the vault
 
 Help uses fixed instructions to open Passwords, follow Android's unlock
@@ -213,12 +222,13 @@ pure val wordsValues = Set("open passwords", "find a password", "show my passwor
 ~~~
 
 
-### Passwords belongs to the verified device account
+### A change of account discards the previous Passwords view
 
-A new vault may be bound to the account and organization in Grace's verified
-device session. A different account or a retired device session cannot access
-that vault. A guest vault with saved passwords stays with the tablet guest until the person unlocks it and approves linking it to their verified account.
-A change of account discards the previous Passwords view, guide and grant.
+When the host reports a change of account, Passwords, if it is showing,
+checks the vault again for the new account, and the guide and backup
+readiness are cleared. Which account may open the vault, and linking
+passwords kept on the tablet to a verified account, are
+[set-up's password rules](./setup.md#story-keep-my-passwords-private-when-the-tablet-account-changes).
 
 ```quint
 pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
@@ -232,14 +242,13 @@ pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: s
 ```
 
 
-### Backup and recovery uses a fresh approval
+### A closed Passwords screen offers no backup action
 
-On a tablet with a supported Cloud account, Backup and recovery opens a
-protected Android screen. Grace opens a first-party browser approval for the
-specific operation and only accepts the current return for that device
-session. The device unlock, recovery key and passwords stay on the tablet.
-A restore only changes an empty vault, and removing a backup leaves the
-tablet's passwords in place.
+The host reports whether Backup and recovery is ready for the current
+Passwords screen. A report for an earlier screen, or while Passwords is
+closed, is refused, and closing Passwords withdraws the offer. Who is offered
+Backup and recovery, its fresh approval and restoring only into an empty
+vault are [set-up's backup rules](./setup.md#story-back-up-and-recover-my-saved-passwords).
 
 ```quint
 pure def canReportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): bool =
@@ -252,7 +261,8 @@ pure def alwaysClosedVaultHasNoBackupAction(v: PasswordView): bool =
 
 ### Passwords offers cloud recovery only after the native host confirms readiness
 
-The protected recovery menu can open while the local vault is locked. The renderer receives only readiness and whether the menu opened. An account change closes the grant and clears the displayed details before a fresh readiness report.
+The protected recovery menu can be offered while the local vault is locked,
+once the host reports it ready. Grace's view holds only whether it is ready.
 
 ~~~quint
 pure def sometimesBackupAndRecoveryIsAvailable(v: PasswordView): bool =
