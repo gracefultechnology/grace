@@ -194,6 +194,15 @@ const BrowserDocument = Schema.Struct({
 const SelectorRead = Schema.Struct({
   url: Schema.String, title: Schema.String, text: Schema.String, truncated: Schema.Boolean,
 });
+const scriptReadPlan = async (said: string, text: string, step: string) => {
+  localStorage.clear();
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said, answer: JSON.stringify({ text, isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [step] }] }),
+  }]), client));
+  return { cloud, secret };
+};
 const BrowserControl = Schema.Struct({
   documentId: Schema.NonEmptyString,
   frameScope: Schema.Literal("main"),
@@ -238,13 +247,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     },
   });
   try {
-    localStorage.clear();
-    const cloud = inject("cloud");
-    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
-      said: intent,
-      answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
-    }]), client));
+    const { cloud, secret } = await scriptReadPlan(intent, "Review the browser step.", "ReadChangedBrowser");
     await transport({ kind: "decisionRoute", cloud, deadlineMs: CLEF_DECISION_TIMEOUT_MS });
     const guideDecision = createClefDecisionsClient({
       baseUrl: cloud, headers: () => ({ Authorization: `Bearer ${secret}` }),
@@ -393,13 +396,7 @@ it.each(inject("billworldStatements"))('Read the $label BillWorld statement (spe
     },
   });
   try {
-    localStorage.clear();
-    const cloud = inject("cloud");
-    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
-      said: question,
-      answer: JSON.stringify({ text: "Review the statement read.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadStatement"] }] }),
-    }]), client));
+    const { cloud, secret } = await scriptReadPlan(question, "Review the statement read.", "ReadStatement");
     const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet", exact: true }));
     await userEvent.fill(page.getByRole("textbox", { name: "Address" }), url);

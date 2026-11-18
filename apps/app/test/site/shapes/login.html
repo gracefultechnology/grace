@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in | Riverbank</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+  main { max-width: 420px; margin: 32px auto; padding: 0 24px; }
+  form { display: flex; flex-direction: column; gap: 12px; }
+  footer { padding: 12px 24px; }
+</style>
+<header><a href="https://www.bank.localhost/ground/shapes/bank.html">Back to Riverbank</a></header>
+<main>
+  <h1>Welcome back</h1>
+  <form action="topic.html" method="get">
+    <label>Username <input name="username" autocomplete="username"></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+    <label><input type="checkbox" name="remember"> Remember me</label>
+    <button>Sign in</button>
+  </form>
+  <p><a href="topic.html?forgot">Forgot username or password?</a></p>
+  <p><a href="topic.html?enroll">Not enrolled? Sign up now</a></p>
+</main>
+<footer>
+  <p>Riverbank will never ask for your password in an email or a text message. If something looks wrong, call the number on the back of your card.</p>
+  <a href="topic.html?privacy">Privacy</a>
+  <a href="topic.html?security">Security center</a>
+</footer>
