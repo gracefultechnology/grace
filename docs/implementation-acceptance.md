@@ -127,8 +127,9 @@ contains the established package and release certificate. The
 was identified from the live Eliza sign-in redirect to Google. Production
 provider discovery currently offers email sign-in. Google callback registration
 and the approved Blooio SMS workspace remain open. Grace Plus uses the USD 30
-monthly plan in Eliza Labs. Live checkout awaits its Stripe product, price,
-credential and webhook. The deployed Worker has its Grace-specific Cartesia
+monthly plan in Eliza Labs. Its active Stripe product and default monthly
+price are registered. Live checkout awaits its credential and webhook.
+The deployed Worker has its Grace-specific Cartesia
 standard key, stock English voice and metering configuration.
 
 ## Decisions and their defaults

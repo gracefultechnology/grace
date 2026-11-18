@@ -53,6 +53,8 @@
         "MAX_COMPLETION_TOKENS": "2048",
         "EMAIL_FROM": "signin@auth.graceforseniors.com",
         "STRIPE_PLAN": "plus_monthly",
+        "STRIPE_PRODUCT_ID": "prod_VeHYVJT4exsbJE",
+        "STRIPE_PRICE_ID": "price_1UcyzpJjh0QG9ZAX9HoN48aB",
         "CARTESIA_VOICE_ID": "273f9ef7-9fc2-4def-88bb-ab108c6249ca",
         "SPEECH_STT_MICROS_PER_SECOND": "135",
         "SPEECH_TTS_MICROS_PER_CHARACTER": "45",
