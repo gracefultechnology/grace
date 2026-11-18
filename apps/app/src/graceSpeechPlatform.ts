@@ -66,8 +66,6 @@ export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
   };
 }
 
-export type Playback = ReturnType<typeof gracePlayback>;
-
 export function gracePlayback() {
   const audio = new webView.window.AudioContext();
   const level = audio.createGain();
