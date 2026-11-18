@@ -26,6 +26,7 @@ export const meta: ComponentMeta<HomeEmailCardProps> = {
   states: {
     Offline: { ...emailOffline, className: "h-[290px] w-[470px]" },
     Empty: { ...email, className: "h-[290px] w-[470px]", status: "No new email", messages: [] },
+    "Not connected": { ...email, className: "h-[290px] w-[470px]", notConnected: true, messages: [] },
   },
   decorator: (story) => <div className="bg-gradient-frame-soft p-12">{story()}</div>,
 };
