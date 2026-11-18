@@ -51,8 +51,8 @@ review. Release evidence still comes from the Grace entry point.
 | Home, Settings and preferences | Core turns supply the model reply. OS owns the device surfaces. | Grace owns the launcher, Settings, and exact-turn action controls. Tapped text-size, in-app dimming, and voice changes reuse the workspace preferences. Device-wide brightness and preference persistence need device evidence. |
 | Browser navigation and pointing | `plugin-browser` and `plugin-computeruse` can directly operate pages or the desktop. | Grace keeps website navigation inside its Browser and OS bridge. A model reply can offer a supported Grace screen or an exact HTTPS destination. Page-element pointing with verified current geometry remains open. |
 | Gmail | `plugin-inbox` and `plugin-google-workspace` reach provider data. | Grace Cloud owns Gmail grants and provider operations. Hosted Grace supports Inbox previews, reviewed drafts and threaded replies, and Trash with Undo. Search from a model reply resolves a unique result on the currently loaded Inbox page. Full folder search, attachments, forwarding and permanent deletion remain open. |
-| Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace can review and confirm timed creation and confirmed owned occurrence or whole-series edits and removals. Creating a repeating series, showing and handling due reminders, and a Home review that completes without opening Calendar remain open. |
-| Files | `plugin-files` provides managed files, revision-bound selections and durable receipts. | The Grace Files window is reachable. The separate `grace/android-records-files-host` branch adds native catalog, page rendering, picker and camera methods, while its launcher still opens an empty Files window. Mounted catalog, lookup and content access remain open. |
+| Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace supports reviewed creation of one-time, weekly and monthly appointments and confirmed owned occurrence or whole-series edits and removals. Live Google consent, due reminders and completing a review from Home remain open. |
+| Files | `plugin-files` provides managed files, revision-bound selections and durable receipts. | Grace owns a device library partitioned by the signed-in account. Its Android picker, camera, catalog and bounded previews feed the Files screen. Device acceptance, sharing, printing and deletion remain open. |
 | Bill payment, booking and fill | `plugin-form`, `plugin-browser` and `plugin-computeruse` provide general form and website tools. | Grace has workspace rules for observed contexts and explicit payment approval. Live task review, verified form fill, bill submission and appointment booking are not mounted in the launcher. These need Grace-owned actuation and provider evidence. |
 
 Chromium exercised a structured reply through the actual Grace app with a
@@ -109,8 +109,9 @@ Grace repository has an established release certificate for
 `technology.graceful.grace`. The production Android registry uses its SHA-256
 fingerprint. The release signing material stays in its existing custody.
 
-Worker version `4bdee87a-1418-4b67-8236-b909f0390041` deployed Grace
-`55b67a5` with Eliza `febdeaf`. Chromium loaded the hosted UI and its
+Worker version `b4617b8e-f2fc-4ba9-88cc-a44262def963` deployed Grace
+`ef9c02b` with Eliza `33cfd39`. Native discovery confirmed the seven-day
+credential lifetime that the Android host accepts. Chromium loaded the hosted UI and its
 production assets, read the signed-out session across the API origin, and
 received HTTP 401 on an unauthenticated inference request. Native discovery
 returned the registered callback and S256. The public
