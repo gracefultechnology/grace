@@ -190,7 +190,10 @@ export function ManagedRead({ view }: { view: ReadView }) {
     setFailed(false);
     if (command.kind === "refresh") setWriteNotice(undefined);
     const result = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.send(command)));
-    if (!Exit.isSuccess(result) || !result.value) setFailed(true);
+    if (command.kind === "reminder") setWriteNotice({ key: projection, text: Exit.isSuccess(result) && result.value
+      ? command.minutes === 0 ? "Reminder removed from your Grace account." : "Reminder choice saved. Your tablet schedules it when it reconnects."
+      : "Grace couldn’t save that reminder choice." });
+    else if (!Exit.isSuccess(result) || !result.value) setFailed(true);
   });
   const signedIn = account?.graceAccount.tag === "GraceSignedIn" ? account.graceAccount : undefined;
   const authorized = signedIn !== undefined && account !== undefined &&
@@ -238,7 +241,9 @@ export function ManagedRead({ view }: { view: ReadView }) {
     if (snapshot.reason === "native") {
       return <EmptyState title={view === "Email" ? "Open email on Grace’s website" : "Open your calendar on Grace’s website"}>
         <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "openHosted" })}>Open Grace</Button>
-        {failed && <RetryNotice role="alert">Grace’s website couldn’t open.</RetryNotice>}
+        {view === "Calendar" && <Button variant="capsule" size="pill" disabled={pending}
+          onClick={() => run({ kind: "enableReminders" })}>Allow tablet reminders</Button>}
+        {failed && <RetryNotice role="alert">Grace couldn’t finish that request.</RetryNotice>}
       </EmptyState>;
     }
     if (snapshot.reason === "connectorUnavailable") {
@@ -338,6 +343,13 @@ export function ManagedRead({ view }: { view: ReadView }) {
       <PageHeading>{event.title || "Untitled appointment"}</PageHeading>
       <PageText>{day(event.startAt)} · {start(event)}</PageText>
       {event.location && <PageText>{event.location}</PageText>}
+      {event.editable && !event.isAllDay && event.etag && <fieldset>
+        <legend>Reminder on Grace</legend>
+        {([["One hour before", 60], ["One day before", 1440], ["Remove reminder", 0]] as const).map(([label, minutes]) =>
+          <Button key={minutes} variant="capsule" size="pill" disabled={pending} onClick={() => {
+            if (event.etag) run({ kind: "reminder", id: event.externalId, version: event.etag, minutes });
+          }}>{label}</Button>)}
+      </fieldset>}
       {event.description && <PageText className="w-full whitespace-pre-wrap">{event.description}</PageText>}
     </section>
   ) : (
