@@ -17,7 +17,7 @@ and traces (SPEC.md, "One spec tree").
 | Command | Does |
 |---|---|
 | `pnpm dev` | the app, with Vite |
-| `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
+| `pnpm typecheck`, `pnpm build` | Check types or build `dist/` from the current Grace model and design tokens. The Android and Cloud releases use this same web build. |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
 
 ## Browser qualification
