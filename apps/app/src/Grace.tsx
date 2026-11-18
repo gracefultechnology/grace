@@ -12,6 +12,7 @@ const checkLabels: Record<GuidedRead, string> = {
   ReadMail: "Check email",
   ReadBrowser: "Check page",
   ReadChangedBrowser: "Check page",
+  ReachNamedPage: "Check page",
   ReadStatement: "Read statement",
   ReadCalendar: "Check appointment",
   SaveMailAppointment: "Check saved appointment",
@@ -21,9 +22,10 @@ const checkLabels: Record<GuidedRead, string> = {
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, say, checkGuidedRead, pointAtReadLink } = useWorkspace();
-  const { assistant, plan, review } = workspace!;
+  const { assistant, plan, review, device, browser } = workspace!;
   const conversation = assistant.conversation;
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
+  const [pageCheck, setPageCheck] = useState<{ key: string; pending: boolean }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; words?: string }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
@@ -56,9 +58,19 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
       deviceVersion: workspace.device.contextVersion, browserRevision: workspace.browser.revision,
     },
   } as const;
-  const guideKey = workspace && mayGuideReadLink(workspace)
-    ? [assistant.taskId, assistant.workVersion, conversation.generation, next, workspace.device.contextVersion, workspace.browser.revision].join(":")
-    : "";
+  const scopeKey = [assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision].join(":");
+  const guideKey = workspace && mayGuideReadLink(workspace) ? scopeKey : "";
+  const namedCheck = stepKind === "ReachNamedPage" && canCheck && pageCheck?.key === scopeKey ? pageCheck : undefined;
+  const check = () => {
+    if (stepKind !== "ReachNamedPage") {
+      void checkGuidedRead();
+      return;
+    }
+    setPageCheck({ key: scopeKey, pending: true });
+    const report = (accepted: boolean) => setPageCheck((current) =>
+      current?.key === scopeKey ? (accepted ? undefined : { key: scopeKey, pending: false }) : current);
+    void checkGuidedRead().then(report, () => report(false));
+  };
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
   const showLink = () => {
     setLinkFeedback({ key: guideKey });
@@ -120,17 +132,20 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                   <blockquote className="text-body">{plan.originalAsk}</blockquote>
                   <ol className="flex flex-col gap-2">
                     {plan.steps.map((step, index) => <li key={`${step.subject}-${index}`} aria-current={index === next ? "step" : undefined}>
-                      {index < next ? plan.receipts[index]?.evidence : step.outcome}
+                      {index < next ? plan.receipts[index]?.evidence : guidedReadKind(step) === "ReachNamedPage" ? `Find and check “${step.subject}”.` : step.outcome}
                     </li>)}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${currentStep?.subject}”.` : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
             </section>
           )}
           {feedback?.words && <GraceBubble role="status">{feedback.words}</GraceBubble>}
+          {namedCheck?.pending === false && (
+            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{currentStep?.subject}” on this page. Try another link.</GraceBubble>
+          )}
           {canCheck && <AnswerChips>
-            {guideKey && <AnswerChip disabled={feedback !== undefined && feedback.words === undefined} onClick={showLink}>Show me the link</AnswerChip>}
-            <AnswerChip onClick={() => void checkGuidedRead()}>{label}</AnswerChip>
+            {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && feedback.words === undefined)} onClick={showLink}>Show me the link</AnswerChip>}
+            <AnswerChip disabled={namedCheck?.pending} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
           {answers.length > 0 && (
             <AnswerChips>

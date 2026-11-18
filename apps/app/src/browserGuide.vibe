@@ -1,6 +1,6 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
-import { Machine as Workspaces, mayGuideReadLink, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { guidedReadKind, Machine as Workspaces, mayGuideReadLink, nextOutcome, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { CLEF_DECISION_LIMITS, createClefDecisionsClient } from "../../../vendor/eliza/packages/cloud/sdk/native-host/clef-decisions.mjs"
 import type { CloudLink } from "./conversation.vibe"
 import { NativePage } from "./nativePage.vibe"
@@ -13,6 +13,7 @@ export service BrowserGuide {
 
 const unavailable = "I couldn't find a link to point to on this page."
 const changed = "The page or task changed. Ask me again on the page you want."
+const namedPageContext = " Prefer a direct link to the named page. When none is visible, choose a useful section that leads to it."
 const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
 
 function context(w: Workspace) {
@@ -25,7 +26,9 @@ function context(w: Workspace) {
   const step = { task: w.assistant.taskId, version: w.assistant.workVersion, generation: w.assistant.conversation.generation,
     stepIndex: w.plan.receipts.length, deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision }
   const key = JSON.stringify([w.plan.owner, step, tab.id, tab.loadVersion])
-  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: w.plan.originalAsk }
+  const outcome = nextOutcome(w.plan)
+  const namedPage = guidedReadKind(outcome) === "ReachNamedPage"
+  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: namedPage ? outcome.subject : w.plan.originalAsk, namedPage }
 }
 
 function publicWords(text: string): string {
@@ -98,7 +101,8 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
       if (decide === undefined) return "Connect Grace to her decision service to get help choosing a link."
       const request = publicWords(start.goal)
       if (!request || request.length > CLEF_DECISION_LIMITS.goal) return unavailable
-      const goal = request.length + choiceContext.length <= CLEF_DECISION_LIMITS.goal ? request + choiceContext : request
+      const instruction = start.namedPage ? namedPageContext : choiceContext
+      const goal = request.length + instruction.length <= CLEF_DECISION_LIMITS.goal ? request + instruction : request
       for (let attempt = 0; attempt < 2; attempt++) {
         if (context(try workspace.get())?.key !== start.key) return changed
         const snapshot = page.observeLinks(start.id) catch () => undefined
