@@ -12,7 +12,7 @@ export const WireAttachment = Schema.Struct({
 })
 export const WireMessage = Schema.Struct({
   externalId: Text, subject: Text, from: Text, fromEmail: NullableText, replyTo: NullableText, to: Texts, snippet: Text,
-  receivedAt: Text, isUnread: Flag, labels: Texts,
+  receivedAt: Text, isUnread: Flag, hasAttachments: optional(Flag), labels: Texts,
   metadata: Schema.Struct({ historyId: NullableText, messageIdHeader: optional(NullableText), referencesHeader: optional(NullableText) }),
 })
 export const Listing = Schema.Struct({ messages: Schema.Array(WireMessage) })
@@ -28,6 +28,12 @@ export const Operation = Schema.Struct({
   }),
 })
 export const DraftSaved = Schema.Struct({ draftId: Text })
+export const AttachmentContent = Schema.Struct({ mimeType: Text, dataBase64: Text, size: Schema.Int })
+export const DraftList = Schema.Struct({ drafts: Schema.Array(Schema.Struct({ draftId: Text, messageId: Text })), nextPageToken: NullableText })
+export const DraftRead = Schema.Struct({
+  id: Text, messageId: Text,
+  content: Schema.Struct({ to: Texts, cc: Texts, bcc: Texts, subject: Text, bodyText: Text, plainText: Flag, threaded: Flag, attachmentCount: Schema.Int }),
+})
 export const ContactList = Schema.Struct({ contacts: Schema.Array(Schema.Struct({ name: Text, email: Text })) })
 export const WireEvent = Schema.Struct({
   externalId: Text, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,
