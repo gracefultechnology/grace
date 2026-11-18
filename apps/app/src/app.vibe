@@ -17,6 +17,7 @@ import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
 import { type SurfacePlugin, type WiFiPlugin, webView } from "./surfacePlugin.ts"
 import { pageHost } from "./page.vibe"
+import { notices } from "./notices.vibe"
 
 // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
 const started = Layer.effectDiscard(effect {
@@ -93,5 +94,5 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept)
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), grace, browserGuide(cloud)), machines)
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), notices(wifi), grace, browserGuide(cloud)), machines)
 }
