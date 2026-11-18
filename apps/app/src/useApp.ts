@@ -118,8 +118,10 @@ export function useSignIns() {
   const runtime = useRuntime();
   const flows = runtime.runSync(Effect.service(SignIns));
   const note = useSyncExternalStore(flows.notes.subscribe, flows.notes.current);
+  const page = useSyncExternalStore(flows.page.subscribe, flows.page.current);
   return {
     note,
+    page,
     other: (details: OtherDetails) => runtime.runPromise(flows.other(details)),
     servers: (servers: MailServers) => runtime.runPromise(flows.servers(servers)),
   };

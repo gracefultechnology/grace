@@ -141,9 +141,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await agree({ tag: "AddAsk", target: 1, review: { entry, calendarGeneration: gmailView.generation, displayTimezone: gmailView.timezone } },
     () => expect.element(row("Doctor’s appointment", "Not added yet · Grace is asking you")).toBeVisible());
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
-  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
+  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
 }, journey);
 
 const edit = async (title: string, repeats: string) => {

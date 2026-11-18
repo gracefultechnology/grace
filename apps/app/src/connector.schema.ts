@@ -35,7 +35,7 @@ export const WireEvent = Schema.Struct({
 })
 export const Feed = Schema.Struct({ events: Schema.Array(WireEvent) })
 export const Stored = Schema.Struct({ event: WireEvent })
-export const Session = Schema.Struct({ sessionId: Text, pageUrl: Text })
+export const Session = Schema.Struct({ sessionId: Text, pageUrl: Text, embeddable: optional(Flag) })
 export const SessionOutcome = Schema.Struct({
   status: Schema.Literals(["allowed", "cancelled", "refused"]), address: optional(Text),
   granted: optional(Schema.Struct({ mail: Flag, calendar: Flag, contacts: Flag })),

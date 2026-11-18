@@ -1,5 +1,4 @@
-// spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/accounts.md, "Story: Connect the email I already use"
-// Settings: its pages beside the list, and on About this tablet, Clear browsing data behind one confirmation.
+// spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/accounts.md, "Story: Connect the email I already use"
 import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -65,10 +64,8 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
       ) : page === "AboutSettings" ? (
         <>
           <PageHeading>About this tablet</PageHeading>
-          {/* spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation" */}
           <ListRow className="mt-6" title="Clear browsing data" leading={<Trash size={26} strokeWidth={2} aria-hidden />}
             onClick={() => { if (website.can({ type: "requestClearBrowsingData" })) void website.send({ type: "requestClearBrowsingData" }); }} />
-          {/* A purge that left a cookie, or failed, cleared nothing. */}
           {website.requests?.clearing === "ClearFailed" && (
             <Alert variant="destructive" icon={<CircleAlert />} className="mt-4 flex items-center gap-4 text-body font-bold">
               <span className="flex-1">Your browsing data wasn't cleared.</span>

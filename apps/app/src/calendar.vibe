@@ -220,25 +220,20 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   }
   effect function stored(c: Calendar) {
     const v = try box.get()
-    const task = try workspace.get()
-    const approval = task.plan.calendarApproval
-    const expected = guidedSavePending(task) && approval.task === task.assistant.taskId && c.identity.occurrenceId === approval.provisional &&
-      c.approvedRevision === c.revision && !c.hasSaved && matchesGuidedApproval(key, c, approval)
     const receipt = try store.write(written(v, c), v)
     const event: CalendarEvent = single(c)
       ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
       : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
     box.send(event, "ViewStore") catch () => undefined
     for (const p of receipt.published) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
-    if (!expected || !receipt.succeeded) return
-    const result = receipt.published.find((p) => p.scheduleVerified && p.incoming.hasSaved && p.incoming.phase === "Saved" &&
-      p.incoming.identity.occurrenceId !== approval.provisional && matchesGuidedApproval(key, p.incoming, approval))
-    if (result === undefined) return
-    const owned = try box.get()
-    const occurrence = result.incoming.identity.occurrenceId
-    const saved = entryAt(owned, occurrence)
-    if (saved.phase !== "Saved" || !matchesGuidedApproval(key, saved, approval)) return
-    workspace.send({ type: "observeGuidedCalendar", saved: { approval, occurrence, evidence: "" } }, "Host") catch () => undefined
+  }
+  effect function observed(v: CalendarView) {
+    const task = try workspace.get()
+    const approval = task.plan.calendarApproval
+    if (!guidedSavePending(task) || approval.task !== task.assistant.taskId) return
+    const saved = v.entries.find((c) => c.phase === "Saved" && c.hasSaved && c.identity.occurrenceId !== approval.provisional && matchesGuidedApproval(key, c, approval))
+    if (saved === undefined || !(try first(`guided@${approval.task}@${saved.identity.occurrenceId}`))) return
+    workspace.send({ type: "observeGuidedCalendar", saved: { approval, occurrence: saved.identity.occurrenceId, evidence: "" } }, "Host") catch () => undefined
   }
   effect function removedBy(v: CalendarView, plan: Removal) {
     if (plan.tag === "Remove") return try store.remove(kept(v, plan.id).identity, "ThisOccurrence")
@@ -262,6 +257,7 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
       try Effect.uninterruptible(stored(c))
     }
     if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) try Effect.uninterruptible(erased(v))
+    try observed(v)
     try repeat(box, try span)
     try remind(box)
   })
@@ -386,7 +382,8 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     verifySaved: effect (key, view, occurrence, expected) => {
       const account = (try registry.get()).accounts.find((candidate) => candidate.id === key && candidate.use.calendar && candidate.address === view.owner)
       if (!linked || account === undefined || Option.isNone(connector)) return false
-      return connector.value.calendar(account).verifySaved(view, occurrence, expected) catch () => false,
+      return connector.value.calendar(account).verifySaved(view, occurrence, expected) catch () => false
+    },
     notes: {
       subscribe: (listener) => {
         listeners.add(listener)

@@ -126,14 +126,19 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   };
 
   const company = emailProviders[providers[signIn.provider]].name;
+  const provider = signIn.stage === "ProviderPage" ? flows.page : undefined;
   return (
     <SettingsApp {...frame} {...header(page, registry, shown)} onBack={offer({ type: "goBack" })}>
       {content()}
-      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} onCancel={offer({ type: "cancelSignIn" })}>
-        <div className="m-auto flex max-w-[460px] flex-col items-center gap-6 p-8 text-center text-body">
-          <Spinner />
-          <p>Sign in on {company}’s own page. The tablet waits here until you finish.</p>
-        </div>
+      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
+        {provider?.inSheet ? (
+          <iframe src={provider.url} title={`${company}’s own sign-in page`} sandbox="allow-forms allow-scripts" referrerPolicy="no-referrer" className="block size-full border-0" />
+        ) : (
+          <div className="m-auto flex max-w-[460px] flex-col items-center gap-6 p-8 text-center text-body">
+            <Spinner />
+            <p>Sign in on {company}’s own page. The tablet waits here until you finish.</p>
+          </div>
+        )}
       </SignInSheet>
       {flows.note && <Toast key={flows.note.id} placement="screen">{flows.note.text}</Toast>}
     </SettingsApp>

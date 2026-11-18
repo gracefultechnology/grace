@@ -266,6 +266,7 @@ const day = 24 * hour
 const hosts: Record<Slug, string> = {
   google: "accounts.google.com", outlook: "login.live.com", yahoo: "login.yahoo.com", icloud: "appleid.apple.com", aol: "login.aol.com", other: ""
 }
+const framable: readonly Slug[] = ["yahoo", "icloud", "aol"]
 const names: Record<Slug, string> = { google: "Google", outlook: "Outlook", yahoo: "Yahoo", icloud: "iCloud", aol: "AOL", other: "Other email" }
 const listed = ["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "icloud.com", "me.com", "mac.com", "aol.com"]
 export const otherPassword = "Riverview-2026"
@@ -826,7 +827,7 @@ effect function store(site: string) {
     const page = provider === "google"
       ? `${googleConsentPath}?response_type=code&client_id=${googleClient}&redirect_uri=${callback}&scope=${encodeURIComponent(googleScopes)}&state=${sessionId}`
       : `/fake/signin/${sessionId}`
-    return try HttpServerResponse.json({ sessionId, pageUrl: `${host}${page}` })
+    return try HttpServerResponse.json({ sessionId, pageUrl: `${host}${page}`, embeddable: framable.includes(provider) })
   }
 
   effect function holder(sessionId: string) {
@@ -943,7 +944,8 @@ effect function store(site: string) {
     const { sessionId } = try HttpRouter.schemaPathParams(SessionQuery)
     const { session } = try holder(sessionId)
     if (session.provider === "google") throw new Missing()
-    return HttpServerResponse.text(page(session), { contentType: "text/html" })
+    const refused = framable.includes(session.provider) ? {} : { "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'" }
+    return HttpServerResponse.text(page(session), { contentType: "text/html", headers: refused })
   }
 
   effect function choose() {
