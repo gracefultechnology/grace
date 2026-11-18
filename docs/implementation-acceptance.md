@@ -233,7 +233,8 @@ otherwise.
 7. Tablet and sign-in route: the launcher APK on the stock Android of the
    Lenovo TB336FU, with Google Play services and Chrome. Sign-in is the native
    Google account picker plus one permission sheet; the browser route is the
-   fallback. The AOSP image is staged, not built.
+   fallback. The AOSP proof is one recorded Cuttlefish build and boot of the
+   image; no image goes on the Lenovo tablet for the MVP.
 8. The permission sheet: Gmail (read, send, move to Trash) and Google Calendar
    (read and change events). The calendar is her Google Calendar, cached on
    the tablet.
@@ -300,6 +301,33 @@ otherwise.
     keys are made by the owner or an operator from the app's README checklist.
 32. Each feature keeps its journey in its own test file until the last wave
     moves them into one file per runner.
+33. Grace's own wallpaper may keep a clear area where the website shows. It
+    is not a cut in either WebView, `surface.md` records it, and it is
+    derived from the same measurement that places the page, in the same
+    frame.
+34. The hosted web app shows websites as an iframe under Grace's UI, the same
+    model as the tablet. The build that draws websites above the UI with holes
+    is not deployed.
+35. Upstream draws the link guide inside the page, so it stays put when the
+    page scrolls, with Grace's lilac ring and label as its options.
+    `surface.md` says so, and Grace's unused guide components are deleted.
+36. A website's fullscreen video may cover Grace. Back leaves fullscreen, and
+    Grace speaking or a tap on Ask Grace ends it first.
+37. No kiosk: the tablet is not locked to Grace. Home always brings her back
+    and the stock launcher stays as a way to recover (decision 27);
+    `deviceKeys.md` says so.
+38. The launcher APK is the only Android build; the standalone APK flavor
+    and its build flag are dropped. Standalone Grace, the dedicated Grace
+    Cloud deployment and account, stays.
+39. Hosted CI: GitHub billing is restored and every job runs on
+    `ubuntu-24.04`. Until then decision 30 applies.
+40. The benchmark harness (BillWorld, WebArena, their variables, Python and
+    hosted key) moves out of the app into its own package that imports Grace.
+41. Sign-in on debug builds: one shared debug signing key is registered as a
+    development sign-in client, so emulator walks can sign in. The image
+    stays signed out until it is signed by a release signer.
+42. The microphone is asked for at first use, matching decision 11. The
+    image grants nothing at first boot.
 
 ### Gates that follow this delivery
 
@@ -573,7 +601,7 @@ no rule states it.
 
 | ID | Requirement | Story | Rule | Journey | Exercise | Status |
 |---|---|---|---|---|---|---|
-| ENG 01 | AOSP fork, launcher and custom Chromium | n/a | n/a | n/a | `agent` | superseded by decisions 3 and 7: the launcher APK on stock Android with the embedded Eliza runtime; the AOSP image is staged, not built (android-release-and-image) |
+| ENG 01 | AOSP fork, launcher and custom Chromium | n/a | n/a | n/a | `agent` | superseded by decisions 3 and 7: the launcher APK on stock Android with the embedded Eliza runtime; the AOSP proof is one recorded Cuttlefish build and boot, and no image goes on the Lenovo tablet for the MVP (android-release-and-image) |
 | ENG 02 | The shell works without inference | `shell.md` "Keep control through interruptions" | "Network and service failures remain distinct from a failed device shell" | `home`, `chat` | `wifi` | open (ws-device-availability, availability-and-failures-shell); offline: decision 6 |
 | ENG 03 | Staff-provisioned services without customer accounts | n/a | n/a | n/a | n/a | superseded by DIR 04 and decision 9: she signs in to her own Grace account and can subscribe through account settings. External pilot funding is also supported. Provider registrations are in decision 31 |
 | ENG 04 | Policy enforced outside the model | planned `agentActions.md` | `execution.md` "The effect boundary checks both generations and dispatches a prepared operation once" | `actions` | `actions` | open (agent-actions-spec, agent-actions-shell); typed actions only (decision 29) |

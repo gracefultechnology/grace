@@ -47,11 +47,11 @@ The application in `apps/app` is a Capacitor Android application. The MVP ships 
 
 ## Story: Manage my saved passwords privately
 
-> I can open Passwords from the second Home page and use my tablet screen
+> I can open Passwords from its own Home page after Files and use my tablet screen
 > lock to see my saved sign-ins. I can add, edit, show, copy or delete a sign-in,
 > and use a matching saved sign-in on a website after Android asks me to
-> unlock and choose. I can ask Grace for instructions without sharing
-> credentials.
+> unlock and choose. I can type or speak a password question in Ask Grace
+> and get instructions without sharing credentials.
 
 ### Passwords displays sign-in details only while the vault is available
 
@@ -174,23 +174,27 @@ named control. Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit
 sign-in command has a separate [browser admission rule](./browserControls.md).
 
-A tap on the microphone starts one local Android recognition request. A
-current complete result is used for guidance only. Unmatched speech is
-discarded. Leaving Grace, typing, opening a protected surface or cancelling
-stops the request. An unavailable local recognizer leaves Type available.
+The regular Ask Grace message field and microphone both accept password
+requests. During a voice conversation, a recognized password request goes
+directly from the final human utterance to password guidance. The request
+stays out of the conversation history and the reasoning agent. When conversational voice is unavailable,
+the same microphone starts one local Android recognition request for guidance.
+Unmatched local speech is discarded. Leaving Grace, typing, opening a
+protected surface or cancelling stops the request. An unavailable local
+recognizer leaves Type available.
 Password guidance recognizes a short list of spoken or typed phrases, such
-as “Open Passwords,” “Find a saved password,” “Show my password,”
+as “Open Passwords,” “Where can I find my saved passwords?”, “Show my password,”
 “Copy my password,” and “Use a saved password.” The person chooses the
 saved sign-in and uses the highlighted control.
 
 ~~~quint
-pure def passwordsHelpText(guide: PasswordGuide): str = "Open Passwords from the second Home page to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
+pure def passwordsHelpText(guide: PasswordGuide): str = "On Home, go one page past Files and open Passwords to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
 pure def lawHelpDoesNotReadTheVault(v: PasswordView, other: PasswordView): bool =
   helpForPasswords(v) == helpForPasswords(other)
 pure def helpForPasswords(v: PasswordView): str = passwordsHelpText(v.guide)
 pure def passwordGuide(words: str): PasswordGuide =
-  if (words == "open passwords" or words == "open saved passwords") OpenPasswordGuide
-  else if (words == "find a password" or words == "find a saved password" or words == "where are my passwords") FindPasswordGuide
+  if (words == "open passwords" or words == "open saved passwords" or words == "can you open my passwords") OpenPasswordGuide
+  else if (words == "find a password" or words == "find a saved password" or words == "where are my passwords" or words == "where can i find my saved passwords") FindPasswordGuide
   else if (words == "show my password" or words == "how do i show a password") ShowPasswordGuide
   else if (words == "copy my password" or words == "how do i copy a password") CopyPasswordGuide
   else if (words == "fill my password" or words == "use a saved password" or words == "how do i fill a saved password") FillPasswordGuide
