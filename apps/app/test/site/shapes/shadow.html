@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in | Riverbank</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+  main, footer { max-width: 480px; margin: 24px auto; padding: 0 24px; }
+</style>
+<main>
+  <h1>Log in to online banking</h1>
+  <riverbank-login>
+    <template shadowrootmode="open">
+      <style>form { display: flex; flex-direction: column; gap: 12px; }</style>
+      <form action="topic.html" method="get">
+        <label>User ID <input name="user" autocomplete="username"></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+        <button>Log in</button>
+      </form>
+      <p><a href="topic.html?reset">Forgot password?</a></p>
+    </template>
+  </riverbank-login>
+</main>
+<footer>
+  <p>Protect your account: Riverbank will never call you to ask for a one-time code.</p>
+  <a href="topic.html?help">Help</a>
+  <a href="topic.html?privacy">Privacy</a>
+</footer>
