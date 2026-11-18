@@ -196,6 +196,9 @@ pure val networkValues = Set(
   { id: "network", authentication: AccountPassword, remembered: false },
   { id: "network", authentication: OpenNetwork, remembered: false })
 pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
+pure val weight_reportEntry = 4
+pure val weight_join = 4
+pure val weight_receive = 4
 pure val certificateValues = Set("certificate", "other", "")
 pure val goodReport: JoinReport = { network: "network", version: 1, result: Joined, certificate: "", explanation: "" }
 pure val reportValues = Set(goodReport, { ...goodReport, version: 2 },
