@@ -28,6 +28,11 @@ export const Operation = Schema.Struct({
   }),
 })
 export const DraftSaved = Schema.Struct({ draftId: Text })
+export const AttachmentContent = Schema.Struct({ mimeType: Text, dataBase64: Text })
+export const DraftRead = Schema.Struct({
+  id: Text, messageId: Text,
+  content: Schema.Struct({ to: Texts, cc: Texts, bcc: Texts, subject: Text, bodyText: Text, plainText: Flag, threaded: Flag, attachmentCount: Schema.Int }),
+})
 export const ContactList = Schema.Struct({ contacts: Schema.Array(Schema.Struct({ name: Text, email: Text })) })
 export const WireEvent = Schema.Struct({
   externalId: Text, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,

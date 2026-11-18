@@ -10,7 +10,7 @@ import type { MailInstance, MailWriter } from "./useApp.ts";
 
 export type Picking = { readonly field: MailRecipientField; readonly query: string };
 type Field = "subject" | "body";
-type Frame = { onClose: () => void; closeLabel: string; inert?: boolean; "aria-hidden"?: boolean };
+type Frame = { onClose?: () => void; closeLabel: string; inert?: boolean; "aria-hidden"?: boolean };
 
 const questions: Record<MailRecipientField, string> = { to: "Who is it to?", cc: "Who should get a copy?", bcc: "Who should get a hidden copy?" };
 const sending: Record<SendStatus, MailSendStatus> = {
@@ -144,6 +144,6 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
       onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
       {...frame}
-      onClose={() => { void leave(box, mail.hush); frame.onClose(); }} />
+      onClose={frame.onClose && (() => { void leave(box, mail.hush); frame.onClose?.(); })} />
   );
 }

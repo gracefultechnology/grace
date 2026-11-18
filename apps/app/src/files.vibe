@@ -1,0 +1,71 @@
+// spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/files.md, "Opening and retrying load the authoritative local library"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
+import { canLoadForSave, canRestartFiles, canSaveFiles, type FileEffect, Machine as Files, mergeFiles, type SavedFile, stored } from "../gen/app__files.effect.vibe"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import type { Attached } from "./connector.vibe"
+import { HeldFile } from "./instances.vibe"
+
+export const libraryOwner = "tablet"
+export type Saving = { readonly file: SavedFile; readonly content: Attached }
+
+export service Library {
+  save(chosen: readonly Saving[], authorization: string): boolean!!
+}
+
+const catalogKey = "files/catalog"
+const contentKey = (id: string) => `files/content/${id}`
+const decodeCatalog = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(HeldFile)))
+
+const kept = Layer.effect(Library, effect {
+  const files = try Files
+  const store = try KeyValueStore.KeyValueStore
+  const saves = try SynchronizedRef.make(0)
+  if (canRestartFiles(try files.get(), "FileHost")) files.send({ type: "restartFiles" }, "FileHost") catch () => undefined
+
+  effect function catalog() {
+    const text = try store.get(catalogKey)
+    return text === undefined ? [] : [...(try decodeCatalog(text))]
+  }
+
+  effect function load(e: Extract<FileEffect, { tag: "LoadLibrary" }>) {
+    const entries = catalog() catch () => undefined
+    const catalogReport = { owner: e.owner, generation: e.generation, entries: entries ?? [], succeeded: entries !== undefined, evidence: entries === undefined ? "" : "tablet" }
+    files.send({ type: "loadCatalog", catalogReport }, "FileStore") catch () => undefined
+  }
+
+  effect function write(e: Extract<FileEffect, { tag: "StoreFiles" }>, content: ReadonlyMap<string, Attached>) {
+    const written = Effect.as(effect {
+      for (const file of e.files) {
+        const bytes = content.get(file.id)
+        if (bytes !== undefined) try store.set(contentKey(file.id), JSON.stringify(bytes))
+      }
+      try store.set(catalogKey, JSON.stringify(mergeFiles(try catalog(), e.files)))
+    }, true) catch () => false
+    const fileReceipt = { owner: e.owner, generation: e.generation, id: "", succeeded: written, evidence: written ? "tablet" : "" }
+    files.send({ type: "writeResult", fileReceipt }, "FileStore") catch () => undefined
+  }
+
+  effect function perform(out: readonly FileEffect[], content: ReadonlyMap<string, Attached>) {
+    for (const e of out) {
+      if (e.tag === "LoadLibrary") try load(e)
+      if (e.tag === "StoreFiles") try write(e, content)
+    }
+  }
+
+  return {
+    save: (chosen, authorization) => SynchronizedRef.modifyEffect(saves, (n: number) => Effect.map(effect {
+      const content = new Map(chosen.map((c) => [c.file.id, c.content] as const))
+      if (canLoadForSave(try files.get(), libraryOwner, "FileHost")) {
+        const loading = files.send({ type: "loadForSave", owner: libraryOwner }, "FileHost") catch () => undefined
+        if (loading !== undefined) try perform(loading.out, content)
+      }
+      const fileImport = { owner: libraryOwner, generation: (try files.get()).generation, entries: chosen.map((c) => c.file), authorization }
+      if (!canSaveFiles(try files.get(), fileImport, "FileHost")) return false
+      const saving = files.send({ type: "saveFiles", fileImport }, "FileHost") catch () => undefined
+      if (saving === undefined) return false
+      try perform(saving.out, content)
+      return (try files.get()).feedback === "FilesSaved"
+    }, (done) => [done, n + 1] as const))
+  }
+})
+
+export const library = Layer.provideMerge(kept, stored("files"))

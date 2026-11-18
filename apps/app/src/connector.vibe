@@ -5,7 +5,7 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import { AttachmentContent, ContactList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
 import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
@@ -31,6 +31,8 @@ export type MailContent = {
 export type Listed = { readonly receipt: MetadataReceipt; readonly content: MailContent }
 export type Opened = { readonly receipt: ReadReceipt; readonly content: MailContent }
 export type Contact = { readonly name: string; readonly address: string }
+export type Attached = { readonly mimeType: string; readonly data: string }
+export type Restored = { readonly snapshot: DraftSnapshot; readonly verified: boolean }
 export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Exclude<MessageChange, "NoMessageChange">; readonly revision: number; readonly version: string }
 export type DraftStored = { readonly draftId: string; readonly persisted: boolean }
 export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
@@ -52,6 +54,8 @@ export type MailConnection = {
   readonly list: (scope: ListingScope, revisionOf: (ref: string) => number) => Stream.Stream<Listed, ConnectorFailure>
   readonly read: (ref: string, generation: number) => Opened!ConnectorFailure
   readonly header: (ref: string, generation: number) => ReplyHeader!ConnectorFailure
+  readonly attachment: (file: SavedFile, version: string) => Attached!ConnectorFailure
+  readonly draft: (ref: string, version: number) => Restored!ConnectorFailure
   readonly resolve: (contact: string) => Recipient!ConnectorFailure
   readonly contacts: () => readonly Contact[]!ConnectorFailure
   readonly change: (op: ChangeOp) => ChangeReceipt!NeedsSignIn
@@ -122,7 +126,7 @@ function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment):
   const pages = kind === "Pdf" ? a.pages ?? 0 : 0
   return kind === undefined || a.filename === "" || (kind === "Pdf" && pages < 1) ? [] : [{
     id: `${m.externalId}/${a.partId}`, kind, name: a.filename, origin: account.provider, account: account.address, container: m.externalId,
-    sourceRef: m.externalId, contentRef: a.partId, group: m.externalId, savedAt, pages
+    sourceRef: `${m.externalId}/${a.partId}`, contentRef: a.partId, group: m.externalId, savedAt, pages
   }]
 }
 
@@ -333,7 +337,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
     effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot) {
       const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body }
-      const sources = [...new Set(attachments.map((f) => f.sourceRef))]
+      const sources = [...new Set(attachments.map((f) => f.container))]
       if (attachments.length > 0) {
         if (sources.length !== 1 || attachments.some((f) => f.origin !== account.provider || f.account !== account.address)) throw new ProviderRefused({ status: 422 })
         const { message } = try read(sources[0])
@@ -375,8 +379,21 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       },
       header: effect (ref, generation) => {
         const { message } = try read(ref)
-        const address = [message.replyTo, message.fromEmail].find((a) => a?.includes("@"))
+        const own = message.labels.includes("SENT") && message.to.length === 1 ? [/<([^>]+)>/.exec(message.to[0])?.[1] ?? message.to[0].trim()] : [message.replyTo, message.fromEmail]
+        const address = own.find((a) => a?.includes("@"))
         return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
+      },
+      attachment: effect (file, version) => {
+        const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
+        return { mimeType: got.mimeType, data: got.dataBase64 }
+      },
+      draft: effect (ref, version) => {
+        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId: ref, content: "1" }), DraftRead)
+        const opened = d.attachmentCount === 0 ? undefined : try read(messageId)
+        const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
+        const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
+        const verified = id === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
+        return { snapshot: { id: ref, version, content, attachments: files ?? [], replyTo: "" }, verified }
       },
       resolve: effect (contact) => {
         const named = (try contacts(contact)).filter((c) => c.name.toLowerCase() === contact.trim().toLowerCase())

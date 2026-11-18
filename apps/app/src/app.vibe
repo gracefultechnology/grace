@@ -11,6 +11,7 @@ import { calendarFeeds, calendars } from "./calendar.vibe"
 import { agent } from "./actions.vibe"
 import { connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
+import { library } from "./files.vibe"
 import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
@@ -89,7 +90,7 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
 
 /** Everything the interface runs on, over `plugin`, the native page's, `wifi`, where the platform has them, and `cloud`, where Grace's agent answers. */
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, cloud?: CloudLink) {
-  const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
+  const kept = Layer.orDie(Layer.provide(Layer.mergeAll(Layer.provideMerge(instances, accounts), library), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept)
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
   return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), grace), machines)
