@@ -5,7 +5,7 @@ import { expect, inject, it, onTestFinished } from "vitest";
 import { CLEF_DECISION_TIMEOUT_MS, createClefDecisionsClient } from "@elizaos/cloud/clef-decisions";
 import { commands, page, userEvent } from "vitest/browser";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
-import { guidedReadKind, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -266,10 +266,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     const reviewed = workspace().review.request.steps;
-    const named = reviewed.find(step => guidedReadKind(step) === "ReachNamedPage");
+    const named = reviewed.find(step => step.tag === "ReachNamedPage");
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep === "ReachNamedPage") {
-      outcome.reviewedSteps = reviewed.map(step => ({ kind: guidedReadKind(step), subject: step.subject }));
+      outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
       expect(named).toBeDefined();
       expect(reviewed).toHaveLength(1);
     }

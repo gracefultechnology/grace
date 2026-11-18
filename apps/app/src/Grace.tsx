@@ -6,7 +6,7 @@ import { Effect, Stream } from "effect";
 import { KeyRound } from "lucide-react";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
+import { guidedDetails, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
@@ -19,7 +19,7 @@ import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
-const checkLabels: Record<GuidedRead, string> = {
+const checkLabels: Record<GuidedStep["tag"], string> = {
   ReadMail: "Check email",
   ReadBrowser: "Check page",
   ReadChangedBrowser: "Check page",
@@ -27,7 +27,7 @@ const checkLabels: Record<GuidedRead, string> = {
   ReadStatement: "Read statement",
   ReadCalendar: "Check appointment",
   SaveMailAppointment: "Check saved appointment",
-  UnsupportedRead: "",
+  SurfaceOutcome: "",
 };
 
 /** @model spec/app/assistant.md */
@@ -78,7 +78,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const owner = guidedOwner(authority, plan.steps);
   const ownsPlan = plan.owner === owner;
   const abandon = { type: "abandonTask" } as const;
-  const savePlan = plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment");
+  const savePlan = plan.steps.some((step) => step.tag === "SaveMailAppointment");
   const status = assistant.activity === "Paused" ? "Paused" : assistant.outcome === "Completed"
     ? savePlan ? "Planned checks complete" : "Read checks complete"
     : null;
@@ -86,10 +86,11 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const resume = { type: "resume" } as const;
   const paused = hasPlan && ownsPlan && can(resume);
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
-  const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
+  const stepKind = currentStep?.tag ?? "SurfaceOutcome";
+  const details = currentStep && guidedDetails(currentStep);
   const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
-  const canCheck = ownsPlan && label && (currentStep?.surface !== "Browser" || workspace?.device.observationAllowed) &&
-    currentStep?.surface === workspace?.device.surface &&
+  const canCheck = ownsPlan && label && (details?.surface !== "Browser" || workspace?.device.observationAllowed) &&
+    details?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
   const observation = workspace && {
@@ -179,7 +180,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <blockquote className="text-body">{review.request.goal}</blockquote>
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
-                {review.request.steps.map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
+                {review.request.steps.map(guidedDetails).map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
               </ol>
               <AnswerChips><AnswerChip onClick={() => void startReadReview(review.revision)}>Start read plan</AnswerChip></AnswerChips>
             </section>
@@ -194,17 +195,17 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                 <>
                   <blockquote className="text-body">{plan.originalAsk}</blockquote>
                   <ol className="flex flex-col gap-2">
-                    {plan.steps.map((step, index) => <li key={`${step.subject}-${index}`} aria-current={index === next ? "step" : undefined}>
-                      {index < next ? plan.receipts[index]?.evidence : guidedReadKind(step) === "ReachNamedPage" ? `Find and check “${step.subject}”.` : step.outcome}
+                    {plan.steps.map((step, index) => <li key={`${step.tag}-${index}`} aria-current={index === next ? "step" : undefined}>
+                      {index < next ? plan.receipts[index]?.evidence : step.tag === "ReachNamedPage" ? `Find and check “${step.subject}”.` : guidedDetails(step).outcome}
                     </li>)}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${currentStep?.subject}”.` : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
             </section>
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
           {namedCheck?.pending === false && (
-            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{currentStep?.subject}” on this page. Check the page again or try another link.</GraceBubble>
+            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{details?.subject}” on this page. Check the page again or try another link.</GraceBubble>
           )}
           {canCheck && <AnswerChips>
             {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}

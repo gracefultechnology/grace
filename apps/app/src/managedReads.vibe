@@ -1,6 +1,6 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
 import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
-import { Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin } from "./graceAccount.vibe"
@@ -98,7 +98,10 @@ export function guidedAuthority(setup: SetupState | undefined, hash: string): Gu
 }
 
 export function guidedOwner(authority: GuidedAuthority, steps: readonly GuidedStep[]): string | undefined {
-  return steps.some((step) => step.surface === "Email" || step.surface === "Calendar") ? authority.connected : authority.device
+  return steps.some((step) => {
+    const surface = guidedDetails(step).surface
+    return surface === "Email" || surface === "Calendar"
+  }) ? authority.connected : authority.device
 }
 
 export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[]; events: readonly EventRow[] }

@@ -1,7 +1,7 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
-import { guidedReadKind, Machine as Workspaces, mayGuideReadLink, nextOutcome, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, mayGuideReadLink, nextOutcome, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, decodeClefResult, type ClefDecisionRequest, type ClefDecisionResponse } from "@elizaos/cloud/clef-decisions"
 import { accountFetch, apiOrigin, browserAccountId } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -34,8 +34,7 @@ function context(w: Workspace, authority: GuidedAuthority) {
     stepIndex: w.plan.receipts.length, deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision }
   const key = JSON.stringify([w.plan.owner, step, tab.id, tab.loadVersion])
   const outcome = nextOutcome(w.plan)
-  const namedPage = guidedReadKind(outcome) === "ReachNamedPage"
-  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: w.plan.originalAsk, target: namedPage ? outcome.subject : "" }
+  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "" }
 }
 
 function publicWords(text: string): string {

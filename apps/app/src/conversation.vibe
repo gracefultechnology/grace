@@ -12,7 +12,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedReadKind, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
@@ -85,11 +85,11 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   const { registry, workspace } = scene
   if (privateSurfaceActive(workspace)) return undefined
   function receipt(source: GuidedReadSource, identity: readonly string[], text: string): GuidedReadReceipt { return { source, identity, text } }
-  const read = guidedReadKind(step)
+  const read = step.tag
   if (read === "ReadMail" || read === "ReadCalendar" || read === "SaveMailAppointment") {
     const selected = try managed.guidedSelection()
     if (selected.kind !== "legacy") {
-      if (selected.kind === "unavailable" || workspace.plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment")) return undefined
+      if (selected.kind === "unavailable" || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
       const identity = [selected.accountId, selected.googleEmail, selected.id]
       const { grant, version } = selected
       if (read === "ReadMail" && selected.kind === "mail")
@@ -180,7 +180,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       return receipt({ tag: "CurrentAppointment", key: account.id, owner: identity.owner, calendarId: identity.calendarId,
         occurrence: identity.occurrenceId, generation: view.generation, revision }, [read, identity.owner, identity.calendarId, identity.occurrenceId], "Saved appointment: " + committed.title)
     }
-    case "UnsupportedRead": return undefined
+    case "SurfaceOutcome": return undefined
   }
 }
 
@@ -302,10 +302,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const scene = try look()
       const current = scene.workspace
       const step = nextOutcome(current.plan)
-      if (!hasNext(current.plan) || !(try ownsPlan(current.plan)) || step.surface !== current.device.surface || (step.surface === "Browser" && !current.device.observationAllowed) ||
+      const surface = guidedDetails(step).surface
+      if (!hasNext(current.plan) || !(try ownsPlan(current.plan)) || surface !== current.device.surface || (surface === "Browser" && !current.device.observationAllowed) ||
           current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
-      const read = guidedReadKind(step)
+      const read = step.tag
       const namedScope = read === "ReachNamedPage" ? namedReadScope(current) : undefined
       const account = namedScope === undefined ? undefined : try namedAccount()
       const context = replyControlContext(current)
