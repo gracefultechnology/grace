@@ -86,7 +86,7 @@ const SiteField = ({ value = "", placeholder, focused = false, masked = false }:
 
 const SiteError = ({ children }: { children?: string }) => (children ? <div className="mt-2.5 text-base/[normal] text-site-error">{children}</div> : null);
 
-const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindowProps> => {
+export const chase = (page: keyof typeof pages, site: Site = {}): Partial<BrowserWindowProps> => {
   const amount = site.amount ? amounts[site.amount] : "not chosen";
   const card = "absolute top-[92px] left-10 box-border w-[560px] rounded-sm bg-glass px-6 py-5 shadow-site-card";
   return {

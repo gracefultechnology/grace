@@ -1,4 +1,4 @@
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fireEvent, fn, userEvent, waitFor, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceActionLine } from "./GraceActionLine.tsx";
@@ -42,6 +42,7 @@ export const action = (
 );
 
 const jump = fn();
+const follow = fn();
 
 export const meta: ComponentMeta<GraceMessagesProps> = {
   args: { children: conversation },
@@ -49,7 +50,7 @@ export const meta: ComponentMeta<GraceMessagesProps> = {
     Greeting: { children: greeting },
     Thinking: { children: thinking },
     "Margaret acted": { children: action },
-    "Reading earlier": { children: conversation, following: false, hasNewer: true, onJumpToLatest: jump },
+    "Reading earlier": { children: conversation, following: false, hasNewer: true, onJumpToLatest: jump, onFollowingChange: follow },
   },
   decorator: (story) => (
     <div className="group/grace flex h-[480px] w-[1130px] flex-col bg-background" data-size="expanded">
@@ -59,8 +60,14 @@ export const meta: ComponentMeta<GraceMessagesProps> = {
   play: {
     "Reading earlier": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       jump.mockClear();
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Newest message" }));
+      follow.mockClear();
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Newest message" }));
       await expect(jump).toHaveBeenCalled();
+      const log = canvas.getByRole("log", { name: "Conversation" });
+      log.scrollTop = log.scrollHeight;
+      fireEvent.scroll(log);
+      await waitFor(() => expect(follow).toHaveBeenLastCalledWith(true));
     },
   },
 };
