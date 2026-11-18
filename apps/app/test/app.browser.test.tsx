@@ -32,7 +32,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
  * the page starts what Grace asked only when the test says, and only what it asked last.
  */
-function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false) {
+function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: () => unknown) {
   const calls: Call[] = [];
   const android = { allows: true };
   const privateSignIn = { allows: true };
@@ -51,6 +51,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "createSurface" && options.purpose === "manual-sign-in" && !privateSignIn.allows) {
         return Promise.reject(new Error("Android private WebView unavailable"));
       }
+      if (method === "readPage" && readPage) return Promise.resolve(readPage());
       if (method === "controlPage" && controlPage) return Promise.resolve(controlPage(options));
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
@@ -750,7 +751,11 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.element(page.getByRole("button", { name: "Ask Grace" })).toBeVisible();
     expect(runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.surface).toBe("Calendar");
 
-    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+    const askGrace = page.getByRole("button", { name: "Ask Grace", exact: true });
+    await expect.element(askGrace).toHaveAttribute("aria-pressed", "false");
+    await act(() => userEvent.click(askGrace));
+    await expect.element(askGrace).toHaveAttribute("aria-pressed", "true");
+    await expect.element(input).toBeVisible();
     const review = page.getByRole("region", { name: "Review read plan" });
     const plan = page.getByRole("region", { name: "Task plan" });
     const target = "Help center";
@@ -782,7 +787,11 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.element(review.getByText(target, { exact: true })).toBeVisible();
     expect(plan.query()).toBeNull();
     await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
-    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+    const reopen = page.getByRole("button", { name: "Ask Grace", exact: true });
+    await expect.element(reopen).toHaveAttribute("aria-pressed", "false");
+    await expect.element(review).not.toBeInTheDocument();
+    await act(() => userEvent.click(reopen));
+    await expect.element(input).toBeVisible();
     expect(review.query()).toBeNull();
     expect(plan.query()).toBeNull();
 
@@ -1425,14 +1434,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(account));
   const origin = "https://example.org";
-  const home = { id: "example-home", path: "/", title: "Example", text: "Example\nHelp center" };
-  const about = { id: "example-about", path: "/about", title: "About Example", text: "About Example\nHelp center\nOur team" };
-  const help = { id: "example-help", path: "/help", title: target, text: "Help center\nFind answers to frequently asked questions." };
+  const home = { id: "example-home", path: "/", title: "Example", heading: "Example", text: "Example\nHelp center" };
+  const about = { id: "example-about", path: "/about", title: target, heading: "About Example", text: "About Example\nHelp center\nOur team" };
+  const help = { id: "example-help", path: "/help", title: target + " | Example", heading: target, text: "Help center\nFind answers to frequently asked questions." };
   let currentPage = home;
+  let domRevision = 1;
+  let reviseDuringRead = false;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
-        snapshotId: currentPage.id, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
+        snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
         complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
@@ -1445,6 +1456,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       } };
     }
     return { result: { accepted: true } };
+  }, false, () => {
+    if (reviseDuringRead) {
+      domRevision++;
+      reviseDuringRead = false;
+    }
+    return { url: origin + currentPage.path, title: currentPage.title, text: currentPage.heading, truncated: false };
   });
   const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
@@ -1519,6 +1536,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
+    reviseDuringRead = true;
+    await tap(check);
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    await routeTo(result);
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
     expect(check.query()).toBeNull();
