@@ -13,7 +13,7 @@ export service BrowserGuide {
 
 const unavailable = "I couldn't find a link to point to on this page."
 const changed = "The page or task changed. Ask me again on the page you want."
-const namedPageContext = " Prefer a direct link to the named page. When none is visible, choose a useful section that leads to it."
+const namedPageContext = " Prefer an exact page label. If it is absent, choose a navigation section that leads there. Keep the requested kind of page, such as a category or an individual item."
 const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
 
 function context(w: Workspace) {
@@ -28,7 +28,7 @@ function context(w: Workspace) {
   const key = JSON.stringify([w.plan.owner, step, tab.id, tab.loadVersion])
   const outcome = nextOutcome(w.plan)
   const namedPage = guidedReadKind(outcome) === "ReachNamedPage"
-  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: namedPage ? outcome.subject : w.plan.originalAsk, namedPage }
+  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: w.plan.originalAsk, target: namedPage ? outcome.subject : "" }
 }
 
 function publicWords(text: string): string {
@@ -36,11 +36,11 @@ function publicWords(text: string): string {
   return withhold({ text: plain.replace(/https?:\/\/\S+|[\w.+-]+@[\w.-]+\.[\w-]+/giu, "…"), passwords: [] })
 }
 
-function links(snapshot: LinkObservation, page: URL) {
+function links(snapshot: LinkObservation, page: URL, target: string) {
   const { result } = snapshot
   if (result.url !== page.href || result.readyState !== "complete" ||
       result.blockers.some(blocker => blocker.covers !== "partial")) return []
-  const destinations = new Map<string, { id: string; label: string; labels: Set<string>; rank: number; path: string }>()
+  const destinations = new Map<string, { id: string; label: string; labels: Set<string>; rank: number; path: string; menuItem: boolean; expanded?: boolean }>()
   for (const item of result.elements) {
     if (item.tag !== "a" || item.disabled || item.sensitive || !item.label || !item.href || !URL.canParse(item.href)) continue
     const address = new URL(item.href)
@@ -57,24 +57,34 @@ function links(snapshot: LinkObservation, page: URL) {
         bounds.y + bounds.height <= viewport.offsetTop + viewport.height / viewport.scale
       if (!contained) rank = 0
     }
+    const menuItem = item.role === "menuitem"
     const existing = destinations.get(address.href)
     if (existing === undefined) {
-      destinations.set(address.href, { id: item.id, label, labels: new Set([label]), rank, path: address.pathname })
+      destinations.set(address.href, { id: item.id, label, labels: new Set([label]), rank, path: address.pathname, menuItem, expanded: item.expanded })
     } else {
       existing.labels.add(label)
       if (rank > existing.rank) {
         existing.id = item.id
         existing.label = label
         existing.rank = rank
+        existing.menuItem = menuItem
+        existing.expanded = item.expanded
       }
     }
   }
-  return [...destinations].map(([href, target]) => {
-    const prefix = target.path.replace(/\/+$/u, "") + "/"
-    const children = [...destinations.values()].filter(other => other.path !== target.path && other.path.startsWith(prefix))
+  return [...destinations].map(([href, link]) => {
+    const aliases = [...link.labels]
+    const description = aliases.join(" / ")
+    if (target !== "") {
+      const control = link.expanded === false ? " (collapsed menu)" : link.expanded === true ? " (expanded menu)" : link.menuItem ? " (menu item)" : ""
+      return { id: link.id, label: link.label, description: (description + control).slice(0, CLEF_DECISION_LIMITS.candidateLabel),
+        href, exact: aliases.some((label) => label.toLowerCase() === target.toLowerCase()), pointable: link.rank === 2 }
+    }
+    const prefix = link.path.replace(/\/+$/u, "") + "/"
+    const children = [...destinations.values()].filter(other => other.path !== link.path && other.path.startsWith(prefix))
     const section = children.length ? " (section with links including " + children.slice(0, 3).map(child => child.label).join(", ") + ")" : ""
-    const description = [...target.labels].join(" / ") + section
-    return { id: target.id, label: target.label, description: description.slice(0, CLEF_DECISION_LIMITS.candidateLabel), href }
+    return { id: link.id, label: link.label, description: (description + section).slice(0, CLEF_DECISION_LIMITS.candidateLabel), href,
+      exact: false, pointable: link.rank === 2 }
   })
 }
 
@@ -100,14 +110,20 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
       if (start === undefined) return changed
       if (decide === undefined) return "Connect Grace to her decision service to get help choosing a link."
       const request = publicWords(start.goal)
-      if (!request || request.length > CLEF_DECISION_LIMITS.goal) return unavailable
-      const instruction = start.namedPage ? namedPageContext : choiceContext
+      const target = publicWords(start.target)
+      if (!request || (start.target !== "" && (!target || target.includes("*")))) return unavailable
+      const instruction = target === "" ? choiceContext : " Find the named page: " + target + "." + namedPageContext
+      if (request.length > CLEF_DECISION_LIMITS.goal || (target !== "" && request.length + instruction.length > CLEF_DECISION_LIMITS.goal)) return unavailable
       const goal = request.length + instruction.length <= CLEF_DECISION_LIMITS.goal ? request + instruction : request
       for (let attempt = 0; attempt < 2; attempt++) {
         if (context(try workspace.get())?.key !== start.key) return changed
         const snapshot = page.observeLinks(start.id) catch () => undefined
         if (snapshot === undefined) return "I can't read the links in this browser right now."
-        const choices = links(snapshot, start.url)
+        const observed = links(snapshot, start.url, target)
+        const exact = observed.filter((link) => link.exact)
+        if (exact.length > 1) return `More than one link is named “${target}”. Open the one you mean.`
+        if (exact.length === 1 && !exact[0]?.pointable) return `Scroll until “${target}” is visible, then ask again.`
+        const choices = target === "" ? observed : exact.length === 1 ? exact : observed.filter((link) => link.pointable)
         if (!choices.length) return unavailable
         if (context(try workspace.get())?.key !== start.key) return changed
         const decision = Effect.tryPromise(async (signal) => {

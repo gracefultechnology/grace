@@ -81,6 +81,7 @@ export const LinkObservation = Schema.Struct({
     blockers: Schema.Array(Schema.Struct({ kind: Schema.String, covers: Schema.String })),
     elements: Schema.Array(Schema.Struct({
       id: Schema.NonEmptyString, tag: Schema.String, label: Schema.NullOr(Schema.String),
+      role: Schema.optional(Schema.NullOr(Schema.String)), expanded: Schema.optional(Schema.Boolean),
       href: Schema.NullOr(Schema.String), disabled: Schema.optional(Schema.Boolean),
       bounds: Schema.optional(Schema.Struct({ x: Schema.Finite, y: Schema.Finite, width: Schema.Finite, height: Schema.Finite })),
       sensitive: Schema.optional(Schema.NullOr(Schema.String)), inViewport: Schema.Boolean
