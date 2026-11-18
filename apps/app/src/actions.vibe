@@ -164,6 +164,7 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
     case "markUnread": return plain(open === undefined ? [] : [mail(open.account, { tag: "AssistMarkUnread", target: selected(open.mailbox) })])
     case "undoTrash": return plain(shown.flatMap((m) => undoable(m.mailbox).slice(0, 1).map((r) => mail(m.account, { tag: "AssistUndoTrash", target: { ref: r.identity.ref, revision: r.undoRevision } }))))
     case "proposeAppointment": {
+      if (action.entry !== undefined) return "NotYetAvailable"
       const id = `grace-${fresh}`
       const timezone = sourceAt(s.calendars, tablet).view.timezone || zone()
       return plain([{ tag: "ProposeAppointment", key: tablet, seed: seed(s, tablet, id, "", details(action, action.repeat, action.repeat === "Once" ? "" : id, timezone, "")) }])

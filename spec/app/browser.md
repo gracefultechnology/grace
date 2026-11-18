@@ -205,6 +205,9 @@ pure val candidateValues = Set(blankTab(1, 0), blankTab(2, 1))
 pure val tabValues = candidateValues
 pure val tValues = tabValues.union(Set(
   { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 1 },
+  { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 0 },
+  { ...blankTab(1, 0), history: List("first", "middle", "last"), cursor: 1 },
+  { ...blankTab(1, 0), history: List(), cursor: -1 },
   { ...blankTab(2, 1), history: List("https://utility.example"), manualSignIn: true }))
 pure val capacityValues = Set(-1, 0, 1, 2, 3)
 ```
@@ -441,7 +444,7 @@ pure val endingTabValues = Set(
 pure val redirectedTo: str = "https://www.utility.example/home"
 pure def sometimesARedirectIsFollowed(b: Browser): bool =
   activeTab(b).load == Loaded and tabUrl(activeTab(b)) == redirectedTo and activeTab(b).cursor > 0
-pure val endedAtValues = Set(redirectedTo)
+pure val endedAtValues = Set("", redirectedTo)
 ```
 
 ### A load that never starts or never ends becomes the failure view with Reload
