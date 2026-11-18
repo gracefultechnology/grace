@@ -13,9 +13,9 @@ one shared password, in her own screen, through Android's "Save this
 network?" dialog. Company-style networks, which ask for an account, old
 WEP networks and a hotel or café's sign-in page are handed to Android's own
 internet panel.
-Six of the seven join outcomes are the Wi-Fi plugin's six statuses, one for
-one (`vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts`);
-the certificate challenge is the one outcome no plugin status sends. Network
+Six of the seven join outcomes are the Wi-Fi bridge's six statuses, one for
+one (`vendor/eliza/packages/os/src/bridges/definitions/wifi.ts`);
+the certificate challenge is the one outcome no bridge status sends. Network
 names, credentials and fixed delays in
 `prototype/Grace Prototype.html:1994–2036,2217–2227` are demo data, not
 policy. No password, account password, library-card number or PIN enters
@@ -113,7 +113,7 @@ pure def alwaysReadinessBelongsToPrivateEntry(n: NetworkJoin): bool =
 ### Only the current OS result can complete or challenge the join
 
 No timer or nonempty password establishes a connection. The outcomes are
-the plugin's: connected (joined), wrong password (rejected), not connected
+the bridge's: connected (joined), wrong password (rejected), not connected
 (unavailable), declined in Android's dialog, unverified (a working Wi-Fi
 whose name Android withheld) and a sign-in page (portal). Only a password
 network can reject its password, and rejected credentials return to

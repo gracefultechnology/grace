@@ -1427,7 +1427,7 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   expect(stored.revision).toBe(1);
 });
 
-it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share, print and remove the chosen file")', async () => {
+it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and remove the chosen file")', async () => {
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
   let entries = [photo];

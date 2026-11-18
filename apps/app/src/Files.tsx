@@ -1,4 +1,4 @@
-// spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share, print and remove the chosen file"
+// spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share and remove the chosen file"
 import { AppWindow, Button, Dialog, DialogContent, DialogTitle, EmptyState, FilePhotoViewer, FilesApp, Input, PageText, PdfViewer, RetryNotice } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { Folder } from "lucide-react";
