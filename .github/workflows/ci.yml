@@ -73,7 +73,7 @@ jobs:
             echo "WEBARENA_PRIVATE=$private_dir"
             echo "WEBARENA_RESULTS=$results_dir"
             echo "GRACE_WEBARENA_PYTHON=$private_dir/venv/bin/python"
-            echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/task-260-input.json"
+            echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/shopping-input.json"
           } >> "$GITHUB_ENV"
           pnpm gen
       - name: Start the pinned Shopping storefront
