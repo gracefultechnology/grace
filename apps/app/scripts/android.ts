@@ -299,6 +299,17 @@ const SignInReport = Schema.Struct({
   identity: Schema.Struct({ credentialId: Schema.NullOr(Schema.String) }),
 });
 const Targets = Schema.Array(Schema.Struct({ type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
+const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
+const secondHomePage = `document.querySelector('button[aria-label="Page 2"][aria-current=true]') !== null`;
+const passwordCardReady = `(() => {
+  const card = [...document.querySelectorAll("button:enabled")].find((control) => control.textContent.trim() === "Passwords");
+  if (!card || card.closest("[inert]")) return false;
+  for (let element = card; element; element = element.parentElement) {
+    if (element.getAnimations().some((animation) => animation instanceof CSSTransition && animation.playState === "running")) return false;
+  }
+  const { left, top, width, height } = card.getBoundingClientRect();
+  return card.contains(document.elementFromPoint(left + width / 2, top + height / 2));
+})()`;
 
 async function devTools(url: string, signal: AbortSignal) {
   const socket = new WebSocket(url);
@@ -449,10 +460,9 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   const debuggable = `grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit`;
   const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); case "$pid" in *" "*) echo "$pid"; exit;; "") ;; *) ${debuggable};; esac; sleep 1; done`;
   await withGracePage(serial, waitForPid, async (page, pid) => {
-    const home = `[...document.querySelectorAll("[aria-current=true]")].some((e) => e.textContent.trim() === "Home")`;
     const showing = (what: string) => async (error: unknown) =>
       failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
-    await page.until(home, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
+    await page.until(selectedHome, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
     for (const step of exercise) {
       const description = "into" in step ? `Enter text in ${step.into}` : JSON.stringify(step);
       await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(description));
@@ -655,9 +665,17 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "wait for the Grace home screen";
         const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
         await withGracePage(serial, waitForPid, async (page) => {
-          step = "open Passwords from Home";
-          await page.step({ tap: "More apps" });
+          step = "wait for interactive Grace Home";
+          await page.until(selectedHome, AbortSignal.timeout(180_000));
+          process.stdout.write("The installed Grace Home is ready.\n");
+          step = "select the second Grace Home page";
+          await page.step({ tap: "Page 2" });
+          await page.until(secondHomePage, AbortSignal.timeout(30_000));
+          process.stdout.write("The second Grace Home page is selected.\n");
+          step = "open Passwords from the second Grace Home page";
+          await page.until(passwordCardReady, AbortSignal.timeout(30_000));
           await page.step({ tap: "Passwords" });
+          step = "request Passwords unlock";
           await page.step({ tap: "Unlock Passwords" });
           step = "confirm the tablet screen lock";
           await submitPin();
