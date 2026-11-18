@@ -19,7 +19,7 @@ import { AccountActions } from "../src/graceAccount.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, reply, script, signIn, turns } from "./cloud.vibe";
+import { client, otherPassword, reply, script, signIn, turns } from "./cloud.vibe";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -1859,14 +1859,32 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   const start = "Check this open website, read the clinic email I open, and guide me through adding its appointment to my calendar.";
   const prepare = "Prepare the appointment from this email.";
   const approve = "Yes, add it";
-  const title = "Visit with Dr. Patel";
+  const title = "Retinal scan with Dr. Chen";
+  const place = "Riverview Clinic, room 7";
+  const time = "14:35";
+  const other = "family@comcast.net";
   const when = new Date();
-  when.setDate(when.getDate() + 1);
-  when.setHours(10, 0, 0, 0);
+  when.setDate(when.getDate() + 4);
+  when.setHours(14, 35, 0, 0);
   const day = [when.getFullYear(), String(when.getMonth() + 1).padStart(2, "0"), String(when.getDate()).padStart(2, "0")].join("-");
+  const subject = "Your appointment details";
+  const selectedBody = `${title} on ${day} at ${time} in ${place}.`;
+  const decoyBody = "Hearing test with Dr. Lewis at 08:20 in Eastwood, room 3.";
+  const headers = { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" };
+  const deliver = (from: string, fromEmail: string, body: string) => fetch(new URL("/fake/gmail/incoming", cloud), {
+    method: "POST", headers, body: JSON.stringify({ to: gmail, from, fromEmail, subject, body }),
+  });
+  const alternate = await fetch(new URL("/api/v1/eliza/connections/other", cloud), {
+    method: "POST", headers, body: JSON.stringify({ address: other, password: otherPassword }),
+  });
+  expect(alternate.ok).toBe(true);
+  expect(await alternate.json()).toMatchObject({ outcome: "allowed", address: other });
+  expect((await deliver("Riverview Eye Clinic", "eye@riverview.test", selectedBody)).ok).toBe(true);
+  expect((await deliver("Eastwood Hearing Clinic", "hearing@eastwood.test", decoyBody)).ok).toBe(true);
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: start, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadBrowser", "ReadMail", "SaveMailAppointment"] }] }) },
-    { said: prepare, answer: JSON.stringify({ text: "Add the visit with Dr. Patel tomorrow at 10 am?", isQuestion: true, answers: [approve, "No, thanks"], actions: [{ kind: "proposeFromMessage", title, day, time: "10:00" }] }) },
+    { said: prepare, context: { includes: [selectedBody], excludes: [decoyBody] },
+      answer: JSON.stringify({ text: `Add ${title} at ${time} in ${place}?`, isQuestion: true, answers: [approve, "No, thanks"], actions: [{ kind: "proposeFromMessage", title, day, time, place }] }) },
     { said: approve, answer: JSON.stringify({ text: "I will ask your calendar to save it.", isQuestion: false, answers: [], actions: [{ kind: "confirmProposal" }] }) },
   ]), client));
   localStorage.clear();
@@ -1888,13 +1906,13 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   };
   const plan = page.getByRole("region", { name: "Task plan" });
   const receipt = page.getByText("Saved appointment: " + title, { exact: true });
-  const saved = async () => {
+  const calendars = async () => {
     const Kept = Schema.Struct({
-      boxes: Schema.Array(Schema.Struct({ address: Schema.String, calendar: Schema.Array(Schema.Struct({ title: Schema.String, startAt: Schema.String })) })),
+      boxes: Schema.Array(Schema.Struct({ address: Schema.String, calendar: Schema.Array(Schema.Struct({ title: Schema.String, startAt: Schema.String, location: Schema.String })) })),
     });
     const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } });
     const { boxes } = Schema.decodeUnknownSync(Kept)(await response.json());
-    return boxes.flatMap((box) => box.calendar.filter((event) => event.title === title).map((event) => ({ address: box.address, at: event.startAt })));
+    return boxes;
   };
 
   try {
@@ -1909,23 +1927,28 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(start, { exact: true }));
     await tap(button("Collapse"));
     await tap(button("Start read plan"));
+    expect(plan.getByText(/^Open the email/).query()).toBeNull();
     await tap(button("Check page"));
     await routeTo(plan.getByText(/^Open the email/));
 
     await tap(button("Home"));
     await tap(button(/^Email/));
-    await tap(button(/Main St Clinic/));
-    await routeTo(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/));
+    await tap(button(/Riverview Eye Clinic/));
+    await routeTo(page.getByText(selectedBody, { exact: true }));
     await tap(button("Resume Grace"));
     await tap(button("Check email"));
     await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
+    const previous = await calendars();
+    expect(previous.map(({ address }) => address)).toEqual([gmail, other]);
     await say(prepare);
     const yes = button(approve);
     await routeTo(yes);
-    expect(await saved()).toEqual([]);
+    expect(await calendars()).toEqual(previous);
     expect(receipt.query()).toBeNull();
     await tap(yes);
-    await expect.poll(saved, { timeout: 10000 }).toEqual([{ address: gmail, at: when.toISOString() }]);
+    await expect.poll(calendars, { timeout: 10000 }).toEqual(previous.map((box) => box.address === gmail
+      ? { ...box, calendar: [...box.calendar, { title, startAt: when.toISOString(), location: place }] }
+      : box));
     await tap(button("Home"));
     await tap(button(/^Calendar/));
     await tap(button("Resume Grace"));
@@ -1934,7 +1957,7 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await routeTo(receipt);
     await tap(button("Expand"));
     await routeTo(plan.getByText("Open page: https://example.org/", { exact: true }));
-    await routeTo(plan.getByText("Open message: Reminder: your appointment tomorrow at 10 am", { exact: true }));
+    await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
