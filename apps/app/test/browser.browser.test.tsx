@@ -190,6 +190,9 @@ const BrowserDocument = Schema.Struct({
   readyState: Schema.Literals(["loading", "interactive", "complete"]),
   truncated: Schema.Boolean,
 });
+const SelectorRead = Schema.Struct({
+  url: Schema.String, title: Schema.String, text: Schema.String, truncated: Schema.Boolean,
+});
 const BrowserControl = Schema.Struct({
   documentId: Schema.NonEmptyString,
   frameScope: Schema.Literal("main"),
@@ -223,6 +226,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     },
     async readPage(request) {
       if (request.id !== selected) throw new Error("The benchmark site is not the selected Grace surface");
+      if (request.selector !== undefined) return Schema.decodeUnknownSync(SelectorRead)(await transport({ kind: "read", selector: request.selector }));
       const { url, title, text, truncated } = await read();
       return { url, title, text, truncated };
     },
@@ -269,11 +273,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const plan = page.getByRole("region", { name: "Task plan" });
     const finished = plan.getByText("Read checks complete", { exact: true });
     const continuing = page.getByRole("status", { name: "Page check result" });
+    const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
+    const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const visited = new Set([initial.url]);
+    const disclosed = new Set<string>();
+    const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
+    outcome.disclosures = disclosures;
     const hops: { url: string; documentId: string; checked: boolean }[] = [];
     outcome.hops = hops;
     let previous = initial;
-    while (hops.length < (named ? 8 : 1)) {
+    while (hops.length + disclosures.length < (named ? 8 : 1)) {
       try {
         await userEvent.click(showLink);
       } catch (error) {
@@ -283,6 +292,23 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           surface: device.surface, presentation: assistant.presentation, activity: assistant.activity, load: browser.tabs[0]?.load,
         };
         throw error;
+      }
+      if (named) {
+        await expect.poll(() => menuGuidance.query() !== null || linkGuidance.query() !== null, { timeout: 45_000 }).toBe(true);
+        if (menuGuidance.query() !== null) {
+          expect(disclosed.has(previous.documentId)).toBe(false);
+          const evidence = Schema.decodeUnknownSync(Schema.Struct({
+            disclosed: Schema.Literal(true), url: Schema.NonEmptyString, documentId: Schema.NonEmptyString,
+            snapshotId: Schema.NonEmptyString, pointer: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
+            before: Schema.Int, after: Schema.Int,
+          }))(await transport({ kind: "hoverGuide" }));
+          expect(evidence.url).toBe(previous.url);
+          expect(evidence.documentId).toBe(previous.documentId);
+          expect(evidence.after).toBeGreaterThan(evidence.before);
+          disclosed.add(evidence.documentId);
+          disclosures.push(evidence);
+          continue;
+        }
       }
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
       outcome.ringTap = true;

@@ -82,6 +82,7 @@ export const LinkObservation = Schema.Struct({
     elements: Schema.Array(Schema.Struct({
       id: Schema.NonEmptyString, tag: Schema.String, label: Schema.NullOr(Schema.String),
       role: Schema.optional(Schema.NullOr(Schema.String)), expanded: Schema.optional(Schema.Boolean),
+      targetSelector: Schema.optional(Schema.NullOr(Schema.String)),
       href: Schema.NullOr(Schema.String), disabled: Schema.optional(Schema.Boolean),
       bounds: Schema.optional(Schema.Struct({ x: Schema.Finite, y: Schema.Finite, width: Schema.Finite, height: Schema.Finite })),
       sensitive: Schema.optional(Schema.NullOr(Schema.String)), inViewport: Schema.Boolean
@@ -89,4 +90,5 @@ export const LinkObservation = Schema.Struct({
   })
 })
 export type LinkObservation = typeof LinkObservation.Type
+export const MenuRead = Schema.Struct({ url: Url, text: Schema.NonEmptyString, truncated: Schema.Literal(false) })
 export const PointResult = Schema.Struct({ result: Schema.Struct({ accepted: Schema.optional(Schema.Boolean) }) })

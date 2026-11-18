@@ -56,8 +56,9 @@ if (officialCases.length) {
 type SiteAction =
   | { kind: "begin"; taskId: string }
   | { kind: "open"; url: string }
-  | { kind: "read" }
+  | { kind: "read"; selector?: string }
   | { kind: "tapGuide" }
+  | { kind: "hoverGuide" }
   | { kind: "decisionRoute"; cloud: string }
   | { kind: "receipt"; outcome: Record<string, unknown> }
   | { kind: "control"; request: Command };
@@ -199,7 +200,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   return observeSite(existing, action);
 }
 
-type SiteObservation = Extract<SiteAction, { kind: "read" | "tapGuide" | "control" }>;
+type SiteObservation = Extract<SiteAction, { kind: "read" | "tapGuide" | "hoverGuide" | "control" }>;
 
 async function observeSite(existing: Site, action: SiteObservation) {
   const { page, origin, session } = existing;
@@ -217,15 +218,26 @@ async function observeSite(existing: Site, action: SiteObservation) {
     return value.result.value;
   };
   if (action.kind === "read") {
+    if (action.selector !== undefined) {
+      const reader = readFileSync(new URL("../../vendor/eliza/plugins/plugin-native-browser-surface/resources/read-page.js", import.meta.url), "utf8");
+      const result = Schema.decodeUnknownSync(Schema.Struct({
+        url: Schema.String, title: Schema.String, text: Schema.String, truncated: Schema.Boolean,
+      }))(await evaluate(`(${reader})(${JSON.stringify(action.selector)})`));
+      const { frameTree: current } = await session.send("Page.getFrameTree");
+      if (current.frame.loaderId !== loaderId || result.url !== url) throw new Error("The website document changed during the read");
+      return result;
+    }
     const content = await evaluate(`(() => {
       const text = document.body?.innerText ?? "";
       return { title: document.title, text: text.slice(0, 6000), truncated: text.length > 6000, readyState: document.readyState };
     })()`);
     return { url, documentId: loaderId, ...Schema.decodeUnknownSync(PageText)(content) };
   }
-  if (action.kind === "tapGuide") {
+  if (action.kind === "tapGuide" || action.kind === "hoverGuide") {
     await page.bringToFront();
-    const point = Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ x: Schema.Finite, y: Schema.Finite })))(await evaluate(`(() => {
+    const point = Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({
+      x: Schema.Finite, y: Schema.Finite, snapshotId: Schema.String, menu: Schema.Boolean,
+    })))(await evaluate(`(() => {
       const guide = globalThis.__elizaPageGuidanceV1;
       const snapshot = globalThis.__elizaBrowserControlV1;
       if (!guide?.visible || guide.invalidated || guide.paused || !guide.host.isConnected ||
@@ -238,11 +250,38 @@ async function observeSite(existing: Site, action: SiteObservation) {
       if (!view || rect.width <= 0 || rect.height <= 0 || rect.left < view.offsetLeft || rect.top < view.offsetTop ||
           rect.right > view.offsetLeft + view.width || rect.bottom > view.offsetTop + view.height) return null;
       const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
-      return node.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+      const menu = node.getAttribute("role") === "menuitem" && ["true", "menu"].includes(node.getAttribute("aria-haspopup"));
+      return node.contains(document.elementFromPoint(x, y)) ? { x, y, snapshotId: guide.id, menu } : null;
     })()`));
-    if (!point) return { tapped: false, url };
+    if (!point) return { tapped: false, disclosed: false, url };
     const { frameTree: current } = await session.send("Page.getFrameTree");
-    if (current.frame.loaderId !== loaderId || current.frame.url !== url) return { tapped: false, url };
+    if (current.frame.loaderId !== loaderId || current.frame.url !== url) return { tapped: false, disclosed: false, url };
+    if (action.kind === "hoverGuide") {
+      if (!point.menu) return { disclosed: false, url };
+      const { x, y, snapshotId } = point;
+      const selectVisibleChildren = ({ x, y }: { x: number; y: number }) => {
+        const menu = document.elementFromPoint(x, y)?.closest('[role="menuitem"][aria-haspopup]');
+        const item = menu?.closest('li,[role="presentation"],[role="none"]');
+        const controlled = menu?.getAttribute("aria-controls");
+        const declared = controlled ? document.getElementById(controlled) : null;
+        const submenu = declared ?? item?.querySelector('[role="menu"]');
+        const items = submenu?.querySelectorAll('[role="menuitem"],a[href],button') ?? [];
+        return [...items].filter((entry) => {
+          const rect = entry.getBoundingClientRect();
+          return entry.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && rect.width > 0 && rect.height > 0 &&
+            entry.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+        }).length;
+      };
+      const before = await page.evaluate(selectVisibleChildren, { x, y });
+      if (before !== 0) return { disclosed: false, url };
+      await page.mouse.move(x, y);
+      await page.waitForFunction(selectVisibleChildren, { x, y }, { timeout: 8000 });
+      const after = await page.evaluate(selectVisibleChildren, { x, y });
+      const { frameTree: revealed } = await session.send("Page.getFrameTree");
+      if (after <= before || revealed.frame.loaderId !== loaderId || revealed.frame.url !== url)
+        return { disclosed: false, url };
+      return { disclosed: true, url, documentId: loaderId, snapshotId, pointer: { x, y }, before, after };
+    }
     await page.mouse.click(point.x, point.y);
     return { tapped: true, url };
   }

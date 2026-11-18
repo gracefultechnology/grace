@@ -7,6 +7,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
+import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
@@ -50,7 +51,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [pageCheck, setPageCheck] = useState<{ key: string; pending: boolean }>();
-  const [linkFeedback, setLinkFeedback] = useState<{ key: string; words?: string }>();
+  const [linkFeedback, setLinkFeedback] = useState<{ key: string; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
   if (assistant.presentation === "Closed") return null;
@@ -103,8 +104,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
   const showLink = () => {
     setLinkFeedback({ key: guideKey });
-    const report = (words: string) => setLinkFeedback((current) => current?.key === guideKey ? { key: guideKey, words } : current);
-    void pointAtReadLink().then(report, () => report("I could not highlight a link on this page."));
+    const report = (result: BrowserGuidance) => setLinkFeedback((current) => current?.key === guideKey ? { key: guideKey, result } : current);
+    void pointAtReadLink().then(report, () => report({ kind: "Unavailable", words: "I could not highlight a link on this page." }));
   };
 
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": compact over a
@@ -189,12 +190,12 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${currentStep?.subject}”.` : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
             </section>
           )}
-          {feedback?.words && <GraceBubble role="status">{feedback.words}</GraceBubble>}
+          {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : "Link guide result"}>{feedback.result.words}</GraceBubble>}
           {namedCheck?.pending === false && (
             <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{currentStep?.subject}” on this page. Try another link.</GraceBubble>
           )}
           {canCheck && <AnswerChips>
-            {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && feedback.words === undefined)} onClick={showLink}>Show me the link</AnswerChip>}
+            {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && feedback.result === undefined)} onClick={showLink}>Show me the link</AnswerChip>}
             <AnswerChip disabled={namedCheck?.pending} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
           {answers.length > 0 && (
