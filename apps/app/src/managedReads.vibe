@@ -52,7 +52,7 @@ export type ProposedWork = { accountId: string; grant: string } & (
   | { kind: "removeAppointment"; id: string; version: string; series: boolean }
   | { kind: "trash"; id: string; version: string }
 )
-export type StagedWork = { number: number; proposal: ProposedWork }
+type StagedWork = { number: number; proposal: ProposedWork }
 schema Series { accountId: idField; occurrenceId: idField; event: EventRow }
 schema ActionReceipt { accountId: idField; operationId: idField; itemId: idField; version?: string }
 export type WriteReceipt = typeof ActionReceipt.Type
