@@ -1,6 +1,6 @@
 # Commitment authorization and durable outcomes
 
-A commitment is the consequential act a task ends in: paying a bill, booking a visit. This ledger owns its review, approval, submission and verified outcome for every kind of task; it reads a kind only through the subject's kind and the terms of [task](./task.md), never a field of a kind's own. Bill pay is the kind the rules below are written for, and every rule holds for each kind.
+A commitment is the consequential act a task ends in: paying a bill, booking a visit. This ledger owns its review, approval, submission and verified outcome for every kind of task; it reads a kind only through the subject's kind and the terms of [task](./task.md), never a field of a kind's own. The rules below speak of a subject and its terms; bill pay is their worked case, and every rule holds for each kind.
 
 One durable aggregate belongs to one owner, provider, account and subject: a bill occurrence or a visit. Email, Calendar, browser guidance and resumed tasks must retrieve this same aggregate; a new chat is not a new commitment. The subject's reference identifies a unique provider obligation or invoice cycle. A calendar entry ID is not part of the identity: two entries referring to the same bill share one record. Identity uses stable opaque references, not an account suffix, amount, task ID or website name. No password, verification code, card number or bank credential enters this model.
 
@@ -10,7 +10,7 @@ This contract generalizes `BillAttempt`, `MoneyEffect` and `GuideConsent` from t
 
 > As a person paying a bill, I want to see what will happen and choose whether to submit it, without an old answer paying changed details.
 
-### A payment starts without an identity, proposal or submission
+### A commitment starts without an identity, proposal or submission
 
 The identity is a task's subject and the proposal is its terms ([task](./task.md)): a payment's terms for a bill, a booking's for a visit. Dates are unambiguous local calendar-day references accompanied by the website's date semantics in the UI. Money is integer minor units in one explicit currency. Funding references are non-secret identifiers resolved by the provider, never credentials. The initial empty values are sentinels, not a real bill.
 
@@ -86,9 +86,9 @@ pure val weight_submit = 2
 pure val weight_recordOutcome = 2
 ```
 
-### The selected bill identity is bound once and is never replaced by a new task
+### The selected subject's identity is bound once and is never replaced by a new task
 
-Binding requires the person's selected bill, after trusted source resolution. A wrong owner or destination must be corrected before binding or opened as a separate bill aggregate; it cannot rewrite an existing attempt's identity.
+Binding requires the person's selected subject, a bill or a visit, after trusted source resolution. A wrong owner or destination must be corrected before binding or opened as a separate aggregate; it cannot rewrite an existing attempt's identity.
 
 Discovered by the proof: an empty commitment has no saved outcome. Otherwise
 binding a new subject could carry an earlier outcome and another kind of
@@ -105,7 +105,7 @@ pure def stepIdentityNeverChanges(before: Commitment, after: Commitment): bool =
 
 ### Only a fresh matching review can replace the current proposal
 
-The browser host has checked the selected account, actual fields, fees, date and funding method against the person's choices. Only terms of the subject's own kind can be reviewed: a booking's terms never land on a bill. A mismatched review does not advance. Every new review invalidates prior read-back and approval. A reviewed proposal is still unsubmitted. An unresolved window cannot be overwritten by editing the form. Discovered by the proof: every reviewed proposal must retain its nonempty evidence reference, even before an attempt is opened; otherwise a journal could contain no basis for the review.
+The browser host has checked the selected account and the actual fields against the person's choices: a bill's fees, date and funding method, a booking's service, time and place. Only terms of the subject's own kind can be reviewed: a booking's terms never land on a bill. A mismatched review does not advance. Every new review invalidates prior read-back and approval. A reviewed proposal is still unsubmitted. An unresolved window cannot be overwritten by editing the form. Discovered by the proof: every reviewed proposal must retain its nonempty evidence reference, even before an attempt is opened; otherwise a journal could contain no basis for the review.
 
 ```quint
 pure def canReview(p: Commitment, reviewReport: T::ReviewReport, by: T::TaskActor): bool =
@@ -120,9 +120,9 @@ pure def alwaysCounters(p: Commitment): bool = p.revision >= 0 and p.attempt >= 
 pure def alwaysReviewHasEvidence(p: Commitment): bool = p.stage == Reviewed implies p.evidence != ""
 ```
 
-### Current amount, date, funding method and fees are presented before voice approval
+### The current terms are presented before voice approval
 
-The accessible review and its spoken equivalent contain the same proposal. The host acknowledges completed presentation for the exact revision. Interruption before the read-back is complete cannot authorize submission.
+The review shows the subject's current terms: for a bill, the amount, date, funding method and fees. The accessible review and its spoken equivalent contain the same proposal. The host acknowledges completed presentation for the exact revision. Interruption before the read-back is complete cannot authorize submission.
 
 ```quint
 pure def canRecordReadBack(p: Commitment, observedRevision: int, by: T::TaskActor): bool =
@@ -132,7 +132,7 @@ pure def recordReadBack(p: Commitment, observedRevision: int, by: T::TaskActor):
 
 ### A durable unresolved window exists before either submission route is enabled
 
-The store acknowledgement means identity, proposal, review evidence/time reference and attempt number survived an atomic durable write. Every physical write uses the canonical bill key and a revision-checked transaction: serialization or compare-and-swap rejects a stale commit before it changes storage, not only when its callback reaches this model. Concurrent entry points retrieve and update this one aggregate. The shell must request that write before exposing a guided final-payment target. A current-revision write failure leaves Reviewed, records a storage error and offers Retry; no final-payment effect is emitted. Opening the window records uncertainty before dispatch because a manual tap or crash may occur before its observation returns.
+The store acknowledgement means identity, proposal, review evidence/time reference and attempt number survived an atomic durable write. Every physical write uses the canonical subject key and a revision-checked transaction: serialization or compare-and-swap rejects a stale commit before it changes storage, not only when its callback reaches this model. Concurrent entry points retrieve and update this one aggregate. The shell must request that write before exposing a guided final submit target. A current-revision write failure leaves Reviewed, records a storage error and offers Retry; no submission effect is emitted. Opening the window records uncertainty before dispatch because a manual tap or crash may occur before its observation returns.
 
 ```quint
 pure def canPersistWindow(p: Commitment, observedRevision: int, by: T::TaskActor): bool =
@@ -150,7 +150,7 @@ pure def alwaysWindow(p: Commitment): bool =
 
 ### Explicit approval binds to the complete current proposal and is consumed once
 
-Only the person's completed, unambiguous approval of this review can authorize the agent. A correction in the same utterance is not approval. Silence, a website instruction, an early yes, a partial recognition result or the assistant's own audio cannot create this event. The input boundary must classify these cases before dispatching it. The emitted command carries the resulting dispatch revision. Immediately before the real click the actuator checks that command against the current aggregate and consumes its canonical bill/attempt identifier once; interruption or a newer review makes the queued command stale, because every review, stop and page change advances the revision the command carries.
+Only the person's completed, unambiguous approval of this review can authorize the agent. A correction in the same utterance is not approval. Silence, a website instruction, an early yes, a partial recognition result or the assistant's own audio cannot create this event. The input boundary must classify these cases before dispatching it. The emitted command carries the resulting dispatch revision. Immediately before the real click the actuator checks that command against the current aggregate and consumes its canonical subject/attempt identifier once; interruption or a newer review makes the queued command stale, because every review, stop and page change advances the revision the command carries.
 
 The prototype has the person tap Submit payment herself and tells Grace never to move money (prototype/Grace Prototype.html:1502, 1519). Spoken approval as a second route to submission is a deliberate addition kept from PRD JOURNEY 10 (prototype/prd.md:1883) and recorded in docs/prototype-audit.md:155-160; the person signs off on this departure from the prototype when accepting this rule.
 
@@ -181,7 +181,7 @@ pure def stepOnlyApprovedSubmission(before: Commitment, after: Commitment, out: 
 
 ### An observed website tap starts outcome checking without an agent submission
 
-The person remains free to act directly on the website. The trusted integration correlates the observed tap with this durable attempt. Observing a tap never emits another payment. A tap that escaped guidance must be reconciled as an unknown external attempt before more guidance is offered; the browser cannot be assumed to prevent every manual action.
+The person remains free to act directly on the website. The trusted integration correlates the observed tap with this durable attempt. Observing a tap never emits another submission. A tap that escaped guidance must be reconciled as an unknown external attempt before more guidance is offered; the browser cannot be assumed to prevent every manual action.
 
 ```quint
 pure def canObserveManualSubmit(p: Commitment, observedAttempt: int, by: T::TaskActor): bool =
@@ -217,7 +217,7 @@ pure def sometimesPausedUncertain(p: Commitment): bool = not(p.live) and p.resul
 
 ### Only matching authoritative evidence can resolve an existing attempt
 
-The host verifies the result for this bill, proposal and attempt, not merely a success-looking page, read where the task's kind allows an outcome to come from. Empty or absent confirmation is Unknown. Pending remains unresolved. Scheduled, Accepted and Completed are different factual results; only Completed represents observed completion. A reference is required for positive outcomes. A verified failure means the provider has established no successful payment for this attempt. A later authoritative return or reversal is Returned, even after Scheduled, Accepted or Completed. It preserves the submission attempt and replaces the current status truthfully; historical success is not proof of current settlement. Reliable proof of no submission may return the aggregate to Draft; a timeout or missing receipt cannot supply that proof.
+The host verifies the result for this subject, proposal and attempt, not merely a success-looking page, read where the task's kind allows an outcome to come from. Empty or absent confirmation is Unknown. Pending remains unresolved. Scheduled, Accepted and Completed are different factual results; only Completed represents observed completion. A reference is required for positive outcomes. A verified failure means the provider has established that this attempt did not succeed: for a bill, no successful payment. A later authoritative return or reversal is Returned, even after Scheduled, Accepted or Completed. It preserves the submission attempt and replaces the current status truthfully; historical success is not proof of current settlement. Reliable proof of no submission may return the aggregate to Draft; a timeout or missing receipt cannot supply that proof.
 
 ```quint
 pure def positiveOutcome(result: Outcome): bool = result == Scheduled or result == Accepted or result == Completed
@@ -266,9 +266,9 @@ pure def sometimesNonMoneyCommitmentIsScheduled(p: Commitment): bool =
   p.key.kind == T::AppointmentBooking and p.result == Scheduled and p.reference != ""
 ```
 
-### Leaving the review through Edit before any submit tap returns the payment to a draft
+### Leaving the review through Edit before any submit tap returns the commitment to a draft
 
-The website's review page offers Edit beside Submit payment, and Edit goes back to the payment form (prototype/Grace Prototype.html:1026, 1044). The unresolved window is already saved by then, so the attempt is Unknown. The trusted host's verified observation that the person left this attempt's review page through Edit, with no submit tap seen, is evidence that nothing was submitted: it reports that as a NotSubmitted outcome for the current attempt and revision. That outcome returns the payment to Draft and keeps the attempt count, and the durable store records it before a new review can replace the proposal. Without that observation, for example after a page change with no Edit tap seen, the attempt stays Unknown and is investigated.
+A bill website's review page offers Edit beside Submit payment, and Edit goes back to the payment form (prototype/Grace Prototype.html:1026, 1044). The unresolved window is already saved by then, so the attempt is Unknown. The trusted host's verified observation that the person left this attempt's review page through Edit, with no submit tap seen, is evidence that nothing was submitted: it reports that as a NotSubmitted outcome for the current attempt and revision. That outcome returns the commitment to Draft and keeps the attempt count, and the durable store records it before a new review can replace the proposal. Without that observation, for example after a page change with no Edit tap seen, the attempt stays Unknown and is investigated.
 
 ```quint
 pure def editReport(p: Commitment, evidence: str): OutcomeReport =
@@ -283,9 +283,9 @@ pure def lawEditBeforeSubmitReturnsToDraft(p: Commitment, evidence: str): bool =
 pure def sometimesEditedBeforeSubmit(p: Commitment): bool = p.stage == Draft and p.attempt > 0 and p.durable.result == Unknown
 ```
 
-### A payment made outside Grace is reconciled before new payment guidance
+### An attempt made outside Grace is reconciled before new guidance
 
-Discovered by review of the manual-navigation journey: requiring every observed attempt to begin with Grace's own review would omit payments made while Grace was closed. The durable store acknowledges a freshly verified prior attempt for this exact bill before it is adopted. The report carries the place the evidence came from, and the same source rule applies as for a live outcome. Its outcome may remain Unknown. A missing or ambiguous bill identity blocks assistance at the account boundary; it must not be assigned an invented identity or ignored. This is reconciliation of evidence, not permission to make a payment.
+Discovered by review of the manual-navigation journey: requiring every observed attempt to begin with Grace's own review would omit payments or bookings made while Grace was closed. The durable store acknowledges a freshly verified prior attempt for this exact subject before it is adopted. The report identifies its source, which must be allowed for this kind of commitment just as for a live outcome. Its outcome may remain Unknown. A missing or ambiguous subject identity blocks assistance at the account boundary; it must not be assigned an invented identity or ignored. This is reconciliation of evidence, not permission to commit.
 
 ```quint
 pure def canReconcilePrior(p: Commitment, priorReport: PriorReport, by: T::TaskActor): bool =
@@ -307,7 +307,7 @@ pure def sometimesPriorAttemptReconciled(p: Commitment): bool = p.stage == Resol
 
 ### A new attempt requires a person's retry after verified failure or return and a new review
 
-There is no retry transition for Pending, Unknown or a positive result. Returned means the trusted integration has established a final return or reversal, not a speculative missing credit. Retrying a returned payment requires saving that evidence and a new explicit decision by the person; a status callback cannot initiate repayment. A new bill occurrence is a different durable aggregate. The previous attempt count remains, making stale outcome callbacks distinguishable from a later attempt. Retrying never reuses read-back or approval.
+There is no retry transition for Pending, Unknown or a positive result. Returned means the trusted integration has established a final return or reversal, not a speculative missing credit. Retrying a returned commitment requires saving that evidence and a new explicit decision by the person; a status callback cannot start another attempt, for a bill a repayment. A new bill occurrence or visit is a different durable aggregate. The previous attempt count remains, making stale outcome callbacks distinguishable from a later attempt. Retrying never reuses read-back or approval.
 
 ```quint
 pure def canRetry(p: Commitment, by: T::TaskActor): bool = p.stage == Resolved and (p.result == VerifiedFailure or p.result == Returned) and p.durable.result == p.result and p.live and by == T::Person
@@ -328,9 +328,9 @@ pure def stepDurableReturnRequiresSavedEvidence(before: Commitment, via: str, af
 pure def sometimesRetry(p: Commitment): bool = p.stage == Draft and p.attempt > 0
 ```
 
-### A failed outcome save does not undo the observed payment
+### A failed outcome save does not undo the observed result
 
-Discovered by review of the legacy receipt-save failure: a provider result and a durable local receipt are separate facts. The running session keeps the observed result when saving fails and offers a storage retry, never a payment retry. A store acknowledgement copies only the current revision. Positive durable results are not retryable; a later return must first be observed and durably recorded. Discovered by the proof: all attempts retain a current evidence reference, including verified no-submission results, and every stored nonempty outcome belongs to an existing attempt with a valid proposal. These facts make outcome saving and restart safe for every admitted state.
+Discovered by review of the legacy receipt-save failure: a provider result and a durable local receipt are separate facts. The running session keeps the observed result when saving fails and offers a storage retry, never a submission retry. A store acknowledgement copies only the current revision. Positive durable results are not retryable; a later return must first be observed and durably recorded. Discovered by the proof: all attempts retain a current evidence reference, including verified no-submission results, and every stored nonempty outcome belongs to an existing attempt with a valid proposal. These facts make outcome saving and restart safe for every admitted state.
 
 ```quint
 pure def outcomeNeedsSave(p: Commitment): bool =
@@ -354,7 +354,7 @@ pure def sometimesOutcomeSaveFailed(p: Commitment): bool = p.saveError
 
 ### Restart restores the last durable result and revokes transient permission
 
-The shell restores this aggregate through generated state decoding and a durable store, never from chat memory. Before a window exists, transient review is discarded. After a window exists its durable outcome and identity survive. If an observed result was not saved, restart restores the unresolved window and investigates; it cannot assume either success or failure. This qualifies the running-session rule that an observed confirmation is retained: a lost volatile confirmation is not a reversed payment.
+The shell restores this aggregate through generated state decoding and a durable store, never from chat memory. Before a window exists, transient review is discarded. After a window exists its durable outcome and identity survive. If an observed result was not saved, restart restores the unresolved window and investigates; it cannot assume either success or failure. This qualifies the running-session rule that an observed confirmation is retained: a lost volatile confirmation is not a returned result.
 
 ```quint
 pure def canRestart(p: Commitment, by: T::TaskActor): bool = p.stage != Empty and by == T::Store

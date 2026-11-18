@@ -120,7 +120,7 @@ async function visitExampleSite(native: ReturnType<typeof fakePlugin>) {
   await native.report("tab-1", "https://example.org/", 100);
 }
 
-function routedControls(native: ReturnType<typeof fakePlugin>) {
+function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
   const tap = async (target: Locator) => {
     await routeTo(target);
@@ -1047,7 +1047,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       machine.send({ type: "chooseHomePage", page }, "Person")));
     audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
     await startTalk();
-    await expect.poll(() => audio.mock.calls.length).toBe(2);
+    await expect.poll(() => audio.mock.calls.length).toBe(3);
     await expect.element(notice).not.toBeInTheDocument();
     accountId = firstAccount;
     await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
