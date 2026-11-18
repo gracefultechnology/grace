@@ -117,10 +117,15 @@ const read = (raw: string) => {
   const answers = distinct(list(said.answers).map(trimmed).filter((answer): answer is string => typeof answer === "string" && answer !== "")).slice(0, most)
   const working = trimmed(said.working)
   const asked = said.isQuestion == null ? text.endsWith("?") : said.isQuestion === true || said.isQuestion === "true"
+  const supplied = list(said.actions).map(present)
+  const barePage = supplied.some((item) => isFields(item) && item.kind === "ReachNamedPage")
+  const actions = barePage
+    ? supplied.length === 1 ? [{ kind: "proposeReadPlan", steps: supplied }] : []
+    : supplied
   const reply = {
     text,
     ...(typeof working === "string" && working !== "" ? { working } : {}),
-    actions: list(said.actions).flatMap((each) => Option.toArray(decodeAction(present(each)))),
+    actions: actions.flatMap((each) => Option.toArray(decodeAction(each))),
   }
   return asked
     ? { ...reply, isQuestion: true as const, answers: answers.length >= fewest ? answers : [] }

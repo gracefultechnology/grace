@@ -12,7 +12,7 @@ import { withhold } from "./private.ts"
 export type BrowserGuidance = { kind: "Link" | "Menu" | "Unavailable"; words: string }
 
 export service BrowserGuide {
-  point(): BrowserGuidance!!
+  point(onMenu: (guidance: BrowserGuidance) => void): BrowserGuidance!!
 }
 
 function unavailableBecause(words: string): BrowserGuidance { return { kind: "Unavailable", words } }
@@ -133,7 +133,7 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
   })
   try addFinalizer(() => active === undefined ? Effect.void : Effect.ignore(page.clearGuide(active.id)))
   return {
-    point: effect () => {
+    point: effect (onMenu) => {
       const start = context(try workspace.get())
       if (start === undefined) return changed
       if (decide === undefined) return unavailableBecause("Connect Grace to her decision service to get help choosing a link.")
@@ -143,12 +143,15 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
       const instruction = target === "" ? choiceContext : " Find the named page: " + target + "." + namedPageContext
       if (request.length > CLEF_DECISION_LIMITS.goal || (target !== "" && request.length + instruction.length > CLEF_DECISION_LIMITS.goal)) return unavailable
       const goal = request.length + instruction.length <= CLEF_DECISION_LIMITS.goal ? request + instruction : request
-      for (let attempt = 0; attempt < 2; attempt++) {
+      let disclosed: LinkObservation | undefined
+      let retries = 0
+      while (retries < 2) {
         if (context(try workspace.get())?.key !== start.key) return changed
-        const snapshot = page.observeLinks(start.id) catch () => undefined
+        const snapshot: LinkObservation | undefined = disclosed ?? (page.observeLinks(start.id) catch () => undefined)
         if (snapshot === undefined) return unavailableBecause("I can't read the links in this browser right now.")
         const observed = links(snapshot, start.url, target)
         const exact = observed.filter((link) => link.exact)
+        if (disclosed !== undefined && exact.length === 0) return changed
         if (exact.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
         if (exact.length === 1 && !exact[0]?.pointable) return unavailableBecause(`Scroll until “${target}” is visible, then ask again.`)
         const choices = target === "" ? observed : exact.length === 1 ? exact : observed.filter((link) => link.pointable)
@@ -172,26 +175,53 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
           return { retry: false, winner: round[0] }
         }) catch () => ({ retry: true, winner: undefined })
         if (context(try workspace.get())?.key !== start.key) return changed
-        if (decision.retry) continue
+        if (decision.retry) { retries++; continue }
         const winner = decision.winner
         if (winner === undefined) return unavailable
         const opensMenu = target !== "" && !winner.exact && winner.menuItem && winner.selector !== null && winner.selector !== undefined &&
           (try page.hasNavigationMenu(start.id, winner.selector, start.url.href))
         if (context(try workspace.get())?.key !== start.key) return changed
         if (winner.samePage && !opensMenu) return unavailable
-        const expiresAt = (try Clock.currentTimeMillis) + 20000
-        const accepted = page.pointAt(start.id, snapshot.documentId, {
-          kind: "show", id: snapshot.result.snapshotId, snapshotId: snapshot.result.snapshotId,
-          nodeId: winner.id, origin: start.url.origin, expiresAt, text: winner.label, assistantName: "Grace"
+        let current = snapshot
+        let node = winner
+        if (disclosed !== undefined) {
+          const fresh = page.observeLinks(start.id) catch () => undefined
+          if (fresh === undefined || fresh.documentId !== disclosed.documentId) return changed
+          const matches = links(fresh, start.url, target).filter((link) => link.exact && link.pointable)
+          const match = matches.length === 1 ? matches[0] : undefined
+          if (!match || match.href !== winner.href || context(try workspace.get())?.key !== start.key) return changed
+          current = fresh
+          node = match
+        }
+        const expiresAt = (try Clock.currentTimeMillis) + (opensMenu ? 45000 : 20000)
+        const accepted = page.pointAt(start.id, current.documentId, {
+          kind: "show", id: current.result.snapshotId, snapshotId: current.result.snapshotId,
+          nodeId: node.id, origin: start.url.origin, expiresAt, text: node.label, assistantName: "Grace"
         }) catch () => false
         if (!accepted) return changed
         if (opensMenu) {
           active = { id: start.id, key: start.key }
           const hover = Effect.try(supportsPointerHover) catch () => false
           const words = hover
-            ? `Move the pointer over “${winner.label}” to open its submenu, then choose Show me the link again.`
-            : `Open the website’s “${winner.label}” menu, then choose Show me the link again.`
-          return { kind: "Menu", words }
+            ? `Move the pointer over “${winner.label}” and keep it there while I highlight the next link.`
+            : `Open the website’s “${winner.label}” menu and leave it open while I highlight the next link.`
+          try Effect.sync(() => onMenu({ kind: "Menu", words }))
+          const selector = `:is(${winner.selector}):is(:hover,:focus-within,[aria-expanded="true"])`
+          while ((try Clock.currentTimeMillis) < expiresAt) {
+            try Effect.sleep("500 millis")
+            if (context(try workspace.get())?.key !== start.key) return changed
+            if (!(try page.hasNavigationMenu(start.id, selector, start.url.href))) continue
+            const opened = page.observeLinks(start.id) catch () => undefined
+            if (!opened || opened.documentId !== snapshot.documentId) return changed
+            const visible = links(opened, start.url, target).filter((link) => link.exact && link.pointable)
+            if (visible.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
+            if (visible.length === 1) { disclosed = opened; break }
+          }
+          if (disclosed === undefined) {
+            page.clearGuide(start.id) catch () => undefined
+            return unavailableBecause(`I couldn’t see “${target}” in the open menu. You can try another menu.`)
+          }
+          continue
         }
         const recorded = workspace.send({ type: "setGuidedLink", link: { ...start.step, url: winner.href } }, "Host") catch () => undefined
         if (recorded === undefined || context(try workspace.get())?.key !== start.key) {
