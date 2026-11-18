@@ -838,8 +838,53 @@ function deviceNodes(xml: string) {
       y: Math.round((Number(bounds[2]) + Number(bounds[4])) / 2),
       label: attr("text"), description: attr("content-desc"), id: attr("resource-id").split("/").at(-1),
       className: attr("class"), packageName: attr("package"), password: attr("password") === "true", focused: attr("focused") === "true",
+      clickable: attr("clickable") === "true", enabled: attr("enabled") === "true",
     }] : [];
   });
+}
+
+type DeviceNode = ReturnType<typeof deviceNodes>[number];
+const legacyCredential = (node: DeviceNode) =>
+  node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui");
+
+function passwordEditorLabels(apk: string) {
+  const lines = execFileSync(buildTool("aapt2"), ["dump", "resources", apk], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+    .split(/\r?\n/);
+  const label = (resource: string) => {
+    const index = lines.findIndex((line) => line.trimEnd().endsWith(` string/eliza_passwords_${resource}`));
+    const raw = lines[index + 1]?.trim();
+    if (index < 0 || !raw?.startsWith("() ")) throw new Error("The fixture APK is missing a default password editor string");
+    return Schema.decodeUnknownSync(Schema.NonEmptyString)(JSON.parse(raw.slice(3)));
+  };
+  return {
+    name: label("editor_label"), website: label("editor_website"), username: label("editor_username"),
+    password: label("editor_password"), save: label("save"),
+  };
+}
+
+function fullscreenTip(nodes: DeviceNode[]) {
+  const system = nodes.filter((node) => node.packageName === "com.android.systemui");
+  if (!system.some((node) => node.id === "immersive_cling_title") ||
+      !system.some((node) => node.id === "immersive_cling_description")) return undefined;
+  const buttons = system.filter((node) => node.id === "ok" && node.className === "android.widget.Button" && node.enabled && node.clickable);
+  return buttons.length === 1 ? buttons[0] : undefined;
+}
+
+function systemPinPad(nodes: DeviceNode[]) {
+  const system = nodes.filter((node) => node.packageName === "com.android.systemui");
+  if (!system.some((node) => node.id === "compose_credential_view" && node.className === "androidx.compose.ui.platform.ComposeView") ||
+      !system.some((node) => node.id === "cred_pin_pad")) return undefined;
+  const buttons = system.filter((node) => node.enabled && node.clickable);
+  const enter = buttons.find((node) => node.id === "key_enter" && node.className === "android.widget.Button");
+  if (!enter) return undefined;
+  const digits = new Map<string, DeviceNode>();
+  for (const button of buttons) {
+    const digit = [button.label, button.description].find((value) => /^[0-9]$/.test(value));
+    if (digit === undefined) continue;
+    if (digits.has(digit)) return undefined;
+    digits.set(digit, button);
+  }
+  return digits.size === 10 ? { digits, enter } : undefined;
 }
 
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi) {
@@ -868,42 +913,54 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     await shell(serial, `uiautomator dump ${screenFile}`, 45);
     return deviceNodes(await shell(serial, `cat ${screenFile}`, 30));
   };
-  const waitForNode = async (matches: (node: ReturnType<typeof deviceNodes>[number]) => boolean, label: string) => {
+  const waitForUi = async <Found>(select: (nodes: DeviceNode[]) => Found | undefined, label: string) => {
     const until = Date.now() + 180_000;
     while (Date.now() < until) {
       const nodes = await screen().catch(() => []);
-      const found = nodes.find(matches);
-      if (found) return found;
+      const found = select(nodes);
+      if (found !== undefined) return found;
+      const fullscreen = fullscreenTip(nodes);
       const androidWait = nodes.find((node) => node.id === "aerr_wait" && node.label === "Wait" &&
         (node.packageName === "android" || node.packageName === "com.android.systemui"));
-      if (androidWait) {
-        await shell(serial, `input tap ${androidWait.x} ${androidWait.y}`);
-        process.stdout.write("Android requested more time during the fixture.\n");
+      const systemAction = fullscreen ?? androidWait;
+      if (systemAction) {
+        await shell(serial, `input tap ${systemAction.x} ${systemAction.y}`);
+        process.stdout.write(fullscreen ? "Acknowledged Android’s first-use fullscreen tutorial.\n" : "Android requested more time during the fixture.\n");
       }
       await delay(1000);
     }
     throw new Error(`Android did not show ${label}`);
   };
-  const tap = async (matches: Parameters<typeof waitForNode>[0], label: string) => {
-    const { x, y } = await waitForNode(matches, label);
-    await shell(serial, `input tap ${x} ${y}`);
-  };
+  const waitForNode = (matches: (node: DeviceNode) => boolean, label: string) => waitForUi((nodes) => nodes.find(matches), label);
+  const tapNode = ({ x, y }: DeviceNode) => shell(serial, `input tap ${x} ${y}`);
+  const tap = async (matches: (node: DeviceNode) => boolean, label: string) => tapNode(await waitForNode(matches, label));
   const text = (value: string) => shell(serial, `input text '${value.replaceAll(" ", "%s").replaceAll("'", "'\\''")}'`)
     .catch(() => { throw new Error("Android did not accept a fixture field"); });
   const submitPin = async (purpose: "Passwords" | "Autofill") => {
-    step = `find Android’s credential field for ${purpose}`;
-    const credential = (node: ReturnType<typeof deviceNodes>[number]) =>
-      node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui");
-    await tap(credential, "the system screen lock");
+    step = `find Android’s credential prompt for ${purpose}`;
+    const credential = await waitForUi((nodes) => nodes.find(legacyCredential) ?? systemPinPad(nodes), "the system screen lock");
+    if ("digits" in credential) {
+      step = `enter the disposable PIN for ${purpose}`;
+      for (const digit of pin) {
+        const key = credential.digits.get(digit);
+        if (!key) throw new Error("The Android PIN pad changed");
+        await tapNode(key);
+      }
+      step = `confirm Android’s credential prompt for ${purpose}`;
+      await tapNode(await waitForUi((nodes) => systemPinPad(nodes)?.enter, "the system PIN confirmation"));
+      return;
+    }
+    await tapNode(credential);
     step = `focus Android’s credential field for ${purpose}`;
-    await waitForNode((node) => credential(node) && node.focused, "the focused system screen lock");
+    await waitForNode((node) => legacyCredential(node) && node.focused, "the focused system screen lock");
     step = `enter the disposable PIN for ${purpose}`;
     await text(pin);
     step = `confirm Android’s credential prompt for ${purpose}`;
     await shell(serial, "input keyevent KEYCODE_ENTER");
   };
-  const editor = async (field: string, value: string) => {
-    await tap((node) => node.packageName === identity.appId && node.description === field && node.className === "android.widget.EditText", "a native editor field");
+  const editor = async (field: "name" | "website" | "username" | "password", label: string, value: string) => {
+    step = `enter the fixture ${field} in the Android editor`;
+    await tap((node) => node.packageName === identity.appId && node.description === label && node.className === "android.widget.EditText", "a native editor field");
     await text(value);
   };
   let episode: { grade(): Promise<unknown>; close(): Promise<unknown> } | undefined;
@@ -932,13 +989,15 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           buildFailure = error instanceof Error ? error : new Error("Could not build the fixture APK");
           throw buildFailure;
         }
+        step = "read the native editor labels from the episode APK";
+        const apk = path.join(app, output, "standalone-debug.apk");
+        const labels = passwordEditorLabels(apk);
         step = "install the test APK and transport";
         for (const port of deviceTrust.reversePorts) {
           await adb(["-s", serial, "reverse", "--no-rebind", `tcp:${port}`, `tcp:${port}`]);
           cleanup.push(() => adb(["-s", serial, "reverse", "--remove", `tcp:${port}`]));
         }
         step = "install the episode-specific signed APK";
-        const apk = path.join(app, output, "standalone-debug.apk");
         const digest = createHash("sha256").update(readFileSync(apk)).digest("hex");
         const remote = `/data/local/tmp/grace-billworld-${runId}.apk`;
         cleanup.push(() => shell(serial, `rm -f ${remote}`));
@@ -997,14 +1056,14 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await submitPin("Passwords");
           step = "open the protected password editor";
           await page.step({ tap: "Add password" });
-          step = "enter the synthetic sign-in in Android";
-          await editor("Name", login.label);
-          await editor("Website address", origin.origin);
-          await editor("Username", login.username);
-          await editor("Password", login.password);
+          await editor("name", labels.name, login.label);
+          await editor("website", labels.website, origin.origin);
+          await editor("username", labels.username, login.username);
+          await editor("password", labels.password, login.password);
           await shell(serial, "input keyevent KEYCODE_BACK");
           step = "save the synthetic sign-in";
-          await tap((node) => node.packageName === identity.appId && node.label === "Save", "the native Save button");
+          await tap((node) => node.packageName === identity.appId && node.className === "android.widget.Button" &&
+            node.label.toLocaleLowerCase("en-US") === labels.save.toLocaleLowerCase("en-US"), "the native Save button");
           await page.step({ expect: "Password saved." });
           process.stdout.write("The installed native password editor saved the synthetic sign-in.\n");
           step = "open the private HTTPS browser";
