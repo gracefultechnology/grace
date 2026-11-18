@@ -89,9 +89,15 @@ pure val weight_recordOutcome = 2
 
 Binding requires the person's selected bill, after trusted source resolution. A wrong owner or destination must be corrected before binding or opened as a separate bill aggregate; it cannot rewrite an existing attempt's identity.
 
+Discovered by the proof: an empty commitment has no saved outcome. Otherwise
+binding a new subject could carry an earlier outcome and another kind of
+terms into that subject.
+
 ```quint
 pure def canBind(p: Commitment, key: T::Subject, by: T::TaskActor): bool = p.stage == Empty and T::validKey(key) and by == T::Person
 pure def bind(p: Commitment, key: T::Subject, by: T::TaskActor): Commitment = { ...p, key: key, stage: Draft }
+pure def alwaysEmptyHasNoSavedOutcome(p: Commitment): bool =
+  p.stage == Empty implies p.durable.result == NotSubmitted
 pure def alwaysIdentity(p: Commitment): bool = p.stage == Empty or T::validKey(p.key)
 pure def stepIdentityNeverChanges(before: Commitment, after: Commitment): bool = before.stage != Empty implies after.key == before.key
 ```
@@ -366,7 +372,7 @@ The workspace keeps the current commitment and earlier ones and requires `validC
 
 ```quint
 pure def validCommitment(p: Commitment): bool =
-  alwaysIdentity(p) and alwaysProposal(p) and alwaysCounters(p) and
+  alwaysEmptyHasNoSavedOutcome(p) and alwaysIdentity(p) and alwaysProposal(p) and alwaysCounters(p) and
   alwaysWindow(p) and alwaysAuthorization(p) and alwaysResult(p) and
   alwaysSubmissionStage(p) and alwaysResolved(p) and alwaysUnsubmittedStage(p) and
   alwaysDurableWindow(p) and alwaysDurableConfirmation(p) and
