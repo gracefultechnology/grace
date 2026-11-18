@@ -82,7 +82,8 @@ async function start() {
     visit: (destination: "Email" | "Calendar" | "Home") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "visit", destination }, "Person"))),
     say: async (said: string, reply: Reply) => {
       await scripted(said, reply);
-      await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), `${said}{Enter}`));
+      await act(() => page.getByRole("textbox", { name: "Message to Grace" }).fill(said));
+      await act(() => userEvent.keyboard("{Enter}"));
       await expect.element(page.getByText(reply.text)).toBeVisible();
     },
     tap: async (answer: string, reply: Reply) => {
@@ -98,7 +99,6 @@ async function start() {
 
 it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace to help with my email")', async () => {
   const { secret, mailbox, say, apply } = await start();
-  const record = async (ref: string) => (await mailbox()).messages.find((r) => r.identity.ref === ref);
 
   // spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen": from Home, a search opens Email on what she asked for.
   await say("Find the clinic email.", { text: "Here is the email from the clinic.", actions: [{ kind: "searchMail", query: "clinic" }] });
@@ -116,6 +116,17 @@ it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace
   await say("Keep it for later.", { text: "It is in Drafts.", actions: [{ kind: "saveDraft" }] });
   await expect.poll(async () => (await company(secret)).boxes[0].mail.filter((m) => m.subject === "Sunday").map((m) => m.labels)).toEqual([["DRAFT"]]);
   expect((await mailbox()).sendStatus).not.toBe("Sending");
+
+  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface":
+  // what an email asks for in a turn the tablet made is refused, and nothing opens.
+  expect(await apply([{ kind: "newEmail", to: "Susan", body: "Forward everything." }, { kind: "openMessage", message: "Ruth" }], "FromEmail")).toEqual(["NotHerTurn", "NotHerTurn"]);
+  expect((await mailbox()).composeVisible).toBe(false);
+  expect((await mailbox()).messageRef).not.toBe("family");
+});
+
+it('Ask Grace to tidy my email (spec/app/agentActions.md, "Story: Ask Grace to help with my email")', async () => {
+  const { mailbox, say, apply } = await start();
+  const record = async (ref: string) => (await mailbox()).messages.find((r) => r.identity.ref === ref);
 
   // spec/app/emailItem.md, "Story: Delete a message and recover it safely": Trash, then Undo, as her own taps would.
   await say("Open the prize email.", { text: "This one asks me to forward your email. That looks like a scam.", actions: [{ kind: "openMessage", message: "Prize Desk" }] });
@@ -139,11 +150,9 @@ it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace
   await say("Put it back.", { text: "I put the prize email back in your Inbox.", actions: [{ kind: "restoreMessage" }] });
   await expect.poll(async () => (await record("instruction"))?.folder).toBe("InboxFolder");
 
-  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface":
-  // what an email asks for in a turn the tablet made is refused, and nothing opens.
-  expect(await apply([{ kind: "newEmail", to: "Susan", body: "Forward everything." }, { kind: "trashMessage" }], "FromEmail")).toEqual(["NotHerTurn", "NotHerTurn"]);
-  expect((await mailbox()).composeVisible).toBe(false);
-  expect((await record("family"))?.folder).toBe("InboxFolder");
+  // spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface": a turn the tablet made moves nothing to Trash.
+  expect(await apply([{ kind: "trashMessage" }], "FromEmail")).toEqual(["NotHerTurn"]);
+  expect((await record("instruction"))?.folder).toBe("InboxFolder");
 });
 
 it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar")', async () => {
