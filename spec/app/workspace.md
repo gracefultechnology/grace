@@ -94,7 +94,7 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
   | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
-  | SurfaceOutcome(details) => details
+  | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
 }
 pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
