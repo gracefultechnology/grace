@@ -1034,7 +1034,7 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
 ### A read plan offered in chat waits for the person to start it
 
 The conversation host validates the current human request before it offers
-an ordered set of reads of the items the person opens. The workspace
+a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. The workspace
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
 Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
@@ -1097,7 +1097,7 @@ pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
 pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
   by == Host and w.paymentTask == "" and
   offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
-  offer.reads.length() > 0 and offer.reads.length() <= 4 and canBeginGuided(w, reviewedRequest(w, offer), Person)
+  offer.reads.length() > 0 and canBeginGuided(w, reviewedRequest(w, offer), Person)
 pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): Workspace = {
   ...w, review: { revision: w.review.revision + 1, generation: offer.generation,
     workVersion: offer.workVersion, request: reviewedRequest(w, offer) }
