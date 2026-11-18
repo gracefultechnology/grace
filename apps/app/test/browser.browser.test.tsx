@@ -8,7 +8,8 @@ import { guidedReadKind, Machine as Workspaces } from "../gen/app__workspace.eff
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, decisionCloud, script, signIn } from "./cloud.vibe";
+import { client, script, signIn } from "./cloud.vibe";
+import { decisionCloud } from "./browser-decisions.fixture.vibe";
 import "../src/main.css";
 
 const topmost = (element: Element) => {

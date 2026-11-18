@@ -60,16 +60,16 @@ const contentKey = (id: number, ref: string) => `${id}/${ref}`
 const keyPattern = /^(?:mail|calendar|held)\/(\d+)$/
 const decodeHeld = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Held)))
 
-function calendarWithMailSource(text: string | undefined, account: number) {
+effect function calendarWithMailSource(text: string | undefined, account: number) {
   if (text === undefined) return text
   let changed = false
-  const parsed: unknown = JSON.parse(text, (key: string, value: unknown): unknown => {
+  const parsed: unknown = try Effect.try(() => JSON.parse(text, (key: string, value: unknown): unknown => {
     if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
         !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
     const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0
     changed = true
     return { ...value, sourceAccount }
-  })
+  }))
   return changed ? JSON.stringify(parsed) : text
 }
 
@@ -110,10 +110,11 @@ export const instances = Layer.effect(Instances, effect {
   const openCalendar = (key: number) => {
     let last: { raw: string | undefined; compatible: string | undefined } | undefined
     const compatible = Layer.succeed(KeyValueStore.KeyValueStore, {
-      ...store, get: (name: string) => Effect.flatMap(store.get(name), (raw) => Effect.orDie(Effect.try(() => {
-        if (last === undefined || raw !== last.raw) last = { raw, compatible: calendarWithMailSource(raw, key) }
+      ...store, get: effect (name: string) => {
+        const raw = try store.get(name)
+        if (last === undefined || raw !== last.raw) last = { raw, compatible: try Effect.orDie(calendarWithMailSource(raw, key)) }
         return last.compatible
-      })))
+      }
     })
     return Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(calendarKey(key)), compatible)))
   }
