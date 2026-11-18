@@ -910,7 +910,7 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
 {
   if inv(w) && canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) {
     ComponentInvariants(w);
-    app__assistant_hear_ensures(w.assistant, spoken.token, spoken.text, spoken.owner, app__conversation_ConversationActor.ConversationRuntime);
+    app__conversation_hear_ensures(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, app__conversation_ConversationActor.ConversationRuntime);
     app__commitment_authorize_ensures(w.commitment, commitmentTokens.revision, spoken.correction, app__task_TaskActor.Person);
     app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
