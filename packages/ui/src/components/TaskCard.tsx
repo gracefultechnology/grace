@@ -2,7 +2,7 @@ import { useCallback, useId, type ComponentProps } from "react";
 import { CircleCheck, Clock, Pause, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { StatusTag, type TagTone } from "./PaymentStatusBadge.tsx";
+import { StatusTag, type TagTone } from "./StatusTag.tsx";
 
 export type TaskStatus = "paused" | "waiting" | "done";
 

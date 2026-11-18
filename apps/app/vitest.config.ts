@@ -26,11 +26,14 @@ const BenchmarkDefinition = Schema.Struct({
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
-if (process.env.GRACE_BILLWORLD_SHARD !== undefined && !process.env.GRACE_BILLWORLD_DIR)
-  throw new Error("GRACE_BILLWORLD_SHARD requires GRACE_BILLWORLD_DIR");
+if ((process.env.GRACE_BILLWORLD_SHARD !== undefined || process.env.GRACE_BILLWORLD_RESUME_DIR !== undefined) &&
+    !process.env.GRACE_BILLWORLD_DIR)
+  throw new Error("Fleet shard and resume settings require GRACE_BILLWORLD_DIR");
+if (process.env.GRACE_BILLWORLD_DIR && process.env.GRACE_BROWSER_BENCHMARK_FILE)
+  throw new Error("Run Fleet separately from browser tasks declared in an external file");
 const host: NodeJS.Process & { graceFleet?: ReturnType<typeof fleetFixture> } = process;
 const fleet = process.env.GRACE_BILLWORLD_DIR
-  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld", process.env.GRACE_BILLWORLD_SHARD))
+  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld", process.env.GRACE_BILLWORLD_SHARD, process.env.GRACE_BILLWORLD_RESUME_DIR))
   : undefined;
 const definitions: unknown = process.env.GRACE_BROWSER_BENCHMARK_FILE
   ? JSON.parse(readFileSync(process.env.GRACE_BROWSER_BENCHMARK_FILE, "utf8"))
@@ -148,14 +151,16 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         provider: decisionProvider, requests: run.decisions, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
       })
         .catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
-      writeFileSync(definition.receipt, `${JSON.stringify({
+      const receipt = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
         decisionServiceOrigin: decisionProvider === "hosted" && process.env.GRACE_BENCHMARK_CLEF_ORIGIN
           ? new URL(process.env.GRACE_BENCHMARK_CLEF_ORIGIN).origin : undefined,
         outcome: { ...action.outcome, chatProvider: definition.chat ?? "fixture" }, chatStatus: run.chatStatus,
         grade, webArena: webArenaGrade, decisionResults: run.decisionResults,
-      }, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+      };
+      if (fleet) fleet.record(definition.taskId, receipt);
+      else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
       if (webArenaGrade && (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore !== 1))
         throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
     } finally {
