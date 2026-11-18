@@ -607,7 +607,9 @@ pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: st
 
 The owner may separately enable Trash and Undo, and appointment changes. Undo
 is available only once the provider confirms moving the selected message to
-Trash. Appointments are read back to the person before confirmation. Edits and
+Trash. Appointments are read back to the person before confirmation. For a
+new weekly or monthly appointment, the review includes its frequency and
+time zone. A monthly series skips months without the selected day. Edits and
 removals apply to the selected version of an appointment in the primary
 calendar. For a repeating appointment, the person chooses a single occurrence
 or reviews and confirms the entire series separately. Grace checks provider

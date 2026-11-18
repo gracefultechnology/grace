@@ -1,14 +1,16 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
-import { Button, CalendarEventRow, EmptyState, Input, MailMessageRow, PageHeading, PageText, RetryNotice, Textarea } from "@repo/ui";
+import { Button, CalendarEventRow, EmptyState, Input, MailMessageRow, PageHeading, PageText, RetryNotice, SegmentedControl, Textarea } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
+import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
 import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
 import { useRuntime } from "./useApp.ts";
 
 const calendarDay = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const clock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+const reviewedClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
 function day(value: string) {
   return calendarDay.format(new Date(value.length === 10 ? `${value}T12:00:00` : value));
@@ -87,6 +89,8 @@ function MailDraft({ accountId, email, grant, reply, open }: {
 }
 
 type AppointmentDraft = { title: string; start: string; end: string; location: string };
+const repeatLabels = { Once: "Never", Weekly: "Every week", Monthly: "Every month" } satisfies Record<Recurrence, string>;
+const repeatOptions = Object.entries(repeatLabels).map(([value, label]) => ({ value, label }));
 
 function dateInput(time: Date) {
   return new Date(time.getTime() - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -95,7 +99,7 @@ function dateInput(time: Date) {
 function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending, close }: {
   event?: EventRow;
   seriesFor?: string;
-  proposal?: { title: string; start: string; location: string };
+  proposal?: { title: string; start: string; location: string; repeat: Recurrence };
   remove?: boolean;
   write: (command: ManagedWrite) => void;
   pending: boolean;
@@ -110,11 +114,14 @@ function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending,
     location: proposal?.location ?? event?.location ?? "",
   }));
   const [review, setReview] = useState<"save" | "delete" | undefined>(remove ? "delete" : undefined);
+  const [repeat, setRepeat] = useState<Recurrence>(proposal?.repeat ?? "Once");
+  const [timeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
   const update = (field: keyof AppointmentDraft, value: string) => setDraft((previous) => ({ ...previous, [field]: value }));
   const start = new Date(draft.start);
   const end = new Date(draft.end);
   const allDay = event?.isAllDay === true;
-  const valid = draft.title.trim() !== "" && end > start;
+  const shifted = !allDay && end > start && (dateInput(start) !== draft.start || dateInput(end) !== draft.end);
+  const valid = draft.title.trim() !== "" && end > start && !shifted;
   const confirm = () => {
     if (review === "delete") {
       if (event?.etag) write({ kind: "appointment", action: "delete", id: event.externalId, version: event.etag, seriesFor });
@@ -124,16 +131,20 @@ function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending,
     const update = { title: draft.title, location: draft.location, startAt: allDay ? draft.start : start.toISOString(),
       endAt: allDay ? draft.end : end.toISOString(), ...(allDay ? { allDay } : {}) };
     if (event?.etag) write({ kind: "appointment", action: "update", id: event.externalId, version: event.etag, seriesFor, event: update });
-    else if (!event) write({ kind: "appointment", action: "create", event: update });
+    else if (!event) write({ kind: "appointment", action: "create", event: {
+      ...update, ...(repeat === "Once" ? {} : { repeat: { frequency: repeat, timeZone } }),
+    } });
   };
   if (review !== undefined) return <section className="flex flex-col items-start gap-3" aria-busy={pending || undefined}>
     <PageHeading>{review === "delete" ? "Remove this appointment?" : "Review your appointment"}</PageHeading>
     {seriesFor && <PageText>Entire series</PageText>}
     {seriesFor && event?.timezone && <PageText tone="secondary">Series time zone {event.timezone}</PageText>}
+    {!event && repeat !== "Once" && <PageText>{repeatLabels[repeat]} · {timeZone}</PageText>}
+    {!event && repeat === "Monthly" && start.getDate() > 28 && <PageText>Months without day {start.getDate()} are skipped.</PageText>}
     <PageText>{review === "delete" ? event?.title : draft.title}</PageText>
     {review === "delete" && event ? <PageText>{day(event.startAt)} · {event.isAllDay ? "All day" : clock.format(new Date(event.startAt))}</PageText>
       : allDay ? <PageText>{day(draft.start)} · All day, ends before {day(draft.end)}</PageText>
-        : <PageText>{day(start.toISOString())} · {clock.format(start)} to {day(end.toISOString())} · {clock.format(end)}</PageText>}
+        : <PageText>{day(start.toISOString())} · {reviewedClock.format(start)} to {day(end.toISOString())} · {reviewedClock.format(end)}</PageText>}
     <PageText>{review === "delete" ? event?.location : draft.location}</PageText>
     <div className="flex flex-wrap gap-3">
       <Button variant="capsule" size="pill" disabled={pending} onClick={() => setReview(undefined)}>Back</Button>
@@ -150,7 +161,10 @@ function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending,
     <label>Title<Input required maxLength={160} value={draft.title} onChange={(event) => update("title", event.target.value)} /></label>
       <label>Start<Input type={allDay ? "date" : "datetime-local"} required value={draft.start} onChange={(event) => update("start", event.target.value)} /></label>
       <label>{allDay ? "Ends before" : "End"}<Input type={allDay ? "date" : "datetime-local"} required min={draft.start} value={draft.end} onChange={(event) => update("end", event.target.value)} /></label>
+    {shifted && <PageText role="status">The clock changes at that time. Choose another start or end time.</PageText>}
       <label>Location<Input maxLength={320} value={draft.location} onChange={(event) => update("location", event.target.value)} /></label>
+    {!event && <fieldset><legend>Repeats</legend><SegmentedControl aria-label="Repeats" size="sm" options={repeatOptions} value={repeat}
+      onValueChange={(value) => { if (value === "Once" || value === "Weekly" || value === "Monthly") setRepeat(value); }} /></fieldset>}
     <div className="flex flex-wrap gap-3">
       <Button type="button" variant="capsule" size="pill" onClick={close}>Cancel</Button>
       {event && <Button type="button" variant="warn" size="pill" onClick={() => setReview("delete")}>Remove appointment</Button>}

@@ -682,7 +682,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     seriesFor: Schema.optional(Schema.String),
     id: Schema.optional(Schema.String),
     action: Schema.optional(Schema.Literals(["create", "update", "delete"])),
-    event: Schema.optional(Schema.Struct({ title: Schema.String, startAt: Schema.String, endAt: Schema.String, location: Schema.String })),
+    event: Schema.optional(Schema.Struct({ title: Schema.String, startAt: Schema.String, endAt: Schema.String, location: Schema.String,
+      repeat: Schema.optional(Schema.Struct({ frequency: Schema.Literals(["Weekly", "Monthly"]), timeZone: Schema.String })),
+    })),
   }));
   const decodeChange = Schema.decodeUnknownSync(changeInput);
   const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
@@ -751,7 +753,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         else if (outbound.event && outbound.action === "update") {
           expect(outbound.version).toBe('"one"');
           events = events.map((event) => event.externalId === itemId ? { ...event, ...outbound.event, etag: '"two"' } : event);
-        } else if (outbound.event) events = [...events, { ...outbound.event, externalId: itemId, description: "", isAllDay: false, editable: true, seriesId: null, etag: '"new"' }];
+        } else if (outbound.event) {
+          expect(outbound.event.repeat).toEqual({ frequency: "Weekly", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+          events = [...events, { ...outbound.event, externalId: itemId, description: "", isAllDay: false, editable: true, seriesId: null, etag: '"new"' }];
+        }
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
       case "/api/v1/eliza/calendar/feed":
@@ -828,7 +833,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Appointment removed.")).toBeVisible();
     await tap("New appointment");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Lunch"));
+    await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
     await tap("Review appointment");
+    await expect.element(page.getByText("Every week · " + Intl.DateTimeFormat().resolvedOptions().timeZone)).toBeVisible();
     await tap("Confirm appointment");
     await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
     await tap(/Therapy/);

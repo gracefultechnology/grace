@@ -1,6 +1,7 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
 import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin } from "./graceAccount.vibe"
 import { webView } from "./surfacePlugin.ts"
@@ -42,12 +43,12 @@ export type AppointmentEdit = { title: string; startAt: string; endAt: string; l
 export type ManagedWrite =
   | { kind: "trash"; id: string; version: string }
   | { kind: "undo"; id: string; version: string; prior: string }
-  | { kind: "appointment"; action: "create"; event: AppointmentEdit }
+  | { kind: "appointment"; action: "create"; event: AppointmentEdit & { repeat?: { frequency: Exclude<Recurrence, "Once">; timeZone: string } } }
   | { kind: "appointment"; action: "update"; id: string; version: string; seriesFor?: string; event: AppointmentEdit }
   | { kind: "appointment"; action: "delete"; id: string; version: string; seriesFor?: string }
 export type ProposedWork = { accountId: string; grant: string } & (
   | { kind: "draft"; recipient: string; subject: string; text: string; replyTo?: string }
-  | { kind: "appointment"; id?: string; version?: string; title: string; start: string; location: string }
+  | { kind: "appointment"; id?: string; version?: string; title: string; start: string; location: string; repeat: Recurrence }
   | { kind: "removeAppointment"; id: string; version: string; series: boolean }
   | { kind: "trash"; id: string; version: string }
 )
