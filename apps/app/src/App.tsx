@@ -55,9 +55,11 @@ function useHomeCards() {
     const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
   }, [runtime]);
-  const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards())));
-  return snapshot && account?.graceAccount.tag === "GraceSignedIn" && snapshot.accountId === account.graceAccount.accountId &&
-    account.googleLink.tag === "GoogleLinkConnected" && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+  return useSyncExternalStore(subscribe, () => {
+    if (account?.graceAccount.tag !== "GraceSignedIn" || account.googleLink.tag !== "GoogleLinkConnected") return undefined;
+    const snapshot = runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards()));
+    return snapshot?.accountId === account.graceAccount.accountId && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+  });
 }
 
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
