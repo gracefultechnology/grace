@@ -13,6 +13,7 @@ export service BrowserGuide {
 
 const unavailable = "I couldn't find a link to point to on this page."
 const changed = "The page or task changed. Ask me again on the page you want."
+const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
 
 function context(w: Workspace) {
   if (!mayGuideReadLink(w)) return undefined
@@ -86,8 +87,9 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
       const start = context(try workspace.get())
       if (start === undefined) return changed
       if (decide === undefined) return "Connect Grace to her decision service to get help choosing a link."
-      const goal = publicWords(start.goal)
-      if (!goal || goal.length > CLEF_DECISION_LIMITS.goal) return unavailable
+      const request = publicWords(start.goal)
+      if (!request || request.length > CLEF_DECISION_LIMITS.goal) return unavailable
+      const goal = request.length + choiceContext.length <= CLEF_DECISION_LIMITS.goal ? request + choiceContext : request
       for (let attempt = 0; attempt < 2; attempt++) {
         if (context(try workspace.get())?.key !== start.key) return changed
         const snapshot = page.observeLinks(start.id) catch () => undefined
