@@ -201,7 +201,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   const outcome: Record<string, unknown> = {
-    chatProvider: "fixture", observationPermission: "person granted browser reading in Grace",
+    chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
   };
   const native = androidPagePluginAtItsBoundary({
@@ -253,6 +253,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
     await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
+    outcome.observationPermission = "person granted browser reading in Grace";
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
