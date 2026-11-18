@@ -1,17 +1,18 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, Button, besideRail, cn, Dialog, DialogContent, DialogTitle, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { KeyRound } from "lucide-react";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { guidedReadKind, mayGuideReadLink, type GuidedRead, type GuidedStep } from "../gen/app__workspace.ts";
+import { voiceDisclosure } from "../gen/app__conversation.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
-import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
+import { mayOfferTalk, SpeechActions, type VoiceNotice } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
@@ -45,6 +46,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const runtime = useRuntime();
   const { assistant, plan, review, device, browser } = workspace!;
   const conversation = assistant.conversation;
+  const [voiceNotice, setVoiceNotice] = useState<VoiceNotice>();
   const [unavailable, setUnavailable] = useState<number>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(replyOffers, () => Effect.sync(changed)));
@@ -70,7 +72,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const canTalk = mayOfferTalk(workspace!);
   const listeningForPasswords = guide.mic === "GuideMicListening";
   const passwordMicLabel = listeningForPasswords ? "Stop listening for Passwords" : "Say a Passwords command";
-  const talk = () => { guide.stopListening(); void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
+  const talk = (acknowledged?: VoiceNotice) => {
+    guide.stopListening();
+    void runtime.runPromise(Effect.flatMap(SpeechActions, (speech) => speech.talk(acknowledged))).then(setVoiceNotice);
+  };
   const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
     : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
@@ -145,7 +150,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             }
             quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
             micUnavailable={canTalk ? micUnavailable : undefined}
-            onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
+            onFixMic={canTalk ? () => talk() : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
             onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
             onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
@@ -217,6 +222,14 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           )}
         </GraceMessages>
       </GraceWindow>
+      <Dialog open={voiceNotice !== undefined} onOpenChange={(open) => { if (!open) setVoiceNotice(undefined); }}>
+        <DialogContent>
+          <DialogTitle>Talk to Grace</DialogTitle>
+          <PageText>{voiceDisclosure}</PageText>
+          <Button variant="capsule" size="pill" onClick={() => talk(voiceNotice)}>Continue to Talk</Button>
+          <Button variant="plain" size="pill" onClick={() => setVoiceNotice(undefined)}>Cancel</Button>
+        </DialogContent>
+      </Dialog>
     </OverPage>
   );
 }

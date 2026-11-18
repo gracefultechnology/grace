@@ -8,6 +8,7 @@ import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
+import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
@@ -864,6 +865,9 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
+  const firstAccount = crypto.randomUUID();
+  const secondAccount = crypto.randomUUID();
+  let accountId = firstAccount;
   const calls: string[] = [];
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
@@ -881,6 +885,8 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const originalFetch = window.fetch.bind(window);
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const pathname = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+    if (pathname === "/api/auth/session") return Response.json({ account: { id: accountId, email: null } });
+    if (pathname === "/api/v1/billing/subscription" || pathname === "/api/v1/eliza/google/status") return new Response(null, { status: 404 });
     if (!pathname.startsWith(speechPath)) return originalFetch(input, options);
     calls.push(pathname);
     if (pathname.endsWith("/consent")) return Response.json({ consentNonce: sessionId });
@@ -973,8 +979,30 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const workspace = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get()));
     await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
     await expect.poll(() => workspace().device.reasoningAvailable).toBe(true);
-    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-    await act(() => userEvent.click(page.getByRole("button", { name: "Allow mic" })));
+    const press = (control: Locator) => act(() => userEvent.click(control));
+    const notice = page.getByRole("dialog", { name: "Talk to Grace" });
+    const continueTalk = notice.getByRole("button", { name: "Continue to Talk" });
+    const startTalk = () => press(page.getByRole("button", { name: "Allow mic" }).query() ?
+      page.getByRole("button", { name: "Allow mic" }) : page.getByRole("switch", { name: "Mic off" }));
+    await press(page.getByRole("button", { name: "Settings", exact: true }));
+    await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
+    await expect.element(page.getByText(voiceDisclosure, { exact: true })).toBeVisible();
+    await press(page.getByRole("button", { name: "Close Settings", exact: true }));
+    await press(page.getByRole("button", { name: "Ask Grace" }));
+    await startTalk();
+    await expect.element(notice.getByText(voiceDisclosure)).toBeVisible();
+    await press(notice.getByRole("button", { name: "Cancel" }));
+    expect(audio).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+    await startTalk();
+    await expect.element(notice).toBeVisible();
+    accountId = secondAccount;
+    await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    await press(continueTalk);
+    await expect.element(notice).toBeVisible();
+    expect(audio).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+    await press(continueTalk);
     await act(async () => {
       await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
       await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
@@ -983,9 +1011,19 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     expect(microphoneFrames).toBeGreaterThan(0);
     expect(phrases).toEqual([voiceOutput]);
     await expect.poll(() => calls).toEqual([speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"]);
+    audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
+    await startTalk();
+    await expect.poll(() => audio.mock.calls.length).toBe(2);
+    await expect.element(notice).not.toBeInTheDocument();
+    accountId = firstAccount;
+    await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    await startTalk();
+    await expect.element(notice).toBeVisible();
+    expect(audio).toHaveBeenCalledTimes(2);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
+    localStorage.removeItem("grace/voice-disclosure/web/" + secondAccount);
     await microphone.close();
     host.remove();
     request.mockRestore();

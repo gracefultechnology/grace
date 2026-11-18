@@ -1,4 +1,6 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+import { voiceDisclosure } from "../gen/app__conversation.effect.vibe"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
@@ -19,8 +21,10 @@ error SpeechUnavailable
 type InputFrame = { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
   { kind: "received"; payload: unknown } | { kind: "played"; token: number }
 
+export type VoiceNotice = { scope: string | undefined }
+
 export service SpeechActions {
-  talk(): void!!
+  talk(acknowledged?: VoiceNotice): (VoiceNotice | undefined)!!
 }
 
 export function mayOfferTalk(state: Workspace) {
@@ -238,8 +242,21 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   })
 }
 
+effect function voiceNoticeScope(native: boolean, setup: Setup.Shape) {
+  if (!native) {
+    const { graceAccount } = try setup.get()
+    return graceAccount.tag === "GraceSignedIn" ? "web/" + graceAccount.accountId : undefined
+  }
+  const plugin = accountPlugin
+  if (!plugin) return undefined
+  const status = tryPromise(() => plugin.status()) catch () => undefined
+  return status?.kind === "signedIn" && typeof status.voiceDisclosureScope === "string" && /^[a-f0-9]{64}$/.test(status.voiceDisclosureScope)
+    ? "device/" + status.voiceDisclosureScope : undefined
+}
+
 export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effect {
   const workspace = try Workspaces
+  const setup = try Setup
   const mic = try Ref.make<Microphone | null>(null)
   const opening = try Semaphore.make(1)
   effect function closeMic() {
@@ -279,23 +296,33 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
   })
   try addFinalizer(() => closeMic())
   return {
-    talk: () => opening.withPermits(1)(effect {
+    talk: (acknowledged) => opening.withPermits(1)(effect {
       const state = try workspace.get()
-      if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return
+      if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return undefined
+      const scope = try voiceNoticeScope(native, setup)
+      const key = scope === undefined ? undefined : "grace/voice-disclosure/" + scope
+      if (acknowledged !== undefined && acknowledged.scope !== scope) return { scope }
+      if (acknowledged === undefined) {
+        const saved = key === undefined ? null : (Effect.try(() => webView.window.localStorage.getItem(key)) catch () => null)
+        if (saved !== voiceDisclosure) return { scope }
+      } else if (key !== undefined) {
+        Effect.try(() => webView.window.localStorage.setItem(key, voiceDisclosure)) catch () => undefined
+      }
       const opened = tryPromise((signal) => openMicrophone(signal)) catch () => null
       if (opened === null) {
         try reportMic(false)
-        return
+        return undefined
       }
       const current = try workspace.get()
-      if (!mayOfferTalk(current) || current.assistant.presentation === "Closed") {
+      if (!mayOfferTalk(current) || current.assistant.presentation === "Closed" || (try voiceNoticeScope(native, setup)) !== scope) {
         try Effect.ignore(tryPromise(() => opened.close()))
-        return
+        return undefined
       }
       try reportMic(true)
       const accepted = (workspace.send({ type: "talk" }, "Person") |> Effect.as(%, true)) catch () => false
       if (accepted) try Ref.set(mic, opened)
       else try Effect.ignore(tryPromise(() => opened.close()))
+      return undefined
     })
   }
 })
