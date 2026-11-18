@@ -64,10 +64,11 @@ Those checks leave live model behavior, signed-device acceptance and live
 Google consent and writes open.
 
 The APK build previously called scripts in Eliza's app and native-agent
-plugin. It now uses the tools and native browser and Wi-Fi modules in
-`packages/os/android`. The AOSP overlay uses `packages/os/aosp`. The
-browser address parser and TypeScript bridge declarations come from
-`packages/os/src`. Grace renders the browser controls, account settings,
+plugin. It now imports Android and AOSP tooling through the public
+`@elizaos/os/android/*` and `@elizaos/os/aosp/*` exports. Native sources
+come from the pinned checkout. The browser address parser uses
+`@elizaos/os/browser/address`, and Wi-Fi and browser bridge types use
+`@elizaos/os/bridges/definitions/*`. Grace renders the browser controls, account settings,
 managed data and voice controls from its own React app. The old policy's
 refusal list records disallowed capabilities. The current plugin load list
 is empty.
@@ -96,6 +97,18 @@ Google access. The two callbacks need registration on that client. The legacy
 Grace repository has an established release certificate for
 `technology.graceful.grace`. The production Android registry uses its SHA-256
 fingerprint. The release signing material stays in its existing custody.
+
+Worker version `4bdee87a-1418-4b67-8236-b909f0390041` deployed Grace
+`55b67a5` with Eliza `febdeaf`. Chromium loaded the hosted UI and its
+production assets, read the signed-out session across the API origin, and
+received HTTP 401 on an unauthenticated inference request. Native discovery
+returned the registered callback and S256. The public
+[Android App Links document](https://app.graceforseniors.com/.well-known/assetlinks.json)
+contains the established package and release certificate. The
+[Eliza Google client](https://console.cloud.google.com/auth/clients?project=721050741977)
+was identified from the live Eliza sign-in redirect to Google. Production
+provider discovery currently offers email sign-in. Live Google, SMS,
+Stripe and Cartesia require their owner registrations.
 
 ## Decisions and their defaults
 
