@@ -205,6 +205,7 @@ pure val candidateValues = Set(blankTab(1, 0), blankTab(2, 1))
 pure val tabValues = candidateValues
 pure val tValues = tabValues.union(Set(
   { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 1 },
+  { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 0 },
   { ...blankTab(2, 1), history: List("https://utility.example"), manualSignIn: true }))
 pure val capacityValues = Set(-1, 0, 1, 2, 3)
 ```
@@ -431,10 +432,6 @@ pure def lawALoadRecordsWhereItEnded(t: Tab, endedAt: str): bool =
   endedAt != "" and t.cursor >= 0 and t.cursor < t.history.length() implies
     (endedAtCursor(t, endedAt).history.length() == t.history.length() and tabUrl(endedAtCursor(t, endedAt)) == endedAt)
 pure val redirectedTo: str = "https://www.utility.example/home"
-pure val tValues = Set(
-  activeTab(initial),
-  activeTab(navigate(initial, "https://utility.example")),
-  activeTab(goBack(navigate(navigate(initial, "https://utility.example"), redirectedTo))))
 pure def sometimesARedirectIsFollowed(b: Browser): bool =
   activeTab(b).load == Loaded and tabUrl(activeTab(b)) == redirectedTo and activeTab(b).cursor > 0
 pure val endedAtValues = Set("", redirectedTo)
