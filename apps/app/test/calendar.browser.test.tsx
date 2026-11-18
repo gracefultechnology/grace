@@ -124,9 +124,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const tapped: Request = { generation: 2, workVersion: 1, origin: "Tapped" };
   await ask({ type: "agree", given: consent(tapped, 1, proposalOf(asked)), now: tapped }, "Person");
   await expect.poll(async () => (await company(secret)).map((e) => e.title)).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
-  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
+  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
   await stop();
 });
 
