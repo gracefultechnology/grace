@@ -65,7 +65,11 @@ async function lockResults(run: string) {
   });
   guard.stdout.destroy();
   guard.unref();
-  return () => guard.stdin.end();
+  return () => new Promise<void>((released) => {
+    guard.ref();
+    guard.once("close", () => released());
+    guard.stdin.end();
+  });
 }
 
 export async function fleetFixture(directory: string, results: string, shardSetting?: string, resumeDirectory?: string) {
@@ -187,7 +191,7 @@ export async function fleetFixture(directory: string, results: string, shardSett
     }
     replaceScores();
   } catch (error) {
-    unlock();
+    await unlock();
     await closeServers();
     throw error;
   }
@@ -219,7 +223,7 @@ export async function fleetFixture(directory: string, results: string, shardSett
         const { passed, attempted } = score();
         if (attempted !== assigned.length || passed !== assigned.length)
           throw new Error(`BillWorld graded ${passed}/${assigned.length} correct destinations on ${attempted} attempts. See ${run}/scores.json`);
-      } finally { unlock(); }
+      } finally { await unlock(); }
     },
   };
 }
