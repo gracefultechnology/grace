@@ -12,14 +12,15 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedReadKind, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { type Help, helpWith, type Last, looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
+import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
 import { Reply, unreadable } from "./reply.schema.ts"
-import { ManagedReads } from "./managedReads.vibe"
+import { ManagedReads, guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
 import { NativePage } from "./nativePage.vibe"
 import { PageId } from "./nativePage.schema.ts"
 import { statementFacts } from "./statement.vibe"
@@ -32,6 +33,8 @@ export service Conversation {
   turnOrigin(generation: number): Origin!!
   checkGuidedRead(): boolean!!
   help(need: Help): void!!
+  startReadReview(revision: number): boolean!!
+  resumeReadPlan(): boolean!!
 }
 
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
@@ -78,11 +81,11 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   const { registry, workspace } = scene
   if (privateSurfaceActive(workspace)) return undefined
   function receipt(source: GuidedReadSource, identity: readonly string[], text: string): GuidedReadReceipt { return { source, identity, text } }
-  const read = guidedReadKind(step)
+  const read = step.tag
   if (read === "ReadMail" || read === "ReadCalendar" || read === "SaveMailAppointment") {
     const selected = try managed.guidedSelection()
     if (selected.kind !== "legacy") {
-      if (selected.kind === "unavailable" || workspace.plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment")) return undefined
+      if (selected.kind === "unavailable" || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
       const identity = [selected.accountId, selected.googleEmail, selected.id]
       const { grant, version } = selected
       if (read === "ReadMail" && selected.kind === "mail")
@@ -173,7 +176,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       return receipt({ tag: "CurrentAppointment", key: account.id, owner: identity.owner, calendarId: identity.calendarId,
         occurrence: identity.occurrenceId, generation: view.generation, revision }, [read, identity.owner, identity.calendarId, identity.occurrenceId], "Saved appointment: " + committed.title)
     }
-    case "UnsupportedRead": return undefined
+    case "SurfaceOutcome": return undefined
   }
 }
 
@@ -254,16 +257,17 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
       return
     }
+    const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const news = try Ref.get(told)
     const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}` }
     const said = ask(link, [system, ...outgoing]) catch () => undefined
     const reply = try decoded(said)
     if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
     const unread = try Effect.orDie(Effect.try(() => unreadable(said)))
-    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length))
+    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length, authority))
   }
 
-  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, unread: readonly string[], seen: number) {
+  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, unread: readonly string[], seen: number, authority: GuidedAuthority) {
     const offeredRead = actions.some((action) => action.kind === "proposeReadPlan")
     const unavailableSave = actions.some((action) => action.kind === "proposeReadPlan" && action.steps.includes("SaveMailAppointment")) &&
       (try managed.ownsSurfaces())
@@ -275,7 +279,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: false } }, "Host") catch () => undefined
     if (responded === undefined || unavailableSave) return
     try Ref.update(told, (all) => all.slice(seen))
-    const applied = try agent.apply(actions, try request(token, workVersion))
+    const applied = try agent.apply(actions, { ...try request(token, workVersion), authority })
     try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
@@ -294,16 +298,31 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(answer(link, token))))
   }
 
+  effect function ownsPlan(plan: Pick<Scene["workspace"]["plan"], "owner" | "steps">): boolean!! {
+    return plan.owner !== "" && plan.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), plan.steps)
+  }
+
   return {
     turnOrigin,
+    startReadReview: effect (revision) => {
+      const { review } = try workspace.get()
+      if (!(try ownsPlan(review.request))) return false
+      return (workspace.send({ type: "startReadReview", reviewRevision: revision }, "Person") catch () => undefined) !== undefined
+    },
+    resumeReadPlan: effect () => {
+      const { plan } = try workspace.get()
+      if (!hasNext(plan) || !(try ownsPlan(plan))) return false
+      return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
+    },
     checkGuidedRead: effect () => {
       const scene = try look()
       const current = scene.workspace
       const step = nextOutcome(current.plan)
-      if (!hasNext(current.plan) || step.surface !== current.device.surface || (step.surface === "Browser" && !current.device.observationAllowed) ||
+      const surface = guidedDetails(step).surface
+      if (!hasNext(current.plan) || !(try ownsPlan(current.plan)) || surface !== current.device.surface || (surface === "Browser" && !current.device.observationAllowed) ||
           current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
-      const read = guidedReadKind(step)
+      const read = step.tag
       const namedScope = read === "ReachNamedPage" ? namedReadScope(current) : undefined
       const account = namedScope === undefined ? undefined : try namedAccount()
       const context = replyControlContext(current)
@@ -331,7 +350,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (found.source.tag === "NamedDocument" && !(try ownsNamedRead())) return false
       const rechecked = try guidedReceipt(confirmed, step, native, managed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
-      if (!sameRecord) return false
+      if (!sameRecord || !(try ownsPlan(current.plan))) return false
       const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
       const report = {
         owner: current.plan.owner,

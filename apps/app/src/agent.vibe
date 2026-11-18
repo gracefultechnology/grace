@@ -6,10 +6,12 @@ import type { Event, Workspace, WorkspaceActor } from "../gen/app__workspace.eff
 import type { Action } from "./reply.schema.ts"
 
 export type GraceAction = typeof Action.Type
+import type { GuidedAuthority } from "./managedReads.vibe"
+
 export type Outcome = "Applied" | "NotYetAvailable" | "NotFound" | Refusal
 export type Applied = { readonly action: GraceAction; readonly outcome: Outcome }
 
-export service Agent { apply(actions: readonly GraceAction[], request: Request): readonly Applied[]!! }
+export service Agent { apply(actions: readonly GraceAction[], request: Request & { authority?: GuidedAuthority }): readonly Applied[]!! }
 
 export type Step = { readonly event: Event; readonly by: WorkspaceActor }
 
