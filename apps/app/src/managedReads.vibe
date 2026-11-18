@@ -1,6 +1,6 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
 import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin } from "./graceAccount.vibe"
@@ -83,6 +83,22 @@ export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" 
 
 export function usesManagedSurfaces(account: SetupState["graceAccount"] | undefined, hash: string): boolean {
   return account?.tag === "GraceSignedIn" || account?.tag === "GraceDeviceSignedIn" || viewOf(hash) !== undefined
+}
+
+export type GuidedAuthority = { device: string; connected: string | undefined }
+
+export function guidedAuthority(setup: SetupState | undefined, hash: string): GuidedAuthority {
+  const account = setup?.graceAccount
+  const link = setup?.googleLink
+  const device = account?.tag === "GraceSignedIn" ? JSON.stringify(["grace", account.accountId]) : "tablet"
+  const connected = !usesManagedSurfaces(account, hash) ? "tablet" :
+    account?.tag === "GraceSignedIn" && link?.tag === "GoogleLinkConnected" && link.email.trim() !== ""
+      ? JSON.stringify(["google", account.accountId, link.email.trim().toLowerCase()]) : undefined
+  return { device, connected }
+}
+
+export function guidedOwner(authority: GuidedAuthority, steps: readonly GuidedStep[]): string | undefined {
+  return steps.some((step) => step.surface === "Email" || step.surface === "Calendar") ? authority.connected : authority.device
 }
 
 export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[]; events: readonly EventRow[] }

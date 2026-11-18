@@ -72,7 +72,7 @@ type GuidedLink = {
   task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
   stepIndex: int, url: str
 }
-type ReviewOffer = { task: str, generation: int, workVersion: int, steps: List[GuidedStep] }
+type ReviewOffer = { owner: str, task: str, generation: int, workVersion: int, steps: List[GuidedStep] }
 pure def emptyReview(revision: int): GuidedReview = {
   revision: revision, generation: -1, workVersion: -1, request: { owner: "", task: "", goal: "", steps: List() }
 }
@@ -1055,7 +1055,7 @@ The conversation host validates the current human request before it offers
 a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. Each completed check keeps its local source identity and readable evidence. Different items may have the same displayed text. Reopening one unchanged item cannot satisfy a second check for another item. The workspace
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
-Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
+The host records the account and linked source that the offer uses. The person must still be under that same authority when accepting the review, resuming it or confirming a read. Reconnecting the same linked account can renew access without changing the owner. Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
 this plan. Opening the app does not approve an external change. The
 browser’s opening revision identifies a document loaded later in the plan.
 With permission and an active compact Browser step, the person can ask
@@ -1119,7 +1119,7 @@ pure def guidedLinkObserved(w: Workspace): bool =
 pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
   val ask = w.assistant.conversation.messages.foldl("", (latest, message) =>
     if (message.author == C::HumanMessage) message.text else latest)
-  { owner: "tablet", task: offer.task, goal: ask, steps: offer.steps }
+  { owner: offer.owner, task: offer.task, goal: ask, steps: offer.steps }
 }
 pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
   by == Host and w.commitmentTask == "" and
@@ -1143,9 +1143,9 @@ pure def startReadReview(w: Workspace, reviewRevision: int, by: WorkspaceActor):
 pure def lawAnOldReadReviewCannotStart(w: Workspace, reviewRevision: int, by: WorkspaceActor): bool =
   reviewRevision != w.review.revision implies not(canStartReadReview(w, reviewRevision, by))
 pure val offerValues = Set(
-  { task: "read", generation: 1, workVersion: 0, steps: List(readStep(ReadMail)) },
-  { task: "read", generation: 2, workVersion: 0, steps: List(readStep(ReadChangedBrowser)) },
-  { task: "read", generation: 2, workVersion: 0, steps: List(namedPageStep("Support")) })
+  { owner: "tablet", task: "read", generation: 1, workVersion: 0, steps: List(readStep(ReadMail)) },
+  { owner: "tablet", task: "read", generation: 2, workVersion: 0, steps: List(readStep(ReadChangedBrowser)) },
+  { owner: "tablet", task: "read", generation: 2, workVersion: 0, steps: List(namedPageStep("Support")) })
 pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
   stepIndex: 0, url: "https://biller.example/help" })
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)

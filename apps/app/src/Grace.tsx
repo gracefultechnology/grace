@@ -14,6 +14,9 @@ import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
+
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
 const checkLabels: Record<GuidedRead, string> = {
@@ -30,11 +33,12 @@ const checkLabels: Record<GuidedRead, string> = {
 /** @model spec/app/assistant.md */
 
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
-  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink } = useWorkspace();
+  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink, startReadReview, resumeReadPlan } = useWorkspace();
   const guide = usePasswordGuide();
   const runtime = useRuntime();
   const { assistant, plan, review, device, browser } = workspace!;
   const conversation = assistant.conversation;
+  const authority = guidedAuthority(useSetup(runtime).state, window.location.hash);
   const [unavailable, setUnavailable] = useState<number>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(replyOffers, () => Effect.sync(changed)));
@@ -67,21 +71,24 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
   const start = { type: "startReadReview", reviewRevision: review.revision } as const;
-  const showReview = can(start);
+  const showReview = can(start) && review.request.owner === guidedOwner(authority, review.request.steps);
   const next = plan.receipts.length;
   const currentStep = plan.steps[next];
   const hasPlan = plan.steps.length > 0;
+  const owner = guidedOwner(authority, plan.steps);
+  const ownsPlan = plan.owner === owner;
+  const abandon = { type: "abandonTask" } as const;
   const savePlan = plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment");
   const status = assistant.activity === "Paused" ? "Paused" : assistant.outcome === "Completed"
     ? savePlan ? "Planned checks complete" : "Read checks complete"
     : null;
   const stop = { type: "stop" } as const;
   const resume = { type: "resume" } as const;
-  const paused = hasPlan && can(resume);
-  const pausable = hasPlan && assistant.activity !== "Paused" && can(stop);
+  const paused = hasPlan && ownsPlan && can(resume);
+  const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
   const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
-  const canCheck = label && (currentStep?.surface !== "Browser" || workspace?.device.observationAllowed) &&
+  const canCheck = ownsPlan && label && (currentStep?.surface !== "Browser" || workspace?.device.observationAllowed) &&
     currentStep?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
@@ -92,7 +99,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     },
   } as const;
   const scopeKey = [assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision].join(":");
-  const guideKey = workspace && mayGuideReadLink(workspace) ? scopeKey : "";
+  const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const namedCheck = stepKind === "ReachNamedPage" && canCheck && pageCheck?.key === scopeKey ? pageCheck : undefined;
   const check = () => {
     if (stepKind !== "ReachNamedPage") {
@@ -120,7 +127,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
-            onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void send(resume) : interact({ tag: "ResumeSpeech" })}
+            onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}
             expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
@@ -174,10 +181,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <ol aria-label="Read plan" className="list-decimal pl-6">
                 {review.request.steps.map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
               </ol>
-              <AnswerChips><AnswerChip onClick={() => void send(start)}>Start read plan</AnswerChip></AnswerChips>
+              <AnswerChips><AnswerChip onClick={() => void startReadReview(review.revision)}>Start read plan</AnswerChip></AnswerChips>
             </section>
           )}
-          {hasPlan && (
+          {hasPlan && !ownsPlan && can(abandon) && (
+            <AnswerChips><AnswerChip onClick={() => void send(abandon)}>End previous task</AnswerChip></AnswerChips>
+          )}
+          {hasPlan && ownsPlan && (
             <section aria-label="Task plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
               {status && <p className="text-body font-medium">{status}</p>}
               {expanded ? (

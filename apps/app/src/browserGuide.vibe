@@ -6,6 +6,7 @@ import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, de
 import { accountFetch, apiOrigin, browserAccountId } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { supportsPointerHover, webView } from "./surfacePlugin.ts"
+import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
 import { NativePage } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
@@ -22,8 +23,8 @@ const changed = unavailableBecause("The page or task changed. Ask me again on th
 const namedPageContext = " Prefer an exact page label. If it is absent, choose a navigation section that leads there. Keep the requested kind of page, such as a category or an individual item."
 const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
 
-function context(w: Workspace) {
-  if (!mayGuideReadLink(w)) return undefined
+function context(w: Workspace, authority: GuidedAuthority) {
+  if (!mayGuideReadLink(w) || w.plan.owner !== guidedOwner(authority, w.plan.steps)) return undefined
   const tab = activeTab(w.browser)
   const address = tabUrl(tab)
   if (!URL.canParse(address)) return undefined
@@ -100,6 +101,7 @@ const decodeGuideLease = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.Nul
 type ChoiceRequest = Extract<ClefDecisionRequest, { kind: "choice" }>
 export type GuideDecision = (request: ChoiceRequest, signal?: AbortSignal) => Promise<ClefDecisionResponse>
 type DecisionSession = {
+  accountId?: string
   choose: GuideDecision
   current(): Promise<boolean>
 }
@@ -129,17 +131,19 @@ effect function decisionSession(native: boolean, fixture?: GuideDecision): (Deci
     headers: () => ({ "X-Eliza-Account": owner }),
     fetch: accountFetch,
   }))
-  return { choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserAccountId())) === owner }
+  return { accountId: owner, choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserAccountId())) === owner }
 }
 
 export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.effect(BrowserGuide, effect {
   const workspace = try Workspaces
   const page = try NativePage
   const setup = try Setup
+  const authority = effect () => guidedAuthority(try setup.get(), webView.window.location.hash)
+  const currentContext = effect () => context(try workspace.get(), try authority())
   let active: { id: PageId; key: string; account: DecisionSession } | undefined
   try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
     const old = active
-    if (old !== undefined && context(state)?.key !== old.key) {
+    if (old !== undefined && context(state, try authority())?.key !== old.key) {
       active = undefined
       page.clearGuide(old.id) catch () => undefined
     }
@@ -147,7 +151,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   if (fixture === undefined) try fork.scoped Stream.runForEach(setup.changes, effect () => {
     const shown = active
     if (shown === undefined) return
-    const current = tryPromise(() => shown.account.current()) catch () => false
+    const current = (try currentContext())?.key === shown.key && (tryPromise(() => shown.account.current()) catch () => false)
     if (!current && active === shown) {
       active = undefined
       page.clearGuide(shown.id) catch () => undefined
@@ -156,11 +160,14 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   try addFinalizer(() => active === undefined ? Effect.void : Effect.ignore(page.clearGuide(active.id)))
   return {
     point: effect (onMenu) => {
-      const start = context(try workspace.get())
+      const start = (try currentContext())
       if (start === undefined) return changed
       const account = decisionSession(native, fixture) catch () => null
       if (account === null) return unavailableBecause("I couldn’t reach Grace to verify your sign-in.")
       if (account === undefined) return unavailableBecause("Sign in to Grace to get help choosing a link.")
+      const signedIn = (try setup.get()).graceAccount
+      if ((account.accountId !== undefined && signedIn.tag === "GraceSignedIn" && account.accountId !== signedIn.accountId) ||
+          (try currentContext())?.key !== start.key) return changed
       const request = publicWords(start.goal)
       const target = publicWords(start.target)
       if (!request || (start.target !== "" && (!target || target.includes("*")))) return unavailable
@@ -170,7 +177,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       let disclosed: LinkObservation | undefined
       let retries = 0
       while (retries < 2) {
-        if (context(try workspace.get())?.key !== start.key) return changed
+        if ((try currentContext())?.key !== start.key) return changed
         const snapshot: LinkObservation | undefined = disclosed ?? (page.observeLinks(start.id) catch () => undefined)
         if (snapshot === undefined) return unavailableBecause("I can't read the links in this browser right now.")
         const observed = links(snapshot, start.url, target)
@@ -180,7 +187,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if (exact.length === 1 && !exact[0]?.pointable) return unavailableBecause(`Scroll until “${target}” is visible, then ask again.`)
         const choices = target === "" ? observed : exact.length === 1 ? exact : observed.filter((link) => link.pointable)
         if (!choices.length) return unavailable
-        if (context(try workspace.get())?.key !== start.key) return changed
+        if ((try currentContext())?.key !== start.key) return changed
         const decision = Effect.tryPromise(async (signal) => {
           let round = choices
           do {
@@ -188,7 +195,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             for (let index = 0; index < round.length; index += CLEF_DECISION_LIMITS.candidates) {
               const candidates = round.slice(index, index + CLEF_DECISION_LIMITS.candidates)
               const options = candidates.map(({ description }, index) => ({ id: String(index + 1), label: description }))
-              if (!(await account.current()) || context(await runPromise(workspace.get()))?.key !== start.key) return { retry: false }
+              if (!(await account.current()) || (await runPromise(currentContext()))?.key !== start.key) return { retry: false }
               signal.throwIfAborted()
               const answer = await account.choose({ kind: "choice", goal, candidates: options }, signal)
               if (answer.status === "unavailable") return { retry: answer.reason === "provider_error" }
@@ -200,13 +207,13 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           } while (round.length > 1)
           return { retry: false, winner: round[0] }
         }) catch () => ({ retry: false, winner: undefined })
-        if (context(try workspace.get())?.key !== start.key) return changed
+        if ((try currentContext())?.key !== start.key) return changed
         if (decision.retry) { retries++; continue }
         const winner = decision.winner
         if (winner === undefined) return unavailable
         const opensMenu = target !== "" && !winner.exact && winner.menuItem && winner.selector !== null && winner.selector !== undefined &&
           (try page.hasNavigationMenu(start.id, winner.selector, start.url.href))
-        if (context(try workspace.get())?.key !== start.key) return changed
+        if ((try currentContext())?.key !== start.key) return changed
         if (winner.samePage && !opensMenu) return unavailable
         let current = snapshot
         let node = winner
@@ -215,12 +222,12 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           if (fresh === undefined || fresh.documentId !== disclosed.documentId) return changed
           const matches = links(fresh, start.url, target).filter((link) => link.exact && link.pointable)
           const match = matches.length === 1 ? matches[0] : undefined
-          if (!match || match.href !== winner.href || context(try workspace.get())?.key !== start.key) return changed
+          if (!match || match.href !== winner.href || (try currentContext())?.key !== start.key) return changed
           current = fresh
           node = match
         }
         const sameAccount = tryPromise(() => account.current()) catch () => false
-        if (!sameAccount || context(try workspace.get())?.key !== start.key) return changed
+        if (!sameAccount || (try currentContext())?.key !== start.key) return changed
         const expiresAt = (try Clock.currentTimeMillis) + (opensMenu ? 45000 : 20000)
         const accepted = page.pointAt(start.id, current.documentId, {
           kind: "show", id: current.result.snapshotId, snapshotId: current.result.snapshotId,
@@ -228,7 +235,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         }) catch () => false
         if (!accepted) return changed
         const currentAccount = tryPromise(() => account.current()) catch () => false
-        if (!currentAccount || context(try workspace.get())?.key !== start.key) {
+        if (!currentAccount || (try currentContext())?.key !== start.key) {
           page.clearGuide(start.id) catch () => undefined
           return changed
         }
@@ -243,7 +250,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           const selector = `:is(${winner.selector}):is(:hover,:focus-within,[aria-expanded="true"])`
           while ((try Clock.currentTimeMillis) < expiresAt) {
             try Effect.sleep("500 millis")
-            if (active !== menuGuide || context(try workspace.get())?.key !== start.key) return changed
+            if (active !== menuGuide || (try currentContext())?.key !== start.key) return changed
             if (!(try page.hasNavigationMenu(start.id, selector, start.url.href))) continue
             const opened = page.observeLinks(start.id) catch () => undefined
             if (!opened || opened.documentId !== snapshot.documentId) return changed
@@ -258,7 +265,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           continue
         }
         const recorded = workspace.send({ type: "setGuidedLink", link: { ...start.step, url: winner.href } }, "Host") catch () => undefined
-        if (recorded === undefined || context(try workspace.get())?.key !== start.key) {
+        if (recorded === undefined || (try currentContext())?.key !== start.key) {
           page.clearGuide(start.id) catch () => undefined
           return changed
         }
