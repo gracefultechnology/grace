@@ -10,8 +10,9 @@ not a promise that the connection remains online forever.
 
 Grace joins what Android lets an app join: open networks and networks with
 one shared password, in her own screen, through Android's "Save this
-network?" dialog. Company-style networks, which ask for an account, and a
-hotel or café's sign-in page are handed to Android's own internet panel.
+network?" dialog. Company-style networks, which ask for an account, old
+WEP networks and a hotel or café's sign-in page are handed to Android's own
+internet panel.
 Six of the seven join outcomes are the Wi-Fi plugin's six statuses, one for
 one (`vendor/eliza/plugins/plugin-native-wifi/src/definitions.ts`);
 the certificate challenge is the one outcome no plugin status sends. Network
@@ -35,7 +36,8 @@ identify a security context. The displayed four-row preview is not a limit
 on discovery or supported networks. A network can be chosen only from a
 list the OS reported. A remembered or open network joins at once, a
 password network asks for its password, and a network that asks for an
-account opens Android's panel, because no app can join it.
+account opens Android's panel, because no app can join it; the adapter
+reports an old WEP network, which no app can join either, as one.
 
 ```quint
 type NetworkActor = Person | OperatingSystem
@@ -113,8 +115,9 @@ pure def alwaysReadinessBelongsToPrivateEntry(n: NetworkJoin): bool =
 No timer or nonempty password establishes a connection. The outcomes are
 the plugin's: connected (joined), wrong password (rejected), not connected
 (unavailable), declined in Android's dialog, unverified (a working Wi-Fi
-whose name Android withheld) and a sign-in page (portal). Rejected
-credentials return to password entry with the OS's explanation. The second
+whose name Android withheld) and a sign-in page (portal). Only a password
+network can reject its password, and rejected credentials return to
+password entry with the OS's explanation. The second
 rejection offers the written Fix Wi-Fi steps, and further rejections keep a
 calm route to the network's administrator; there is no hard retry cap or
 guessed credential validation. Unavailable networks show failure with an
@@ -132,6 +135,7 @@ pure def answers(phase: JoinPhase, result: JoinResult): bool =
     (result == Joined or result == Unverified or result == Unavailable or result == PortalRequired))
 pure def canReceive(n: NetworkJoin, report: JoinReport, by: NetworkActor): bool =
   by == OperatingSystem and answers(n.phase, report.result) and report.network == n.selected.id and report.version == n.version and
+  (report.result == RejectedCredentials implies n.selected.authentication == SharedPassword) and
   (report.result == CertificateRequired implies report.certificate != "") and
   (report.result == RejectedCredentials or report.result == Unavailable implies report.explanation != "")
 pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJoin = {
