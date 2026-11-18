@@ -59,10 +59,13 @@ lemma CloseQuietWorkspace(w: Workspace)
   requires inv(w)
   requires w.execution.phase == app__execution_OperationPhase.Idle || w.execution.phase == app__execution_OperationPhase.Paused
   requires app__assistant_isVisible(w.assistant)
+  requires !app__assistant_unfinished(w.assistant) || w.assistant.activity.Paused?
   ensures inv(w.(assistant := app__assistant_close(w.assistant, app__conversation_ConversationActor.ConversationUser)))
 {
   ComponentInvariants(w);
   app__assistant_close_ensures(w.assistant, app__conversation_ConversationActor.ConversationUser);
+  var closed := app__assistant_close(w.assistant, app__conversation_ConversationActor.ConversationUser);
+  assert closed.activity == w.assistant.activity;
 }
 
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
@@ -1452,6 +1455,7 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
       InterruptedInvariant(device, w.browser, w);
       var stopped := interrupted(device, w.browser, w);
       if lifecycle.SleepDevice? && app__assistant_isVisible(stopped.assistant) {
+        assert !app__assistant_unfinished(stopped.assistant) || stopped.assistant.activity.Paused?;
         CloseQuietWorkspace(stopped);
       }
       var after := changeLifecycle(w, lifecycle, by_);
