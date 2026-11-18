@@ -246,6 +246,15 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
   await say("What day is it today?", { text: "It is today, all day.", actions: [] });
   await expect.poll(async () => (await asked()).ask.tag).toBe("NoAsk");
   expect(await apply([yes], "Typed")).toEqual(["NothingAsked"]);
+  await say("Take the eye check off my calendar.", { text: "Take off your eye check? Shall I?", isQuestion: true, answers: ["Yes, take it off", "No"],
+    actions: [{ kind: "proposeDeletion", entry: "Eye check", scope: "ThisOccurrence" }] });
+  expect((await asked()).ask.tag).toBe("DeleteAsk");
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{ said: "Is it raining?", answer: "[]" }]), client));
+  await act(() => page.getByRole("textbox", { name: "Message to Grace" }).fill("Is it raining?"));
+  await act(() => userEvent.keyboard("{Enter}"));
+  await expect.element(page.getByText("Sorry, I didn’t catch that. Could you say it again?")).toBeVisible();
+  await expect.poll(async () => (await asked()).ask.tag).toBe("NoAsk");
+  expect(await apply([yes], "Typed")).toEqual(["NothingAsked"]);
   expect(await eyeCheck()).toBeDefined();
 });
 

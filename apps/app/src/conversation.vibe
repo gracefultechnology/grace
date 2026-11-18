@@ -79,7 +79,13 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   try following(registry.changes, effect (before: Registry, after: Registry) => toldOfAccounts(before, after))
   try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
 
-  effect function fail(token: number) {
+  effect function request(token: number, workVersion: number) {
+    const turn = try Ref.get(asked)
+    return { generation: token, workVersion, origin: turn.generation === token ? turn.origin : "FromDevice" } as const
+  }
+
+  effect function fail(token: number, workVersion: number) {
+    try agent.apply([], try request(token, workVersion))
     workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: apology } }, "Host") catch () => undefined
   }
 
@@ -101,7 +107,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news).text}` }
     const said = ask(link, [system, ...outgoing]) catch () => undefined
     const reply = try decoded(said)
-    if (said === undefined || reply === undefined) return try fail(token)
+    if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
     const unread = try Effect.orDie(Effect.try(() => unreadable(said)))
     try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length))
   }
@@ -110,8 +116,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, text, isQuestion, answers: [...answers], audible: false } }, "Host") catch () => undefined
     if (responded === undefined) return
     try Ref.update(told, (all) => all.slice(seen))
-    const turn = try Ref.get(asked)
-    const applied = try agent.apply(actions, { generation: token, workVersion, origin: turn.generation === token ? turn.origin : "FromDevice" })
+    const applied = try agent.apply(actions, try request(token, workVersion))
     try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
