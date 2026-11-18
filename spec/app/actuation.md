@@ -85,19 +85,24 @@ import interaction as I from "./interaction"
 
 pure def observedSample(starting: WS::Workspace): WS::Workspace = {
   val ready = WS::changeLifecycle(starting, WS::StartupSucceeded, WS::Host)
-  val online = WS::setAvailability(ready, { connection: S::Online, reasoning: true, microphone: true, observation: true }, WS::Host)
-  val opened = WS::interact(WS::openGrace(WS::visit(online, S::Browser, WS::Person), WS::Person),
-    I::Resize({ expanded: false }), WS::Person)
-  val task = WS::begin(opened, { owner: "owner", task: "task", goal: "Read the account", origin: CM::exampleKey.origin }, WS::Person)
-  val page = WS::receiveLoad(task, { id: 1, version: 1, result: B::Loaded }, WS::Host)
-  WS::observe(page, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation,
-    checkpoint: "Read the current account" }, WS::Host)
+  val online = WS::setAvailability(ready, { connection: S::Online, reasoning: true, microphone: true, observation: false }, WS::Host)
+  val opened = WS::openGrace(WS::visit(online, S::Browser, WS::Person), WS::Person)
+  val allowed = WS::setBrowserObservation(opened, { allowed: true, deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, WS::Person)
+  val compact = WS::interact(allowed, I::Resize({ expanded: false }), WS::Person)
+  val task = WS::begin(compact, { owner: "owner", task: "task", goal: "Read the account", origin: CM::exampleKey.origin }, WS::Person)
+  val page = WS::receiveLoad(task, { id: task.browser.selected, version: B::activeTab(task.browser).loadVersion, result: B::Loaded }, WS::Host)
+  WS::observe(page, { deviceVersion: page.device.contextVersion, browserRevision: page.browser.revision, taskVersion: page.assistant.workVersion,
+    website: { ...X::goodObservation, generation: page.execution.generation }, checkpoint: "Read the current account" }, WS::Host)
 }
+pure def sampleOperationTokens(w: WS::Workspace): WS::OperationTokens =
+  { deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion,
+    generation: w.execution.generation, observation: w.execution.observation }
+pure def sampleOperationRequest(w: WS::Workspace, target: str, valueRef: str, kind: X::OperationKind): WS::OperationRequest =
+  { deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion,
+    generation: w.execution.generation, observation: w.execution.observation, target: target, valueRef: valueRef, kind: kind }
 pure def ordinarySample(observed: WS::Workspace): WS::WorkspaceResult = {
-  val versions = { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 }
-  val queued = WS::prepare(observed, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1,
-    target: "control", valueRef: "", kind: X::ReadPage }, WS::Host)
-  WS::dispatch(queued, versions, WS::Actuator)
+  val queued = WS::prepare(observed, sampleOperationRequest(observed, "control", "", X::ReadPage), WS::Host)
+  WS::dispatch(queued, sampleOperationTokens(queued), WS::Actuator)
 }
 pure def commitmentSample(observed: WS::Workspace): WS::WorkspaceResult = {
   val bound = WS::bindCommitment(observed, CM::exampleKey, WS::Person)

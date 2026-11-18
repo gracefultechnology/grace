@@ -189,10 +189,31 @@ now. The host that resolves the value names its source: her answer only for
 what she said in this task, never a value read from a website or an old
 conversation. That naming is the host's duty; this check cannot see it.
 
+After applying a saved fill, the host reads back the field it actually
+changed. It presents the original saved receipt, the in-flight command and
+the readback together. Only a matching positive readback puts the explanation
+in the assistant's visible task checkpoint. Its fixed wording leaves out the
+saved value, field contents, website text, account, origin and receipt.
+A mismatch follows the ordinary verification failure route. A stale or
+replayed callback cannot create another explanation.
+
 ```quint
 type FillSource = HerAnswer | HerSavedDetail
 pure def fillAllowed(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, source: FillSource, saved: SavedFill, by: WS::WorkspaceActor): bool =
   if (source == HerSavedDetail) currentSavedDetailEffect(w, pendingEffect, d, saved, by) else AC::currentEffect(w, pendingEffect, by)
+pure val savedUseCheckpoint = "I filled this field using a detail you saved."
+pure def afterSavedFillReadback(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, saved: SavedFill, currentVerification: WS::CurrentVerification, by: WS::WorkspaceActor): WS::Workspace = {
+  val report = { ...currentVerification, checkpoint: savedUseCheckpoint }
+  if (currentSavedDetailEffect(w, pendingEffect, d, saved, WS::Actuator) and WS::canVerify(w, report, by))
+    WS::verify(w, report, by)
+  else w
+}
+pure def lawOnlyVerifiedSavedUseExplains(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, saved: SavedFill, currentVerification: WS::CurrentVerification, by: WS::WorkspaceActor): bool = {
+  val after = afterSavedFillReadback(w, pendingEffect, d, saved, currentVerification, by)
+  val explained = after.execution.phase == X::Verified and after.assistant.workVersion > w.assistant.workVersion and after.assistant.checkpoint == savedUseCheckpoint
+  val report = { ...currentVerification, checkpoint: savedUseCheckpoint }
+  explained iff (currentVerification.website.matches and currentSavedDetailEffect(w, pendingEffect, d, saved, WS::Actuator) and WS::canVerify(w, report, by))
+}
 pure def lawSavedSourceNeedsTheCurrentDetail(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, d: SD::SavedDetails, saved: SavedFill, by: WS::WorkspaceActor): bool =
   fillAllowed(w, pendingEffect, d, HerSavedDetail, saved, by) implies
     AC::currentEffect(w, pendingEffect, by) and currentFactAuthorization(SD::detailAt(d, receiptKey(saved.authorization)), saved.authorization)
@@ -218,9 +239,8 @@ pure def authorizedFill(f: M::PersonalFact): M::MemoryStep = {
   M::dispatchFill(queued, { version: f.revision, task: "task", destination: CM::exampleKey.origin }, M::MemoryRuntime)
 }
 pure def savedWorkspace(w: WS::Workspace): WS::WorkspaceResult = {
-  val queued = WS::prepare(w, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1,
-    target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillOrdinary }, WS::Host)
-  WS::dispatch(queued, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 }, WS::Actuator)
+  val queued = WS::prepare(w, AC::sampleOperationRequest(w, "name-field", "memory-name-revision-2", X::FillOrdinary), WS::Host)
+  WS::dispatch(queued, AC::sampleOperationTokens(queued), WS::Actuator)
 }
 pure val correction: M::FactProposal = { factKey: "name", kind: M::Name, scope: "", value: "Grace", source: M::FreshUserChoice, version: 2 }
 pure val wValues = Set(WS::initial, AC::observedSample(WS::initial), savedWorkspace(AC::observedSample(WS::initial)).state,
@@ -240,6 +260,14 @@ pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin
   target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillOrdinary }),
   X::Operate({ owner: "owner", task: "task", origin: CM::exampleKey.origin, generation: 1, observation: 1,
     target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillSignInIdentifier }))
+pure val currentVerificationValues = {
+  val w = savedWorkspace(AC::observedSample(WS::initial)).state
+  val report = { deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion,
+    website: { ...X::goodVerification, generation: w.execution.generation, observation: w.execution.observation },
+    checkpoint: "Read the field", needsUser: false }
+  Set(report, { ...report, browserRevision: report.browserRevision + 1 },
+    { ...report, website: { ...report.website, matches: false, reason: "Field unchanged" } })
+}
 pure val proposedFactValues = Set(correction, { ...correction, version: 1 })
 pure val factKeyValues = Set("name", "provider", "missing")
 pure val dValues = Set(SD::initial, { facts: List(authorizedFill(approvedFact(M::initial)).state) },
