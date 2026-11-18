@@ -1738,7 +1738,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Ask Grace" }));
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
-    await act(() => userEvent.type(field, ask + "{Enter}"));
+    await act(() => field.fill(ask));
+    await act(() => userEvent.keyboard("{Enter}"));
     await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
