@@ -468,9 +468,13 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: "example-home", frameScope: "main", result: {
         snapshotId: "links", url: "https://example.org/", complete: true, readyState: "complete", blockers: [],
+        viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
-          { id: "help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true },
+          { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
+            bounds: { x: 100, y: -2, width: 100, height: 32 } },
+          { id: "help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
+            bounds: { x: 100, y: 80, width: 100, height: 32 } },
         ],
       } };
     }
