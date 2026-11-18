@@ -431,9 +431,13 @@ pure def lawALoadRecordsWhereItEnded(t: Tab, endedAt: str): bool =
   endedAt != "" and t.cursor >= 0 and t.cursor < t.history.length() implies
     (endedAtCursor(t, endedAt).history.length() == t.history.length() and tabUrl(endedAtCursor(t, endedAt)) == endedAt)
 pure val redirectedTo: str = "https://www.utility.example/home"
+pure val tValues = Set(
+  activeTab(initial),
+  activeTab(navigate(initial, "https://utility.example")),
+  activeTab(goBack(navigate(navigate(initial, "https://utility.example"), redirectedTo))))
 pure def sometimesARedirectIsFollowed(b: Browser): bool =
   activeTab(b).load == Loaded and tabUrl(activeTab(b)) == redirectedTo and activeTab(b).cursor > 0
-pure val endedAtValues = Set(redirectedTo)
+pure val endedAtValues = Set("", redirectedTo)
 ```
 
 ### A load that never starts or never ends becomes the failure view with Reload
