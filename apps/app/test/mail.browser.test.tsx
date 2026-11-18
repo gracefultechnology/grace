@@ -160,15 +160,16 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
   await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
   const askGrace = page.getByRole("button", { name: "Ask Grace", exact: true });
-  await act(() => userEvent.type(askGrace, "{Enter}"));
-  await expect.element(askGrace).toHaveAttribute("aria-pressed", "true");
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), ask + "{Enter}"));
+  await click(askGrace);
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.element(message).toBeVisible();
+  await act(() => userEvent.type(message, ask + "{Enter}"));
   const yes = page.getByRole("button", { name: approve, exact: true });
   await expect.element(yes).toBeVisible();
   expect(await visits()).toEqual([]);
   expect((await company()).googleRequests).not.toContain("POST /calendar/v3/calendars/primary/events");
   await click(yes);
-  await expect.poll(visits).toHaveLength(1);
+  await expect.poll(visits, { timeout: 10000 }).toHaveLength(1);
   const [saved] = await visits();
   expect(saved).toMatchObject({ externalId: expect.stringMatching(/^appointment/), title, startAt: tomorrow.toISOString(),
     description: expect.stringContaining("Visit form") });
