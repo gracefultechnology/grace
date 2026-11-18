@@ -12,7 +12,7 @@ import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../
 import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
-import { ManagedReads } from "./managedReads.vibe";
+import { ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
 import { mailAccounts } from "../gen/app__accounts.ts";
@@ -82,7 +82,6 @@ const wifiWords: Record<Connectivity, string> = {
 
 function Screen() {
   const account = useSetup(useRuntime()).state?.graceAccount;
-  const managedAccount = account?.tag === "GraceSignedIn" || account?.tag === "GraceDeviceSignedIn";
   const cards = useHomeCards();
   const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
@@ -130,8 +129,7 @@ function Screen() {
       void send({ type: "togglePopover", popover });
     },
   });
-  const managedIntent = window.location.hash === "#email" || window.location.hash === "#calendar";
-  const useManaged = managedIntent || managedAccount || (!accounts?.accounts.length && cards !== undefined);
+  const useManaged = usesManagedSurfaces(account, window.location.hash);
   const online = device.connectivity === "Online";
   const volume = preferences.session;
   // spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone": zero volume is muted, and Unmute at zero chooses 50.

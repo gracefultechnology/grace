@@ -112,9 +112,9 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const kept = Layer.orDie(Layer.provide(Layer.mergeAll(Layer.provideMerge(instances, accounts), library), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const machines = Layer.mergeAll(preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
-  const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), grace, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech)), machines)
+  const guidance = Layer.provideMerge(agent, services(cloud))
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech)), machines)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
-  const controlled = Layer.provideMerge(replyControls(platform.native), managed)
+  const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)
 }
