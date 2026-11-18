@@ -3,7 +3,7 @@ import { hasOneStatementAnswer } from "../gen/app__workspace.effect.vibe"
 import { type LinkObservation } from "./nativePage.schema.ts"
 
 const totalLabel = /^(?:total amount due|amount due|total due|balance due|statement balance)(?:\s*:\s*|\s+|$)(.*)$/iu
-const dateLabel = /^(?:payment due date|bill due date|due date|payment due by|pay by)(?:\s*:\s*|\s+|$)(.*)$/iu
+const dateLabel = /^(?:payment due date|bill due date|due date|payment due by|payment due|due by|pay by)(?:\s*:\s*|\s+|$)(.*)$/iu
 const money = /^(?:[$£€]\s*\d+(?:[,.]\d{3})*(?:[.,]\d{2})?|(?:USD|EUR|GBP)\s+\d+(?:[,.]\d{3})*(?:[.,]\d{2})?)$/iu
 const date = /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},?\s+\d{4})$/iu
 
@@ -21,7 +21,7 @@ export function statementFacts(snapshot: LinkObservation, url: string) {
   if (result.url !== url || result.readyState !== "complete" || result.domRevision === undefined ||
       result.blockers.some(item => item.covers !== "partial") || !result.text || !result.title ||
       !/\b(?:current|latest)\s+(?:utility\s+)?(?:bill|statement|invoice)\b|\b(?:bill|statement|invoice)\s+for\s+the\s+current\s+period\b/iu.test(result.title)) return undefined
-  const lines = result.text.split(/\r?\n/u).map(line => line.trim()).filter(Boolean)
+  const lines = result.text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map(line => line.trim()).filter(Boolean)
   const amounts = labeled(lines, totalLabel, money)
   const dates = labeled(lines, dateLabel, date)
   if (!hasOneStatementAnswer(amounts, dates)) return undefined

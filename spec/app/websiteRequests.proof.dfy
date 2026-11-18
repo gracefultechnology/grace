@@ -1133,10 +1133,11 @@ lemma lawAnsweringTheOnlyMessageReleasesThePage_ensures(s: WebsiteRequests, id: 
     AnswerState(s, id, choice, by_);
     var r := presented(s);
     assert s.requests == [r];
-    var kept := ProofLib.Filter((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests);
-    forall q | q in kept ensures false
-    { ProofLib.FilterMember((q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask))), s.requests, q); }
-    assert kept == [];
+    var keep := (q: WebsiteRequest) => ((q.id != id) && !(sameSite(q.ask, presented(s).ask)));
+    assert s.requests[0].id == id;
+    ProofLib.FilterCons(keep, s.requests);
+    ProofLib.FilterNil(keep, s.requests[1..]);
+    assert ProofLib.Filter(keep, s.requests) == [];
     var after := answer(s, id, choice, by_).state;
     assert after.requests == [] && after.asking == [];
     PresentedFilter(after);

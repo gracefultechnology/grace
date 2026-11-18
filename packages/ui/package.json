@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "sideEffects": ["./src/fonts.ts"],
+  "sideEffects": ["./src/fonts.css"],
   "exports": {
     ".": "./src/index.ts",
-    "./fonts": "./src/fonts.ts",
+    "./fonts": "./src/fonts.css",
     "./styles.css": "./styles.css"
   },
   "scripts": {
