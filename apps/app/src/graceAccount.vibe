@@ -69,11 +69,15 @@ export service AccountActions {
   run(operation: Operation): boolean!!
 }
 
+export function accountFetch(input: RequestInfo | URL, init?: RequestInit) {
+  return webView.window.fetch(input, { ...init, credentials: "include", cache: "no-store", redirect: "error" })
+}
+
 const webTransport: Transport = {
-  request: (path, method, body) => tryPromise((signal) => webView.window.fetch(
+  request: (path, method, body) => tryPromise((signal) => accountFetch(
     apiOrigin + path,
     {
-      method, credentials: "include", cache: "no-store", signal,
+      method, signal,
       headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     },
@@ -128,6 +132,10 @@ effect function session(transport: Transport) {
     if (!renewed.ok) throw new AccountRequestFailed()
     return try decode(renewed, Session)
   })))
+}
+
+export effect function browserAccountId() {
+  return (try session(webTransport)).account?.id
 }
 
 effect function readAccount(transport: Transport): GraceAccount!unknown {

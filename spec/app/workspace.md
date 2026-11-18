@@ -19,6 +19,8 @@ adapter correctly recognized a website or that an external effect succeeded.
 
 > As a person using Grace, I can leave a task, close Grace, lose permissions
 > or put the device to sleep without old clicks or recording continuing.
+> When I choose Wi-Fi, Home or Settings during a full-screen conversation,
+> Grace moves into the lower pane so I can see the control I chose.
 
 ### The workspace contains the actual device, page, conversation and operation
 
@@ -403,13 +405,19 @@ Returning to an application or reopening Grace reveals that same paused task.
 Leaving the surface or sleeping dismisses keyboard focus while retaining the
 draft. Opening Grace ends an active address-editor focus; browser address entry
 still works independently while Grace is closed.
+Choosing Home or Settings moves expanded chat into the lower pane, including
+when the selected surface is already open. Compact chat stays compact and
+closed chat stays closed.
 
 ```quint
+pure def makeRoomForRail(revealControls: bool, w: Workspace): Workspace =
+  if (revealControls and w.assistant.presentation == A::Expanded)
+    { ...w, assistant: A::resize(w.assistant, false, C::ConversationUser) } else w
 pure def canVisit(w: Workspace, destination: S::Surface, by: WorkspaceActor): bool =
   by == Person and (S::canOpenSurface(w.device, destination) or S::canOpenNative(w.device, destination))
 pure def visit(w: Workspace, destination: S::Surface, by: WorkspaceActor): Workspace =
-  interrupted(if (S::isTaskSurface(destination)) S::openSurface(w.device, destination)
-    else S::openNative(w.device, destination), w.browser, w)
+  val device = if (S::isTaskSurface(destination)) S::openSurface(w.device, destination) else S::openNative(w.device, destination)
+  makeRoomForRail(destination == S::Home or destination == S::DeviceSettings, interrupted(device, w.browser, w))
 pure def canReturnToApplication(w: Workspace, by: WorkspaceActor): bool =
   by == Person and S::canReturnFromNative(w.device)
 pure def returnToApplication(w: Workspace, by: WorkspaceActor): Workspace =
@@ -599,6 +607,9 @@ pure val guidanceReportValues = Set(
 
 ### Home pages and rail overlays invalidate the covered page
 
+Choosing Wi-Fi on the rail moves expanded chat into the lower pane, just as
+Home and Settings do. The Wi-Fi popover still toggles on each tap.
+
 ```quint
 pure def canChooseHomePage(w: Workspace, page: S::HomePage, by: WorkspaceActor): bool =
   by == Person and S::canChooseHomePage(w.device, page)
@@ -611,7 +622,13 @@ pure def chooseSettingsPage(w: Workspace, page: S::SettingsPage, by: WorkspaceAc
 pure def canTogglePopover(w: Workspace, popover: S::RailPopover, by: WorkspaceActor): bool =
   by == Person and S::canTogglePopover(w.device, popover)
 pure def togglePopover(w: Workspace, popover: S::RailPopover, by: WorkspaceActor): Workspace =
-  interrupted(S::togglePopover(w.device, popover), w.browser, w)
+  makeRoomForRail(popover == S::WifiPopover, interrupted(S::togglePopover(w.device, popover), w.browser, w))
+pure def lawRailChoicesRevealTheirControls(w: Workspace): bool =
+  val expected = if (w.assistant.presentation == A::Expanded) A::Compact else w.assistant.presentation
+  w.device.readiness == S::Ready implies
+    visit(w, S::Home, Person).assistant.presentation == expected and
+    visit(w, S::DeviceSettings, Person).assistant.presentation == expected and
+    togglePopover(w, S::WifiPopover, Person).assistant.presentation == expected
 pure def canDismissPopover(w: Workspace, by: WorkspaceActor): bool = by == Person and S::canDismissPopover(w.device)
 pure def dismissPopover(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::dismissPopover(w.device), w.browser, w)
@@ -1045,7 +1062,7 @@ With permission and an active compact Browser step, the person can ask
 Grace to highlight a link on the loaded page. The host binds the
 highlighted destination to this step and its current page context. A
 highlight does not record a read or navigate the page. Visiting a
-different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
 
 When the person permits observation and a secure site is loaded, the chat planner can see that the current tab already has a website open and the public hostname. The browser keeps the full address and document contents local when reporting that context.
 

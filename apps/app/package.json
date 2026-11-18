@@ -15,6 +15,7 @@
   "dependencies": {
     "@capacitor/android": "8.5.2",
     "@capacitor/core": "8.5.2",
+    "@elizaos/cloud": "link:../../vendor/eliza/packages/cloud",
     "@elizaos/os": "link:../../vendor/eliza/packages/os",
     "@repo/design-system": "workspace:*",
     "@repo/ui": "workspace:*",

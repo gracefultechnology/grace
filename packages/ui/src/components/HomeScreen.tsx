@@ -44,7 +44,7 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
 
 const pages: HomePage[] = ["main", "files"];
 const shifts: Record<HomePage, number> = { main: 0, files: 468 };
-const compactShifts: Record<HomePage, number> = { main: 0, files: 354 };
+const columnGap = 20;
 const SWIPE = { threshold: 12, overscroll: 60 };
 const slots = {
   calendar: { x: 0, top: 0, w: 480, h: 560 },
@@ -52,7 +52,7 @@ const slots = {
   internet: { x: 500, top: 310, w: 470, h: 250 },
   files: { x: 990, top: 0, w: 520, h: 560 },
 };
-const columns: Record<keyof typeof slots, number> = { calendar: 0, email: 354, internet: 708, files: 1062 };
+const columns: Record<keyof typeof slots, number> = { calendar: 0, email: 1, internet: 2, files: 3 };
 const VIEW = 1042;
 const RADIUS = 400;
 const STAGE = { width: 1268, height: 788, rail: 138 };
@@ -99,13 +99,15 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
  */
 export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, passwords, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
   const full = layout === "full";
-  const compact = !full;
+  const compact = layout === "compact";
   const [measure, measured] = useSize<HTMLDivElement>();
   const box = measured ?? STAGE;
   const across = (box.width - STAGE.rail) / (STAGE.width - STAGE.rail);
   const scale = Math.min(1, across, full ? box.height / STAGE.height : 1);
-  const x = Math.max(0, (box.width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2);
-  const stops = full ? shifts : compactShifts;
+  const stageWidth = compact ? Math.max(STAGE.width, box.width) : STAGE.width;
+  const x = compact ? 0 : Math.max(0, (box.width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2);
+  const columnStep = (stageWidth - STAGE.rail + columnGap) / 3;
+  const stops = compact ? { main: 0, files: columnStep } : shifts;
   const [dragShift, setDragShift] = useState<number | null>(null);
   const dragRef = useRef<{ x: number; k: number; from: number; shift: number; moved: boolean } | null>(null);
   const swipedRef = useRef(false);
@@ -145,11 +147,12 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     event.preventDefault();
   };
   const place = (slot: keyof typeof slots, card: (turn: number) => ReactNode) => {
-    const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { left: columns[slot], top: 0, width: 334, height: "100%", transform: `translateX(${-shift}px)` } };
+    const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { left: columns[slot] * columnStep, top: 0, width: columnStep - columnGap, height: "100%", transform: `translateX(${-shift}px)` } };
     const { transform, transformOrigin, ...frame } = style;
     const still = dragShift !== null && "transition-none";
+    const offPage = compact && (slot === "calendar" && nearest === "files" || slot === "files" && nearest === "main");
     return (
-      <div className={cn("absolute transition-[left,top,width,height] duration-slow ease-settle motion-reduce:transition-none", still)} style={frame}>
+      <div inert={offPage} className={cn("absolute transition-[left,top,width,height] duration-slow ease-settle motion-reduce:transition-none", still)} style={frame}>
         <div className={cn("size-full transition-[transform,transform-origin] duration-[320ms] ease-out-cubic will-change-transform motion-reduce:transition-none", still)} style={{ transform, transformOrigin }}>
           {card(turn)}
         </div>
@@ -167,11 +170,11 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
       className={cn("absolute inset-1.5 z-[1] overflow-hidden font-sans transition-[bottom] duration-slow ease-settle motion-reduce:transition-none", className)}
       {...props}
     >
-      <div className="absolute top-0 left-0" style={{ width: STAGE.width, height: full ? STAGE.height : box.height / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
-        <HomeGreeting greeting={greeting} name={name} line={line} compact={compact} className={cn("absolute left-[182px] transition-[top] duration-slow ease-settle motion-reduce:transition-none", full ? "top-[34px]" : "top-[22px]")} />
+      <div className="absolute top-0 left-0" style={{ width: stageWidth, height: full ? STAGE.height : box.height / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
+        {!compact && <HomeGreeting greeting={greeting} name={name} line={line} compact={!full} className={cn("absolute left-[182px] transition-[top] duration-slow ease-settle motion-reduce:transition-none", full ? "top-[34px]" : "top-[22px]")} />}
         {banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
         {layout !== "greeting" && (
-          <div className={cn("absolute left-[182px] w-[1042px] transition-[top,height] duration-slow ease-settle motion-reduce:transition-none", full ? "top-40 h-[560px]" : "top-24 h-[calc(100%-120px)]")}>
+          <div className={cn("absolute transition-[top,height] duration-slow ease-settle motion-reduce:transition-none", full ? "top-40 left-[182px] h-[560px] w-[1042px]" : "inset-y-0 right-0 left-[138px] overflow-clip")}>
             {place("calendar", (turn) => <HomeCalendarCard {...calendar} compact={compact} turn={turn} className={cn("size-full", calendar.className)} />)}
             {place("email", (turn) => <HomeEmailCard {...email} compact={compact} turn={turn} className={cn("size-full", email.className)} />)}
             {place("internet", (turn) => <InternetCard {...internet} compact={compact} turn={turn} className={cn("size-full", internet.className)} />)}

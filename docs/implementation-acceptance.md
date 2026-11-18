@@ -341,6 +341,10 @@ On a stock Android emulator with WebView 149, the installed browser instrumentat
 
 The standalone approval page now offers the email or SMS code methods enabled by the deployment. The email-only journey verified the active account before asking for backup approval. Chromium exercised the consent screen, and the Worker tested an email code, stale-session refusal and a fresh native approval against PGlite with synthetic email delivery. [Standalone consent implementation](https://github.com/gracefultechnology/grace-new/commit/0d24c86c49efed78d59707b30b7976b05fb7a2fb)
 
+The private vault and encrypted-backup implementation merged into both Eliza develop and Vibestack. The standalone Grace Worker passed a local account journey against a disposable PostgreSQL-compatible database. A person signed in through email verification, read the account’s subscription status, and signed out. The inference endpoint refused an unfunded account, served a funded test request, and recorded one usage entry when the caller retried the same request. The same Worker advertised encrypted backup and returned first-party consent with framing, cache and referrer protections. The test supplied synthetic email delivery, model responses and credits. [Eliza develop](https://github.com/elizaOS/eliza/pull/39859) · [Eliza Vibestack](https://github.com/elizaOS/eliza/pull/39861) · [Grace standalone integration](https://github.com/gracefultechnology/grace-new/pull/67)
+
+Eliza Cloud staging deployed revision `36f2576` through its protected Cloud workflow. The existing staging service and the standalone Grace production service each returned HTTP 204 for their own registered Grace backup client. Shared staging refused anonymous reads, writes and deletes, and withheld cross-origin access from a foreign origin. A live encrypted transfer with a disposable Google account requires the person’s native sign-in and backup approval. [Eliza staging deployment](https://github.com/elizaOS/eliza/actions/runs/44231960640) · [Grace production revision and database qualification](https://github.com/gracefultechnology/grace-new/pull/79)
+
 ## PRD requirements
 
 ### Always-applicable rules

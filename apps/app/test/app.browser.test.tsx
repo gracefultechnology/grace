@@ -435,6 +435,45 @@ it("Use the website under Grace's controls", async () => {
 }, 120_000);
 
 
+it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/assistant.md, "Story: Keep control of one task across windows and pauses")', async () => {
+  const runtime = ManagedRuntime.make(application(undefined));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    host.remove();
+    await runtime.dispose();
+  });
+  await act(() => root.render(<App runtime={runtime} />));
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const tap = (name: string) => act(() => userEvent.click(button(name)));
+
+  await tap("Ask Grace");
+  await tap("Close Grace");
+  await tap("Ask Grace");
+  await expect.element(button("Collapse")).toBeVisible();
+  await tap("Home");
+  await expect.element(button("Expand")).toBeVisible();
+  await tap("More apps");
+  await tap("Back to the first page");
+  await tap("Close Grace");
+  await tap("Ask Grace");
+  await expect.element(button("Expand")).toBeVisible();
+
+  await tap("Expand");
+  await act(() => userEvent.click(page.getByRole("button", { name: /^Wi-Fi/ })));
+  await expect.element(button("Expand")).toBeVisible();
+  await tap("Wi-Fi settings");
+
+  await tap("Expand");
+  await tap("Settings");
+  await expect.element(button("Expand")).toBeVisible();
+  await tap("About this tablet");
+  await tap("Clear browsing data");
+  await expect.element(page.getByRole("dialog")).toBeVisible();
+  await tap("Cancel");
+});
+
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   let locked = true;
   let edited = false;
@@ -1463,6 +1502,35 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     }
     return { url: origin + currentPage.path, title: currentPage.title, text: currentPage.heading, truncated: false };
   });
+  let guideOwner: string | null = null;
+  let guideCalls = 0;
+  let replaceGuideOwner = true;
+  const browserFetch = window.fetch.bind(window);
+  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    const url = new URL(String(input), window.location.origin);
+    if (url.origin !== window.location.origin) return browserFetch(input, init);
+    switch (url.pathname) {
+      case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
+      case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
+      case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
+      case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
+      case "/api/v1/decisions":
+        guideCalls++;
+        expect(init?.credentials).toBe("include");
+        const headers = new Headers(init?.headers);
+        expect(headers.has("Authorization")).toBe(false);
+        expect(headers.get("X-Eliza-Account")).toBe(guideOwner);
+        return browserFetch(new URL(url.pathname, cloud), { ...init, credentials: "omit",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } }).then((response) => {
+          if (replaceGuideOwner) {
+            guideOwner = "another-owner";
+            replaceGuideOwner = false;
+          }
+          return response;
+        });
+      default: return browserFetch(input, init);
+    }
+  });
   const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
@@ -1524,6 +1592,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(check);
 
     await tap(showLink);
+    await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
+    expect(guideCalls).toBe(0);
+    guideOwner = "guide-owner";
+    await tap(showLink);
+    await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
+    expect(native.calls("controlPage")).not.toContainEqual(expect.objectContaining({
+      command: expect.objectContaining({ subaction: "guide", guidance: expect.objectContaining({ kind: "show" }) }),
+    }));
+    guideOwner = "guide-owner";
+    await tap(showLink);
     await routeTo(page.getByText("Look for “Help center” on example.org."));
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
       subaction: "guide", guidance: { kind: "show", nodeId: "help" },
@@ -1563,7 +1641,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: /Westside Reception/ }));
     await expect.element(page.getByText("Your appointment is at our Westside office.")).toBeVisible();
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
-    await tap(page.getByRole("button", { name: "Collapse", exact: true }));
+    await routeTo(page.getByRole("button", { name: "Expand", exact: true }));
     await tap(resume);
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
@@ -1582,6 +1660,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
+    accountNetwork.mockRestore();
     localStorage.clear();
   }
 });
