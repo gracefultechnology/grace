@@ -3,13 +3,13 @@
 // spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
 import { Effect, type ManagedRuntime, Option, Stream } from "effect";
 import { createContext, createElement, type ReactNode, use, useEffect, useState, useSyncExternalStore } from "react";
-import { type Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
+import type { Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
 import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
-import { type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
+import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
 import type { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
