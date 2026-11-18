@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -140,16 +141,22 @@ const Arguments = Schema.Struct({
   receipt: Schema.optional(Schema.NonEmptyString),
 });
 
+const located = (found: string | null, missing: string) => {
+  if (found === null) throw new Error(missing);
+  return found;
+};
+const androidHome = () => located(resolveAndroidSdkRoot(), "No Android SDK was found: set ANDROID_HOME");
+
 export function buildTool(name: string): string {
-  const tools = path.join(resolveAndroidSdkRoot(), "build-tools");
+  const tools = path.join(androidHome(), "build-tools");
   const [newest] = readdirSync(tools).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   return path.join(tools, newest, name);
 }
 
 const environment = () => ({
   ...process.env,
-  ANDROID_HOME: resolveAndroidSdkRoot(),
-  JAVA_HOME: resolveJavaHome(),
+  ANDROID_HOME: androidHome(),
+  JAVA_HOME: located(resolveJavaHome(), "No JDK was found: set JAVA_HOME to a JDK 21"),
   ...(process.env[keystore]?.trim() ? { [keystore]: path.resolve(process.env.INIT_CWD ?? process.cwd(), process.env[keystore]) } : {}),
 });
 
@@ -355,7 +362,7 @@ function declaredActions(bundle: string) {
   const pending: unknown[] = [parseAst(bundle)];
   while (pending.length) {
     const node = pending.pop();
-    if (Array.isArray(node)) pending.push(...node);
+    if (Array.isArray(node)) pending.push(...Array.from<unknown>(node));
     if (!isSyntax(node)) continue;
     if (node.type === "ObjectExpression") objects.push(Schema.decodeUnknownSync(Schema.Array(Schema.Unknown))(node.properties).filter(isSyntax));
     const [target, value] = node.type === "VariableDeclarator" ? [node.id, node.init] : node.type === "AssignmentExpression" ? [node.left, node.right] : [];
@@ -452,7 +459,7 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
   writeFileSync(path.join(directory, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
 }
 
-const sdk = (tool: string) => path.join(resolveAndroidSdkRoot(), tool);
+const sdk = (tool: string) => path.join(androidHome(), tool);
 const run = promisify(execFile);
 const stopping = new AbortController();
 const adb = async (args: string[], seconds = 60) => {
@@ -518,7 +525,7 @@ async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudPro
   await new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve);
     socket.addEventListener("error", () => reject(new Error(`Could not open ${url}`)));
-    signal.addEventListener("abort", () => reject(signal.reason));
+    signal.addEventListener("abort", () => reject(new Error(`Could not open ${url}`, { cause: signal.reason })));
   });
   const pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: unknown) => void }>();
   const rejectAll = (error: Error) => { for (const waiter of pending.values()) waiter.reject(error); };
@@ -769,12 +776,13 @@ async function runBenchmark({ input, receipt }: BenchmarkRun, page: Awaited<Retu
   } finally {
     website?.page.close();
     const first = observations[0]?.document;
-    const navigation = first && requestAcceptedAt ? observations.some(({ at, document }) => {
+    const since = requestAcceptedAt;
+    const navigation = first && since ? observations.some(({ at, document }) => {
       const address = new URL(document.url);
       address.hash = "";
       const initial = new URL(first.url);
       initial.hash = "";
-      return at >= requestAcceptedAt && document.loaderId !== first.loaderId && address.href !== initial.href;
+      return at >= since && document.loaderId !== first.loaderId && address.href !== initial.href;
     }) : false;
     try {
       writeFileSync(output, `${JSON.stringify({ surface: "android-webview", input, status, failure, requestAcceptedAt, navigation, observations, transcripts }, null, 2)}\n`);
@@ -923,6 +931,10 @@ const LoginFixture = Schema.Struct({
   login: Schema.Struct({ label: Schema.String, origin: Schema.String, username: Schema.String, password: Schema.String }),
 });
 const Grade = Schema.Struct({ grade: Schema.Struct({ success: Schema.Boolean }), paymentCount: Schema.Int });
+const Callable = Schema.declare((value: unknown): value is (...args: unknown[]) => unknown => typeof value === "function");
+const isEpisodeHost = Schema.is(Schema.Struct({ startPasswordLoginEpisode: Callable }));
+const Episode = Schema.Struct({ grade: Callable, close: Callable });
+const isEpisode = Schema.is(Episode);
 
 function deviceNodes(xml: string) {
   return Array.from(xml.matchAll(/<node\b[^>]*>/g)).flatMap(([node]) => {
@@ -955,7 +967,7 @@ function buildPasswordEditorFixture(directory: string, login: typeof LoginFixtur
   const manifest = path.join(work, "AndroidManifest.xml");
   writeFileSync(manifest, `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${editorFixturePackage}"><uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36"/><application android:testOnly="true" android:allowBackup="false"/><instrumentation android:name=".BillWorldPasswordEditor" android:targetPackage="${identity.appId}"/></manifest>`);
   const compile = (tool: string, args: string[]) => execFileSync(tool, args, { stdio: "ignore", timeout: 180_000 });
-  compile(path.join(resolveJavaHome(), "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
+  compile(path.join(environment().JAVA_HOME, "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
     path.join(app, "test/device/BillWorldPasswordEditor.java")]);
   const compiled = path.join(classes, "technology/graceful/fixture/BillWorldPasswordEditor.class");
   compile(buildTool("d8"), ["--lib", sdkJar, "--min-api", "29", "--output", work, compiled]);
@@ -1040,8 +1052,8 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       await installedApk() !== undefined || await installedApk(editorFixturePackage) !== undefined) {
     throw new Error("BillWorld requires an emulator with no existing Grace installation");
   }
-  const fixture = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
-  if (typeof fixture.startPasswordLoginEpisode !== "function") throw new Error("BillWorld password fixture is unavailable");
+  const fixture: unknown = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
+  if (!isEpisodeHost(fixture)) throw new Error("BillWorld password fixture is unavailable");
   const cleanup: Array<() => Promise<unknown>> = [];
   let buildFailure: Error | undefined;
   const screenFile = `/data/local/tmp/grace-billworld-ui-${randomUUID()}.xml`;
@@ -1099,10 +1111,10 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     step = `confirm Android’s credential prompt for ${purpose}`;
     await shell(serial, "input keyevent KEYCODE_ENTER");
   };
-  let episode: { grade(): Promise<unknown>; close(): Promise<unknown> } | undefined;
+  let episode: typeof Episode.Type | undefined;
   let step = "open fixture";
   try {
-    episode = await fixture.startPasswordLoginEpisode({
+    const started = await fixture.startPasswordLoginEpisode({
       provision: async (input: unknown) => {
         signal.throwIfAborted();
         const { runId, login, entryUrl, deviceTrust } = Schema.decodeUnknownSync(LoginFixture)(input);
@@ -1116,7 +1128,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         const resources = `${output}/res`;
         mkdirSync(path.join(app, resources, "raw"), { recursive: true, mode: 0o700 });
         mkdirSync(path.join(app, resources, "xml"), { recursive: true });
-        cleanup.push(async () => { rmSync(path.join(app, output), { recursive: true, force: true }); });
+        cleanup.push(() => rm(path.join(app, output), { recursive: true, force: true }));
         copyFileSync(deviceTrust.caPath, path.join(app, resources, "raw/billworld_episode_ca.pem"));
         writeFileSync(path.join(app, resources, "xml/network_security.xml"),
           '<network-security-config><base-config cleartextTrafficPermitted="false"/><domain-config cleartextTrafficPermitted="false"><domain>localhost</domain><domain>127.0.0.1</domain><trust-anchors><certificates src="@raw/billworld_episode_ca"/></trust-anchors></domain-config></network-security-config>');
@@ -1239,9 +1251,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
       },
     });
-    const activeEpisode = episode;
-    if (activeEpisode === undefined) throw new Error("The fixture did not start");
-    const readGrade = async () => Schema.decodeUnknownSync(Grade)(await activeEpisode.grade());
+    if (!isEpisode(started)) throw new Error("The fixture did not start");
+    episode = started;
+    const readGrade = async () => Schema.decodeUnknownSync(Grade)(await started.grade());
     const before = await readGrade();
     if (before.grade.success || before.paymentCount !== 0) throw new Error("Autofill must not submit or pay");
     step = "submit the website form and grade";
