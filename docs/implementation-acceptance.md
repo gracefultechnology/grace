@@ -89,9 +89,13 @@ Eliza Core, an owner-bound PGlite database and the Grace Worker with a real
 Cloudflare Qwen response. A local Cloudflare Worker with the remote Workers
 AI binding also answered a metered chat and returned a 768-value embedding.
 The normal production bundle built from fresh tracked sources and frozen
-installs. Stripe, Google and speech used network fixtures. Android
-installation, live Google consent, paid checkout and a real microphone
-session still require separate launch evidence.
+installs. Stripe and Google used network fixtures. The speech relay also
+used the real Cartesia service from a local Worker. Julia – Gentle Guide
+synthesized “Welcome to Grace.” The Worker streamed 46,080 bytes of PCM
+back through transcription, which recognized “Grace.” PostgreSQL recorded
+765 microdollars for synthesis and 419 for transcription. Android
+installation, live Google consent, paid checkout and a device microphone
+session still require launch evidence.
 
 On November 17, 2026 the Grace Worker went live on
 [the app host](https://app.graceforseniors.com) and
@@ -109,8 +113,8 @@ Grace repository has an established release certificate for
 `technology.graceful.grace`. The production Android registry uses its SHA-256
 fingerprint. The release signing material stays in its existing custody.
 
-Worker version `2140486d-7ea8-4980-afc0-2420f114a774` deployed Grace
-`24bc090` with Eliza `7b4da95`. The production migration created the
+Worker version `7d179df3-c254-4e3d-bb2b-bfd0b8fc2590` deployed Grace
+`3de43c1` with Eliza `7b4da95`. The production migration created the
 native Google challenge table. The runtime role can read, insert and
 delete challenges. Native discovery confirmed the seven-day
 credential lifetime that the Android host accepts. Chromium loaded the hosted UI and its
@@ -123,9 +127,9 @@ contains the established package and release certificate. The
 was identified from the live Eliza sign-in redirect to Google. Production
 provider discovery currently offers email sign-in. Google callback registration
 and the approved Blooio SMS workspace remain open. Grace Plus uses the USD 30
-monthly plan in Eliza Labs. Voice uses a Grace-specific standard key and a
-stock English voice in the Eliza Cartesia organization. Live checkout and
-speech still require provider provisioning and acceptance.
+monthly plan in Eliza Labs. Live checkout awaits its Stripe product, price,
+credential and webhook. The deployed Worker has its Grace-specific Cartesia
+standard key, stock English voice and metering configuration.
 
 ## Decisions and their defaults
 
