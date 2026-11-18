@@ -28,7 +28,8 @@ export const Operation = Schema.Struct({
   }),
 })
 export const DraftSaved = Schema.Struct({ draftId: Text })
-export const AttachmentContent = Schema.Struct({ mimeType: Text, dataBase64: Text })
+export const AttachmentContent = Schema.Struct({ mimeType: Text, dataBase64: Text, size: Schema.Int })
+export const DraftList = Schema.Struct({ drafts: Schema.Array(Schema.Struct({ draftId: Text, messageId: Text })), nextPageToken: NullableText })
 export const DraftRead = Schema.Struct({
   id: Text, messageId: Text,
   content: Schema.Struct({ to: Texts, cc: Texts, bcc: Texts, subject: Text, bodyText: Text, plainText: Flag, threaded: Flag, attachmentCount: Schema.Int }),

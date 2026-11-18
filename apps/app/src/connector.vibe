@@ -5,7 +5,7 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { AttachmentContent, ContactList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
 import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
@@ -121,8 +121,19 @@ function searchOf(folder: string, text: string) {
   return [folder, ...text.split(/\s+/).map((w) => w.replace(/"/g, "")).filter((w) => w !== "").map((w) => `"${w}"`)].join(" ")
 }
 
+const shown: Record<string, { readonly kind: "Photo" | "Pdf"; readonly name: RegExp; readonly magic: string }> = {
+  "application/pdf": { kind: "Pdf", name: /\.pdf$/i, magic: "JVBERi0" },
+  "image/png": { kind: "Photo", name: /\.png$/i, magic: "iVBORw0KGgo" },
+  "image/jpeg": { kind: "Photo", name: /\.jpe?g$/i, magic: "/9j/" },
+  "image/webp": { kind: "Photo", name: /\.webp$/i, magic: "UklGR" }
+}
+const attachmentLimit = 5 * 1024 * 1024
+const byteLength = (base64: string) => Math.floor(base64.length * 3 / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0)
+const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
+
 function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment): SavedFile[] {
-  const kind = a.mimeType === "application/pdf" ? "Pdf" : a.mimeType.startsWith("image/") ? "Photo" : undefined
+  const type = shown[a.mimeType]
+  const kind = type !== undefined && type.name.test(a.filename) && a.size <= attachmentLimit ? type.kind : undefined
   const pages = kind === "Pdf" ? a.pages ?? 0 : 0
   return kind === undefined || a.filename === "" || (kind === "Pdf" && pages < 1) ? [] : [{
     id: `${m.externalId}/${a.partId}`, kind, name: a.filename, origin: account.provider, account: account.address, container: m.externalId,
@@ -326,6 +337,14 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       return try fetched(asked("/read", { messageId: ref }), ReadResponse)
     }
 
+    effect function draftOf(ref: string, pageToken: string | undefined): string!ConnectorFailure {
+      const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }), DraftList)
+      const found = page.drafts.find((d) => d.messageId === ref)
+      if (found !== undefined) return found.draftId
+      if (page.nextPageToken === null) throw new ProviderRefused({ status: 404 })
+      return try draftOf(ref, page.nextPageToken)
+    }
+
     effect function contacts(query: string) {
       return (try fetched(asked("/contacts", { query }), ContactList)).contacts.map((c): Contact => ({ name: c.name, address: c.email }))
     }
@@ -379,20 +398,23 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       },
       header: effect (ref, generation) => {
         const { message } = try read(ref)
-        const own = message.labels.includes("SENT") && message.to.length === 1 ? [/<([^>]+)>/.exec(message.to[0])?.[1] ?? message.to[0].trim()] : [message.replyTo, message.fromEmail]
-        const address = own.find((a) => a?.includes("@"))
+        const sent = message.labels.includes("SENT")
+        const address = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a) => a?.includes("@"))
         return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
       },
       attachment: effect (file, version) => {
         const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
+        const type = shown[got.mimeType]
+        if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
         return { mimeType: got.mimeType, data: got.dataBase64 }
       },
       draft: effect (ref, version) => {
-        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId: ref, content: "1" }), DraftRead)
+        const draftId = try draftOf(ref, undefined)
+        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }), DraftRead)
         const opened = d.attachmentCount === 0 ? undefined : try read(messageId)
         const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
         const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
-        const verified = id === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
+        const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
         return { snapshot: { id: ref, version, content, attachments: files ?? [], replyTo: "" }, verified }
       },
       resolve: effect (contact) => {
