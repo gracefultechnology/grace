@@ -5,7 +5,7 @@ import { AnswerChip, AnswerChips, Button, besideRail, cn, Dialog, DialogContent,
 import { Effect, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { guidedDetails, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
+import { guidedDetails, localPasswordCommands, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
@@ -65,6 +65,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     });
   };
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [pageCheck, setPageCheck] = useState<{ key: string; pending: boolean }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; result?: BrowserGuidance }>();
@@ -145,17 +146,19 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningLocally} listening={listeningLocally}
-            quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
+          <GraceDock value={draft} placeholder={localCommands ? "Type a Passwords command" : undefined} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningLocally} listening={listeningLocally}
+            quiet={((localCommands || !device.reasoningAvailable) && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
             micUnavailable={needsMicPermission ? "Allow the microphone to talk to Grace" : undefined}
             onFixMic={() => talk()} fixMicLabel="Allow mic"
             onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
             onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
-              const revision = current().assistant.conversation.draftRevision;
+              const state = current();
+              const revision = state.assistant.conversation.draftRevision;
               void guide.request(revision).then(async (guided) => {
                 if (guided) { setDraft(""); return; }
+                if (localPasswordCommands(state.device)) return;
                 const sent = await say({ tag: "SendDraft", revision });
                 if (sent && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
               });

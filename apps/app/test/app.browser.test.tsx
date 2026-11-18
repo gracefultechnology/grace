@@ -875,7 +875,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
@@ -920,12 +920,15 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     }
     return Response.json({ revoked: true });
   });
+  const sockets: FixtureSocket[] = [];
+  let recordedFrames = 0;
   class FixtureSocket extends EventTarget {
     readyState = 0;
     bufferedAmount = 0;
 
     constructor(url: string) {
       super();
+      sockets.push(this);
       expect(new URL(url).pathname).toBe(speechPath + "/ws");
       queueMicrotask(() => {
         this.readyState = 1;
@@ -941,6 +944,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 
     send(value: string | ArrayBuffer) {
       if (value instanceof ArrayBuffer) {
+        recordedFrames++;
         expect(value.byteLength % 2).toBe(0);
         if (nextTranscript) {
           this.receive({ t: "stt", event: { type: "start-of-turn", transcript: "" } });
@@ -990,7 +994,11 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     },
     ...agentEvents(listeners),
   };
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
+  const localRequests: ((result: GuideSpeechResult) => void)[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }, undefined, undefined, {
+    listen: () => new Promise<GuideSpeechResult>((resolve) => { localRequests.push(resolve); }),
+    cancel: () => Promise.resolve(),
+  }));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   try {
@@ -1029,15 +1037,8 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const speechSession = [speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"];
     await expect.poll(() => calls).toEqual(speechSession);
 
-    nextTranscript = "Where can I find my saved passwords?";
-    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
-    await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
-    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
-    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
-    expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
-    expect(turns).toEqual([{ text: voiceInput }]);
-    expect(phrases).toEqual([voiceOutput]);
-    await expect.poll(() => calls).toEqual([speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"]);
+    const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "chooseHomePage", page }, "Person")));
     audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
     await startTalk();
     await expect.poll(() => audio.mock.calls.length).toBe(2);
@@ -1047,6 +1048,45 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     await startTalk();
     await expect.element(notice).toBeVisible();
     expect(audio).toHaveBeenCalledTimes(2);
+    await press(notice.getByRole("button", { name: "Cancel" }));
+    accountId = secondAccount;
+    await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    const firstTurnFrames = recordedFrames;
+    await startTalk();
+    await expect.poll(() => recordedFrames).toBeGreaterThan(firstTurnFrames);
+    await act(() => choosePage("PasswordsCard").then(() => undefined));
+    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+    await act(async () => {
+      sockets.at(-1)?.receive({ t: "stt", event: { type: "end-of-turn", transcript: "fixture stale utterance" } });
+    });
+    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+    await expect.poll(() => localRequests.length).toBe(1);
+    await act(async () => { localRequests[0]?.({ status: "complete", text: "fixture spoken credential" }); });
+    await expect.element(page.getByText("I couldn’t recognize that request. Try typing it.")).toBeVisible();
+    const draft = page.getByRole("textbox", { name: "Message to Grace" });
+    await act(() => userEvent.type(draft, "fixture arbitrary credential"));
+    const revision = workspace().assistant.conversation.draftRevision;
+    await expect(runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "interact", input: { tag: "SendDraft", revision } }, "Person")))).rejects.toBeDefined();
+    await expect.element(page.getByRole("button", { name: "Send", exact: true })).not.toBeInTheDocument();
+    await act(() => userEvent.keyboard("{Enter}"));
+    expect(calls).toEqual([...speechSession, ...speechSession]);
+    expect(captures).toHaveLength(2);
+    expect(turns).toEqual([{ text: voiceInput }]);
+    await act(() => choosePage("MainCards").then(() => undefined));
+    await expect.element(draft).toHaveValue("");
+    expect(workspace().assistant.conversation.draft).toBe("");
+
+    nextTranscript = "Where can I find my saved passwords?";
+    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+    await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended", "ended"]);
+    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession, ...speechSession]);
+    expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+    expect(turns).toEqual([{ text: voiceInput }]);
+    expect(phrases).toEqual([voiceOutput]);
+    await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).not.toBeInTheDocument();
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
