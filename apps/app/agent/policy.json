@@ -135,6 +135,9 @@
         "IGNORE": "Ends a turn that needs no answer. It changes nothing.",
         "NONE": "Ends a turn that needs no action. It changes nothing."
       },
+      "plannerTools": {
+        "DISCOVER_ACTIONS": "The planner's own tool, built on each turn and never registered, so it can be neither allowed nor refused; it lists and loads only the actions allowed here, and does nothing itself."
+      },
       "refuse": {
         "DISCOVER_ACTIONS": "local run only",
         "ASSERT_MEETING_MOCK_LEDGER": "Registered only by @elizaos/plugin-meetings, which this file refuses.",
@@ -317,7 +320,8 @@
         "WORKFLOW": "Registered only by @elizaos/plugin-workflow, which this file refuses.",
         "WORKTREE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
         "WORK_THREAD": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
-        "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses."
+        "WRITE": "Registered only by @elizaos/plugin-coding-tools, which this file refuses.",
+        "DISCOVER_ACTIONS": "local run only"
       },
       "refusedSubactionsOf": [
         "BLOCK",

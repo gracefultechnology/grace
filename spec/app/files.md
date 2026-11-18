@@ -1,7 +1,7 @@
 # Saved photos and documents
 
 Files is the local library shown in `prototype/Grace Prototype.html`, lines
-1978–1992. Photos is the initial tab; Documents contains PDFs. Email attachment
+2041–2059. Photos is the initial tab; Documents contains PDFs. Email attachment
 saves feed this same library, and sharing a photo opens an email draft. This
 model owns the library and its current selection, not email sending or personal
 memory. Raw document/image bytes remain in the access-controlled content store;
@@ -22,11 +22,11 @@ provider, person or filename. The host authenticates actors independently of
 request JSON and resolves source access before importing content.
 
 ```quint
-type FileActor = FileUser | FileHost | FileStore | Printer
+type FileActor = FileUser | FileHost | FileStore
 type FileKind = Photo | Pdf
 type FileTab = Photos | Documents
-type FileOperation = NoFileOperation | ReadingCatalog | ReadingFile | Locating | SavingFiles | DeletingPhoto | Printing
-type FileFeedback = NoFileFeedback | FilesSaved | PhotoDeleted | CatalogFailed | ContentFailed | WriteFailed | PrintAccepted | PrintUncertain | PrintFailed | NothingFound | SeveralMatches
+type FileOperation = NoFileOperation | ReadingCatalog | ReadingFile | Locating | SavingFiles | DeletingPhoto
+type FileFeedback = NoFileFeedback | FilesSaved | PhotoDeleted | CatalogFailed | ContentFailed | WriteFailed | NothingFound | SeveralMatches
 type SavedFile = {
   id: str, kind: FileKind, name: str, origin: str, account: str, container: str,
   sourceRef: str, contentRef: str, group: str, savedAt: int, pages: int
@@ -34,7 +34,7 @@ type SavedFile = {
 type Files = {
   owner: str, opened: bool, loaded: bool, entries: List[SavedFile], tab: FileTab,
   selected: str, contentReady: bool, generation: int, pending: FileOperation,
-  pendingId: str, pendingFiles: List[SavedFile], pendingPrint: SavedFile, feedback: FileFeedback,
+  pendingId: str, pendingFiles: List[SavedFile], feedback: FileFeedback,
   query: str, matches: List[str], page: int
 }
 type FileEffect = LoadLibrary({ owner: str, generation: int }) |
@@ -42,21 +42,18 @@ type FileEffect = LoadLibrary({ owner: str, generation: int }) |
   ReadFile({ owner: str, generation: int, file: SavedFile }) |
   StoreFiles({ owner: str, generation: int, files: List[SavedFile] }) |
   RemovePhoto({ owner: str, generation: int, id: str }) |
-  PrintFile({ owner: str, generation: int, file: SavedFile }) |
   SharePhoto({ owner: str, file: SavedFile })
 type FilesResult = { state: Files, out: List[FileEffect] }
 type CatalogReport = { owner: str, generation: int, entries: List[SavedFile], succeeded: bool, evidence: str }
 type FileReceipt = { owner: str, generation: int, id: str, succeeded: bool, evidence: str }
 type FileImport = { owner: str, generation: int, entries: List[SavedFile], authorization: str }
-type ExternalPrint = { owner: str, generation: int, file: SavedFile, authorization: str }
-type PrintReport = { owner: str, generation: int, id: str, result: FileFeedback, evidence: str }
 type LocateReport = { owner: str, generation: int, query: str, ids: List[str] }
 type PhotoCursor = { at: int, found: int }
 pure val noPhotoCursor: PhotoCursor = { at: 0, found: -1 }
 pure val emptyFile: SavedFile = { id: "", kind: Photo, name: "", origin: "", account: "", container: "", sourceRef: "", contentRef: "", group: "", savedAt: 0, pages: 0 }
 pure val initial: Files = { owner: "", opened: false, loaded: false, entries: List(), tab: Photos,
   selected: "", contentReady: false, generation: 0, pending: NoFileOperation, pendingId: "",
-  pendingFiles: List(), pendingPrint: emptyFile, feedback: NoFileFeedback, query: "", matches: List(), page: 0 }
+  pendingFiles: List(), feedback: NoFileFeedback, query: "", matches: List(), page: 0 }
 pure def validFile(file: SavedFile): bool =
   file.id != "" and file.name != "" and file.origin != "" and file.account != "" and file.container != "" and
   file.sourceRef != "" and file.contentRef != "" and file.savedAt >= 0 and
@@ -97,7 +94,7 @@ the email. That internal load neither opens Files nor authorizes saving content.
 ```quint
 pure def canOpenFiles(f: Files, owner: str, by: FileActor): bool =
   by == FileUser and owner != "" and (f.owner == "" or owner == f.owner) and
-  (f.pending == NoFileOperation or (f.loaded and (f.pending == SavingFiles or f.pending == DeletingPhoto or f.pending == Printing)))
+  (f.pending == NoFileOperation or (f.loaded and (f.pending == SavingFiles or f.pending == DeletingPhoto)))
 pure def openFiles(f: Files, owner: str, by: FileActor): FilesResult = {
   state: { ...f, owner: owner, opened: true, selected: "", contentReady: false, page: 0,
     pending: if (f.loaded) f.pending else ReadingCatalog, generation: if (f.loaded) f.generation else f.generation + 1,
@@ -136,9 +133,9 @@ The grid and document rows select stable IDs, never array positions retained
 across a save or delete. Opening preserves the source file. Photo preview has
 Previous and Next at actual bounds; document preview identifies its filename and
 shows "Page n of N" for the page on screen, as the prototype does
-(`prototype/Grace Prototype.html`, lines 1944 and 1986). The prototype draws
+(`prototype/Grace Prototype.html`, lines 2050 and 2053). The prototype draws
 only page one of documents such as its four-page "Medicare summary.pdf" (line
-1980); here every page is reachable. A document opens at page 1, and the person
+2047); here every page is reachable. A document opens at page 1, and the person
 moves to the previous or next page within 1 to its page count. A photo has no
 page. Corrupt, missing or unsupported content gives a visible failure and
 Back/Retry. The content renderer must sandbox active content and must not execute
@@ -184,9 +181,7 @@ pure def alwaysPendingFileExists(f: Files): bool =
     f.loaded and hasFile(f, f.pendingId)) and
   ((f.pending == NoFileOperation or f.pending == ReadingCatalog or f.pending == Locating or f.pending == SavingFiles) implies f.pendingId == "") and
   (f.pending == ReadingFile implies f.opened and f.selected == f.pendingId and not(f.contentReady)) and
-  (f.pending == DeletingPhoto implies fileAt(f, f.pendingId).kind == Photo) and
-  (if (f.pending == Printing) validFile(f.pendingPrint) and f.pendingPrint.kind == Pdf and f.pendingId == f.pendingPrint.id
-    else f.pendingPrint == emptyFile)
+  (f.pending == DeletingPhoto implies fileAt(f, f.pendingId).kind == Photo)
 pure def sometimesPhotoOpened(f: Files): bool = f.contentReady and fileAt(f, f.selected).kind == Photo
 pure def sometimesDocumentOpened(f: Files): bool = f.contentReady and fileAt(f, f.selected).kind == Pdf
 pure def sometimesContentFailure(f: Files): bool = f.feedback == ContentFailed
@@ -199,13 +194,13 @@ pure def sometimesLaterPage(f: Files): bool = f.contentReady and f.page > 1
 explicitly authorized content. The retrieval adapter supplies current stable
 IDs. A single result highlights the actual row and selects its tab; multiple
 matches ask which item rather than guessing from a repeated name. No match
-states that plainly. Finding does not open, print, share or delete content.
+states that plainly. Finding does not open, share or delete content.
 Each explicit find request carries a new generation. A new query replaces the
 old request; Close cancels it. A result must match the owner, generation and
 exact requested query, so stale retrieval cannot reopen Files or replace the
 current answer.
 
-Grace's find opens Files from any screen (prototype lines 2109 and 2143–2146),
+Grace's find opens Files from any screen (prototype lines 2247 and 2281–2284),
 so it does not need Files to have been opened first. When the library has not
 been loaded yet, before its first opening or after a restart, the find opens
 Files, keeps the query and reads the catalog for the owner who asked. A
@@ -251,10 +246,10 @@ pure def sometimesFindWaitsForLibrary(f: Files): bool = f.pending == ReadingCata
 pure def sometimesFoundBeforeLibraryOpened(f: Files): bool = highlightedFile(f) != "" and f.generation == 1
 ```
 
-## Story: Save, share, print and remove the chosen file
+## Story: Save, share and remove the chosen file
 
 > As an older adult, I want a clear result when I save an attachment, share a
-> photo, print a document or delete a local photo, without changing the wrong item.
+> photo or delete a local photo, without changing the wrong item.
 
 ### Saving one attachment or all selected photos is one acknowledged local transaction
 
@@ -309,13 +304,13 @@ pure def sometimesWriteFailure(f: Files): bool = f.feedback == WriteFailed
 ### A photo taken or a file chosen on the device has its own local source identity
 
 Email's Attach menu offers Take a photo, Choose from Photos and Choose a file
-(`prototype/Grace Prototype.html`, line 1957). Choose from Photos attaches a
+(`prototype/Grace Prototype.html`, line 2021). Choose from Photos attaches a
 saved Files entry with the identity it already has. A new camera photo or a
 file from the system picker has no mailbox source, so its source is the device:
 origin `device`, the owner's account, the capture or picker session as its
 container, and the capture or picked item's ID as both its source reference and
 its stable local ID. Its content reference names the captured bytes. Such a
-capture goes into the draft only, as in the prototype (line 2202): it is not
+capture goes into the draft only, as in the prototype (line 2340): it is not
 added to Files. Saving it later is the ordinary Save of a sent or received
 attachment.
 
@@ -373,57 +368,16 @@ pure def sharePhoto(f: Files, id: str, generation: int, by: FileActor): FilesRes
 }
 ```
 
-### Printing reports actual printer acceptance and preserves an uncertain request
-
-Print is available for a document row or its preview, and directly from a
-readable Email PDF without saving it first. The latter carries the current
-mail-source authorization and explicit Print choice; its immutable descriptor
-is held only for the pending job and never inserted into the saved catalog. It requests that exact
-content from the native print service. A prototype toast is not printer evidence:
-accepted means the print service accepted the job, not that paper came out.
-Failure permits an explicit retry. An uncertain result retains the current job
-and blocks another print request until the service resolves it. Old owner,
-request or file callbacks cannot report success for a different selection.
-
-```quint
-pure def canPrintDocument(f: Files, id: str, by: FileActor): bool =
-  by == FileUser and f.opened and f.loaded and f.pending == NoFileOperation and hasFile(f, id) and fileAt(f, id).kind == Pdf
-pure def printDocument(f: Files, id: str, by: FileActor): FilesResult = {
-  state: { ...f, pending: Printing, pendingId: id, pendingPrint: fileAt(f, id), generation: f.generation + 1, feedback: NoFileFeedback },
-  out: List(PrintFile({ owner: f.owner, generation: f.generation + 1, file: fileAt(f, id) }))
-}
-pure def canPrintFromEmail(f: Files, externalPrint: ExternalPrint, by: FileActor): bool =
-  by == FileHost and f.pending == NoFileOperation and externalPrint.owner != "" and
-  (f.owner == "" or f.owner == externalPrint.owner) and externalPrint.generation == f.generation and
-  validFile(externalPrint.file) and externalPrint.file.kind == Pdf and externalPrint.authorization != ""
-pure def printFromEmail(f: Files, externalPrint: ExternalPrint, by: FileActor): FilesResult = {
-  state: { ...f, owner: externalPrint.owner, pending: Printing, pendingId: externalPrint.file.id,
-    pendingPrint: externalPrint.file, generation: f.generation + 1, feedback: NoFileFeedback },
-  out: List(PrintFile({ owner: externalPrint.owner, generation: f.generation + 1, file: externalPrint.file }))
-}
-pure def canPrintResult(f: Files, printReport: PrintReport, by: FileActor): bool =
-  by == Printer and f.pending == Printing and printReport.owner == f.owner and printReport.generation == f.generation and printReport.id == f.pendingId and
-  (printReport.result == PrintAccepted or printReport.result == PrintUncertain or printReport.result == PrintFailed) and
-  (printReport.result == PrintAccepted implies printReport.evidence != "")
-pure def printResult(f: Files, printReport: PrintReport, by: FileActor): Files =
-  { ...f, pending: if (printReport.result == PrintUncertain) Printing else NoFileOperation,
-    pendingId: if (printReport.result == PrintUncertain) f.pendingId else "",
-    pendingPrint: if (printReport.result == PrintUncertain) f.pendingPrint else emptyFile, feedback: printReport.result }
-pure def sometimesPrintAccepted(f: Files): bool = f.feedback == PrintAccepted
-pure def sometimesPrintUncertain(f: Files): bool = f.feedback == PrintUncertain
-```
-
-### Close and restart stop previews without inventing a storage or printer result
+### Close and restart stop previews without inventing a storage result
 
 Close returns Home and clears the preview while preserving the tab and saved
-library. A loaded library can reopen while a write/print finishes; reopening
+library. A loaded library can reopen while a write finishes; reopening
 does not change that pending request generation. Tab choice cancels a pending
-find request before showing the chosen index. Reads are cancelled; a storage or print operation already dispatched
+find request before showing the chosen index. Reads are cancelled; a storage operation already dispatched
 may finish and report its matching result. Restart discards the view and reloads
 the durable catalog on the next open. The store serializes commits or compares
 request versions at commit; a rejected late callback cannot overwrite newer
-storage. Already accepted print jobs are not promised cancelled by Close or a
-restart. Printing again after restart requires another explicit user action.
+storage.
 
 ```quint
 pure def canCloseFiles(f: Files, by: FileActor): bool = by == FileUser and f.opened
@@ -489,18 +443,6 @@ pure val fileReceiptValues = Set(
   { owner: "owner", generation: 4, id: "photo2", succeeded: true, evidence: "read" },
   { owner: "owner", generation: 4, id: "document", succeeded: true, evidence: "read" },
   { owner: "other", generation: 2, id: "photo", succeeded: true, evidence: "wrong-owner" })
-pure val externalPrintValues = Set(
-  { owner: "owner", generation: 0, file: samplePdf, authorization: "email-print-choice" },
-  { owner: "owner", generation: 1, file: samplePdf, authorization: "email-print-choice" },
-  { owner: "owner", generation: 1, file: samplePhoto, authorization: "email-print-choice" },
-  { owner: "other", generation: 1, file: samplePdf, authorization: "email-print-choice" },
-  { owner: "owner", generation: 1, file: samplePdf, authorization: "" })
-pure val printReportValues = Set(
-  { owner: "owner", generation: 2, id: "document", result: PrintAccepted, evidence: "job-accepted" },
-  { owner: "owner", generation: 1, id: "document", result: PrintAccepted, evidence: "job-accepted" },
-  { owner: "owner", generation: 2, id: "document", result: PrintUncertain, evidence: "" },
-  { owner: "owner", generation: 2, id: "document", result: PrintFailed, evidence: "" },
-  { owner: "other", generation: 2, id: "document", result: PrintAccepted, evidence: "wrong-owner" })
 pure val locateReportValues = Set(
   { owner: "owner", generation: 2, query: "recital", ids: List("photo") }, { owner: "owner", generation: 2, query: "form", ids: List("document") },
   { owner: "owner", generation: 2, query: "photos", ids: List("photo", "photo2") }, { owner: "owner", generation: 2, query: "missing", ids: List() },
