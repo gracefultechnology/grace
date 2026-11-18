@@ -19,7 +19,7 @@ import task as T from "./task"
 type Stage = Empty | Draft | Reviewed | Guarded | Authorized | Checking | Resolved
 type Outcome = NotSubmitted | Unknown | Pending | Scheduled | Accepted | Completed | VerifiedFailure | Returned
 type OutcomeReport = { key: T::Subject, attempt: int, revision: int, result: Outcome, evidence: str, reference: str, place: T::TaskPlace }
-type PriorReport = { key: T::Subject, proposal: T::Terms, revision: int, result: Outcome, evidence: str, reference: str }
+type PriorReport = { key: T::Subject, proposal: T::Terms, revision: int, result: Outcome, evidence: str, reference: str, place: T::TaskPlace }
 type StoredOutcome = { result: Outcome, evidence: str, reference: str }
 type Commitment = {
   key: T::Subject, proposal: T::Terms, stage: Stage, result: Outcome,
@@ -69,9 +69,10 @@ pure val outcomeReportValues = Set(
   { ...exampleOutcome, key: bookingKey, result: Pending, reference: "", place: T::InEmail },
   { ...exampleOutcome, key: bookingKey, result: Scheduled, reference: "confirmation", place: T::InEmail }
 )
-pure val examplePrior: PriorReport = { key: exampleKey, proposal: exampleTerms, revision: 0, result: Scheduled, evidence: "prior-result", reference: "receipt" }
+pure val examplePrior: PriorReport = { key: exampleKey, proposal: exampleTerms, revision: 0, result: Scheduled, evidence: "prior-result", reference: "receipt", place: T::OnWebsite }
 pure val priorReportValues = Set(
-  examplePrior, { ...examplePrior, result: Unknown, reference: "" }, { ...examplePrior, result: Pending, reference: "" },
+  examplePrior, { ...examplePrior, place: T::InEmail }, { ...examplePrior, key: bookingKey, proposal: bookingTerms, place: T::InEmail },
+  { ...examplePrior, result: Unknown, reference: "" }, { ...examplePrior, result: Pending, reference: "" },
   { ...examplePrior, result: VerifiedFailure, reference: "" }, { ...examplePrior, result: Returned, reference: "" }, { ...examplePrior, revision: 1 },
   { ...examplePrior, key: { ...exampleKey, origin: "https://credit.example" } },
   { ...examplePrior, result: Completed }, { ...examplePrior, reference: "" }, { ...examplePrior, evidence: "" }
@@ -284,13 +285,16 @@ pure def sometimesEditedBeforeSubmit(p: Commitment): bool = p.stage == Draft and
 
 ### A payment made outside Grace is reconciled before new payment guidance
 
-Discovered by review of the manual-navigation journey: requiring every observed attempt to begin with Grace's own review would omit payments made while Grace was closed. The durable store acknowledges a freshly verified prior attempt for this exact bill before it is adopted. Its outcome may remain Unknown. A missing or ambiguous bill identity blocks assistance at the account boundary; it must not be assigned an invented identity or ignored. This is reconciliation of evidence, not permission to make a payment.
+Discovered by review of the manual-navigation journey: requiring every observed attempt to begin with Grace's own review would omit payments made while Grace was closed. The durable store acknowledges a freshly verified prior attempt for this exact bill before it is adopted. The report carries the place the evidence came from, and the same source rule applies as for a live outcome. Its outcome may remain Unknown. A missing or ambiguous bill identity blocks assistance at the account boundary; it must not be assigned an invented identity or ignored. This is reconciliation of evidence, not permission to make a payment.
 
 ```quint
 pure def canReconcilePrior(p: Commitment, priorReport: PriorReport, by: T::TaskActor): bool =
   (p.stage == Draft or p.stage == Reviewed) and p.live and p.result == NotSubmitted and p.durable.result == NotSubmitted and
   priorReport.key == p.key and T::validTerms(p.key.kind, priorReport.proposal) and priorReport.revision == p.revision and priorReport.result != NotSubmitted and
-  priorReport.evidence != "" and (positiveOutcome(priorReport.result) implies priorReport.reference != "") and by == T::Store
+  T::outcomePlaceAllowed(p.key.kind, priorReport.place) and priorReport.evidence != "" and
+  (positiveOutcome(priorReport.result) implies priorReport.reference != "") and by == T::Store
+pure def lawPriorOutcomeFromAnotherPlaceIsRejected(p: Commitment, priorReport: PriorReport, by: T::TaskActor): bool =
+  not(T::outcomePlaceAllowed(p.key.kind, priorReport.place)) implies not(canReconcilePrior(p, priorReport, by))
 pure def reconcilePrior(p: Commitment, priorReport: PriorReport, by: T::TaskActor): Commitment = {
   ...p, proposal: priorReport.proposal, result: priorReport.result, evidence: priorReport.evidence,
   reference: if (positiveOutcome(priorReport.result)) priorReport.reference else "",
