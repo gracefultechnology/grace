@@ -219,7 +219,7 @@ async function observeSite(existing: Site, action: SiteObservation) {
   };
   if (action.kind === "read") {
     if (action.selector !== undefined) {
-      const reader = readFileSync(new URL("../../vendor/eliza/plugins/plugin-native-browser-surface/resources/read-page.js", import.meta.url), "utf8");
+      const reader = readFileSync(new URL("../../vendor/eliza/packages/os/android/browser-surface/resources/read-page.js", import.meta.url), "utf8");
       const result = Schema.decodeUnknownSync(Schema.Struct({
         url: Schema.String, title: Schema.String, text: Schema.String, truncated: Schema.Boolean,
       }))(await evaluate(`(${reader})(${JSON.stringify(action.selector)})`));
