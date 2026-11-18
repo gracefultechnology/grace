@@ -83,12 +83,12 @@ function dueReminder(registry: Accounts, views: readonly CalendarInstance[]) {
   return { due, canDismiss: box.can(dismiss), onDismiss: () => { if (box.can(dismiss)) void box.send(dismiss); } };
 }
 
-export function reminderToast(registry: Accounts, views: readonly CalendarInstance[], now: number): ReactNode {
+export function reminderToast(registry: Accounts, views: readonly CalendarInstance[], now: number, above?: number): ReactNode {
   const shown = dueReminder(registry, views);
   if (!shown) return undefined;
   const d = shown.due.details;
   return (
-    <Toast key={`reminder/${shown.due.key}/${shown.due.identity.occurrenceId}`} placement="screen">
+    <Toast key={`reminder/${shown.due.key}/${shown.due.identity.occurrenceId}`} placement="screen" above={above}>
       <span>{`Reminder: ${d.title} ${relative(dayOf(d.startAt), dayOf(now)).toLowerCase()} at ${timeLabel(d.startAt)}`}</span>
       <Button variant="plain" size="compact" className="bg-glass/14 font-bold text-frame-lilac active:bg-glass/24" disabled={!shown.canDismiss} onClick={shown.onDismiss}>Dismiss</Button>
     </Toast>

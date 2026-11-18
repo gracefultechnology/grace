@@ -10,7 +10,7 @@ import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../
 import { canChangeLifecycle, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { mailAccounts } from "../gen/app__accounts.ts";
 import { Browser } from "./Browser.tsx";
-import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment } from "./Calendar.tsx";
+import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment, reminderToast } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
@@ -95,6 +95,7 @@ function Screen() {
   const surface = device.surface;
   const fire = (event: WorkspaceEvent) => ({ disabled: !can(event), onClick: () => void send(event) });
   const visit = (destination: Surface) => fire({ type: "visit", destination });
+  const toCalendar = () => { const event = { type: "visit", destination: "Calendar" } as const; if (can(event)) void send(event); };
   const toggle = (popover: Popover) => ({
     selected: device.railPopover === popover,
     ...fire({ type: "togglePopover", popover }),
@@ -134,8 +135,8 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              banner={accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : undefined}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: [] }, ...visit("Calendar") }}
+              banner={accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: [] }, ...visit("Calendar") }}
               email={{
                 messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
@@ -149,6 +150,9 @@ function Screen() {
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
+      {accounts && surface !== "Home" && surface !== "Calendar" && device.readiness !== "Sleeping" && (
+        <WithCalendars keys={calendarKeys(accounts)}>{(calendars) => reminderToast(accounts, calendars, now.getTime(), bottom)}</WithCalendars>
+      )}
       {surface === "Email" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {app && (
