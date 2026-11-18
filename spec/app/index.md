@@ -213,7 +213,11 @@ pure val wordsValues = Set("open passwords", "find a password", "show my passwor
 A new vault may be bound to the account and organization in Grace's verified
 device session. A different account or a retired device session cannot access
 that vault. A guest vault with saved passwords stays with the tablet guest until the person unlocks it and approves linking it to their verified account.
-A change of account discards the previous Passwords view, guide and grant.
+[Setup](./setup.md) owns who can enter or link the vault. Android checks the current
+device credential against the generation bound to that account and organization.
+When the native host reports an account change, Passwords advances its view
+generation, discards the unlocked list and guide, and clears recovery readiness.
+A late report from the previous view cannot restore it.
 
 ```quint
 pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
@@ -234,7 +238,10 @@ protected Android screen. Grace opens a first-party browser approval for the
 specific operation and only accepts the current return for that device
 session. The device unlock, recovery key and passwords stay on the tablet.
 A restore only changes an empty vault, and removing a backup leaves the
-tablet's passwords in place.
+tablet's passwords in place. [Setup](./setup.md) owns eligibility and the
+empty-vault restore guard. The native account and Cloud enforce the separate
+operation grant. Passwords displays the host's readiness only for the current
+view generation while the screen is open. Closing the screen removes the action.
 
 ```quint
 pure def canReportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): bool =

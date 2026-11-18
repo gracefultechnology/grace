@@ -28,6 +28,9 @@ import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -120,9 +123,9 @@ public final class GraceAccount extends Plugin {
    try {
     CloudDeviceAccount account = account(getContext());
     if (finishAcknowledgment(account)) didSignIn();
-    boolean signedIn = GracePasswordsOwner.stableSession(getContext()) != null;
-    if (signedIn) GracePasswordsOwner.confirmVerifiedAccount(getContext());
-    call.resolve(projection(signedIn));
+    var session = GracePasswordsOwner.stableSession(getContext());
+    if (session != null) GracePasswordsOwner.confirmVerifiedAccount(getContext());
+    call.resolve(projection(session));
    }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
    retryRevocation();
@@ -341,8 +344,9 @@ public final class GraceAccount extends Plugin {
      account.clear();
      return null;
     });
+    JSObject signedOut = projection(null);
     getActivity().runOnUiThread(() -> {
-     notifyListeners("sessionChanged", projection(false));
+     notifyListeners("sessionChanged", signedOut);
      call.resolve();
     });
     retryRevocation();
@@ -389,15 +393,21 @@ public final class GraceAccount extends Plugin {
   }
  }
 
- private void didSignIn() {
+ private void didSignIn() throws Exception {
+  JSObject status = projection(GracePasswordsOwner.stableSession(getContext()));
   getActivity().runOnUiThread(() -> {
    if (getActivity().isFinishing() || getActivity().isDestroyed()) return;
-   notifyListeners("sessionChanged", projection(true));
+   notifyListeners("sessionChanged", status);
   });
  }
 
- private static JSObject projection(boolean signedIn) {
-  return new JSObject().put("kind", signedIn ? "signedIn" : "signedOut");
+ static JSObject projection(CloudDeviceAccount.Session session) throws NoSuchAlgorithmException {
+  if (session == null) return new JSObject().put("kind", "signedOut");
+  String identity = "grace-voice-disclosure\u0000" + session.organizationId() + "\u0000" + session.accountId();
+  byte[] digest = MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));
+  StringBuilder scope = new StringBuilder(64);
+  for (byte value : digest) scope.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+  return new JSObject().put("kind", "signedIn").put("voiceDisclosureScope", scope.toString());
  }
 
  private void open(Uri address, PluginCall call) {
