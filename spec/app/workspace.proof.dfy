@@ -1530,7 +1530,7 @@ lemma GuidedReceiptPreserves(w: Workspace, report: GuidedObservation, by_: Works
     assert |after.plan.receipts| == |w.plan.receipts| + 1;
     if hasNext(after.plan) {
       assert nextOutcome(after.plan) in w.plan.steps;
-      assert nextOutcome(after.plan).outcome != "";
+      assert guidedDetails(nextOutcome(after.plan)).outcome != "";
     } else {
       app__assistant_finishTask_ensures(w.assistant, report.task, report.version, app__assistant_TaskOutcome.Completed, report.evidence, app__conversation_ConversationActor.ConversationRuntime);
     }
