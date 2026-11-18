@@ -1060,10 +1060,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           identity: connectorConfigured ? { email: person.email } : null, connectionId: connectorConfigured ? grant : null,
           grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
         });
-      case "/api/v1/eliza/gmail/triage":
+      case "/api/v1/eliza/google/gmail/triage":
         inboxRequests++;
         return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
-      case "/api/v1/eliza/gmail/read":
+      case "/api/v1/eliza/google/gmail/read":
         expect(api.searchParams.get("messageId")).toBe(mail.externalId);
         return reply({
           accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
@@ -1115,7 +1115,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         }
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
-      case "/api/v1/eliza/calendar/feed":
+      case "/api/v1/eliza/google/calendar/feed":
         expect(api.searchParams.get("timeMin")).not.toBeNull();
         expect(api.searchParams.get("timeMax")).not.toBeNull();
         return reply({
