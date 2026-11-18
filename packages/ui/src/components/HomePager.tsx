@@ -12,7 +12,7 @@ export type HomePagerProps = Omit<ComponentProps<"div">, "children"> & {
   onPageChange?: (page: number) => void;
   /** The accessible name of the arrow to the next page. */
   nextLabel?: string;
-  /** The accessible name of the arrow back to the first page. */
+  /** The accessible name of the arrow to the previous page. */
   backLabel?: string;
   /** The accessible name of a dot, before its number: "Page". */
   pageLabel?: string;
@@ -24,16 +24,16 @@ export type HomePagerProps = Omit<ComponentProps<"div">, "children"> & {
 
 /**
  * Home's page controls: a dot per page under the cards, the current one a long indigo dash, and a round glass arrow at
- * the edge toward the other page. Drawn over Home's whole area.
+ * each edge that has a page beyond it. Drawn over Home's whole area.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#buttons
  */
-export function HomePager({ page, count = 2, onPageChange, nextLabel = "More apps", backLabel = "Back to the first page", pageLabel = "Page", compact = false, arrows = true, className, ...props }: HomePagerProps) {
+export function HomePager({ page, count = 2, onPageChange, nextLabel = "More apps", backLabel = "Previous page", pageLabel = "Page", compact = false, arrows = true, className, ...props }: HomePagerProps) {
   const arrow = cn("pointer-events-auto absolute size-[76px] p-0 text-chrome transition-none active:scale-96", compact ? "top-1/2 -translate-y-1/2" : "top-[402px]");
   return (
     <div className={cn("pointer-events-none absolute inset-0 z-[300]", className)} {...props}>
       {arrows && page > 0 && (
-        <Button variant="capsule" aria-label={backLabel} onClick={() => onPageChange?.(0)} className={cn(arrow, "left-[156px]")}>
+        <Button variant="capsule" aria-label={backLabel} onClick={() => onPageChange?.(page - 1)} className={cn(arrow, "left-[156px]")}>
           <ChevronLeft aria-hidden size={34} strokeWidth={2.6} />
         </Button>
       )}
