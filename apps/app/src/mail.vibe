@@ -109,6 +109,8 @@ effect function fetched(shelf: Instances.Shape, mail: MailConnection, id: number
   return content
 }
 
+error AttachmentChanged
+
 export const mailing = Layer.effect(Mail, effect {
   const registry = try Accounts
   const shelf = try Instances
@@ -280,11 +282,16 @@ export const mailing = Layer.effect(Mail, effect {
 
   try fork.in(scope) watchEach(registry.changes, (a) => a.accounts, (id) => shelf.mail(id), watch)
 
-  effect function reply(id: number) {
+  effect function ownedMailbox(id: number) {
     const account = try accountOf(id)
     const box = shelf.mail(id) catch () => undefined
-    if (account === undefined || box === undefined) return
-    const m = try box.get()
+    return account && box ? { account, box, m: try box.get() } : undefined
+  }
+
+  effect function reply(id: number) {
+    const owned = try ownedMailbox(id)
+    if (!owned) return
+    const { account, box, m } = owned
     const header = headerFor(board, shelf.held(id, m.messageRef), id, m) ?? (connectionOf(account).header(m.messageRef, m.generation) catch () => undefined)
     if (header !== undefined) box.send({ type: "replyToMessage", header }, "MailHost") catch () => undefined
   }
@@ -325,17 +332,20 @@ export const mailing = Layer.effect(Mail, effect {
   }
 
   effect function save(id: number, refs: readonly string[]) {
-    const account = try accountOf(id)
-    const box = shelf.mail(id) catch () => undefined
-    if (account === undefined || box === undefined) return
-    const m = try box.get()
+    const owned = try ownedMailbox(id)
+    if (!owned) return
+    const { account, box, m } = owned
     const chosen = m.assets.filter((a) => refs.includes(a.sourceRef))
     if (!mayExportAttachments(m, [...refs])) return
     const mail = connectionOf(account)
     const version = shelf.content(id, m.messageRef)?.version ?? ""
     const ids = chosen.map((f) => f.id)
     post({ unsaved: new Set([...board.unsaved].filter((f) => !ids.includes(f))) })
-    const feedback = try library.save(chosen, (file) => fetched(shelf, mail, id, file, version), `${account.provider}:${account.address}/${m.messageRef}`)
+    const feedback = try library.save(chosen, effect (file) => {
+      const current = try box.get()
+      if (current.messageRef !== m.messageRef || !mayExportAttachments(current, [...refs]) || shelf.content(id, current.messageRef)?.version !== version) throw new AttachmentChanged()
+      return try fetched(shelf, mail, id, file, version)
+    }, `${account.provider}:${account.address}/${m.messageRef}`, version)
     if (feedback === "FilesSaved") try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
     if (feedback === "WriteFailed" || feedback === "CatalogFailed") post({ unsaved: new Set([...board.unsaved, ...ids]) })
   }

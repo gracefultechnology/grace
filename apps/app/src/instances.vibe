@@ -5,7 +5,7 @@ import { type Event as MailEvent, hasMessage, listingScope, Machine as MailMachi
 import type { ChangeReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
-import { type Attached, Connector, type MailConnection, type MailContent, NeedsSignIn } from "./connector.vibe"
+import { type Attached, Connector, type MailConnection, MailContent, NeedsSignIn } from "./connector.vibe"
 
 export error NotAnAccount { id: number }
 
@@ -14,13 +14,8 @@ export schema HeldFile {
   readonly container: string; readonly sourceRef: string; readonly contentRef: string; readonly group: string
   readonly savedAt: number; readonly pages: number
 }
-schema HeldContent {
-  readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
-  readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
-  readonly to: readonly string[]; readonly attachment?: boolean; readonly replied?: string
-}
 schema HeldReply { readonly address: string; readonly subject: string; readonly verified: boolean }
-export schema Held { readonly content: HeldContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
+export schema Held { readonly content: MailContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
 
 export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
 export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>
