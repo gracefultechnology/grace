@@ -476,9 +476,11 @@ jobs:
       - id: setup
         uses: ./.github/actions/setup
       - run: pnpm verify --continue --summarize
-      - name: Exercise Google consent, Gmail, and Calendar on the local provider
+      - name: Exercise Google consent and guided tasks across apps with local fixtures
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'
+        run: >-
+          pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
+          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply'
       - if: always() && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:
