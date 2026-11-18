@@ -1110,7 +1110,11 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.step({ tap: "Internet" });
           await page.step({ type: origin.origin, into: "Address" });
           await page.step({ press: "Enter" });
-          await page.step({ tap: "Private sign-in" });
+          step = "ask Grace to open the site’s private sign-in";
+          await page.step({ tap: "Ask Grace" });
+          await page.step({ type: "sign me in to pay my bill", into: "Message to Grace" });
+          await page.step({ tap: "Send" });
+          step = "open the episode using the private address control";
           await page.step({ type: entry.href, into: "Private website address", replace: true });
           await page.step({ press: "Enter" });
         }, 900);
