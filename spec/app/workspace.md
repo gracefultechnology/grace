@@ -907,14 +907,15 @@ task generation and current controller generation. The trusted host checks
 the actual origin, account and redaction before it supplies this evidence.
 
 ```quint
-pure def canObserve(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
+pure def observationArrives(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
   by == Host and mayAssist(w) and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   currentObservation.deviceVersion == w.device.contextVersion and
   B::observationMatches(w.browser, w.browser.selected, currentObservation.browserRevision) and
   currentObservation.taskVersion == w.assistant.workVersion and currentObservation.checkpoint != "" and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking or
-    (w.assistant.activity == A::WebsiteWait and w.commitment.stage == CM::Checking and w.commitment.dispatched)) and
-  X::canObserve(w.execution, currentObservation.website, X::BrowserBridge)
+    (w.assistant.activity == A::WebsiteWait and w.commitment.stage == CM::Checking and w.commitment.dispatched))
+pure def canObserve(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
+  observationArrives(w, currentObservation, by) and X::canObserve(w.execution, currentObservation.website, X::BrowserBridge)
 pure def observe(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace =
   val observedWorkspace = {
     ...w, execution: X::observe(w.execution, currentObservation.website, X::BrowserBridge),
@@ -935,6 +936,38 @@ pure def prepare(w: Workspace, operationRequest: OperationRequest, by: Workspace
   execution: X::prepare(w.execution, operationRequest.target, operationRequest.valueRef, operationRequest.kind, operationRequest.observation, X::BrowserBridge),
   commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment
 }
+```
+
+### A page on another origin, or a step that is the person's, blocks the task where she can see it
+
+An observation that arrives on every current version but reads a page on
+another origin than the task's is not dropped: the task is blocked with that
+reason until a fresh observation on its own origin. When the step the task
+needs, at the current observation, is one Grace may not take, because it is
+out of her reach or is the person's to tap, the task is blocked for the
+person with that step named, and an approved payment review on the old page
+is no longer current. Neither changes the conversation; Grace continues
+only on a fresh observation.
+
+```quint
+pure def canRefuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
+  observationArrives(w, currentObservation, by) and X::canRefuseOrigin(w.execution, currentObservation.website, X::BrowserBridge)
+pure def refuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace =
+  { ...w, execution: X::refuseOrigin(w.execution, currentObservation.website, X::BrowserBridge) }
+pure def canLeaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): bool =
+  by == Host and mayAssist(w) and observationIsCurrent(w) and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
+  operationRequest.deviceVersion == w.device.contextVersion and operationRequest.browserRevision == w.browser.revision and
+  operationRequest.generation == w.execution.generation and operationRequest.observation == w.execution.observation and
+  operationRequest.taskVersion == w.assistant.workVersion and w.assistant.activity == A::ReadyForStep and
+  X::canLeaveToPerson(w.execution, operationRequest.target, X::BrowserBridge)
+pure def leaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): Workspace = {
+  ...w, execution: X::leaveToPerson(w.execution, operationRequest.target, X::BrowserBridge),
+  commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment
+}
+pure def sometimesOtherOriginBlocksTask(w: Workspace): bool =
+  A::unfinished(w.assistant) and X::sometimesOtherOriginRefused(w.execution)
+pure def sometimesStepLeftToPerson(w: Workspace): bool =
+  A::unfinished(w.assistant) and X::sometimesOutOfReachStepIsThePersons(w.execution)
 ```
 
 ### Dispatch checks the context again and readback establishes the result
@@ -1004,7 +1037,10 @@ pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X
 A successfully verified step does not itself complete the person's goal.
 The trusted domain integration separately reports that the requested goal
 has been fulfilled, with nonempty endpoint evidence and the same owner,
-task, goal, page, device and operation versions. That report retires the
+task, goal, page, device and operation versions. The report counts only
+when the current observation of the page, taken after the last step,
+carries the goal's own fact with its quote; a report from the host with no
+quoted fact establishes nothing. That report retires the
 ordinary controller and permits a later task without labelling this one
 abandoned. An attached payment must use its durable payment-result path;
 an ordinary completion report cannot bypass its unresolved ledger.
@@ -1013,7 +1049,7 @@ an ordinary completion report cannot bypass its unresolved ledger.
 pure def canCompleteOrdinary(w: Workspace, completion: GoalCompletion, by: WorkspaceActor): bool =
   by == Host and mayAssist(w) and observationIsCurrent(w) and w.commitmentTask == "" and
   w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
-  w.execution.phase == X::Verified and w.assistant.activity == A::ReadyForStep and w.assistant.replacementId == "" and
+  X::goalObserved(w.execution, completion.goal) and w.assistant.activity == A::ReadyForStep and w.assistant.replacementId == "" and
   completion.owner == w.execution.owner and completion.task == w.assistant.taskId and completion.goal == w.assistant.goal and
   completion.deviceVersion == w.device.contextVersion and
   B::observationMatches(w.browser, w.browser.selected, completion.browserRevision) and
@@ -1503,7 +1539,7 @@ different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
 Walks include an ordinary task and payments at two different origins. Preparing
 an ordinary step has the weight of the other website callbacks: ordinary
-completion needs one exact eleven-event path, which a rarer preparation
+completion needs one exact twelve-event path, which a rarer preparation
 almost never completes within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Walks also go offline, lose the
@@ -1574,13 +1610,17 @@ pure val currentObservationValues = Set(observed,
   { ...observed, browserRevision: 3, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 4, taskVersion: 3,
     website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } },
+  { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } },
+  { ...observed, taskVersion: 2, checkpoint: "Account read",
+    website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } },
   { ...observed, browserRevision: 4, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
   { ...observed, browserRevision: 4, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
 pure val operation: OperationRequest = {
   deviceVersion: 6, browserRevision: 2, taskVersion: 1,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage
 }
-pure val operationRequestValues = Set(operation, { ...operation, deviceVersion: 0 }, { ...operation, kind: X::FinalSubmit })
+pure val operationRequestValues = Set(operation, { ...operation, deviceVersion: 0 }, { ...operation, kind: X::FinalSubmit },
+  { ...operation, target: "booking-frame", kind: X::Choose })
 pure val tokensValues = Set(
   { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 },
   { deviceVersion: 0, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 })
@@ -1594,7 +1634,7 @@ pure val currentVerificationValues = Set({ deviceVersion: 6, browserRevision: 2,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Please check the account details", needsUser: true })
 pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
-  deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 1
+  deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 2
 }
 pure val completionValues = Set(completedGoal,
   { ...completedGoal, task: "other", goal: "Read another account" },
@@ -1651,6 +1691,8 @@ pure val weight_approveSpokenCommitment = 24
 pure val weight_submitCommitment = 24
 pure val weight_recordCommitment = 24
 pure val weight_completeOrdinary = 24
+pure val weight_refuseOrigin = 8
+pure val weight_leaveToPerson = 8
 pure val weight_saveCommitment = 24
 pure val weight_interact = 8
 pure val weight_detectWake = 8
