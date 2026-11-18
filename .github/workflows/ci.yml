@@ -11,6 +11,10 @@ on:
         description: Run the pinned 100-biller browser qualification
         type: boolean
         default: true
+      webarena:
+        description: Run official Shopping task 260 with hosted link guidance
+        type: boolean
+        default: false
   pull_request:
     branches: [develop, main]
   push:
@@ -22,15 +26,165 @@ concurrency:
 
 env:
   TURBO_TELEMETRY_DISABLED: "1"
+  GRACE_BILLWORLD_REVISION: f335b651f9820c3454f447e3d4722b78c5298a0b
 
 permissions:
   contents: read
 
 jobs:
+  webarena:
+    if: github.event_name == 'workflow_dispatch' && inputs.webarena
+    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHOPPING_IMAGE: docker.io/am1n3e/webarena-verified-shopping@sha256:3e8cb9b945ea9b1c94ab26dba53e8d12dd0406abbf4bf686fd3bb2b6a5908feb
+      SHOPPING_ORIGIN: https://127.0.0.1:7770
+      GRACE_WEBARENA_UPSTREAM: ${{ github.workspace }}/.cache/webarena-upstream
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          verification: "false"
+      - uses: actions/checkout@v7
+        with:
+          repository: web-arena-x/webarena
+          ref: dce04686a56253aefba7b18a4fa0937cf1dc987b
+          path: .cache/webarena-upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - name: Prepare evaluator and Chromium
+        run: |
+          private_dir="$RUNNER_TEMP/grace-webarena-private"
+          results_dir="$RUNNER_TEMP/grace-webarena-results"
+          install -d -m 700 "$private_dir" "$results_dir"
+          python -m venv "$private_dir/venv"
+          "$private_dir/venv/bin/python" -m pip install -r "$GRACE_WEBARENA_UPSTREAM/requirements.txt"
+          {
+            echo "WEBARENA_PRIVATE=$private_dir"
+            echo "WEBARENA_RESULTS=$results_dir"
+            echo "GRACE_WEBARENA_PYTHON=$private_dir/venv/bin/python"
+            echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/task-260-input.json"
+          } >> "$GITHUB_ENV"
+          pnpm --filter @repo/app exec playwright install --with-deps chromium
+          pnpm gen
+      - name: Start the pinned Shopping storefront
+        run: |
+          test "$(uname -m)" = x86_64
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          available=$(sudo df -Pm "$docker_root" | awk 'NR == 2 { print $4 }')
+          if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] && (( available < 24000 )); then
+            sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet
+          fi
+          sudo df -h "$docker_root"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends caddy
+          docker pull --platform linux/amd64 "$SHOPPING_IMAGE"
+          docker image inspect --format '{{json .RepoDigests}}' "$SHOPPING_IMAGE" > "$WEBARENA_RESULTS/shopping-image.json"
+          docker run -d --name grace-webarena-shopping --platform linux/amd64 \
+            -p 127.0.0.1:17771:80 -e WA_ENV_CTRL_EXTERNAL_SITE_URL="$SHOPPING_ORIGIN/" "$SHOPPING_IMAGE"
+          ready=false
+          for _ in {1..40}; do
+            if timeout 10 docker exec grace-webarena-shopping sh -ec '
+              mysqladmin ping -h 127.0.0.1 --silent &&
+              curl --silent --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:9200/ |
+                grep -Eq "^(200|401)$"
+            '; then
+              ready=true
+              break
+            fi
+            sleep 10
+          done
+          test "$ready" = true
+          docker exec grace-webarena-shopping sh -ec '
+            cd /var/www/magento2
+            php bin/magento config:set web/unsecure/base_url https://127.0.0.1:7770/
+            php bin/magento config:set web/secure/base_url https://127.0.0.1:7770/
+            php bin/magento config:set web/secure/use_in_frontend 1
+            php bin/magento cache:flush
+          '
+          cat > "$WEBARENA_PRIVATE/Caddyfile" <<'CADDY'
+          {
+            admin off
+            auto_https disable_redirects
+            skip_install_trust
+          }
+          https://127.0.0.1:7770 {
+            bind 127.0.0.1
+            tls internal
+            reverse_proxy http://127.0.0.1:17771
+          }
+          CADDY
+          XDG_DATA_HOME="$WEBARENA_PRIVATE/caddy-data" XDG_CONFIG_HOME="$WEBARENA_PRIVATE/caddy-config" \
+            caddy start --config "$WEBARENA_PRIVATE/Caddyfile" --adapter caddyfile
+          status=$(curl --insecure --fail --silent --show-error --max-time 90 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
+          test "$status" = 200
+      - name: Verify the published synthetic Shopping sign-in
+        working-directory: apps/app
+        env:
+          WA_SHOPPING_FIXTURE_LOGIN: emma.lopez@gmail.com:Password.123
+        run: |
+          umask 077
+          node --input-type=module <<'JS'
+          import { chromium } from "playwright";
+          const origin = process.env.SHOPPING_ORIGIN;
+          const browser = await chromium.launch();
+          try {
+            const context = await browser.newContext({ ignoreHTTPSErrors: true });
+            await context.route("**/*", (route) => {
+              const request = route.request();
+              if (new URL(request.url()).origin !== origin) return route.abort();
+              return request.isNavigationRequest()
+                ? route.continue({ headers: { ...request.headers(), "x-m2-customer-auto-login": process.env.WA_SHOPPING_FIXTURE_LOGIN } })
+                : route.continue();
+            });
+            const page = await context.newPage();
+            const response = await page.goto(origin + "/customer/account/", { waitUntil: "domcontentloaded", timeout: 120000 });
+            if (!response?.ok()) throw new Error("The seeded Shopping account request failed");
+            await page.getByRole("heading", { name: "My Account", exact: true }).first().waitFor({ timeout: 120000 });
+            await context.storageState({ path: process.env.WEBARENA_PRIVATE + "/shopping-state.json" });
+          } finally {
+            await browser.close();
+          }
+          JS
+      - name: Grade official task 260
+        env:
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: |
+          test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
+          git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
+            jq -e --arg start "$SHOPPING_ORIGIN/" --arg receipt "$WEBARENA_RESULTS/task-260.json" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" \
+              '.[] | select(.task_id == 260) | {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: $receipt, siteStorageState: $state, evaluator: "webarena"}' \
+              > "$GRACE_BROWSER_BENCHMARK_FILE"
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 260' |
+            tee "$WEBARENA_RESULTS/grace-browser.log"
+          jq -e '.webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true' "$WEBARENA_RESULTS/task-260.json"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: webarena-shopping-260
+          path: |
+            ${{ runner.temp }}/grace-webarena-results/shopping-image.json
+            ${{ runner.temp }}/grace-webarena-results/task-260.json
+            ${{ runner.temp }}/grace-webarena-results/grace-browser.log
+          if-no-files-found: warn
   billworld:
     if: github.event_name == 'workflow_dispatch' && inputs.billworld
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,7 +193,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: gracefultechnology/billworld
-          ref: f335b651f9820c3454f447e3d4722b78c5298a0b
+          ref: ${{ env.GRACE_BILLWORLD_REVISION }}
           path: .cache/billworld
           persist-credentials: false
       - run: pnpm gen
@@ -47,14 +201,226 @@ jobs:
         env:
           GRACE_BILLWORLD_DIR: ${{ github.workspace }}/.cache/billworld
           GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet
+          GRACE_BILLWORLD_SHARD: ${{ matrix.shard }}
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
         run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: billworld-browser-receipts
+          name: billworld-browser-receipts-${{ matrix.shard }}
           path: ${{ runner.temp }}/grace-fleet
+          if-no-files-found: error
+  billworld-aggregate:
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.billworld
+    needs: billworld
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: billworld-browser-receipts-*
+          path: ${{ runner.temp }}/grace-fleet-shards
+      - name: Verify all 100 independently graded browser receipts
+        env:
+          GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet-shards
+          GRACE_BILLWORLD_MATRIX_RESULT: ${{ needs.billworld.result }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          root = Path(os.environ["GRACE_BILLWORLD_RESULTS"])
+          revision = os.environ["GRACE_BILLWORLD_REVISION"]
+          cohort = None
+          verified = {}
+
+          def load(path):
+              if not path.is_file():
+                  raise SystemExit(f"Missing Fleet receipt {path}")
+              return json.loads(path.read_text())
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          for shard in range(1, 5):
+              manifests = list((root / f"billworld-browser-receipts-{shard}").rglob("cohort.json"))
+              require(len(manifests) == 1, f"Expected one Fleet cohort manifest for shard {shard}")
+              manifest = load(manifests[0])
+              require(
+                  (manifest["revision"], manifest["shard"], manifest["shardCount"]) == (revision, shard, 4),
+                  f"Wrong Fleet revision or shard metadata for shard {shard}",
+              )
+              tasks = manifest["cohort"]
+              ids = [task["taskId"] for task in tasks]
+              require(len(ids) == len(set(ids)) == 100, "Fleet manifest must declare 100 unique billers")
+              identity = [
+                  (task["taskId"], task["template"], task["evidence"], urlsplit(task["startUrl"])[2:], urlsplit(task["expected"])[2:])
+                  for task in tasks
+              ]
+              if cohort is None:
+                  cohort = identity
+              require(identity == cohort, f"Fleet cohort differs on shard {shard}")
+              assigned = {task["taskId"]: task for task in tasks[shard - 1::4]}
+              directory = manifests[0].parent
+              scores = load(directory / "scores.json")
+              require(
+                  (scores["revision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
+                   scores["attempted"], scores["total"], scores["passed"]) == (revision, shard, 4, 100, 25, 25, 25),
+                  f"Incomplete or failed Fleet score for shard {shard}",
+              )
+              require(set(scores["cases"]) == set(assigned), f"Wrong case membership on shard {shard}")
+              for task_id, task in assigned.items():
+                  require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
+                  receipt = load(directory / f"{task_id}.json")
+                  grade = receipt["grade"]
+                  require(task_id not in verified and scores["cases"][task_id] is True and
+                          receipt["taskId"] == task_id and receipt["startUrl"] == task["startUrl"] and
+                          receipt["decisionProvider"] == "hosted" and receipt["decisionRequests"] > 0 and
+                          receipt["outcome"]["ringTap"] is True and not receipt["outcome"].get("failure") and
+                          grade["passed"] is True and grade["visible"] is True and
+                          grade["expected"] == grade["destination"] == task["expected"] != task["startUrl"],
+                          f"Duplicate or failed Fleet browser receipt for {task_id}")
+                  verified[task_id] = shard
+
+          require(len(verified) == 100, "Expected 100 distinct verified Fleet browser receipts")
+          require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
+          (root / "qualification.json").write_text(json.dumps(
+              {"revision": revision, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
+          ) + "\n")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+              summary.write("Verified **100 of 100** distinct Fleet billers across four shards.\n")
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: billworld-browser-qualification
+          path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
+          if-no-files-found: error
+  billworld-released:
+    if: github.event_name == 'workflow_dispatch' && inputs.billworld
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
+      GRACE_BILLWORLD_RESULTS: ${{ github.workspace }}/.cache/grace-released-billworld-results
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v7
+        with:
+          repository: gracefultechnology/billworld
+          ref: ${{ env.GRACE_BILLWORLD_REVISION }}
+          path: .cache/billworld
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: .cache/billworld/billworld/public/reference-assets
+          key: billworld-released-pdfs-v1-${{ env.GRACE_BILLWORLD_REVISION }}
+      - name: Prepare and verify the public fixture assets
+        run: |
+          node --input-type=module <<'JS'
+          import { createHash } from "node:crypto";
+          import { execFileSync } from "node:child_process";
+          import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+
+          const tree = process.env.GRACE_BILLWORLD_RELEASED_DIR;
+          const pin = process.env.GRACE_BILLWORLD_REVISION;
+          const revision = execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          if (revision !== pin) throw new Error("Wrong released BillWorld revision");
+          const upstream = "billworld/research/wvu-documents.json";
+          const manifest = JSON.parse(execFileSync("git", ["-C", tree, "show", `${pin}:${upstream}`], { encoding: "utf8" }));
+          const names = ["wvu-billing-collections-policy.pdf", "wvu-financial-assistance-policy.pdf", "wvu-sample-statement.pdf"];
+          if (manifest.mode !== "public_read_only_GET" ||
+              JSON.stringify(manifest.documents.map(({ file }) => file).sort()) !== JSON.stringify(names))
+            throw new Error("Unexpected pinned public PDF manifest");
+
+          const publicDir = join(tree, "billworld", "public");
+          const assetsDir = join(publicDir, "reference-assets");
+          mkdirSync(assetsDir, { recursive: true });
+          mkdirSync(join(publicDir, "reference-pages"), { recursive: true });
+          const assets = [];
+          for (const { file, url, sha256, bytes } of manifest.documents) {
+            const source = new URL(url);
+            if (source.protocol !== "https:" || source.hostname !== "wvumedicine.org" ||
+                source.username || source.password || !/^[a-f0-9]{64}$/.test(sha256) || !Number.isSafeInteger(bytes) || bytes <= 0)
+              throw new Error(`Invalid pinned public asset record for ${file}`);
+            const target = join(assetsDir, file);
+            const check = (path) => {
+              const data = readFileSync(path);
+              if (data.length !== bytes || createHash("sha256").update(data).digest("hex") !== sha256)
+                throw new Error(`Pinned size or SHA-256 mismatch for ${file}`);
+            };
+            if (existsSync(target)) check(target);
+            else {
+              const download = target + ".download";
+              try {
+                execFileSync("curl", ["--fail", "--silent", "--show-error", "--retry", "3", "--max-time", "60",
+                  "--proto", "=https", "--output", download, source.href], { stdio: "inherit" });
+                check(download);
+                renameSync(download, target);
+              } finally {
+                rmSync(download, { force: true });
+              }
+            }
+            assets.push({ file, source: source.href, sha256, bytes });
+          }
+          mkdirSync(process.env.GRACE_BILLWORLD_RESULTS, { recursive: true });
+          writeFileSync(join(process.env.GRACE_BILLWORLD_RESULTS, "assets.json"),
+            JSON.stringify({ revision, upstream, assets }, null, 2) + "\n");
+          JS
+      - run: pnpm gen
+      - name: Read the original released statement and grade both controls
+        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the released BillWorld statement'
+      - name: Require the negative witness and six positive checks
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { readFileSync, readdirSync } from "node:fs";
+          import { join } from "node:path";
+
+          const results = process.env.GRACE_BILLWORLD_RESULTS;
+          const episodes = readdirSync(results).filter((name) => name.startsWith("released-statement-"));
+          assert.equal(episodes.length, 1, "Expected one released BillWorld episode pair");
+          const read = (name) => JSON.parse(readFileSync(join(results, episodes[0], name), "utf8"));
+          const checks = {
+            statement_viewed_after_login: true, due_date_reported: true, amount_reported: true,
+            protected_state_unchanged: true, credentials_unchanged: true, no_forbidden_operations: true
+          };
+          const negative = read("no-action.json");
+          const positive = read("grace-answer.json");
+          for (const receipt of [negative, positive]) {
+            assert.equal(receipt.revision, process.env.GRACE_BILLWORLD_REVISION);
+            assert.equal(receipt.releasedId, "task_md9");
+            assert.equal(receipt.grade.taskId, "malden-view-bill-v1");
+            assert.equal(receipt.grade.constructionSlice, false);
+            assert.equal(receipt.grade.actionBudgetEnforced, true);
+            assert.equal(receipt.grade.withinTimeBudget, true);
+            assert.equal(receipt.grade.withinActionBudget, true);
+          }
+          for (const key of ["environmentBuildId", "evaluatorBuildId"]) {
+            assert.ok(negative.grade[key]);
+            assert.equal(negative.grade[key], positive.grade[key]);
+          }
+          assert.equal(negative.source, "grader_validation");
+          assert.equal(negative.grade.success, false);
+          assert.equal(negative.grade.actionsUsed, 0);
+          assert.deepEqual(negative.grade.checks, { ...checks,
+            statement_viewed_after_login: false, due_date_reported: false, amount_reported: false });
+          assert.equal(positive.source, "reference_script");
+          assert.equal(positive.grade.success, true);
+          assert.ok(positive.grade.actionsUsed > 0);
+          assert.deepEqual(positive.grade.checks, checks);
+          JS
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: billworld-released-task-md9
+          path: ${{ github.workspace }}/.cache/grace-released-billworld-results
           if-no-files-found: error
   verify:
     runs-on: ubuntu-latest
@@ -70,6 +436,9 @@ jobs:
       - id: setup
         uses: ./.github/actions/setup
       - run: pnpm verify --continue --summarize
+      - name: Exercise Google consent, Gmail, and Calendar on the local provider
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'
       - if: always() && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:

@@ -71,6 +71,9 @@ export const LinkObservation = Schema.Struct({
     url: Schema.String,
     complete: Schema.Literal(true),
     readyState: Schema.String,
+    title: Schema.optional(Schema.NullOr(Schema.String)),
+    text: Schema.optional(Schema.NullOr(Schema.String)),
+    domRevision: Schema.optional(Schema.Int),
     blockers: Schema.Array(Schema.Struct({ kind: Schema.String, covers: Schema.String })),
     elements: Schema.Array(Schema.Struct({
       id: Schema.NonEmptyString, tag: Schema.String, label: Schema.NullOr(Schema.String),

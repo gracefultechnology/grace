@@ -5,6 +5,12 @@ prototype, legacy models and new Quint. It complements the
 [coverage map](requirements-coverage.md); proof and simulation results belong in
 the validation report. A reviewed rule is not user acceptance.
 
+This is the record of the models-only phase, last changed on 14 November
+2026. The specs are where to read these rules now. Where a row differs from
+the [acceptance list's decisions](implementation-acceptance.md#decisions-and-their-defaults)
+or the specs, those win: no wake detector is installed (decision 5), and
+Files has no Print, so the print findings below no longer apply.
+
 ## Corrections and discovered rules
 
 | Area | Finding and resulting contract |
@@ -17,11 +23,11 @@ the validation report. A reviewed rule is not user acceptance.
 | Inductive payment facts | Reviews require evidence; an attempt requires its review evidence; a saved outcome requires an attempt. Without these facts, abstract states admitted by the earlier invariants could manufacture authorization or durable confirmation. |
 | Provider facts | Unknown fee is not zero, and a positive required minimum conflicts with “nothing due.” Preparation requires consistent observed facts and exact readback. No guard names a provider or fixed page sequence. |
 | Repeated website failure | Retry identity includes semantic operation, target, value and page facts. At most one unchanged retry is allowed; pause and re-observation cannot erase that limit. Changed facts or a genuinely different approach can proceed. |
-| Guidance dismissal | The anchored label and ring need their own visibility state. Dismiss retains the same task, instruction and conversation; Show restores only a target whose device, page, task and conversation context still matches. Private or app guidance does not grant browser action authority. |
+| Guidance dismissal | Guidance is Look (a ring on a fact), Tap (a label on the control she uses next) or Done (the green check, only for a verified completed outcome). The anchored label and ring need their own visibility state. Dismiss retains the same task, instruction and conversation; Show restores only a target whose device, page, task and conversation context still matches. Private or app guidance does not grant browser action authority. |
 | Normal website completion | A successful individual action does not finish the user's goal. The workspace needs a separate, current, evidence-backed goal-completion route; payment tasks must finish through their durable outcome route. |
 | Browser effect consumption | An effect can be delayed after Workspace emits it. A stateless actuator check binds the original effect to the current operation or unresolved payment attempt immediately before the host hands it to Chromium. The host still owns immutable outbox provenance, current saved-value authority, one-time consumption and serialization against interruption. |
-| Expected page changes | An expected, correctly correlated response to an in-flight operation invalidates old page observations without imposing a new manual Resume step. Unrelated/manual changes pause and require reconciliation. |
-| Wake lifecycle | The explicitly approved local “Hey Grace” feature can wake and open Grace while pausing old work. A wake phrase does not authorize a payment. Generation-bound silence and return timers cannot close a newer exchange or resume work. |
+| Expected page changes | An expected, correctly correlated response to an in-flight operation invalidates old page observations without imposing a new manual Resume step. Unrelated/manual changes pause and require reconciliation. A guided plan across applications advances on each observed outcome: the workspace's `GuidedPlan`, `beginGuided` and `confirmGuided`. |
+| Wake lifecycle | The “Hey Grace” rules can wake and open Grace while pausing old work; no detector is installed in the MVP, so nothing reports a wake phrase. A wake phrase does not authorize a payment. Generation-bound silence and return timers cannot close a newer exchange or resume work. |
 | Conversation composition | Calling a child conversation reducer outside the workspace would bypass its interruption rules. Typed messages, voice results, keyboard changes and reading controls need one coordinated route through the actual nested state; new input cancels stale wake timers and invalidates conflicting website work. |
 | Browser and settings composition | Address editing, zoom, scroll, layout, recent-history controls, preference Undo and sample output also use the owning workspace. Current revision identifies host geometry reports. Text-size changes invalidate targets; history-only edits do not. The departure rule follows the browser revision so removing recent history preserves payment readiness while still retaining the attempt and durable record. Geometry changes preserve a pending user question or explicit user-wait state. |
 | Spoken payment approval | An exact, fully classified approval must update the transcript and authorize the payment atomically. Routing it first as a generic correction would invalidate the review it is approving. Partial audio, corrections and unrelated requests cannot use the approval route. |
@@ -56,7 +62,7 @@ states, every transition's admission conditions, rejected stale inputs,
 ownership of identities and versions, emitted effects, and prose/Quint agreement.
 Collection proofs cover arbitrary valid collections, not only the finite values
 used to discover simulation traces. The generated model is the only owner of
-product state; there is no copied application implementation in this phase.
+product state.
 
 The important external assumptions are explicit: host-supplied actor identity,
 verified page/connector provenance, correctly correlated observations, atomic

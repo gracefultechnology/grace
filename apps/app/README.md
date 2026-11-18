@@ -19,6 +19,43 @@ and traces (SPEC.md, "One spec tree").
 | `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
 
+## Browser qualification
+
+Dispatch the CI workflow with BillWorld enabled to run the Fleet cohorts and
+the released statement task. Fleet runs four deterministic shards against the
+same pinned 100-biller cohort. The aggregate requires all 100 distinct
+browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
+pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
+for a 25-biller run, or omit it to run the full cohort.
+
+The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
+CI checks out the public BillWorld revision
+`f335b651f9820c3454f447e3d4722b78c5298a0b` and prepares the three public
+WVU Medicine PDFs required to boot its shared host. The versioned CI cache
+holds the original bytes. Preparation verifies the size and SHA-256 of each
+file on both cache hits and fresh public downloads against the pinned
+[upstream document manifest](https://github.com/gracefultechnology/billworld/blob/f335b651f9820c3454f447e3d4722b78c5298a0b/billworld/research/wvu-documents.json).
+The Malden journey uses the shipped portal routes.
+
+The simulated person uses the fixture account to sign in, opens the utility
+account and current bill, and presents that statement to Grace. They submit
+the released read-only question, review and start its read plan, and select
+**Read statement**. The planner reply is scripted at the test boundary.
+Grace reads the real fixture document and the upstream grader checks her
+visible answer. The job requires a rejected zero-action control and all six
+checks on the completed trial, including unchanged protected state and
+credentials. CI uploads asset provenance and both grader receipts as
+`billworld-released-task-md9`.
+
+The standard verification job also runs **Gmail signup to Calendar** in
+Chromium using the loopback Google provider. The simulated person grants
+consent to the fixture account, opens the clinic email, asks Grace to prepare
+its appointment, and separately approves the save. The test checks the
+saved appointment through the provider readback. It needs no real Google
+account, external provider login, or hosted model key. Run it locally after
+`pnpm gen` with
+`pnpm --filter @repo/app test:browser test/mail.browser.test.tsx -t 'Gmail signup to Calendar'`.
+
 ## Android
 
 Start with `git submodule update --init vendor/eliza`: the build uses upstream Eliza's Android scripts
