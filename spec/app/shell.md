@@ -165,7 +165,7 @@ pure def wake(s: Shell): Shell = {
 }
 pure def restart(s: Shell): Shell = {
   ...s, readiness: Starting, surface: Home, returnSurface: Home,
-  reasoningAvailable: false, railPopover: NoPopover, homePage: MainCards,
+  reasoningAvailable: false, observationAllowed: false, railPopover: NoPopover, homePage: MainCards,
   contextVersion: s.contextVersion + 1
 }
 pure def sometimesSleepingKeepsTheSurface(s: Shell): bool =
