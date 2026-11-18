@@ -572,11 +572,17 @@ async function devTools(url: string, signal: AbortSignal) {
         return;
       }
       if ("signIn" in step) {
-        const expression = `(async () => { const status = await Capacitor.Plugins.GraceAccount.status(); const endpoint = new URL("https://api.graceforseniors.com/api/v1/app-auth/mobile/config"); endpoint.search = new URLSearchParams({clientId: "technology.graceful.grace", environment: "production", redirectUri: "https://app.graceforseniors.com/android/auth/callback"}); const res = await fetch(endpoint); if (!res.ok) throw new Error("Google configuration unavailable"); const config = await res.json(); return JSON.stringify({ status, google: config.google?.nativeSignIn === true }); })()`;
+        const endpoint = new URL("https://api.graceforseniors.com/api/v1/app-auth/mobile/config");
+        endpoint.search = new URLSearchParams({ clientId: identity.appId, environment: "production", redirectUri: "https://app.graceforseniors.com/android/auth/callback" }).toString();
+        const expression = `(async () => {
+          const { GraceAccount, CapacitorHttp } = Capacitor.Plugins;
+          const status = await GraceAccount.status();
+          const config = await CapacitorHttp.get({ url: ${JSON.stringify(endpoint.href)}, responseType: "json" });
+          return { status, google: config.status === 200 ? config.data?.google?.nativeSignIn : undefined };
+        })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
-        const reply = String(result.value);
-        if (/eliza_mobile_/.test(reply)) throw new Error("A sign-in result carries an Eliza Cloud key");
-        const { status, google } = Schema.decodeUnknownSync(Schema.fromJsonString(SignInReport), { onExcessProperty: "error" })(reply);
+        if (!Schema.is(SignInReport, { onExcessProperty: "error" })(result.value)) throw new Error("The native account status or public sign-in configuration was unavailable or returned unexpected fields");
+        const { status, google } = result.value;
         const found = { signedIn: status.kind === "signedIn", google };
         process.stdout.write(`sign-in status ${JSON.stringify({ ...status, ...found })}\n`);
         if (found.signedIn !== step.signIn.signedIn || found.google !== step.signIn.google)
