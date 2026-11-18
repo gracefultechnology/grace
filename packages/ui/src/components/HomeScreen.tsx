@@ -1,4 +1,5 @@
 import { useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { KeyRound } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { useSize } from "../lib/observe.ts";
 import { FilesCard, type FilesCardProps } from "./FilesCard.tsx";
@@ -9,7 +10,9 @@ import { LauncherCard, type LauncherCardProps } from "./LauncherCard.tsx";
 import { HomePager, type HomePagerProps } from "./HomePager.tsx";
 import { InternetCard, type InternetCardProps } from "./InternetCard.tsx";
 
-export type HomePage = "main" | "files";
+const pages = ["MainCards", "FilesCard", "PasswordsCard"] as const;
+
+export type HomePage = (typeof pages)[number];
 
 export type HomeLayout = "full" | "compact" | "greeting";
 
@@ -30,30 +33,33 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
   internet: InternetCardProps;
   /** The Files card: the newest photos and document. */
   files: FilesCardProps;
-  /** Opens Passwords from the second Home page without previewing any sign-ins. */
+  /** Opens Passwords from its own Home page, after Files, without previewing any sign-ins. */
   passwords?: Pick<LauncherCardProps, "disabled" | "onClick">;
   /** How Home fills its space; give a `compact` or `greeting` Home a `bottom` that clears Grace's window. */
   layout?: HomeLayout;
   /** The page in view. */
   page?: HomePage;
-  /** Asks for the other page: an arrow or a dot was tapped. */
+  /** Asks for another page: an arrow or a dot was tapped, or Home was swiped sideways. */
   onPageChange?: (page: HomePage) => void;
   /** The pager's accessible names. */
   pager?: Pick<HomePagerProps, "nextLabel" | "backLabel" | "pageLabel">;
 };
 
-const pages: HomePage[] = ["main", "files"];
-const shifts: Record<HomePage, number> = { main: 0, files: 468 };
+const VIEW = 1042;
 const columnGap = 20;
 const SWIPE = { threshold: 12, overscroll: 60 };
+const filesSlot = { x: 990, top: 0, w: 520, h: 560 };
+const filesEnd = filesSlot.x + filesSlot.w;
 const slots = {
   calendar: { x: 0, top: 0, w: 480, h: 560 },
   email: { x: 500, top: 0, w: 470, h: 290 },
   internet: { x: 500, top: 310, w: 470, h: 250 },
-  files: { x: 990, top: 0, w: 520, h: 560 },
+  files: filesSlot,
+  passwords: { ...filesSlot, x: filesEnd + columnGap + (VIEW - filesSlot.w) / 2 },
 };
-const columns: Record<keyof typeof slots, number> = { calendar: 0, email: 1, internet: 2, files: 3 };
-const VIEW = 1042;
+const shifts: Record<HomePage, number> = { MainCards: 0, FilesCard: filesEnd - VIEW, PasswordsCard: filesEnd + columnGap };
+const columns: Record<keyof typeof slots, number> = { calendar: 0, email: 1, internet: 2, files: 3, passwords: 5 };
+const columnShifts: Record<HomePage, number> = { MainCards: 0, FilesCard: 1, PasswordsCard: 4 };
 const RADIUS = 400;
 const STAGE = { width: 1268, height: 788, rail: 138 };
 
@@ -87,17 +93,18 @@ function drum({ x, top, w, h }: (typeof slots)[keyof typeof slots], shift: numbe
 }
 
 /**
- * Home: the greeting, the launcher cards on two pages that turn away round the edges like the side of a drum, the
- * pager, and a banner when there is news. Above Grace's compact window the cards stand in four narrow columns that
- * slide flat; with the keyboard up as well, only the greeting stays. It lies under the rail, which is glass, so a card
- * rolling off the left shows through it. Place it on the `TabletScreen` beside the `Rail`.
+ * Home: the greeting, the launcher cards on three pages that turn away round the edges like the side of a drum, the
+ * pager, and a banner when there is news. Above Grace's compact window the cards stand in narrow columns that slide
+ * flat, three to a page and Passwords alone in the middle of its own; with the keyboard up as well, only the greeting
+ * stays. It lies under the rail, which is glass, so a card rolling off the left shows through it. Place it on the
+ * `TabletScreen` beside the `Rail`.
  * The prototype's `#home[data-hmode]` control-panel modes A–F and H are experiments; only mode G, progressive blur and
  * its default, is the design.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
  * @design packages/design-system/design.md#screens
  */
-export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, passwords, layout = "full", page = "main", onPageChange, pager, className, ...props }: HomeScreenProps) {
+export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, passwords, layout = "full", page = "MainCards", onPageChange, pager, className, ...props }: HomeScreenProps) {
   const full = layout === "full";
   const compact = layout === "compact";
   const [measure, measured] = useSize<HTMLDivElement>();
@@ -107,12 +114,16 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const stageWidth = compact ? Math.max(STAGE.width, box.width) : STAGE.width;
   const x = compact ? 0 : Math.max(0, (box.width - STAGE.rail - (STAGE.width - STAGE.rail) * scale) / 2);
   const columnStep = (stageWidth - STAGE.rail + columnGap) / 3;
-  const stops = compact ? { main: 0, files: columnStep } : shifts;
+  const viewWidth = compact ? 3 * columnStep - columnGap : VIEW;
+  const lastPage: HomePage = passwords ? "PasswordsCard" : "FilesCard";
+  const shown = pages.slice(0, pages.indexOf(lastPage) + 1);
+  const stop = (of: HomePage) => compact ? columnShifts[of] * columnStep : shifts[of];
+  const nearestTo = (at: number) => shown.reduce((best, next) => Math.abs(stop(next) - at) < Math.abs(stop(best) - at) ? next : best);
   const [dragShift, setDragShift] = useState<number | null>(null);
   const dragRef = useRef<{ x: number; k: number; from: number; shift: number; moved: boolean } | null>(null);
   const swipedRef = useRef(false);
-  const shift = dragShift ?? stops[page];
-  const nearest: HomePage = shift > (stops.main + stops.files) / 2 ? "files" : "main";
+  const shift = dragShift ?? stop(shown.includes(page) ? page : "MainCards");
+  const nearest = nearestTo(shift);
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
     swipedRef.current = false;
     if (layout === "greeting" || (event.target as Element).closest("[data-home-pager] button")) return;
@@ -129,7 +140,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
       event.currentTarget.setPointerCapture(event.pointerId);
     }
     if (!state.moved) return;
-    state.shift = Math.max(stops.main - SWIPE.overscroll, Math.min(stops.files + SWIPE.overscroll, state.from - dx));
+    state.shift = Math.max(stop("MainCards") - SWIPE.overscroll, Math.min(stop(lastPage) + SWIPE.overscroll, state.from - dx));
     setDragShift(state.shift);
   };
   const settle = () => {
@@ -138,7 +149,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     if (!state?.moved) return;
     swipedRef.current = true;
     setDragShift(null);
-    onPageChange?.(state.shift > (stops.main + stops.files) / 2 ? "files" : "main");
+    onPageChange?.(nearestTo(state.shift));
   };
   const swallowSwipeClick = (event: MouseEvent) => {
     if (!swipedRef.current) return;
@@ -147,13 +158,15 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     event.preventDefault();
   };
   const place = (slot: keyof typeof slots, card: (turn: number) => ReactNode) => {
-    const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { left: columns[slot] * columnStep, top: 0, width: columnStep - columnGap, height: "100%", transform: `translateX(${-shift}px)` } };
+    const flat = full ? { left: slots[slot].x, width: slots[slot].w } : { left: columns[slot] * columnStep, width: columnStep - columnGap };
+    const { style, turn } = full ? drum(slots[slot], shift) : { turn: 0, style: { ...flat, top: 0, height: "100%", transform: `translateX(${-shift}px)` } };
     const { transform, transformOrigin, ...frame } = style;
     const still = dragShift !== null && "transition-none";
-    const offPage = compact && (slot === "calendar" && nearest === "files" || slot === "files" && nearest === "main");
+    const resting = flat.left - stop(nearest);
+    const offPage = resting >= viewWidth || resting + flat.width <= 0;
     return (
-      <div inert={offPage} className={cn("absolute transition-[left,top,width,height] duration-slow ease-settle motion-reduce:transition-none", still)} style={frame}>
-        <div className={cn("size-full transition-[transform,transform-origin] duration-[320ms] ease-out-cubic will-change-transform motion-reduce:transition-none", still)} style={{ transform, transformOrigin }}>
+      <div aria-hidden={offPage || undefined} inert={offPage} className={cn("absolute transition-[left,top,width,height] duration-slow ease-settle motion-reduce:transition-none", still)} style={frame}>
+        <div className={cn("size-full backface-hidden transition-[transform,transform-origin] duration-[320ms] ease-out-cubic will-change-transform motion-reduce:transition-none", still)} style={{ transform, transformOrigin }}>
           {card(turn)}
         </div>
       </div>
@@ -167,7 +180,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
       onPointerUp={settle}
       onPointerCancel={settle}
       onClickCapture={swallowSwipeClick}
-      className={cn("absolute inset-1.5 z-[1] overflow-hidden font-sans transition-[bottom] duration-slow ease-settle motion-reduce:transition-none", className)}
+      className={cn("absolute inset-1.5 z-[1] touch-pan-y touch-pinch-zoom overflow-hidden font-sans transition-[bottom] duration-slow ease-settle motion-reduce:transition-none", className)}
       {...props}
     >
       <div className="absolute top-0 left-0" style={{ width: stageWidth, height: full ? STAGE.height : box.height / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
@@ -178,15 +191,15 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
             {place("calendar", (turn) => <HomeCalendarCard {...calendar} compact={compact} turn={turn} className={cn("size-full", calendar.className)} />)}
             {place("email", (turn) => <HomeEmailCard {...email} compact={compact} turn={turn} className={cn("size-full", email.className)} />)}
             {place("internet", (turn) => <InternetCard {...internet} compact={compact} turn={turn} className={cn("size-full", internet.className)} />)}
-            {place("files", (turn) => passwords ? (
-              <div className="flex size-full flex-col gap-4">
-                <FilesCard {...files} compact={compact} turn={turn} className={cn("min-h-0 flex-1", files.className)} />
-                <LauncherCard {...passwords} inert={nearest !== "files"} title="Passwords" size="medium" compact={compact} turn={turn} className="h-24 w-full shrink-0" />
-              </div>
-            ) : <FilesCard {...files} compact={compact} turn={turn} className={cn("size-full", files.className)} />)}
+            {place("files", (turn) => <FilesCard {...files} compact={compact} turn={turn} className={cn("size-full", files.className)} />)}
+            {passwords && place("passwords", (turn) => (
+              <LauncherCard {...passwords} title="Passwords" compact={compact} turn={turn} className="size-full">
+                <KeyRound aria-hidden className="m-auto size-24 text-primary" strokeWidth={1.5} />
+              </LauncherCard>
+            ))}
           </div>
         )}
-        <HomePager data-home-pager page={pages.indexOf(nearest)} count={pages.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(pages[i] ?? "main")} {...pager} />
+        <HomePager data-home-pager page={shown.indexOf(nearest)} count={shown.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(shown[i] ?? "MainCards")} {...pager} />
       </div>
     </div>
   );

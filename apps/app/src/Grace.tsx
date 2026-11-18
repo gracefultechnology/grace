@@ -1,9 +1,8 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Stream } from "effect";
-import { KeyRound } from "lucide-react";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { guidedDetails, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
@@ -62,11 +61,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
   const canTalk = mayOfferTalk(workspace!);
-  const listeningForPasswords = guide.mic === "GuideMicListening";
-  const passwordMicLabel = listeningForPasswords ? "Stop listening for Passwords" : "Say a Passwords command";
+  const listeningLocally = guide.mic === "GuideMicListening";
   const talk = () => { guide.stopListening(); void runtime.runPromise(Effect.flatMap(Effect.service(SpeechActions), (speech) => speech.talk())); };
-  const micUnavailable = !canTalk ? (device.reasoningAvailable ? "Type a message" : "Grace is unavailable right now")
-    : device.microphoneAllowed ? undefined : "Allow the microphone to talk to Grace";
+  const needsMicPermission = canTalk && !device.microphoneAllowed;
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
@@ -133,17 +130,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningForPasswords} listening={listeningForPasswords}
-            attach={
-              <Button variant="plain" size="pill" aria-label={passwordMicLabel} aria-pressed={listeningForPasswords}
-                onClick={listeningForPasswords ? guide.stopListening : guide.listen}>
-                <KeyRound size={24} aria-hidden />
-                <span className="hidden lg:inline">{passwordMicLabel}</span>
-              </Button>
-            }
+          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningLocally} listening={listeningLocally}
             quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
-            micUnavailable={canTalk ? micUnavailable : undefined}
-            onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
+            micUnavailable={needsMicPermission ? "Allow the microphone to talk to Grace" : undefined}
+            onFixMic={talk} fixMicLabel="Allow mic"
             onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
             onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
@@ -160,8 +150,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
-          {guide.mic === "GuideMicUnavailable" && <PageText role="status">On-device voice is unavailable. You can type a Passwords command.</PageText>}
-          {guide.mic === "GuideMicNoMatch" && <PageText role="status">Try saying “open passwords” or “fill my password”.</PageText>}
+          {!canTalk && guide.mic === "GuideMicUnavailable" && <PageText role="status">The microphone is unavailable. You can type your request.</PageText>}
+          {!canTalk && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that request. Try typing it.</PageText>}
           {currentOffer && currentOffer.labels.length > 0 && (
             <AnswerChips>{currentOffer.labels.map((label, index) =>
               <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>
