@@ -22,9 +22,9 @@ export const billReviewLabels: TaskReviewLabels = {
 };
 
 export const bookingReviewLabels: TaskReviewLabels = {
+  ...billReviewLabels,
   heading: "Book with {who}",
   note: "Nothing is booked until you say yes.",
-  stale: "These details changed",
 };
 
 export type TaskReviewCardProps = Omit<PanelProps, "variant" | "children" | "title"> & {
