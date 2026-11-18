@@ -1,21 +1,23 @@
-// spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"
+// spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/accounts.md, "Story: Connect the email I already use"
 // Settings: its pages beside the list, and on About this tablet, Clear browsing data behind one confirmation.
 import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
+import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 const names: Record<SettingsPage, PageName> = {
-  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", AboutSettings: "about",
+  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 const pages = Object.values(names);
 const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 
-/** @model spec/app/websiteRequests.md */
+/** @model spec/app/websiteRequests.md
+ * @model spec/app/accounts.md */
 export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
   const { workspace, can, send } = useWorkspace();
   const website = useWebsiteRequests();
@@ -34,9 +36,11 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
+  const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
+
   return (
-    <SettingsApp pages={pages} page={names[page]} onPageChange={choose} {...props}
-      onClose={() => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }}>
+    <SettingsApp {...frame}>
       {page === "AccountSettings" ? <GraceAccountSettings /> : page === "TextSizeSettings" ? (
         <SettingsTextSize sizes={Object.values(textSizes)} value={textSizes[preferences.textSize]}
           greeting="Good morning" eventWhen="SAT 10 am" eventTitle="Your appointment" graceMessage="Your appointment is tomorrow at 10 am."

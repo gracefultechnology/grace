@@ -1,4 +1,4 @@
-// spec/app/workspace.md, "Story: Leave and return without hidden work"; spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
+// spec/app/workspace.md, "Story: Leave and return without hidden work"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/shell.md, "Story: Reach everyday tasks from Home"
 // The application: the workspace as its one state, the page layer and what the page's website asks
 // beside it on the host's side, the native page under both, and what the device reports.
 import { machine as passwordViews } from "../gen/app.effect.vibe"
@@ -16,9 +16,19 @@ import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
 import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces, machine as workspaces } from "../gen/app__workspace.effect.vibe"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import { accounts, signIns } from "./accounts.vibe"
+import { calendarFeeds, calendars } from "./calendar.vibe"
+import { agent } from "./actions.vibe"
+import { browserGuide } from "./browserGuide.vibe"
+import { connector, SignInPage } from "./connector.vibe"
+import { type CloudLink, conversation } from "./conversation.vibe"
+import { instances, reading } from "./instances.vibe"
+import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
 import { type GuideSpeechPlugin, type SurfacePlugin, type WiFiPlugin, webView } from "./surfacePlugin.ts"
 import { pageHost } from "./page.vibe"
+import { notices } from "./notices.vibe"
 
 // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
 const started = Layer.effectDiscard(effect {
@@ -70,9 +80,35 @@ const keyboard = (plugin: SurfacePlugin | undefined) => Layer.effect(Keyboard, e
   return { height: SubscriptionRef.changes(height) }
 })
 
-/** Everything the interface runs on, over `plugin`, the native page's, and `wifi`, where the platform has them. */
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, platform: { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; vault?: PasswordVault; guideSpeech?: GuideSpeechPlugin } = { native: false }) {
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault, platform.guideSpeech)), Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), setup(), passwordViews()))
+const signInPage = Layer.sync(SignInPage, () => {
+  const opened = new Map<string, Window | null>()
+  return {
+    open: (url: string) => sync(() => {
+      const page = webView.window.open(url, "_blank")
+      if (page !== null) page.opener = null
+      opened.set(url, page)
+    }),
+    close: (url: string) => sync(() => { opened.get(url)?.close(); opened.delete(url) })
+  }
+})
+
+const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
+
+const linked = (cloud: CloudLink) => Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced)
+
+const services = (cloud: CloudLink | undefined) => cloud === undefined
+  ? Layer.mergeAll(signIns, calendars(false))
+  : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
+
+type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; vault?: PasswordVault; guideSpeech?: GuideSpeechPlugin }
+
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: TabletPlatform | CloudLink = { native: false }) {
+  const platform = "native" in host ? host : { native: false }
+  const cloud = "url" in host ? host : undefined
+  const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
+  const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
+  const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), notices(wifi), grace, browserGuide(cloud), graceAccount(platform.native), graceSpeech(platform.native), passwords(platform.vault, platform.guideSpeech)), machines)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
   const controlled = Layer.provideMerge(replyControls(platform.native), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)

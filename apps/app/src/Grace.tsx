@@ -1,10 +1,11 @@
-// spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"
+// spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
 import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
-import { Effect, Exit, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
+import { guidedReadKind, mayGuideReadLink, type GuidedRead } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
@@ -13,13 +14,23 @@ import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
+const checkLabels: Record<GuidedRead, string> = {
+  ReadMail: "Check email",
+  ReadBrowser: "Check page",
+  ReadChangedBrowser: "Check page",
+  ReadStatement: "Read statement",
+  ReadCalendar: "Check appointment",
+  SaveMailAppointment: "Check saved appointment",
+  UnsupportedRead: "",
+};
+
 /** @model spec/app/assistant.md */
 
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
-  const { workspace, can, send, current } = useWorkspace();
+  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink } = useWorkspace();
   const guide = usePasswordGuide();
   const runtime = useRuntime();
-  const { assistant, device } = workspace!;
+  const { assistant, device, plan, review } = workspace!;
   const conversation = assistant.conversation;
   const [unavailable, setUnavailable] = useState<number>();
   const subscribe = useCallback((changed: () => void) => {
@@ -37,6 +48,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   };
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
+  const [linkFeedback, setLinkFeedback] = useState<{ key: string; words?: string }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
   if (assistant.presentation === "Closed") return null;
@@ -48,6 +60,40 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
+  const start = { type: "startReadReview", reviewRevision: review.revision } as const;
+  const showReview = can(start);
+  const next = plan.receipts.length;
+  const currentStep = plan.steps[next];
+  const hasPlan = plan.steps.length > 0;
+  const savePlan = plan.steps.some((step) => guidedReadKind(step) === "SaveMailAppointment");
+  const status = assistant.activity === "Paused" ? "Paused" : assistant.outcome === "Completed"
+    ? savePlan ? "Planned checks complete" : "Read checks complete"
+    : null;
+  const stop = { type: "stop" } as const;
+  const resume = { type: "resume" } as const;
+  const paused = hasPlan && can(resume);
+  const pausable = hasPlan && assistant.activity !== "Paused" && can(stop);
+  const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
+  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
+  const canCheck = label && (currentStep?.surface !== "Browser" || workspace?.device.observationAllowed) &&
+    currentStep?.surface === workspace?.device.surface &&
+    (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
+    conversation.turn === "Ready" && !conversation.question;
+  const observation = workspace && {
+    type: "setBrowserObservation", choice: {
+      allowed: !workspace.device.observationAllowed,
+      deviceVersion: workspace.device.contextVersion, browserRevision: workspace.browser.revision,
+    },
+  } as const;
+  const guideKey = workspace && mayGuideReadLink(workspace)
+    ? [assistant.taskId, assistant.workVersion, conversation.generation, next, workspace.device.contextVersion, workspace.browser.revision].join(":")
+    : "";
+  const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
+  const showLink = () => {
+    setLinkFeedback({ key: guideKey });
+    const report = (words: string) => setLinkFeedback((current) => current?.key === guideKey ? { key: guideKey, words } : current);
+    void pointAtReadLink().then(report, () => report("I could not highlight a link on this page."));
+  };
 
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": compact over a
   // shown page, and expanded over one the host has not hidden yet. One window at both sizes, so resizing keeps its focus.
@@ -57,8 +103,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
         style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={
-          <GraceHeader pause={conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
-            onPause={() => interact({ tag: "PauseSpeech" })} onResume={() => interact({ tag: "ResumeSpeech" })}
+          <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
+            onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void send(resume) : interact({ tag: "ResumeSpeech" })}
             expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
@@ -83,8 +129,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                 const revision = current().assistant.conversation.draftRevision;
                 void guide.request(revision).then(async (guided) => {
                   if (guided) { setDraft(""); return; }
-                  const result = await send({ type: "interact", input: { tag: "SendDraft", revision } });
-                  if (result !== undefined && Exit.isSuccess(result) && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
+                  const sent = await say({ tag: "SendDraft", revision });
+                  if (sent && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
                 });
               }} />
           </div>
@@ -99,8 +145,47 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           )}
           {(currentOffer?.blocked || unavailable === conversation.generation) &&
             <PageText role="status">Grace can’t complete that action here.</PageText>}
+          {observation && can(observation) && (
+            <AnswerChips>
+              <AnswerChip onClick={() => void send(observation)}>
+                {observation.choice.allowed ? "Allow Grace to read this browser" : "Turn off browser reading"}
+              </AnswerChip>
+            </AnswerChips>
+          )}
+          {showReview && (
+            <section aria-label="Review read plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
+              <blockquote className="text-body">{review.request.goal}</blockquote>
+              <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
+              <ol aria-label="Read plan" className="list-decimal pl-6">
+                {review.request.steps.map((step, index) => <li key={`${step.subject}-${index}`}>{step.subject}</li>)}
+              </ol>
+              <AnswerChips><AnswerChip onClick={() => void send(start)}>Start read plan</AnswerChip></AnswerChips>
+            </section>
+          )}
+          {hasPlan && (
+            <section aria-label="Task plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
+              {status && <p className="text-body font-medium">{status}</p>}
+              {expanded ? (
+                <>
+                  <blockquote className="text-body">{plan.originalAsk}</blockquote>
+                  <ol className="flex flex-col gap-2">
+                    {plan.steps.map((step, index) => <li key={`${step.subject}-${index}`} aria-current={index === next ? "step" : undefined}>
+                      {index < next ? plan.receipts[index]?.evidence : step.outcome}
+                    </li>)}
+                  </ol>
+                </>
+              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
+            </section>
+          )}
+          {feedback?.words && <GraceBubble role="status">{feedback.words}</GraceBubble>}
+          {canCheck && <AnswerChips>
+            {guideKey && <AnswerChip disabled={feedback !== undefined && feedback.words === undefined} onClick={showLink}>Show me the link</AnswerChip>}
+            <AnswerChip onClick={() => void checkGuidedRead()}>{label}</AnswerChip>
+          </AnswerChips>}
           {answers.length > 0 && (
-            <AnswerChips>{answers.map((text) => <AnswerChip key={text} onClick={() => interact(answerEvent(text))}>{text}</AnswerChip>)}</AnswerChips>
+            <AnswerChips>
+              {answers.map((text) => <AnswerChip key={text} onClick={() => void say({ tag: "ChooseAnswer", token: conversation.generation, text })}>{text}</AnswerChip>)}
+            </AnswerChips>
           )}
         </GraceMessages>
       </GraceWindow>

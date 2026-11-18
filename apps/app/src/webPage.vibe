@@ -50,6 +50,9 @@ export function webPage() {
     try addFinalizer(() => sync(() => { for (const id of [...frames.keys()]) remove(id) }))
     return {
       privateSignIn: false,
+      observeLinks: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
+      pointAt: () => Effect.fail(new PageFailed({ cause: "This browser cannot annotate another website." })),
+      clearGuide: () => sync(() => undefined),
       claim: () => sync(() => { for (const left of document.querySelectorAll("iframe[data-page]")) left.remove() }),
       create: (id, url, manualSignIn) => manualSignIn
         ? Effect.fail(new PageFailed({ cause: "Private sign-in requires Android" }))

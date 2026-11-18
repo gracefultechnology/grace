@@ -5,7 +5,8 @@ Email, Internet, Files and Passwords cards, persistent Ask Grace, and clearly se
 Home and Close browser controls. Two Home pages have arrow, dot and swipe
 navigation; the final prototype uses the progressive-blur carousel and icon
 app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
-Account and About this tablet; Volume and Wi-Fi also open rail popovers over the current app.
+Account, Email & calendar and About this tablet; Volume and Wi-Fi also open rail
+popovers over the current app.
 
 This module owns device readiness and the selected surface. The assistant
 owns its conversation, task and microphone. `contextVersion` changes when
@@ -15,6 +16,8 @@ The new Settings presentation is Grace UI over actual operating-system
 capabilities. Permission, network authentication and certificate decisions
 retain their real OS semantics. [Network joining](./network.md) owns the
 private join workflow; this shell alone owns observed connectivity.
+[Email accounts](./accounts.md) owns what the Email & calendar page lists and
+its sign-in flows; this shell owns only that the page is the one shown.
 References: PRD MVP01–06, ANDROID01–10, ENG02–03; prototype 1847–1882, 2038–2053,
 2247–2268 and 2278–2365.
 
@@ -31,7 +34,7 @@ type Surface = Home | Calendar | Email | Browser | Files | Passwords | DeviceSet
 type Connectivity = Offline | Scanning | NoNetworks | Connecting | Online | CaptivePortal | WrongPassword | ConnectionFailed
 type HomePage = MainCards | FilesCard
 type RailPopover = NoPopover | WifiPopover | VolumePopover
-type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | AccountSettings | AboutSettings
+type SettingsPage = TextSizeSettings | BrightnessSettings | VoiceSettings | NetworkSettings | EmailCalendarSettings | AccountSettings | AboutSettings
 type Shell = {
   readiness: Readiness,
   surface: Surface,
@@ -136,6 +139,8 @@ pure def dismissPopover(s: Shell): Shell = {
 pure def alwaysReturnDestinationIsAnApplication(s: Shell): bool = isTaskSurface(s.returnSurface)
 pure def sometimesSettingsWorkOffline(s: Shell): bool =
   s.surface == DeviceSettings and s.settingsPage == NetworkSettings and s.connectivity == Offline
+pure def sometimesEmailCalendarSettingsIsReachable(s: Shell): bool =
+  s.surface == DeviceSettings and s.settingsPage == EmailCalendarSettings
 ```
 
 ## Story: Keep control through interruptions
@@ -161,7 +166,7 @@ pure def wake(s: Shell): Shell = {
 }
 pure def restart(s: Shell): Shell = {
   ...s, readiness: Starting, surface: Home, returnSurface: Home,
-  reasoningAvailable: false, railPopover: NoPopover, homePage: MainCards,
+  reasoningAvailable: false, observationAllowed: false, railPopover: NoPopover, homePage: MainCards,
   contextVersion: s.contextVersion + 1
 }
 pure def sometimesSleepingKeepsTheSurface(s: Shell): bool =

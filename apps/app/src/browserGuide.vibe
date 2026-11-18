@@ -1,0 +1,147 @@
+// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
+import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
+import { Machine as Workspaces, mayGuideReadLink, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { CLEF_DECISION_LIMITS, createClefDecisionsClient } from "../../../vendor/eliza-cloud-sdk/clef-decisions.mjs"
+import type { CloudLink } from "./conversation.vibe"
+import { NativePage } from "./nativePage.vibe"
+import { type LinkObservation, PageId } from "./nativePage.schema.ts"
+import { withhold } from "./private.ts"
+
+export service BrowserGuide {
+  point(): string!!
+}
+
+const unavailable = "I couldn't find a link to point to on this page."
+const changed = "The page or task changed. Ask me again on the page you want."
+const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
+
+function context(w: Workspace) {
+  if (!mayGuideReadLink(w)) return undefined
+  const tab = activeTab(w.browser)
+  const address = tabUrl(tab)
+  if (!URL.canParse(address)) return undefined
+  const url = new URL(address)
+  if (url.protocol !== "https:" || url.username || url.password) return undefined
+  const step = { task: w.assistant.taskId, version: w.assistant.workVersion, generation: w.assistant.conversation.generation,
+    stepIndex: w.plan.receipts.length, deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision }
+  const key = JSON.stringify([w.plan.owner, step, tab.id, tab.loadVersion])
+  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: w.plan.originalAsk }
+}
+
+function publicWords(text: string): string {
+  const plain = text.normalize("NFC").replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/gu, " ").trim()
+  return withhold({ text: plain.replace(/https?:\/\/\S+|[\w.+-]+@[\w.-]+\.[\w-]+/giu, "…"), passwords: [] })
+}
+
+function links(snapshot: LinkObservation, page: URL) {
+  const { result } = snapshot
+  if (result.url !== page.href || result.readyState !== "complete" ||
+      result.blockers.some(blocker => blocker.covers !== "partial")) return []
+  const destinations = new Map<string, { id: string; label: string; labels: Set<string>; rank: number; path: string }>()
+  for (const item of result.elements) {
+    if (item.tag !== "a" || item.disabled || item.sensitive || !item.label || !item.href || !URL.canParse(item.href)) continue
+    const address = new URL(item.href)
+    if (address.origin !== page.origin || address.username || address.password ||
+        (address.pathname === page.pathname && address.search === page.search)) continue
+    const label = publicWords(item.label)
+    if (!label || label.includes("*") || label.length > CLEF_DECISION_LIMITS.candidateLabel) continue
+    const bounds = item.bounds
+    const viewport = result.viewport
+    let rank = item.inViewport ? 2 : 1
+    if (item.inViewport && bounds !== undefined && viewport !== undefined && viewport.scale > 0) {
+      const contained = bounds.x >= viewport.offsetLeft && bounds.y >= viewport.offsetTop &&
+        bounds.x + bounds.width <= viewport.offsetLeft + viewport.width / viewport.scale &&
+        bounds.y + bounds.height <= viewport.offsetTop + viewport.height / viewport.scale
+      if (!contained) rank = 0
+    }
+    const existing = destinations.get(address.href)
+    if (existing === undefined) {
+      destinations.set(address.href, { id: item.id, label, labels: new Set([label]), rank, path: address.pathname })
+    } else {
+      existing.labels.add(label)
+      if (rank > existing.rank) {
+        existing.id = item.id
+        existing.label = label
+        existing.rank = rank
+      }
+    }
+  }
+  return [...destinations].map(([href, target]) => {
+    const prefix = target.path.replace(/\/+$/u, "") + "/"
+    const children = [...destinations.values()].filter(other => other.path !== target.path && other.path.startsWith(prefix))
+    const section = children.length ? " (section with links including " + children.slice(0, 3).map(child => child.label).join(", ") + ")" : ""
+    const description = [...target.labels].join(" / ") + section
+    return { id: target.id, label: target.label, description: description.slice(0, CLEF_DECISION_LIMITS.candidateLabel), href }
+  })
+}
+
+export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(BrowserGuide, effect {
+  const workspace = try Workspaces
+  const page = try NativePage
+  const connect = () => cloud === undefined ? undefined : createClefDecisionsClient({
+    baseUrl: cloud.url, headers: () => ({ Authorization: `Bearer ${cloud.key}` }), timeoutMs: 20000
+  })
+  const decide = Effect.try(connect) catch () => undefined
+  let active: { id: PageId; key: string } | undefined
+  try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
+    const old = active
+    if (old !== undefined && context(state)?.key !== old.key) {
+      active = undefined
+      page.clearGuide(old.id) catch () => undefined
+    }
+  })
+  try addFinalizer(() => active === undefined ? Effect.void : Effect.ignore(page.clearGuide(active.id)))
+  return {
+    point: effect () => {
+      const start = context(try workspace.get())
+      if (start === undefined) return changed
+      if (decide === undefined) return "Connect Grace to her decision service to get help choosing a link."
+      const request = publicWords(start.goal)
+      if (!request || request.length > CLEF_DECISION_LIMITS.goal) return unavailable
+      const goal = request.length + choiceContext.length <= CLEF_DECISION_LIMITS.goal ? request + choiceContext : request
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (context(try workspace.get())?.key !== start.key) return changed
+        const snapshot = page.observeLinks(start.id) catch () => undefined
+        if (snapshot === undefined) return "I can't read the links in this browser right now."
+        const choices = links(snapshot, start.url)
+        if (!choices.length) return unavailable
+        if (context(try workspace.get())?.key !== start.key) return changed
+        const decision = Effect.tryPromise(async (signal) => {
+          let round = choices
+          do {
+            const selected: typeof choices = []
+            for (let index = 0; index < round.length; index += CLEF_DECISION_LIMITS.candidates) {
+              const candidates = round.slice(index, index + CLEF_DECISION_LIMITS.candidates)
+              const options = candidates.map(({ description }, index) => ({ id: String(index + 1), label: description }))
+              const answer = await decide({ kind: "choice", goal, candidates: options }, signal)
+              if (answer.status === "unavailable") return { retry: answer.reason === "provider_error" }
+              if (answer.status !== "ok" || answer.kind !== "choice") return { retry: false }
+              const choice = candidates[options.findIndex(option => option.id === answer.choice)]
+              if (choice !== undefined) selected.push(choice)
+            }
+            round = selected
+          } while (round.length > 1)
+          return { retry: false, winner: round[0] }
+        }) catch () => ({ retry: true, winner: undefined })
+        if (context(try workspace.get())?.key !== start.key) return changed
+        if (decision.retry) continue
+        const winner = decision.winner
+        if (winner === undefined) return unavailable
+        const expiresAt = (try Clock.currentTimeMillis) + 20000
+        const accepted = page.pointAt(start.id, snapshot.documentId, {
+          kind: "show", id: snapshot.result.snapshotId, snapshotId: snapshot.result.snapshotId,
+          nodeId: winner.id, origin: start.url.origin, expiresAt, text: winner.label, assistantName: "Grace"
+        }) catch () => false
+        if (!accepted) return changed
+        const recorded = workspace.send({ type: "setGuidedLink", link: { ...start.step, url: winner.href } }, "Host") catch () => undefined
+        if (recorded === undefined || context(try workspace.get())?.key !== start.key) {
+          page.clearGuide(start.id) catch () => undefined
+          return changed
+        }
+        active = { id: start.id, key: start.key }
+        return `Look for “${winner.label}” on ${start.url.hostname}.`
+      }
+      return unavailable
+    }
+  }
+})

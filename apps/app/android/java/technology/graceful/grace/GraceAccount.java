@@ -269,8 +269,7 @@ public final class GraceAccount extends Plugin {
   getActivity().runOnUiThread(() -> {
    if (getActivity().isFinishing() || getActivity().isDestroyed()) return;
    notifyListeners("sessionChanged", projection(true));
-   try { getActivity().startForegroundService(new Intent(getContext(), GraceAgentService.class).setAction("restart")); }
-   catch (IllegalStateException unavailable) { }
+   GraceAgentService.restart(getContext());
   });
  }
 

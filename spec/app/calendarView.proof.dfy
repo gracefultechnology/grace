@@ -967,3 +967,174 @@ lemma lawComingUpShowsSavedEvents_ensures(v: CalendarView, query: app__calendar_
     ProofLib.FilterMember((c: app__calendar_Calendar) => app__calendar_inView(c, v.owner, v.calendarId, query.fromTime, query.untilTime), v.entries, c);
   }
 }
+
+lemma CalendarUnboundIsEmpty(v: CalendarView)
+  requires alwaysViewIdentity(v) && alwaysSelectionIsCurrent(v) && alwaysDeletionHasSelection(v)
+  requires v.owner == ""
+  ensures |v.entries| == 0 && |v.series| == 0 && v.selectedId == "" && v.deletion.NoDeletion?
+{
+  if v.selectedId != "" {
+    CalendarEntryAtView(v, v.selectedId);
+    assert ProofLib.Filter((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == v.selectedId)) && (!c.phase.Deleted?)), v.entries) == [];
+  }
+}
+
+lemma bindCalendar_ensures(v: CalendarView, owner: string, calendarId: string, timezone: string, by_: ViewActor)
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysViewIdentity(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysViewWindow(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesBelongToCalendar(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysOccurrenceIsUnique(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEditingIsSelected(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysCancelledIdsAreAbsent(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDefinitions(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesUseSeries(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSelectionIsCurrent(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletionHasSelection(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesStayDeleted(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesIdsAreNonempty(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> stepOccurrenceIdentityIsFixed(v, bindCalendar(v, owner, calendarId, timezone, by_)))
+{
+  if inv(v) && canBindCalendar(v, owner, calendarId, timezone, by_) {
+    var after := bindCalendar(v, owner, calendarId, timezone, by_);
+    if v.owner == "" {
+      CalendarUnboundIsEmpty(v);
+      CalendarEntryAtView(after, after.selectedId);
+    } else {
+      assert after == v;
+    }
+    CalendarSameEntries(v, after);
+  }
+}
+
+lemma CalendarChangedEntry(c: app__calendar_Calendar, details: app__calendar_EntryDetails)
+  requires validStored(c) && c.phase.Saved? && app__calendar_validDetails(details)
+  ensures validStored(changedEntry(c, details))
+  ensures changedEntry(c, details).phase.Editing?
+  ensures changedEntry(c, details).identity == c.identity
+  ensures changedEntry(c, details).committed == c.committed
+  ensures changedEntry(c, details).hasSaved == c.hasSaved
+  ensures changedEntry(c, details).draft == details
+  ensures changedEntry(c, details).approvedRevision == changedEntry(c, details).revision
+  ensures changedEntry(c, details).approvedRevision != -1
+{
+  assert app__calendar_inv(c);
+  var begun := app__calendar_beginEdit(c, app__calendar_CalendarActor.CalendarUser);
+  app__calendar_beginEdit_ensures(c, app__calendar_CalendarActor.CalendarUser);
+  assert app__calendar_inv(begun);
+  var editing := app__calendar_edit(begun, details, app__calendar_CalendarActor.CalendarUser);
+  app__calendar_edit_ensures(begun, details, app__calendar_CalendarActor.CalendarUser);
+  assert app__calendar_inv(editing);
+  app__calendar_approveSave_ensures(editing, editing.revision, app__calendar_CalendarActor.CalendarUser);
+}
+
+lemma confirmChange_ensures(v: CalendarView, changeRequest: ConfirmedChange, by_: ViewActor)
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysViewIdentity(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysViewWindow(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysEntriesBelongToCalendar(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysOccurrenceIsUnique(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysEditingIsSelected(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysCancelledIdsAreAbsent(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysSeriesDefinitions(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysEntriesUseSeries(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysSelectionIsCurrent(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysDeletionHasSelection(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysDeletedSeriesStayDeleted(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysDeletedSeriesIdsAreNonempty(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysSeriesDeletionIsRecurring(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> stepOccurrenceIdentityIsFixed(v, confirmChange(v, changeRequest, by_)))
+{
+  if inv(v) && canConfirmChange(v, changeRequest, by_) {
+    var id := changeRequest.id;
+    var before := entryAt(v, id);
+    CalendarEntryMember(v, id);
+    CalendarChangedEntry(before, changeRequest.details);
+    CalendarUniqueDistinct(v);
+    var approved := changedEntry(before, changeRequest.details);
+    var after := confirmChange(v, changeRequest, by_);
+    forall i | 0 <= i < |v.entries|
+      ensures after.entries[i].identity == v.entries[i].identity
+      ensures validStored(after.entries[i])
+      ensures after.entries[i].committed == v.entries[i].committed
+      ensures after.entries[i].hasSaved == v.entries[i].hasSaved
+      ensures after.entries[i].phase.Deleted? == v.entries[i].phase.Deleted?
+      ensures after.entries[i].phase.Editing? ==> after.entries[i] == approved
+    {
+      if v.entries[i].identity.occurrenceId == id {
+        CalendarSameKey(v, before, v.entries[i]);
+        assert after.entries[i] == approved;
+      } else {
+        assert after.entries[i] == v.entries[i];
+      }
+    }
+    forall i, j | 0 <= i < |after.entries| && 0 <= j < |after.entries| && i != j
+      ensures (after.entries[i].identity.owner, after.entries[i].identity.calendarId, after.entries[i].identity.occurrenceId) !=
+        (after.entries[j].identity.owner, after.entries[j].identity.calendarId, after.entries[j].identity.occurrenceId)
+    {
+    }
+    CalendarDistinctUnique(after);
+    assert alwaysEntriesBelongToCalendar(after);
+    var at :| 0 <= at < |v.entries| && v.entries[at] == before;
+    assert after.entries[at] == approved;
+    CalendarEntryFind(after, after.entries[at]);
+    forall prior, laterEntry | prior in v.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
+      ensures prior.identity == laterEntry.identity
+    {
+      var k :| 0 <= k < |after.entries| && after.entries[k] == laterEntry;
+      CalendarSameKey(v, prior, v.entries[k]);
+    }
+  }
+}
+
+lemma confirmDeletion_ensures(v: CalendarView, deletionRequest: ConfirmedDeletion, by_: ViewActor)
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysViewIdentity(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysViewWindow(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysEntriesBelongToCalendar(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysOccurrenceIsUnique(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysEditingIsSelected(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysCancelledIdsAreAbsent(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysSeriesDefinitions(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysEntriesUseSeries(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysSelectionIsCurrent(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysDeletionHasSelection(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysDeletedSeriesStayDeleted(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysDeletedSeriesIdsAreNonempty(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysSeriesDeletionIsRecurring(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> stepOccurrenceIdentityIsFixed(v, confirmDeletion(v, deletionRequest, by_)))
+{
+  if inv(v) && canConfirmDeletion(v, deletionRequest, by_) {
+    var after := confirmDeletion(v, deletionRequest, by_);
+    CalendarEntryMember(v, deletionRequest.id);
+    CalendarEntryAtView(v, deletionRequest.id);
+    CalendarEntryAtView(after, deletionRequest.id);
+    assert entryAt(after, deletionRequest.id) == entryAt(v, deletionRequest.id);
+    CalendarSameEntries(v, after);
+  }
+}
+
+lemma CalendarEntryFound(v: CalendarView, id: string)
+  requires entryAt(v, id).hasSaved
+  ensures entryAt(v, id) in v.entries
+  ensures entryAt(v, id).identity.occurrenceId == id
+{
+  CalendarEntryAtView(v, id);
+  var matches := ProofLib.Filter((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?)), v.entries);
+  assert |matches| == 1;
+  assert entryAt(v, id) == matches[0];
+  ProofLib.FilterMember((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?)), v.entries, entryAt(v, id));
+}
+
+lemma lawChangeIsConsumedOnce_ensures(v: CalendarView, changeRequest: ConfirmedChange, nextChange: ConfirmedChange, by_: ViewActor)
+  ensures (lawChangeIsConsumedOnce(v, changeRequest, nextChange, by_) == true)
+{
+  if canConfirmChange(v, changeRequest, by_) {
+    var before := entryAt(v, changeRequest.id);
+    CalendarEntryFound(v, changeRequest.id);
+    var k :| 0 <= k < |v.entries| && v.entries[k] == before;
+    var after := confirmChange(v, changeRequest, by_);
+    assert after.entries[k] == changedEntry(before, changeRequest.details);
+    assert after.entries[k].phase.Editing?;
+    assert after.entries[k] in after.entries;
+    assert hasEditing(after);
+  }
+}

@@ -38,7 +38,7 @@ lemma sendDraft_ensures(m: Mailbox, operationId: string, recipientValid: bool, p
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepUnresolvedDraftIsFixed(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepWorthyComposerIsNotDropped(m, "sendDraft", sendDraft(m, operationId, recipientValid, persisted, by_)))
   ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepMailboxIdentityIsFixed(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
-  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepRetirementRequiresCompletion(m, sendDraft(m, operationId, recipientValid, persisted, by_)))
+  ensures (inv(m) ==> canSendDraft(m, operationId, recipientValid, persisted, by_) ==> stepRetirementRequiresCompletion(m, "sendDraft", sendDraft(m, operationId, recipientValid, persisted, by_)))
 {
   if inv(m) && canSendDraft(m, operationId, recipientValid, persisted, by_) {
     SendDraftIssuedView(m, operationId, recipientValid, persisted, by_);
@@ -93,7 +93,7 @@ lemma removeAsset_ensures(m: Mailbox, assetId: string, by_: MailActor)
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepUnresolvedDraftIsFixed(m, removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepWorthyComposerIsNotDropped(m, "removeAsset", removeAsset(m, assetId, by_)))
   ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepMailboxIdentityIsFixed(m, removeAsset(m, assetId, by_)))
-  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepRetirementRequiresCompletion(m, removeAsset(m, assetId, by_)))
+  ensures (inv(m) ==> canRemoveAsset(m, assetId, by_) ==> stepRetirementRequiresCompletion(m, "removeAsset", removeAsset(m, assetId, by_)))
 {
   if inv(m) && canRemoveAsset(m, assetId, by_) {
     EmailRemovedAssetsView(m, assetId, by_);
@@ -136,7 +136,7 @@ lemma forwardAttachment_ensures(m: Mailbox, content: DraftContent, by_: MailActo
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepUnresolvedDraftIsFixed(m, forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepWorthyComposerIsNotDropped(m, "forwardAttachment", forwardAttachment(m, content, by_)))
   ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepMailboxIdentityIsFixed(m, forwardAttachment(m, content, by_)))
-  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepRetirementRequiresCompletion(m, forwardAttachment(m, content, by_)))
+  ensures (inv(m) ==> canForwardAttachment(m, by_) ==> stepRetirementRequiresCompletion(m, "forwardAttachment", forwardAttachment(m, content, by_)))
 {
   if inv(m) && canForwardAttachment(m, by_) {
     EmailForwardedAssetsView(m, content, by_);
@@ -198,7 +198,7 @@ lemma receiveMessage_ensures(m: Mailbox, scope: ListingScope, listing: app__emai
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepUnresolvedDraftIsFixed(m, receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepWorthyComposerIsNotDropped(m, "receiveMessage", receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepMailboxIdentityIsFixed(m, receiveMessage(m, scope, listing, by_)))
-  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepRetirementRequiresCompletion(m, receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepRetirementRequiresCompletion(m, "receiveMessage", receiveMessage(m, scope, listing, by_)))
 {
   EmailFrame_receiveMessage(m, scope, listing, by_);
   if inv(m) && canReceiveMessage(m, scope, listing, by_) {
@@ -272,7 +272,7 @@ lemma readResult_ensures(m: Mailbox, readReceipt: ReadReceipt, by_: MailActor)
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepUnresolvedDraftIsFixed(m, readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepWorthyComposerIsNotDropped(m, "readResult", readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepMailboxIdentityIsFixed(m, readResult(m, readReceipt, by_)))
-  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepRetirementRequiresCompletion(m, readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepRetirementRequiresCompletion(m, "readResult", readResult(m, readReceipt, by_)))
 {
   EmailFrame_readResult(m, readReceipt, by_);
   if inv(m) && canReadResult(m, readReceipt, by_) {
@@ -322,7 +322,7 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepUnresolvedDraftIsFixed(m, changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepWorthyComposerIsNotDropped(m, "changeSelectedMessage", changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepMailboxIdentityIsFixed(m, changeSelectedMessage(m, target, change, by_)))
-  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepRetirementRequiresCompletion(m, changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepRetirementRequiresCompletion(m, "changeSelectedMessage", changeSelectedMessage(m, target, change, by_)))
 {
   EmailFrame_changeSelectedMessage(m, target, change, by_);
   if inv(m) && canChangeSelectedMessage(m, target, change, by_) {
@@ -391,7 +391,7 @@ lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepUnresolvedDraftIsFixed(m, undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepWorthyComposerIsNotDropped(m, "undoMessageTrash", undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepMailboxIdentityIsFixed(m, undoMessageTrash(m, target, by_)))
-  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepRetirementRequiresCompletion(m, undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepRetirementRequiresCompletion(m, "undoMessageTrash", undoMessageTrash(m, target, by_)))
 {
   EmailFrame_undoMessageTrash(m, target, by_);
   if inv(m) && canUndoMessageTrash(m, target, by_) {
@@ -464,7 +464,7 @@ lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_C
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepUnresolvedDraftIsFixed(m, completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepWorthyComposerIsNotDropped(m, "completeMessageChange", completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepMailboxIdentityIsFixed(m, completeMessageChange(m, messageReceipt, by_)))
-  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepRetirementRequiresCompletion(m, completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepRetirementRequiresCompletion(m, "completeMessageChange", completeMessageChange(m, messageReceipt, by_)))
 {
   EmailFrame_completeMessageChange(m, messageReceipt, by_);
   if inv(m) && canCompleteMessageChange(m, messageReceipt, by_) {
@@ -661,7 +661,7 @@ lemma EmailFrame_receiveMessage(m: Mailbox, scope: ListingScope, listing: app__e
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysSendEvidence(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> alwaysEditableDraftIsNotRetired(receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepMailboxIdentityIsFixed(m, receiveMessage(m, scope, listing, by_)))
-  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepRetirementRequiresCompletion(m, receiveMessage(m, scope, listing, by_)))
+  ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepRetirementRequiresCompletion(m, "receiveMessage", receiveMessage(m, scope, listing, by_)))
   ensures (inv(m) ==> canReceiveMessage(m, scope, listing, by_) ==> stepUnresolvedDraftIsFixed(m, receiveMessage(m, scope, listing, by_)))
 {
 }
@@ -688,7 +688,7 @@ lemma EmailFrame_readResult(m: Mailbox, readReceipt: ReadReceipt, by_: MailActor
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysSendEvidence(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> alwaysEditableDraftIsNotRetired(readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepMailboxIdentityIsFixed(m, readResult(m, readReceipt, by_)))
-  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepRetirementRequiresCompletion(m, readResult(m, readReceipt, by_)))
+  ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepRetirementRequiresCompletion(m, "readResult", readResult(m, readReceipt, by_)))
   ensures (inv(m) ==> canReadResult(m, readReceipt, by_) ==> stepUnresolvedDraftIsFixed(m, readResult(m, readReceipt, by_)))
 {
 }
@@ -715,7 +715,7 @@ lemma EmailFrame_changeSelectedMessage(m: Mailbox, target: MessageTarget, change
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysSendEvidence(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> alwaysEditableDraftIsNotRetired(changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepMailboxIdentityIsFixed(m, changeSelectedMessage(m, target, change, by_)))
-  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepRetirementRequiresCompletion(m, changeSelectedMessage(m, target, change, by_)))
+  ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepRetirementRequiresCompletion(m, "changeSelectedMessage", changeSelectedMessage(m, target, change, by_)))
   ensures (inv(m) ==> canChangeSelectedMessage(m, target, change, by_) ==> stepUnresolvedDraftIsFixed(m, changeSelectedMessage(m, target, change, by_)))
 {
 }
@@ -741,7 +741,7 @@ lemma EmailFrame_undoMessageTrash(m: Mailbox, target: MessageTarget, by_: MailAc
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysSendEvidence(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> alwaysEditableDraftIsNotRetired(undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepMailboxIdentityIsFixed(m, undoMessageTrash(m, target, by_)))
-  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepRetirementRequiresCompletion(m, undoMessageTrash(m, target, by_)))
+  ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepRetirementRequiresCompletion(m, "undoMessageTrash", undoMessageTrash(m, target, by_)))
   ensures (inv(m) ==> canUndoMessageTrash(m, target, by_) ==> stepUnresolvedDraftIsFixed(m, undoMessageTrash(m, target, by_)))
 {
   if inv(m) && canUndoMessageTrash(m, target, by_) {
@@ -778,7 +778,7 @@ lemma EmailFrame_completeMessageChange(m: Mailbox, messageReceipt: app__emailIte
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysSendEvidence(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysEditableDraftIsNotRetired(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepMailboxIdentityIsFixed(m, completeMessageChange(m, messageReceipt, by_)))
-  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepRetirementRequiresCompletion(m, completeMessageChange(m, messageReceipt, by_)))
+  ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepRetirementRequiresCompletion(m, "completeMessageChange", completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> stepUnresolvedDraftIsFixed(m, completeMessageChange(m, messageReceipt, by_)))
 {
   if inv(m) && canCompleteMessageChange(m, messageReceipt, by_) {

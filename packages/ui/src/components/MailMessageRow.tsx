@@ -13,7 +13,6 @@ export const mailIcons = {
   sent: icon("mail-sent", "m22 2-7 20-4-9-9-4Z", "M22 2 11 13"),
   pencil: PencilIcon,
   down: icon("mail-down", "M12 15V3", "m7 10 5 5 5-5", "M5 21h14"),
-  printer: icon("mail-printer", "M6 9V2h12v7", "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2", "M6 14h12v8H6z"),
   file: icon("mail-file", "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", "M14 2v4a2 2 0 0 0 2 2h4", "M10 13h4M10 17h4"),
   mail: MailIcon,
   camera: createLucideIcon("mail-camera", [
@@ -50,6 +49,8 @@ export type MailMessageRowProps = Omit<ListRowProps, "title" | "subtitle" | "lea
   subject: string;
   /** When it arrived, as the app formats it: "2:15 PM", "Yesterday". */
   time: string;
+  /** The email account it came to, under the time, when there are several (prototype `.actag`). */
+  account?: string;
   /** It carries photos or files: a paperclip follows the subject. */
   attachment?: boolean;
   /** The accessible name of the paperclip. */
@@ -59,11 +60,12 @@ export type MailMessageRowProps = Omit<ListRowProps, "title" | "subtitle" | "lea
 };
 
 /**
- * One email in a folder: the sender's avatar, name and unread dot, the subject and when it came (prototype `mrow()`).
+ * One email in a folder: the sender's avatar, name and unread dot, the subject, when it came and, with several
+ * accounts, which one it came to (prototype `mrow()`).
  * @model spec/app/emailItem.md
  * @design packages/design-system/design.md#windows
  */
-export function MailMessageRow({ from, subject, time, attachment = false, attachmentLabel = "Has attachments", onOpen, ...props }: MailMessageRowProps) {
+export function MailMessageRow({ from, subject, time, account, attachment = false, attachmentLabel = "Has attachments", onOpen, ...props }: MailMessageRowProps) {
   return (
     <ListRow
       title={from.name}
@@ -79,7 +81,15 @@ export function MailMessageRow({ from, subject, time, attachment = false, attach
           )}
         </>
       }
-      time={time}
+      time={account ? undefined : time}
+      trailing={
+        account ? (
+          <span className="flex flex-col items-end gap-1 self-start pt-1.5 whitespace-nowrap text-muted-foreground">
+            <span className="text-lg leading-6 font-medium">{time}</span>
+            <span className="text-base leading-5 font-semibold">{account}</span>
+          </span>
+        ) : undefined
+      }
       leading={<MailContactAvatar contact={from} aria-hidden />}
       onClick={onOpen}
       {...props}
