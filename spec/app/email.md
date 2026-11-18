@@ -284,7 +284,9 @@ this spec refuses her without it but cannot itself establish it.
   that is open, so the person sees what she is about to move.
 - She never approves, sends, deletes for good or opens a link: no arm of
   `assistMail` reaches those transitions, and `lawGraceNeverRaisesApproval`
-  checks every arm.
+  checks every arm. Discovered by the proof: an email the person is already
+  sending stays Sending while Grace moves the open message, so the law says
+  she never starts a send, not that nothing is being sent.
 
 This departs from the prototype on purpose in two places. The prototype's open
 and search drop an open composer (`prototype/Grace Prototype.html:2278–2279`);
@@ -339,7 +341,7 @@ pure def lawGraceNeverRaisesApproval(m: Mailbox, assist: MailAssist, asked: bool
   val after = assistMail(m, assist, asked, by)
   canAssistMail(m, assist, asked, by) implies
     ((after.approvedRevision == -1 or after.approvedRevision == m.approvedRevision) and
-      after.sendStatus != Sending and
+      (after.sendStatus == Sending implies m.sendStatus == Sending) and
       after.outbox.listMap(q => q.operationId) == m.outbox.listMap(q => q.operationId) and
       after.outbox.listMap(q => q.status) == m.outbox.listMap(q => q.status) and
       after.issuedSends.subseteq(m.issuedSends) and m.issuedSends.subseteq(after.issuedSends) and

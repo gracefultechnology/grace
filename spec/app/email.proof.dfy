@@ -355,20 +355,25 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
 
   if inv(m) && canChangeSelectedMessage(m, target, change, by_) {
     var after := changeSelectedMessage(m, target, change, by_);
-    if true {
+    if change.UnreadMessage? {
+      assert after.messageRefs == m.messageRefs;
+    } else {
       assert after.messageRefs == ProofLib.Filter((set_x: string) => !((set_x in [target.ref])), m.messageRefs);
     }
     forall ref | ref in after.messageRefs
       ensures availableMessage(after, ref)
     {
-      if true {
+      if !change.UnreadMessage? {
         ProofLib.FilterMember((set_x: string) => !((set_x in [target.ref])), m.messageRefs, ref);
         assert ref != target.ref;
       }
+      assert ref in m.messageRefs;
+      assert availableMessage(m, ref);
       if ref != target.ref {
-        assert ref in m.messageRefs;
-        assert availableMessage(m, ref);
         assert messageRecord(after, ref) == messageRecord(m, ref);
+      } else {
+        assert messageRecord(after, ref) == app__emailItem_changeMessage(messageRecord(m, ref), change, app__emailItem_MessageActor.MessageUser);
+        assert !changingFolder(messageRecord(after, ref));
       }
     }
   }
@@ -1298,6 +1303,9 @@ lemma assistMail_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailA
 lemma lawGraceNeverRaisesApproval_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailActor)
   ensures (lawGraceNeverRaisesApproval(m, assist, asked, by_) == true)
 {
+  if canAssistMail(m, assist, asked, by_) && !(assist.AssistTrash? || assist.AssistRestore? || assist.AssistMarkUnread? || assist.AssistUndoTrash?) {
+    assert assistMail(m, assist, asked, by_).messages == m.messages;
+  }
   if canAssistMail(m, assist, asked, by_) && (assist.AssistTrash? || assist.AssistRestore? || assist.AssistMarkUnread? || assist.AssistUndoTrash?) {
     var after := assistMail(m, assist, asked, by_);
     var change := if assist.AssistTrash? then app__emailItem_MessageChange.TrashMessage
