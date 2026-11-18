@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import { type ComponentProps, type ReactNode, createContext, use, useCallback, useMemo, useState } from "react";
 import { PageHost, Part } from "./page.vibe";
 import { type Runtime, usePageLayer } from "./useApp.ts";
+import { websites } from "./webPage.vibe";
 
 type Watch = (element: HTMLElement, part: Part) => () => void;
 const WatchContext = createContext<Watch | null>(null);
@@ -33,14 +34,21 @@ export function PageArea({ className }: { className?: string }) {
 export function OverPage({ className, ...props }: ComponentProps<"div">) {
   const [drawn, setDrawn] = useState(false);
   const ref = useWatch(useMemo(() => Part.Control({ show: setDrawn }), []));
-  return <div ref={ref} inert={!drawn} className={cn(!drawn && "invisible", className)} {...props} />;
+  return <div ref={ref} inert={!drawn} className={cn("pointer-events-auto", !drawn && "invisible", className)} {...props} />;
 }
 
 const r = parseFloat(tokens.rounded.window);
+
+const adopt = (element: HTMLDivElement | null) => { element?.append(websites); };
 
 export function PageBackdrop({ className }: { className?: string }) {
   const layer = usePageLayer();
   const page = layer?.shown ? layer.page : undefined;
   const hole = page && `M${page.x} ${page.y}H${page.x + page.width}V${page.y + page.height - r}A${r} ${r} 0 0 1 ${page.x + page.width - r} ${page.y + page.height}H${page.x + r}A${r} ${r} 0 0 1 ${page.x} ${page.y + page.height - r}Z`;
-  return <div aria-hidden className={className} style={hole ? { clipPath: `path(evenodd, "M0 0H100000V100000H0Z${hole}")` } : undefined} />;
+  return (
+    <>
+      <div aria-hidden className={className} style={hole ? { clipPath: `path(evenodd, "M0 0H100000V100000H0Z${hole}")` } : undefined} />
+      <div ref={adopt} className="contents" />
+    </>
+  );
 }
