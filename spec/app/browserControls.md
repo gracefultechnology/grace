@@ -138,11 +138,18 @@ pure def lawAnActiveBillCannotHandOffToAnotherOrigin(task: str, origin: str, oth
 pure def lawStaleSignInRequestIsIgnored(b: B::Browser, id: int, revision: int, origin: str): bool =
   (id != b.selected or revision != b.revision) implies
     not(canControl(b, RequestPrivateSignIn({ id: id, revision: revision, origin: origin }), BrowserControlUser))
+pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str): bool =
+  not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
+```
+
+### A private sign-in tab keeps its address and page position to itself
+
+While the selected tab is a private sign-in, the person cannot edit its address or navigate it elsewhere, and the browser host cannot report its scroll position or open page panel.
+
+```quint
 pure def lawPrivateAddressesAndPanelsStayOutOfControls(b: B::Browser, text: str, scroll: int): bool =
   B::activeTab(b).manualSignIn implies
     (not(canControl(b, EditAddress({ text: text }), BrowserControlUser)) and
      not(canControl(b, Navigate({ url: text }), BrowserControlUser)) and
      not(canControl(b, RememberPage({ id: b.selected, revision: b.revision, scroll: scroll, pagePanel: text }), BrowserControlHost)))
-pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str): bool =
-  not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```

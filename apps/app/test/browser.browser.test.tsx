@@ -5,7 +5,7 @@ import { expect, inject, it, onTestFinished } from "vitest";
 import { CLEF_DECISION_TIMEOUT_MS, createClefDecisionsClient } from "@elizaos/cloud/clef-decisions";
 import { commands, page, userEvent } from "vitest/browser";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
-import { guidedReadKind, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -194,6 +194,15 @@ const BrowserDocument = Schema.Struct({
 const SelectorRead = Schema.Struct({
   url: Schema.String, title: Schema.String, text: Schema.String, truncated: Schema.Boolean,
 });
+const scriptReadPlan = async (said: string, text: string, step: string) => {
+  localStorage.clear();
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said, answer: JSON.stringify({ text, isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [step] }] }),
+  }]), client));
+  return { cloud, secret };
+};
 const BrowserControl = Schema.Struct({
   documentId: Schema.NonEmptyString,
   frameScope: Schema.Literal("main"),
@@ -238,13 +247,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     },
   });
   try {
-    localStorage.clear();
-    const cloud = inject("cloud");
-    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
-      said: intent,
-      answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
-    }]), client));
+    const { cloud, secret } = await scriptReadPlan(intent, "Review the browser step.", "ReadChangedBrowser");
     await transport({ kind: "decisionRoute", cloud, deadlineMs: CLEF_DECISION_TIMEOUT_MS });
     const guideDecision = createClefDecisionsClient({
       baseUrl: cloud, headers: () => ({ Authorization: `Bearer ${secret}` }),
@@ -266,10 +269,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     const reviewed = workspace().review.request.steps;
-    const named = reviewed.find(step => guidedReadKind(step) === "ReachNamedPage");
+    const named = reviewed.find(step => step.tag === "ReachNamedPage");
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep === "ReachNamedPage") {
-      outcome.reviewedSteps = reviewed.map(step => ({ kind: guidedReadKind(step), subject: step.subject }));
+      outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
       expect(named).toBeDefined();
       expect(reviewed).toHaveLength(1);
     }
@@ -366,13 +369,14 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   }
 }, 240_000);
 
-it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+it.each(inject("billworldStatements"))('Read the $label BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ billerId }) => {
   const transport = commands.releasedStatement;
   const { url, taskId, question } = Schema.decodeUnknownSync(Schema.Struct({
     url: Schema.NonEmptyString, taskId: Schema.NonEmptyString, question: Schema.NonEmptyString,
-  }))(await transport({ kind: "prepare" }));
-  expect(taskId).toBe("task_md9");
+  }))(await transport({ kind: "prepare", billerId }));
+  expect(taskId).toBe(billerId === undefined ? "task_md9" : billerId + ":view-bill");
   let shown: string | null | undefined;
+  let observations = 0;
   const native = androidPagePluginAtItsBoundary({
     createSurface(request) {
       if (request.url !== url) return Promise.reject(new Error("Grace must attach to the exact prepared statement"));
@@ -386,17 +390,13 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
     },
     async controlPage(request) {
       if (request.id !== shown || request.command.subaction !== "snapshot") throw new Error("Only the presented statement can be read");
-      return Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "observe", request }));
+      const observed = Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "observe", request }));
+      observations++;
+      return observed;
     },
   });
   try {
-    localStorage.clear();
-    const cloud = inject("cloud");
-    const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
-      said: question,
-      answer: JSON.stringify({ text: "Review the statement read.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadStatement"] }] }),
-    }]), client));
+    const { cloud, secret } = await scriptReadPlan(question, "Review the statement read.", "ReadStatement");
     const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet", exact: true }));
     await userEvent.fill(page.getByRole("textbox", { name: "Address" }), url);
@@ -410,15 +410,34 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
-    await userEvent.click(page.getByRole("button", { name: "Read statement", exact: true }));
-    await expect.element(page.getByRole("region", { name: "Task plan" }).getByText("Read checks complete", { exact: true })).toBeVisible();
+    const check = page.getByRole("button", { name: "Read statement", exact: true });
+    const complete = page.getByRole("region", { name: "Task plan" }).getByText("Read checks complete", { exact: true });
+    if (billerId !== undefined) {
+      for (const value of ["past", "ambiguous"] as const) {
+        await transport({ kind: "evidence", value });
+        const before = observations;
+        await userEvent.click(check);
+        await expect.poll(() => observations).toBeGreaterThan(before);
+        await expect.element(check).toBeEnabled();
+        expect(complete.query()).toBeNull();
+      }
+      await transport({ kind: "evidence", value: "restored" });
+    }
+    await userEvent.click(check);
+    await expect.element(complete).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Expand", exact: true }));
     const answer = page.getByRole("region", { name: "Grace" }).getByText(/^Statement amount due:/);
     await expect.element(answer).toBeVisible();
     const grade = await transport({ kind: "answer", text: answer.element().textContent ?? "" });
-    expect(grade).toMatchObject({ success: true, constructionSlice: false, actionBudgetEnforced: true, withinActionBudget: true,
-      checks: { statement_viewed_after_login: true, due_date_reported: true, amount_reported: true, protected_state_unchanged: true, credentials_unchanged: true, no_forbidden_operations: true },
-    });
+    if (billerId === undefined) {
+      expect(grade).toMatchObject({ success: true, constructionSlice: false, actionBudgetEnforced: true, withinActionBudget: true,
+        checks: { statement_viewed_after_login: true, due_date_reported: true, amount_reported: true, protected_state_unchanged: true, credentials_unchanged: true, no_forbidden_operations: true },
+      });
+    } else {
+      expect(grade).toMatchObject({ success: true, taskId, predicateSource: "task",
+        results: [{ pass: true }, { pass: true }, { pass: true }, { pass: true }, { pass: true }],
+      });
+    }
   } finally {
     await transport({ kind: "close" });
   }

@@ -1,4 +1,4 @@
-import "@repo/ui/fonts";
+import "@repo/ui/fonts.css";
 import { Capacitor } from "@capacitor/core";
 import { ManagedRuntime } from "effect";
 import { StrictMode } from "react";
