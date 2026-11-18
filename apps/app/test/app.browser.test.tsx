@@ -438,7 +438,8 @@ it("Use the website under Grace's controls", async () => {
 }, 120_000);
 
 
-it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/assistant.md, "Story: Keep control of one task across windows and pauses")', async () => {
+it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday tasks from Home")', async () => {
+  // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"
   const runtime = ManagedRuntime.make(application(undefined));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
@@ -721,7 +722,8 @@ it('Use only the current local speech for Passwords guidance (spec/app/index.md,
 });
 
 
-it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps")`, async () => {
+it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
+  // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
   const listeners = new Map<string, (input: unknown) => void>();
   const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
   const stopped: string[] = [];
@@ -750,7 +752,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.poll(() => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.reasoningAvailable).toBe(true);
     await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
     const input = page.getByRole("textbox", { name: "Message to Grace" });
-    await act(() => userEvent.type(input, "What can you do?"));
+    await act(() => input.fill("What can you do?"));
     await act(() => userEvent.click(page.getByRole("button", { name: "Send" })));
     await expect.poll(() => requests[0]?.body).toEqual({ text: "What can you do?" });
     const id = requests[0].id;
@@ -783,14 +785,16 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.element(page.getByRole("button", { name: "Close Calendar" })).toBeVisible();
     expect(page.getByRole("button", { name: "Open Calendar", exact: true }).query()).toBeNull();
 
-    await act(() => userEvent.type(input, "My password is c0mputer{Enter}"));
+    await act(() => input.fill("My password is c0mputer"));
+    await act(() => userEvent.keyboard("{Enter}"));
     await expect.poll(() => state().messages.at(-1)?.text).toBe("[Private information removed]");
     await expect.poll(() => state().turn).toBe("Ready");
     await expect.element(input).toHaveValue("");
     expect(requests).toHaveLength(2);
     expect(state().messages.some((message) => message.text.includes("c0mputer"))).toBe(false);
 
-    await act(() => userEvent.type(input, "One more question{Enter}"));
+    await act(() => input.fill("One more question"));
+    await act(() => userEvent.keyboard("{Enter}"));
     await expect.poll(() => requests[2]?.body).toEqual({ text: "One more question" });
     await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
     await expect.poll(() => stopped).toEqual(["/api/turns/room/abort"]);
@@ -813,7 +817,8 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     const namedPage: GraceAction = { kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }] };
     const offer = async (words: string, actions: readonly unknown[]) => {
       const count = requests.length;
-      await act(() => userEvent.type(input, words + "{Enter}"));
+      await act(() => input.fill(words));
+      await act(() => userEvent.keyboard("{Enter}"));
       await expect.poll(() => requests[count]?.body).toEqual({ text: words });
       expect(review.query()).toBeNull();
       expect(plan.query()).toBeNull();
@@ -1294,7 +1299,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   }
 });
 
-it('Check the Android readback for brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
+it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
   const audio = { step: 0, min: 0, max: 15, muted: false };
   let brightness = 20;
   let denyBrightness = false;
@@ -1337,7 +1342,7 @@ it('Check the Android readback for brightness and mute (spec/app/preferences.md,
   expect(brightness).toBe(applied);
 });
 
-it('Restore the saved text size when Grace restarts (spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements")', async () => {
+it('Restore saved text size (spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements")', async () => {
   let stored: { revision: number; value?: string } = { revision: 0 };
   let rejectNextWrite = true;
   const options = {
@@ -1910,7 +1915,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 });
 
-it('Follow one reviewed plan across apps with signed-in managed selections (spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const ask = "Check my two open emails and one calendar appointment.";
@@ -2112,7 +2118,8 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   const say = async (text: string) => {
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
-    await act(() => userEvent.type(field, `${text}{Enter}`));
+    await act(() => field.fill(text));
+    await act(() => userEvent.keyboard("{Enter}"));
   };
   const plan = page.getByRole("region", { name: "Task plan" });
   const receipt = page.getByText("Saved appointment: " + title, { exact: true });
