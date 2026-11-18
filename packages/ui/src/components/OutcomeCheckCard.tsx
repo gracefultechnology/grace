@@ -51,7 +51,7 @@ export type OutcomeCheckCardProps = Omit<PanelProps, "variant" | "children" | "t
 /**
  * The calm card for a task whose result is not known, or not saved, on coming back to it: it asks Margaret not to pay
  * or book again, and offers only to look (Check again, Open the website) or to save what was seen (Try saving again).
- * @model spec/app/payment.md
+ * @model spec/app/commitment.md
  * @design packages/design-system/design.md#grace
  */
 export function OutcomeCheckCard({ site, title, message, onCheck, onOpenSite, onRetrySave, checking = false, result, labels, className, ...props }: OutcomeCheckCardProps) {

@@ -33,7 +33,8 @@ import shell as S from "./shell"
 import browser as B from "./browser"
 import assistant as A from "./assistant"
 import conversation as C from "./conversation"
-import payment as P from "./payment"
+import commitment as CM from "./commitment"
+import task as T from "./task"
 import preferences as R from "./preferences"
 import wake as W from "./wake"
 
@@ -213,8 +214,8 @@ pure def approvedFact(f: M::PersonalFact): M::PersonalFact = {
   M::remember(proposed, proposed.revision, M::MemoryUser)
 }
 pure def authorizedFill(f: M::PersonalFact): M::MemoryStep = {
-  val queued = M::queueFill(f, { version: f.revision, task: "task", destination: P::exampleKey.origin, requestedKind: M::Name, verified: true, relevant: true }, M::MemoryRuntime)
-  M::dispatchFill(queued, { version: f.revision, task: "task", destination: P::exampleKey.origin }, M::MemoryRuntime)
+  val queued = M::queueFill(f, { version: f.revision, task: "task", destination: CM::exampleKey.origin, requestedKind: M::Name, verified: true, relevant: true }, M::MemoryRuntime)
+  M::dispatchFill(queued, { version: f.revision, task: "task", destination: CM::exampleKey.origin }, M::MemoryRuntime)
 }
 pure def savedWorkspace(w: WS::Workspace): WS::WorkspaceResult = {
   val queued = WS::prepare(w, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1,
@@ -234,10 +235,10 @@ pure val savedValues = Set(
   { owner: "owner", valueRef: "other-reference", authorization: authorizedFill(approvedFact(M::initial)).out.nth(0) },
   { owner: "other-owner", valueRef: "memory-name-revision-2", authorization: authorizedFill(approvedFact(M::initial)).out.nth(0) })
 pure val authorizationValues = Set(authorizedFill(approvedFact(M::initial)).out.nth(0),
-  M::FillAuthorized({ factKey: "name", revision: 1, task: "task", destination: P::exampleKey.origin, value: "Ada" }))
-pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin: P::exampleKey.origin, generation: 1, observation: 1,
+  M::FillAuthorized({ factKey: "name", revision: 1, task: "task", destination: CM::exampleKey.origin, value: "Ada" }))
+pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin: CM::exampleKey.origin, generation: 1, observation: 1,
   target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillOrdinary }),
-  X::Operate({ owner: "owner", task: "task", origin: P::exampleKey.origin, generation: 1, observation: 1,
+  X::Operate({ owner: "owner", task: "task", origin: CM::exampleKey.origin, generation: 1, observation: 1,
     target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillSignInIdentifier }))
 pure val proposedFactValues = Set(correction, { ...correction, version: 1 })
 pure val factKeyValues = Set("name", "provider", "missing")

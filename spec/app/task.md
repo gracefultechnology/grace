@@ -73,8 +73,8 @@ pure def lawTermsNeverCrossKinds(pay: Proposal, book: Booking, kind: TaskKind): 
 A task's outcome is read on the website it was done on. A booking may also be confirmed by an email; nothing else is a place an outcome comes from.
 
 ```quint
-type Place = OnWebsite | InEmail | InCalendar | InFiles | InConversation
-pure def outcomePlaceAllowed(kind: TaskKind, place: Place): bool =
+type TaskPlace = OnWebsite | InEmail | InCalendar | InFiles | InConversation
+pure def outcomePlaceAllowed(kind: TaskKind, place: TaskPlace): bool =
   place == OnWebsite or (kind == AppointmentBooking and place == InEmail)
 ```
 
@@ -89,6 +89,6 @@ pure def recordsInCalendar(kind: TaskKind): bool = kind == AppointmentBooking
 An outcome for a bill is accepted only from the website it was paid on.
 
 ```quint
-pure def lawABillIsNeverSettledFromAMessage(place: Place): bool =
+pure def lawABillIsNeverSettledFromAMessage(place: TaskPlace): bool =
   outcomePlaceAllowed(BillPay, place) implies place == OnWebsite
 ```

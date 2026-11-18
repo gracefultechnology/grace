@@ -1,6 +1,6 @@
 # Handoffs between Files, Email, Calendar and the browser
 
-This registry maps a canonical bill to its one durable [payment](./payment.md) aggregate. It owns references, not a second copy of payment status. Calendar occurrence IDs, email message IDs, chat IDs and browser tabs are source locations; none changes payment identity. The bill reference identifies the provider's unique obligation or invoice cycle, not merely a recurring merchant relationship.
+This registry maps a canonical bill to its one durable [payment](./commitment.md) aggregate. It owns references, not a second copy of payment status. Calendar occurrence IDs, email message IDs, chat IDs and browser tabs are source locations; none changes payment identity. The bill reference identifies the provider's unique obligation or invoice cycle, not merely a recurring merchant relationship.
 
 The shell constructs sources through the projections below from decoded domain state, then authenticates the person's selection separately from planner output. Storage resolves the registry atomically with aggregate creation; a competing creation returns the existing mapping. Selecting a source never sends money. This integrates the previously separate legacy guide and bill stores identified in `MoneyEffect` and `BillAttempt`.
 
@@ -18,7 +18,8 @@ Close is the same kind of operation over the device and the app on screen.
 Only a confirmed bill from the selected connected mailbox or a saved bill occurrence is a usable source. The mailbox resolves selection against its current owned message record, so Trash, purge or a stale reference cannot retain source authority. Calendar callers resolve the selected occurrence through the current collection, so a deleted entry or series cannot supply an old cached bill. The calendar must be open and outside its deletion flow; a hidden selection retained for a pending deletion is not an actionable bill. Email text and calendar titles are not destination authority. The browser still verifies origin and account through the preparation model before using personal data.
 
 ```quint
-import payment as P from "./payment"
+import commitment as CM from "./commitment"
+import task as T from "./task"
 import email as E from "./email"
 import files as F from "./files"
 import emailItem as I from "./emailItem"
@@ -27,8 +28,8 @@ import calendarView as V from "./calendarView"
 import shell as S from "./shell"
 import browser as B from "./browser"
 type SourceKind = EmailSource | CalendarSource | BrowserSource
-type BillSource = { key: P::BillKey, kind: SourceKind, reference: str }
-type Binding = { key: P::BillKey, recordRef: str }
+type BillSource = { key: T::Subject, kind: SourceKind, reference: str }
+type Binding = { key: T::Subject, recordRef: str }
 type SourceLocation = NoLocation
   | MailLocation({ selection: E::BillSelection })
   | CalendarLocation({ owner: str, calendarId: str, occurrenceId: str, generation: int, revision: int })
@@ -40,35 +41,35 @@ type Registry = {
   owner: str, bindings: List[Binding], pending: BillOpening,
   waiting: bool, requestVersion: int, selected: str, resolutionError: bool
 }
-type HandoffEffect = ResolvedBill({ key: P::BillKey, recordRef: str, source: BillSource, requestVersion: int, context: NavigationContext })
+type HandoffEffect = ResolvedBill({ key: T::Subject, recordRef: str, source: BillSource, requestVersion: int, context: NavigationContext })
 type HandoffResult = { state: Registry, out: List[HandoffEffect] }
-pure val noSource: BillSource = { key: P::emptyKey, kind: BrowserSource, reference: "" }
+pure val noSource: BillSource = { key: T::emptyKey, kind: BrowserSource, reference: "" }
 pure val noContext: NavigationContext = { deviceVersion: -1, location: NoLocation }
 pure val noOpening: BillOpening = { source: noSource, context: noContext }
-pure val noBinding: Binding = { key: P::emptyKey, recordRef: "" }
+pure val noBinding: Binding = { key: T::emptyKey, recordRef: "" }
 pure val initial: Registry = {
   owner: "", bindings: List(), pending: noOpening, waiting: false, requestVersion: 0, selected: "", resolutionError: false
 }
 pure def emailSource(mail: E::Mailbox): BillSource = {
-  key: if (E::billReady(mail)) { owner: mail.owner, origin: mail.bill.origin, account: mail.bill.account, bill: mail.bill.ref } else P::emptyKey,
+  key: if (E::billReady(mail)) { kind: T::BillPay, owner: mail.owner, origin: mail.bill.origin, account: mail.bill.account, ref: mail.bill.ref } else T::emptyKey,
   kind: EmailSource, reference: if (E::billReady(mail)) mail.messageRef else ""
 }
 pure def calendarSource(entry: C::Calendar): BillSource = {
-  key: if (C::billAvailable(entry)) { owner: entry.identity.owner, origin: entry.identity.billOrigin, account: entry.identity.billAccount, bill: entry.identity.billRef } else P::emptyKey,
+  key: if (C::billAvailable(entry)) { kind: T::BillPay, owner: entry.identity.owner, origin: entry.identity.billOrigin, account: entry.identity.billAccount, ref: entry.identity.billRef } else T::emptyKey,
   kind: CalendarSource, reference: if (C::billAvailable(entry)) entry.identity.occurrenceId else ""
 }
 pure def currentCalendarSource(calendar: V::CalendarView): BillSource =
   if (calendar.opened and calendar.deletion == V::NoDeletion) calendarSource(V::selectedOccurrence(calendar)) else noSource
-pure def usableSource(source: BillSource): bool = P::validKey(source.key) and source.reference != ""
+pure def usableSource(source: BillSource): bool = T::validKey(source.key) and source.reference != ""
 pure def lawAbsentCalendarBillHasNoSource(calendar: V::CalendarView): bool =
   not(C::billAvailable(V::selectedOccurrence(calendar))) implies not(usableSource(currentCalendarSource(calendar)))
 pure def lawHiddenCalendarSelectionHasNoSource(calendar: V::CalendarView): bool =
   (not(calendar.opened) or calendar.deletion != V::NoDeletion) implies not(usableSource(currentCalendarSource(calendar)))
 pure def lawUnavailableMessageHasNoSource(mail: E::Mailbox): bool =
   not(E::selectedMessageIsCurrent(mail)) implies not(usableSource(emailSource(mail)))
-pure def bindingFor(r: Registry, key: P::BillKey): Binding =
+pure def bindingFor(r: Registry, key: T::Subject): Binding =
   r.bindings.foldl(noBinding, (found, row) => if (row.key == key) row else found)
-pure def accessibleRecord(r: Registry, key: P::BillKey): str =
+pure def accessibleRecord(r: Registry, key: T::Subject): str =
   if (r.owner != "" and key.owner == r.owner) bindingFor(r, key).recordRef else ""
 pure def emailOpening(mail: E::Mailbox, device: S::Shell): BillOpening = {
   source: emailSource(mail),
@@ -93,7 +94,7 @@ pure def validOpening(opening: BillOpening): bool =
     | NoLocation => false
     | MailLocation(data) => opening.source.kind == EmailSource and I::validIdentity(data.selection.source) and
         data.selection.generation >= 0 and data.selection.source.owner == opening.source.key.owner and
-        data.selection.source.ref == opening.source.reference and data.selection.billRef == opening.source.key.bill and
+        data.selection.source.ref == opening.source.reference and data.selection.billRef == opening.source.key.ref and
         data.selection.origin == opening.source.key.origin and data.selection.account == opening.source.key.account
     | CalendarLocation(data) => opening.source.kind == CalendarSource and data.owner == opening.source.key.owner and
         data.calendarId != "" and data.occurrenceId == opening.source.reference and data.generation >= 0 and data.revision >= 0
@@ -101,9 +102,9 @@ pure def validOpening(opening: BillOpening): bool =
         data.tab >= 0 and data.revision >= 0
   })
 pure val sourceValues = Set(
-  { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: EmailSource, reference: "message" },
-  { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: CalendarSource, reference: "calendar-entry" },
-  { key: { owner: "owner", origin: "https://credit.example", account: "account", bill: "other-bill" }, kind: BrowserSource, reference: "page" },
+  { key: { kind: T::BillPay, owner: "owner", origin: "https://utility.example", account: "account", ref: "bill" }, kind: EmailSource, reference: "message" },
+  { key: { kind: T::BillPay, owner: "owner", origin: "https://utility.example", account: "account", ref: "bill" }, kind: CalendarSource, reference: "calendar-entry" },
+  { key: { kind: T::BillPay, owner: "owner", origin: "https://credit.example", account: "account", ref: "other-bill" }, kind: BrowserSource, reference: "page" },
   noSource
 )
 pure val photoMailbox: E::Mailbox = { ...E::initial, owner: "owner", provider: "mail-provider", account: "mail-account" }
@@ -122,12 +123,12 @@ pure val entryValues = Set(C::initial,
       kind: C::Bill, billRef: "bill", billOrigin: "https://utility.example", billAccount: "account" },
     committed: { ...C::noDetails, title: "Bill", startAt: 1, endAt: 2, timezone: "UTC" } })
 pure val openingValues = Set(
-  { source: { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: EmailSource, reference: "message" },
+  { source: { key: { kind: T::BillPay, owner: "owner", origin: "https://utility.example", account: "account", ref: "bill" }, kind: EmailSource, reference: "message" },
     context: { deviceVersion: 3, location: MailLocation({ selection: { source: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
       generation: 0, billRef: "bill", origin: "https://utility.example", account: "account" } }) } },
-  { source: { key: { owner: "owner", origin: "https://utility.example", account: "account", bill: "bill" }, kind: CalendarSource, reference: "calendar-entry" },
+  { source: { key: { kind: T::BillPay, owner: "owner", origin: "https://utility.example", account: "account", ref: "bill" }, kind: CalendarSource, reference: "calendar-entry" },
     context: { deviceVersion: 3, location: CalendarLocation({ owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", generation: 0, revision: 0 }) } },
-  { source: { key: { owner: "owner", origin: "https://credit.example", account: "account", bill: "other-bill" }, kind: BrowserSource, reference: "page" },
+  { source: { key: { kind: T::BillPay, owner: "owner", origin: "https://credit.example", account: "account", ref: "other-bill" }, kind: BrowserSource, reference: "page" },
     context: { deviceVersion: 3, location: BrowserLocation({ owner: "owner", tab: B::initial.selected, revision: B::initial.revision }) } },
   { source: noSource, context: noContext }
 )
@@ -156,7 +157,7 @@ The surrounding application clears the former owner's browser session and person
 pure def canChooseOwner(r: Registry, by: RegistryActor): bool = by == RegistryUser
 pure def chooseOwner(r: Registry, owner: str, by: RegistryActor): Registry =
   { ...r, owner: owner, pending: noOpening, waiting: false, selected: "", resolutionError: false, requestVersion: r.requestVersion + 1 }
-pure def lawOtherOwnerHasNoAccessibleRecord(r: Registry, key: P::BillKey): bool =
+pure def lawOtherOwnerHasNoAccessibleRecord(r: Registry, key: T::Subject): bool =
   key.owner != r.owner implies accessibleRecord(r, key) == ""
 ```
 
@@ -196,7 +197,7 @@ pure def resolutionFailed(r: Registry, expectedVersion: int, by: RegistryActor):
 pure def alwaysResolutionError(r: Registry): bool = r.resolutionError implies r.waiting
 pure def sometimesResolutionFailed(r: Registry): bool = r.resolutionError
 pure def alwaysMappingsAreValid(r: Registry): bool =
-  r.bindings.every(row => P::validKey(row.key) and row.recordRef != "")
+  r.bindings.every(row => T::validKey(row.key) and row.recordRef != "")
 pure def alwaysOneRecordPerBill(r: Registry): bool =
   r.bindings.every(row => r.bindings.select(other => other.key == row.key).length() == 1)
 pure def alwaysOneBillPerRecord(r: Registry): bool =
@@ -296,19 +297,19 @@ pure def lawCanceledNavigationIsRejected(r: Registry, resolved: HandoffEffect, l
 An unavailable or mismatched aggregate is Unknown, not unpaid, failed or completed. Scheduled and Accepted remain distinct from Completed; a later verified Returned result replaces historical success. Closing the browser or deleting the source entry cannot alter the payment. A positive reference can be retrieved later from the canonical record, even after the originating conversation has ended.
 
 ```quint
-pure def sourceMatchesPayment(source: BillSource, payment: P::Payment): bool =
-  usableSource(source) and source.key == payment.key
-pure def visibleOutcome(source: BillSource, payment: P::Payment): P::PaymentOutcome =
-  if (sourceMatchesPayment(source, payment)) payment.result else P::Unknown
-pure def visibleReceipt(source: BillSource, payment: P::Payment): str =
-  if (sourceMatchesPayment(source, payment) and P::positiveOutcome(payment.result)) payment.reference else ""
-pure def lawAnotherBillHasNoReceipt(source: BillSource, payment: P::Payment): bool =
-  source.key != payment.key implies visibleReceipt(source, payment) == ""
-pure def lawCompletedLabelRequiresCompletedEvidence(source: BillSource, payment: P::Payment): bool =
-  visibleOutcome(source, payment) == P::Completed implies sourceMatchesPayment(source, payment) and payment.result == P::Completed
-pure val paymentValues = Set(P::initial,
-  { ...P::initial, key: P::exampleKey, proposal: P::exampleProposal, stage: P::Resolved, result: P::Completed, reference: "receipt" },
-  { ...P::initial, key: P::exampleKey, proposal: P::exampleProposal, stage: P::Checking, result: P::Unknown })
+pure def sourceMatchesCommitment(source: BillSource, commitment: CM::Commitment): bool =
+  usableSource(source) and source.key == commitment.key
+pure def visibleOutcome(source: BillSource, commitment: CM::Commitment): CM::Outcome =
+  if (sourceMatchesCommitment(source, commitment)) commitment.result else CM::Unknown
+pure def visibleReceipt(source: BillSource, commitment: CM::Commitment): str =
+  if (sourceMatchesCommitment(source, commitment) and CM::positiveOutcome(commitment.result)) commitment.reference else ""
+pure def lawAnotherBillHasNoReceipt(source: BillSource, commitment: CM::Commitment): bool =
+  source.key != commitment.key implies visibleReceipt(source, commitment) == ""
+pure def lawCompletedLabelRequiresCompletedEvidence(source: BillSource, commitment: CM::Commitment): bool =
+  visibleOutcome(source, commitment) == CM::Completed implies sourceMatchesCommitment(source, commitment) and commitment.result == CM::Completed
+pure val commitmentValues = Set(CM::initial,
+  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleTerms, stage: CM::Resolved, result: CM::Completed, reference: "receipt" },
+  { ...CM::initial, key: CM::exampleKey, proposal: CM::exampleTerms, stage: CM::Checking, result: CM::Unknown })
 ```
 
 ## Story: Share the photo I am viewing through my chosen mailbox

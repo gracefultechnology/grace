@@ -9,7 +9,7 @@ import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import { folderRows, fromChoices, mailContext, type MailTold, needsSignIn, openSource, outboxCount, showsMail, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { type Ask, Machine as Proposal, type Pending } from "../gen/app__proposal.effect.vibe"
 import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
-import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Applied, Outcome } from "./agent.vibe"
 import type { MailContent } from "./connector.vibe"
 import { Instances, tablet } from "./instances.vibe"
@@ -50,7 +50,7 @@ export effect function looker() {
 }
 
 const surfaces: Record<Surface, string> = {
-  Home: "Home", Calendar: "Calendar", Email: "Email", Browser: "the internet", Files: "Files", DeviceSettings: "Settings"
+  Home: "Home", Calendar: "Calendar", Email: "Email", Passwords: "Passwords", Browser: "the internet", Files: "Files", DeviceSettings: "Settings"
 }
 const pages: Record<SettingsPage, string> = {
   TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi", EmailCalendarSettings: "Email & calendar", AboutSettings: "About"
@@ -267,7 +267,7 @@ export function toldOfAccounts(before: Registry, after: Registry): string {
 function browserScreen(s: Scene): Part {
   const { device, browser } = s.workspace
   const tab = activeTab(browser)
-  if (!device.observationAllowed || tab.load !== "Loaded") return { lines: [], targets: [] }
+  if (privateSurfaceActive(s.workspace) || !device.observationAllowed || tab.load !== "Loaded") return { lines: [], targets: [] }
   const address = tabUrl(tab)
   if (!URL.canParse(address)) return { lines: [], targets: [] }
   const url = new URL(address)

@@ -382,8 +382,9 @@ pure def finishLoad(b: Browser, id: int, loadVersion: int, result: Load): Browse
 pure def canFinishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, endedAt: str): bool =
   canFinishLoad(b, id, loadVersion, result) and endedAt != ""
 pure def finishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: str): Browser = {
-  val url = if (endedAt == "") tabUrl(tabById(b, id)) else endedAt
-  val remember = result == Loaded and url != "" and not(tabById(b, id).manualSignIn)
+  val tab = tabById(b, id)
+  val url = if (endedAt == "") tabUrl(tab) else endedAt
+  val remember = result == Loaded and url != "" and not(tab.manualSignIn)
   {
     ...b, tabs: b.tabs.listMap(t => if (t.id == id)
       { ...endedAtCursor(t, endedAt), load: result, secure: secure and result == Loaded } else t),

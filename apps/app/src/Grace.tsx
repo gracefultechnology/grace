@@ -118,11 +118,11 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               {guide.mic === "GuideMicUnavailable" && <p role="status">On-device voice is unavailable. You can type a Passwords command.</p>}
               {guide.mic === "GuideMicNoMatch" && <p role="status">Try saying “open passwords” or “fill my password”.</p>}
             </div>
-            <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice}
+            <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || guide.mic === "GuideMicListening"} listening={guide.mic === "GuideMicListening"}
               quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
-              micUnavailable={micUnavailable}
+              micUnavailable={canTalk ? micUnavailable : undefined}
               onFixMic={canTalk ? talk : undefined} fixMicLabel={canTalk ? "Allow mic" : undefined}
-              onMicChange={(on) => { if (on) talk(); else interact({ tag: "StopVoice" }); }}
+              onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
               onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
               onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
               onSend={() => {

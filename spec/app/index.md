@@ -33,7 +33,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
-- [Payment authorization, durable attempts and provider outcomes](./payment.md)
+- [Commitment authorization, durable attempts and provider outcomes](./commitment.md)
 - [One canonical bill across Email, Calendar and browser entry points](./handoffs.md)
 - [Composed navigation, interruption and execution](./workspace.md)
 - [Actuator checks for emitted browser and payment commands](./actuation.md)
@@ -62,9 +62,11 @@ previews describe unavailability. The vault and its summaries are excluded
 from the transcript, memory, cloud and agent tools. The device vault belongs
 to this Android user. A prior hosted account or account-bound vault is not
 opened by the device-only flow; when the app cannot verify ownership it
-leaves those records sealed. A show, copy or delete request uses the revision
-the person saw. If the sign-in changed on the device, Passwords refreshes
-the displayed details so the person can review them before trying again.
+leaves those records sealed.
+
+Showing, copying and deleting a saved sign-in require the same revision the
+person chose. If another native action updates it first, Passwords shows the
+current details and asks the person to choose again. Cancel keeps the entry.
 
 ~~~quint
 type VaultActor = PasswordsPerson | PasswordsHost
@@ -158,11 +160,19 @@ prompt and choose a saved login. The same action can speak these instructions
 when voice is available. It receives no vault state, account text or website
 form values and has no authority over the editor or browser. Recognized
 requests from the current typed draft or a current complete human utterance
-work while Cloud reasoning is unavailable. Guidance selects only the general Passwords screen or Browser and a cue for the
+work while Cloud reasoning is unavailable. They select only the general Passwords screen or Browser and a cue for the
 named control. Guidance never chooses or reveals an entry, copies a
-password or presses a website button. A direct sign-in command follows the [browser admission rule](./browserControls.md).
+password, opens a private page or presses a website button. An explicit
+sign-in command has a separate [browser admission rule](./browserControls.md).
 
-A separate Passwords microphone button starts one recognition request on the Android device. The current complete result can guide the person. Leaving Grace, typing, opening a protected surface or cancelling stops recognition.
+A tap on the microphone starts one local Android recognition request. A
+current complete result is used for guidance only. Unmatched speech is
+discarded. Leaving Grace, typing, opening a protected surface or cancelling
+stops the request. An unavailable local recognizer leaves Type available.
+Password guidance recognizes a short list of spoken or typed phrases, such
+as “Open Passwords,” “Find a saved password,” “Show my password,”
+“Copy my password,” and “Use a saved password.” The person chooses the
+saved sign-in and uses the highlighted control.
 
 ~~~quint
 pure def passwordsHelpText(guide: PasswordGuide): str = "Open Passwords from the second Home page to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
@@ -202,7 +212,7 @@ pure val wordsValues = Set("open passwords", "find a password", "show my passwor
 
 A new vault may be bound to the account and organization in Grace's verified
 device session. A different account or a retired device session cannot access
-that vault. A guest vault with saved passwords stays with the tablet guest.
+that vault. A guest vault with saved passwords stays with the tablet guest until the person unlocks it and approves linking it to their verified account.
 A change of account discards the previous Passwords view, guide and grant.
 
 ```quint
@@ -234,3 +244,12 @@ pure def reportBackupReady(v: PasswordView, generation: int, ready: bool, by: Va
 pure def alwaysClosedVaultHasNoBackupAction(v: PasswordView): bool =
   isClosedVault(v.vault) implies not(v.backupReady)
 ```
+
+### Passwords offers cloud recovery only after the native host confirms readiness
+
+The protected recovery menu can open while the local vault is locked. The renderer receives only readiness and whether the menu opened. An account change closes the grant and clears the displayed details before a fresh readiness report.
+
+~~~quint
+pure def sometimesBackupAndRecoveryIsAvailable(v: PasswordView): bool =
+  isLockedVault(v.vault) and v.backupReady
+~~~

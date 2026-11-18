@@ -26,6 +26,7 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -52,7 +53,7 @@ public final class GraceFiles extends Plugin {
  private volatile Lease active;
  private Stage staged;
  private record Lease(String token, String owner) {}
- private record Stage(Lease lease, String id, File temporary) {}
+ private record Stage(Lease lease, String id, File temporary, JSObject entry) {}
  private interface Work { void run() throws Exception; }
 
  private void perform(PluginCall call, Work work) {
@@ -217,7 +218,7 @@ public final class GraceFiles extends Plugin {
    try (Cursor rows = getContext().getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
     name = displayName(rows != null && rows.moveToFirst() ? rows.getString(0) : null, call.getString("kind", ""));
    }
-   try (InputStream content = getContext().getContentResolver().openInputStream(uri)) { stage(call, name, content); }
+   try (InputStream content = getContext().getContentResolver().openInputStream(uri)) { offer(call, stage(call, name, content)); }
   });
  }
 
@@ -256,15 +257,20 @@ public final class GraceFiles extends Plugin {
   perform(call, () -> {
    try {
     if (result.getResultCode() != Activity.RESULT_OK) { call.reject("No photo was taken", "cancelled"); return; }
-    try (InputStream content = Files.newInputStream(file.toPath())) { stage(call, "Photo " + System.currentTimeMillis() + ".jpg", content); }
+    try (InputStream content = Files.newInputStream(file.toPath())) { offer(call, stage(call, "Photo " + System.currentTimeMillis() + ".jpg", content)); }
    } finally { file.delete(); }
   });
  }
 
- private void stage(PluginCall call, String name, InputStream content) throws Exception {
+ private void offer(PluginCall call, Stage candidate) {
+  discard();
+  staged = candidate;
+  call.resolve(candidate.entry());
+ }
+
+ private Stage stage(PluginCall call, String name, InputStream content) throws Exception {
   Lease lease = current(call);
   if (content == null) throw new IOException("File unavailable");
-  discard();
   File owned = library(lease);
   File[] existing = owned.listFiles(file -> file.isDirectory() && ID.matcher(file.getName()).matches());
   if (existing == null || existing.length >= MAX_FILES) throw new IOException("Library is full");
@@ -291,8 +297,7 @@ public final class GraceFiles extends Plugin {
    }
    JSObject ready = entry(id, file);
    current(call);
-   staged = new Stage(lease, id, file);
-   call.resolve(ready);
+   return new Stage(lease, id, file, ready);
   } catch (Exception failed) {
    file.delete();
    folder.delete();
@@ -300,17 +305,60 @@ public final class GraceFiles extends Plugin {
   }
  }
 
- @PluginMethod public void commit(PluginCall call) {
+ @PluginMethod public void save(PluginCall call) {
+  perform(call, () -> {
+   current(call);
+   String name = call.getString("name", "");
+   String type = kind(name);
+   String data = call.getString("data", "");
+   if (type.isEmpty() || data.length() > 4 * ((MAX_BYTES + 2) / 3)) throw new IllegalArgumentException();
+   try (InputStream content = new ByteArrayInputStream(Base64.decode(data, Base64.DEFAULT))) {
+    Stage attachment = stage(call, displayName(name, type), content);
+    try { publish(call, attachment); }
+    finally {
+     attachment.temporary().delete();
+     attachment.temporary().getParentFile().delete();
+    }
+    call.resolve(attachment.entry());
+   }
+  });
+ }
+
+ @PluginMethod public void remove(PluginCall call) {
   perform(call, () -> {
    Lease lease = current(call);
-   Stage candidate = staged;
-   if (candidate == null || !candidate.lease().equals(lease) || !candidate.id().equals(call.getString("id"))) throw new SecurityException();
-   File destination = new File(library(lease), candidate.id());
-   if (destination.exists()) throw new IOException("Already saved");
-   current(call);
-   Files.move(candidate.temporary().getParentFile().toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE);
-   staged = null;
-   call.resolve(new JSObject().put("id", candidate.id()));
+   String id = call.getString("id", "");
+   if (!ID.matcher(id).matches()) throw new IllegalArgumentException();
+   File folder = new File(library(lease), id);
+   if (folder.exists()) {
+    File file = item(folder);
+    current(call);
+    File removed = new File(folder.getParentFile(), ".removed-" + id);
+    Files.move(folder.toPath(), removed.toPath(), StandardCopyOption.ATOMIC_MOVE);
+    Files.delete(new File(removed, file.getName()).toPath());
+    Files.delete(removed.toPath());
+   }
+   call.resolve();
   });
+ }
+
+ @PluginMethod public void commit(PluginCall call) {
+  perform(call, () -> {
+   String id = call.getString("id", "");
+   Stage candidate = staged;
+   if (candidate == null || !candidate.id().equals(id)) throw new SecurityException();
+   publish(call, candidate);
+   staged = null;
+   call.resolve(new JSObject().put("id", id));
+  });
+ }
+
+ private void publish(PluginCall call, Stage candidate) throws Exception {
+  Lease lease = current(call);
+  if (!candidate.lease().equals(lease)) throw new SecurityException();
+  File destination = new File(library(lease), candidate.id());
+  if (destination.exists()) throw new IOException("Already saved");
+  current(call);
+  Files.move(candidate.temporary().getParentFile().toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE);
  }
 }

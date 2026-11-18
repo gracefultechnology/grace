@@ -146,7 +146,7 @@ function Screen() {
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
-    <TextScale percent={textScalePercent(volume)}><div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+    <TextScale percent={textScalePercent(volume)}><div data-benchmark-observable={!privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn)} className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
       <div className="contents" {...under(sleeping)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}

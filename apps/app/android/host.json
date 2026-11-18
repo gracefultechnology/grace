@@ -13,7 +13,8 @@
     { "name": "capacitor-android", "source": { "root": "dependencies", "path": "capacitor" } },
     { "name": "eliza-browser-surface", "source": { "root": "upstream", "path": "packages/os/android/browser-surface" } },
     { "name": "elizaos-capacitor-passwords", "source": { "root": "upstream", "path": "packages/os/android/passwords" } },
-    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "packages/os/android/wifi" } }
+    { "name": "eliza-wifi", "source": { "root": "upstream", "path": "packages/os/android/wifi" } },
+    { "name": "eliza-reminders", "source": { "root": "upstream", "path": "packages/os/android/reminders" } }
   ],
   "signing": { "storeFile": "GRACE_KEYSTORE", "storePassword": "GRACE_KEYSTORE_PASSWORD", "keyAlias": "GRACE_KEY_ALIAS", "keyPassword": "GRACE_KEY_PASSWORD" },
   "manifest": { "root": "consumer", "path": "android/AndroidManifest.xml" },

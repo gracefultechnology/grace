@@ -2,7 +2,9 @@
 // The Capacitor bindings of the plugins MainActivity registers. Their types are the plugins' own
 // (definitions.ts); none of their runtime code is bundled. Beside them, what the WebView itself knows of the network.
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import type { PluginListenerHandle } from "@capacitor/core";
+import { accountPlugin } from "./accountPlugin.ts";
 import type { ElizaSurfaceManagerPlugin } from "@elizaos/os/bridges/definitions/browser-surface";
 import type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
 import { createPasswordsClient } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -38,6 +40,21 @@ export type GuideSpeechPlugin = {
 
 export const guideSpeechPlugin = Capacitor.isPluginAvailable("GraceGuideSpeech")
   ? registerPlugin<GuideSpeechPlugin>("GraceGuideSpeech") : undefined;
+
+export type PasswordBackupPlugin = {
+  addListener(event: "passwordOwnerChanged", changed: () => void): Promise<PluginListenerHandle>;
+  passwordBackupStatus(): Promise<{ ready: boolean }>;
+  openBackupRecovery(): Promise<{ status: "opened" | "unavailable" }>;
+  dismissPasswordRecovery?(): Promise<void>;
+};
+
+const backupReady = Schema.decodeUnknownSync(Schema.Struct({ ready: Schema.Boolean }));
+export const passwordBackupPlugin: PasswordBackupPlugin | undefined = accountPlugin && {
+  addListener: (_event, changed) => accountPlugin.addListener("sessionChanged", changed),
+  passwordBackupStatus: async () => backupReady(await accountPlugin.passwordRecoveryStatus()),
+  openBackupRecovery: async () => { await accountPlugin.showPasswordRecovery(); return { status: "opened" }; },
+  dismissPasswordRecovery: () => accountPlugin.dismissPasswordRecovery(),
+};
 
 /** The Wi-Fi plugin, which only the launcher registers; elsewhere the WebView's own online state is all there is. */
 export const wifiPlugin = Capacitor.isPluginAvailable("ElizaWiFi") ? registerPlugin<WiFiPlugin>("ElizaWiFi") : undefined;
