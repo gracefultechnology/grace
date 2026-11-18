@@ -35,6 +35,7 @@ performed equivalent provider-form/choice verification, not an alternative BP ha
 import billpay as BP from "./billpay"
 import commitment as CM from "./commitment"
 import task as T from "./task"
+import taskKinds as K from "./taskKinds"
 import workspace as W from "./workspace"
 import shell as S from "./shell"
 import browser as B from "./browser"
@@ -52,7 +53,7 @@ pure def reportFromHandoff(transfer: ScopedPreparedReview): W::CurrentReview =
       browserRevision: transfer.captured.browserRevision,
       taskVersion: transfer.captured.taskVersion,
       review: {
-        key: details.key, proposal: T::PayTerms({ pay: details.proposal }), evidence: details.evidence,
+        key: details.key, proposal: details.proposal, evidence: details.evidence,
         revision: transfer.captured.revision
       }
     }
@@ -83,7 +84,7 @@ pure def lawConversionKeepsCurrentChoice(
   match converted {
   | ReviewDeclined => true
   | ReviewConverted(value) => preparationMatchesHandoff(preparation, transfer) and
-    value.report.review.key == preparation.key and value.report.review.proposal == T::PayTerms({ pay: preparation.choice }) and
+    value.report.review.key == preparation.key and value.report.review.proposal == preparation.choice and
     value.report.review.evidence == preparation.evidence and
     value.report.review.revision == transfer.captured.revision
 }
@@ -122,12 +123,8 @@ is stale. The examples are simulation inputs and do not restrict runtime values.
 pure val preparationValues = {
   val begun = BP::begin(BP::initial, CM::exampleKey, "source", T::Person)
   val signed = BP::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: BP::SignedIn }, T::Host)
-  val facts = BP::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: {
-    statement: { known: true, amount: 8420 }, minimum: { known: true, amount: 3500 },
-    current: { known: true, amount: 11255 }, fee: { known: true, amount: 0 }, dueDay: 3,
-    currency: "USD", scheduled: false, nothingDue: false, paymentAllowed: true, funding: List("bank-ref")
-  } }, T::Host)
-  val chosen = BP::choose(BP::confirmFacts(facts, T::Person), CM::exampleProposal, T::Person)
+  val facts = BP::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: K::sampleBillFacts }, T::Host)
+  val chosen = BP::choose(BP::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
   val verified = BP::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
   val handed = BP::handOff(verified, T::Actuator).state
   val paused = BP::pause(handed, T::Person)
@@ -157,12 +154,12 @@ pure val wValues = {
 }
 pure val transferValues = {
   val captured = { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 0, attempt: 0 }
-  val details = { key: CM::exampleKey, proposal: CM::exampleProposal, evidence: "source", version: 4 }
+  val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
   val valid = { handoff: BP::ReviewPayment(details), captured: captured }
   Set(valid,
     { ...valid, handoff: BP::ReviewPayment({ ...details, version: 3 }) },
     { ...valid, handoff: BP::ReviewPayment({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, proposal: { ...CM::exampleProposal, day: 2 } }) },
+    { ...valid, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) },
     { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) },
     { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "" }) },
     { ...valid, captured: { ...captured, deviceVersion: 5 } },
