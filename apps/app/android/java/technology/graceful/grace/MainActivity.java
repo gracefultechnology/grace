@@ -65,6 +65,7 @@ public class MainActivity extends ElizaBridgeActivity {
  @Override public void onStart() {
   super.onStart();
   GraceAgentService.resume(this);
+  ManagedCalendarReminders.reconcile(this);
  }
 
  private void leave(OnBackPressedCallback callback) {
@@ -89,6 +90,7 @@ public class MainActivity extends ElizaBridgeActivity {
  @Override public void onWindowFocusChanged(boolean hasFocus) {
   super.onWindowFocusChanged(hasFocus);
   if (!hasFocus) return;
+  ManagedCalendarReminders.open(this);
   WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
   bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
   bars.hide(WindowInsetsCompat.Type.systemBars());

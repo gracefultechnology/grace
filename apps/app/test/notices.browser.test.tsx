@@ -1,10 +1,12 @@
 // spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "No notice shows over a commitment review or a website's question"
 import { Effect, ManagedRuntime, Stream } from "effect";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine as Notices } from "../gen/app__notices.effect.vibe";
 import { type Event as ProposalEvent, Machine as Proposals, addVisit } from "../gen/app__proposal.effect.vibe";
+import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
@@ -69,4 +71,60 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
     await expect.element(page.getByRole("status")).toHaveTextContent("Moved to Files");
     expect(toasts.slice(4)).toEqual([null, "Moved to Files"]);
   });
+});
+
+it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background")', async () => {
+  const id = "owned-calendar-" + "a".repeat(24) + "-" + "b".repeat(48);
+  const reminders = [{ id, title: "Library visit", eventAt: Date.now() + 3600000 }];
+  const actions: string[] = [];
+  let entries: typeof reminders = [];
+  let changed: (() => void) | undefined;
+  let accept = false;
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    reminders: {
+      enableManagedReminders: async () => undefined,
+      managedDue: async () => ({ reminders: entries }),
+      openManagedDue: async ({ id: selected }) => { actions.push("open:" + selected); },
+      dismissManagedDue: async ({ id: selected }) => {
+        actions.push("dismiss:" + selected);
+        if (!accept) throw new Error("Calendar could not save dismissal");
+        entries = [];
+        return { id: selected };
+      },
+      addListener: async (_event, listener) => {
+        changed = listener;
+        return { remove: async () => { changed = undefined; } };
+      },
+    },
+  }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  await act(() => root.render(<App runtime={runtime} />));
+  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
+  await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
+    report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
+  const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await click("Settings");
+  entries = reminders;
+  await act(() => changed?.());
+  const toast = page.getByText(/^Reminder: Library visit/);
+  await expect.element(toast).toBeVisible();
+  await click("See details");
+  await expect.poll(() => actions).toEqual(["open:" + id]);
+  await click("Home");
+  const banner = page.getByText(/^Library visit/);
+  await expect.element(banner).toBeVisible();
+  await click("Dismiss");
+  await expect.poll(() => actions).toEqual(["open:" + id, "dismiss:" + id]);
+  await expect.element(banner).toBeVisible();
+  accept = true;
+  await click("Dismiss");
+  await expect.poll(() => actions).toEqual(["open:" + id, "dismiss:" + id, "dismiss:" + id]);
+  await expect.element(banner).not.toBeInTheDocument();
 });

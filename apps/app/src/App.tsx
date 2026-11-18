@@ -19,7 +19,7 @@ import { mailAccounts } from "../gen/app__accounts.ts";
 import { Calendar, calendarKeys, homeCalendar, nextAppointment } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
-import { Notices } from "./Notices.tsx";
+import { NoticeBanner, Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
@@ -166,7 +166,7 @@ function Screen() {
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-            <HomeScreen className="inset-0" layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+            <HomeScreen className="inset-0" banner={<NoticeBanner />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,

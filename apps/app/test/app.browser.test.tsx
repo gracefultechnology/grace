@@ -997,6 +997,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let trashed = false;
   const sent: string[] = [];
   let changed: string[] = [];
+  const reminders: number[] = [];
   const literalText = "<strong>This stays plain text.</strong>";
   const oldURL = window.location.href;
   const oldIntent = sessionStorage.getItem("grace-hosted-read");
@@ -1085,6 +1086,16 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
         trashed = !trashed;
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId: mail.externalId, version: "9" });
+      }
+      case "/api/v1/eliza/google/calendar/reminder": {
+        const input = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
+          accountId: Schema.String, grantId: Schema.String, occurrenceId: Schema.String,
+          version: Schema.String, minutes: Schema.Int,
+        })))(options?.body);
+        expect(input).toMatchObject({ accountId: person.id, grantId: grant, occurrenceId: "event-1", version: '"one"' });
+        reminders.push(input.minutes);
+        return reply({ ...input, status: input.minutes === 0 ? "cancelled" : "saved",
+          fireAt: Date.parse(time) - input.minutes * 60_000 });
       }
       case "/api/v1/eliza/google/calendar/series":
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
@@ -1189,6 +1200,12 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Calendar");
     await tap(/Dentist/);
     await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
+    expect(reminders).toEqual([]);
+    await tap("One hour before");
+    await expect.poll(() => reminders).toEqual([60]);
+    await expect.element(page.getByText("Reminder choice saved. Your tablet schedules it when it reconnects.")).toBeVisible();
+    await tap("Remove reminder");
+    await expect.poll(() => reminders).toEqual([60, 0]);
     await tap("Change appointment");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
     await tap("Review appointment");
@@ -1721,7 +1738,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Ask Grace" }));
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
-    await act(() => userEvent.type(field, ask + "{Enter}"));
+    await act(() => field.fill(ask));
+    await act(() => userEvent.keyboard("{Enter}"));
     await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
