@@ -2,7 +2,7 @@
 import { type Event, type Notice, type Place, Machine as Notices, type Rejected, initial, lifetimeMs, machine, queued } from "../gen/app__notices.effect.vibe"
 import { Machine as WebsiteRequests, presented } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { webView, wifiPlugin } from "./surfacePlugin.ts"
+import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
 
 export data Reply {
   Undo { notice: Notice }
@@ -26,6 +26,7 @@ const host = Layer.effect(NoticeHost, effect {
   const workspace = try Workspaces
   const requests = try WebsiteRequests
   const replies = try PubSub.unbounded<Reply>()
+  const lock = try Semaphore.make(1)
 
   effect function report(left: readonly Notice[]) {
     try Effect.forEach(left, (notice) => PubSub.publish(replies, Reply.Closed({ notice })))
@@ -46,8 +47,10 @@ const host = Layer.effect(NoticeHost, effect {
   effect function expireAfter(notice: Notice) {
     const elapsed = lifetimeMs(notice.offer)
     try sleep(elapsed)
-    const sent = notices.send({ type: "expire", id: notice.id, elapsed }, "Host") catch () => undefined
-    if (sent !== undefined) try report([notice])
+    uninterruptible {
+      const sent = notices.send({ type: "expire", id: notice.id, elapsed }, "Host") catch () => undefined
+      if (sent !== undefined) try report([notice])
+    }
   }
 
   effect function ended(event: Extract<Event, { type: "act" | "closeToast" }>) {
@@ -63,13 +66,13 @@ const host = Layer.effect(NoticeHost, effect {
     requests.changes,
     Stream.fromEventListener(webView.document, "visibilitychange")
   ], { concurrency: "unbounded" })
-  try fork.scoped Stream.runForEach(scene, () => follow())
+  try fork.scoped Stream.runForEach(scene, () => lock.withPermits(1)(follow()))
   const showing = Stream.changesWith(Stream.map(notices.changes, (n) => n.shown.at(0)), (a, b) => a?.id === b?.id)
   try fork.scoped Stream.runDrain(Stream.switchMap(showing, (x) => x === undefined ? Stream.empty : Stream.fromEffect(expireAfter(x))))
 
   return {
     effect raise(notice: Omit<Notice, "id">) {
-      return queued(try notices.send({ type: "raise", ...notice }, "App")).at(-1)?.id
+      return queued(try lock.withPermits(1)(notices.send({ type: "raise", ...notice }, "App"))).at(-1)?.id
     },
     effect act(id: number) {
       const notice = try ended({ type: "act", id })
@@ -87,11 +90,10 @@ const host = Layer.effect(NoticeHost, effect {
   }
 })
 
-effect function connected(): boolean!! {
-  const wifi = wifiPlugin
+effect function connected(wifi: WiFiPlugin | undefined): boolean!! {
   if (wifi === undefined) return try webView.online
   const c = tryPromise(() => wifi.getConnectivity()) catch () => undefined
   return c === undefined ? try webView.online : c.online && !c.captivePortal
 }
 
-export const notices = Layer.provideMerge(host, Layer.unwrap(Effect.map(connected(), (online) => machine({ ...initial, online }))))
+export const notices = (wifi: WiFiPlugin | undefined) => Layer.provideMerge(host, Layer.unwrap(Effect.map(connected(wifi), (online) => machine({ ...initial, online }))))

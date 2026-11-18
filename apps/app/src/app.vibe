@@ -94,5 +94,5 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const machines = Layer.mergeAll(workspaces(), pageLayers(), websiteRequests(), nativePage(plugin), kept)
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
-  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), notices, grace, browserGuide(cloud)), machines)
+  return Layer.provideMerge(Layer.mergeAll(pageHost, started, connectivity(wifi), keyboard(plugin), notices(wifi), grace, browserGuide(cloud)), machines)
 }
