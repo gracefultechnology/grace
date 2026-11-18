@@ -3,15 +3,15 @@ import { type HomeMail, MailApp, type MailFolder, MailMessageView, type MailPhot
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
 import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
-import { emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
+import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
 import { type Files, hasFile, type SavedFile } from "../gen/app__files.ts";
 import { type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, fromChoices, mailContext, openSource, outboxCount, outboxRows, showsMail, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
 import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
-import { answerable, headerFor, recipientsOf } from "./mail.vibe";
-import { type MailInstance, type MailWriter, useAccounts, useFiles, useMail, useMailContent, useMailFile, useWorkspace, WithMailboxes } from "./useApp.ts";
+import { answerable, headerFor, queuedAt, recipientsOf } from "./mail.vibe";
+import { type MailInstance, type MailWriter, useAccounts, useFiles, useMail, useMailContent, useMailFile, useMailHeld, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 type Read = (id: number, ref: string) => MailContent | undefined;
@@ -38,7 +38,7 @@ function saverOf(box: MailInstance, mail: MailWriter | undefined, files: Files |
       if (!files || chosen.length === 0) return undefined;
       if (files.loaded && chosen.every((f) => hasFile(files, f.id))) return "saved";
       if (files.pending === "SavingFiles" && chosen.some((f) => files.pendingFiles.some((p) => p.id === f.id))) return "saving";
-      return files.feedback === "WriteFailed" ? "failed" : undefined;
+      return chosen.some((f) => mail?.unsaved.has(f.id)) ? "failed" : undefined;
     },
     offer: (refs) => (mail && files?.pending === "NoFileOperation" && refs.length > 0 && mayExportAttachments(box.state, [...refs]) ? () => void mail.save(box.id, refs) : undefined),
   };
@@ -83,6 +83,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const { workspace, can, send } = useWorkspace();
   const account = useAccounts();
   const read = useMailContent();
+  const kept = useMailHeld();
   const held = useMailFile();
   const files = useFiles();
   const mail = useMail();
@@ -137,8 +138,8 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const attachment = (file: SavedFile): MailEvent => ({ type: "readMail", kind: "OpenAttachment", ref: file.sourceRef, approved: true });
     const opener = (chosen: readonly SavedFile[]) => chosen.some((f) => opening.can(attachment(f))) ? (i: number) => { const f = chosen[i]; if (f) offer(opening, attachment(f))?.(); } : undefined;
     const allPhotos = photos.map((p) => p.sourceRef);
-    const header = mail && headerFor(mail, opening.id, m);
-    const replying = mail && ready && answerable(m) && (header ? header.verified : online);
+    const header = mail && headerFor(mail, kept(opening.id, m.messageRef), opening.id, m);
+    const replying = mail && ready && answerable(m) && header && canReplyToMessage(m, header, "MailHost");
     return (
       <>
       <MailMessageView from={{ name: c?.from ?? "" }} address={showsScamWarning(m) ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={c?.body ?? ""}
@@ -161,11 +162,17 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const folder: Folder = lead?.folder ?? "InboxFolder";
   const rows = accountRows(registry, sources);
   const waitingCount = outboxCount(registry, sources);
+  const drafts = shown.reduce((n, b) => n + b.state.messages.filter((r) => r.folder === "DraftsFolder").length, 0);
   const outbox = outboxChosen && waitingCount > 0;
-  const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => ({
-    id: `${r.account}/${r.queued.operationId}`, from: { name: mail?.nameOf(r.queued.snapshot.content.to) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "" }, subject: r.queued.snapshot.content.subject, time: "",
-    account: rows.length ? name(r.account) : undefined,
-  }));
+  const untitled = (subject: string | undefined) => subject === "" ? "(no subject)" : subject ?? "";
+  const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => {
+    const at = queuedAt(r.queued.operationId);
+    return {
+      id: `${r.account}/${r.queued.operationId}`, from: { name: mail?.nameOf(r.queued.snapshot.content.to) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "" },
+      subject: untitled(r.queued.snapshot.content.subject), time: Number.isNaN(at) ? "" : when(at, now), attachment: r.queued.snapshot.attachments.length > 0,
+      account: rows.length ? name(r.account) : undefined,
+    };
+  });
   const theirs = folder === "DraftsFolder" || folder === "SentFolder";
   const party = (c: MailContent | undefined) => {
     if (!theirs) return c?.from ?? "";
@@ -175,8 +182,9 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const listed: MailSummary[] = folderRows(registry, sources, folder).sort(newest(read)).map((r) => {
     const c = read(r.account, r.record.identity.ref);
     return {
-      id: `${r.account}/${r.record.identity.ref}`, from: { name: party(c) }, subject: theirs && c?.subject === "" ? "(no subject)" : c?.subject ?? "", time: c ? when(c.receivedAt, now) : "",
-      unread: r.record.unread, account: rows.length ? name(r.account) : undefined,
+      id: `${r.account}/${r.record.identity.ref}`, from: { name: party(c) },
+      subject: r.record.answered && c?.replied ? `You replied: “${c.replied.slice(0, 28)}…”` : theirs ? untitled(c?.subject) : c?.subject ?? "",
+      time: c ? when(c.receivedAt, now) : "", unread: r.record.unread, attachment: c?.attachment, account: rows.length ? name(r.account) : undefined,
     };
   });
   const notice = (b: MailBanner): ReactNode => {
@@ -210,7 +218,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   });
 
   return (
-    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), outbox: waitingCount }}
+    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), drafts, outbox: waitingCount }}
       accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
       onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}

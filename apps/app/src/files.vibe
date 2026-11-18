@@ -1,24 +1,70 @@
 // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/files.md, "Opening and retrying load the authoritative local library"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
-import { canLoadForSave, canRestartFiles, canSaveFiles, type FileEffect, Machine as Files, mergeFiles, type SavedFile, stored } from "../gen/app__files.effect.vibe"
+import { canLoadForSave, canSaveFiles, type FileEffect, type FileFeedback, Machine as Files, machine, mergeFiles, type SavedFile } from "../gen/app__files.effect.vibe"
 import type { Attached } from "./connector.vibe"
-import { catalog as storedCatalog, commit } from "./fileStore.ts"
 import { HeldFile } from "./instances.vibe"
+import { webView } from "./surfacePlugin.ts"
 
 export const libraryOwner = "tablet"
 
 export service Library {
-  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string): boolean!!
+  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string): (FileFeedback | undefined)!!
 }
 
+export error LibraryUnavailable { step: string }
+
 const decodeCatalog = Schema.decodeUnknownEffect(Schema.UndefinedOr(Schema.Array(HeldFile)))
+const catalogKey = "catalog"
+
+effect function awaited<A>(step: string, begin: (done: (value: A) => void, failed: () => void) => void) {
+  const result = try Deferred.make<A, LibraryUnavailable>()
+  const failed = () => { Deferred.doneUnsafe(result, Exit.fail(new LibraryUnavailable({ step }))) }
+  try Effect.try({ try: () => begin((value) => { Deferred.doneUnsafe(result, Exit.succeed(value)) }, failed), catch: () => new LibraryUnavailable({ step }) })
+  return try Deferred.await(result)
+}
+
+const opened = acquireRelease(
+  awaited<IDBDatabase>("open", (done, failed) => {
+    const request = webView.window.indexedDB.open("grace-files", 1)
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore("content")
+      request.result.createObjectStore("catalog")
+    }
+    request.onsuccess = () => done(request.result)
+    request.onerror = failed
+  }),
+  (db) => sync(() => db.close())
+)
+
+effect function storedCatalog() {
+  return try scoped(effect {
+    const db = try opened
+    return try awaited<unknown>("read", (done, failed) => {
+      const request = db.transaction("catalog").objectStore("catalog").get(catalogKey)
+      request.onsuccess = () => done(request.result)
+      request.onerror = failed
+    })
+  })
+}
+
+effect function commit(content: ReadonlyMap<string, Attached>, entries: readonly SavedFile[]) {
+  try scoped(effect {
+    const db = try opened
+    try awaited<void>("write", (done, failed) => {
+      const t = db.transaction(["content", "catalog"], "readwrite")
+      t.oncomplete = () => done(undefined)
+      t.onabort = failed
+      for (const [id, bytes] of content) t.objectStore("content").put(bytes, id)
+      t.objectStore("catalog").put(entries, catalogKey)
+    })
+  })
+}
 
 const kept = Layer.effect(Library, effect {
   const files = try Files
   const saves = try SynchronizedRef.make(0)
-  if (canRestartFiles(try files.get(), "FileHost")) files.send({ type: "restartFiles" }, "FileHost") catch () => undefined
 
   effect function catalog() {
-    return [...(try decodeCatalog(try tryPromise(() => storedCatalog()))) ?? []]
+    return [...(try decodeCatalog(try storedCatalog())) ?? []]
   }
 
   effect function load(e: Extract<FileEffect, { tag: "LoadLibrary" }>) {
@@ -32,7 +78,7 @@ const kept = Layer.effect(Library, effect {
       const staged = new Map<string, Attached>()
       for (const file of e.files) staged.set(file.id, try content(file))
       const entries = mergeFiles(try catalog(), e.files)
-      try tryPromise(() => commit(staged, entries))
+      try commit(staged, entries)
     }, true) catch () => false
     const fileReceipt = { owner: e.owner, generation: e.generation, id: "", succeeded: written, evidence: written ? "tablet" : "" }
     files.send({ type: "writeResult", fileReceipt }, "FileStore") catch () => undefined
@@ -51,14 +97,16 @@ const kept = Layer.effect(Library, effect {
         const loading = files.send({ type: "loadForSave", owner: libraryOwner }, "FileHost") catch () => undefined
         if (loading !== undefined) try perform(loading.out, content)
       }
-      const fileImport = { owner: libraryOwner, generation: (try files.get()).generation, entries: [...chosen], authorization }
-      if (!canSaveFiles(try files.get(), fileImport, "FileHost")) return false
+      const library = try files.get()
+      if (!library.loaded) return library.feedback
+      const fileImport = { owner: libraryOwner, generation: library.generation, entries: [...chosen], authorization }
+      if (!canSaveFiles(try files.get(), fileImport, "FileHost")) return undefined
       const saving = files.send({ type: "saveFiles", fileImport }, "FileHost") catch () => undefined
-      if (saving === undefined) return false
+      if (saving === undefined) return undefined
       try perform(saving.out, content)
-      return (try files.get()).feedback === "FilesSaved"
+      return (try files.get()).feedback
     }, (done) => [done, n + 1] as const))
   }
 })
 
-export const library = Layer.provideMerge(kept, stored("files"))
+export const library = Layer.provideMerge(kept, machine())

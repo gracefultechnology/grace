@@ -1,8 +1,9 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "The visible Send button approves exactly the composer the user sees"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "From offers each account that has Email on and can send"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
 import { type MailContact, MailCompose, type MailPhoto, type MailRecipientField, MailRecipientPicker, type MailSendStatus } from "@repo/ui";
+import { Exit } from "effect";
 import { use, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
-import { type DraftContent, emptyContent, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
+import { type DraftContent, emptyContent, enabled, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
 import { canMoveDraft, contactAccounts, fromChoices, type MailSource, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
 import { recipientsOf, recipientsValid } from "./mail.vibe";
@@ -90,7 +91,8 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
     if (box) return edit(box, sendTo(box.state.draft, field, address));
     const from = boxes.find((b) => b.id === startFrom(registry, sources, address));
     const start: MailEvent = { type: "startDraft", reply: false };
-    if (from?.can(start)) void from.send(start).then(() => from.send({ type: "editDraft", content: { ...emptyContent, to: address } }));
+    const addressed: MailEvent = { type: "editDraft", content: { ...emptyContent, to: address } };
+    if (from?.can(start)) void from.send(start).then((exit) => { if (Exit.isSuccess(exit) && enabled(exit.value, addressed, "MailUser")) void from.send(addressed); });
   };
 
   if (picking) {

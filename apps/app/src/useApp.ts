@@ -116,6 +116,10 @@ export function useMailFile() {
   return useInstances().file;
 }
 
+export function useMailHeld() {
+  return useInstances().held;
+}
+
 export function useFiles() {
   return useFilesMachine(useRuntime()).state;
 }
@@ -150,7 +154,7 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() };
 const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 

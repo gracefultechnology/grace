@@ -82,13 +82,23 @@ const row = (name: string) => folders().getByRole("button", { name: new RegExp(`
 const email = (from: RegExp) => page.getByRole("button", { name: from });
 const subject = () => page.getByLabelText("Subject");
 const words = () => page.getByRole("textbox", { name: "Write your message, or ask Grace to help" });
+const library = (version: number) => new Promise<IDBDatabase>((resolve, reject) => {
+  const request = indexedDB.open("grace-files", version);
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(new Error("The test could not open the file library", { cause: request.error }));
+});
+const forgotten = () => new Promise<void>((resolve, reject) => {
+  const request = indexedDB.deleteDatabase("grace-files");
+  request.onsuccess = () => resolve();
+  request.onerror = () => reject(new Error("The test could not delete the file library", { cause: request.error }));
+});
 const opened = async (from: RegExp, title: string) => {
   await click(email(from));
   await expect.element(page.getByRole("heading", { name: title })).toBeVisible();
 };
 
 it("See all my email in one place", async () => {
-  const { secret, host, person } = await start();
+  const { secret, host, person, company } = await start();
 
   // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"
   const card = page.getByRole("button", { name: /^Email/ });
@@ -106,6 +116,8 @@ it("See all my email in one place", async () => {
   const clinic = email(/Main St Clinic/);
   const church = email(/St\. Mark’s Church Office/);
   await expect.element(clinic).toBeVisible();
+  await expect.element(email(/^Main St Clinic.*Has attachments/)).toBeVisible();
+  await expect.element(email(/^Riverside Power.*Has attachments/)).not.toBeInTheDocument();
   await expect.element(church).toBeVisible();
 
   await click(row("Outlook"));
@@ -144,25 +156,42 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(row("Gmail 3")).toBeVisible();
 
-  await opened(/Ruth/, "Lunch on Sunday?");
+  const png = /^data:image\/png;base64,iVBORw0KGgo/;
+  const unread = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "family").map((m) => m.labels.includes("UNREAD")));
+  await opened(/^Ruth.*Has attachments/, "Lunch on Sunday?");
   await expect.element(page.getByText("3 photos")).toBeVisible();
-  await click(page.getByRole("button", { name: "Piano.png" }));
-  await expect.element(page.getByRole("heading", { name: "Photo 2 of 3" })).toBeVisible();
-  await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", expect.stringMatching(/^data:image\/png;base64,iVBORw0KGgo/));
-  await click(page.getByRole("button", { name: "Next photo" }));
-  await expect.element(page.getByRole("heading", { name: "Photo 3 of 3" })).toBeVisible();
-  await click(page.getByRole("button", { name: "Save to Files" }));
-  await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
-  await click(page.getByRole("button", { name: "Back to Ruth’s email" }));
-  await click(page.getByRole("button", { name: "Save all to Files" }));
-  await expect.element(page.getByText("3 photos saved to Files")).toBeVisible();
+  await expect.poll(unread).toEqual([false]);
+  await expect.element(page.getByRole("img", { name: "Bow.png" })).toHaveAttribute("src", expect.stringMatching(png));
   await host("Offline");
   await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
   await click(page.getByRole("button", { name: "Bow.png" }));
   await expect.element(page.getByRole("heading", { name: "Photo 1 of 3" })).toBeVisible();
+  await expect.element(page.getByRole("img", { name: "Bow.png" })).toHaveAttribute("src", expect.stringMatching(png));
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   await host("Online");
+  await click(page.getByRole("button", { name: "Next photo" }));
+  await expect.element(page.getByRole("heading", { name: "Photo 2 of 3" })).toBeVisible();
+  await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", expect.stringMatching(png));
+  const blocking = await library(2);
+  await click(page.getByRole("button", { name: "Save to Files" }));
+  const unsaved = page.getByRole("alert");
+  await expect.element(unsaved).toBeVisible();
+  await expect.element(unsaved.getByRole("button", { name: "Try again" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Next photo" }));
+  await expect.element(page.getByRole("heading", { name: "Photo 3 of 3" })).toBeVisible();
+  await expect.element(unsaved).not.toBeInTheDocument();
+  await click(page.getByRole("button", { name: "Save to Files" }));
+  await expect.element(unsaved).toBeVisible();
+  blocking.close();
+  await forgotten();
+  await click(page.getByRole("button", { name: "Try again" }));
+  await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
+  await click(page.getByRole("button", { name: "Previous photo" }));
+  await expect.element(page.getByRole("heading", { name: "Photo 2 of 3" })).toBeVisible();
+  await expect.element(unsaved).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Ruth’s email" }));
+  await click(page.getByRole("button", { name: "Save all to Files" }));
+  await expect.element(page.getByText("3 photos saved to Files")).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(row("Gmail 2")).toBeVisible();
 
@@ -201,7 +230,7 @@ it("See all my email in one place", async () => {
 
   await click(page.getByRole("button", { name: "Close Email" }));
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
-}, 180_000);
+}, 300_000);
 
 it("Write or reply and confirm before sending", async () => {
   const { secret, host, company } = await start();
@@ -226,6 +255,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: /^Back to / }));
   await click(page.getByRole("button", { name: "Back to Sent" }));
   await click(row("All inboxes"));
+  await expect.element(email(/^Main St Clinic.*You replied: “Thank you, I’ll be there\.…”/)).toBeVisible();
 
   // spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
   await click(page.getByRole("button", { name: "Write" }));
@@ -274,6 +304,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(page.getByRole("button", { name: "Remove Susan" })).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(email(/^To Susan.*Lunch next week/)).toBeVisible();
+  await expect.element(row("Drafts 1")).toBeVisible();
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
@@ -289,6 +320,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(row("Outbox 1"));
   const waiting = email(/Re: Lunch on Sunday\?/);
   await expect.element(waiting).toBeVisible();
+  await expect.element(page.getByText("Just now")).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   await host("Online");
   await expect.element(waiting).not.toBeInTheDocument();
@@ -299,7 +331,7 @@ it("Write or reply and confirm before sending", async () => {
   const after = (await sends()).filter((id) => !before.includes(id));
   expect(after).toHaveLength(1);
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
-}, 180_000);
+}, 300_000);
 
 it("Delete a message and recover it safely", async () => {
   const { company } = await start();

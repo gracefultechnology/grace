@@ -7,11 +7,11 @@ import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
-import { Instances } from "./instances.vibe"
+import { type Held, Instances } from "./instances.vibe"
 
 export type Note = { readonly id: number; readonly text: string }
 
-export type Board = { readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader> }
+export type Board = { readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string> }
 
 export type Boards = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Board }
 
@@ -32,10 +32,13 @@ export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()
 export const recipientsValid = (c: DraftContent) => c.to !== "" && [...recipientsOf(c.to), ...c.cc, ...c.bcc].every((a) => address.test(a))
 const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts" }
 export const answerable = (m: Mailbox) => replyable(m) && m.folder !== "DraftsFolder"
-export const headerFor = (board: Board, id: number, m: Mailbox) => {
+export const headerFor = (board: Board, held: Held | undefined, id: number, m: Mailbox): ReplyHeader | undefined => {
   const header = board.replies.get(id)
-  return header !== undefined && header.ref === m.messageRef && header.generation === m.generation ? header : undefined
+  if (header !== undefined && header.ref === m.messageRef && header.generation === m.generation) return header
+  return held?.reply === undefined ? undefined : { ...held.reply, ref: m.messageRef, generation: m.generation }
 }
+const operationTime = /^send-\d+-([0-9a-z]+)-/
+export const queuedAt = (operationId: string) => parseInt(operationTime.exec(operationId)?.[1] ?? "", 36)
 const noteFor = "2600 millis"
 const undoFor = "6 seconds"
 
@@ -118,7 +121,7 @@ export const mailing = Layer.effect(Mail, effect {
   const names = new Map<string, string>()
   const listeners = new Set<() => void>()
   const counter = { next: 1 }
-  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map() }
+  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() }
 
   const post = (next: Partial<Board>) => {
     board = { ...board, ...next }
@@ -167,14 +170,18 @@ export const mailing = Layer.effect(Mail, effect {
     return found
   }
 
-  effect function prepareReply(id: number, mail: MailConnection, m: Mailbox) {
+  effect function prepareReply(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
     const header = mail.header(m.messageRef, m.generation) catch () => undefined
-    if (header !== undefined) post({ replies: new Map(board.replies).set(id, header) })
+    if (header === undefined) return
+    const known = shelf.held(id, header.ref)
+    if (known !== undefined) shelf.remember(id, { ...known, reply: { address: header.address, subject: header.subject, verified: header.verified } })
+    try shelf.keep(id, new Set((try box.get()).messages.map((r) => r.identity.ref)))
+    post({ replies: new Map(board.replies).set(id, header) })
   }
 
   effect function heard(account: Account, mail: MailConnection, box: MailMachine.Shape, before: Mailbox, after: Mailbox) {
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
-    if (opened && answerable(after) && headerFor(board, account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, after)
+    if (opened && answerable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
@@ -294,7 +301,7 @@ export const mailing = Layer.effect(Mail, effect {
     const box = shelf.mail(id) catch () => undefined
     if (account === undefined || box === undefined) return
     const m = try box.get()
-    const header = headerFor(board, id, m) ?? (connectionOf(account).header(m.messageRef, m.generation) catch () => undefined)
+    const header = headerFor(board, shelf.held(id, m.messageRef), id, m) ?? (connectionOf(account).header(m.messageRef, m.generation) catch () => undefined)
     if (header !== undefined) box.send({ type: "replyToMessage", header }, "MailHost") catch () => undefined
   }
 
@@ -342,8 +349,11 @@ export const mailing = Layer.effect(Mail, effect {
     if (!mayExportAttachments(m, [...refs])) return
     const mail = connectionOf(account)
     const version = shelf.content(id, m.messageRef)?.version ?? ""
-    const done = try library.save(chosen, (file) => fetched(shelf, mail, id, file, version), `${account.provider}:${account.address}/${m.messageRef}`)
-    if (done) try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
+    const ids = chosen.map((f) => f.id)
+    post({ unsaved: new Set([...board.unsaved].filter((f) => !ids.includes(f))) })
+    const feedback = try library.save(chosen, (file) => fetched(shelf, mail, id, file, version), `${account.provider}:${account.address}/${m.messageRef}`)
+    if (feedback === "FilesSaved") try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
+    if (feedback === "WriteFailed" || feedback === "CatalogFailed") post({ unsaved: new Set([...board.unsaved, ...ids]) })
   }
 
   const traced = try HttpClient.TracerPropagationEnabled
