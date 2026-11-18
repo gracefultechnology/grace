@@ -7,6 +7,7 @@ import { MenuLabel, MenuOption, type MenuProps } from "./Menu.tsx";
 import { SwitchTrack } from "./Switch.tsx";
 
 const chose = fn();
+const openChange = fn();
 const draw = (paths: ReactNode, size = 24, stroke = 2.2) => <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">{paths}</svg>;
 const voice = draw(<><path d="M11 5 6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></>, 22, 2);
 const speed = (
@@ -23,6 +24,7 @@ export const meta: ComponentMeta<MenuProps> = {
   args: {
     trigger: <Button variant="glass" size="pill">{voice}Voice<ChevronDown size={18} strokeWidth={2.4} aria-hidden /></Button>,
     children: speed,
+    onOpenChange: openChange,
   },
   examples: {
     Attach: {
@@ -42,11 +44,13 @@ export const meta: ComponentMeta<MenuProps> = {
   play: {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       chose.mockClear();
+      openChange.mockClear();
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Voice" }));
       await expect((await screen.findByRole("menuitemradio", { name: "Normal" })).getAttribute("aria-checked")).toBe("true");
       await userEvent.click(screen.getByRole("menuitemradio", { name: "Faster" }));
       await expect(chose).toHaveBeenCalledWith("Faster");
       await expect(screen.queryByRole("menu")).toBeNull();
+      await expect(openChange.mock.calls).toEqual([[true], [false]]);
     },
   },
 };

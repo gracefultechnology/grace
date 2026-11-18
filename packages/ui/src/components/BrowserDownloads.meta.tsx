@@ -8,6 +8,7 @@ import { unfocus } from "./MailApp.meta.tsx";
 
 const openFile = fn();
 const dismiss = fn();
+const openChange = fn();
 
 const downloads: BrowserDownload[] = [
   { id: 4, name: "Visit form.pdf", status: "saving", progress: 40 },
@@ -17,7 +18,7 @@ const downloads: BrowserDownload[] = [
 ];
 
 export const meta: ComponentMeta<BrowserDownloadsProps> = {
-  args: { downloads, onOpen: openFile, onDismiss: dismiss },
+  args: { downloads, onOpen: openFile, onDismiss: dismiss, onOpenChange: openChange },
   examples: {
     Open: { open: true },
   },
@@ -32,7 +33,10 @@ export const meta: ComponentMeta<BrowserDownloadsProps> = {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       openFile.mockClear();
       dismiss.mockClear();
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Downloads" }));
+      openChange.mockClear();
+      const trigger = within(canvasElement).getByRole("button", { name: "Downloads" });
+      await userEvent.click(trigger);
+      await expect([trigger.getAttribute("aria-expanded"), openChange.mock.calls]).toEqual(["true", [[true]]]);
       const list = within(await screen.findByRole("dialog", { name: "Downloads" }));
       await expect(list.getByRole("progressbar", { name: "Saving Visit form.pdf" })).toBeTruthy();
       await userEvent.click(list.getByRole("button", { name: "Open in Files" }));

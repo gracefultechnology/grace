@@ -1,3 +1,4 @@
+import { expect, fn, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AnswerChip, AnswerChips } from "./AnswerChip.tsx";
 import { GraceDock } from "./GraceDock.tsx";
@@ -18,10 +19,12 @@ const dock = (expanded: boolean, turn: "grace" | "answers" | "margaret") => (
   <GraceDock {...dockArgs} quiet={turn === "grace"} placeholder={turn === "margaret" ? "Talk or tap to type a message" : ""} maxLines={expanded ? 6 : 4} />
 );
 
+const fit = fn();
+
 export const meta: ComponentMeta<GraceWindowProps> = {
   args: { size: "expanded", header: header(true), dock: dock(true, "grace"), children: <GraceMessages>{greeting}</GraceMessages> },
   examples: {
-    Compact: { size: "compact", header: header(false), dock: dock(false, "grace") },
+    Compact: { size: "compact", header: header(false), dock: dock(false, "grace"), onHeightChange: fit },
     Conversation: { header: header(true, "idle"), dock: dock(true, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
     "Compact question": { size: "compact", height: 330, header: header(false, "idle"), dock: dock(false, "answers"), children: <GraceMessages>{conversation}</GraceMessages> },
     "Compact question, listening": {
@@ -64,4 +67,10 @@ export const meta: ComponentMeta<GraceWindowProps> = {
       <ScreenSlot className="z-[3] flex flex-col justify-end">{story()}</ScreenSlot>
     </TabletScreen>
   ),
+  play: {
+    Compact: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const grace = within(canvasElement).getByRole("region", { name: "Grace" });
+      await expect(grace.style.height).toBe(`${fit.mock.lastCall?.[0]}px`);
+    },
+  },
 };

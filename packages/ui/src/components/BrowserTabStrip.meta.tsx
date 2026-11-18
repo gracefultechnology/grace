@@ -7,6 +7,9 @@ const select = fn();
 const close = fn();
 const pick = fn();
 const shut = fn();
+const newTab = fn();
+const closeBrowser = fn();
+const moreOpen = fn();
 
 const chase: BrowserTabItem[] = [
   { id: 1, title: "Sign in · Chase", initial: "C" },
@@ -18,11 +21,11 @@ const chase: BrowserTabItem[] = [
 const crowded = { tabs: [chase[0], chase[2], chase[4]], overflow: [chase[1], chase[3]], selectedId: 3 };
 
 export const meta: ComponentMeta<BrowserTabStripProps> = {
-  args: { tabs: [{ id: 1, title: "New tab" }], selectedId: 1 },
+  args: { tabs: [{ id: 1, title: "New tab" }], selectedId: 1, onNewTab: newTab, onCloseBrowser: closeBrowser },
   examples: {
     "Several tabs": { tabs: crowded.tabs, selectedId: 3, onSelectTab: select, onCloseTab: close },
     "Loading page": { tabs: [{ ...chase[2], pageLoading: true }], selectedId: 3 },
-    "More tabs": { ...crowded, onSelectTab: pick, onCloseTab: shut },
+    "More tabs": { ...crowded, onSelectTab: pick, onCloseTab: shut, onOverflowOpenChange: moreOpen },
     "More tabs open": { ...crowded, overflowOpen: true },
   },
   decorator: (story) => (
@@ -36,6 +39,15 @@ export const meta: ComponentMeta<BrowserTabStripProps> = {
     </div>
   ),
   play: {
+    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      newTab.mockClear();
+      closeBrowser.mockClear();
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Open a new tab" }));
+      await userEvent.click(canvas.getByRole("button", { name: "Close browser" }));
+      await expect([newTab, closeBrowser].map((spy) => spy.mock.calls.length)).toEqual([1, 1]);
+      unfocus();
+    },
     "Several tabs": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByRole("button", { name: "Sign in · Chase" }));
@@ -44,7 +56,10 @@ export const meta: ComponentMeta<BrowserTabStripProps> = {
       unfocus();
     },
     "More tabs": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "2 more" }));
+      moreOpen.mockClear();
+      const more = within(canvasElement).getByRole("button", { name: "2 more" });
+      await userEvent.click(more);
+      await expect([more.getAttribute("aria-expanded"), moreOpen.mock.calls[0]]).toEqual(["true", [true]]);
       const list = within(await screen.findByRole("dialog", { name: "More tabs" }));
       await expect(list.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["CCredit card · Chase", "CReview payment · Chase"]);
       await userEvent.click(list.getByRole("button", { name: "Close Review payment · Chase" }));
