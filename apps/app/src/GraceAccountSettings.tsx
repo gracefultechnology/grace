@@ -6,6 +6,7 @@ import { useMachine } from "../gen/app__setup.react.ts";
 import { mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
+import { GraceSignInCode } from "./GraceSignInCode.tsx";
 
 /** @model spec/app/setup.md */
 export function GraceAccountSettings() {
@@ -23,10 +24,6 @@ export function GraceAccountSettings() {
   });
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [provider, setProvider] = useState<"email" | "sms">();
-  const [destination, setDestination] = useState("");
-  const [challenge, setChallenge] = useState("");
-  const [code, setCode] = useState("");
-  const inputId = useId();
   const [mail, setMail] = useState(false);
   const [trashMail, setTrashMail] = useState(false);
   const [writeCalendar, setWriteCalendar] = useState(false);
@@ -34,17 +31,6 @@ export function GraceAccountSettings() {
   const [calendar, setCalendar] = useState(false);
   const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
-  const submitCode = () => {
-    if (provider === undefined) return;
-    if (challenge === "") run({ kind: "sendCode", provider, address: destination.trim() }, () => setChallenge(destination.trim()));
-    else run({ kind: "verifyCode", provider, address: challenge, code: code.trim() }, resetCode);
-  };
-  const resetCode = () => {
-    setProvider(undefined);
-    setDestination("");
-    setChallenge("");
-    setCode("");
-  };
   const run = (operation: Operation, onSuccess?: () => void) => startTransition(async () => {
     setFailed(false);
     setReturnFailed("");
@@ -72,26 +58,7 @@ export function GraceAccountSettings() {
           {!snapshot.google && !snapshot.emailCode && !snapshot.smsCode && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Sign-in is unavailable.</RetryNotice>}
         </div>
       ) : (
-        <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); submitCode(); }}>
-          {challenge === "" ? (
-            <>
-              <label htmlFor={inputId}>{provider === "email" ? "Email address" : "Phone number with country code"}</label>
-              <Input id={inputId} type={provider === "email" ? "email" : "tel"} autoComplete={provider === "email" ? "email" : "tel"}
-                value={destination} onChange={(event) => setDestination(event.target.value)} disabled={pending} required />
-            </>
-          ) : (
-            <>
-              <PageText>We sent a code to {challenge}.</PageText>
-              <label htmlFor={inputId}>Sign-in code</label>
-              <Input id={inputId} inputMode="numeric" autoComplete="one-time-code" value={code}
-                onChange={(event) => setCode(event.target.value)} disabled={pending} required />
-            </>
-          )}
-          <div className="flex flex-wrap gap-3">
-            <Button type="submit" variant="prominent" size="pill" disabled={pending}>{challenge === "" ? "Send code" : "Sign in"}</Button>
-            <Button type="button" variant="capsule" size="pill" disabled={pending} onClick={resetCode}>Back</Button>
-          </div>
-        </form>
+        <GraceSignInCode provider={provider} pending={pending} run={run} onClose={() => setProvider(undefined)} />
       ))}
       {canRetry && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>}
       {snapshot?.tag === "GraceDeviceSignedOut" && (

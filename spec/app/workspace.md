@@ -102,8 +102,12 @@ pure val initial: Workspace = {
   preferences: R::initial, wake: W::initial,
   paymentTask: "", observedDevice: 0, observedBrowser: 0
 }
+pure def privateSignInActive(w: Workspace): bool =
+  w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
+pure def privateSurfaceActive(w: Workspace): bool =
+  w.device.surface == S::Passwords or privateSignInActive(w)
 pure def mayAssist(w: Workspace): bool =
-  w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
+  not(privateSignInActive(w)) and w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
 pure def observationIsCurrent(w: Workspace): bool =
   w.observedDevice == w.device.contextVersion and w.observedBrowser == w.browser.revision
@@ -343,7 +347,7 @@ pure def canCloseBrowser(w: Workspace, by: WorkspaceActor): bool =
 pure def closeBrowser(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::openSurface(w.device, S::Home), B::closeBrowser(w.browser), w)
 pure def canOpenGrace(w: Workspace, by: WorkspaceActor): bool =
-  by == Person and w.device.readiness == S::Ready and A::canOpen(w.assistant, C::ConversationUser)
+  by == Person and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and A::canOpen(w.assistant, C::ConversationUser)
 pure def openGrace(w: Workspace, by: WorkspaceActor): Workspace =
   afterInteraction(A::open(w.assistant, C::ConversationUser), w.browser.editingAddress, false, w)
 pure def canCloseGrace(w: Workspace, by: WorkspaceActor): bool =
@@ -363,7 +367,7 @@ pure def abandonTask(w: Workspace, by: WorkspaceActor): Workspace = {
   wake: W::cancel(w.wake, W::WakeUser)
 }
 pure def canTalk(w: Workspace, by: WorkspaceActor): bool =
-  by == Person and S::mayRequestReasoning(w.device) and w.device.microphoneAllowed and
+  by == Person and not(privateSurfaceActive(w)) and S::mayRequestReasoning(w.device) and w.device.microphoneAllowed and
   A::canTalk(w.assistant, C::ConversationUser)
 pure def talk(w: Workspace, by: WorkspaceActor): Workspace =
   afterInteraction(A::talk(w.assistant, C::ConversationUser), w.assistant.keyboard != A::NoKeyboard or w.browser.editingAddress, false, w)
@@ -396,7 +400,7 @@ A fully classified payment approval uses its separate atomic route below.
 ```quint
 
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
-  (by == Person or by == Host) and w.device.readiness == S::Ready and
+  (by == Person or by == Host) and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
   (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
@@ -579,6 +583,7 @@ pure def listeningAfterWake(w: Workspace): A::Assistant =
   val opened = wakeWindow(paused, presentation)
   if (w.device.reasoningAvailable) A::talk(opened, C::ConversationUser) else opened
 pure def canDetectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActor): bool =
+  not(privateSurfaceActive(w)) and
   by == Host and W::canDetect(w.wake, detection, W::WakeHost) and
   w.preferences.session.wakeEnabled and w.device.microphoneAllowed and
   (w.device.readiness == S::Ready or w.device.readiness == S::Sleeping) and
@@ -702,7 +707,8 @@ pure def begin(w: Workspace, taskRequest: TaskRequest, by: WorkspaceActor): Work
 }
 pure def canChangePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and w.device.surface == S::Browser and
-  BC::canControl(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost)
+  BC::canControl(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost) and
+  BC::requestMatchesTask(browserInput, w.execution.task, w.execution.origin)
 pure def changePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceActor): Workspace =
   val browser = BC::control(w.browser, browserInput, if (by == Person) BC::BrowserControlUser else BC::BrowserControlHost)
   val updated = if (browser.revision != w.browser.revision) interrupted(w.device, browser, w)
