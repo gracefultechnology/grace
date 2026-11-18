@@ -56,7 +56,7 @@ function period(mode: "WeekView" | "MonthView", anchor: number) {
 
 const opening = (v: CalendarView): CalendarEvent => ({ type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone });
 
-async function openFrom(views: readonly CalendarInstance[], r: CalRow, visit: () => void) {
+async function openFrom(views: readonly CalendarInstance[], r: CalRow, visit: () => void, opens: (v: CalendarView) => CalendarEvent) {
   const lead = views.find((v) => v.key === tabletKey);
   const box = views.find((v) => v.key === r.key);
   if (!lead || !box) return;
@@ -66,9 +66,33 @@ async function openFrom(views: readonly CalendarInstance[], r: CalRow, visit: ()
   }
   const day = { type: "navigate", report: navigation((await lead.current()).window, "SelectDay", dayOf(r.details.startAt)) } as const;
   if (enabled(await lead.current(), day, "ViewUser")) await lead.send(day);
-  const open = { type: "openOccurrence", id: r.identity.occurrenceId } as const;
-  if (enabled(await box.current(), open, "ViewUser")) await box.send(open);
+  const open = opens(await box.current());
+  if (!enabled(await box.current(), open, "ViewUser")) return;
+  await box.send(open);
   visit();
+}
+
+const occurrence = (id: string) => (): CalendarEvent => ({ type: "openOccurrence", id });
+const reminding = (id: string) => (v: CalendarView): CalendarEvent => ({ type: "openReminder", id, owner: v.owner, calendarId: v.calendarId, timezone: v.timezone });
+
+function dueReminder(registry: Accounts, views: readonly CalendarInstance[]) {
+  const [due] = shownReminders(registry, sourcesOf(views)).sort(byStart);
+  const box = due && views.find((v) => v.key === due.key);
+  if (!due || !box) return undefined;
+  const dismiss: CalendarEvent = { type: "changeOccurrence", id: due.identity.occurrenceId, command: { tag: "DismissReminder" } };
+  return { due, canDismiss: box.can(dismiss), onDismiss: () => { if (box.can(dismiss)) void box.send(dismiss); } };
+}
+
+export function reminderToast(registry: Accounts, views: readonly CalendarInstance[], now: number): ReactNode {
+  const shown = dueReminder(registry, views);
+  if (!shown) return undefined;
+  const d = shown.due.details;
+  return (
+    <Toast key={`reminder/${shown.due.key}/${shown.due.identity.occurrenceId}`} placement="screen">
+      <span>{`Reminder: ${d.title} ${relative(dayOf(d.startAt), dayOf(now)).toLowerCase()} at ${timeLabel(d.startAt)}`}</span>
+      <Button variant="plain" size="compact" className="bg-glass/14 font-bold text-frame-lilac active:bg-glass/24" disabled={!shown.canDismiss} onClick={shown.onDismiss}>Dismiss</Button>
+    </Toast>
+  );
 }
 
 async function editSeries(box: CalendarInstance, id: string) {
@@ -91,25 +115,24 @@ export function homeCalendar(registry: Accounts, views: readonly CalendarInstanc
   const events = upcoming(registry, sources, now, now + horizon).sort(byStart).slice(0, 3).map((r) => ({
     id: `${r.key}/${r.identity.occurrenceId}`, weekday: short(dayOf(r.details.startAt), today).toUpperCase(), time: timeLabel(r.details.startAt),
     title: r.details.title, detail: whoWhere(r.details) || undefined, next: r.details.important,
-    onClick: visit && ((e: { stopPropagation: () => void }) => { e.stopPropagation(); void openFrom(views, r, visit); }),
+    onClick: visit && ((e: { stopPropagation: () => void }) => { e.stopPropagation(); void openFrom(views, r, visit, occurrence(r.identity.occurrenceId)); }),
   }));
   return { events, status: upcoming(registry, sources, midnight(today), midnight(today + 1)).length > 0 ? "Today" : "Nothing else today" };
 }
 
 export function homeReminder(registry: Accounts, views: readonly CalendarInstance[], now: number, visit: (() => void) | undefined): ReactNode {
-  const [due] = shownReminders(registry, sourcesOf(views)).sort(byStart);
-  const box = due && views.find((v) => v.key === due.key);
-  if (!due || !box) return undefined;
+  const shown = dueReminder(registry, views);
+  if (!shown) return undefined;
+  const { due } = shown;
   const d = due.details;
-  const dismiss: CalendarEvent = { type: "changeOccurrence", id: due.identity.occurrenceId, command: { tag: "DismissReminder" } };
   const when = `${relative(dayOf(d.startAt), dayOf(now))} at ${timeLabel(d.startAt)}`;
   return (
     <Banner icon={<span className="flex text-alert"><BellIcon className="size-7.5" /></span>} title={d.title}
       line={[when, d.location.split(" · ")[0]].filter(Boolean).join(" · ")}
       actions={
         <>
-          {visit && <Button variant="prominent" size="compact" onClick={() => void openFrom(views, due, visit)}>See details</Button>}
-          <Button variant="plain" size="compact-icon" aria-label="Dismiss" disabled={!box.can(dismiss)} onClick={() => { if (box.can(dismiss)) void box.send(dismiss); }}>
+          {visit && <Button variant="prominent" size="compact" onClick={() => void openFrom(views, due, visit, reminding(due.identity.occurrenceId))}>See details</Button>}
+          <Button variant="plain" size="compact-icon" aria-label="Dismiss" disabled={!shown.canDismiss} onClick={shown.onDismiss}>
             <X aria-hidden size={24} strokeWidth={1.75} />
           </Button>
         </>
@@ -140,7 +163,7 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
   const note = useCalendarNote();
   const lead = views.find((v) => v.key === tabletKey);
   if (!lead) return null;
-  const toast = note && <Toast key={note.id} placement="screen">{note.text}</Toast>;
+  const toast = note ? <Toast key={note.id} placement="screen">{note.text}</Toast> : reminderToast(registry, views, now);
   const sources = sourcesOf(views);
   const today = dayOf(now);
   const w = lead.state.window;

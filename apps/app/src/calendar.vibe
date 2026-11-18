@@ -126,7 +126,8 @@ function written(v: CalendarView, c: Calendar): Calendar {
 
 function removed(v: CalendarView) {
   const { seriesId, recurrence } = entryAt(v, v.selectedId).committed
-  return !generated(seriesId, v.selectedId) ? v.selectedId : v.scope === "EntireSeries" || recurrence === "Once" ? rootOf(v, seriesId) : undefined
+  if (v.scope === "ThisOccurrence" && recurrence !== "Once") return undefined
+  return generated(seriesId, v.selectedId) ? rootOf(v, seriesId) : v.selectedId
 }
 
 const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(approveSave(create(noEntry, {
@@ -290,7 +291,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     if (news !== "DeletedAppointment") return { text: "Saved to your calendar", row: `${key}/${id}` }
     const box = shelf.calendar(key) catch () => undefined
     const gone = box === undefined ? undefined : (try box.get()).entries.find((c) => c.identity.occurrenceId === id)
-    return { text: `Deleted ${gone?.committed.title ?? "it"}`, row: "" }
+    return gone === undefined ? undefined : { text: `Deleted ${gone.committed.title}`, row: "" }
   }
 
   const notices = Stream.filter(Stream.mapEffect(Stream.fromPubSub(hub), noteOf), (said) => said !== undefined)
