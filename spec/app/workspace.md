@@ -31,7 +31,9 @@ Discovered by the proof: every retained plan step has a named subject and
 nonempty outcome, so the next instruction still exists after a receipt.
 The workspace also retains the component rules for a loaded page's security,
 the assistant's visible work, guidance and conversation offers, and the
-execution's verified observation context.
+execution's verified observation context. Discovered by the proof: retained
+website facts have a source quotation, and a queued step must still be one
+Grace may take. The workspace keeps the same rules as the execution it holds.
 
 ```quint
 import shell as S from "./shell"
@@ -189,7 +191,8 @@ pure def alwaysBrowserRules(w: Workspace): bool =
 pure def alwaysAssistantRules(w: Workspace): bool = I::validAssistant(w.assistant)
 pure def alwaysExecutionRules(w: Workspace): bool =
   X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysObservedContextExists(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
+  X::alwaysFactsAreQuoted(w.execution) and X::alwaysObservedContextExists(w.execution) and
+  X::alwaysQueuedStepIsGraces(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
   X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
   X::alwaysNoExhaustedApproachQueued(w.execution)
 pure def alwaysCommitmentRules(w: Workspace): bool =
