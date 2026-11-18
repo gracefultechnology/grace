@@ -8,22 +8,41 @@ import android.util.Log;
 
 public class GraceAgentService extends EmbeddedAgentService {
  @Override protected CloudAccount cloudAccount() throws Exception {
-  var session = GraceAccount.account(this).session();
+  var session = GracePasswordsOwner.stableSession(this);
   return session == null ? null : new CloudAccount(session.token(), session.accountId(), session.organizationId());
  }
 
  private static volatile boolean alive, restartOwed;
 
  @Override public void onCreate() { super.onCreate(); alive = true; }
- @Override public void onDestroy() { alive = false; super.onDestroy(); }
+ @Override public void onDestroy() {
+  try { super.onDestroy(); } finally { alive = false; }
+ }
 
  @Override protected Notification runtimeNotification() {
   return Notification.Builder.recoverBuilder(this, super.runtimeNotification()).setSmallIcon(R.drawable.notification_icon).build();
  }
 
  static void resume(Context context) {
+  if (GracePasswordsOwner.accountChanging()) return;
   if (restartOwed) restart(context);
   else if (!alive) start(context, null);
+ }
+
+ static void retire() {
+  restartOwed = true;
+  prepareRestartFor(GraceAgentService.class);
+ }
+
+ static void finishAccountChange(Context context) {
+  try {
+   if (GracePasswordsOwner.stableSession(context) != null) {
+    restart(context);
+    return;
+   }
+  } catch (Exception unconfirmed) { }
+  restartOwed = false;
+  context.stopService(new Intent(context, GraceAgentService.class));
  }
 
  static void restart(Context context) {
