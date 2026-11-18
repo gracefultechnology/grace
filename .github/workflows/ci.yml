@@ -11,6 +11,10 @@ on:
         description: Run the pinned 100-biller browser qualification
         type: boolean
         default: true
+      billworld_resume_run:
+        description: Optional earlier CI run ID at the exact same product commit
+        type: string
+        required: false
       webarena:
         description: Run official Shopping task 260 with hosted link guidance
         type: boolean
@@ -179,6 +183,9 @@ jobs:
           if-no-files-found: warn
   billworld:
     if: github.event_name == 'workflow_dispatch' && inputs.billworld
+    permissions:
+      actions: read
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 150
     strategy:
@@ -197,6 +204,20 @@ jobs:
           path: .cache/billworld
           persist-credentials: false
       - run: pnpm gen
+      - if: inputs.billworld_resume_run != ''
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.billworld_resume_run }}
+          name: billworld-browser-receipts-${{ matrix.shard }}
+          path: ${{ runner.temp }}/grace-fleet
+      - if: inputs.billworld_resume_run != ''
+        name: Select the previous Fleet result directory
+        shell: bash
+        run: |
+          mapfile -t manifests < <(find "$RUNNER_TEMP/grace-fleet" -name cohort.json -type f)
+          test "${#manifests[@]}" -eq 1
+          printf 'GRACE_BILLWORLD_RESUME_DIR=%s\n' "$(dirname "${manifests[0]}")" >> "$GITHUB_ENV"
       - name: Follow Grace through the Fleet cohort
         env:
           GRACE_BILLWORLD_DIR: ${{ github.workspace }}/.cache/billworld
@@ -204,7 +225,7 @@ jobs:
           GRACE_BILLWORLD_SHARD: ${{ matrix.shard }}
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
-        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
+        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -224,6 +245,7 @@ jobs:
         env:
           GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet-shards
           GRACE_BILLWORLD_MATRIX_RESULT: ${{ needs.billworld.result }}
+          GRACE_PRODUCT_REVISION: ${{ github.sha }}
         run: |
           python3 - <<'PY'
           import json
@@ -233,6 +255,7 @@ jobs:
 
           root = Path(os.environ["GRACE_BILLWORLD_RESULTS"])
           revision = os.environ["GRACE_BILLWORLD_REVISION"]
+          product_revision = os.environ["GRACE_PRODUCT_REVISION"]
           cohort = None
           verified = {}
 
@@ -245,19 +268,26 @@ jobs:
               if not condition:
                   raise SystemExit(message)
 
+          def loopback(value):
+              url = urlsplit(value)
+              require(url.scheme == "https" and url.hostname == "127.0.0.1" and url.port and
+                      url.username is None and url.password is None, f"Invalid Fleet loopback URL {value}")
+              return url
+
           for shard in range(1, 5):
               manifests = list((root / f"billworld-browser-receipts-{shard}").rglob("cohort.json"))
               require(len(manifests) == 1, f"Expected one Fleet cohort manifest for shard {shard}")
               manifest = load(manifests[0])
               require(
-                  (manifest["revision"], manifest["shard"], manifest["shardCount"]) == (revision, shard, 4),
+                  (manifest["revision"], manifest["productRevision"], manifest["shard"], manifest["shardCount"]) ==
+                  (revision, product_revision, shard, 4),
                   f"Wrong Fleet revision or shard metadata for shard {shard}",
               )
               tasks = manifest["cohort"]
               ids = [task["taskId"] for task in tasks]
               require(len(ids) == len(set(ids)) == 100, "Fleet manifest must declare 100 unique billers")
               identity = [
-                  (task["taskId"], task["template"], task["evidence"], urlsplit(task["startUrl"])[2:], urlsplit(task["expected"])[2:])
+                  (task["taskId"], task["template"], task["evidence"], loopback(task["startUrl"])[2:], loopback(task["expected"])[2:])
                   for task in tasks
               ]
               if cohort is None:
@@ -265,10 +295,12 @@ jobs:
               require(identity == cohort, f"Fleet cohort differs on shard {shard}")
               assigned = {task["taskId"]: task for task in tasks[shard - 1::4]}
               directory = manifests[0].parent
+              require({path.stem for path in directory.glob("*.json")} == ({"cohort", "scores"} | set(assigned)),
+                      f"Wrong receipt membership on shard {shard}")
               scores = load(directory / "scores.json")
               require(
-                  (scores["revision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
-                   scores["attempted"], scores["total"], scores["passed"]) == (revision, shard, 4, 100, 25, 25, 25),
+                  (scores["revision"], scores["productRevision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
+                   scores["attempted"], scores["total"], scores["passed"]) == (revision, product_revision, shard, 4, 100, 25, 25, 25),
                   f"Incomplete or failed Fleet score for shard {shard}",
               )
               require(set(scores["cases"]) == set(assigned), f"Wrong case membership on shard {shard}")
@@ -276,19 +308,24 @@ jobs:
                   require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
                   receipt = load(directory / f"{task_id}.json")
                   grade = receipt["grade"]
+                  start = loopback(receipt["startUrl"])
+                  destination = loopback(grade["destination"])
                   require(task_id not in verified and scores["cases"][task_id] is True and
-                          receipt["taskId"] == task_id and receipt["startUrl"] == task["startUrl"] and
+                          receipt["surface"] == "desktop-chromium" and receipt["taskId"] == task_id and
+                          start[2:] == loopback(task["startUrl"])[2:] and
+                          destination[2:] == loopback(task["expected"])[2:] and start[:2] == destination[:2] and
                           receipt["decisionProvider"] == "hosted" and receipt["decisionRequests"] > 0 and
-                          receipt["outcome"]["ringTap"] is True and not receipt["outcome"].get("failure") and
+                          isinstance(receipt["outcome"]["graceTerminal"], str) and receipt["outcome"]["ringTap"] is True and
+                          not receipt["outcome"].get("failure") and
                           grade["passed"] is True and grade["visible"] is True and
-                          grade["expected"] == grade["destination"] == task["expected"] != task["startUrl"],
+                          grade["expected"] == grade["destination"] != receipt["startUrl"],
                           f"Duplicate or failed Fleet browser receipt for {task_id}")
                   verified[task_id] = shard
 
           require(len(verified) == 100, "Expected 100 distinct verified Fleet browser receipts")
           require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
           (root / "qualification.json").write_text(json.dumps(
-              {"revision": revision, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
+              {"revision": revision, "productRevision": product_revision, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
           ) + "\n")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
               summary.write("Verified **100 of 100** distinct Fleet billers across four shards.\n")
