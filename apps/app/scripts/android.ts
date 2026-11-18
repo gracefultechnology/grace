@@ -689,6 +689,12 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       const nodes = await screen().catch(() => []);
       const found = nodes.find(matches);
       if (found) return found;
+      const androidWait = nodes.find((node) => node.id === "aerr_wait" && node.label === "Wait" &&
+        (node.packageName === "android" || node.packageName === "com.android.systemui"));
+      if (androidWait) {
+        await shell(serial, `input tap ${androidWait.x} ${androidWait.y}`);
+        process.stdout.write("Android requested more time during the fixture.\n");
+      }
       await delay(1000);
     }
     throw new Error(`Android did not show ${label}`);
