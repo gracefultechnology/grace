@@ -128,11 +128,13 @@ To repeat them, dispatch `ci` with `cross_app_only` enabled.
 
 To reproduce the BillWorld jobs on their own, dispatch `ci` with `billworld`
 and `benchmarks_only` enabled, and leave `webarena` disabled. The four Fleet
-shards upload receipts for the aggregate job, and the released statement job
-uploads its positive and no-action receipts. For manual runs in
+shards upload receipts for the aggregate job. The statement job uploads
+Malden’s positive and no-action receipts as `billworld-released-task-md9`.
+Its `billworld-fleet-view-bill` artifact contains the independent billing-task
+grades and both negative controls for three additional billers. For manual runs in
 `gracefultechnology/grace-new`, an administrator can set the repository variable
 `GRACE_BILLWORLD_RUNNER` to a Linux x64 runner label shared by those jobs.
-Without the variable, the jobs use `ubuntu-latest`.
+Without the variable, the jobs use `ubuntu-24.04`.
 
 The Fleet shards share one hosted decision credential. The first four-shard GitHub Actions run sent simultaneous requests and received HTTP 429 responses from staging. Fleet now schedules one shard at a time. Each shard retains its own receipts and the aggregate still requires all 100 successful browser outcomes. [Concurrent Fleet run](https://github.com/gracefultechnology/grace-new/actions/runs/44254873722)
 
@@ -158,6 +160,18 @@ Six offline Chromium journeys passed in GitHub Actions on `45c81f0`. They cover 
 | 2 | Extend the billing and WebArena tasks that have independent graders. | Publish denominators separately for authored billing tasks, additional Shopping intents and each new WebArena evaluator or site. Exercise a refusal, interruption and a successful outcome before qualifying each kind of write. |
 | 3 | Extend app coverage with a source-bound checkpoint and a new adapter. | Recover a paused task across restart under the same account, invalidate a stale receipt after an account switch, and complete a Files or multi-tab task without reusing an earlier observation. Carry a venue read from a webpage into an explicitly approved calendar write. |
 | 4 | Qualify the installed standalone app against its own cloud and finish whole-repository verification. | Record an authenticated hosted decision from an installed device, a completed browser task and the ordinary full `pnpm check` result. Keep the upstream sandbox, native build and installed-device receipts identifiable by revision. |
+
+### Tagged capabilities and account ownership
+
+On `47fd9f0` with Eliza `6e3b157`, the official WebArena URL evaluator and Grace’s own completion check each accepted all four declared Shopping attempts. Task 260 reached Video Games once with a fixed plan. Task 261 reached Headphones in three fresh sessions, each with a successful live upstream chat request. All four used hosted Clef for browser decisions. Two infrastructure attempts ended before a task started. [Product source](https://github.com/gracefultechnology/grace-new/tree/47fd9f02cd13f3ee480f6ccced6806b8b0d2e379) · [Official task definitions](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
+
+The authenticated statement job passed on this revision. After a simulated person signed in and opened each bill, Grace read the amount and due date. Malden passed the six checks in BillWorld’s released `task_md9`. The original Fleet view-bill grader passed five checks each for 121 Disposal, 405 Express Lanes and Aberdeen News. All seven negative controls were rejected. [Statement and Fleet workflow](https://github.com/gracefultechnology/grace-new/actions/runs/44361214963)
+
+### How a reviewed step runs
+
+A guided task has an owner, a goal, an ordered list of steps and a current position. The person reviews the list before starting. Each executable step names a capability. The same capability determines its visible instruction, the app that opens and the adapter that can verify completion. For example, a named-page step takes the destination from the reviewed plan and checks its visible heading in the current browser document. An email-to-calendar step reads the selected message and needs separate approval to write the event. A planner can describe another outcome, but the offer requires a registered adapter. Repeating an executable instruction as free text cannot grant that capability. [Workspace model](../spec/app/workspace.md) · [Plan execution](../apps/app/src/conversation.vibe)
+
+The plan belongs to the active account. Grace rechecks ownership when offering, starting, resuming or crediting a step, and before using a cloud decision. Switching accounts hides the prior plan and gives the person a way to end it. The local Google journeys exercise same-subject messages, a different account, a renewed grant and an approval bound to the actual selected message. The statement reader recognizes current balances and due dates across portal layouts, including “Payment due” and “Due by.” An ambiguous date leaves the read unconfirmed. [Browser journeys](../apps/app/test/app.browser.test.tsx) · [BillWorld journeys](../apps/app/test/browser.browser.test.tsx)
 
 ### WebArena Shopping on x86 Linux
 
