@@ -284,7 +284,7 @@ function buildAndroid({ release = false, abi, fixture }: { release?: boolean; ab
     output: fixture?.output ?? "artifacts",
     signing: { environment: Object.values(signing) },
     prepare: [
-      { command: path.join(app, "node_modules/.bin/vite"), args: ["build"] },
+      { command: "pnpm", args: ["run", "build"] },
       { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
     ],
     verify: { command: process.execPath, args: [import.meta.filename, ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },

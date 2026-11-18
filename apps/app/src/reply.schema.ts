@@ -1,4 +1,4 @@
-// spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A tapped answer preserves whether the microphone was active"
+// spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A tapped answer is one of the offered answers and preserves whether the microphone was active"
 import { Option, Schema, SchemaGetter } from "effect"
 import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
 import type { Pace, TextSize } from "../gen/app__preferences.effect.vibe"
