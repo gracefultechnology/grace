@@ -420,10 +420,11 @@ pure val choiceValues = Set(
 
 Home retains all browser tabs. Close browser resets the tabs and returns Home.
 Close Grace hides its window and retains the website. All three preserve the
-task, transcript and draft while pausing unfinished work and stopping speech.
+task and transcript while pausing unfinished work and stopping speech.
 Returning to an application or reopening Grace reveals that same paused task.
-Leaving the surface or sleeping dismisses keyboard focus while retaining the
-draft. Opening Grace ends an active address-editor focus; browser address entry
+Leaving the surface or sleeping dismisses keyboard focus. The draft survives
+these interruptions unless the person enters or leaves the Passwords card.
+Opening Grace ends an active address-editor focus. Browser address entry
 still works independently while Grace is closed.
 Choosing Home or Settings moves expanded chat into the lower pane, including
 when the selected surface is already open. Compact chat stays compact and
