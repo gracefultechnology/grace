@@ -31,11 +31,10 @@ export const billFactsLabels: TaskFactsLabels = {
 };
 
 export const bookingFactsLabels: TaskFactsLabels = {
+  ...billFactsLabels,
   outcome: "Booking",
   noOutcome: "Nothing booked yet",
-  unknown: "Not shown on the website",
   open: "Open website",
-  recheck: "Check website again",
   status: bookingStatusLabels,
 };
 
