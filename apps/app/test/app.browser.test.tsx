@@ -8,12 +8,14 @@ import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vit
 import { type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
+import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
+import { AccountActions } from "../src/graceAccount.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -998,6 +1000,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const literalText = "<strong>This stays plain text.</strong>";
   const oldURL = window.location.href;
   const oldIntent = sessionStorage.getItem("grace-hosted-read");
+  const oldAccounts = localStorage.getItem("accounts");
+  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
+  const legacyAccount = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "previous@example.test", granted: allowedUse }, "Gmail", "AccountConnector");
+  localStorage.setItem("accounts", JSON.stringify(legacyAccount));
   const hint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(person.id));
   const ownerHint = Array.from(new Uint8Array(hint), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const url = new URL(oldURL);
@@ -1006,6 +1012,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   window.history.replaceState(undefined, "", url);
 
   let signedIn = false;
+  let connectorConfigured = false;
+  let inboxRequests = 0;
   let replyFromOwner = false;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
@@ -1048,10 +1056,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status":
         return reply({
-          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
-          identity: { email: person.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"],
+          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
+          identity: connectorConfigured ? { email: person.email } : null, connectionId: connectorConfigured ? grant : null,
+          grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
         });
-      case "/api/v1/eliza/gmail/triage": return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
+      case "/api/v1/eliza/gmail/triage":
+        inboxRequests++;
+        return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
       case "/api/v1/eliza/gmail/read":
         expect(api.searchParams.get("messageId")).toBe(mail.externalId);
         return reply({
@@ -1127,6 +1138,20 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Send code");
     await act(() => userEvent.type(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
     await tap("Sign in");
+    await expect.element(page.getByRole("button", { name: "Close Email" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Go to Account" })).not.toBeInTheDocument();
+    expect(inboxRequests).toBe(0);
+
+    connectorConfigured = true;
+    await act(async () => {
+      await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
+    });
+    await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    const homeUrl = new URL(window.location.href);
+    homeUrl.hash = "";
+    window.history.replaceState(undefined, "", homeUrl);
+    await tap("Close Email");
+    await tap(/^Email/);
     await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
     await tap(/Your receipt/);
@@ -1206,10 +1231,154 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await runtime.dispose();
     host.remove();
     provider.mockRestore();
+    if (oldAccounts === null) localStorage.removeItem("accounts");
+    else localStorage.setItem("accounts", oldAccounts);
     if (oldIntent === null) sessionStorage.removeItem("grace-hosted-read");
     else sessionStorage.setItem("grace-hosted-read", oldIntent);
     window.history.replaceState(undefined, "", oldURL);
   }
+});
+
+it('Check the Android readback for brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
+  const audio = { step: 0, min: 0, max: 15, muted: false };
+  let brightness = 20;
+  let denyBrightness = false;
+  const readback: { brightness: number; muted: boolean; step: number }[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    display: {
+      getDevice: async () => {
+        readback.push({ brightness, muted: audio.muted, step: audio.step });
+        return { volume: { ...audio }, brightness: { percent: brightness } };
+      },
+      setBrightness: async ({ percent }) => { if (!denyBrightness) brightness = percent; },
+      setVolume: async ({ step, muted }) => { Object.assign(audio, { step, muted }); },
+    },
+  }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await act(() => root.render(<App runtime={runtime} />));
+  await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: false, step: 9 });
+  await tap("Volume");
+  await tap("Mute");
+  await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: true, step: 9 });
+  await tap("Unmute");
+  await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: false, step: 9 });
+  await tap("Volume");
+  await tap("Settings");
+  await tap("Brightness");
+  await tap("Dimmer");
+  await expect.poll(() => readback.at(-1)?.brightness).toBeLessThan(100);
+  const applied = brightness;
+  denyBrightness = true;
+  await tap("Dimmer");
+  await expect.element(page.getByText("The tablet couldn’t apply that setting.")).toBeVisible();
+  expect(brightness).toBe(applied);
+});
+
+it('Restore the saved text size when Grace restarts (spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements")', async () => {
+  let stored: { revision: number; value?: string } = { revision: 0 };
+  let rejectNextWrite = true;
+  const options = {
+    native: true,
+    preferences: {
+      read: async () => stored,
+      write: async ({ revision, value }: { revision: number; value: string }) => {
+        expect(revision).toBe(stored.revision);
+        if (rejectNextWrite) {
+          rejectNextWrite = false;
+          throw new Error("Device storage unavailable");
+        }
+        stored = { revision: revision + 1, value };
+        return { revision: stored.revision };
+      },
+    },
+  };
+  const host = document.body.appendChild(document.createElement("div"));
+  let runtime = ManagedRuntime.make(application(undefined, undefined, options));
+  let root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  const mountSettings = async () => {
+    await act(() => root.render(<App runtime={runtime} />));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Settings", exact: true })));
+  };
+  const larger = page.getByRole("radio", { name: "Larger", exact: true });
+  await mountSettings();
+  await act(() => userEvent.click(larger));
+  await expect.element(larger).toHaveAttribute("aria-checked", "true");
+  await expect.element(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+  expect(stored.revision).toBe(0);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Try again", exact: true })));
+  await expect.poll(() => stored.revision).toBe(1);
+  await act(() => root.unmount());
+  await runtime.dispose();
+  root = createRoot(host);
+  runtime = ManagedRuntime.make(application(undefined, undefined, options));
+  await mountSettings();
+  await expect.element(larger).toHaveAttribute("aria-checked", "true");
+  expect(stored.revision).toBe(1);
+});
+
+it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share, print and remove the chosen file")', async () => {
+  const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
+  const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
+  let entries = [photo];
+  const removals: string[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    files: {
+      open: async () => ({ lease }),
+      close: async () => undefined,
+      list: async () => ({ entries }),
+      preview: async ({ id, page }) => ({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
+      pick: async () => undefined,
+      capture: async () => undefined,
+      commit: async () => undefined,
+      remove: async (request) => {
+        expect(request).toEqual({ lease, id: photo.id });
+        removals.push(request.id);
+        if (removals.length === 1) throw new Error("Device storage unavailable");
+        entries = [];
+      },
+    },
+  }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await runtime.dispose();
+    host.remove();
+  });
+  await act(() => root.render(<App runtime={runtime} />));
+  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
+  await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
+    report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
+  await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
+    workspace.send({ type: "chooseHomePage", page: "FilesCard" }, "Person"))));
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await tap("Files");
+  await tap("Garden.jpg");
+  await tap("Delete");
+  await tap("Cancel");
+  expect(removals).toEqual([]);
+  await tap("Delete");
+  await tap("Delete photo");
+  await expect.element(page.getByRole("img", { name: photo.name })).toBeVisible();
+  await tap("Try again");
+  await tap("Delete photo");
+  await expect.poll(() => removals).toEqual([photo.id, photo.id]);
+  await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
+  expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
 });
 
 it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {

@@ -2,7 +2,7 @@
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
@@ -23,8 +23,6 @@ const opened = window.open.bind(window);
 const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "";
 
 let secret = "";
-const start = () => ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-let app: ReturnType<typeof start>;
 
 beforeAll(async () => {
   globalThis.fetch = (input, init) => {
@@ -39,13 +37,25 @@ beforeAll(async () => {
   };
   environment.IS_REACT_ACT_ENVIRONMENT = true;
   await page.viewport(1280, 800);
-  localStorage.clear();
-  secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
-  app = start();
 });
-afterAll(async () => {
-  await app.dispose();
+beforeEach(async () => {
   localStorage.clear();
+  chatBodies.length = 0;
+  otherChecks.length = 0;
+  providerPages.length = 0;
+  secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
+  const app = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await app.dispose();
+    host.remove();
+    localStorage.clear();
+  });
+  await act(() => root.render(<App runtime={app} />));
+});
+afterAll(() => {
   environment.IS_REACT_ACT_ENVIRONMENT = false;
   globalThis.fetch = fetched;
   window.open = opened;
@@ -79,9 +89,6 @@ async function closeSettings() {
 }
 
 it("Connect the email I already use", async () => {
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={app} />)));
-
   // spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"
   await openEmailSettings();
   await expect.element(page.getByText("Which email do you use?")).toBeVisible();
@@ -140,8 +147,10 @@ it("Connect the email I already use", async () => {
   await expect.element(page.getByRole("heading", { name: "Mail settings", level: 1 })).toBeVisible();
   await expect.element(servers.getByLabelText("Incoming mail server")).toHaveValue("mail.riverview.net");
   await tap(servers.getByRole("button", { name: "Ask Grace" }));
+  const composer = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.element(composer).toBeVisible();
   const asked = "What are mail servers?";
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), `${asked}{Enter}`));
+  await act(() => userEvent.type(composer, `${asked}{Enter}`));
   await expect.element(page.getByText(reply(asked))).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await act(() => servers.getByLabelText("Incoming mail server").fill("mail.wrong.net"));
@@ -161,14 +170,23 @@ it("Connect the email I already use", async () => {
     expect(kept).not.toContain(typed);
     expect(chatBodies.join("\n")).not.toContain(typed);
   }
-
-  await act(() => Promise.resolve(root.unmount()));
 });
 
 it("Choose what each email brings and take it off the tablet", async () => {
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={app} />)));
   const row = (address: string) => page.getByRole("button", { name: new RegExp(address) });
+  await openEmailSettings();
+  await tap(tile("Outlook"));
+  await answerOutlook("allow");
+  await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
+  await tap(page.getByRole("button", { name: "Add another email" }));
+  await tap(tile("Other email"));
+  const form = page.getByRole("form", { name: "Other email" });
+  await act(() => form.getByLabelText("Your name").fill("Margaret Hill"));
+  await act(() => form.getByLabelText("Email address").fill(riverview));
+  await act(() => form.getByLabelText("Password").fill(otherPassword));
+  await tap(form.getByRole("button", { name: "Next" }));
+  await tap(page.getByRole("form", { name: "Mail settings" }).getByRole("button", { name: "Connect" }));
+  await expect.element(page.getByRole("heading", { name: "Riverview", exact: true })).toBeVisible();
   await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
   await expect.element(row(outlook)).toBeVisible();
 
@@ -177,6 +195,8 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await tap(page.getByRole("button", { name: /St\. Mark’s Church Office/ }));
+  await expect.element(page.getByRole("alert")).toBeVisible();
+  await tap(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Outlook needs you to sign in again")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
   await openEmailSettings();
@@ -212,6 +232,4 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
-
-  await act(() => Promise.resolve(root.unmount()));
 });

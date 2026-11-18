@@ -58,7 +58,7 @@ schema ActionReceipt { accountId: idField; operationId: idField; itemId: idField
 export type WriteReceipt = typeof ActionReceipt.Type
 type WriteScope = { accountId: string; grant: string }
 
-type Waiting = "native" | "checking" | "unavailable" | "signedOut" | "connect" | "mismatch"
+type Waiting = "native" | "checking" | "unavailable" | "signedOut" | "connect" | "connectorUnavailable" | "mismatch"
 type Scope =
   | { kind: "closed" }
   | { kind: "waiting"; view: ReadView; reason: Waiting }
@@ -178,6 +178,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       const hash = ownerHash(accountId) catch () => ""
       if (hash !== intent.owner) return { kind: "waiting", view, reason: "mismatch" }
     }
+    if (account.googleLink.tag === "GoogleLinkUnavailable") return { kind: "waiting", view, reason: "connectorUnavailable" }
     if (!mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar")) {
       return { kind: "waiting", view, reason: "connect" }
     }
@@ -231,6 +232,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       return true
     }
     if (command.kind === "account") {
+      if (scope.kind !== "waiting" || !["signedOut", "connect", "mismatch"].includes(scope.reason)) return false
       const kept = try Ref.get(pending)
       try saveIntent({ view: scope.view, owner: kept?.owner, returning: true })
       try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
@@ -389,8 +391,9 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     }
     try fork.scoped Stream.runForEach(Stream.zipLatest(desk.changes, setup.changes), effect ([workspace, account]) => {
       const next = try Ref.get(pending)
-      if (next?.returning && workspace.device.surface === "DeviceSettings" && workspace.device.settingsPage === "AccountSettings" &&
-        (try scopeOf(next.view, account, next)).kind === "ready") {
+      if (next?.returning && workspace.device.surface === "DeviceSettings" && workspace.device.settingsPage === "AccountSettings") {
+        const scope = try scopeOf(next.view, account, next)
+        if (scope.kind !== "ready" && (scope.kind !== "waiting" || scope.reason !== "connectorUnavailable")) return
         const opened = desk.send({ type: "visit", destination: next.view }, "Person") catch () => undefined
         if (opened !== undefined) try saveIntent({ ...next, returning: false })
       }

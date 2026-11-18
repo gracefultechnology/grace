@@ -89,14 +89,14 @@ export function FilePhotoViewer({
     <AppWindow
       actions={
         <>
-          <Button variant="plain" size="compact" className={headerPill} onClick={onShare}>
+          {onShare && <Button variant="plain" size="compact" className={headerPill} onClick={onShare}>
             <Forward {...pill} />
             {shareLabel}
-          </Button>
-          <Button variant="plain" size="compact" className={headerPill} onClick={onDelete}>
+          </Button>}
+          {onDelete && <Button variant="plain" size="compact" className={headerPill} onClick={onDelete}>
             <mailIcons.trash {...pill} />
             {deleteLabel}
-          </Button>
+          </Button>}
         </>
       }
       {...props}

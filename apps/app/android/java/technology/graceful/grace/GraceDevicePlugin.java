@@ -63,6 +63,10 @@ public class GraceDevicePlugin extends Plugin {
    return;
   }
   audio.setStreamVolume(MEDIA, step, 0);
+  Boolean muted = call.getBoolean("muted");
+  if (muted != null && audio.isStreamMute(MEDIA) != muted) {
+   audio.adjustStreamVolume(MEDIA, muted ? AudioManager.ADJUST_MUTE : AudioManager.ADJUST_UNMUTE, 0);
+  }
   call.resolve(volume());
  }
 
@@ -82,7 +86,7 @@ public class GraceDevicePlugin extends Plugin {
  }
 
  private JSObject volume() {
-  return new JSObject().put("step", audio.getStreamVolume(MEDIA)).put("min", audio.getStreamMinVolume(MEDIA)).put("max", audio.getStreamMaxVolume(MEDIA));
+  return new JSObject().put("step", audio.getStreamVolume(MEDIA)).put("min", audio.getStreamMinVolume(MEDIA)).put("max", audio.getStreamMaxVolume(MEDIA)).put("muted", audio.isStreamMute(MEDIA));
  }
 
  private JSObject brightness() {
