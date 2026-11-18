@@ -12,6 +12,7 @@ interface AccountPlugin {
   dismissPasswordRecovery(): Promise<void>;
   manageAccount(): Promise<void>;
   openHostedView(options: { view: "email" | "calendar" }): Promise<void>;
+  chooseBrowserLink(input: { goal: string; candidates: readonly { id: string; label: string }[] }): Promise<unknown>;
   startSpeech(): Promise<unknown>;
   stopSpeech(input: { sessionId: string }): Promise<void>;
   addListener(event: "sessionChanged", listener: (status: AccountStatus) => void): Promise<PluginListenerHandle>;

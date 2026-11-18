@@ -23,14 +23,21 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.json.JSONObject;
 
 @CapacitorPlugin(name = "GraceAccount")
 public final class GraceAccount extends Plugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
  private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
+ private static final ExecutorService CHOICES = Executors.newSingleThreadExecutor();
+ private static final String CLOUD_ORIGIN = "https://api.graceforseniors.com";
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
 
@@ -97,7 +104,7 @@ public final class GraceAccount extends Plugin {
  private Picker picker;
 
  static CloudDeviceAccount account(Context context) {
-  return new CloudDeviceAccount(context, "https://app.graceforseniors.com", "https://api.graceforseniors.com", "/android/auth/callback");
+  return new CloudDeviceAccount(context, "https://app.graceforseniors.com", CLOUD_ORIGIN, "/android/auth/callback");
  }
 
  @PluginMethod public void status(PluginCall call) {
@@ -205,6 +212,81 @@ public final class GraceAccount extends Plugin {
    try { open(account(getContext()).hostedView(call.getString("view")), call); }
    catch (Exception unavailable) { call.reject("Couldn't open the connected account view"); }
   });
+ }
+
+ @PluginMethod public void chooseBrowserLink(PluginCall call) {
+  CloudDeviceAccount.Session owner;
+  try { owner = GracePasswordsOwner.stableSession(getContext()); }
+  catch (Exception unavailable) { owner = null; }
+  if (owner == null) {
+   call.resolve(choiceUnavailable("disabled"));
+   return;
+  }
+  chooseBrowserLink(call, owner);
+ }
+
+ private void chooseBrowserLink(PluginCall call, CloudDeviceAccount.Session owner) {
+  CHOICES.execute(() -> {
+   try {
+    String goal = call.getString("goal");
+    var candidates = call.getArray("candidates");
+    if (goal == null || goal.isBlank() || goal.length() > 2000 || candidates == null || candidates.length() < 1 || candidates.length() > 16) {
+     call.resolve(choiceUnavailable("disabled"));
+     return;
+    }
+    byte[] request = new JSONObject().put("kind", "choice").put("goal", goal).put("candidates", candidates)
+     .toString().getBytes(StandardCharsets.UTF_8);
+    if (request.length > 32768 || !currentDecisionOwner(owner)) {
+     call.resolve(choiceUnavailable("disabled"));
+     return;
+    }
+    var connection = (HttpURLConnection) URI.create(CLOUD_ORIGIN + "/api/v1/decisions").toURL().openConnection();
+    connection.setInstanceFollowRedirects(false);
+    connection.setConnectTimeout(8000);
+    connection.setReadTimeout(10000);
+    connection.setRequestMethod("POST");
+    connection.setRequestProperty("Authorization", "Bearer " + owner.token());
+    connection.setRequestProperty("Accept", "application/json");
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setDoOutput(true);
+    connection.setFixedLengthStreamingMode(request.length);
+    try {
+     try (var output = connection.getOutputStream()) { output.write(request); }
+     int status = connection.getResponseCode();
+     if (status != 200) {
+      boolean providerError = (status < 400 || status >= 500) && currentDecisionOwner(owner);
+      call.resolve(choiceUnavailable(providerError ? "provider_error" : "disabled"));
+      return;
+     }
+     try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
+      byte[] buffer = new byte[512];
+      int count;
+      while ((count = input.read(buffer)) != -1) {
+       if (output.size() + count > 16384) {
+        call.resolve(choiceUnavailable("provider_error"));
+        return;
+       }
+       output.write(buffer, 0, count);
+      }
+      if (!currentDecisionOwner(owner)) call.resolve(choiceUnavailable("disabled"));
+      else call.resolve(new JSObject(new String(output.toByteArray(), StandardCharsets.UTF_8)));
+     }
+    } finally {
+     connection.disconnect();
+    }
+   } catch (Exception unavailable) {
+    call.resolve(choiceUnavailable(currentDecisionOwner(owner) ? "provider_error" : "disabled"));
+   }
+  });
+ }
+
+ private boolean currentDecisionOwner(CloudDeviceAccount.Session owner) {
+  try { return owner.equals(GracePasswordsOwner.stableSession(getContext())); }
+  catch (Exception unavailable) { return false; }
+ }
+
+ private static JSObject choiceUnavailable(String reason) {
+  return new JSObject().put("status", "unavailable").put("reason", reason);
  }
 
  @PluginMethod public void startSpeech(PluginCall call) {

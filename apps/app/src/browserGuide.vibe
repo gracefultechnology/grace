@@ -1,8 +1,10 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { guidedReadKind, Machine as Workspaces, mayGuideReadLink, nextOutcome, type Workspace } from "../gen/app__workspace.effect.vibe"
-import { CLEF_DECISION_LIMITS, createClefDecisionsClient } from "../../../vendor/eliza-cloud-sdk/clef-decisions.mjs"
+import { CLEF_DECISION_LIMITS, createClefDecisionsClient, type ClefDecisionRequest, type ClefDecisionResponse } from "../../../vendor/eliza-cloud-sdk/clef-decisions.mjs"
 import type { CloudLink } from "./conversation.vibe"
+import { accountPlugin } from "./accountPlugin.ts"
+import { supportsPointerHover } from "./surfacePlugin.ts"
 import { NativePage } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
@@ -92,10 +94,32 @@ function links(snapshot: LinkObservation, page: URL, target: string) {
   })
 }
 
+const NativeChoice = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("unavailable"), reason: Schema.Literals(["disabled", "provider_error"]) }),
+  Schema.Struct({
+    status: Schema.Literal("ok"), kind: Schema.Literal("choice"), model: Schema.NonEmptyString,
+    choice: Schema.NullOr(Schema.String), confidence: Schema.Finite,
+    probabilities: Schema.Record(Schema.String, Schema.Finite),
+  }),
+])
+const decodeNativeChoice = Schema.decodeUnknownSync(NativeChoice)
+
+function nativeDecisions() {
+  const bridge = accountPlugin
+  if (bridge === undefined) return undefined
+  return async (request: ClefDecisionRequest, signal?: AbortSignal): Promise<ClefDecisionResponse> => {
+    if (request.kind !== "choice") return { status: "unavailable", reason: "disabled" }
+    signal?.throwIfAborted()
+    const reply = await bridge.chooseBrowserLink({ goal: request.goal, candidates: request.candidates })
+    signal?.throwIfAborted()
+    return decodeNativeChoice(reply)
+  }
+}
+
 export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(BrowserGuide, effect {
   const workspace = try Workspaces
   const page = try NativePage
-  const connect = () => cloud === undefined ? undefined : createClefDecisionsClient({
+  const connect = () => cloud === undefined ? nativeDecisions() : createClefDecisionsClient({
     baseUrl: cloud.url, headers: () => ({ Authorization: `Bearer ${cloud.key}` }), timeoutMs: 20000
   })
   const decide = Effect.try(connect) catch () => undefined
@@ -163,7 +187,11 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
         if (!accepted) return changed
         if (opensMenu) {
           active = { id: start.id, key: start.key }
-          return { kind: "Menu", words: `Move the pointer over “${winner.label}” to open its submenu, then choose Show me the link again.` }
+          const hover = Effect.try(supportsPointerHover) catch () => false
+          const words = hover
+            ? `Move the pointer over “${winner.label}” to open its submenu, then choose Show me the link again.`
+            : `Open the website’s “${winner.label}” menu, then choose Show me the link again.`
+          return { kind: "Menu", words }
         }
         const recorded = workspace.send({ type: "setGuidedLink", link: { ...start.step, url: winner.href } }, "Host") catch () => undefined
         if (recorded === undefined || context(try workspace.get())?.key !== start.key) {

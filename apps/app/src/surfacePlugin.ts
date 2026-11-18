@@ -67,3 +67,7 @@ export const identity = { owner: "grace-browser", session: crypto.randomUUID(), 
 /** The WebView's own view of the network (app.vibe, connectivity): whether it has one, whether the interface is hidden, and
  * the targets of their change events. */
 export const webView = { online: Effect.sync(() => navigator.onLine), hidden: () => document.hidden, window, document };
+
+export function supportsPointerHover() {
+  return typeof window !== "undefined" && window.matchMedia("(any-hover: hover)").matches
+}
