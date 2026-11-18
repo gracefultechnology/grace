@@ -190,9 +190,10 @@ A run of commit `b0ce38b` with `--emulator <avd>` and `--exercise agent` on a fr
 with a load average near 290: both debug APKs passed that commit's content check at 113,487,977 bytes; on a
 fresh install the service was in the foreground 9 seconds after Home showed and the agent had
 unpacked its payload and reported `credential` 20 seconds after; it was the same process after Grace
-was left for Android's settings, and Grace raised no `am_anr` event. A run of `0f2a9c3` with
-`DISCOVER_ACTIONS` let past the action check by hand, at a load average near 320, built both APKs at
-113,483,881 bytes and passed the same walk.
+was left for Android's settings, and Grace raised no `am_anr` event. A plain build of `17fdcc3` with
+`DISCOVER_ACTIONS` under `plannerTools`, at a load average near 380, exited 0 in 2 minutes: both debug
+APKs at 113,631,337 bytes passed the action check with 68 actions seen, and `--verify` with
+`17fdcc3`'s own `policy.json` fails on the same APKs, naming `DISCOVER_ACTIONS`.
 
 The agent has not reached `running`. Built once with `cloudCredential()` returning a placeholder line
 (never committed), the service unpacked the payload and launched Bun under its musl loader
@@ -213,14 +214,17 @@ route the bridge relays, since the payload carries no gateway) with `agent/polic
 both cloud models; and
 `artifacts/agent/policy.json`, which allows `policy.json`'s `actions.upstream.allow` (the agent's
 `ELIZA_ACTION_ALLOWLIST`, which refuses every other action at its gate), refuses
-`actions.upstream.refuse` and denies the plugins it refuses. The `GRACE_*` actions are not allowed
+`actions.upstream.refuse` and denies the plugins it refuses. `actions.upstream.plannerTools` is not
+passed on: it names the planner's own tools, such as `DISCOVER_ACTIONS`, which the planner builds on
+each turn without registering them, so the allowlist cannot name them; that tool lists and loads only
+actions the allowlist admits. The `GRACE_*` actions are not allowed
 yet: no plugin in the payload registers them, and a name the agent does not register fails its boot. The
 route allowlist the APK ships is `android/agent.json`'s; nothing reads `agent/routes.json`, whose
 `stream/start`, `stream/pull` and `stream/cancel` routes are upstream's gateway's, not the embedded
 bridge's.
 `--verify` parses the agent bundle out of each APK (Vite's `parseAst`) and fails when an object
-literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`)
-nor refused, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
+literal with `similes`, `handler` or `validate` has a `name` that is neither allowed (with `GRACE_*`),
+refused, nor a planner tool, by name or under a `refusedSubactionsOf` umbrella. A name is seen when it is an
 upper-case string or a variable only ever given such strings, in any declarator or assignment; a name
 computed at run time (a parameter, a member, a call, or a variable also given other values) is not,
 nor is an action object with no `name` of its own, such as one a factory fills in, the `DEVICE_*`
