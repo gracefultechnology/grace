@@ -11,7 +11,8 @@ ledger. Sources: INT 01–15, CTX 01, INV 04/07–09 and ANDROID 06/09.
 ## Story: Keep control of one task across windows and pauses
 
 > As an older adult, I want to hide Grace, use the website myself and return
-> deliberately, with my task and conversation still understandable.
+> deliberately, with my task and conversation still understandable. When I open
+> Grace again, the chat has the same size it had when I closed it.
 
 ### One task has one context and one current step
 
@@ -43,14 +44,14 @@ pure val noGuidance: Guidance = {
   deviceVersion: 0, browserRevision: 0, shown: false
 }
 type Assistant = {
-  presentation: Presentation, keyboard: KeyboardOwner, guidance: Guidance,
+  presentation: Presentation, reopenExpanded: bool, keyboard: KeyboardOwner, guidance: Guidance,
   conversation: C::Conversation, activity: Assistance,
   taskId: str, goal: str, checkpoint: str, operation: str,
   workVersion: int, outcome: TaskOutcome, evidence: str,
   replacementId: str, replacementGoal: str, interruptedWork: bool
 }
 pure val initial: Assistant = {
-  presentation: Closed, keyboard: NoKeyboard, guidance: noGuidance, conversation: C::initial,
+  presentation: Closed, reopenExpanded: true, keyboard: NoKeyboard, guidance: noGuidance, conversation: C::initial,
   activity: NoTask, taskId: "", goal: "", checkpoint: "", operation: "",
   workVersion: 0, outcome: Unfinished, evidence: "",
   replacementId: "", replacementGoal: "", interruptedWork: false
@@ -84,26 +85,17 @@ pure def keyboardCaptionVisible(a: Assistant): bool =
 
 ### Opening and resizing reveal the same conversation without activating it
 
-The new prototype's Ask Grace entry opens expanded chat from any surface.
-Pressing Ask Grace while the window is already visible changes nothing. Expand,
-Collapse and Show chat retain the conversation and task exactly. Show chat,
-the caption strip's control above the website keyboard, only closes that
-keyboard and brings Grace back at the size she had (prototype 1248–1249, 1704).
-
-The sources disagree about the size a paused task reopens at: compact for
-every paused task (an earlier draft of this spec), full chat with one Resume
-card (PRD INT 01 and INT 05, prd.md:1894, 1898), or compact only when Grace
-was closed in the middle of her own website step (prototype 1721–1729,
-`S.closedMid`). The user chose the prototype: Close records whether it
-interrupted Grace's own step, and only then does Ask Grace open compact, so the
-page and her question naming the steps done and not done ("You closed me
-while I was … Shall I carry on?") stay in view. Any other reopening is
-expanded. Reopening never resumes.
+Ask Grace opens expanded the first time. After Close, Ask Grace restores the
+last visible size, whether the person closed the full conversation or the
+compact chat below the page. Pressing Ask Grace while the window is visible
+keeps its size. Reopening preserves the paused task and waits for the person
+to resume it. Expand, Collapse and Show chat keep the conversation. Show chat
+closes the website keyboard and reveals Grace at the size she had.
 
 ```quint
 pure def canOpen(a: Assistant, by: C::ConversationActor): bool = by == C::ConversationUser and not(isVisible(a))
 pure def open(a: Assistant, by: C::ConversationActor): Assistant =
-  { ...a, presentation: if (a.activity == Paused and a.interruptedWork) Compact else Expanded }
+  { ...a, presentation: if (a.reopenExpanded) Expanded else Compact }
 pure def canResize(a: Assistant, expanded: bool, by: C::ConversationActor): bool =
   by == C::ConversationUser and isVisible(a)
 pure def resize(a: Assistant, expanded: bool, by: C::ConversationActor): Assistant =
@@ -128,12 +120,15 @@ when the relevant page changes or the device leaves the task context.
 pure def canClose(a: Assistant, by: C::ConversationActor): bool =
   by == C::ConversationUser and isVisible(a)
 pure def close(a: Assistant, by: C::ConversationActor): Assistant =
-  { ...paused(C::quiet(a.conversation, by), a), presentation: Closed, keyboard: NoKeyboard,
+  { ...paused(C::quiet(a.conversation, by), a), presentation: Closed,
+    reopenExpanded: a.presentation == Expanded, keyboard: NoKeyboard,
     interruptedWork: a.activity == DoingWork or a.activity == WebsiteWait }
 pure def canPause(a: Assistant, by: C::ConversationActor): bool = unfinished(a)
 pure def pause(a: Assistant, by: C::ConversationActor): Assistant =
   paused(C::quiet(a.conversation, by), a)
 
+pure def lawReopeningRestoresTheClosedSize(a: Assistant): bool =
+  isVisible(a) implies open(close(a, C::ConversationUser), C::ConversationUser).presentation == a.presentation
 pure def stepClosePreservesTask(before: Assistant, via: str, after: Assistant): bool =
   via == "close" implies after.taskId == before.taskId and after.goal == before.goal and
     after.checkpoint == before.checkpoint and after.outcome == before.outcome

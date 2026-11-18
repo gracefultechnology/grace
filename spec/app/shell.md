@@ -2,8 +2,8 @@
 
 The Home and system rail follow `prototype/Grace Prototype.html`: Calendar,
 Email, Internet, Files and Passwords cards, persistent Ask Grace, and clearly separate
-Home and Close browser controls. Two Home pages have arrow, dot and swipe
-navigation; the final prototype uses the progressive-blur carousel and icon
+Home and Close browser controls. Two Home pages have arrow and swipe
+navigation, with page dots when Home fills the screen; the final prototype uses the progressive-blur carousel and icon
 app headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
 Account, Email & calendar and About this tablet; Volume and Wi-Fi also open rail
 popovers over the current app.
@@ -25,6 +25,11 @@ References: PRD MVP01–06, ANDROID01–10, ENG02–03; prototype 1847–1882, 2
 
 > As a person using Grace, I can open my calendar, email or the internet from
 > Home and return without losing the separate conversation or provider data.
+> With Grace open at the bottom, I can use either page of Home. The cards fill
+> the pane above Grace, aligned to her window, with the same gap above chat as
+> between chat and the rail. The greeting and bottom page dots yield that space
+> to the cards. In Settings, I can scroll the list to About this tablet and
+> scroll the selected page to its last control while Grace stays open.
 
 ### Startup distinguishes a usable shell from a recoverable startup failure
 

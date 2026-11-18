@@ -43,7 +43,7 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
   const content = (main = true) => (
     <>
       {art ? (
-        <span className="absolute -top-[34px] -right-5" style={away ? { opacity: Math.max(0, 1 - away * 3) } : undefined}>
+        <span className={cn("absolute", compact ? "top-2 right-2" : "-top-[34px] -right-5")} style={away ? { opacity: Math.max(0, 1 - away * 3) } : undefined}>
           {art}
         </span>
       ) : null}

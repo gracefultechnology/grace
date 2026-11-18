@@ -187,9 +187,9 @@ keyboards and the address editor, so a keyboard survives only when Home is
 pressed while already on Home. Hiding the browser ends the website's question
 over the page, and closing Settings cancels Clear browsing data's
 confirmation (`settingsClosed`). A device that is not ready ignores it.
-Afterwards the only thing Back can still step through is Grace itself: that
-surviving keyboard, then expanded Grace; with Grace compact and no keyboard,
-the next Back leaves.
+Home moves an expanded conversation into the lower pane. Afterwards Back
+dismisses a surviving keyboard. When the keyboard is already closed, the
+next Back leaves.
 
 ```quint
 pure def homeRequests(r: WR::WebsiteRequests): WR::WebsiteRequests = {
@@ -201,7 +201,6 @@ pure def lawLauncherHomeLeavesOnlyGraceToStepBack(shell: S::Shell, a: A::Assista
   val home = WS::visit(w, S::Home, WS::Person)
   val afterHome = backAction(home.device, home.assistant, home.browser, homeRequests(r))
   WS::canVisit(w, S::Home, WS::Person) implies
-    (afterHome == DismissKeyboard or afterHome == CollapseGrace or afterHome == Unconsumed) and
-    (afterHome == Unconsumed iff
-      (a.presentation != A::Expanded and (a.keyboard == A::NoKeyboard or shell.surface != S::Home)))
+    (afterHome == DismissKeyboard or afterHome == Unconsumed) and
+    (afterHome == Unconsumed iff (a.keyboard == A::NoKeyboard or shell.surface != S::Home))
 ```

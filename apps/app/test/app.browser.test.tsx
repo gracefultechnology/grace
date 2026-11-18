@@ -436,6 +436,45 @@ it("Use the website under Grace's controls", async () => {
 }, 120_000);
 
 
+it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/assistant.md, "Story: Keep control of one task across windows and pauses")', async () => {
+  const runtime = ManagedRuntime.make(application(undefined));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    host.remove();
+    await runtime.dispose();
+  });
+  await act(() => root.render(<App runtime={runtime} />));
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const tap = (name: string) => act(() => userEvent.click(button(name)));
+
+  await tap("Ask Grace");
+  await tap("Close Grace");
+  await tap("Ask Grace");
+  await expect.element(button("Collapse")).toBeVisible();
+  await tap("Home");
+  await expect.element(button("Expand")).toBeVisible();
+  await tap("More apps");
+  await tap("Back to the first page");
+  await tap("Close Grace");
+  await tap("Ask Grace");
+  await expect.element(button("Expand")).toBeVisible();
+
+  await tap("Expand");
+  await act(() => userEvent.click(page.getByRole("button", { name: /^Wi-Fi/ })));
+  await expect.element(button("Expand")).toBeVisible();
+  await tap("Wi-Fi settings");
+
+  await tap("Expand");
+  await tap("Settings");
+  await expect.element(button("Expand")).toBeVisible();
+  await tap("About this tablet");
+  await tap("Clear browsing data");
+  await expect.element(page.getByRole("dialog")).toBeVisible();
+  await tap("Cancel");
+});
+
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   let locked = true;
   let edited = false;
@@ -1714,7 +1753,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: /Westside Reception/ }));
     await expect.element(page.getByText("Your appointment is at our Westside office.")).toBeVisible();
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
-    await tap(page.getByRole("button", { name: "Collapse", exact: true }));
+    await routeTo(page.getByRole("button", { name: "Expand", exact: true }));
     await tap(resume);
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
