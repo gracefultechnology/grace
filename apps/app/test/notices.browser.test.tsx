@@ -1,8 +1,10 @@
-// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"
+// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "No notice shows over a commitment review or a website's question"
 import { Effect, ManagedRuntime, Stream } from "effect";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
+import { Machine as Notices } from "../gen/app__notices.effect.vibe";
+import { type Event as ProposalEvent, Machine as Proposals, addVisit } from "../gen/app__proposal.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
@@ -55,5 +57,16 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
         { _tag: "Closed", notice: { id: 2, source: "Files", offer: "NoOffer", subject: "Saved to Files" } },
       ],
     });
+
+    const question = (event: ProposalEvent, by: "Grace" | "Host") => runtime.runPromise(Effect.flatMap(Effect.service(Proposals), (p) => p.send(event, by)));
+    const covered = () => runtime.runPromise(Effect.flatMap(Effect.service(Notices), (n) => Effect.map(n.get(), (x) => x.blocked)));
+    const spoken = { generation: 1, workVersion: 1, origin: "Spoken" } as const;
+    await question({ type: "propose", ask: addVisit, request: spoken, now: spoken }, "Grace");
+    await expect.poll(covered).toBe(true);
+    await notices((host) => host.raise({ source: "Files", offer: "NoOffer", subject: "Moved to Files" }));
+    await expect.element(page.getByRole("status")).not.toBeInTheDocument();
+    await question({ type: "withdraw", interruption: "Cancellation" }, "Host");
+    await expect.element(page.getByRole("status")).toHaveTextContent("Moved to Files");
+    expect(toasts.slice(4)).toEqual([null, "Moved to Files"]);
   });
 });

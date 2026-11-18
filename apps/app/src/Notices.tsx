@@ -1,7 +1,7 @@
 // spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
 import { Banner, BellIcon, Button, Toast, WifiSlash } from "@repo/ui";
 import { Effect } from "effect";
-import { Undo2, Wifi, X } from "lucide-react";
+import { Wifi, X } from "lucide-react";
 import { type Notice, bannerOf, isBackOnline } from "../gen/app__notices.ts";
 import { useMachine } from "../gen/app__notices.react.ts";
 import { NoticeHost, Reply } from "./notices.vibe";
@@ -22,14 +22,15 @@ export function Notices({ above }: { above: number }) {
   const { state, can, host } = useNotices();
   const toast = state?.shown.at(0);
   if (toast === undefined) return null;
+  const actable = can({ type: "act", id: toast.id }, "Person");
+  const act = host((h) => h.act(toast.id));
   return (
     <OverPage className="absolute left-1/2 z-[45] -translate-x-1/2" style={{ bottom: above + 24 }}>
-      <Toast key={toast.id}>
+      <Toast key={toast.id} onUndo={toast.offer === "Undo" && actable ? act : undefined}>
         {words(toast)}
-        {can({ type: "act", id: toast.id }, "Person") && (
-          <Button variant="plain" size="compact" className={toastButton} onClick={host((h) => h.act(toast.id))}>
-            {toast.offer === "Undo" && <Undo2 aria-hidden size={20} strokeWidth={2.4} />}
-            {toast.offer === "Undo" ? "Undo" : "See details"}
+        {toast.offer === "SeeDetails" && actable && (
+          <Button variant="plain" size="compact" className={toastButton} onClick={act}>
+            See details
           </Button>
         )}
         {can({ type: "closeToast", id: toast.id }, "Person") && (

@@ -1,5 +1,6 @@
-// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: Never have a decision covered"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "Only reminders reach Android, and a new one only while Grace is in the background"
+// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: Never have a decision covered"; spec/app/notices.md, "No notice shows over a commitment review or a website's question"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "Only reminders reach Android, and a new one only while Grace is in the background"
 import { type Event, type Notice, type Place, Machine as Notices, type Rejected, initial, lifetimeMs, machine, queued } from "../gen/app__notices.effect.vibe"
+import { Machine as Proposals, asking } from "../gen/app__proposal.effect.vibe"
 import { Machine as WebsiteRequests, presented } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
@@ -21,10 +22,11 @@ export service NoticeHost {
 
 export type NoticeServices = Notices | NoticeHost
 
-const host = Layer.effect(NoticeHost, effect {
+const host = (wifi: WiFiPlugin | undefined) => Layer.effect(NoticeHost, effect {
   const notices = try Notices
   const workspace = try Workspaces
   const requests = try WebsiteRequests
+  const proposals = try Proposals
   const replies = try PubSub.unbounded<Reply>()
   const lock = try Semaphore.make(1)
   const serial = lock.withPermits(1)
@@ -38,7 +40,8 @@ const host = Layer.effect(NoticeHost, effect {
     const n = try notices.get()
     const place: Place = (try sync(webView.hidden)) || device.readiness === "Sleeping" ? "Background" : device.surface === "Home" ? "Home" : "OtherScreen"
     const expanded = assistant.presentation === "Expanded"
-    const blocked = presented(try requests.get()).id !== 0
+    const question = try proposals.get()
+    const blocked = presented(try requests.get()).id !== 0 || (asking(question) && question.agreed === 0)
     if (place !== n.place) try Effect.orDie(notices.send({ type: "move", place }, "Host"))
     if (place === "Background" && n.place !== "Background") try report(queued(n))
     if (expanded !== n.expanded) try Effect.orDie(notices.send({ type: "expand", expanded }, "Host"))
@@ -60,11 +63,12 @@ const host = Layer.effect(NoticeHost, effect {
     return sent === undefined ? undefined : notice
   }
 
-  const connection = Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity)), 1)
-  try fork.scoped Stream.runForEach(connection, (c) => Effect.orDie(notices.send({ type: "observeConnection", online: c === "Online" }, "Host")))
+  const connection = Stream.changes(Stream.concat(Stream.fromEffect(connected(wifi)), Stream.drop(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online"), 1)))
+  try fork.scoped Stream.runForEach(connection, (online) => Effect.orDie(notices.send({ type: "observeConnection", online }, "Host")))
   const scene = Stream.mergeAll([
     workspace.changes,
     requests.changes,
+    proposals.changes,
     Stream.fromEventListener(webView.document, "visibilitychange")
   ], { concurrency: "unbounded" })
   try fork.scoped Stream.runForEach(scene, () => serial(follow()))
@@ -97,4 +101,4 @@ effect function connected(wifi: WiFiPlugin | undefined): boolean!! {
   return c === undefined ? try webView.online : c.online && !c.captivePortal
 }
 
-export const notices = (wifi: WiFiPlugin | undefined) => Layer.provideMerge(host, Layer.unwrap(Effect.map(connected(wifi), (online) => machine({ ...initial, online }))))
+export const notices = (wifi: WiFiPlugin | undefined) => Layer.provideMerge(host(wifi), machine(initial))
