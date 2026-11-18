@@ -1,5 +1,5 @@
 // spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share, print and remove the chosen file"
-import { AppWindow, Button, EmptyState, FilesApp, Input, PageText, PdfViewer, PhotoViewer, RetryNotice } from "@repo/ui";
+import { AppWindow, Button, Dialog, DialogContent, DialogTitle, EmptyState, FilePhotoViewer, FilesApp, Input, PageText, PdfViewer, RetryNotice } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { Folder } from "lucide-react";
 import { type ComponentProps, useCallback, useState, useSyncExternalStore, useTransition } from "react";
@@ -28,6 +28,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const runtime = useRuntime();
   const account = useMachine(runtime).state?.graceAccount.tag;
   const [query, setQuery] = useState("");
+  const [confirmation, setConfirmation] = useState<{ id: string; lease: string; generation: number }>();
   const [failed, setFailed] = useState(false);
   const [pending, startTransition] = useTransition();
   const subscribe = useCallback((changed: () => void) => {
@@ -62,11 +63,30 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
 
   if (selected.id !== "") {
     if (selected.kind === "Photo") {
-      return <PhotoViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} src={snapshot.image ?? ""} alt={selected.name}
-        status={previewStatus} errorLabel="This photo couldn’t be shown." onRetry={retry}
-        first={!enabled(model, { type: "movePhoto", direction: -1 }, "FileUser")}
-        last={!enabled(model, { type: "movePhoto", direction: 1 }, "FileUser")}
-        onPrevious={() => run({ kind: "photo", direction: -1 })} onNext={() => run({ kind: "photo", direction: 1 })} />;
+      if (!snapshot.image) return <AppWindow {...cover} onClose={back} closeLabel="Back to Files" title={selected.name}>
+        {previewStatus === "failed" ? <RetryNotice onRetry={retry}>This photo couldn’t be shown.</RetryNotice> : <PageText role="status">Opening the photo…</PageText>}
+      </AppWindow>;
+      const target = { id: selected.id, lease: snapshot.lease, generation: model.generation };
+      const confirm = () => setConfirmation(target);
+      const removing = confirmation?.id === target.id && confirmation.lease === target.lease && confirmation.generation === target.generation;
+      return <>
+        <FilePhotoViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} src={snapshot.image} alt={selected.name}
+          first={!enabled(model, { type: "movePhoto", direction: -1 }, "FileUser")}
+          last={!enabled(model, { type: "movePhoto", direction: 1 }, "FileUser")}
+          onPrevious={() => run({ kind: "photo", direction: -1 })} onNext={() => run({ kind: "photo", direction: 1 })}
+          onDelete={!waiting && enabled(model, { type: "deletePhoto", id: target.id, generation: target.generation }, "FileUser") ? confirm : undefined}
+          deleteError={model.feedback === "WriteFailed" ? "This photo wasn’t deleted." : undefined} onRetryDelete={confirm} />
+        <Dialog open={removing} onOpenChange={(open) => { if (!open) setConfirmation(undefined); }}>
+          <DialogContent>
+            <DialogTitle>Delete {selected.name}?</DialogTitle>
+            <Button variant="warn" size="pill" disabled={waiting} onClick={() => {
+              setConfirmation(undefined);
+              if (confirmation) run({ kind: "deletePhoto", ...confirmation });
+            }}>Delete photo</Button>
+            <Button variant="capsule" size="pill" onClick={() => setConfirmation(undefined)}>Cancel</Button>
+          </DialogContent>
+        </Dialog>
+      </>;
     }
     return <PdfViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} pageLabel={`Page ${model.page} of ${selected.pages}`}
       status={previewStatus} errorLabel="This page couldn’t be shown." onRetry={retry}>

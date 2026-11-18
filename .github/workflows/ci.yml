@@ -1,12 +1,16 @@
 name: ci
 
-# Every run is `pnpm verify`, the tools' own self-test included; Turborepo and
+# Ordinary runs use `pnpm verify`, the tools' own self-test included; Turborepo and
 # spec skip what the change does not reach, from the cache of the last run.
 # The fixed normal profile is the same locally and in CI. The self-test also
 # installs and checks each standalone example.
 on:
   workflow_dispatch:
     inputs:
+      cross_app_only:
+        description: Run only the four offline Google and cross-app Chromium journeys
+        type: boolean
+        default: false
       billworld:
         description: Run the pinned 100-biller browser qualification
         type: boolean
@@ -37,7 +41,7 @@ permissions:
 
 jobs:
   webarena:
-    if: github.event_name == 'workflow_dispatch' && inputs.webarena
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.webarena
     runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 60
     defaults:
@@ -185,7 +189,7 @@ jobs:
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
           if-no-files-found: warn
   billworld:
-    if: github.event_name == 'workflow_dispatch' && inputs.billworld
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     permissions:
       actions: read
       contents: read
@@ -236,7 +240,7 @@ jobs:
           path: ${{ runner.temp }}/grace-fleet
           if-no-files-found: error
   billworld-aggregate:
-    if: always() && github.event_name == 'workflow_dispatch' && inputs.billworld
+    if: always() && github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     needs: billworld
     runs-on: ubuntu-latest
     steps:
@@ -339,7 +343,7 @@ jobs:
           path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
           if-no-files-found: error
   billworld-released:
-    if: github.event_name == 'workflow_dispatch' && inputs.billworld
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -463,11 +467,11 @@ jobs:
           path: ${{ github.workspace }}/.cache/grace-released-billworld-results
           if-no-files-found: error
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-latest' }}
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      TURBO_CACHE: ${{ github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r' }}
+      TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
+      TURBO_CACHE: ${{ inputs.cross_app_only && 'local:rw' || (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') }}
     steps:
       # apps/app/scripts import upstream Eliza's Android tools from the vendor/eliza submodule.
       - uses: actions/checkout@v7
@@ -480,24 +484,24 @@ jobs:
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply'
-      - if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+      - if: ${{ !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm verify --continue --summarize
-      - if: always() && steps.setup.outputs.spec-cache-key != ''
+      - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.setup.outputs.spec-cache-path }}
           key: ${{ steps.setup.outputs.spec-cache-key }}
-      - if: always() && steps.setup.outputs.turbo-cache-key != ''
+      - if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
         run: |
           mkdir -p .turbo/cache
           cat .turbo/runs/*.json 2>/dev/null | jq -r '.tasks[] | select(.cache.status == "HIT") | .hash' | while read -r hash; do find .turbo/cache -name "$hash*" -exec touch {} +; done
           find .turbo/cache -type f -mtime +7 -delete
-      - if: always() && steps.setup.outputs.turbo-cache-key != ''
+      - if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
         uses: actions/cache/save@v6
         with:
           path: .turbo/cache
           key: ${{ steps.setup.outputs.turbo-cache-key }}
-      - if: always()
+      - if: always() && !inputs.cross_app_only
         uses: actions/upload-artifact@v7
         with:
           name: proof
@@ -505,7 +509,7 @@ jobs:
             gen/proof/
             vibestack/studio/gen/proof/
           if-no-files-found: ignore
-      - if: failure()
+      - if: failure() && !inputs.cross_app_only
         uses: actions/upload-artifact@v7
         with:
           name: failures
