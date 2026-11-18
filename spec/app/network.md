@@ -46,7 +46,7 @@ type Network = { id: str, authentication: Authentication, remembered: bool }
 type JoinPhase = Selecting | PrivateEntry | Joining | AndroidPanel | CertificateDecision | PortalEntry | JoinComplete | JoinUnconfirmed | JoinFailed
 type JoinResult = Joined | RejectedCredentials | Unavailable | Declined | Unverified | CertificateRequired | PortalRequired
 type JoinReport = { network: str, version: int, result: JoinResult, certificate: str, explanation: str }
-type Discovery = Scanning | WifiOff | LocationAccessNeeded | ExplainingLocation | LocationRefused | LocationOff | NoNetworks | NetworksFound
+type Discovery = Scanning | WifiOff | LocationAccessNeeded | ExplainingLocation | LocationRefused | LocationOff | NoNetworks | NetworksFound({ networks: List[Network] })
 type NetworkJoin = {
   selected: Network, phase: JoinPhase, version: int, errors: int,
   entryReady: bool, privateVisible: bool, certificate: str, explanation: str,
@@ -65,8 +65,12 @@ pure def attemptPhase(network: Network): JoinPhase =
   if (network.remembered or network.authentication == OpenNetwork) Joining
   else if (network.authentication == AccountPassword) AndroidPanel
   else PrivateEntry
+pure def reportedNetwork(d: Discovery, network: Network): bool = match d {
+  | NetworksFound(listed) => listed.networks.includes(network)
+  | _ => false
+}
 pure def canChoose(n: NetworkJoin, network: Network, by: NetworkActor): bool =
-  by == Person and network.id != "" and n.phase != Joining and n.discovery == NetworksFound
+  by == Person and network.id != "" and n.phase != Joining and reportedNetwork(n.discovery, network)
 pure def choose(n: NetworkJoin, network: Network, by: NetworkActor): NetworkJoin = {
   ...cleared(n.version + 1, n), selected: network, phase: attemptPhase(network)
 }
@@ -226,11 +230,11 @@ OS replaces the reason, except while the person reads why location is
 needed.
 
 ```quint
-type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found
+type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found({ networks: List[Network] })
 type ListAction = NoAction | OpenPanel | Explain | Allow | Rescan
 pure def listAction(d: Discovery): ListAction = match d {
   | Scanning => NoAction
-  | NetworksFound => NoAction
+  | NetworksFound(_) => NoAction
   | WifiOff => OpenPanel
   | LocationOff => OpenPanel
   | LocationRefused => OpenPanel
@@ -238,8 +242,12 @@ pure def listAction(d: Discovery): ListAction = match d {
   | ExplainingLocation => Allow
   | NoNetworks => Rescan
 }
-pure def canReportScan(n: NetworkJoin, by: NetworkActor): bool =
-  by == OperatingSystem and n.discovery != ExplainingLocation
+pure def canReportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): bool =
+  by == OperatingSystem and n.discovery != ExplainingLocation and match found {
+    | Found(listed) => listed.networks.length() > 0 and listed.networks.every(a =>
+        a.id != "" and listed.networks.every(b => a.id == b.id implies a == b))
+    | _ => true
+  }
 pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): NetworkJoin = {
   val refused = if (n.locationAsked) LocationRefused else LocationAccessNeeded
   { ...n, discovery: match found {
@@ -247,7 +255,7 @@ pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): Networ
     | NoLocationAccess => refused
     | LocationDisabled => LocationOff
     | NoneNearby => NoNetworks
-    | Found => NetworksFound
+    | Found(listed) => NetworksFound({ networks: listed.networks })
   } }
 }
 pure def canOpenPanel(n: NetworkJoin, by: NetworkActor): bool = by == Person and listAction(n.discovery) == OpenPanel
@@ -255,7 +263,13 @@ pure def openPanel(n: NetworkJoin, by: NetworkActor): NetworkJoin = { ...n, disc
 pure def canRescan(n: NetworkJoin, by: NetworkActor): bool = by == Person and listAction(n.discovery) == Rescan
 pure def rescan(n: NetworkJoin, by: NetworkActor): NetworkJoin = { ...n, discovery: Scanning }
 pure def lawEveryEmptyListOffersAnAction(d: Discovery): bool =
-  (d != Scanning and d != NetworksFound) iff listAction(d) != NoAction
+  (match d { | Scanning => false | NetworksFound(_) => false | _ => true }) iff listAction(d) != NoAction
+pure val dValues: Set[Discovery] = Set(Scanning, WifiOff, LocationAccessNeeded, ExplainingLocation, LocationRefused, LocationOff, NoNetworks).union(
+  networkValues.map(network => NetworksFound({ networks: List(network) }))
+)
+pure val foundValues: Set[ScanResult] = Set(RadioOff, NoLocationAccess, LocationDisabled, NoneNearby).union(
+  networkValues.map(network => Found({ networks: List(network) }))
+)
 pure def sometimesWifiOff(n: NetworkJoin): bool = n.discovery == WifiOff
 pure def sometimesLocationOff(n: NetworkJoin): bool = n.discovery == LocationOff
 pure def sometimesNoNetworksNearby(n: NetworkJoin): bool = n.discovery == NoNetworks
