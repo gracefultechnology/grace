@@ -107,16 +107,22 @@ const Arguments = Schema.Struct({
   receipt: Schema.optional(Schema.NonEmptyString),
 });
 
+const located = (found: string | null, missing: string) => {
+  if (found === null) throw new Error(missing);
+  return found;
+};
+const androidHome = () => located(resolveAndroidSdkRoot(), "No Android SDK was found: set ANDROID_HOME");
+
 export function buildTool(name: string): string {
-  const tools = path.join(resolveAndroidSdkRoot(), "build-tools");
+  const tools = path.join(androidHome(), "build-tools");
   const [newest] = readdirSync(tools).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   return path.join(tools, newest, name);
 }
 
 const environment = () => ({
   ...process.env,
-  ANDROID_HOME: resolveAndroidSdkRoot(),
-  JAVA_HOME: resolveJavaHome(),
+  ANDROID_HOME: androidHome(),
+  JAVA_HOME: located(resolveJavaHome(), "No JDK was found: set JAVA_HOME to a JDK 21"),
   ...(process.env[keystore]?.trim() ? { [keystore]: path.resolve(process.env.INIT_CWD ?? process.cwd(), process.env[keystore]) } : {}),
 });
 
@@ -379,7 +385,7 @@ function writeApkManifest(directory = artifacts, episodeCertificate = false) {
   writeFileSync(path.join(directory, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
 }
 
-const sdk = (tool: string) => path.join(resolveAndroidSdkRoot(), tool);
+const sdk = (tool: string) => path.join(androidHome(), tool);
 const run = promisify(execFile);
 const stopping = new AbortController();
 const adb = async (args: string[], seconds = 60) => {
@@ -674,12 +680,13 @@ async function runBenchmark({ input, receipt }: BenchmarkRun, page: Awaited<Retu
   } finally {
     website?.page.close();
     const first = observations[0]?.document;
-    const navigation = first && requestAcceptedAt ? observations.some(({ at, document }) => {
+    const since = requestAcceptedAt;
+    const navigation = first && since ? observations.some(({ at, document }) => {
       const address = new URL(document.url);
       address.hash = "";
       const initial = new URL(first.url);
       initial.hash = "";
-      return at >= requestAcceptedAt && document.loaderId !== first.loaderId && address.href !== initial.href;
+      return at >= since && document.loaderId !== first.loaderId && address.href !== initial.href;
     }) : false;
     try {
       writeFileSync(output, `${JSON.stringify({ surface: "android-webview", input, status, failure, requestAcceptedAt, navigation, observations, transcripts }, null, 2)}\n`);

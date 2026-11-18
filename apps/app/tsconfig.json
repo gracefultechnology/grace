@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "allowArbitraryExtensions": true,
+    "allowJs": true,
     "customConditions": ["eliza-source"],
     "jsx": "react-jsx",
     "lib": [
@@ -21,12 +22,19 @@
     "paths": {
       "@capacitor/core": [
         "./node_modules/@capacitor/core"
+      ],
+      "@elizaos/os/android/build-consumer.mjs": [
+        "./scripts/build-consumer.d.ts"
+      ],
+      "@elizaos/os/android/toolchain.ts": [
+        "./scripts/toolchain.d.ts"
       ]
     }
   },
   "include": [
     "src",
     "test",
+    "scripts",
     "gen/*.ts",
     "gen/*.vibe",
     "*.config.ts"
