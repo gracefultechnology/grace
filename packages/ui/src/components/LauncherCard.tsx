@@ -32,14 +32,13 @@ const heads = {
 
 /**
  * A Home launcher card: clear glass that opens its app, with the app's name, a status line and a preview of what is
- * in it. The title names the card and the status and preview describe it.
+ * in it. A slow sheen crosses it. Its name is its title and status; the preview describes it.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
  */
 export function LauncherCard({ title, status, size = "large", art, turn = 0, compact = false, headClassName, titleClassName, type = "button", className, style, children, ...props }: LauncherCardProps) {
   const away = Math.min(1, Math.abs(turn));
   const head = heads[size];
-  const statusId = useId();
   const previewId = useId();
   const content = (main = true) => (
     <>
@@ -50,7 +49,7 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
       ) : null}
       <span className={cn("absolute", head.head, headClassName)}>
         <span className={cn("block font-bold", head.title, titleClassName)}>{title}</span>
-        {status && <span id={main ? statusId : undefined} className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{status}</span>}
+        {status && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{status}</span>}
       </span>
       {children ? (
         <span id={main ? previewId : undefined} aria-hidden className={cn("absolute flex flex-col", head.body)}>
@@ -62,8 +61,7 @@ export function LauncherCard({ title, status, size = "large", art, turn = 0, com
   return (
     <button
       type={type}
-      aria-label={title}
-      aria-describedby={[status && statusId, children && previewId].filter(Boolean).join(" ") || undefined}
+      aria-describedby={children ? previewId : undefined}
       className={cn(
         focusRing,
         "relative block cursor-pointer rounded-card bg-glass/40 p-0 text-left font-sans text-foreground",

@@ -67,6 +67,7 @@ const PluginCall = {
 };
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
+  Schema.Struct({ homeCard: Schema.NonEmptyString }),
   Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString, replace: Schema.optional(Schema.Boolean) }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.NonEmptyString }),
@@ -418,7 +419,7 @@ const Reply = Schema.Struct({ id: Schema.optional(Schema.Number), result: Schema
 const Nothing = Schema.Struct({});
 const Evaluated = Schema.Struct({ result: Schema.Struct({ value: Schema.optional(Schema.Unknown) }) });
 const Document = Schema.Struct({ root: Schema.Struct({ nodeId: Schema.Number }) });
-const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Schema.Struct({ value: Schema.Unknown })), backendDOMNodeId: Schema.optional(Schema.Number) });
+const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Schema.Struct({ value: Schema.Unknown })), name: Schema.optional(Schema.Struct({ value: Schema.String })), backendDOMNodeId: Schema.optional(Schema.Number) });
 const AXNodes = Schema.Struct({ nodes: Schema.Array(AXNode) });
 const Quads = Schema.Struct({ quads: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number])) });
 const SignInReport = Schema.Struct({
@@ -486,23 +487,25 @@ async function devTools(url: string, signal: AbortSignal) {
     }
   };
 
-  const find = async (name: string, signal: AbortSignal) => {
+  const find = async (target: string | { homeCard: string }, signal: AbortSignal) => {
     const { root } = await send({ method: "DOM.getDocument", params: { depth: 0 }, schema: Document, signal });
-    const { nodes } = await send({ method: "Accessibility.queryAXTree", params: { nodeId: root.nodeId, accessibleName: name }, schema: AXNodes, signal });
-    const matches = nodes.flatMap((node) => !node.ignored && node.role?.value !== "StaticText" && node.backendDOMNodeId !== undefined ? [node.backendDOMNodeId] : []);
-    if (matches.length > 1) throw new Error(`${matches.length} things are named "${name}"`);
+    const query = typeof target === "string" ? { accessibleName: target } : { role: "button" };
+    const { nodes } = await send({ method: "Accessibility.queryAXTree", params: { nodeId: root.nodeId, ...query }, schema: AXNodes, signal });
+    const named = typeof target === "string" ? nodes : nodes.filter(({ name }) => name?.value === target.homeCard || name?.value.startsWith(target.homeCard + " "));
+    const matches = named.flatMap((node) => !node.ignored && node.role?.value !== "StaticText" && node.backendDOMNodeId !== undefined ? [node.backendDOMNodeId] : []);
+    if (matches.length > 1) throw new Error(`${matches.length} controls match ${JSON.stringify(target)}`);
     return matches[0];
   };
 
-  const tap = async (name: string, signal: AbortSignal) => {
-    let node = await find(name, signal);
+  const tap = async (target: string | { homeCard: string }, signal: AbortSignal) => {
+    let node = await find(target, signal);
     while (node === undefined) {
       await until("true", signal);
-      node = await find(name, signal);
+      node = await find(target, signal);
     }
     await send({ method: "DOM.scrollIntoViewIfNeeded", params: { backendNodeId: node }, schema: Nothing, signal });
     const { quads: [quad] } = await send({ method: "DOM.getContentQuads", params: { backendNodeId: node }, schema: Quads, signal });
-    if (!quad) throw new Error(`"${name}" is not on screen`);
+    if (!quad) throw new Error(`${JSON.stringify(target)} is not on screen`);
     const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
     await tapAt({ x, y }, signal);
   };
@@ -581,8 +584,9 @@ async function devTools(url: string, signal: AbortSignal) {
           return { status, google: config.status === 200 ? config.data?.google?.nativeSignIn : undefined };
         })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
-        if (!Schema.is(SignInReport, { onExcessProperty: "error" })(result.value)) throw new Error("The native account status or public sign-in configuration was unavailable or returned unexpected fields");
-        const { status, google } = result.value;
+        const report = Schema.decodeUnknownOption(SignInReport, { onExcessProperty: "error" })(result.value);
+        if (report._tag === "None") throw new Error("The native account status or public sign-in configuration was unavailable or returned unexpected fields");
+        const { status, google } = report.value;
         const found = { signedIn: status.kind === "signedIn", google };
         process.stdout.write(`sign-in status ${JSON.stringify({ ...status, ...found })}\n`);
         if (found.signedIn !== step.signIn.signedIn || found.google !== step.signIn.google)
@@ -590,6 +594,10 @@ async function devTools(url: string, signal: AbortSignal) {
         return;
       }
       if ("tap" in step) return await tap(step.tap, signal);
+      if ("homeCard" in step) {
+        await until(selectedHome, signal);
+        return await tap(step, signal);
+      }
       if ("into" in step) {
         await tap(step.into, signal);
         if (step.replace) {

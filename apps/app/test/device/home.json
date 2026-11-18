@@ -1,8 +1,8 @@
 [
-  { "tap": "Email" },
+  { "homeCard": "Email" },
   { "expect": "Open email on Grace’s website" },
   { "tap": "Close Email" },
-  { "tap": "Calendar" },
+  { "homeCard": "Calendar" },
   { "expect": "Open your calendar on Grace’s website" },
   { "tap": "Close Calendar" },
   { "tap": "Files" },
