@@ -161,7 +161,7 @@ pure def alwaysObservedContextExists(x: Execution): bool =
 
 ### Each step has a consequence class, and Grace takes only the steps that are hers
 
-The bridge classifies every target it names, from the control itself and never from what the page says about it. A routine step (read, move on, an ordinary button or option) Grace may take. An ask-first step (filling in a detail) she takes only with the person's yes, which is the value reference: a value the person gave or a saved detail she approved for this site. A person-only step (a password, sign-in, a site's consent or permission) and a commit (money, booking, sending, deleting, changing) are tapped by the person; a commit Grace takes only through the commitment route, never this one. A target out of Grace's reach is tapped by the person whatever its class. A step Grace may not take is only pointed at.
+The bridge classifies every target it names, from the control itself and never from what the page says about it. A routine step (read, move on, an ordinary button or option) Grace may take. An ask-first step (filling in a detail) she takes only with the person's yes, which is the value reference: a value the person gave or a saved detail she approved for this site. On this route a person-only step (a password, sign-in, a site's consent or permission) and a commit (money, booking, sending, deleting, changing) are the person's to tap; a commit Grace takes only through the commitment route, after the person's yes at its exact review, never this one. A target out of Grace's reach is tapped by the person whatever its class. A step Grace may not take is only pointed at.
 
 ```quint
 pure val noTarget: PageTarget = { id: "", consequence: PersonOnly, inReach: false }
