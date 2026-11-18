@@ -8,6 +8,7 @@ export interface FilesPort {
   preview(input: { lease: string; id: string; page: number; small?: boolean }): Promise<unknown>;
   pick(input: { lease: string; kind: "photo" | "pdf" }): Promise<unknown>;
   capture(input: { lease: string }): Promise<unknown>;
+  remove(input: { lease: string; id: string }): Promise<void>;
   commit(input: { lease: string; id: string }): Promise<unknown>;
 }
 

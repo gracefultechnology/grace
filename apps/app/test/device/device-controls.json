@@ -10,6 +10,10 @@
   { "key": "VOLUME_DOWN" },
   { "call": "GraceDevice.getDevice", "returns": { "volume": { "step": 5 } } },
   { "call": "GraceDevice.setVolume", "with": { "step": 1000 }, "refuses": "The volume step is outside the device's steps" },
+  { "call": "GraceDevice.setVolume", "with": { "step": 5, "muted": true }, "returns": { "muted": true } },
+  { "call": "GraceDevice.getDevice", "returns": { "volume": { "muted": true } } },
+  { "call": "GraceDevice.setVolume", "with": { "step": 5, "muted": false }, "returns": { "step": 5, "muted": false } },
+  { "call": "GraceDevice.getDevice", "returns": { "volume": { "step": 5, "muted": false } } },
   { "call": "GraceDevice.setBrightness", "with": { "percent": 40 }, "returns": { "percent": 40 } },
   { "call": "GraceDevice.getDevice", "returns": { "brightness": { "percent": 40 }, "screenOn": true } }
 ]

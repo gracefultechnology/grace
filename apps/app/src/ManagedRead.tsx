@@ -241,6 +241,9 @@ export function ManagedRead({ view }: { view: ReadView }) {
         {failed && <RetryNotice role="alert">Grace’s website couldn’t open.</RetryNotice>}
       </EmptyState>;
     }
+    if (snapshot.reason === "connectorUnavailable") {
+      return <EmptyState title={view === "Email" ? "Google mail isn’t available right now" : "Google Calendar isn’t available right now"} role="status" />;
+    }
     if (snapshot.reason === "unavailable") {
       return <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>;
     }

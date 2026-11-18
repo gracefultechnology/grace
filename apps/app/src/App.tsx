@@ -130,7 +130,7 @@ function Screen() {
     },
   });
   const managedIntent = window.location.hash === "#email" || window.location.hash === "#calendar";
-  const useManaged = managedIntent || (!accounts?.accounts.length && (cards !== undefined || managedAccount));
+  const useManaged = managedIntent || managedAccount || (!accounts?.accounts.length && cards !== undefined);
   const online = device.connectivity === "Online";
   const volume = preferences.session;
   // spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone": zero volume is muted, and Unmute at zero chooses 50.
@@ -167,14 +167,14 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!cards && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
                 weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0 };
             }) }, ...visit("Calendar") }}
               email={{
-                messages: cards ? (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
-              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })) : accounts ? homeMail(accounts, boxes, read) : [], notConnected: !cards && accounts !== undefined && mailAccounts(accounts).length === 0,
+                messages: useManaged ? (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
+              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })) : accounts ? homeMail(accounts, boxes, read) : [], notConnected: !useManaged && accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
               }}
               internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}

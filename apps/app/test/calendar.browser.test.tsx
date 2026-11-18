@@ -56,7 +56,7 @@ async function start() {
   return {
     secret, eyeAt, eyeDay, card, run,
     toEyeWeek: async () => {
-      await act(() => userEvent.click(card));
+      await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
       await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
@@ -132,6 +132,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
 it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eyeAt, eyeDay, toEyeWeek, stop } = await start();
+  const unrelated = (await held(secret)).filter(({ title }) => title === "Joan’s birthday");
   const titles = async () => (await company(secret)).map((e) => e.title).filter((t) => t !== "Joan’s birthday");
   const edit = async (title: string, repeats: string) => {
     await click("Edit");
@@ -191,13 +192,13 @@ it('Add, change and delete (spec/app/calendarView.md, "Story: Delete this occurr
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
-  expect(await held(secret)).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
+  expect(await held(secret)).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }, ...unrelated]);
   await click("Next week");
   await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await click("Delete");
   await click("Delete every one");
   await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
-  await expect.poll(titles).toEqual([]);
+  await expect.poll(() => held(secret)).toEqual(unrelated);
   await click("Previous week");
   await click("Previous week");
   await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
