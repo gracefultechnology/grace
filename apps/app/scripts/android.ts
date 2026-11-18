@@ -423,7 +423,10 @@ const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Sc
 const AXNodes = Schema.Struct({ nodes: Schema.Array(AXNode) });
 const Quads = Schema.Struct({ quads: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number])) });
 const SignInReport = Schema.Struct({
-  status: Schema.Struct({ kind: Schema.Literals(["signedIn", "signedOut"]) }),
+  status: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("signedOut") }),
+    Schema.Struct({ kind: Schema.Literal("signedIn"), voiceDisclosureScope: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)) }),
+  ]),
   google: Schema.Boolean,
 });
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
@@ -588,7 +591,7 @@ async function devTools(url: string, signal: AbortSignal) {
         if (report._tag === "None") throw new Error("The native account status or public sign-in configuration was unavailable or returned unexpected fields");
         const { status, google } = report.value;
         const found = { signedIn: status.kind === "signedIn", google };
-        process.stdout.write(`sign-in status ${JSON.stringify({ ...status, ...found })}\n`);
+        process.stdout.write(`sign-in status ${JSON.stringify(found)}\n`);
         if (found.signedIn !== step.signIn.signedIn || found.google !== step.signIn.google)
           throw new Error(`Sign-in is ${JSON.stringify(found)}, not ${JSON.stringify(step.signIn)}`);
         return;
