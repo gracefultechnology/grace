@@ -661,10 +661,10 @@ An anonymous device profile can open an unbound vault. A verified account opens 
 ```quint
 type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })
 type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ credentialId: str })
-pure def passwordAdmission(custody: PasswordCustody, account: PasswordAccount): bool =
+pure def passwordAdmission(custody: PasswordCustody, passwordAccount: PasswordAccount): bool =
   match custody {
-    | DevicePasswordCustody => match account { | DevicePasswordAccount => true | _ => false }
-    | BoundPasswordCustody(owner) => match account {
+    | DevicePasswordCustody => match passwordAccount { | DevicePasswordAccount => true | _ => false }
+    | BoundPasswordCustody(owner) => match passwordAccount {
         | ActivePasswordAccount(active) => owner.scope != "" and owner.generationId != "" and owner.generationId == active.credentialId
         | _ => false
       }
