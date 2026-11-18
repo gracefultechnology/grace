@@ -480,10 +480,6 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   };
 
   try {
-    await act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
-      w.send({ type: "setAvailability", availability: {
-        connection: device.connectivity, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true,
-      } }, "Host")))));
     await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
     await native.route();
     await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
@@ -505,6 +501,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const showLink = page.getByRole("button", { name: "Show me the link" });
     expect(showLink.query()).toBeNull();
     await tap(page.getByRole("button", { name: "Start read plan" }));
+    expect(showLink.query()).toBeNull();
+    const allowReading = page.getByRole("button", { name: "Allow Grace to read this browser", exact: true });
+    const resumeReading = page.getByRole("button", { name: "Resume Grace" });
+    await tap(allowReading);
+    await tap(resumeReading);
+    await routeTo(showLink);
+    await tap(page.getByRole("button", { name: "Turn off browser reading", exact: true }));
+    expect(showLink.query()).toBeNull();
+    await tap(allowReading);
+    await tap(resumeReading);
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the next page you want me to check/)).toBeVisible();
 

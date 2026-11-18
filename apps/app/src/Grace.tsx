@@ -46,9 +46,16 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const pausable = hasPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep ? guidedReadKind(currentStep) : "UnsupportedRead";
   const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
-  const canCheck = label && currentStep?.surface === workspace?.device.surface &&
+  const canCheck = label && (stepKind !== "ReadStatement" || workspace?.device.observationAllowed) &&
+    currentStep?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
+  const observation = workspace && {
+    type: "setBrowserObservation", choice: {
+      allowed: !workspace.device.observationAllowed,
+      deviceVersion: workspace.device.contextVersion, browserRevision: workspace.browser.revision,
+    },
+  } as const;
   const guideKey = workspace && mayGuideReadLink(workspace)
     ? [assistant.taskId, assistant.workVersion, conversation.generation, next, workspace.device.contextVersion, workspace.browser.revision].join(":")
     : "";
@@ -88,6 +95,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
+          {observation && can(observation) && (
+            <AnswerChips>
+              <AnswerChip onClick={() => void send(observation)}>
+                {observation.choice.allowed ? "Allow Grace to read this browser" : "Turn off browser reading"}
+              </AnswerChip>
+            </AnswerChips>
+          )}
           {showReview && (
             <section aria-label="Review read plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
               <blockquote className="text-body">{review.request.goal}</blockquote>
