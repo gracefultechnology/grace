@@ -789,8 +789,8 @@ async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray
   });
 }
 
-async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string, listTargets: () => Promise<typeof Targets.Type>) => Promise<void>) {
-  const pid = (await shell(serial, waitForPid, 180)).trim();
+async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string, listTargets: () => Promise<typeof Targets.Type>) => Promise<void>, socketTimeoutSeconds = 180) {
+  const pid = (await shell(serial, waitForPid, socketTimeoutSeconds)).trim();
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
   try {
@@ -1073,13 +1073,13 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "start the Grace tablet app";
         const started = await shell(serial, `am start -n ${activity}`, 120);
         if (!started.startsWith("Starting: Intent {") || !started.includes(`cmp=${activity}`)) throw new Error("Android did not dispatch Grace");
-        step = "wait for the Grace home screen";
-        const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
+        step = "wait for Grace’s native WebView socket";
+        const waitForPid = `for i in $(seq 840); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
         signal.throwIfAborted();
         await withGracePage(serial, waitForPid, async (page) => {
           signal.throwIfAborted();
           step = "wait for interactive Grace Home";
-          await page.until(selectedHome, AbortSignal.timeout(180_000));
+          await page.until(selectedHome, AbortSignal.any([signal, AbortSignal.timeout(420_000)]));
           process.stdout.write("The installed Grace Home is ready.\n");
           step = "wait for the Page 2 control on Grace Home";
           const page2 = await page.waitForHomeControl({ label: "Page 2" }, AbortSignal.timeout(120_000));
@@ -1113,7 +1113,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.step({ tap: "Private sign-in" });
           await page.step({ type: entry.href, into: "Private website address", replace: true });
           await page.step({ press: "Enter" });
-        });
+        }, 900);
         step = "request Android autofill and choose the matching entry";
         await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
         await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
