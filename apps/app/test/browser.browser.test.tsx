@@ -265,12 +265,14 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
-    const named = workspace().review.request.steps.find(step => guidedReadKind(step) === "ReachNamedPage");
-    if (requiredStep === "ReachNamedPage") {
-      expect(named).toBeDefined();
-      expect(workspace().review.request.steps).toHaveLength(1);
-    }
+    const reviewed = workspace().review.request.steps;
+    const named = reviewed.find(step => guidedReadKind(step) === "ReachNamedPage");
     if (named) outcome.reviewedDestination = named.subject;
+    if (requiredStep === "ReachNamedPage") {
+      outcome.reviewedSteps = reviewed.map(step => ({ kind: guidedReadKind(step), subject: step.subject }));
+      expect(named).toBeDefined();
+      expect(reviewed).toHaveLength(1);
+    }
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
     const showLink = page.getByRole("button", { name: "Show me the link" });
