@@ -201,7 +201,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   const outcome: Record<string, unknown> = {
-    chatProvider: "fixture", observationPermission: "synthetic test-device grant",
+    chatProvider: "fixture", observationPermission: "person granted browser reading in Grace",
     operator: "trusted Chromium mouse input at visible guide ring",
   };
   const native = androidPagePluginAtItsBoundary({
@@ -251,11 +251,12 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     outcome.start = { url: initial.url, documentId: initial.documentId };
     expect(initial.url).toBe(new URL(startUrl).href);
     await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+    await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
-    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
     const showLink = page.getByRole("button", { name: "Show me the link" });
     try {
@@ -334,11 +335,12 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
     await userEvent.click(page.getByRole("button", { name: "Go", exact: true }));
     await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
     await userEvent.type(page.getByRole("button", { name: "Ask Grace", exact: true }), "{Enter}");
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+    await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), question);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
-    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
     await userEvent.click(page.getByRole("button", { name: "Read statement", exact: true }));
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText("Read checks complete", { exact: true })).toBeVisible();
