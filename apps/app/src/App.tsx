@@ -182,7 +182,7 @@ function Screen() {
           )}</WithMailboxes>
         </OverPage>
       )}
-      {surface === "Browser" && <div className={cn(lifted, besideRail, "z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
+      {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
       {surface === "Email" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}

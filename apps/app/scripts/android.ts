@@ -889,7 +889,7 @@ function buildPasswordEditorFixture(directory: string, login: typeof LoginFixtur
   const manifest = path.join(work, "AndroidManifest.xml");
   writeFileSync(manifest, `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${editorFixturePackage}"><uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36"/><application android:testOnly="true" android:allowBackup="false"/><instrumentation android:name=".BillWorldPasswordEditor" android:targetPackage="${identity.appId}"/></manifest>`);
   const compile = (tool: string, args: string[]) => execFileSync(tool, args, { stdio: "ignore", timeout: 180_000 });
-  compile(path.join(resolveJavaHome(), "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
+  compile(path.join(environment().JAVA_HOME, "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
     path.join(app, "test/device/BillWorldPasswordEditor.java")]);
   const compiled = path.join(classes, "technology/graceful/fixture/BillWorldPasswordEditor.class");
   compile(buildTool("d8"), ["--lib", sdkJar, "--min-api", "29", "--output", work, compiled]);

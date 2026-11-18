@@ -118,15 +118,20 @@ const vaultStatus = (locked: boolean): ReturnType<PasswordVault["status"]> => Pr
   autofill: { supported: true, selected: "this-app" },
 });
 
-const openRouted = async (native: ReturnType<typeof fakePlugin>, cloud: Parameters<typeof application>[2]) => {
-  const runtime = ManagedRuntime.make(application(native.plugin, undefined, cloud));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
   const tap = async (target: Locator) => {
     await routeTo(target);
     await act(() => userEvent.click(target));
   };
+  return { routeTo, tap };
+}
+
+const openRouted = async (native: ReturnType<typeof fakePlugin>, cloud: Parameters<typeof application>[2]) => {
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, cloud));
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  const { routeTo, tap } = routedControls(native);
   const browse = async () => {
     await tap(page.getByRole("button", { name: "Internet" }));
     await native.route();
@@ -1929,8 +1934,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
-  const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
-  const tap = async (target: Locator) => { await routeTo(target); await act(() => userEvent.click(target)); };
+  const { routeTo, tap } = routedControls(native);
   const send = async (message: string) => {
     const text = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(text);
