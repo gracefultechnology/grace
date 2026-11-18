@@ -50,24 +50,27 @@ export function webPage() {
     try addFinalizer(() => sync(() => { for (const id of [...frames.keys()]) remove(id) }))
     return {
       privateSignIn: false,
+      observeLinks: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
+      pointAt: () => Effect.fail(new PageFailed({ cause: "This browser cannot annotate another website." })),
+      clearGuide: () => sync(() => undefined),
       claim: () => sync(() => { for (const left of document.querySelectorAll("iframe[data-page]")) left.remove() }),
       create: (id, url, manualSignIn) => manualSignIn
         ? Effect.fail(new PageFailed({ cause: "Private sign-in requires Android" }))
         : sync(() => {
-        remove(id)
-        const element = document.createElement("iframe")
-        element.dataset.page = id
-        element.title = "Website"
-        element.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms", "allow-popups")
-        element.hidden = true
-        Object.assign(element.style, { position: "fixed", zIndex: "2147483647", border: "0", left: "0", top: "0", width: "0", height: "0" })
-        const frame: Frame = { element, history: [url], at: 0, going: undefined, placed: { x: 0, y: 0, width: 0, height: 0 }, routed: undefined }
-        clip(frame)
-        element.addEventListener("load", () => loaded(id, frame))
-        frames.set(id, frame)
-        go(id, frame, url)
-        document.body.append(element)
-      }),
+          remove(id)
+          const element = document.createElement("iframe")
+          element.dataset.page = id
+          element.title = "Website"
+          element.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms", "allow-popups")
+          element.hidden = true
+          Object.assign(element.style, { position: "fixed", zIndex: "2147483647", border: "0", left: "0", top: "0", width: "0", height: "0" })
+          const frame: Frame = { element, history: [url], at: 0, going: undefined, placed: { x: 0, y: 0, width: 0, height: 0 }, routed: undefined }
+          clip(frame)
+          element.addEventListener("load", () => loaded(id, frame))
+          frames.set(id, frame)
+          go(id, frame, url)
+          document.body.append(element)
+        }),
       place: (id, page, corners) => on(id, (frame) => {
         frame.placed = page
         clip(frame)

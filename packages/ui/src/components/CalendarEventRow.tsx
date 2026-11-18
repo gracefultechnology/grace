@@ -23,10 +23,13 @@ export type CalendarEventRowProps = Omit<ComponentProps<"button">, "title" | "ch
   draft?: boolean;
   /** The line a draft shows under its title. */
   draftNote?: string;
+  /** Where the event lives, after its details: "Gmail", "On this tablet". Given only while an email's calendar is on; a draft has none. */
+  tag?: string;
 };
 
 /**
- * One event in a list: its day and time, a colored bar, the title and its details; it opens the event (prototype `calRow`, `.a-row`).
+ * One event in a list: its day and time, a colored bar, the title, its details and where it lives; it opens the event, except a draft
+ * Grace is still asking about (prototype `calRow`, `.a-row`, `.actag2`).
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
  */
@@ -41,17 +44,22 @@ export function CalendarEventRow({
   importantLabel = "Important",
   draft = false,
   draftNote = "Not added yet · Grace is asking you",
+  tag,
+  onClick,
   className,
   ...props
 }: CalendarEventRowProps) {
   const details = draft ? draftNote : [who, where, repeat].filter(Boolean).join(" · ");
+  const shownTag = draft ? undefined : tag;
   return (
     <button
       type="button"
+      aria-disabled={draft || undefined}
+      onClick={draft ? undefined : onClick}
       className={cn(
         focusRing,
         "box-border flex min-h-24 w-full cursor-pointer items-center gap-5 rounded-row bg-panel px-[22px] py-4 text-left font-sans active:scale-[.99] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
-        draft && "bg-background outline-[2.5px] -outline-offset-[2.5px] outline-guide outline-dashed",
+        draft && "cursor-default bg-background active:scale-100 outline-[2.5px] -outline-offset-[2.5px] outline-guide outline-dashed",
         className,
       )}
       {...props}
@@ -63,7 +71,12 @@ export function CalendarEventRow({
       <span className={cn("w-[3px] flex-none self-stretch rounded-full", important ? "bg-alert" : "bg-lavender")}>{important && <span className="sr-only">{importantLabel}</span>}</span>
       <span className="min-w-0">
         <span className="block text-lead leading-[30px] font-bold text-chrome">{title}</span>
-        {details && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{details}</span>}
+        {(details || shownTag) && (
+          <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">
+            {details}
+            {shownTag && <span className="ml-2.5 inline-block rounded-full bg-primary/7 px-2.5 text-caption leading-6 font-semibold text-subtle">{shownTag}</span>}
+          </span>
+        )}
       </span>
       <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-auto flex-none text-chevron" />
     </button>

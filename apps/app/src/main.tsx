@@ -7,4 +7,4 @@ import { application } from "./app.vibe";
 import { devicePlugin, wifiPlugin, passwordClient } from "./surfacePlugin.ts";
 import "./main.css";
 
-createRoot(document.getElementById("root")!).render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, passwordClient))} /></StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, undefined, passwordClient))} /></StrictMode>);

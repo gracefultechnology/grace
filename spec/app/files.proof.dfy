@@ -164,25 +164,6 @@ lemma writeResult_ensures(f: Files, fileReceipt: FileReceipt, by_: FileActor)
   }
 }
 
-lemma printDocument_ensures(f: Files, id: string, by_: FileActor)
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysLibraryIdentity(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysCatalogLoadHasNoStaleView(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysCatalogValid(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysSelectionExists(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysPageInBounds(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysPendingFileExists(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysMatchesExist(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> alwaysPendingImportValid(printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> stepFailedWriteKeepsLibrary(f, "printDocument", printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> stepOnlyAcknowledgedWritesChangeLibrary(f, "printDocument", printDocument(f, id, by_).state))
-  ensures (inv(f) ==> canPrintDocument(f, id, by_) ==> stepOwnerDoesNotChange(f, printDocument(f, id, by_).state))
-{
-  if inv(f) && canPrintDocument(f, id, by_) {
-    ExistingFileLookup(f, id);
-    CatalogDistinct(f.entries);
-  }
-}
-
 // spec/app/files.md, "Opening a file verifies that exact content before presenting a preview"
 lemma openFile_ensures(f: Files, id: string, by_: FileActor)
   ensures (inv(f) ==> canOpenFile(f, id, by_) ==> alwaysLibraryIdentity(openFile(f, id, by_).state))

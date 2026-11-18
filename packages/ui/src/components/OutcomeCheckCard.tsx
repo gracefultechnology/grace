@@ -1,55 +1,62 @@
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { Panel, type PanelProps } from "./Panel.tsx";
-import { PaymentStatusBadge, type PaymentStatusBadgeProps } from "./PaymentStatusBadge.tsx";
+import { bookingStatusLabels, PaymentStatusBadge, paymentStatusLabels, type PaymentStatusBadgeProps, type PaymentStatusLabels } from "./PaymentStatusBadge.tsx";
 
-export type PaymentCheckLabels = {
+export type OutcomeCheckLabels = {
   title: string;
   message: string;
   check: string;
   open: string;
   retrySave: string;
+  status: PaymentStatusLabels;
 };
 
-export const paymentCheckLabels: PaymentCheckLabels = {
+export const billCheckLabels: OutcomeCheckLabels = {
   title: "Let’s check whether it went through",
   message: "Please don’t pay again until you’ve checked {site}.",
   check: "Check again",
   open: "Open {site}",
   retrySave: "Try saving again",
+  status: paymentStatusLabels,
 };
 
-export type PaymentCheckCardProps = Omit<PanelProps, "variant" | "children" | "title"> & {
-  /** The bill's website: "chase.com". */
+export const bookingCheckLabels: OutcomeCheckLabels = {
+  ...billCheckLabels,
+  message: "Please don’t book again until you’ve checked {site}.",
+  status: bookingStatusLabels,
+};
+
+export type OutcomeCheckCardProps = Omit<PanelProps, "variant" | "children" | "title"> & {
+  /** The task's website: "chase.com". */
   site: string;
   /** The heading, unless the default. */
   title?: string;
   /** What Margaret is told, unless the default, such as "Chase accepted the payment. Saving the record didn’t work." */
   message?: string;
-  /** Looks at the website again for the result; it never pays. */
+  /** Looks at the website again for the result; it never pays or books. */
   onCheck?: () => void;
-  /** Opens the bill's website. */
+  /** Opens the task's website. */
   onOpenSite?: () => void;
-  /** Saves the result already seen again; it never pays again. */
+  /** Saves the result already seen again; it never pays or books again. */
   onRetrySave?: () => void;
   /** A check is under way. */
   checking?: boolean;
   /** The result, once found: the card shows it in place of its actions. */
-  result?: PaymentStatusBadgeProps;
-  /** Words to use instead of the defaults, to localize. */
-  labels?: Partial<PaymentCheckLabels>;
+  result?: Omit<PaymentStatusBadgeProps, "labels">;
+  /** The task kind's words, such as `billCheckLabels`. */
+  labels: OutcomeCheckLabels;
 };
 
 /**
- * The calm card for a payment whose result is not known, or not saved, on coming back to a bill: it asks Margaret not to
- * pay again, and offers only to look (Check again, Open the website) or to save what was seen (Try saving again).
+ * The calm card for a task whose result is not known, or not saved, on coming back to it: it asks Margaret not to pay
+ * or book again, and offers only to look (Check again, Open the website) or to save what was seen (Try saving again).
  * @model spec/app/payment.md
  * @design packages/design-system/design.md#grace
  */
-export function PaymentCheckCard({ site, title, message, onCheck, onOpenSite, onRetrySave, checking = false, result, labels, className, ...props }: PaymentCheckCardProps) {
-  const words = { ...paymentCheckLabels, ...labels };
+export function OutcomeCheckCard({ site, title, message, onCheck, onOpenSite, onRetrySave, checking = false, result, labels, className, ...props }: OutcomeCheckCardProps) {
   const fill = (template: string) => template.replaceAll("{site}", site);
-  const heading = title ?? words.title;
+  const heading = title ?? labels.title;
   const actions = !result && (onRetrySave || onCheck || onOpenSite);
   return (
     <Panel
@@ -60,24 +67,24 @@ export function PaymentCheckCard({ site, title, message, onCheck, onOpenSite, on
       {...props}
     >
       <p className="m-0 text-title-sm leading-8 font-bold text-chrome">{heading}</p>
-      <p className="m-0 text-body-lg leading-[30px] font-normal text-foreground">{fill(message ?? words.message)}</p>
-      {result && <PaymentStatusBadge className="self-start" {...result} />}
+      <p className="m-0 text-body-lg leading-[30px] font-normal text-foreground">{fill(message ?? labels.message)}</p>
+      {result && <PaymentStatusBadge className="self-start" {...result} labels={labels.status} />}
       {actions && (
         <div className="mt-1 flex flex-wrap gap-3">
           {onRetrySave ? (
             <Button variant="prominent" size="pill" onClick={onRetrySave}>
-              {words.retrySave}
+              {labels.retrySave}
             </Button>
           ) : (
             <>
               {onCheck && (
                 <Button variant="prominent" size="pill" loading={checking} onClick={onCheck}>
-                  {words.check}
+                  {labels.check}
                 </Button>
               )}
               {onOpenSite && (
                 <Button variant="capsule" size="pill" onClick={onOpenSite}>
-                  {fill(words.open)}
+                  {fill(labels.open)}
                 </Button>
               )}
             </>

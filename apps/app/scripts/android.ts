@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs, promisify } from "node:util";
@@ -46,7 +47,7 @@ const Policy = Schema.Struct({
   plugins: Schema.Struct({ refuse: Reasons }),
   actions: Schema.Struct({
     grace: Schema.Record(Schema.String, Schema.Unknown),
-    upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
+    upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, plannerTools: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
   }),
 });
 const policy = Schema.decodeUnknownSync(Policy)(readJson(path.join(app, "agent/policy.json")));
@@ -78,6 +79,13 @@ const Step = Schema.Union([
 ]);
 type Step = typeof Step.Type;
 type OnDevice = Extract<Step, { service: string } | { leaveFor: string }>;
+const Benchmark = Schema.Struct({
+  taskId: Schema.NonEmptyString,
+  intent: Schema.NonEmptyString,
+  startUrl: Schema.NonEmptyString,
+});
+type Benchmark = typeof Benchmark.Type;
+type BenchmarkRun = { input: Benchmark; receipt: string };
 const Arguments = Schema.Struct({
   release: Schema.optional(Schema.Boolean),
   verify: Schema.optional(Schema.Boolean),
@@ -87,6 +95,8 @@ const Arguments = Schema.Struct({
   exercise: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-z0-9-]+$/))),
   "billworld-passwords": Schema.optional(Schema.NonEmptyString),
   "verify-billworld-run": Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/))),
+  benchmark: Schema.optional(Schema.NonEmptyString),
+  receipt: Schema.optional(Schema.NonEmptyString),
 });
 
 export function buildTool(name: string): string {
@@ -217,8 +227,8 @@ function checkPolicy(bundle: string) {
   const known = checked.get(digest);
   if (known !== undefined) return known;
   const declared = declaredActions(bundle);
-  const { allow, refuse, refusedSubactionsOf } = policy.actions.upstream;
-  const unlisted = [...declared].filter((name) => !Object.hasOwn(allow, name) && !Object.hasOwn(refuse, name) && !Object.hasOwn(policy.actions.grace, name)
+  const { allow, refuse, plannerTools, refusedSubactionsOf } = policy.actions.upstream;
+  const unlisted = [...declared].filter((name) => ![allow, refuse, plannerTools, policy.actions.grace].some((listed) => Object.hasOwn(listed, name))
     && !refusedSubactionsOf.some((umbrella) => name.startsWith(`${umbrella}_`))).sort();
   if (unlisted.length) throw new Error(`The agent registers actions agent/policy.json neither allows nor refuses: ${unlisted.join(", ")}`);
   checked.set(digest, declared.size);
@@ -298,7 +308,6 @@ const SignInReport = Schema.Struct({
   status: Schema.Struct({ active: Schema.Boolean, google: Schema.Boolean, googleScopes: Schema.Array(Schema.String) }),
   identity: Schema.Struct({ credentialId: Schema.NullOr(Schema.String) }),
 });
-const Targets = Schema.Array(Schema.Struct({ type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
 const secondHomePage = `document.querySelector('button[aria-label="Page 2"][aria-current=true]') !== null`;
 const passwordCardReady = `(() => {
@@ -310,6 +319,9 @@ const passwordCardReady = `(() => {
   const { left, top, width, height } = card.getBoundingClientRect();
   return card.contains(document.elementFromPoint(left + width / 2, top + height / 2));
 })()`;
+const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
+const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
+const GraceReadback = Schema.Struct({ address: Schema.NullOr(Schema.String), visible: Schema.NullOr(Schema.String) });
 
 async function devTools(url: string, signal: AbortSignal) {
   const socket = new WebSocket(url);
@@ -388,8 +400,18 @@ async function devTools(url: string, signal: AbortSignal) {
   return {
     until,
     describe,
-    async step(step: Exclude<Step, OnDevice>) {
-      const signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000);
+    async mainFrame(signal: AbortSignal) {
+      const { frameTree } = await send({ method: "Page.getFrameTree", params: {}, schema: MainFrame, signal });
+      return frameTree.frame;
+    },
+    async guidance(signal: AbortSignal) {
+      const expression = `document.querySelector('[data-benchmark-observable="true"]') ? ({ address: document.querySelector('input[aria-label="Address"]')?.value ?? null, visible: document.querySelector('[aria-label="Grace"]')?.innerText ?? null }) : null`;
+      const { result } = await send({ method: "Runtime.evaluate", params: { expression, returnByValue: true }, schema: Evaluated, signal });
+      const guidance = Schema.decodeUnknownSync(Schema.NullOr(GraceReadback))(result.value);
+      if (guidance === null) throw new Error("The benchmark cannot observe this surface");
+      return guidance;
+    },
+    async step(step: Exclude<Step, OnDevice>, signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000)) {
       if ("agent" in step) {
         const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && Promise.resolve(listening).then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
@@ -434,6 +456,99 @@ async function devTools(url: string, signal: AbortSignal) {
 
 const failing = (what: string) => (error: unknown) => { throw new Error(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); };
 
+function testOrigin(url: string) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || !["127.0.0.1", "localhost", "10.0.2.2"].includes(parsed.hostname) || parsed.username || parsed.password)
+    throw new Error("Benchmark sites must use synthetic HTTPS origins on the local test network");
+  return parsed.origin;
+}
+
+async function runBenchmark({ input, receipt }: BenchmarkRun, page: Awaited<ReturnType<typeof devTools>>, listTargets: () => Promise<typeof Targets.Type>) {
+  const origin = testOrigin(input.startUrl);
+  const timeout = AbortSignal.timeout(180_000);
+  const observations: Array<{ at: string; document: Awaited<ReturnType<typeof page.mainFrame>> & { targetId: string } }> = [];
+  const transcripts: Array<{ at: string; text: string }> = [];
+  const output = openSync(receipt, "wx", 0o600);
+  let status: "operator-finished" | "timed-out" | "failed" = "failed";
+  let failure: string | undefined;
+  let requestAcceptedAt: string | undefined;
+  let website: { targetId: string; page: Awaited<ReturnType<typeof devTools>> } | undefined;
+  const observe = async () => {
+    const guidance = await page.guidance(timeout);
+    if (guidance.visible && transcripts.at(-1)?.text !== guidance.visible)
+      transcripts.push({ at: new Date().toISOString(), text: guidance.visible });
+    if (!guidance.address || !URL.canParse(guidance.address)) return;
+    const address = new URL(guidance.address);
+    if (address.origin !== origin) return;
+    const targets = (await listTargets()).filter((target) => target.type === "page" && target.webSocketDebuggerUrl && URL.canParse(target.url) && new URL(target.url).origin === origin);
+    const [target] = targets;
+    if (targets.length > 1) throw new Error("Multiple test-origin WebViews prevent binding to the selected tab");
+    if (!target?.webSocketDebuggerUrl) return;
+    if (website?.targetId !== target.id) {
+      website?.page.close();
+      website = { targetId: target.id, page: await devTools(target.webSocketDebuggerUrl, timeout) };
+    }
+    const frame = await website.page.mainFrame(timeout);
+    if (new URL(frame.url).origin !== origin || new URL(frame.url).href !== address.href) return;
+    const document = { ...frame, targetId: target.id };
+    const last = observations.at(-1);
+    if (last?.document.targetId !== document.targetId || last.document.loaderId !== document.loaderId || last.document.url !== document.url)
+      observations.push({ at: new Date().toISOString(), document });
+  };
+  try {
+    if (!process.stdin.isTTY) throw new Error("A benchmark requires an interactive operator");
+    await page.step({ tap: "Internet" }, timeout);
+    await page.step({ type: input.startUrl, into: "Address" }, timeout);
+    await page.step({ tap: "Go" }, timeout);
+    while (!observations.length) {
+      await observe();
+      await page.until("true", timeout);
+    }
+    await page.step({ tap: "Ask Grace" }, timeout);
+    await page.step({ type: input.intent, into: "Message to Grace" }, timeout);
+    await page.step({ press: "Enter" }, timeout);
+    const accepted = AbortSignal.any([timeout, AbortSignal.timeout(15_000)]);
+    await page.until(`document.querySelector('[aria-label="Grace"]')?.innerText.includes(${JSON.stringify(input.intent)})`, accepted)
+      .catch(failing("Waiting for Grace to accept the task into chat; the app needs a bound decision service"));
+    requestAcceptedAt = new Date().toISOString();
+    const operator = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      let finished = false;
+      const finish = operator.question("Follow Grace in the emulator, then press Enter to record the result. ", { signal: timeout })
+        .finally(() => { finished = true; });
+      void finish.catch(() => undefined);
+      while (!finished) {
+        await observe();
+        await page.until("true", timeout);
+      }
+      await finish;
+    } finally {
+      operator.close();
+    }
+    await observe();
+    status = "operator-finished";
+  } catch (error) {
+    status = timeout.aborted ? "timed-out" : "failed";
+    failure = error instanceof Error ? error.message : String(error);
+    throw error;
+  } finally {
+    website?.page.close();
+    const first = observations[0]?.document;
+    const navigation = first && requestAcceptedAt ? observations.some(({ at, document }) => {
+      const address = new URL(document.url);
+      address.hash = "";
+      const initial = new URL(first.url);
+      initial.hash = "";
+      return at >= requestAcceptedAt && document.loaderId !== first.loaderId && address.href !== initial.href;
+    }) : false;
+    try {
+      writeFileSync(output, `${JSON.stringify({ surface: "android-webview", input, status, failure, requestAcceptedAt, navigation, observations, transcripts }, null, 2)}\n`);
+    } finally {
+      closeSync(output);
+    }
+  }
+}
+
 async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: OnDevice) {
   if ("service" in step) {
     const foreground = `dumpsys activity services ${identity.appId}/.${step.service} | grep -c isForeground=true`;
@@ -447,7 +562,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
   await shell(serial, `am start -W -n ${activity}`, 120);
 }
 
-async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>) {
+async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, benchmark?: BenchmarkRun) {
   await adb(["-s", serial, "install", "-r", path.join(artifacts, "launcher-debug.apk")], 300);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
@@ -459,7 +574,7 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
   process.stdout.write(`${serial} ${webView ?? "WebView unknown"}\n`);
   const debuggable = `grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit`;
   const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); case "$pid" in *" "*) echo "$pid"; exit;; "") ;; *) ${debuggable};; esac; sleep 1; done`;
-  await withGracePage(serial, waitForPid, async (page, pid) => {
+  await withGracePage(serial, waitForPid, async (page, pid, listTargets) => {
     const showing = (what: string) => async (error: unknown) =>
       failing(`${what}${await page.describe().then((shown) => ` (the page shows ${shown})`, () => "")}`)(error);
     await page.until(selectedHome, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
@@ -468,26 +583,28 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
       await ("service" in step || "leaveFor" in step ? onDevice(serial, pid, step) : page.step(step)).catch(showing(description));
       process.stdout.write(`${description} ok\n`);
     }
+    if (benchmark) await runBenchmark(benchmark, page, listTargets);
   });
 }
 
-async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string) => Promise<void>) {
+async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string, listTargets: () => Promise<typeof Targets.Type>) => Promise<void>) {
   const pid = (await shell(serial, waitForPid, 180)).trim();
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
   try {
+    const listTargets = async (signal = AbortSignal.timeout(120_000)) => Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal })
+      .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
     const ready = AbortSignal.timeout(120_000);
     let host: string | undefined;
     while (!host && !ready.aborted) {
-      const targets = Schema.decodeUnknownSync(Targets)(await fetch(`http://127.0.0.1:${port}/json`, { signal: ready })
-        .then((response) => response.json()).catch(failing("Listing Grace's WebView pages")));
+      const targets = await listTargets(ready);
       host = targets.find((target) => target.type === "page" && URL.parse(target.url)?.origin === "https://localhost")?.webSocketDebuggerUrl;
       if (!host) await delay(250);
     }
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
     const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
     try {
-      await run(page, pid);
+      await run(page, pid, listTargets);
     } finally {
       page.close();
     }
@@ -496,7 +613,7 @@ async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: str
   }
 }
 
-async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>) {
+async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>, benchmark?: BenchmarkRun) {
   const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
   await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
   const installing = (await shell(serial, "date +%s")).trim();
@@ -507,7 +624,7 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     if (graces.length) throw new Error(`Grace was not responding on ${serial}:\n${graces.join("\n")}`, { cause });
     return events.length;
   };
-  await walk(serial, exercise).catch(async (error: unknown) => {
+  await walk(serial, exercise, benchmark).catch(async (error: unknown) => {
     responding(await anrs().catch(() => { throw error; }), error);
     throw error;
   });
@@ -732,15 +849,22 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
 }
 
 if (import.meta.main) {
-  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" } } }).values;
-  const { verify, release, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun } = Schema.decodeUnknownSync(Arguments)(options);
+  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, benchmark: { type: "string" }, receipt: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" } } }).values;
+  const { verify, release, abi = "arm64-v8a", install, emulator, exercise, benchmark, receipt, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun } = Schema.decodeUnknownSync(Arguments)(options);
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
+  if ((benchmark || receipt) && (!benchmark || !receipt || (!install && !emulator) || exercise || verify))
+    throw new Error("--benchmark <input> and --receipt <new-file> require an emulator and run without --exercise or --verify");
   if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
   if (emulator && !avds().includes(emulator)) throw new Error(`No AVD named ${emulator}`);
   const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step), { onExcessProperty: "error" })(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
+  const trial = benchmark && receipt ? { input: Schema.decodeUnknownSync(Benchmark, { onExcessProperty: "error" })(readJson(benchmark)), receipt } : undefined;
+  if (trial) {
+    testOrigin(trial.input.startUrl);
+    if (existsSync(trial.receipt)) throw new Error("Benchmark receipt already exists");
+  }
   if (billworld !== undefined) {
-    if (verify || release || install || exercise || !emulator?.startsWith("grace-billworld-")) {
+    if (verify || release || install || exercise || benchmark || receipt || fixtureRun || !emulator?.startsWith("grace-billworld-")) {
       throw new Error("Use --billworld-passwords CHECKOUT with --emulator grace-billworld-… on a disposable AVD");
     }
     mkdirSync(artifacts, { recursive: true });
@@ -757,7 +881,7 @@ if (import.meta.main) {
     if (target) {
       process.once("exit", (code) => { stopping.abort(); if (code) target.stop(); });
       for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
-      await deliver(target, steps);
+      await deliver(target, steps, trial);
     }
   }
 }
