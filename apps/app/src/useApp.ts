@@ -8,6 +8,8 @@ import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts"
 import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
+import type { Machine as Files } from "../gen/app__files.effect.vibe";
+import { useMachine as useFilesMachine } from "../gen/app__files.react.ts";
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
 import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
@@ -39,7 +41,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices | Files, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -147,6 +149,18 @@ export function useMailContent() {
   return useInstances().content;
 }
 
+export function useMailFile() {
+  return useInstances().file;
+}
+
+export function useMailHeld() {
+  return useInstances().held;
+}
+
+export function useFiles() {
+  return useFilesMachine(useRuntime()).state;
+}
+
 type NestedProps<T> = { ids: readonly number[]; use: (id: number) => T | undefined; children: (all: readonly T[]) => ReactNode };
 
 function Nested<T>({ ids, use, children }: NestedProps<T>): ReactNode {
@@ -177,7 +191,7 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() };
 const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 
@@ -193,6 +207,7 @@ export function useMail() {
     confirmSend: (id: number, revision: number) => runtime.runPromise(mail.confirmSend(id, revision)),
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
     discarded: () => runtime.runPromise(mail.discarded()),
+    save: (id: number, refs: readonly string[]) => runtime.runPromise(mail.save(id, refs)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);

@@ -25,6 +25,7 @@ import { agent } from "./actions.vibe"
 import { browserGuide, type GuideDecision } from "./browserGuide.vibe"
 import { connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
+import { library } from "./files.vibe"
 import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
@@ -108,7 +109,7 @@ type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPor
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin, speech?: GuideSpeechPlugin) {
   const platform = "native" in host ? host : { native: false }
   const cloud = "url" in host ? host : undefined
-  const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
+  const kept = Layer.orDie(Layer.provide(Layer.mergeAll(Layer.provideMerge(instances, accounts), library), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const machines = Layer.mergeAll(preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
   const grace = Layer.provideMerge(conversation(cloud), Layer.provideMerge(agent, services(cloud)))
