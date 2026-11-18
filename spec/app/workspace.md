@@ -1538,7 +1538,8 @@ different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
 Walks include an ordinary task and payments at two different origins. Preparing
 an ordinary step has the weight of the other website callbacks: ordinary
-completion needs one exact twelve-event path, which a rarer preparation
+completion needs browser observation permission, a compact chat, a verified step
+and a fresh observation of its goal, which a rarer preparation
 almost never completes within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Walks also go offline, lose the
@@ -1599,78 +1600,78 @@ pure val unexpectedValues = Set(
   { id: 1, revision: 0, loadVersion: 0, destination: "https://utility.example/updated" })
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded }, { id: 1, version: 1, result: B::LoadFailed },
-  { id: 1, version: 3, result: B::Loaded })
+  { id: 1, version: 2, result: B::Loaded }, { id: 1, version: 3, result: B::Loaded })
 pure val observed: CurrentObservation = {
-  deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
+  deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
 pure val currentObservationValues = Set(observed,
   { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } },
-  { ...observed, browserRevision: 3, website: { ...X::goodObservation, generation: 2 } },
-  { ...observed, browserRevision: 3, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
-  { ...observed, browserRevision: 4, taskVersion: 3,
+  { ...observed, browserRevision: 4, website: { ...X::goodObservation, generation: 2 } },
+  { ...observed, browserRevision: 4, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
+  { ...observed, browserRevision: 5, taskVersion: 3,
     website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } },
   { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } },
   { ...observed, taskVersion: 2, checkpoint: "Account read",
     website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } },
-  { ...observed, browserRevision: 4, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
-  { ...observed, browserRevision: 4, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
+  { ...observed, browserRevision: 5, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
+  { ...observed, browserRevision: 5, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
 pure val operation: OperationRequest = {
-  deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  deviceVersion: 7, browserRevision: 3, taskVersion: 1,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage
 }
 pure val operationRequestValues = Set(operation, { ...operation, deviceVersion: 0 }, { ...operation, kind: X::FinalSubmit },
   { ...operation, target: "booking-frame", kind: X::Choose })
 pure val tokensValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 },
-  { deviceVersion: 0, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 })
-pure val currentVerificationValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 },
+  { deviceVersion: 0, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 })
+pure val currentVerificationValues = Set({ deviceVersion: 7, browserRevision: 3, taskVersion: 1,
   website: X::goodVerification, checkpoint: "Current account read", needsUser: false },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Current account read", needsUser: false },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Please check the account details", needsUser: true })
 pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
-  deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 2
+  deviceVersion: 7, browserRevision: 3, taskVersion: 2, generation: 1, observation: 2
 }
 pure val completionValues = Set(completedGoal,
   { ...completedGoal, task: "other", goal: "Read another account" },
   { ...completedGoal, evidence: "" },
   { ...completedGoal, taskVersion: 1 }, { ...completedGoal, goal: "Another goal" })
 pure val commitmentTokensValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 0 },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, revision: 1, attempt: 1 },
-  { deviceVersion: 0, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 })
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, revision: 1, attempt: 1 },
+  { deviceVersion: 0, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 })
 pure val currentReviewValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: CM::exampleReview },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     review: { ...CM::exampleReview, key: { ...CM::exampleKey, origin: "https://credit.example" } } })
-pure val currentOutcomeValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: CM::exampleOutcome },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: CM::exampleOutcome },
-  { deviceVersion: 6, browserRevision: 3, taskVersion: 1, report: { ...CM::exampleOutcome, revision: 3 } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...CM::exampleOutcome, result: CM::Pending, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::VerifiedFailure, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::Returned, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2,
+pure val currentOutcomeValues = Set({ deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: CM::exampleOutcome },
+  { deviceVersion: 7, browserRevision: 4, taskVersion: 1, report: { ...CM::exampleOutcome, revision: 3 } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::exampleOutcome, result: CM::Pending, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::VerifiedFailure, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::Returned, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2,
     report: { ...CM::exampleOutcome, key: { ...CM::exampleKey, origin: "https://credit.example" } } })
 pure val currentPriorValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: CM::examplePrior },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...CM::examplePrior, result: CM::VerifiedFailure, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...CM::examplePrior, result: CM::Returned, reference: "" } })
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::examplePrior },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::examplePrior, result: CM::VerifiedFailure, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::examplePrior, result: CM::Returned, reference: "" } })
 pure val saveReportValues = Set(
   { key: CM::exampleKey, revision: 3, succeeded: true },
   { key: CM::exampleKey, revision: 4, succeeded: true },
   { key: CM::exampleKey, revision: 3, succeeded: false },
   { key: { ...CM::exampleKey, origin: "https://credit.example" }, revision: 3, succeeded: true })
 pure val progressValues = Set(
-  { owner: "owner", task: "other", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { owner: "owner", task: "other", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
-  { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { owner: "owner", task: "task", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
-  { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { owner: "owner", task: "task", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: CommitmentProgress, destination: "" })
 pure val weight_changeLifecycle = 4
 pure val weight_setAvailability = 4
