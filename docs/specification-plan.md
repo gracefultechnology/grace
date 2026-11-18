@@ -132,7 +132,7 @@ XDG_DATA_HOME="$fx/caddy-data" XDG_CONFIG_HOME="$fx/caddy-config" \
   caddy start --config "$fx/Caddyfile" --adapter caddyfile
 ```
 
-Wait for seeded MariaDB and Elasticsearch in `docker logs grace-webarena-shopping`. Configure the synthetic fixture's Magento address after the dependencies start, then confirm the real home page returns HTTP 200. Cold-start requests may take time while the database recovers.
+Install the repository’s pinned Dafny 4.11.0 on the host before running `pnpm install`. Workspace preparation locates the Z3 solver from Dafny or the host path. Wait for seeded MariaDB and Elasticsearch in `docker logs grace-webarena-shopping`. Configure the synthetic fixture's Magento address after the dependencies start, then confirm the real home page returns HTTP 200. Cold-start requests may take time while the database recovers.
 
 ```sh
 docker exec grace-webarena-shopping sh -ec '
