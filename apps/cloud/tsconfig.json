@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rewriteRelativeImportExtensions": true,
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "rootDirs": [".", ".vibe/declarations"]
+  },
+  "include": ["src"],
+  "vibe": { "sidecarDir": ".vibe/declarations" }
+}

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -9,12 +9,11 @@ import { createInterface } from "node:readline/promises";
 import { isDeepStrictEqual, parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
-import { buildConsumerAndroidRuntime } from "../../../vendor/eliza/packages/app/scripts/lib/consumer-android-runtime.mjs";
-import { stageAndroidRuntimeInventory } from "../../../vendor/eliza/plugins/plugin-native-agent/native-host/android-runtime-inventory.mjs";
-import { buildAndroidConsumer } from "../../../vendor/eliza/packages/app/scripts/mobile/android/build-consumer.mjs";
-import { generateAndroidConsumerHost } from "../../../vendor/eliza/packages/app/scripts/mobile/android/consumer-host.mjs";
-import { readApkSignerDigest } from "../../../vendor/eliza/packages/app/scripts/mobile/artifact-inspection/apk-distribution.mjs";
-import { resolveAndroidSdkRoot, resolveJavaHome } from "../../../vendor/eliza/packages/app/scripts/mobile/toolchain.ts";
+import { stageRuntimePayload } from "@elizaos/os/android/android-runtime-inventory.mjs";
+import { buildAndroidConsumer } from "@elizaos/os/android/build-consumer.mjs";
+import { generateAndroidConsumerHost } from "@elizaos/os/android/consumer-host.mjs";
+import { readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
+import { resolveAndroidSdkRoot, resolveJavaHome } from "@elizaos/os/android/toolchain.ts";
 import config from "../capacitor.config.ts";
 
 const app = path.resolve(import.meta.dirname, "..");
@@ -31,7 +30,6 @@ const forbiddenEntry = new RegExp([
   String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
   String.raw`^assets/(?!public/)([^/]+/)*(tts|asr|models?)/`,
 ].join("|"), "i");
-const cloudSpeechClass = /^Lai\/eliza\/voice\/(cloud\/R|SpeechStreamBridgePlugin|CloudSpeechWire|AudioTrackSpeechOutput|SpeechAudioFocus|SpeechAudioFocusPolicy|SpeechPcmQueue|StreamingSpeechPlayback|VoiceLatencyTrials)[;$]/;
 const inferenceClass = /^L(ai\/eliza\/voice\/|ai\/onnxruntime\/|org\/tensorflow\/lite\/|org\/pytorch\/|com\/k2fsa\/|com\/google\/mediapipe\/|org\/vosk\/)/;
 
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, "utf8"));
@@ -46,22 +44,16 @@ const keystore = signing.storeFile;
 const Reasons = Schema.Record(Schema.String, Schema.String);
 const Policy = Schema.Struct({
   model: Schema.NonEmptyString,
-  plugins: Schema.Struct({ refuse: Reasons }),
+  plugins: Schema.Struct({ load: Reasons, refuse: Reasons }),
   actions: Schema.Struct({
     grace: Schema.Record(Schema.String, Schema.Unknown),
     upstream: Schema.Struct({ allow: Reasons, refuse: Reasons, plannerTools: Reasons, refusedSubactionsOf: Schema.Array(Schema.String) }),
   }),
 });
 const policy = Schema.decodeUnknownSync(Policy)(readJson(path.join(app, "agent/policy.json")));
-const stubPlugins = [
-  "@elizaos/plugin-browser", "@elizaos/plugin-calendar", "@elizaos/plugin-discord", "@elizaos/plugin-google-workspace",
-  "@elizaos/plugin-inbox", "@elizaos/plugin-knowledge", "@elizaos/plugin-local-inference", "@elizaos/plugin-maps",
-  "@elizaos/plugin-notes", "@elizaos/plugin-personal-assistant", "@elizaos/plugin-vision",
-  "@pixiv/three-vrm", "discord.js", "google-auth-library", "googleapis", "three",
-];
-const unrefused = stubPlugins.filter((name) => name.startsWith("@elizaos/plugin-") && !Object.hasOwn(policy.plugins.refuse, name));
-if (unrefused.length) throw new Error(`The agent payload leaves out ${unrefused.join(", ")}, which agent/policy.json does not refuse`);
-
+const pluginLoad = Object.keys(policy.plugins.load);
+if (pluginLoad.some((name) => Object.hasOwn(policy.plugins.refuse, name)))
+  throw new Error("Grace's device policy cannot load a plugin it refuses");
 const Abi = Schema.Literals(["arm64-v8a", "x86_64"]);
 type Abi = typeof Abi.Type;
 const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
@@ -134,26 +126,110 @@ const versionCode = (version: string) => {
   return Number(parts[1]) * 1e6 + Number(parts[2]) * 1e3 + Number(parts[3]);
 };
 
-function agentRuntime(abi: Abi) {
-  const commit = execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const key = createHash("sha256").update(JSON.stringify({ commit, abi, stubPlugins })).digest("hex").slice(0, 16);
-  const payload = path.join(artifacts, "agent-runtime", `${abi}-${key}`);
-  if (existsSync(payload)) return payload;
-  const building = `${payload}.building-${process.pid}`;
-  const skills = path.join(building, "skills");
-  mkdirSync(skills, { recursive: true });
-  try {
-    const { output } = buildConsumerAndroidRuntime({
-      source: upstream, expectedCommit: commit, output: path.join(building, "payload"), skillsDirectory: skills,
-      stageGateway: () => ({}), targetAbi: abi, stubPlugins, embeddingModel: false,
-    });
-    const main = path.join(output, "android/app/src/main");
-    stageAndroidRuntimeInventory({ assetsDirectory: path.join(main, "assets"), nativeLibraryDirectory: path.join(main, "jniLibs", abi), excludedAgentDirectories: [abi], targetAbi: abi, gateway: false });
-    renameSync(output, payload);
-    return payload;
-  } finally {
-    rmSync(building, { recursive: true, force: true });
+const Commit = Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/));
+const NodeVersion = Schema.String.check(Schema.isPattern(/^26\.[0-9]+\.[0-9]+$/));
+const NodeToolchain = {
+  version: NodeVersion,
+  ndk: Schema.NonEmptyString,
+  apiLevel: Schema.Int.check(Schema.isGreaterThanOrEqualTo(29)),
+};
+const Digest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
+const SourceArtifact = Schema.String.check(Schema.isPattern(/^https:\/\/github\.com\/elizaOS\/eliza\/releases\/download\/android-node-v26\.[0-9]+\.[0-9]+-ndk-[0-9.]+\/node-v26\.[0-9]+\.[0-9]+-android-(arm64-v8a|x86_64)\.zip$/));
+const NodeManifest = Schema.Struct({ schema: Schema.Literal(1), abi: Abi, ...NodeToolchain, sha256: Digest, sourceSha256: Digest, buildCommit: Commit });
+const NodeLock = Schema.Struct({ ...NodeToolchain, sourceSha256: Digest, buildCommit: Commit, entries: Schema.Array(Schema.Struct({
+  abi: Abi, sha256: Digest, archiveSha256: Digest, url: SourceArtifact,
+})) });
+const BundlePin = Schema.Struct({ schema: Schema.Literal(1), sourceCommit: Commit });
+
+function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: Abi) {
+  const selected = lock.entries.filter((entry) => entry.abi === abi);
+  if (selected.length !== 1) throw new Error(`Eliza's runtime lock must name ${abi} once`);
+  const [source] = selected;
+  const executable = "libeliza_node.so";
+  const manifest = "manifest.json";
+  function verified(binary: Buffer, receipt: Buffer) {
+    const candidate = Schema.decodeUnknownSync(NodeManifest)(JSON.parse(receipt.toString("utf8")));
+    if (candidate.abi !== abi || candidate.version !== lock.version || candidate.ndk !== lock.ndk
+        || candidate.apiLevel !== lock.apiLevel || candidate.buildCommit !== lock.buildCommit
+        || candidate.sourceSha256 !== lock.sourceSha256 || candidate.sha256 !== source.sha256
+        || createHash("sha256").update(binary).digest("hex") !== source.sha256) {
+      throw new Error(`Eliza's Android Node ${abi} differs from the runtime lock`);
+    }
+    return { ...candidate, file: path.join(directory, executable), url: source.url };
   }
+  if (existsSync(path.join(directory, executable)) && existsSync(path.join(directory, manifest))) {
+    return verified(readFileSync(path.join(directory, executable)), readFileSync(path.join(directory, manifest)));
+  }
+  mkdirSync(path.dirname(directory), { recursive: true });
+  const scratch = mkdtempSync(path.join(path.dirname(directory), ".android-node-"));
+  const archive = path.join(scratch, "runtime.zip");
+  const formatLimit = 256 * 1024 * 1024;
+  try {
+    execFileSync("curl", ["--proto", "=https", "--proto-redir", "=https", "--fail", "--location", "--silent", "--show-error",
+      "--retry", "2", "--connect-timeout", "15", "--max-time", "240", "--max-filesize", String(formatLimit),
+      "--output", archive, source.url], { stdio: "inherit" });
+    if (createHash("sha256").update(readFileSync(archive)).digest("hex") !== source.archiveSha256)
+      throw new Error(`Eliza's Android Node ${abi} archive differs from the runtime lock`);
+    const read = (entry: string) => execFileSync("unzip", ["-p", archive, entry], { maxBuffer: formatLimit });
+    const binary = read(executable);
+    const receipt = read(manifest);
+    const runtime = verified(binary, receipt);
+    writeFileSync(path.join(scratch, executable), binary, { mode: 0o755 });
+    writeFileSync(path.join(scratch, manifest), receipt, { mode: 0o644 });
+    rmSync(archive);
+    renameSync(scratch, directory);
+    return runtime;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function bundleAgent(commit: string, bundle: string) {
+  const generate = (owner: string) => execFileSync("pnpm", ["--dir", upstream, "gen", "--owner", owner], { stdio: "inherit" });
+  generate("core");
+  generate("agent");
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core", "build"], { stdio: "inherit" });
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/agent", "exec", "vibelang", "-p", "tsconfig.device.json"], { stdio: "inherit" });
+  const build = path.join(upstream, "packages/agent/dist/src/bundle/build.js");
+  execFileSync(process.execPath, ["--input-type=module", "--eval", [
+    'import { pathToFileURL } from "node:url";',
+    'const [file, outDir, sourceCommit, plugins] = process.argv.slice(1);',
+    'const { buildAgentBundle } = await import(pathToFileURL(file).href);',
+    'await buildAgentBundle({ outDir, sourceCommit, plugins: JSON.parse(plugins) });',
+  ].join("\n"), build, bundle, commit, JSON.stringify(pluginLoad)], { cwd: upstream, stdio: "inherit" });
+}
+
+function agentRuntime(abi: Abi) {
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  const commit = Schema.decodeUnknownSync(Commit)(git(app, "rev-parse", "HEAD:vendor/eliza"));
+  if (git(upstream, "rev-parse", "HEAD") !== commit) throw new Error(`The Eliza checkout must match Grace's gitlink ${commit}`);
+  const output = path.join(artifacts, "agent-runtime", commit, abi);
+  const inventory = path.join(output, "android/app/src/main/assets/agent/inventory.json");
+  if (!existsSync(inventory)) {
+    const runtime = path.join(upstream, "packages/os/dist/android", abi);
+    const bundle = path.join(upstream, "packages/agent/dist/bundle");
+    const nodeLockFile = path.join(upstream, "packages/os/aosp/runtime/node.lock.json");
+    const bundleFile = path.join(bundle, "agent.mjs");
+    const bundleManifest = path.join(bundle, "manifest.json");
+    if (!existsSync(nodeLockFile)) throw new Error(`Pinned Eliza runtime ${commit} lacks the reviewed Android Node lock`);
+    const nodeLock = Schema.decodeUnknownSync(NodeLock)(readJson(nodeLockFile));
+    const androidNode = resolveNodeRuntime(runtime, nodeLock, abi);
+    if (!existsSync(bundleFile) || !existsSync(bundleManifest)
+        || Schema.decodeUnknownSync(BundlePin)(readJson(bundleManifest)).sourceCommit !== commit) {
+      const sourceEdits = git(upstream, "status", "--porcelain", "--", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
+        "packages/core", "packages/agent", "packages/os", "spec", "vibestack");
+      if (sourceEdits) throw new Error("The Eliza device source has uncommitted changes");
+      bundleAgent(commit, bundle);
+    }
+    stageRuntimePayload({
+      runtime: androidNode, nodeLock,
+      bundle: bundleFile, bundleManifest, sourceCommit: commit, targetAbi: abi, output,
+    });
+  }
+  const manifest = path.join(path.dirname(inventory), "manifest.json");
+  if (Schema.decodeUnknownSync(BundlePin)(readJson(manifest)).sourceCommit !== commit)
+    throw new Error("The staged Android bundle belongs to another Eliza commit");
+  return output;
 }
 
 function writeAgentData() {
@@ -163,7 +239,7 @@ function writeAgentData() {
   writeJson(path.join(artifacts, "agent/policy.json"), {
     schema: 1,
     actions: { allowed: policy.actions.upstream.allow, refused: policy.actions.upstream.refuse },
-    plugins: { denied: Object.keys(policy.plugins.refuse) },
+    plugins: { load: pluginLoad },
   });
 }
 
@@ -264,18 +340,36 @@ function writeApkManifest(directory = artifacts, episodeCertificate = false) {
     }
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
-    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_bun\.so$/.exec(entry)?.slice(1) ?? []);
-    if (abis.length !== 1 || !entries.includes("assets/agent-runtime.inventory")) throw new Error(`${name} does not carry one agent runtime: libeliza_bun.so for ${abis.join(", ") || "no processor type"}`);
-    const listed = execFileSync("unzip", ["-p", file, "assets/agent-runtime.inventory"], { encoding: "utf8" }).trim().split("\n").slice(1)
-      .map((line) => line.split("\t")).map(([kind, , , source]) => kind === "native" ? `lib/${abis[0]}/${source}` : `assets/${source}`);
-    const missing = ["assets/agent/agent-bundle.js", ...listed].filter((entry) => !entries.includes(entry));
-    if (missing.length) throw new Error(`${name} lacks agent runtime files its inventory lists: ${missing.join(", ")}; delete artifacts/agent-runtime to rebuild a payload staged by an older build`);
+    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
+    if (abis.length !== 1 || !entries.includes("assets/agent/inventory.json")) throw new Error(`${name} does not carry one agent runtime: libeliza_node.so for ${abis.join(", ") || "no processor type"}`);
+    const inventory = Schema.decodeUnknownSync(Schema.Struct({
+      schema: Schema.Literal(1),
+      files: Schema.Array(Schema.Struct({
+        path: Schema.String.check(Schema.isPattern(/^(assets\/agent\/|lib\/(arm64-v8a|x86_64)\/)[A-Za-z0-9_+./-]+$/)),
+        size: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(512 * 1024 * 1024)),
+        sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+      })),
+    }))(JSON.parse(execFileSync("unzip", ["-p", file, "assets/agent/inventory.json"], { encoding: "utf8" })));
+    const listed = new Set(inventory.files.map((entry) => entry.path));
+    if (listed.size !== inventory.files.length || !listed.has("assets/agent/agent.mjs")
+        || !listed.has(`lib/${abis[0]}/libeliza_node.so`))
+      throw new Error(`${name} does not list exactly its runtime files`);
+    const unexpected = entries.filter((entry) => entry.startsWith("assets/agent/") && !entry.endsWith("/")
+      && entry !== "assets/agent/inventory.json" && !listed.has(entry));
+    if (unexpected.length) throw new Error(`${name} contains unlisted runtime files: ${unexpected.join(", ")}`);
+    for (const entry of inventory.files) {
+      if (entry.path.split("/").some((part) => part === "." || part === "..") || !entries.includes(entry.path))
+        throw new Error(`${name} lacks its inventoried runtime file ${entry.path}`);
+      const bytes = execFileSync("unzip", ["-p", file, entry.path], { maxBuffer: entry.size + 1 });
+      if (bytes.length !== entry.size || createHash("sha256").update(bytes).digest("hex") !== entry.sha256)
+        throw new Error(`${name} has a runtime file that differs from its inventory: ${entry.path}`);
+    }
     const classes = Array.from(execFileSync(buildTool("dexdump"), [file], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] })
       .matchAll(/^  Class descriptor  : '([^']+)'$/gm), ([, descriptor]) => descriptor);
-    const inference = classes.filter((descriptor) => inferenceClass.test(descriptor) && !cloudSpeechClass.test(descriptor));
+    const inference = classes.filter((descriptor) => inferenceClass.test(descriptor));
     if (inference.length) throw new Error(`${name} carries local inference or voice model classes: ${inference.join(", ")}`);
-    if (!classes.includes("Lai/eliza/voice/SpeechStreamBridgePlugin;")) throw new Error(`${name} lacks the cloud speech bridge`);
-    const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent-bundle.js"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
+    if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the cloud speech bridge`);
+    const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent.mjs"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     const debuggable = execFileSync(buildTool("aapt"), ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
     process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the cloud speech bridge and no inference class; its ${actions} actions declared by name are each allowed or refused\n`);
@@ -328,8 +422,8 @@ const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Sc
 const AXNodes = Schema.Struct({ nodes: Schema.Array(AXNode) });
 const Quads = Schema.Struct({ quads: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number])) });
 const SignInReport = Schema.Struct({
-  status: Schema.Struct({ active: Schema.Boolean, google: Schema.Boolean, googleScopes: Schema.Array(Schema.String) }),
-  identity: Schema.Struct({ credentialId: Schema.NullOr(Schema.String) }),
+  status: Schema.Struct({ kind: Schema.Literals(["signedIn", "signedOut"]) }),
+  google: Schema.Boolean,
 });
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
 const secondHomePage = `document.querySelector('button[aria-label="Page 2"][aria-current=true]') !== null`;
@@ -461,12 +555,12 @@ async function devTools(url: string, signal: AbortSignal) {
         return;
       }
       if ("signIn" in step) {
-        const expression = `(async () => { const signIn = Capacitor.Plugins.GraceSignIn; return JSON.stringify({ status: await signIn.status({ refreshNegative: true }), identity: await signIn.credentialIdentity({ environment: "production" }) }); })()`;
+        const expression = `(async () => { const status = await Capacitor.Plugins.GraceAccount.status(); const endpoint = new URL("https://api.graceforseniors.com/api/v1/app-auth/mobile/config"); endpoint.search = new URLSearchParams({clientId: "technology.graceful.grace", environment: "production", redirectUri: "https://app.graceforseniors.com/android/auth/callback"}); const res = await fetch(endpoint); if (!res.ok) throw new Error("Google configuration unavailable"); const config = await res.json(); return JSON.stringify({ status, google: config.google?.nativeSignIn === true }); })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
         const reply = String(result.value);
         if (/eliza_mobile_/.test(reply)) throw new Error("A sign-in result carries an Eliza Cloud key");
-        const { status, identity } = Schema.decodeUnknownSync(Schema.fromJsonString(SignInReport))(reply);
-        const found = { signedIn: identity.credentialId !== null, google: status.google };
+        const { status, google } = Schema.decodeUnknownSync(Schema.fromJsonString(SignInReport), { onExcessProperty: "error" })(reply);
+        const found = { signedIn: status.kind === "signedIn", google };
         process.stdout.write(`sign-in status ${JSON.stringify({ ...status, ...found })}\n`);
         if (found.signedIn !== step.signIn.signedIn || found.google !== step.signIn.google)
           throw new Error(`Sign-in is ${JSON.stringify(found)}, not ${JSON.stringify(step.signIn)}`);

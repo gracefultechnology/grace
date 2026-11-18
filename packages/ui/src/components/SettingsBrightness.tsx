@@ -86,7 +86,7 @@ export function SettingsBrightness({
           onValueChange={onBrightnessChange}
         />
       </Panel>
-      <SettingsSwitchRow className="mt-3.5" title={nightDimLabel} subtitle={nightDimHint} checked={nightDim} onCheckedChange={onNightDimChange} />
+      {onNightDimChange && <SettingsSwitchRow className="mt-3.5" title={nightDimLabel} subtitle={nightDimHint} checked={nightDim} onCheckedChange={onNightDimChange} />}
     </section>
   );
 }

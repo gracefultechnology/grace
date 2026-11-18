@@ -62,7 +62,7 @@ export function SettingsVoice({
   return (
     <section aria-label="Grace’s voice" className={cn("font-sans", className)} {...props}>
       <SettingsPageHeading>Grace’s voice</SettingsPageHeading>
-      <ListRow
+      {onPlaySample && <ListRow
         className="mt-[18px] min-h-[76px]"
         title="Hear Grace"
         trailing={
@@ -71,7 +71,7 @@ export function SettingsVoice({
             Play a sample
           </Button>
         }
-      />
+      />}
       <PageHeading level="section" className="mt-5">{speedLabel}</PageHeading>
       <SegmentedControl aria-label={speedLabel} className="mt-2.5" options={speeds} value={speed} onValueChange={(next) => next && onSpeedChange?.(next)} />
       <SettingsSwitchRow className="mt-3.5 min-h-[76px]" title="Grace speaks out loud" subtitle="Her voice comes over the internet." checked={speaks} onCheckedChange={onSpeaksChange} />

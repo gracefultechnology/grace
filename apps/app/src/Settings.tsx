@@ -1,15 +1,20 @@
 // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/accounts.md, "Story: Connect the email I already use"
 // Settings: its pages beside the list, and on About this tablet, Clear browsing data behind one confirmation.
-import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, SettingsApp, type SettingsPage as PageName } from "@repo/ui";
+import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
+import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
+import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 const names: Record<SettingsPage, PageName> = {
-  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
+  TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
+const pages = Object.values(names);
+const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
+const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
@@ -17,6 +22,11 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
   const { workspace, can, send } = useWorkspace();
   const website = useWebsiteRequests();
   const page = workspace!.device.settingsPage;
+  const preferences = workspace!.preferences.session;
+  const preview = (settings: DisplayPreferences) => {
+    const event = { type: "changePreferences", settings } as const;
+    if (can(event)) void send(event);
+  };
   const choose = (name: PageName) => {
     const event = { type: "chooseSettingsPage", page: (Object.keys(names) as SettingsPage[]).find((p) => names[p] === name)! } as const;
     if (can(event)) void send(event);
@@ -26,12 +36,30 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
-  const frame = { page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
   if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
 
   return (
     <SettingsApp {...frame}>
-      {page === "AboutSettings" ? (
+      {page === "AccountSettings" ? <GraceAccountSettings /> : page === "TextSizeSettings" ? (
+        <SettingsTextSize sizes={Object.values(textSizes)} value={textSizes[preferences.textSize]}
+          greeting="Good morning" eventWhen="SAT 10 am" eventTitle="Your appointment" graceMessage="Your appointment is tomorrow at 10 am."
+          onValueChange={(value) => {
+            const found = Object.entries(textSizes).find((entry) => entry[1] === value);
+            if (found && (found[0] === "Smaller" || found[0] === "StandardText" || found[0] === "Larger" || found[0] === "Largest"))
+              preview({ ...preferences, textSize: found[0] });
+          }} />
+      ) : page === "BrightnessSettings" ? (
+        <SettingsBrightness brightness={preferences.brightness} onBrightnessChange={(value) => preview(brightnessChoice(preferences, value))}
+          nightDim={preferences.nightDimming} />
+      ) : page === "VoiceSettings" ? (
+        <SettingsVoice speeds={paceOptions.map((pace) => ({ value: pace, label: pace }))} speed={preferences.pace}
+          onSpeedChange={(value) => {
+            if (value === "Slower" || value === "Normal" || value === "Faster") preview({ ...preferences, pace: value });
+          }} speaks={preferences.voiceOutput} onSpeaksChange={(value) => preview({ ...preferences, voiceOutput: value })} wake="unavailable" />
+      ) : page === "NetworkSettings" ? (
+        <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{workspace?.device.connectivity === "Online" ? "Connected" : "No internet connection"}</PageText></>
+      ) : page === "AboutSettings" ? (
         <>
           <PageHeading>About this tablet</PageHeading>
           {/* spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation" */}

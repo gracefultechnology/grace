@@ -1,0 +1,27 @@
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
+import { migrate, storeLayer } from "@elizaos/cloud/store"
+import { NodeFileSystem } from "@effect/platform-node"
+
+const Binding = Schema.Struct({
+  CLOUD_IDENTITY_DIGEST: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  CLOUD_ENVIRONMENT: Schema.Literals(["staging", "production"])
+})
+const Worker = Schema.Struct({ vars: Binding, env: Schema.Struct({ production: Schema.Struct({ vars: Binding }) }) })
+
+error EnvironmentMismatch
+
+const migration = effect {
+  const fs = try FileSystem.FileSystem
+  const file = try fs.readFileString("wrangler.jsonc")
+  const settings = try Schema.decodeUnknownEffect(Schema.fromJsonString(Worker))(file)
+  const name = try Config.withDefault(Config.String("CLOUD_ENVIRONMENT"), "staging")
+  const environment = try Schema.decodeUnknownEffect(Schema.Literals(["staging", "production"]))(name)
+  const vars = environment === "production" ? settings.env.production.vars : settings.vars
+  if (vars.CLOUD_ENVIRONMENT !== environment) throw new EnvironmentMismatch()
+  const url = Redacted.value(try Config.Redacted("DATABASE_URL"))
+  const now = try Clock.currentTimeMillis
+  const result = try Effect.provide(migrate({ digest: vars.CLOUD_IDENTITY_DIGEST, environment, now }), storeLayer({ kind: "pg", url }))
+  try annotateLogs(logInfo("Grace database is ready"), { environment, migrations: result.applied })
+}
+
+await Effect.runPromise(Effect.provide(migration, NodeFileSystem.layer))

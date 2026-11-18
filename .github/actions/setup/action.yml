@@ -66,6 +66,9 @@ runs:
         path: .turbo/cache
         key: ${{ steps.turbo-cache.outputs.key }}
         restore-keys: turbo-${{ runner.os }}-${{ runner.arch }}-
+    - name: Install pinned Eliza backend workspaces
+      run: pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
+      shell: bash
     - run: pnpm install --frozen-lockfile
       shell: bash
     # Quint's first-run downloader uses the unauthenticated GitHub API.

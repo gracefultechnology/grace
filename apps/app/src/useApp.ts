@@ -17,6 +17,12 @@ import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/a
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
 import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
+import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
+import type { FileLibrary } from "./fileLibrary.vibe";
+import type { ManagedReads } from "./managedReads.vibe";
+import type { AccountActions } from "./graceAccount.vibe";
+import type { ReplyControls } from "./replyControls.vibe";
+import type { SpeechActions } from "./graceSpeech.vibe";
 import type { Machine as PasswordView } from "../gen/app.effect.vibe";
 import { useMachine as usePasswordView } from "../gen/app.react.ts";
 import { Passwords } from "./passwords.vibe";
@@ -33,7 +39,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | PasswordView | Passwords | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -50,9 +56,9 @@ export function usePasswordGuide() {
   const { state } = usePasswordView(runtime);
   return {
     guide: state?.guide,
-    microphone: state?.guideMic,
+    mic: state?.guideMic,
     listen: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.listenForGuide())),
-    stopMic: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.stopGuideMic())),
+    stopListening: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.stopGuideMic())),
     request: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Passwords), (service) => service.guideTyped(revision))),
     finish: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide())),
   };

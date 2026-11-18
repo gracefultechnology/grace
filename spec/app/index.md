@@ -73,7 +73,7 @@ type VaultActor = PasswordsPerson | PasswordsHost
 type LoginBinding = { kind: str, facet: str, display: str }
 type LoginSummary = { id: str, label: str, username: str, bindings: List[LoginBinding], revision: int }
 type VaultIssue = NoDeviceLock | UnsupportedVault | LostVaultKey | VaultClosed
-type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | BackupUnavailable | SpokenHelpUnavailable | SavedLogin | DeletedLogin | ChangedLogin
+type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | SpokenHelpUnavailable | SavedLogin | DeletedLogin | ChangedLogin | BackupUnavailable
 type VaultMode = ClosedPasswords | CheckingVault | LockedVault | UnavailableVault({ reason: VaultIssue })
   | OpenVault({ entries: List[LoginSummary], selected: str })
 type PasswordGuide = NoPasswordGuide | OpenPasswordGuide | FindPasswordGuide | ShowPasswordGuide | CopyPasswordGuide | FillPasswordGuide
@@ -160,7 +160,7 @@ prompt and choose a saved login. The same action can speak these instructions
 when voice is available. It receives no vault state, account text or website
 form values and has no authority over the editor or browser. Recognized
 requests from the current typed draft or a current complete human utterance
-select only the general Passwords screen or Browser and a cue for the
+work while Cloud reasoning is unavailable. They select only the general Passwords screen or Browser and a cue for the
 named control. Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit
 sign-in command has a separate [browser admission rule](./browserControls.md).
@@ -208,32 +208,48 @@ pure val wordsValues = Set("open passwords", "find a password", "show my passwor
 ~~~
 
 
-### Passwords offers cloud recovery only after the native host confirms readiness
+### Passwords belongs to the verified device account
 
-When the native host reports an eligible account, secured device and working
-backup service, Passwords can open its protected Backup and recovery menu.
-The menu handles sign-in, confirmation and custody. The renderer receives
-only readiness and whether the menu opened. Recovery may be available while
-the local vault remains locked or inaccessible. Account changes discard
-voice/typed guidance, close the current grant and clear visible sign-in
-details before native readiness is checked again.
+A new vault may be bound to the account and organization in Grace's verified
+device session. A different account or a retired device session cannot access
+that vault. A guest vault with saved passwords stays with the tablet guest until the person unlocks it and approves linking it to their verified account.
+A change of account discards the previous Passwords view, guide and grant.
 
-~~~quint
-pure def canReportBackupReadiness(v: PasswordView, generation: int, ready: bool, by: VaultActor): bool =
-  by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault)) and ready != v.backupReady
-pure def reportBackupReadiness(v: PasswordView, generation: int, ready: bool, by: VaultActor): PasswordView =
-  { ...v, backupReady: ready }
-pure def alwaysClosedPasswordsDoesNotOfferBackup(v: PasswordView): bool =
-  isClosedVault(v.vault) implies not(v.backupReady)
+```quint
 pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost
 pure def passwordOwnerChanged(v: PasswordView, by: VaultActor): PasswordView =
   { ...v,
     vault: if (isClosedVault(v.vault)) ClosedPasswords else CheckingVault,
-    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, backupReady: false, guideMic: GuideMicIdle }
+    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle, backupReady: false }
 pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool =
-  via == "passwordOwnerChanged" implies
-    not(isOpenVault(after.vault)) and after.guide == NoPasswordGuide and not(after.backupReady)
+  via == "passwordOwnerChanged" implies not(isOpenVault(after.vault)) and after.guide == NoPasswordGuide and not(after.backupReady)
+```
+
+
+### Backup and recovery uses a fresh approval
+
+On a tablet with a supported Cloud account, Backup and recovery opens a
+protected Android screen. Grace opens a first-party browser approval for the
+specific operation and only accepts the current return for that device
+session. The device unlock, recovery key and passwords stay on the tablet.
+A restore only changes an empty vault, and removing a backup leaves the
+tablet's passwords in place.
+
+```quint
+pure def canReportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): bool =
+  by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault)) and ready != v.backupReady
+pure def reportBackupReady(v: PasswordView, generation: int, ready: bool, by: VaultActor): PasswordView =
+  { ...v, backupReady: ready }
+pure def alwaysClosedVaultHasNoBackupAction(v: PasswordView): bool =
+  isClosedVault(v.vault) implies not(v.backupReady)
+```
+
+### Passwords offers cloud recovery only after the native host confirms readiness
+
+The protected recovery menu can open while the local vault is locked. The renderer receives only readiness and whether the menu opened. An account change closes the grant and clears the displayed details before a fresh readiness report.
+
+~~~quint
 pure def sometimesBackupAndRecoveryIsAvailable(v: PasswordView): bool =
   isLockedVault(v.vault) and v.backupReady
 ~~~

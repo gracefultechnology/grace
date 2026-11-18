@@ -7,6 +7,11 @@ import android.content.Intent;
 import android.util.Log;
 
 public class GraceAgentService extends EmbeddedAgentService {
+ @Override protected CloudAccount cloudAccount() throws Exception {
+  var session = GraceAccount.account(this).session();
+  return session == null ? null : new CloudAccount(session.token(), session.accountId(), session.organizationId());
+ }
+
  private static volatile boolean alive, restartOwed;
 
  @Override public void onCreate() { super.onCreate(); alive = true; }
@@ -14,12 +19,6 @@ public class GraceAgentService extends EmbeddedAgentService {
 
  @Override protected Notification runtimeNotification() {
   return Notification.Builder.recoverBuilder(this, super.runtimeNotification()).setSmallIcon(R.drawable.notification_icon).build();
- }
-
- @Override protected String cloudCredential() throws Exception { return GraceCredentials.cloudKey(this); }
-
- static boolean stopped() throws org.json.JSONException {
-  return statusFor(GraceAgentService.class, true, "").getString("state").equals("stopped");
  }
 
  static void resume(Context context) {

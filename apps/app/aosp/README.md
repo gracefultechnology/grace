@@ -5,8 +5,7 @@ tablet"). This image is the later route, and it is staged, not built: no one has
 booted it, which needs an x86_64 Linux host set up for Cuttlefish
 ([source.android.com/docs/devices/cuttlefish](https://source.android.com/docs/devices/cuttlefish/get-started)).
 
-`scripts/aosp.ts` stages `vendor/grace` with upstream's stagers in
-`vendor/eliza/packages/os/scripts/android`, into `artifacts/aosp/grace-<sha>` (an earlier staging is
+`scripts/aosp.ts` stages `vendor/grace` with the Eliza OS launcher stager and Grace’s pinned browser, into `artifacts/aosp/grace-<sha>` (an earlier staging is
 removed; nothing is left behind when a check fails):
 
 | Staged | Is |
@@ -16,9 +15,7 @@ removed; nothing is left behind when a check fails):
 | `grace_cf_x86_64_tablet.mk`, `AndroidProducts.mk` | the product: the Cuttlefish x86_64 device, `tablet` characteristics, time zone `America/New_York` |
 | `overlay/` | Android's first-boot settings: no lock screen, a 30-minute screen timeout, automatic time zone off |
 
-The Chromium APK is never downloaded by the script. Take `chrome-android-desktop.zip` from the
-`sourceUrl` that `vendor/eliza/packages/os/android/vendor/eliza/manifests/browser-apps.json` pins for
-`x86_64`, unzip it, and pass the APK whose SHA-256 is the pinned one; a different file, signer,
+The Chromium APK is never downloaded by the script. Download [Chromium snapshot 1703955](https://storage.googleapis.com/chromium-browser-snapshots/AndroidDesktop_x64/1703955/chrome-android-desktop.zip), unzip it, and pass the APK whose SHA-256 is the pinned one; a different file, signer,
 package or version is refused. It is a development snapshot, so only a `userdebug` image takes it.
 
 Websites inside Grace are drawn by the image's WebView, not by Chromium: the stock
@@ -34,6 +31,7 @@ Grace or to the stock launcher if Grace cannot start.
 # 1. Stage (in apps/app). --development admits a debug-signed APK; a signed release APK
 #    (README.md, "Android") takes --signer <cert SHA-256>, the "certificate SHA-256 digest" of
 #    apksigner verify --print-certs artifacts/launcher-release.apk
+pnpm android --abi x86_64
 pnpm aosp --apk artifacts/launcher-debug.apk --development --browser <Chromium APK>
 
 # 2. Copy into an Android 17 tree

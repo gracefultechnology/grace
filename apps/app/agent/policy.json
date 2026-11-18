@@ -1,12 +1,7 @@
 {
-  "pin": "ca8823de9098f5274b9ad3d97afddbdc0e71cc00",
   "model": "qwen-3.8-27b",
   "plugins": {
-    "load": {
-      "@elizaos/plugin-assistant": "Installs the message service, so a turn can be answered at all; its actions are narrowed by this file.",
-      "@elizaos/plugin-elizacloud": "Reaches the cloud model through her Eliza Cloud account; no model runs on the tablet.",
-      "@elizaos/plugin-sql": "Holds the running conversation for the agent while it runs."
-    },
+    "load": {},
     "refuse": {
       "@elizaos/plugin-agent-orchestrator": "Not part of Grace: it adds abilities the spec does not guard.",
       "@elizaos/plugin-anthropic": "The model is reached only through her Eliza Cloud account.",
