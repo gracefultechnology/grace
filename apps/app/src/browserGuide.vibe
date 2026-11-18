@@ -1,10 +1,11 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { guidedReadKind, Machine as Workspaces, mayGuideReadLink, nextOutcome, type Workspace } from "../gen/app__workspace.effect.vibe"
-import { CLEF_DECISION_LIMITS, createClefDecisionsClient, type ClefDecisionRequest, type ClefDecisionResponse } from "../../../vendor/eliza-cloud-sdk/clef-decisions.mjs"
-import type { CloudLink } from "./conversation.vibe"
+import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, decodeClefResult, type ClefDecisionRequest, type ClefDecisionResponse } from "@elizaos/cloud/clef-decisions"
+import { accountFetch, apiOrigin, browserAccountId } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
-import { supportsPointerHover } from "./surfacePlugin.ts"
+import { supportsPointerHover, webView } from "./surfacePlugin.ts"
 import { NativePage } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
@@ -94,36 +95,48 @@ function links(snapshot: LinkObservation, page: URL, target: string) {
   })
 }
 
-const NativeChoice = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("unavailable"), reason: Schema.Literals(["disabled", "provider_error"]) }),
-  Schema.Struct({
-    status: Schema.Literal("ok"), kind: Schema.Literal("choice"), model: Schema.NonEmptyString,
-    choice: Schema.NullOr(Schema.String), confidence: Schema.Finite,
-    probabilities: Schema.Record(Schema.String, Schema.Finite),
-  }),
-])
-const decodeNativeChoice = Schema.decodeUnknownSync(NativeChoice)
+const decodeGuideLease = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.NullOr(Schema.NonEmptyString) }))
 
-function nativeDecisions() {
-  const bridge = accountPlugin
-  if (bridge === undefined) return undefined
-  return async (request: ClefDecisionRequest, signal?: AbortSignal): Promise<ClefDecisionResponse> => {
-    if (request.kind !== "choice") return { status: "unavailable", reason: "disabled" }
-    signal?.throwIfAborted()
-    const reply = await bridge.chooseBrowserLink({ goal: request.goal, candidates: request.candidates })
-    signal?.throwIfAborted()
-    return decodeNativeChoice(reply)
-  }
+type ChoiceRequest = Extract<ClefDecisionRequest, { kind: "choice" }>
+export type GuideDecision = (request: ChoiceRequest, signal?: AbortSignal) => Promise<ClefDecisionResponse>
+type DecisionSession = {
+  choose: GuideDecision
+  current(): Promise<boolean>
 }
 
-export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(BrowserGuide, effect {
+effect function decisionSession(native: boolean, fixture?: GuideDecision): (DecisionSession | undefined)!unknown {
+  if (fixture !== undefined) return { choose: fixture, current: () => Promise.resolve(true) }
+  if (native) {
+    const bridge = accountPlugin
+    if (bridge === undefined) return undefined
+    const lease = try tryPromise(async () => decodeGuideLease(await bridge.browserGuideLease()))
+    if (lease.id === null) return undefined
+    const id = lease.id
+    return {
+      current: async () => decodeGuideLease(await bridge.browserGuideLease()).id === id,
+      choose: async (request, signal) => {
+        signal?.throwIfAborted()
+        const reply = await bridge.chooseBrowserLink({ lease: id, goal: request.goal, candidates: request.candidates })
+        signal?.throwIfAborted()
+        return decodeClefResult(request, reply) ?? { status: "unavailable", reason: clefUnavailability(reply) }
+      },
+    }
+  }
+  const owner = try browserAccountId()
+  if (owner === undefined) return undefined
+  const choose = try Effect.try(() => createClefDecisionsClient({
+    baseUrl: apiOrigin || webView.window.location.origin,
+    headers: () => ({ "X-Eliza-Account": owner }),
+    fetch: accountFetch,
+  }))
+  return { choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserAccountId())) === owner }
+}
+
+export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.effect(BrowserGuide, effect {
   const workspace = try Workspaces
   const page = try NativePage
-  const connect = () => cloud === undefined ? nativeDecisions() : createClefDecisionsClient({
-    baseUrl: cloud.url, headers: () => ({ Authorization: `Bearer ${cloud.key}` }), timeoutMs: 20000
-  })
-  const decide = Effect.try(connect) catch () => undefined
-  let active: { id: PageId; key: string } | undefined
+  const setup = try Setup
+  let active: { id: PageId; key: string; account: DecisionSession } | undefined
   try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
     const old = active
     if (old !== undefined && context(state)?.key !== old.key) {
@@ -131,12 +144,23 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
       page.clearGuide(old.id) catch () => undefined
     }
   })
+  if (fixture === undefined) try fork.scoped Stream.runForEach(setup.changes, effect () => {
+    const shown = active
+    if (shown === undefined) return
+    const current = tryPromise(() => shown.account.current()) catch () => false
+    if (!current && active === shown) {
+      active = undefined
+      page.clearGuide(shown.id) catch () => undefined
+    }
+  })
   try addFinalizer(() => active === undefined ? Effect.void : Effect.ignore(page.clearGuide(active.id)))
   return {
     point: effect (onMenu) => {
       const start = context(try workspace.get())
       if (start === undefined) return changed
-      if (decide === undefined) return unavailableBecause("Connect Grace to her decision service to get help choosing a link.")
+      const account = decisionSession(native, fixture) catch () => null
+      if (account === null) return unavailableBecause("I couldn’t reach Grace to verify your sign-in.")
+      if (account === undefined) return unavailableBecause("Sign in to Grace to get help choosing a link.")
       const request = publicWords(start.goal)
       const target = publicWords(start.target)
       if (!request || (start.target !== "" && (!target || target.includes("*")))) return unavailable
@@ -164,7 +188,9 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
             for (let index = 0; index < round.length; index += CLEF_DECISION_LIMITS.candidates) {
               const candidates = round.slice(index, index + CLEF_DECISION_LIMITS.candidates)
               const options = candidates.map(({ description }, index) => ({ id: String(index + 1), label: description }))
-              const answer = await decide({ kind: "choice", goal, candidates: options }, signal)
+              if (!(await account.current()) || context(await runPromise(workspace.get()))?.key !== start.key) return { retry: false }
+              signal.throwIfAborted()
+              const answer = await account.choose({ kind: "choice", goal, candidates: options }, signal)
               if (answer.status === "unavailable") return { retry: answer.reason === "provider_error" }
               if (answer.status !== "ok" || answer.kind !== "choice") return { retry: false }
               const choice = candidates[options.findIndex(option => option.id === answer.choice)]
@@ -173,7 +199,7 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
             round = selected
           } while (round.length > 1)
           return { retry: false, winner: round[0] }
-        }) catch () => ({ retry: true, winner: undefined })
+        }) catch () => ({ retry: false, winner: undefined })
         if (context(try workspace.get())?.key !== start.key) return changed
         if (decision.retry) { retries++; continue }
         const winner = decision.winner
@@ -193,14 +219,22 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
           current = fresh
           node = match
         }
+        const sameAccount = tryPromise(() => account.current()) catch () => false
+        if (!sameAccount || context(try workspace.get())?.key !== start.key) return changed
         const expiresAt = (try Clock.currentTimeMillis) + (opensMenu ? 45000 : 20000)
         const accepted = page.pointAt(start.id, current.documentId, {
           kind: "show", id: current.result.snapshotId, snapshotId: current.result.snapshotId,
           nodeId: node.id, origin: start.url.origin, expiresAt, text: node.label, assistantName: "Grace"
         }) catch () => false
         if (!accepted) return changed
+        const currentAccount = tryPromise(() => account.current()) catch () => false
+        if (!currentAccount || context(try workspace.get())?.key !== start.key) {
+          page.clearGuide(start.id) catch () => undefined
+          return changed
+        }
         if (opensMenu) {
-          active = { id: start.id, key: start.key }
+          const menuGuide = { id: start.id, key: start.key, account }
+          active = menuGuide
           const hover = Effect.try(supportsPointerHover) catch () => false
           const words = hover
             ? `Move the pointer over “${winner.label}” and keep it there while I highlight the next link.`
@@ -209,7 +243,7 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
           const selector = `:is(${winner.selector}):is(:hover,:focus-within,[aria-expanded="true"])`
           while ((try Clock.currentTimeMillis) < expiresAt) {
             try Effect.sleep("500 millis")
-            if (context(try workspace.get())?.key !== start.key) return changed
+            if (active !== menuGuide || context(try workspace.get())?.key !== start.key) return changed
             if (!(try page.hasNavigationMenu(start.id, selector, start.url.href))) continue
             const opened = page.observeLinks(start.id) catch () => undefined
             if (!opened || opened.documentId !== snapshot.documentId) return changed
@@ -228,7 +262,7 @@ export const browserGuide = (cloud: CloudLink | undefined) => Layer.effect(Brows
           page.clearGuide(start.id) catch () => undefined
           return changed
         }
-        active = { id: start.id, key: start.key }
+        active = { id: start.id, key: start.key, account }
         return { kind: "Link", words: `Look for “${winner.label}” on ${start.url.hostname}.` }
       }
       return unavailable

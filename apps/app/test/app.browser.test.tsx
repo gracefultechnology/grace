@@ -1463,6 +1463,35 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     }
     return { url: origin + currentPage.path, title: currentPage.title, text: currentPage.heading, truncated: false };
   });
+  let guideOwner: string | null = null;
+  let guideCalls = 0;
+  let replaceGuideOwner = true;
+  const browserFetch = window.fetch.bind(window);
+  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    const url = new URL(String(input), window.location.origin);
+    if (url.origin !== window.location.origin) return browserFetch(input, init);
+    switch (url.pathname) {
+      case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
+      case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
+      case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
+      case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
+      case "/api/v1/decisions":
+        guideCalls++;
+        expect(init?.credentials).toBe("include");
+        const headers = new Headers(init?.headers);
+        expect(headers.has("Authorization")).toBe(false);
+        expect(headers.get("X-Eliza-Account")).toBe(guideOwner);
+        return browserFetch(new URL(url.pathname, cloud), { ...init, credentials: "omit",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } }).then((response) => {
+          if (replaceGuideOwner) {
+            guideOwner = "another-owner";
+            replaceGuideOwner = false;
+          }
+          return response;
+        });
+      default: return browserFetch(input, init);
+    }
+  });
   const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
@@ -1524,6 +1553,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(check);
 
     await tap(showLink);
+    await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
+    expect(guideCalls).toBe(0);
+    guideOwner = "guide-owner";
+    await tap(showLink);
+    await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
+    expect(native.calls("controlPage")).not.toContainEqual(expect.objectContaining({
+      command: expect.objectContaining({ subaction: "guide", guidance: expect.objectContaining({ kind: "show" }) }),
+    }));
+    guideOwner = "guide-owner";
+    await tap(showLink);
     await routeTo(page.getByText("Look for “Help center” on example.org."));
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
       subaction: "guide", guidance: { kind: "show", nodeId: "help" },
@@ -1582,6 +1621,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
+    accountNetwork.mockRestore();
     localStorage.clear();
   }
 });
