@@ -30,7 +30,7 @@ import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
 import { BrowserGuide, type BrowserGuidance } from "./browserGuide.vibe";
-import { settled } from "./calendar.vibe";
+import { CalendarNews, settled } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
 import type { Contact } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
@@ -200,6 +200,13 @@ export function useMail() {
       return known;
     },
   };
+}
+
+const unnoted = () => undefined;
+
+export function useCalendarNote() {
+  const news = Option.getOrUndefined(useRuntime().runSync(Effect.serviceOption(CalendarNews)));
+  return useSyncExternalStore(news?.notes.subscribe ?? silence, news?.notes.current ?? unnoted);
 }
 
 export type MailWriter = NonNullable<ReturnType<typeof useMail>>;
