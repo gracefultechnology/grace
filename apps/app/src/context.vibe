@@ -53,7 +53,7 @@ const surfaces: Record<Surface, string> = {
   Home: "Home", Calendar: "Calendar", Email: "Email", Passwords: "Passwords", Browser: "the internet", Files: "Files", DeviceSettings: "Settings"
 }
 const pages: Record<SettingsPage, string> = {
-  TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi", EmailCalendarSettings: "Email & calendar", AboutSettings: "About"
+  TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi", EmailCalendarSettings: "Email & calendar", AccountSettings: "Account", AboutSettings: "About"
 }
 const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook", Yahoo: "Yahoo", ICloud: "iCloud", Aol: "AOL", OtherEmail: "Other email" }
 const folders: Record<Folder, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts", TrashFolder: "Trash", PurgedFolder: "deleted for good" }
