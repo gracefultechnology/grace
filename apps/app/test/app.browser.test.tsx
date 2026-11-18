@@ -1682,6 +1682,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let currentPage = home;
   let domRevision = 1;
   let reviseDuringRead = false;
+  let replaceDocumentDuringRead = false;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
@@ -1699,9 +1700,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     }
     return { result: { accepted: true } };
   }, false, () => {
-    if (reviseDuringRead) {
-      domRevision++;
-      reviseDuringRead = false;
+    if (reviseDuringRead) domRevision++;
+    if (replaceDocumentDuringRead) {
+      currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
+      replaceDocumentDuringRead = false;
     }
     return { url: origin + currentPage.path, title: currentPage.title, text: currentPage.heading, truncated: false };
   });
@@ -1818,6 +1820,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
+    replaceDocumentDuringRead = true;
+    await tap(check);
+    await expect.poll(() => result.query()?.textContent).toContain(target);
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
     reviseDuringRead = true;
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();

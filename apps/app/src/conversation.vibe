@@ -66,7 +66,6 @@ type GuidedReadSource =
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; revision: number }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
 type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
-type GuidedReadAttempt = GuidedReadReceipt | { changedDocument: string }
 
 function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
@@ -79,7 +78,7 @@ function namedReadScope(w: Scene["workspace"]): string {
     nextOutcome(plan), plan.linkStep, plan.linkUrl, tab.id, tab.loadVersion, tabUrl(tab)])
 }
 
-effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage.Shape, managed: ManagedReads.Shape, expectedDocument?: string): (GuidedReadAttempt | undefined)!! {
+effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage.Shape, managed: ManagedReads.Shape, expectedDocument?: string): (GuidedReadReceipt | undefined)!! {
   const { registry, workspace } = scene
   if (privateSurfaceActive(workspace)) return undefined
   function receipt(source: GuidedReadSource, identity: readonly string[], text: string): GuidedReadReceipt { return { source, identity, text } }
@@ -132,15 +131,14 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
       if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument) ||
-          before.result.url !== url || before.result.readyState !== "complete" || before.result.domRevision === undefined ||
+          before.result.url !== url || before.result.readyState !== "complete" ||
           before.result.blockers.some((item) => item.covers !== "partial")) return undefined
       const primary = native.readPrimaryHeading(id) catch () => undefined
       const observed = normalizedHeading(primary?.text)
       if (!primary || primary.url !== url || observed === "" || observed !== normalizedHeading(step.subject)) return undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId || after.result.url !== url || after.result.readyState !== "complete" ||
-          after.result.domRevision === undefined || after.result.blockers.some((item) => item.covers !== "partial")) return undefined
-      if (after.result.domRevision !== before.result.domRevision) return { changedDocument: after.documentId }
+          after.result.blockers.some((item) => item.covers !== "partial")) return undefined
       return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
         [url.replace(/#.*$/u, "")], "Open page: " + observed)
     }
@@ -293,7 +291,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const namedScope = read === "ReachNamedPage" ? namedReadScope(current) : undefined
       const account = namedScope === undefined ? undefined : try namedAccount()
       const context = replyControlContext(current)
-      let retried = false
       effect function ownsNamedRead() {
         const w = try workspace.get()
         return replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
@@ -303,15 +300,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           w.execution.phase === "Idle" && w.commitmentTask === "" &&
           namedReadScope(w) === namedScope && (try namedAccount()) === account
       }
-      effect function readReceipt(view: Scene, expectedDocument?: string): (GuidedReadReceipt | undefined)!! {
-        const result = try guidedReceipt(view, step, native, managed, expectedDocument)
-        if (result === undefined || !("changedDocument" in result)) return result
-        if (retried || !(try ownsNamedRead())) return undefined
-        retried = true
-        const settled = try guidedReceipt(view, step, native, managed, result.changedDocument)
-        return settled !== undefined && !("changedDocument" in settled) ? settled : undefined
-      }
-      const found = try readReceipt(scene)
+      const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return false
       if (read === "SaveMailAppointment") {
         if (found.source.tag !== "CurrentAppointment") return false
@@ -323,7 +312,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
       if (sourceKey === "") return false
       const confirmed = try look()
-      const rechecked = try readReceipt(confirmed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
+      if (found.source.tag === "NamedDocument" && !(try ownsNamedRead())) return false
+      const rechecked = try guidedReceipt(confirmed, step, native, managed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return false
       const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
