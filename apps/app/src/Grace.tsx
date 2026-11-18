@@ -120,11 +120,11 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                   <blockquote className="text-body">{plan.originalAsk}</blockquote>
                   <ol className="flex flex-col gap-2">
                     {plan.steps.map((step, index) => <li key={`${step.subject}-${index}`} aria-current={index === next ? "step" : undefined}>
-                      {index < next ? plan.receipts[index] : step.outcome}
+                      {index < next ? plan.receipts[index]?.evidence : step.outcome}
                     </li>)}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : currentStep?.outcome ?? plan.receipts.at(-1)}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : currentStep?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
             </section>
           )}
           {feedback?.words && <GraceBubble role="status">{feedback.words}</GraceBubble>}

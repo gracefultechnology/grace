@@ -453,6 +453,13 @@ it("Talk or type without losing the conversation", async () => {
 it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const subject = "Reminder: your appointment tomorrow at 10 am";
+  const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ to: "owner@grace.test", from: "Westside Reception", fromEmail: "desk@westside.test", subject, body: "Your appointment is at our Westside office." }),
+  });
+  expect(incoming.ok).toBe(true);
   const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
   const account = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.clear();
@@ -490,7 +497,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Ask Grace" }));
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
-    const ask = "Check the help page on this website, then read my open email and saved appointment. Don't move or change anything.";
+    const ask = "Check the help page on this website, then read my two appointment emails and saved appointment. Don't move or change anything.";
     await act(() => userEvent.type(field, ask + "{Enter}"));
     await routeTo(page.getByRole("list", { name: "Read plan" }));
     await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
@@ -542,7 +549,19 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: /Main St Clinic/ }));
     await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
     await tap(resume);
-    await tap(page.getByRole("button", { name: "Check email" }));
+    const checkEmail = page.getByRole("button", { name: "Check email" });
+    await tap(checkEmail);
+    await tap(page.getByRole("button", { name: "Expand", exact: true }));
+    const checkedMail = page.getByRole("region", { name: "Task plan" }).getByText(`Open message: ${subject}`, { exact: true });
+    await expect.element(checkedMail).toBeVisible();
+    await tap(page.getByRole("button", { name: "Collapse", exact: true }));
+    await tap(checkEmail);
+    await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
+    await tap(page.getByRole("button", { name: "Back to Inbox" }));
+    await tap(page.getByRole("button", { name: /Westside Reception/ }));
+    await expect.element(page.getByText("Your appointment is at our Westside office.")).toBeVisible();
+    if (resume.query() !== null) await tap(resume);
+    await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
 
     await tap(page.getByRole("button", { name: "Home", exact: true }));
@@ -556,7 +575,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(plan.getByText(/^Eye check with Dr\. Patel · /));
     await tap(page.getByRole("button", { name: "Expand", exact: true }));
     await routeTo(plan.getByText("Open page: https://example.org/help", { exact: true }));
-    await routeTo(plan.getByText("Open message: Reminder: your appointment tomorrow at 10 am", { exact: true }));
+    await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
