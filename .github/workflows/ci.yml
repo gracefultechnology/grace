@@ -46,7 +46,7 @@ permissions:
 jobs:
   webarena:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.webarena
-    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     defaults:
       run:
@@ -197,7 +197,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -247,7 +247,7 @@ jobs:
   billworld-aggregate:
     if: always() && github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     needs: billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -371,7 +371,7 @@ jobs:
           if-no-files-found: error
   billworld-released:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
       GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
@@ -495,7 +495,7 @@ jobs:
           if-no-files-found: error
   verify:
     if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)
-    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
