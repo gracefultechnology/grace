@@ -422,11 +422,11 @@ Email decides when a tapped link may leave the message: a link in an
 unflagged message is released at once, and one behind a scam warning only
 after the person confirms that same link (`spec/app/email.md`, "A scam
 warning needs current evidence and holds that message's links"). The host
-then hands that one released link to the Browser while the message it came
-from is still the one on screen in Email. Email marks the link opened, the
+then hands that one released link to the Browser while the device is ready
+and the message it came from is still the one on screen in Email. Email marks the link opened, the
 Browser opens it in a new tab after the others, selected and loading, and the
 device shows the Browser. The pages already open stay in their tabs. A held
-link, a link Email did not release, a different link, a message no longer
+link, an empty link, a link Email did not release, a different link, a message no longer
 on screen, or a message covered by a composer opens nothing and leaves all three as they were. If the browser’s next tab identifier is already in use, the handoff also declines. Opening a link
 never sends mail and leaves the messages and the outbox as they were. With a ready device and a fresh browser, a person reading a flagged message can tap its link, confirm the warning and open that link.
 
