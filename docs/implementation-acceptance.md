@@ -134,18 +134,24 @@ standard key, stock English voice and metering configuration.
 
 ### Release checks after the standalone integration
 
-Grace [PR 52](https://github.com/gracefultechnology/grace-new/pull/52) merged
-into `develop`. The merged tree depends on Eliza `3570d7d` for private
-Passwords, browser sign-in and encrypted recovery. Eliza `vibestack` at
-`84fbeb6` includes both `3570d7d` and the shared account-credit repair.
-The [Passwords review](https://github.com/elizaOS/eliza/pull/39861) also
-contains Android test-host adjustments. The production Worker remains on
-the verified revision recorded above.
+Grace [PR 52](https://github.com/gracefultechnology/grace-new/pull/52)
+merged the standalone cloud and private Passwords integration. Production
+Worker `33d5c152-b89d-43a3-a7f4-74d5edc67b50` now serves Grace
+`5b0a744` with published Eliza `787916c`. That pin includes the shared
+credit repair, the Android Passwords test host and the image-verification
+model used by the device Agent build. The generated device bundle started,
+reported its three actions and verified its manifest. The hosted application
+and its assets loaded in Chromium, the database reported ready and the
+API returned 401 for unauthenticated inference. The production migrations
+installed the encrypted backup tables. The runtime role could use backup
+approvals and could neither change the database identity nor record migrations.
+[Grace release pin](https://github.com/gracefultechnology/grace-new/pull/79)
+· [Published Eliza revision](https://github.com/elizaOS/eliza/commit/787916c4f07fa4a80998a7cc3b40f4ac682ae2da)
 
 | Area | Observed result | Remaining launch work |
 | --- | --- | --- |
 | Browser guidance | The merged Grace host imports `vendor/eliza-cloud-sdk/clef-decisions.mjs`. The tablet entry point supplies a native agent, while the guide expects a URL and bearer key. The previous Eliza tree served `POST /api/v1/decisions`. | Port the bounded decision route and public client to Eliza Cloud. Use the signed-in account on the tablet, remove the copied SDK and exercise link selection against Grace’s Worker. |
-| Account credits | Eliza [updated the Worker](https://github.com/elizaOS/eliza/commit/dd0632672a9f2365ee66132d83d9252242266ca3) to consume the new generated funding decision. Real PostgreSQL recorded one addition across an initial credit, an exact replay, a replay with a different amount and an invalid amount. | Qualify a published Eliza revision containing both the funding repair and private Passwords, then advance the Grace pin. |
+| Account credits | Eliza [updated the Worker](https://github.com/elizaOS/eliza/commit/dd0632672a9f2365ee66132d83d9252242266ca3) to consume the new generated funding decision. Real PostgreSQL recorded one addition across an initial credit, an exact replay, a replay with a different amount and an invalid amount. | The deployed pin contains this repair. Live subscription funding and revocation await the Stripe credentials and webhook. |
 | Android Node | The [build for Grace’s runtime](https://github.com/elizaOS/eliza/actions/runs/44225326512) produced the arm64 artifact. Its checksum matched the build manifest, and the executable returned `v26.13.1` and `android/arm64` on a fresh API 36 tablet emulator. | Verify the x86_64 artifact, publish and pin both archives, then exercise the signed Grace APK and its microphone. |
 | Full Grace check | Six simulations hit the 60-minute limit on the launch checkout. They cover Assistant, Execution, Workspace, Website Requests, Email and Setup. The run also reported pending spec and contract reviews. | Complete the simulations on the integrated source and reconcile the reviews for owner acceptance. |
 
