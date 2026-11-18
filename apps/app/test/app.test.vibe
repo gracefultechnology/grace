@@ -162,7 +162,7 @@ it.live("Read an email and its original attachment, and find and open the email 
       const header = try mail.header("clinic", 4)
       const form = try mail.attachment(opened.receipt.assets[0], opened.content.version)
       try Effect.try(() => assert.deepStrictEqual({
-        inbox, found, header, receipt: opened.receipt, form: [form.mimeType, form.data.startsWith("JVBERi")], from: [opened.content.from, opened.content.fromAddress], body: opened.content.body.startsWith("Dear Margaret")
+        inbox, found, header, receipt: opened.receipt, attached: opened.content.attachment, form: [form.mimeType, form.data.startsWith("JVBERi")], from: [opened.content.from, opened.content.fromAddress], body: opened.content.body.startsWith("Dear Margaret")
       }, {
         inbox: ["Your Riverside Power bill is ready", "A message for Grace", "Lunch on Sunday?", "Reminder: your appointment tomorrow at 10 am"],
         found: ["Reminder: your appointment tomorrow at 10 am"],
@@ -171,7 +171,7 @@ it.live("Read an email and its original attachment, and find and open the email 
           id: "clinic/2", kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
           sourceRef: "clinic/2", contentRef: "2", group: "clinic", savedAt: opened.content.receivedAt, pages: 2
         }] },
-        form: ["application/pdf", true],
+        attached: true, form: ["application/pdf", true],
         from: ["Main St Clinic", "frontdesk@mainst-clinic.test"],
         body: true
       }))
@@ -232,7 +232,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const removed = try mail.deleteDraft("draft-sunday")
       const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
       const sent = try listed(gmail, "SentFolder")
-      const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => m.content.ref)
+      const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => [m.content.ref, m.content.replied, m.content.attachment])
       const looked = [try mail.lookup("operation-1"), try mail.lookup("operation-never")]
       try outage(cloud, secret, true)
       const offline = try mail.send("operation-2", draft)
@@ -253,7 +253,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
         saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Visit form.pdf"], removed: true,
         restored: [true, content, [["Visit form.pdf", "draft-sunday/1"]], 2],
         sends: [["Sent", true], ["Sent", true]], same: true,
-        sent: ["Re: Lunch on Sunday?"], answered: ["family"],
+        sent: ["Re: Lunch on Sunday?"], answered: [["family", "Yes please.", true]],
         looked: ["Sent", "SendFailed"], never: { resultStatus: "SendFailed", evidence: "not-sent" },
         offline: { resultStatus: "SendUnknown", evidence: "" },
         later: ["SendFailed", "Sent", "Sent"], again: true,

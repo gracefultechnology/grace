@@ -26,7 +26,7 @@ export type ServersForm = OtherForm & { readonly incoming: string; readonly outg
 export type MailContent = {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
   readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
-  readonly to: readonly string[]
+  readonly to: readonly string[]; readonly attachment?: boolean; readonly replied?: string
 }
 export type Listed = { readonly receipt: MetadataReceipt; readonly content: MailContent }
 export type Opened = { readonly receipt: ReadReceipt; readonly content: MailContent }
@@ -99,21 +99,29 @@ function receivedOf(m: Message) {
   return Number.isNaN(at) ? undefined : at
 }
 
-function content(m: Message, receivedAt: number, body: string): MailContent {
-  return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "", to: m.to }
+function content(m: Message, receivedAt: number, body: string, replied = ""): MailContent {
+  return {
+    ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "", to: m.to,
+    attachment: m.hasAttachments ?? false, replied
+  }
 }
 
-function repliedTo(sent: readonly Message[]): ReadonlySet<string> {
-  return new Set(sent.filter((s) => s.labels.includes("SENT")).flatMap((s) => (s.metadata.referencesHeader ?? "").trim().split(/\s+/).slice(-1).filter((id) => id !== "")))
+function repliesTo(sent: readonly Message[]): ReadonlyMap<string, string> {
+  const replies = new Map<string, string>()
+  for (const s of sent.filter((s) => s.labels.includes("SENT"))) {
+    const parent = (s.metadata.referencesHeader ?? "").trim().split(/\s+/).at(-1) ?? ""
+    if (parent !== "" && !replies.has(parent)) replies.set(parent, s.snippet)
+  }
+  return replies
 }
 
-function listed(scope: ListingScope, m: Message, revision: number, replied: ReadonlySet<string>): Listed[] {
+function listed(scope: ListingScope, m: Message, revision: number, replies: ReadonlyMap<string, string>): Listed[] {
   const identity = { owner: scope.owner, provider: scope.provider, account: scope.account, ref: m.externalId }
   const receivedAt = receivedOf(m)
-  const answered = replied.has(m.metadata.messageIdHeader ?? "")
+  const replied = replies.get(m.metadata.messageIdHeader ?? "")
   return receivedAt === undefined ? [] : [{
-    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered }, revision, evidence: `history:${m.metadata.historyId ?? ""}` },
-    content: content(m, receivedAt, "")
+    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered: replied !== undefined }, revision, evidence: `history:${m.metadata.historyId ?? ""}` },
+    content: content(m, receivedAt, "", replied)
   }]
 }
 
@@ -387,8 +395,8 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         return folder === undefined ? Stream.empty : Stream.unwrap(effect {
           const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query), maxResults: "50" }), Listing)
           const sent = scope.folder === "SentFolder" ? messages : (try fetched(asked("/search", { query: sentMail, maxResults: "50" }), Listing)).messages
-          const replied = repliedTo(sent)
-          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replied)))
+          const replies = repliesTo(sent)
+          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replies)))
         })
       },
       read: effect (ref, generation) => {

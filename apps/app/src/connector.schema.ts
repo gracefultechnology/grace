@@ -12,7 +12,7 @@ export const WireAttachment = Schema.Struct({
 })
 export const WireMessage = Schema.Struct({
   externalId: Text, subject: Text, from: Text, fromEmail: NullableText, replyTo: NullableText, to: Texts, snippet: Text,
-  receivedAt: Text, isUnread: Flag, labels: Texts,
+  receivedAt: Text, isUnread: Flag, hasAttachments: optional(Flag), labels: Texts,
   metadata: Schema.Struct({ historyId: NullableText, messageIdHeader: optional(NullableText), referencesHeader: optional(NullableText) }),
 })
 export const Listing = Schema.Struct({ messages: Schema.Array(WireMessage) })
