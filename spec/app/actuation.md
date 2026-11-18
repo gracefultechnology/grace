@@ -69,11 +69,14 @@ pure def lawCommitmentConsumptionUsesDurableAttempt(w: WS::Workspace, pendingEff
 
 ### Finite examples include current commands and requests fenced by Stop
 
-Examples derive effects through each owning Workspace transition. They include
-both browser routes and Stop after emission. Grace is made compact before the
-task begins, since her steps run only while the page is in view
-([assistant](./assistant.md)). The same checks apply to arbitrary verified
-sites, values and versions.
+The person grants observation and the selected page loads before either
+browser route can act. The ordinary example emits its current website
+command. The payment example reviews the bill, reads it back, journals the
+attempt, and receives the person's complete approval before the actuator
+emits its one command. Stop fences both emitted commands. A separate
+manual tap on the reviewed website enters outcome checking without asking
+the actuator to submit. These checks apply to arbitrary verified sites,
+values and versions.
 
 ```quint
 import shell as S from "./shell"
@@ -104,22 +107,28 @@ pure def ordinarySample(observed: WS::Workspace): WS::WorkspaceResult = {
   val queued = WS::prepare(observed, sampleOperationRequest(observed, "control", "", X::ReadPage), WS::Host)
   WS::dispatch(queued, sampleOperationTokens(queued), WS::Actuator)
 }
-pure def commitmentSample(observed: WS::Workspace): WS::WorkspaceResult = {
+pure def sampleCommitmentTokens(w: WS::Workspace): WS::CommitmentTokens =
+  { deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion,
+    revision: w.commitment.revision, attempt: w.commitment.attempt }
+pure def journaledSample(observed: WS::Workspace): WS::Workspace = {
   val bound = WS::bindCommitment(observed, CM::exampleKey, WS::Person)
-  val reviewed = WS::reviewCommitment(bound,
-    { deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: CM::exampleReview }, WS::Host)
-  val tokens = { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 0 }
-  val readBack = WS::readBackCommitment(reviewed, tokens, WS::Host)
-  val journaled = WS::journalCommitment(readBack, tokens, true, WS::Store)
-  val listening = WS::talk(journaled, WS::Person)
-  val journalTokens = { ...tokens, attempt: 1 }
-  val approved = WS::approveSpokenCommitment(listening, journalTokens, { token: listening.assistant.conversation.generation,
-    text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, WS::Person)
-  WS::submitCommitment(approved, { ...journalTokens, taskVersion: approved.assistant.workVersion }, WS::Actuator)
+  val reviewed = WS::reviewCommitment(bound, { deviceVersion: bound.device.contextVersion, browserRevision: bound.browser.revision,
+    taskVersion: bound.assistant.workVersion, review: { ...CM::exampleReview, revision: bound.commitment.revision } }, WS::Host)
+  val readBack = WS::readBackCommitment(reviewed, sampleCommitmentTokens(reviewed), WS::Host)
+  WS::journalCommitment(readBack, sampleCommitmentTokens(readBack), true, WS::Store)
 }
+pure def approvedSample(journaled: WS::Workspace): WS::Workspace = {
+  val listening = WS::talk(journaled, WS::Person)
+  WS::approveSpokenCommitment(listening, sampleCommitmentTokens(listening),
+    { token: listening.assistant.conversation.generation, text: "Yes, pay this bill.",
+      owner: C::HumanAudio, complete: true, approves: true, correction: false }, WS::Person)
+}
+pure def commitmentSample(approved: WS::Workspace): WS::WorkspaceResult =
+  WS::submitCommitment(approved, sampleCommitmentTokens(approved), WS::Actuator)
 pure val pendingEffectValues = {
   val observed = observedSample(WS::initial)
-  Set(ordinarySample(observed).out.nth(0), commitmentSample(observed).out.nth(0), WS::WakeFeedback({ signal: W::WakeChime }))
+  val approved = approvedSample(journaledSample(observed))
+  Set(ordinarySample(observed).out.nth(0), commitmentSample(approved).out.nth(0), WS::WakeFeedback({ signal: W::WakeChime }))
 }
 pure val operationValues = Set(X::Operate({ owner: "owner", task: "task", origin: CM::exampleKey.origin,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage }))
@@ -129,7 +138,11 @@ pure val startingValues = Set(WS::initial)
 pure val wValues = {
   val observed = observedSample(WS::initial)
   val ordinary = ordinarySample(observed).state
-  val commitment = commitmentSample(observed).state
-  Set(WS::initial, ordinary, WS::stop(ordinary, WS::Person), commitment, WS::stop(commitment, WS::Person))
+  val journaled = journaledSample(observed)
+  val approved = approvedSample(journaled)
+  val submitted = commitmentSample(approved).state
+  val manual = WS::observeCommitmentTap(journaled, sampleCommitmentTokens(journaled), WS::Host)
+  Set(WS::initial, ordinary, WS::stop(ordinary, WS::Person), approved, submitted, WS::stop(submitted, WS::Person),
+    manual, WS::stop(manual, WS::Person))
 }
 ```
