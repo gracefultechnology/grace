@@ -4,7 +4,7 @@
 import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
@@ -240,9 +240,10 @@ function Screen() {
 
 /** The application over `runtime`, from `application` of app.vibe. */
 export function App({ runtime }: { runtime: Runtime }) {
+  const screen = useMemo(() => runtime.context().then(() => <Screen />), [runtime]);
   return (
     <RuntimeContext value={runtime}>
-      <PageMeasurer runtime={runtime}><Suspense><Screen /></Suspense></PageMeasurer>
+      <PageMeasurer runtime={runtime}><Suspense>{screen}</Suspense></PageMeasurer>
     </RuntimeContext>
   );
 }
