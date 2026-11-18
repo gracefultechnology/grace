@@ -1641,7 +1641,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: /Westside Reception/ }));
     await expect.element(page.getByText("Your appointment is at our Westside office.")).toBeVisible();
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
-    await expect.element(page.getByRole("button", { name: "Expand", exact: true })).toBeVisible();
+    await routeTo(page.getByRole("button", { name: "Expand", exact: true }));
     await tap(resume);
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
