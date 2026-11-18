@@ -44,6 +44,25 @@ const contentKey = (id: number, ref: string) => `${id}/${ref}`
 const keyPattern = /^(?:mail|calendar|held)\/(\d+)$/
 const decodeHeld = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Held)))
 
+export effect function watchEach<B, E, R>(changes: Stream.Stream<Registry>, wanted: (a: Registry) => readonly Account[], open: (id: number) => B!NotAnAccount, watch: (account: Account, box: B) => Fiber.Fiber<void>!E!R) {
+  const watched = try Ref.make(new Map<number, Fiber.Fiber<void>>())
+  try Stream.runForEach(changes, effect (a: Registry) => {
+    const accounts = wanted(a)
+    for (const account of accounts) {
+      if ((try Ref.get(watched)).has(account.id)) continue
+      const box = open(account.id) catch () => undefined
+      if (box === undefined) continue
+      const fiber = try watch(account, box)
+      try Ref.update(watched, (all) => new Map(all).set(account.id, fiber))
+    }
+    for (const [id, fiber] of try Ref.get(watched)) {
+      if (accounts.some((x) => x.id === id)) continue
+      try Fiber.interrupt(fiber)
+      try Ref.update(watched, (all) => new Map([...all].filter(([k]) => k !== id)))
+    }
+  })
+}
+
 export const instances = Layer.effect(Instances, effect {
   const registry = try Accounts
   const store = try KeyValueStore.KeyValueStore

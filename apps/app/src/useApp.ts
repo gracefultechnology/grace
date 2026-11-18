@@ -76,6 +76,8 @@ export function useWorkspace() {
     current: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())),
     /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */
     say: (input: PersonTurn) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.say(input))),
+    startReadReview: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.startReadReview(revision))),
+    resumeReadPlan: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.resumeReadPlan())),
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
     /** The person's Close browser, which the page host also tells what websites asked. */
