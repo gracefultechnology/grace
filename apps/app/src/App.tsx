@@ -13,6 +13,7 @@ import { Browser } from "./Browser.tsx";
 import { Calendar, calendarKeys, homeCalendar, nextAppointment } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
+import { Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { Settings } from "./Settings.tsx";
 import { RuntimeContext, type Runtime, useAccounts, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
@@ -174,6 +175,7 @@ function Screen() {
           )}
         </OverPage>
       )}
+      <Notices above={bottom - 6} />
       <Grace onHeightChange={setGraceHeight} />
       {device.readiness === "Sleeping" && (
         <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (

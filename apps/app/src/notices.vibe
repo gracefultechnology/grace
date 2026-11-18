@@ -1,0 +1,97 @@
+// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: Never have a decision covered"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "Only reminders reach Android, and a new one only while Grace is in the background"
+import { type Event, type Notice, type Place, Machine as Notices, type Rejected, initial, lifetimeMs, machine, queued } from "../gen/app__notices.effect.vibe"
+import { Machine as WebsiteRequests, presented } from "../gen/app__websiteRequests.effect.vibe"
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { webView, wifiPlugin } from "./surfacePlugin.ts"
+
+export data Reply {
+  Undo { notice: Notice }
+  SeeDetails { reminder: string }
+  Dismiss { reminder: string }
+  Closed { notice: Notice }
+}
+
+export service NoticeHost {
+  raise(notice: Omit<Notice, "id">): (number | undefined)!Rejected
+  act(id: number): void!!
+  close(id: number): void!!
+  reply(reply: Reply): void!!
+  readonly replies: Stream.Stream<Reply>
+}
+
+export type NoticeServices = Notices | NoticeHost
+
+const host = Layer.effect(NoticeHost, effect {
+  const notices = try Notices
+  const workspace = try Workspaces
+  const requests = try WebsiteRequests
+  const replies = try PubSub.unbounded<Reply>()
+
+  effect function report(left: readonly Notice[]) {
+    try Effect.forEach(left, (notice) => PubSub.publish(replies, Reply.Closed({ notice })))
+  }
+
+  effect function follow() {
+    const { device, assistant } = try workspace.get()
+    const n = try notices.get()
+    const place: Place = (try sync(webView.hidden)) || device.readiness === "Sleeping" ? "Background" : device.surface === "Home" ? "Home" : "OtherScreen"
+    const expanded = assistant.presentation === "Expanded"
+    const blocked = presented(try requests.get()).id !== 0
+    if (place !== n.place) try Effect.orDie(notices.send({ type: "move", place }, "Host"))
+    if (place === "Background" && n.place !== "Background") try report(queued(n))
+    if (expanded !== n.expanded) try Effect.orDie(notices.send({ type: "expand", expanded }, "Host"))
+    if (blocked !== n.blocked) try Effect.orDie(notices.send({ type: "cover", blocked }, "App"))
+  }
+
+  effect function expireAfter(notice: Notice) {
+    const elapsed = lifetimeMs(notice.offer)
+    try sleep(elapsed)
+    const sent = notices.send({ type: "expire", id: notice.id, elapsed }, "Host") catch () => undefined
+    if (sent !== undefined) try report([notice])
+  }
+
+  effect function ended(event: Extract<Event, { type: "act" | "closeToast" }>) {
+    const notice = (try notices.get()).shown.find((x) => x.id === event.id)
+    const sent = notices.send(event, "Person") catch () => undefined
+    return sent === undefined ? undefined : notice
+  }
+
+  const connection = Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity)), 1)
+  try fork.scoped Stream.runForEach(connection, (c) => Effect.orDie(notices.send({ type: "observeConnection", online: c === "Online" }, "Host")))
+  const scene = Stream.mergeAll([
+    workspace.changes,
+    requests.changes,
+    Stream.fromEventListener(webView.document, "visibilitychange")
+  ], { concurrency: "unbounded" })
+  try fork.scoped Stream.runForEach(scene, () => follow())
+  const showing = Stream.changesWith(Stream.map(notices.changes, (n) => n.shown.at(0)), (a, b) => a?.id === b?.id)
+  try fork.scoped Stream.runDrain(Stream.switchMap(showing, (x) => x === undefined ? Stream.empty : Stream.fromEffect(expireAfter(x))))
+
+  return {
+    effect raise(notice: Omit<Notice, "id">) {
+      return queued(try notices.send({ type: "raise", ...notice }, "App")).at(-1)?.id
+    },
+    effect act(id: number) {
+      const notice = try ended({ type: "act", id })
+      if (notice !== undefined) try PubSub.publish(replies, notice.offer === "Undo" ? Reply.Undo({ notice }) : Reply.SeeDetails({ reminder: notice.subject }))
+    },
+    effect close(id: number) {
+      const notice = try ended({ type: "closeToast", id })
+      if (notice?.offer === "SeeDetails") try PubSub.publish(replies, Reply.Dismiss({ reminder: notice.subject }))
+      else if (notice !== undefined) try report([notice])
+    },
+    effect reply(reply: Reply) {
+      try PubSub.publish(replies, reply)
+    },
+    replies: Stream.fromPubSub(replies)
+  }
+})
+
+effect function connected(): boolean!! {
+  const wifi = wifiPlugin
+  if (wifi === undefined) return try webView.online
+  const c = tryPromise(() => wifi.getConnectivity()) catch () => undefined
+  return c === undefined ? try webView.online : c.online && !c.captivePortal
+}
+
+export const notices = Layer.provideMerge(host, Layer.unwrap(Effect.map(connected(), (online) => machine({ ...initial, online }))))

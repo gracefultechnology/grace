@@ -27,9 +27,10 @@ import type { Contact } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
 import { type Board, Mail } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
+import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
