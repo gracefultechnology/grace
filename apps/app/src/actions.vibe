@@ -1,4 +1,7 @@
 // spec/app/agentActions.md, "Story: Ask Grace to help with my email"; spec/app/agentActions.md, "Story: Ask Grace about my calendar"; spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen"; spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard"; spec/app/agentActions.md, "Grace only asks about a calendar that shows, with a question that calendar would take"; spec/app/agentActions.md, "An appointment from an email is asked only as the calendar rules allow"; spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"; spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
+import { webView } from "./surfacePlugin.ts"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import { type AgentAction, type Route, route, type World } from "../gen/app__agentActions.effect.vibe"
 import { withhold } from "./private.ts"
@@ -9,7 +12,7 @@ import { emptyContent, type Mailbox, messageRecord, type Recipient } from "../ge
 import { mailContext, openSource, showsMail, startFrom, undoable, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { asking, Machine as Proposal } from "../gen/app__proposal.effect.vibe"
 import { mayAct, type Moment, type Request } from "../gen/app__request.effect.vibe"
-import { Machine as Workspaces, namedPageStep, readStep } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied, type GraceAction, type Outcome, type Step, settingSteps, visitSteps, workspaceSteps } from "./agent.vibe"
 import type { Contact } from "./connector.vibe"
 import { looker, type Scene, screen } from "./context.vibe"
@@ -186,6 +189,7 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
 /** Grace's reply actions, each as the one event its route gives, on the machines that own them; what no route allows is reported with its reason. */
 export const agent = Layer.effect(Agent, effect {
   const workspace = try Workspaces
+  const setup = try Setup
   const registry = try Accounts
   const proposals = try Proposal
   const shelf = try Instances
@@ -240,7 +244,7 @@ export const agent = Layer.effect(Agent, effect {
     return outcome
   }
 
-  effect function perform(action: GraceAction, request: Request): Outcome!! {
+  effect function perform(action: GraceAction, request: Request & { authority?: GuidedAuthority }): Outcome!! {
     const s = try look()
     const fresh = `${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
     if (action.kind === "proposeReadPlan") {
@@ -253,8 +257,10 @@ export const agent = Layer.effect(Agent, effect {
       const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
       if (!eligible) return "OwnerRefused"
       if (action.steps.some((step) => typeof step !== "string" && !words.includes(step.target))) return "OwnerRefused"
-      const steps = action.steps.map((step) => typeof step === "string" ? readStep(step) : namedPageStep(step.target))
-      const offer = { task: fresh, generation: request.generation, workVersion: request.workVersion, steps }
+      const steps = action.steps.map((step): GuidedStep => typeof step === "string" ? { tag: step } : { tag: "ReachNamedPage", subject: step.target })
+      const owner = request.authority === undefined ? undefined : guidedOwner(request.authority, steps)
+      if (owner === undefined || owner !== guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), steps)) return "OwnerRefused"
+      const offer = { owner, task: fresh, generation: request.generation, workVersion: request.workVersion, steps }
       return try sent(workspace.send({ type: "offerReadReview", offer }, "Host"))
     }
     const planned = try plan(action, s, request, fresh, helper)

@@ -38,7 +38,6 @@
       "vars": {
         "PUBLIC_API_ORIGIN": "https://api.graceforseniors.com",
         "WEB_ORIGIN": "https://app.graceforseniors.com",
-        "GOOGLE_CLIENT_ID": "721050741977-rovpvq9usa9as3ca8u33shtfo7issdfu.apps.googleusercontent.com",
         "NATIVE_AUTH_CALLBACK": "https://app.graceforseniors.com/android/auth/callback",
         "NATIVE_CLIENT_ID": "technology.graceful.grace",
         "NATIVE_CLIENT_REGISTRY": "[{\"clientId\":\"technology.graceful.grace\",\"environment\":\"production\",\"displayName\":\"Grace\",\"androidPackage\":\"technology.graceful.grace\",\"certFingerprints\":[\"B8:9E:0E:36:E3:6E:75:3E:9E:95:1C:EA:A6:3B:AE:85:3F:AB:76:93:5D:F7:A4:15:3B:CF:C2:CC:EB:C7:D3:D7\"],\"signInReturn\":\"https://app.graceforseniors.com/android/auth/callback\",\"billingReturn\":\"https://app.graceforseniors.com/\",\"credentialTtlMs\":604800000,\"nativeGoogle\":true,\"enabled\":true}]",

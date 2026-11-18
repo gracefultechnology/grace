@@ -335,7 +335,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
     output,
     signing: { environment: Object.values(signing) },
     prepare: [
-      { command: path.join(app, "node_modules/.bin/vite"), args: ["build", "--outDir", webDir] },
+      { command: "pnpm", args: ["run", "build", "--outDir", webDir] },
       { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
     ],
     verify: { command: process.execPath, args: [import.meta.filename, "--cloud-profile", cloudProfile,
