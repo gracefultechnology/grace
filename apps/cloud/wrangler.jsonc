@@ -53,6 +53,10 @@
         "MAX_COMPLETION_TOKENS": "2048",
         "EMAIL_FROM": "signin@auth.graceforseniors.com",
         "STRIPE_PLAN": "plus_monthly",
+        "CARTESIA_VOICE_ID": "273f9ef7-9fc2-4def-88bb-ab108c6249ca",
+        "SPEECH_STT_MICROS_PER_SECOND": "135",
+        "SPEECH_TTS_MICROS_PER_CHARACTER": "45",
+        "SPEECH_DAILY_SESSION_LIMIT": "120",
         "SMS_ALLOWED_COUNTRY_CODES": "+1",
         "SMS_HOURLY_BUDGET": "300"
       },
