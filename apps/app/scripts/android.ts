@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -887,7 +887,7 @@ function systemPinPad(nodes: DeviceNode[]) {
   return digits.size === 10 ? { digits, enter } : undefined;
 }
 
-async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi) {
+async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi, signal: AbortSignal) {
   const installedApk = async () => {
     const packages = (await shell(serial, `cmd package list packages -f ${identity.appId}`)).trim();
     if (!packages) return undefined;
@@ -907,16 +907,20 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   if (typeof fixture.startPasswordLoginEpisode !== "function") throw new Error("BillWorld password fixture is unavailable");
   const cleanup: Array<() => Promise<unknown>> = [];
   let buildFailure: Error | undefined;
-  const screenFile = "/data/local/tmp/grace-billworld-ui.xml";
+  const screenFile = `/data/local/tmp/grace-billworld-ui-${randomUUID()}.xml`;
   const pin = "7539";
   const screen = async () => {
-    await shell(serial, `rm -f ${screenFile} && uiautomator dump ${screenFile}`, 45);
-    return deviceNodes(await shell(serial, `cat ${screenFile}`, 30));
+    signal.throwIfAborted();
+    const redact = String.raw`s/(<node[^>]*[[:space:]]text=")[^"]*("[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*>)/\1\2/g; s/(<node[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*[[:space:]]text=")[^"]*("[^>]*>)/\1\3/g`;
+    const xml = await shell(serial, `umask 077; trap 'rm -f ${screenFile}' EXIT; trap 'exit 1' HUP INT TERM; rm -f ${screenFile} && uiautomator dump ${screenFile} >/dev/null && sed -E '${redact}' ${screenFile}`, 75);
+    return deviceNodes(xml);
   };
   const waitForUi = async <Found>(select: (nodes: DeviceNode[]) => Found | undefined, label: string) => {
     const until = Date.now() + 180_000;
     while (Date.now() < until) {
+      signal.throwIfAborted();
       const nodes = await screen().catch(() => []);
+      signal.throwIfAborted();
       const found = select(nodes);
       if (found !== undefined) return found;
       const fullscreen = fullscreenTip(nodes);
@@ -971,6 +975,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     step = `verify focus on the native editor ${field} field`;
     await waitForNode((node) => matches(node) && node.focused, "the focused native editor field");
     step = `type into the focused native editor ${field} field`;
+    signal.throwIfAborted();
     await text(value);
   };
   let episode: { grade(): Promise<unknown>; close(): Promise<unknown> } | undefined;
@@ -978,6 +983,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   try {
     episode = await fixture.startPasswordLoginEpisode({
       provision: async (input: unknown) => {
+        signal.throwIfAborted();
         const { runId, login, entryUrl, deviceTrust } = Schema.decodeUnknownSync(LoginFixture)(input);
         const entry = new URL(entryUrl);
         const origin = new URL(login.origin);
@@ -1002,6 +1008,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "read the native editor labels from the episode APK";
         const apk = path.join(app, output, "standalone-debug.apk");
         const labels = passwordEditorLabels(apk);
+        signal.throwIfAborted();
         step = "install the test APK and transport";
         for (const port of deviceTrust.reversePorts) {
           await adb(["-s", serial, "reverse", "--no-rebind", `tcp:${port}`, `tcp:${port}`]);
@@ -1017,6 +1024,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           if (!installed) return;
           if (installed !== digest) throw new Error("The installed app changed during the episode");
           await adb(["-s", serial, "uninstall", identity.appId], 180);
+          if (await installedApk() !== undefined) throw new Error("The disposable Grace app remains installed");
         });
         await shell(serial, `pm install -t ${remote}`, 300).catch(() => undefined);
         if (await installedApk() !== digest) throw new Error("Android did not install the episode APK");
@@ -1050,7 +1058,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         if (!started.includes(`Activity: ${activity}`)) throw new Error("Grace did not open");
         step = "wait for the Grace home screen";
         const waitForPid = `for i in $(seq 120); do pid=$(pidof ${identity.appId}); grep -q "webview_devtools_remote_$pid$" /proc/net/unix && echo "$pid" && exit; sleep 1; done`;
+        signal.throwIfAborted();
         await withGracePage(serial, waitForPid, async (page) => {
+          signal.throwIfAborted();
           step = "wait for interactive Grace Home";
           await page.until(selectedHome, AbortSignal.timeout(180_000));
           process.stdout.write("The installed Grace Home is ready.\n");
@@ -1101,9 +1111,10 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
     while (Date.now() < until) {
+      signal.throwIfAborted();
       const after = await readGrade();
       if (after.paymentCount !== 0) throw new Error("The sign-in run encountered a payment");
-      if (after.grade.success) { process.stdout.write("BillWorld sign-in passed through installed Android Autofill. No payment was made.\n"); return; }
+      if (after.grade.success) return;
       await delay(1000);
     }
     throw new Error("BillWorld did not confirm the account view");
@@ -1111,8 +1122,10 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     if (buildFailure) throw buildFailure;
     throw new Error(`BillWorld password journey stopped at: ${step}`);
   } finally {
-    for (const release of cleanup.reverse()) await release().catch(() => { process.stderr.write("A BillWorld fixture cleanup step failed.\n"); });
+    let clean = true;
+    for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
     await episode?.close();
+    if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.");
   }
 }
 
@@ -1140,10 +1153,21 @@ if (import.meta.main) {
     }
     mkdirSync(artifacts, { recursive: true });
     const target = await emulatorTarget(emulator);
+    const interrupt = new AbortController();
+    const cancel = () => interrupt.abort();
+    process.on("SIGINT", cancel);
+    process.on("SIGTERM", cancel);
     try {
       await Promise.race([adb(["-s", target.serial, "wait-for-device", "shell", 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'], 600), target.exited]);
-      await billworldPasswords(target.serial, billworld, abi);
-    } finally { target.stop(); }
+      interrupt.signal.throwIfAborted();
+      await billworldPasswords(target.serial, billworld, abi, interrupt.signal);
+      interrupt.signal.throwIfAborted();
+      process.stdout.write("BillWorld sign-in passed through installed Android Autofill. No payment was made.\n");
+    } finally {
+      process.off("SIGINT", cancel);
+      process.off("SIGTERM", cancel);
+      target.stop();
+    }
   } else if (fixtureRun) writeApkManifest(path.join(artifacts, "billworld-passwords", fixtureRun), true);
   else if (verify) writeApkManifest();
   else {
