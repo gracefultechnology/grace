@@ -7,7 +7,8 @@ The shell constructs sources through the projections below from decoded domain s
 The photo handoff below is a stateless operation over the actual Files and
 chosen mailbox states. An accepted result replaces those two states atomically;
 a declined result supplies no replacement. It is not another Files or Email store.
-Close is the same kind of operation over the device and the app on screen.
+Close is the same kind of operation over the device and the app on screen,
+and so is opening an email's link over the device, Email and the Browser.
 
 ## Story: Open the same bill from any surface
 
@@ -427,7 +428,7 @@ Browser opens it in a new tab after the others, selected and loading, and the
 device shows the Browser. The pages already open stay in their tabs. A held
 link, a link Email did not release, a different link, or a message no longer
 on screen opens nothing and leaves all three as they were. Opening a link
-never sends, saves or deletes mail.
+never sends mail and leaves the messages and the outbox as they were.
 
 ```quint
 type LinkHandoff = LinkDeclined | OpenedLink({ device: S::Shell, mail: E::Mailbox, browser: B::Browser })
