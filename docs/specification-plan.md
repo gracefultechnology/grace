@@ -189,17 +189,24 @@ JS
 unset WA_SHOPPING_FIXTURE_LOGIN
 ```
 
-Provide the authorized hosted decision origin and key in the environment. Generate the case from the pinned public intent, run it, then check both independent scoring fields. The grader's expected URL stays in the upstream evaluator fixture. The shopper storage file and the fixture input that points to it stay local.
+Provide the hosted decision origin and test key in the environment. Generate both cases from the pinned public intents. The upstream evaluator keeps the expected URLs. The local fixture directory holds the synthetic shopper session.
 
 ```sh
 git -C "$fx/upstream" show HEAD:config_files/test.raw.json |
-  jq -e --arg receipt "$fx/task-260.json" --arg state "$fx/shopping-state.json" \
-    '.[] | select(.task_id == 260) | {taskId:(.task_id|tostring), intent, startUrl:"https://127.0.0.1:7770/", receipt:$receipt, siteStorageState:$state, evaluator:"webarena"}' \
-    > "$fx/task-260-input.json"
+  jq -e --arg results "$fx" --arg state "$fx/shopping-state.json" '
+    [.[] | select(.task_id == 260 or .task_id == 261) |
+      {taskId: (.task_id | tostring), intent, startUrl: "https://127.0.0.1:7770/",
+       receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
+       siteStorageState: $state, evaluator: "webarena"} +
+      (if .task_id == 261 then {chat: "upstream", requiredStep: "ReachNamedPage"} else {} end)]' \
+    > "$fx/shopping-input.json"
 GRACE_WEBARENA_UPSTREAM="$fx/upstream" GRACE_WEBARENA_PYTHON="$fx/evaluator/bin/python" \
-GRACE_BROWSER_BENCHMARK_FILE="$fx/task-260-input.json" \
-  pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 260'
-jq -e '.webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true' "$fx/task-260.json"
+GRACE_BROWSER_BENCHMARK_FILE="$fx/shopping-input.json" \
+  pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
+jq -es 'length == 2 and all(.[]; .webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance)' \
+  "$fx/task-260.json" "$fx/task-261.json"
+jq -e '.chatStatus == 200 and .outcome.chatProvider == "upstream" and
+  (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked' "$fx/task-261.json"
 ```
 
 For offline preparation, prefetch the pinned OCI image, upstream checkout and Python wheels, the application's Chromium binary and its Linux system packages, the Eliza submodule and pnpm dependencies. The pinned Python venv supplies the URL grader's dependencies. Hosted qualification needs access to the configured Decisions API.
