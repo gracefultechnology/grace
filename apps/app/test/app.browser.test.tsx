@@ -523,7 +523,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
     const check = page.getByRole("button", { name: "Check page" });
     const plan = page.getByRole("region", { name: "Task plan" });
-    const pending = plan.getByText("Find and check the named page.", { exact: true });
+    const pending = plan.getByText(`Find and check “${target}”.`, { exact: true });
     expect(check.query()).toBeNull();
     const showLink = page.getByRole("button", { name: "Show me the link" });
     expect(showLink.query()).toBeNull();
