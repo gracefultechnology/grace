@@ -283,7 +283,8 @@ public final class GraceAccount extends CloudSignInPlugin {
     var purpose = CloudPasswordBackup.Purpose.valueOf(request.purpose.name());
     boolean started = startNativePasswordBackup(ENVIRONMENT, purpose, current, new NativePasswordBackupCallback() {
      @Override public void approved(CloudPasswordBackup.Approval grant) {
-      if (!grant.current() || !owner.session().accountId().equals(grant.ownerId())) {
+      if (!grant.current() || !owner.session().accountId().equals(grant.ownerId())
+        || !owner.session().organizationId().equals(grant.organizationId())) {
        controller.failed(request, "Choose the Google account you already use with Grace.");
        return;
       }

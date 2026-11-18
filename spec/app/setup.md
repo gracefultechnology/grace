@@ -754,7 +754,8 @@ pure def mayApproveSharedPasswordBackup(freshNativeGoogle: bool, sameAccount: bo
   freshNativeGoogle and sameAccount and confirmed
 pure def validPasswordBackupBinding(binding: PasswordBackupBinding): bool =
   binding.issuer == passwordCloudIssuer(binding.profile) and
-  binding.registrationId != "" and binding.accountId != "" and binding.generationId != "" and binding.requestId != ""
+  binding.registrationId != "" and binding.accountId != "" and binding.organizationId != "" and
+  binding.generationId != "" and binding.requestId != ""
 pure def passwordBackupApprovalMatches(approval: PasswordBackupApproval, binding: PasswordBackupBinding): bool =
   validPasswordBackupBinding(binding) and
   (if (binding.profile == StandaloneGraceProduction) approval == StandaloneBrowserPasswordApproval({ binding: binding })
@@ -774,8 +775,8 @@ pure def lawStandaloneConsentCannotApproveShared(binding: PasswordBackupBinding)
 Grace captures the current verified account and the selected deployment's
 registered app when it opens a unique native request. The approval must
 match that deployment and canonical issuer, named app registration,
-account and organization, sign-in generation, request, and action. If the
-issuer omits an organization, the account identifier carries its scope.
+verified account and organization, sign-in generation, request, and action.
+Both deployments supply the verified organization.
 Grace consumes the matching approval before starting the authorized
 operation. Cancel, sign-out, and replacement of the request or the account
 credentials close the pending operation. A credential change also closes
@@ -803,6 +804,8 @@ pure val standalonePasswordBackupSample: PasswordBackupBinding = {
 pure val bindingValues: Set[PasswordBackupBinding] = Set(sharedPasswordBackupSample)
   .union(Set(standalonePasswordBackupSample))
   .union(Set({ ...sharedPasswordBackupSample, issuer: "https://cloud-staging.eliza.app" }))
+  .union(Set({ ...sharedPasswordBackupSample, organizationId: "other-home" }))
+  .union(Set({ ...standalonePasswordBackupSample, organizationId: "" }))
   .union(Set({ ...sharedPasswordBackupSample, purpose: RestorePasswordBackup }))
   .union(Set({ ...standalonePasswordBackupSample, generationId: "old" }))
 pure val approvedValues: Set[PasswordBackupBinding] = bindingValues
@@ -817,6 +820,10 @@ pure def lawPasswordBackupGrantFollowsItsBinding(binding: PasswordBackupBinding,
     not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), StandaloneBrowserPasswordApproval({ binding: approved })))
 pure def lawPasswordBackupGrantNeedsCanonicalIssuer(binding: PasswordBackupBinding): bool =
   binding.issuer != passwordCloudIssuer(binding.profile) implies
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), SharedNativePasswordApproval({ binding: binding }))) and
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), StandaloneBrowserPasswordApproval({ binding: binding })))
+pure def lawPasswordBackupGrantNeedsVerifiedOrganization(binding: PasswordBackupBinding): bool =
+  binding.organizationId == "" implies
     not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), SharedNativePasswordApproval({ binding: binding }))) and
     not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), StandaloneBrowserPasswordApproval({ binding: binding })))
 pure def lawMatchingPasswordBackupGrantIsUsable(binding: PasswordBackupBinding): bool =
