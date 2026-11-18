@@ -910,7 +910,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const screenFile = "/data/local/tmp/grace-billworld-ui.xml";
   const pin = "7539";
   const screen = async () => {
-    await shell(serial, `uiautomator dump ${screenFile}`, 45);
+    await shell(serial, `rm -f ${screenFile} && uiautomator dump ${screenFile}`, 45);
     return deviceNodes(await shell(serial, `cat ${screenFile}`, 30));
   };
   const waitForUi = async <Found>(select: (nodes: DeviceNode[]) => Found | undefined, label: string) => {
@@ -959,8 +959,18 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     await shell(serial, "input keyevent KEYCODE_ENTER");
   };
   const editor = async (field: "name" | "website" | "username" | "password", label: string, value: string) => {
-    step = `enter the fixture ${field} in the Android editor`;
-    await tap((node) => node.packageName === identity.appId && node.description === label && node.className === "android.widget.EditText", "a native editor field");
+    const matches = (node: DeviceNode) => node.packageName === identity.appId && node.className === "android.widget.EditText" &&
+      node.description === label && node.enabled && node.clickable && node.password === (field === "password");
+    step = `find the native editor ${field} field`;
+    const control = await waitForUi((nodes) => {
+      const fields = nodes.filter(matches);
+      return fields.length === 1 ? fields[0] : undefined;
+    }, "one matching native editor field");
+    step = `tap the native editor ${field} field`;
+    await tapNode(control);
+    step = `verify focus on the native editor ${field} field`;
+    await waitForNode((node) => matches(node) && node.focused, "the focused native editor field");
+    step = `type into the focused native editor ${field} field`;
     await text(value);
   };
   let episode: { grade(): Promise<unknown>; close(): Promise<unknown> } | undefined;
