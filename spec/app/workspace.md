@@ -1071,7 +1071,7 @@ name quoted from the current request. Checking a page opened along the way
 does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
-For a requested statement read, the host reads the current visible document locally. The amount due and due date each need a single distinct labeled value on the same statement. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
+For a requested statement read, the host reads the current visible document locally. The document must identify itself as the current or latest bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
 
 ```quint
 pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
