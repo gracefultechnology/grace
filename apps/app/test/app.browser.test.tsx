@@ -1016,6 +1016,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let connectorConfigured = false;
   let inboxRequests = 0;
   let replyFromOwner = false;
+  let unconfirmed: string | undefined;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
@@ -1079,8 +1080,15 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           expect(outbound).toMatchObject({ replyTo: mail.externalId, subject: "Your receipt", text: "Thank you." });
         else expect(outbound).toMatchObject({ subject: "Hello", text: "See you soon." });
         sent.push(outbound.replyTo ? "reply" : "new");
+        if (!outbound.replyTo) {
+          unconfirmed = outbound.operationId;
+          return reply({ error: "google_action_outcome_unknown" }, 409);
+        }
         return reply({ accountId: person.id, operationId: outbound.operationId, messageId: "sent-1" });
       }
+      case "/api/v1/eliza/google/gmail/send/status":
+        expect(Object.fromEntries(api.searchParams)).toEqual({ grantId: grant, operationId: unconfirmed });
+        return reply({ accountId: person.id, operationId: unconfirmed, messageId: "sent-2" });
       case "/api/v1/eliza/google/gmail/trash": {
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
@@ -1127,6 +1135,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         }
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
+      case "/api/v1/eliza/google/calendar/reminder/event": {
+        expect(api.searchParams.get("grantId")).toBe(grant);
+        const event = events.find((item) => item.externalId === api.searchParams.get("occurrenceId"));
+        return event ? reply({ accountId: person.id, event }) : reply({ error: "google_item_not_found" }, 404);
+      }
       case "/api/v1/eliza/google/calendar/feed":
         expect(api.searchParams.get("grantId")).toBe(grant);
         expect(api.searchParams.get("timeMin")).not.toBeNull();
@@ -1139,9 +1152,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     }
   });
 
-  const runtime = ManagedRuntime.make(application(undefined));
+  let runtime = ManagedRuntime.make(application(undefined));
   const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
+  let root = createRoot(host);
   const tap = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   try {
     await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
@@ -1196,6 +1209,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("To robin@example.test")).toBeVisible();
     expect(sent).toEqual(["reply"]);
     await tap("Confirm and send");
+    await tap("Check send status");
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply", "new"]);
     await tap("Close Email");
@@ -1245,6 +1259,20 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Close Calendar");
     await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
     await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
+
+    await act(() => Promise.resolve(root.unmount()));
+    await runtime.dispose();
+    const lunch = events.find((event) => event.title === "Lunch")!;
+    const reminded = new URL(oldURL);
+    reminded.hash = "calendar";
+    reminded.searchParams.set("owner_hint", ownerHint);
+    reminded.searchParams.set("occurrence", lunch.externalId);
+    window.history.replaceState(undefined, "", reminded);
+    runtime = ManagedRuntime.make(application(undefined));
+    root = createRoot(host);
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await expect.element(page.getByRole("heading", { name: "Lunch" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Back to calendar" })).toBeVisible();
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
