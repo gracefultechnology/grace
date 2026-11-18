@@ -56,7 +56,6 @@ lemma navigate_ensures(b: Browser, url: string)
   }
 }
 
-// A page moving by itself changes the tabs and counters as navigate does, and only the address edit differs.
 lemma pageMoved_ensures(b: Browser, url: string)
   ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysTabsAreWellFormed(pageMoved(b, url)))
   ensures (inv(b) ==> canPageMoved(b, url) ==> alwaysTabIdentifiersAreUnique(pageMoved(b, url)))
@@ -74,7 +73,6 @@ lemma pageMoved_ensures(b: Browser, url: string)
   }
 }
 
-// The selected tab moves as pageMoved does; any other tab only gains a history entry and keeps its load.
 lemma tabMoved_ensures(b: Browser, id: int, url: string)
   ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysTabsAreWellFormed(tabMoved(b, id, url)))
   ensures (inv(b) ==> canTabMoved(b, id, url) ==> alwaysTabIdentifiersAreUnique(tabMoved(b, id, url)))
@@ -96,7 +94,6 @@ lemma tabMoved_ensures(b: Browser, id: int, url: string)
   }
 }
 
-// Every tab with the selected id is the same after the move, position by position, so the lookup finds the same tab.
 lemma lawABackgroundTabMovingKeepsTheSelectedPage_ensures(b: Browser, id: int, url: string)
   ensures (lawABackgroundTabMovingKeepsTheSelectedPage(b, id, url) == true)
 {
@@ -113,7 +110,6 @@ lemma lawABackgroundTabMovingKeepsTheSelectedPage_ensures(b: Browser, id: int, u
   }
 }
 
-// A background tab moves only when not loading, and the move keeps each matching tab's load, position by position.
 lemma lawNoLoadFinishesOnABackgroundTabsMove_ensures(b: Browser, id: int, url: string, loadVersion: int, result: Load)
   ensures (lawNoLoadFinishesOnABackgroundTabsMove(b, id, url, loadVersion, result) == true)
 {

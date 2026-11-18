@@ -1,5 +1,3 @@
-// Proofs for the owned workspace and its canonical payment registry.
-
 lemma ComponentInvariants(w: Workspace)
   requires inv(w)
   ensures app__shell_inv(w.device)
@@ -1134,7 +1132,6 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
   }
 }
 
-// A background tab's move keeps the selected page and the revision (the browser's law), and website work needs the selected page in view.
 lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPaymentAssociation(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysPausedPaymentCannotSubmit(unwatchedPage(w, unexpected, by_)))
