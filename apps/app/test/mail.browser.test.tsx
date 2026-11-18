@@ -9,6 +9,7 @@ import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider,
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
+import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, outage, signIn } from "./cloud.vibe";
 import "../src/main.css";
 
@@ -52,7 +53,10 @@ async function start() {
   await allowOutlook(secret);
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(kept()));
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  const network = { online: true };
+  const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
+  const runtime = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
+  const connectivity = () => runtime.runPromise(Effect.map(Effect.flatMap(Effect.service(Workspaces), (w) => w.get()), (w) => w.device.connectivity));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
   onTestFinished(async () => {
@@ -62,8 +66,11 @@ async function start() {
   });
   return {
     secret,
-    host: (availability: "Online" | "Offline") => act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
-      w.send({ type: "setAvailability", availability: { connection: availability, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed } }, "Host"))))),
+    host: async (availability: "Online" | "Offline") => {
+      network.online = availability === "Online";
+      await act(() => Promise.resolve(window.dispatchEvent(new Event(availability === "Online" ? "online" : "offline"))));
+      await expect.poll(connectivity).toBe(availability);
+    },
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
     company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } })).json()),
   };
@@ -139,9 +146,9 @@ it("See all my email in one place", async () => {
 
   await opened(/Ruth/, "Lunch on Sunday?");
   await expect.element(page.getByText("3 photos")).toBeVisible();
-  await click(page.getByRole("button", { name: "Piano.svg" }));
+  await click(page.getByRole("button", { name: "Piano.png" }));
   await expect.element(page.getByRole("heading", { name: "Photo 2 of 3" })).toBeVisible();
-  await expect.element(page.getByRole("img", { name: "Piano.svg" })).toHaveAttribute("src", expect.stringMatching(/^data:image\/svg\+xml;base64,/));
+  await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", expect.stringMatching(/^data:image\/png;base64,iVBORw0KGgo/));
   await click(page.getByRole("button", { name: "Next photo" }));
   await expect.element(page.getByRole("heading", { name: "Photo 3 of 3" })).toBeVisible();
   await click(page.getByRole("button", { name: "Save to Files" }));
@@ -151,7 +158,7 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByText("3 photos saved to Files")).toBeVisible();
   await host("Offline");
   await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
-  await click(page.getByRole("button", { name: "Bow.svg" }));
+  await click(page.getByRole("button", { name: "Bow.png" }));
   await expect.element(page.getByRole("heading", { name: "Photo 1 of 3" })).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   await host("Online");

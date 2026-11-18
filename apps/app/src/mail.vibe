@@ -6,16 +6,12 @@ import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.
 import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
-import { Library, type Saving } from "./files.vibe"
+import { Library } from "./files.vibe"
 import { Instances } from "./instances.vibe"
 
 export type Note = { readonly id: number; readonly text: string }
 
-export type SaveStatus = "saving" | "failed"
-export type Board = {
-  readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>
-  readonly saves: ReadonlyMap<string, SaveStatus>
-}
+export type Board = { readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader> }
 
 export type Boards = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Board }
 
@@ -102,23 +98,12 @@ effect function reopen(mail: MailConnection, box: MailMachine.Shape, m: Mailbox)
   if (restored !== undefined) box.send({ type: "restoreDraft", snapshot: restored.snapshot, generation: m.generation, verified: restored.verified }, "MailConnector") catch () => undefined
 }
 
-effect function gathered(shelf: Instances.Shape, mail: MailConnection, id: number, chosen: readonly SavedFile[], version: string) {
-  const all: Saving[] = []
-  for (const file of chosen) {
-    const content = shelf.file(id, file.sourceRef) ?? (try mail.attachment(file, version))
-    shelf.hold(id, file.sourceRef, content)
-    all.push({ file, content })
-  }
-  return all
-}
-
-function marked(saves: ReadonlyMap<string, SaveStatus>, files: readonly SavedFile[], status: SaveStatus | undefined) {
-  const next = new Map(saves)
-  for (const f of files) {
-    if (status === undefined) next.delete(f.id)
-    else next.set(f.id, status)
-  }
-  return next
+effect function fetched(shelf: Instances.Shape, mail: MailConnection, id: number, file: SavedFile, version: string) {
+  const held = shelf.file(id, file)
+  if (held !== undefined) return held
+  const content = try mail.attachment(file, version)
+  shelf.hold(id, file, content)
+  return content
 }
 
 export const mailing = Layer.effect(Mail, effect {
@@ -133,7 +118,7 @@ export const mailing = Layer.effect(Mail, effect {
   const names = new Map<string, string>()
   const listeners = new Set<() => void>()
   const counter = { next: 1 }
-  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), saves: new Map() }
+  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map() }
 
   const post = (next: Partial<Board>) => {
     board = { ...board, ...next }
@@ -354,13 +339,10 @@ export const mailing = Layer.effect(Mail, effect {
     if (account === undefined || box === undefined) return
     const m = try box.get()
     const chosen = m.assets.filter((a) => refs.includes(a.sourceRef))
-    if (!mayExportAttachments(m, [...refs]) || chosen.some((f) => board.saves.get(f.id) === "saving")) return
-    post({ saves: marked(board.saves, chosen, "saving") })
+    if (!mayExportAttachments(m, [...refs])) return
     const mail = connectionOf(account)
     const version = shelf.content(id, m.messageRef)?.version ?? ""
-    const fetched = gathered(shelf, mail, id, chosen, version) catch () => undefined
-    const done = fetched !== undefined && (try library.save(fetched, `${account.provider}:${account.address}/${m.messageRef}`))
-    post({ saves: marked(board.saves, chosen, done ? undefined : "failed") })
+    const done = try library.save(chosen, (file) => fetched(shelf, mail, id, file, version), `${account.provider}:${account.address}/${m.messageRef}`)
     if (done) try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
   }
 

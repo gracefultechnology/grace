@@ -35,11 +35,12 @@ function picture(file: SavedFile, held: Attached | undefined): MailPhoto {
 function saverOf(box: MailInstance, mail: MailWriter | undefined, files: Files | undefined): Saver {
   return {
     status: (chosen) => {
-      if (chosen.length > 0 && files?.loaded && chosen.every((f) => hasFile(files, f.id))) return "saved";
-      const marks = chosen.map((f) => mail?.saves.get(f.id));
-      return marks.includes("saving") ? "saving" : marks.includes("failed") ? "failed" : undefined;
+      if (!files || chosen.length === 0) return undefined;
+      if (files.loaded && chosen.every((f) => hasFile(files, f.id))) return "saved";
+      if (files.pending === "SavingFiles" && chosen.some((f) => files.pendingFiles.some((p) => p.id === f.id))) return "saving";
+      return files.feedback === "WriteFailed" ? "failed" : undefined;
     },
-    offer: (refs) => (mail && refs.length > 0 && mayExportAttachments(box.state, [...refs]) ? () => void mail.save(box.id, refs) : undefined),
+    offer: (refs) => (mail && files?.pending === "NoFileOperation" && refs.length > 0 && mayExportAttachments(box.state, [...refs]) ? () => void mail.save(box.id, refs) : undefined),
   };
 }
 
@@ -136,17 +137,19 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const attachment = (file: SavedFile): MailEvent => ({ type: "readMail", kind: "OpenAttachment", ref: file.sourceRef, approved: true });
     const opener = (chosen: readonly SavedFile[]) => chosen.some((f) => opening.can(attachment(f))) ? (i: number) => { const f = chosen[i]; if (f) offer(opening, attachment(f))?.(); } : undefined;
     const allPhotos = photos.map((p) => p.sourceRef);
+    const header = mail && headerFor(mail, opening.id, m);
+    const replying = mail && ready && answerable(m) && (header ? header.verified : online);
     return (
       <>
       <MailMessageView from={{ name: c?.from ?? "" }} address={showsScamWarning(m) ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={c?.body ?? ""}
         scam={showsScamWarning(m)} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
-        photos={ready ? photos.map((p) => picture(p, held(opening.id, p.sourceRef))) : undefined} onOpenPhoto={opener(photos)}
+        photos={ready ? photos.map((p) => picture(p, held(opening.id, p))) : undefined} onOpenPhoto={opener(photos)}
         onSaveAll={saver.offer(allPhotos)} saveAllStatus={saver.status(photos)} onRetrySaveAll={saver.offer(allPhotos)}
         files={ready ? pdfs.map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined} onOpenFile={opener(pdfs)}
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
         onRetry={offer(opening, open)}
-        onReply={mail && ready && answerable(m) && (online || headerFor(mail, opening.id, m)) ? () => void mail.reply(opening.id) : undefined}
-        onForward={mail && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
+        onReply={replying ? () => void mail.reply(opening.id) : undefined}
+        onForward={m.folder !== "DraftsFolder" && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
       {toast}
@@ -233,7 +236,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
 }
 
 type AttachmentProps = {
-  box: MailInstance; held: (id: number, ref: string) => Attached | undefined; saver: Saver; sender: string; subject: string;
+  box: MailInstance; held: (id: number, file: SavedFile) => Attached | undefined; saver: Saver; sender: string; subject: string;
   onForward: (sent: ReturnType<MailInstance["send"]>) => void; toast: ReactNode; frame: Frame;
 };
 
@@ -245,13 +248,13 @@ function Attachment({ box, held, saver, sender, subject, onForward, toast, frame
   const offer = (event: MailEvent) => (box.can(event) ? () => void box.send(event) : undefined);
   const status = m.readStatus === "Reading" ? "loading" : m.readStatus === "ReadFailed" ? "failed" : "ready";
   const back = offer({ type: "backToMessage" });
-  const shown = held(box.id, file.sourceRef);
+  const shown = held(box.id, file);
   const save = { onSave: saver.offer([file.sourceRef]), saveStatus: saver.status([file]) };
   const leave = { backLabel: back && `${sender}’s email`, onBack: back, onRetry: offer({ type: "readMail", kind: "OpenAttachment", ref: m.requestedRef, approved: true }), status, ...frame } as const;
   if (file.kind === "Pdf")
     return (
       <>
-        <PdfViewer title={file.name} pageLabel={`Page 1 of ${file.pages}`} savable={save.onSave !== undefined} {...save} onRetryAction={save.onSave} {...leave}>
+        <PdfViewer title={file.name} pageLabel={`Page 1 of ${file.pages}`} savable={save.onSave !== undefined || save.saveStatus !== undefined} {...save} onRetryAction={save.onSave} {...leave}>
           {shown ? <object data={`data:${shown.mimeType};base64,${shown.data}`} type={shown.mimeType} aria-label={file.name} className="h-[640px] w-full">{unrendered}</object> : unrendered}
         </PdfViewer>
         {toast}
