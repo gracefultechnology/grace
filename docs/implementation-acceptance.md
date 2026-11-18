@@ -109,8 +109,10 @@ Grace repository has an established release certificate for
 `technology.graceful.grace`. The production Android registry uses its SHA-256
 fingerprint. The release signing material stays in its existing custody.
 
-Worker version `b4617b8e-f2fc-4ba9-88cc-a44262def963` deployed Grace
-`ef9c02b` with Eliza `33cfd39`. Native discovery confirmed the seven-day
+Worker version `2140486d-7ea8-4980-afc0-2420f114a774` deployed Grace
+`24bc090` with Eliza `7b4da95`. The production migration created the
+native Google challenge table. The runtime role can read, insert and
+delete challenges. Native discovery confirmed the seven-day
 credential lifetime that the Android host accepts. Chromium loaded the hosted UI and its
 production assets, read the signed-out session across the API origin, and
 received HTTP 401 on an unauthenticated inference request. Native discovery
@@ -119,8 +121,11 @@ returned the registered callback and S256. The public
 contains the established package and release certificate. The
 [Eliza Google client](https://console.cloud.google.com/auth/clients?project=721050741977)
 was identified from the live Eliza sign-in redirect to Google. Production
-provider discovery currently offers email sign-in. Live Google, SMS,
-Stripe and Cartesia require their owner registrations.
+provider discovery currently offers email sign-in. Google callback registration
+and the approved Blooio SMS workspace remain open. Grace Plus uses the USD 30
+monthly plan in Eliza Labs. Voice uses a Grace-specific standard key and a
+stock English voice in the Eliza Cartesia organization. Live checkout and
+speech still require provider provisioning and acceptance.
 
 ## Decisions and their defaults
 
