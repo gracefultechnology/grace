@@ -959,6 +959,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const literalText = "<strong>This stays plain text.</strong>";
   const oldURL = window.location.href;
   const oldIntent = sessionStorage.getItem("grace-hosted-read");
+  const oldAccounts = localStorage.getItem("accounts");
+  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
+  const legacyAccount = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "previous@example.test", granted: allowedUse }, "Gmail", "AccountConnector");
+  localStorage.setItem("accounts", JSON.stringify(legacyAccount));
   const hint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(person.id));
   const ownerHint = Array.from(new Uint8Array(hint), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const url = new URL(oldURL);
@@ -1089,6 +1093,12 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await act(() => userEvent.type(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
     await tap("Sign in");
     await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    const homeUrl = new URL(window.location.href);
+    homeUrl.hash = "";
+    window.history.replaceState(undefined, "", homeUrl);
+    await tap("Close Email");
+    await tap(/^Email/);
+    await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
     await tap(/Your receipt/);
     await expect.element(page.getByRole("alert")).toBeVisible();
@@ -1167,6 +1177,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await runtime.dispose();
     host.remove();
     provider.mockRestore();
+    if (oldAccounts === null) localStorage.removeItem("accounts");
+    else localStorage.setItem("accounts", oldAccounts);
     if (oldIntent === null) sessionStorage.removeItem("grace-hosted-read");
     else sessionStorage.setItem("grace-hosted-read", oldIntent);
     window.history.replaceState(undefined, "", oldURL);
