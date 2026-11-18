@@ -5,12 +5,12 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { Agent, type Applied } from "./agent.vibe"
+import { Agent } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
-import { type Help, helpWith, looker, render, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
+import { type Help, helpWith, type Last, looker, render, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances } from "./instances.vibe"
 import { withhold } from "./private.ts"
-import { Reply } from "./reply.schema.ts"
+import { Reply, unreadable } from "./reply.schema.ts"
 
 export type CloudLink = { readonly url: string; readonly key: string }
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
@@ -44,7 +44,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const workspace = try Workspaces
   const agent = try Agent
   const asked = try Ref.make<{ readonly generation: number; readonly origin: Origin }>({ generation: -1, origin: "FromDevice" })
-  const notDone = try Ref.make<readonly Applied[]>([])
+  const last = try Ref.make<Last>({ notDone: [], unread: [] })
   const told = try Ref.make<readonly string[]>([])
   const look = try looker()
   const registry = try Accounts
@@ -53,7 +53,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const scope = try Scope.Scope
 
   effect function tell(words: string) {
-    if (words !== "") try Ref.update(told, (all) => [...all, words])
+    if (words !== "" && link !== undefined) try Ref.update(told, (all) => [...all, words])
   }
 
   effect function following<S>(changes: Stream.Stream<S>, words: (before: S, after: S) => string!!) {
@@ -98,20 +98,21 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       return
     }
     const news = try Ref.get(told)
-    const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), news).text}` }
+    const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news).text}` }
     const said = ask(link, [system, ...outgoing]) catch () => undefined
     const reply = try decoded(said)
-    if (reply === undefined) return try fail(token)
-    try Ref.update(told, (all) => all.slice(news.length))
-    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply))
+    if (said === undefined || reply === undefined) return try fail(token)
+    const unread = try Effect.orDie(Effect.try(() => unreadable(said)))
+    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length))
   }
 
-  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type) {
+  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, unread: readonly string[], seen: number) {
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, text, isQuestion, answers: [...answers], audible: false } }, "Host") catch () => undefined
     if (responded === undefined) return
-    const last = try Ref.get(asked)
-    const applied = try agent.apply(actions, { generation: token, workVersion, origin: last.generation === token ? last.origin : "FromDevice" })
-    try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
+    try Ref.update(told, (all) => all.slice(seen))
+    const turn = try Ref.get(asked)
+    const applied = try agent.apply(actions, { generation: token, workVersion, origin: turn.generation === token ? turn.origin : "FromDevice" })
+    try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
   effect function take(input: PersonTurn, origin: Origin) {

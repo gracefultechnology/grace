@@ -75,10 +75,9 @@ function message(s: Scene, words: string): { readonly account: number; readonly 
   return found === undefined ? undefined : { account: found.account, ref: found.record.identity.ref }
 }
 
-function appointmentNamed(s: Scene, words: string): { readonly key: number; readonly id: string } | undefined {
+function appointmentNamed(s: Scene, words: string, now: number): { readonly key: number; readonly id: string } | undefined {
   const named = /^event:(\d+):(.+)$/.exec(words.trim())
   if (named !== null) return { key: Number(named[1]), id: named[2] }
-  const now = Date.now()
   const found = calendarContext(s.registry, s.calendars, now - dayLength, now + 400 * dayLength)
     .sort((a, b) => a.details.startAt - b.details.startAt)
     .find((r) => lower(r.details.title).includes(lower(words)))
@@ -116,8 +115,8 @@ function fromMessage(s: Scene, a: Appointment, fresh: string): Planned {
   return plain([{ tag: "ProposeFromMessage", account: open.account, seed: seed(s, key, id, open.mailbox.messageRef, details(a, "Once", "", timezone, note)) }])
 }
 
-function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" }>): Plan {
-  const found = appointmentNamed(s, action.entry)
+function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" }>, now: number): Plan {
+  const found = appointmentNamed(s, action.entry, now)
   if (found === undefined) return "NotFound"
   const was = entryAt(sourceAt(s.calendars, found.key).view, found.id).committed
   const day = action.day === undefined ? dayOf(was.startAt) : civil(action.day)
@@ -132,7 +131,8 @@ function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" 
   } }])
 }
 
-effect function plan(action: GraceAction, s: Scene, request: Request, fresh: string, helper: Option.Option<Mail.Shape>): Plan!! {
+effect function plan(action: GraceAction, s: Scene, request: Request, stamp: number, helper: Option.Option<Mail.Shape>): Plan!! {
+  const fresh = `${stamp.toString(36)}-${(try Random.nextInt).toString(36)}`
   const shown = shownOf(s)
   const open = openOf(s)
   const writing = writingOf(s)
@@ -183,9 +183,9 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
       return plain([{ tag: "ProposeAppointment", key: tablet, seed: seed(s, tablet, id, "", details(action, action.repeat, action.repeat === "Once" ? "" : id, timezone, "")) }])
     }
     case "proposeFromMessage": return fromMessage(s, action, fresh)
-    case "proposeChange": return changed(s, action)
+    case "proposeChange": return changed(s, action, stamp)
     case "proposeDeletion": {
-      const found = appointmentNamed(s, action.entry)
+      const found = appointmentNamed(s, action.entry, stamp)
       return found === undefined ? "NotFound" : plain([{ tag: "ProposeDeletion", key: found.key, id: found.id, scope: action.scope }])
     }
     case "confirmProposal": return plain([{ tag: "ConfirmProposal" }])
@@ -267,10 +267,9 @@ export const agent = Layer.effect(Agent, effect {
   }
 
   effect function perform(action: GraceAction, request: Request): Done!! {
-    for (const source of shownOf(try look())) try settled(source.account)
+    try Effect.forEach(shownOf(try look()), (source) => settled(source.account), { concurrency: "unbounded", discard: true })
     const s = try look()
-    const fresh = `${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
-    const planned = try plan(action, s, request, fresh, helper)
+    const planned = try plan(action, s, request, try Clock.currentTimeMillis, helper)
     if (planned === "NotFound" || planned === "NotYetAvailable") return { outcome: planned, showsEmail: false }
     if (planned === undefined) {
       const steps = workspaceSteps(action, s.workspace)
