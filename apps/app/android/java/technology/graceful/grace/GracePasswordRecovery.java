@@ -29,6 +29,19 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  private volatile Operation operation;
  private volatile boolean destroyed;
 
+ interface SnapshotTransfer {
+  CloudPasswordBackup.Response run(String revision, byte[] ciphertext) throws Exception;
+ }
+
+ record Approval(String scope, String ownerId, String revision, boolean present,
+                 java.util.function.BooleanSupplier active, SnapshotTransfer transfer) {
+  boolean current() { return active.getAsBoolean(); }
+  CloudPasswordBackup.Response run(String expectedRevision, byte[] ciphertext) throws Exception {
+   if (!current()) throw new IllegalStateException("Account verification changed");
+   return transfer.run(expectedRevision, ciphertext);
+  }
+ }
+
  static final class Operation {
   final CloudPasswordBackup.Purpose purpose;
   volatile CompletableFuture<?> pending;
@@ -71,10 +84,10 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
 
  boolean isCurrent(Operation expected) { return !destroyed && operation == expected; }
 
- void run(Operation expected, CloudPasswordBackup.Approval approval) {
+ void run(Operation expected, Approval approval) {
   expected.waitingForBrowser = false;
   Runnable account = () -> {
-   if (!approval.current()) throw new IllegalStateException("Password backup approval expired");
+   if (!isCurrent(expected) || !approval.current()) throw new IllegalStateException("Password backup approval expired");
   };
   CloudPasswordBackup.Purpose purpose = expected.purpose;
   byte[] recoveryKey = null;

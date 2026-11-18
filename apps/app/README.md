@@ -104,6 +104,14 @@ in `artifacts/agent-runtime/<pinned-commit>/<abi>`.
 JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
 usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
+Choose the cloud deployment at build time with `--cloud-profile`. The default
+is `standalone-production` for Grace Cloud. `shared-production` uses Eliza Cloud
+production. `shared-staging` uses Eliza Cloud staging and builds debug APKs only.
+The choice applies to both flavors and fixes the account registration and callback,
+the web bundle's cloud origins, and the embedded agent's inference endpoint.
+Shared builds write their APKs, verification manifest and intermediate files under
+`artifacts/cloud-profiles/<profile>/`. Use the same `--cloud-profile` with `--verify`.
+
 `--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
 (absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
 the working directory), `GRACE_KEYSTORE_PASSWORD`,
@@ -246,7 +254,8 @@ Grace killed between two steps failed it in 19 seconds, the next step saying her
 debugging socket. Interrupted with SIGTERM while booting, the command exited 143 and stopped the
 emulator it had started; a plain build has no handler and dies on the signal.
 
-`scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
+`scripts/android.ts` generates the standalone Grace Cloud Gradle host in `android/generated/`
+and shared Eliza Cloud Gradle hosts in `artifacts/cloud-profiles/<profile>/gradle/` from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
@@ -272,7 +281,7 @@ agent over an authenticated private Unix socket. The native service publishes a 
 the child credential and loopback token on stdin. Startup waits for an authenticated health response
 with the current launch epoch.
 
-On devices with Google Play services and native Google enabled in Grace Cloud, Grace opens the
+On standalone Grace Cloud devices with Google Play services and native Google enabled, Grace opens the
 Android Google account picker. Cloud issues a one-time nonce tied to the device PKCE challenge.
 Android sends the Google result directly to Cloud and exchanges the returned device code. The
 Google ID token and PKCE verifier stay in the Android host.
@@ -291,11 +300,17 @@ Android's encrypted, no-backup store. A Cloud acknowledgement activates the toke
 Grace puts it into use. The app bridge reports only whether the device is signed in.
 Signing out stops the device agent, removes the credential and requests revocation. The hosted app
 must publish Android Digital Asset Links for the release signer to validate the callback. Device
-sessions expire after seven days, when the person signs in again.
+sessions expire after seven days, when the person signs in again. Standalone
+password recovery uses a fresh approval on Grace Cloud's registered browser page.
 
-`android/agent.json` names the Grace Cloud origin and admitted agent routes, `agent/character.json`
+Shared Eliza Cloud uses the selected deployment's registered App Link at
+`/auth/grace/callback`. Password backup and recovery ask for fresh native Google
+verification through Steward and a separate native choice for the action.
+Each deployment accepts grants for its own acknowledged account and request.
+
+`android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent
-provides storage, Cloud models and the message service. The APK check rejects
+provides storage, the selected Cloud deployment's models and the message service. The APK check rejects
 declared actions outside the allowed or refused list and rejects bundled on-device inference models.
 
 ### Records, reminders and files

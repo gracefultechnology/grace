@@ -6,7 +6,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.CancellationSignal;
-import android.os.SystemClock;
 import androidx.credentials.CredentialManager;
 import androidx.credentials.CredentialManagerCallback;
 import androidx.credentials.CustomCredential;
@@ -24,33 +23,22 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.ByteArrayOutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import org.json.JSONObject;
 
 @CapacitorPlugin(name = "GraceAccount")
 public final class GraceAccount extends Plugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
  private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
- private static final ExecutorService CHOICES = Executors.newSingleThreadExecutor();
- private static final ScheduledExecutorService CHOICE_DEADLINE = Executors.newSingleThreadScheduledExecutor();
- private static final int CHOICE_DEADLINE_MS = 30_000;
- private static final String CLOUD_ORIGIN = "https://api.graceforseniors.com";
+ private static final String CLOUD_ORIGIN = BuildConfig.CLOUD_API_ORIGIN;
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
- private record GuideLease(String id, CloudDeviceAccount.Session owner) {}
- private GuideLease guideLease;
+ private GraceBrowserGuide guide;
 
  @Override public void load() {
-  passwordBackup = new CloudPasswordBackup(account(getContext()), "technology.graceful.grace", "production");
+  guide = new GraceBrowserGuide(getContext());
+  passwordBackup = new CloudPasswordBackup(account(getContext()), BuildConfig.APPLICATION_ID, "production");
   recovery = new GracePasswordRecovery(getActivity(), this);
  }
 
@@ -96,7 +84,8 @@ public final class GraceAccount extends Plugin {
   RECOVERY.execute(() -> {
    try {
     var approval = passwordBackup.exchange(data, operation.purpose, () -> recovery.isCurrent(operation) && recoveryAccountReady());
-    recovery.run(operation, approval);
+    recovery.run(operation, new GracePasswordRecovery.Approval(approval.scope(), approval.ownerId(), approval.revision(),
+       approval.present(), approval::current, approval::run));
    } catch (Exception unavailable) {
     recovery.failed(operation, "This password backup approval has ended. Try again.");
    }
@@ -111,8 +100,18 @@ public final class GraceAccount extends Plugin {
  private record Picker(CloudDeviceAccount.NativeGoogleAttempt attempt, CancellationSignal signal, PluginCall call) {}
  private Picker picker;
 
- static CloudDeviceAccount account(Context context) {
-  return new CloudDeviceAccount(context, "https://app.graceforseniors.com", CLOUD_ORIGIN, "/android/auth/callback");
+ static CloudDeviceAccount.Session session(Context context) throws Exception {
+  CloudDeviceAccount account = account(context);
+  if (account.awaitingAcknowledgment()) throw new IllegalStateException("Account change in progress");
+  return account.session();
+ }
+
+ static boolean handles(Context context, Uri address) { return account(context).handles(address); }
+
+ static Uri hostedView(Context context, String view) throws Exception { return account(context).hostedView(view); }
+
+ private static CloudDeviceAccount account(Context context) {
+  return new CloudDeviceAccount(context, BuildConfig.CLOUD_WEB_ORIGIN, CLOUD_ORIGIN, BuildConfig.CLOUD_CALLBACK_PATH);
  }
 
  @PluginMethod public void status(PluginCall call) {
@@ -222,95 +221,9 @@ public final class GraceAccount extends Plugin {
   });
  }
 
- @PluginMethod public void browserGuideLease(PluginCall call) {
-  CHOICES.execute(() -> {
-   var lease = currentGuideLease();
-   call.resolve(new JSObject().put("id", lease == null ? JSONObject.NULL : lease.id()));
-  });
- }
+ @PluginMethod public void browserGuideLease(PluginCall call) { guide.browserGuideLease(call); }
 
- private synchronized GuideLease currentGuideLease() {
-  CloudDeviceAccount.Session owner;
-  try { owner = GracePasswordsOwner.stableSession(getContext()); }
-  catch (Exception unavailable) { owner = null; }
-  if (owner == null) guideLease = null;
-  else if (guideLease == null || !owner.equals(guideLease.owner())) guideLease = new GuideLease(UUID.randomUUID().toString(), owner);
-  return guideLease;
- }
-
- @PluginMethod public void chooseBrowserLink(PluginCall call) {
-  CHOICES.execute(() -> {
-   var lease = currentGuideLease();
-   if (lease == null || !lease.id().equals(call.getString("lease"))) {
-    call.resolve(choiceUnavailable("disabled"));
-    return;
-   }
-   var owner = lease.owner();
-   try {
-    String goal = call.getString("goal");
-    var candidates = call.getArray("candidates");
-    if (goal == null || goal.isBlank() || goal.length() > 2000 || candidates == null || candidates.length() < 1 || candidates.length() > 16) {
-     call.resolve(choiceUnavailable("disabled"));
-     return;
-    }
-    byte[] request = new JSONObject().put("kind", "choice").put("goal", goal).put("candidates", candidates)
-     .toString().getBytes(StandardCharsets.UTF_8);
-    if (request.length > 32768 || !currentDecisionOwner(owner)) {
-     call.resolve(choiceUnavailable("disabled"));
-     return;
-    }
-    var connection = (HttpURLConnection) URI.create(CLOUD_ORIGIN + "/api/v1/decisions").toURL().openConnection();
-    connection.setInstanceFollowRedirects(false);
-    connection.setConnectTimeout(8000);
-    connection.setReadTimeout(CHOICE_DEADLINE_MS);
-    connection.setRequestMethod("POST");
-    connection.setRequestProperty("Authorization", "Bearer " + owner.token());
-    connection.setRequestProperty("Accept", "application/json");
-    connection.setRequestProperty("Content-Type", "application/json");
-    connection.setDoOutput(true);
-    connection.setFixedLengthStreamingMode(request.length);
-    long deadline = SystemClock.elapsedRealtime() + CHOICE_DEADLINE_MS;
-    var cancel = CHOICE_DEADLINE.schedule(connection::disconnect, CHOICE_DEADLINE_MS, TimeUnit.MILLISECONDS);
-    try {
-     try (var output = connection.getOutputStream()) { output.write(request); }
-     int status = connection.getResponseCode();
-     if (status != 200) {
-      boolean providerError = (status < 400 || status >= 500) && currentDecisionOwner(owner);
-      call.resolve(choiceUnavailable(providerError ? "provider_error" : "disabled"));
-      return;
-     }
-     try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
-      byte[] buffer = new byte[512];
-      int count;
-      while ((count = input.read(buffer)) != -1) {
-       if (output.size() + count > 16384) {
-        call.resolve(choiceUnavailable("provider_error"));
-        return;
-       }
-       output.write(buffer, 0, count);
-      }
-      if (!currentDecisionOwner(owner)) call.resolve(choiceUnavailable("disabled"));
-      else if (SystemClock.elapsedRealtime() >= deadline) call.resolve(choiceUnavailable("provider_error"));
-      else call.resolve(new JSObject(new String(output.toByteArray(), StandardCharsets.UTF_8)));
-     }
-    } finally {
-     cancel.cancel(false);
-     connection.disconnect();
-    }
-   } catch (Exception unavailable) {
-    call.resolve(choiceUnavailable(currentDecisionOwner(owner) ? "provider_error" : "disabled"));
-   }
-  });
- }
-
- private boolean currentDecisionOwner(CloudDeviceAccount.Session owner) {
-  try { return owner.equals(GracePasswordsOwner.stableSession(getContext())); }
-  catch (Exception unavailable) { return false; }
- }
-
- private static JSObject choiceUnavailable(String reason) {
-  return new JSObject().put("status", "unavailable").put("reason", reason);
- }
+ @PluginMethod public void chooseBrowserLink(PluginCall call) { guide.chooseBrowserLink(call); }
 
  @PluginMethod public void startSpeech(PluginCall call) {
   ACCOUNT.execute(() -> {
@@ -378,7 +291,6 @@ public final class GraceAccount extends Plugin {
   Context context = getContext().getApplicationContext();
   try {
    GracePasswordsOwner.enteringAccountChange(context);
-   synchronized (this) { guideLease = null; }
    recovery.accountChanged();
    GraceAgentService.retire();
    return change.call();

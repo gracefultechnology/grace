@@ -41,7 +41,7 @@
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="https" android:host="app.graceforseniors.com" android:path="/android/auth/callback" />
+    <data android:scheme="https" android:host="${graceCloudCallbackHost}" android:path="${graceCloudCallbackPath}" />
    </intent-filter>
   </activity>
   <receiver android:name=".GraceRemindersPlugin$Receiver" android:exported="false">

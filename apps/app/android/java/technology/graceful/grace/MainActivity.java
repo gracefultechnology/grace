@@ -108,7 +108,7 @@ public class MainActivity extends ElizaBridgeActivity {
  private Uri accountCallback(Intent intent) {
   if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return null;
   Uri data = intent.getData();
-  return GraceAccount.account(this).handles(data) ? data : null;
+  return GraceAccount.handles(this, data) ? data : null;
  }
 
  private void acceptAccountCallback(Uri data) {
