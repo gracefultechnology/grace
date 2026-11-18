@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.CancellationSignal;
+import android.os.SystemClock;
 import androidx.credentials.CredentialManager;
 import androidx.credentials.CredentialManagerCallback;
 import androidx.credentials.CustomCredential;
@@ -31,6 +32,8 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "GraceAccount")
@@ -38,6 +41,8 @@ public final class GraceAccount extends Plugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
  private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
  private static final ExecutorService CHOICES = Executors.newSingleThreadExecutor();
+ private static final ScheduledExecutorService CHOICE_DEADLINE = Executors.newSingleThreadScheduledExecutor();
+ private static final int CHOICE_DEADLINE_MS = 30_000;
  private static final String CLOUD_ORIGIN = "https://api.graceforseniors.com";
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
@@ -257,13 +262,15 @@ public final class GraceAccount extends Plugin {
     var connection = (HttpURLConnection) URI.create(CLOUD_ORIGIN + "/api/v1/decisions").toURL().openConnection();
     connection.setInstanceFollowRedirects(false);
     connection.setConnectTimeout(8000);
-    connection.setReadTimeout(10000);
+    connection.setReadTimeout(CHOICE_DEADLINE_MS);
     connection.setRequestMethod("POST");
     connection.setRequestProperty("Authorization", "Bearer " + owner.token());
     connection.setRequestProperty("Accept", "application/json");
     connection.setRequestProperty("Content-Type", "application/json");
     connection.setDoOutput(true);
     connection.setFixedLengthStreamingMode(request.length);
+    long deadline = SystemClock.elapsedRealtime() + CHOICE_DEADLINE_MS;
+    var cancel = CHOICE_DEADLINE.schedule(connection::disconnect, CHOICE_DEADLINE_MS, TimeUnit.MILLISECONDS);
     try {
      try (var output = connection.getOutputStream()) { output.write(request); }
      int status = connection.getResponseCode();
@@ -283,9 +290,11 @@ public final class GraceAccount extends Plugin {
        output.write(buffer, 0, count);
       }
       if (!currentDecisionOwner(owner)) call.resolve(choiceUnavailable("disabled"));
+      else if (SystemClock.elapsedRealtime() >= deadline) call.resolve(choiceUnavailable("provider_error"));
       else call.resolve(new JSObject(new String(output.toByteArray(), StandardCharsets.UTF_8)));
      }
     } finally {
+     cancel.cancel(false);
      connection.disconnect();
     }
    } catch (Exception unavailable) {

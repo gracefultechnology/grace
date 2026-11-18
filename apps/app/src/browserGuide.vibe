@@ -128,7 +128,6 @@ effect function decisionSession(native: boolean, fixture?: GuideDecision): (Deci
     baseUrl: apiOrigin || webView.window.location.origin,
     headers: () => ({ "X-Eliza-Account": owner }),
     fetch: accountFetch,
-    timeoutMs: 20000,
   }))
   return { choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserAccountId())) === owner }
 }

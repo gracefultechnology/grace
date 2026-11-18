@@ -2,7 +2,7 @@
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
-import { createClefDecisionsClient } from "@elizaos/cloud/clef-decisions";
+import { CLEF_DECISION_TIMEOUT_MS, createClefDecisionsClient } from "@elizaos/cloud/clef-decisions";
 import { commands, page, userEvent } from "vitest/browser";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { guidedReadKind, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
@@ -245,9 +245,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       said: intent,
       answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
     }]), client));
-    await transport({ kind: "decisionRoute", cloud });
+    await transport({ kind: "decisionRoute", cloud, deadlineMs: CLEF_DECISION_TIMEOUT_MS });
     const guideDecision = createClefDecisionsClient({
-      baseUrl: cloud, headers: () => ({ Authorization: `Bearer ${secret}` }), timeoutMs: 20000,
+      baseUrl: cloud, headers: () => ({ Authorization: `Bearer ${secret}` }),
     });
     const { workspace } = await launch(native.plugin, { url: cloud, key: secret, guideDecision });
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
