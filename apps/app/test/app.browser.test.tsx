@@ -523,7 +523,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
     const check = page.getByRole("button", { name: "Check page" });
     const plan = page.getByRole("region", { name: "Task plan" });
-    const pending = plan.locator('[aria-current="step"]');
+    const pending = plan.getByRole("paragraph");
     expect(check.query()).toBeNull();
     const showLink = page.getByRole("button", { name: "Show me the link" });
     expect(showLink.query()).toBeNull();
@@ -541,7 +541,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(allowReading);
     await tap(resumeReading);
     await tap(check);
-    await expect.element(pending).toBeVisible();
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     const resume = page.getByRole("button", { name: "Resume Grace" });
     currentPage = about;
@@ -549,7 +549,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(resume);
     await tap(check);
     await expect.element(page.getByRole("status", { name: "Page check result" })).toHaveTextContent(target);
-    await expect.element(pending).toBeVisible();
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
     expect(plan.getByText(/^Open page:/).query()).toBeNull();
     expect(plan.getByText("Read checks complete").query()).toBeNull();
     await routeTo(check);
@@ -559,7 +559,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
       subaction: "guide", guidance: { kind: "show", nodeId: "help" },
     } });
-    await expect.element(pending).toBeVisible();
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     currentPage = help;
     await native.report("tab-1", origin + help.path, 100);
