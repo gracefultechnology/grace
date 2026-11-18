@@ -587,7 +587,8 @@ pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: s
 Grace opens its registered Cloud approval page in a browser. The page shows
 one requested action and the account that will approve it. Approve sends
 that account and action together. If the browser account changes or needs
-fresh sign-in, the person signs in and chooses again. Cancel closes the
+fresh sign-in, the person uses one of the deployment's available account
+sign-in methods and chooses again. Cancel closes the
 approval without issuing it. The return to the tablet carries a single-use
 code bound to the native request. The browser never handles the recovery
 key or password data.

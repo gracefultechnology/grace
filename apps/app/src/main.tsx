@@ -5,7 +5,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { PasswordBackupConsent } from "./PasswordBackupConsent.tsx";
-import { pendingPasswordApproval } from "./passwordBackupConsent.vibe";
+import { backupSignInProviders, pendingPasswordApproval } from "./passwordBackupConsent.vibe";
 import { agentPlugin } from "./agentPlugin.ts";
 import { application } from "./app.vibe";
 import { devicePlugin, wifiPlugin, passwordClient } from "./surfacePlugin.ts";
@@ -21,8 +21,12 @@ function renderApp() {
 if (native) {
   renderApp();
 } else {
-  void pendingPasswordApproval().then(({ present, approval, account }) => {
-    if (present) root.render(<StrictMode><PasswordBackupConsent approval={approval} account={account} /></StrictMode>);
-    else renderApp();
+  void pendingPasswordApproval().then(async ({ present, approval, account }) => {
+    if (!present) {
+      renderApp();
+      return;
+    }
+    const providers = approval ? await backupSignInProviders() : undefined;
+    root.render(<StrictMode><PasswordBackupConsent approval={approval} account={account} providers={providers} /></StrictMode>);
   });
 }

@@ -872,3 +872,53 @@ it('Approve the shown account before returning to the tablet (spec/app/setup.md,
   await expect.element(page.getByRole("link", { name: "Return to Grace" })).toHaveAttribute("href", returned.href);
   expect(requests).toEqual([{ approval, expectedOwnerId: "owner" }]);
 });
+
+it('Refresh an email-only sign-in before approving a password backup (spec/app/setup.md, "Story: Approve a password backup in my browser")', async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  const approval = {
+    clientId: "technology.graceful.grace", environment: "staging", purpose: "save",
+    redirectUri: "https://app.graceforseniors.com/android/auth/callback", state: "s".repeat(43),
+    codeChallenge: "c".repeat(43), codeChallengeMethod: "S256",
+  } as const;
+  const calls: string[] = [];
+  const network = window.fetch.bind(window);
+  const returned = new URL(approval.redirectUri);
+  returned.searchParams.set("code", "pbackup_" + "k".repeat(43));
+  returned.searchParams.set("state", approval.state);
+  let approves = 0;
+  const mock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    if (typeof input !== "string") return network(input, init);
+    const pathname = new URL(input, window.location.href).pathname;
+    if (pathname.startsWith("/api/auth/email/")) {
+      calls.push(pathname);
+      return Response.json({});
+    }
+    if (pathname === "/api/auth/session") return Response.json({ account: { id: "owner", email: "owner@example.test" } });
+    if (pathname !== "/api/v1/app-auth/mobile/password-backup") return network(input, init);
+    calls.push(pathname);
+    if (++approves === 1) return new Response(null, { status: 401 });
+    expect(JSON.parse(String(init?.body))).toEqual({ approval, expectedOwnerId: "owner" });
+    return Response.json({ redirectUrl: returned.href });
+  });
+  onTestFinished(async () => {
+    mock.mockRestore();
+    await act(() => root.unmount());
+    element.remove();
+  });
+  await act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }}
+    providers={{ google: false, email: true, sms: false }} />));
+  await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
+  await act(async () => { await page.getByRole("button", { name: "Use email" }).click(); });
+  await act(async () => { await page.getByLabelText("Email address").fill("owner@example.test"); });
+  await act(async () => { await page.getByRole("button", { name: "Send code" }).click(); });
+  await act(async () => { await page.getByLabelText("Sign-in code").fill("123456"); });
+  await act(async () => { await page.getByRole("button", { name: "Sign in", exact: true }).click(); });
+  expect(approves).toBe(1);
+  await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
+  await expect.element(page.getByRole("link", { name: "Return to Grace" })).toHaveAttribute("href", returned.href);
+  expect(calls).toEqual([
+    "/api/v1/app-auth/mobile/password-backup", "/api/auth/email/send", "/api/auth/email/verify", "/api/v1/app-auth/mobile/password-backup",
+  ]);
+});

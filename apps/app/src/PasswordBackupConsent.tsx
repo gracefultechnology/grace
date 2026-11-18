@@ -1,8 +1,11 @@
 // spec/app/setup.md, "Story: Approve a password backup in my browser"
 import { Button } from "@repo/ui";
+import { GraceSignInCode } from "./GraceSignInCode.tsx";
+import type { CodeProvider, CodeSignIn } from "./graceAccount.vibe";
 import { useState, useTransition } from "react";
 import {
-  cancelPasswordApproval, confirmPasswordApproval, signInForApproval, type Approval, type ConsentResult, type SignedInAccount,
+  cancelPasswordApproval, confirmPasswordApproval, noBackupSignInProviders, signInForApproval, signInWithBackupCode,
+  type Approval, type ConsentResult, type SignedInAccount,
 } from "./passwordBackupConsent.vibe";
 
 const titles = {
@@ -12,9 +15,29 @@ const titles = {
   verify: "Verify this tablet",
 };
 
-export function PasswordBackupConsent({ approval, account }: { approval: Approval | null; account: SignedInAccount | null }) {
+export function PasswordBackupConsent({ approval, account: originalAccount, providers = noBackupSignInProviders }: {
+  approval: Approval | null;
+  account: SignedInAccount | null;
+  providers?: typeof noBackupSignInProviders;
+}) {
   const [pending, run] = useTransition();
+  const [account, setAccount] = useState(originalAccount);
+  const [provider, setProvider] = useState<CodeProvider>();
+  const [codeFailed, setCodeFailed] = useState(false);
   const [status, setStatus] = useState<ConsentResult | null>(null);
+  const runCode = (operation: CodeSignIn, onSuccess: () => void) => run(async () => {
+    setCodeFailed(false);
+    const result = await signInWithBackupCode(operation);
+    if (result.kind === "unavailable") {
+      setCodeFailed(true);
+      return;
+    }
+    if (result.kind === "signedIn") {
+      setAccount(result.account);
+      setStatus(null);
+    }
+    onSuccess();
+  });
   const needsSignIn = !account || status?.kind === "signInRequired" || status?.kind === "accountChanged";
   const message = !approval ? "Open Passwords on your tablet and try again." :
     status?.kind === "unavailable" ? "Grace couldn’t finish. Please try again." :
@@ -26,15 +49,28 @@ export function PasswordBackupConsent({ approval, account }: { approval: Approva
       <section className="w-full max-w-lg flex flex-col items-start gap-5" aria-busy={pending || undefined}>
         <h1 className="text-2xl font-semibold">{approval ? titles[approval.purpose] : "Password backup unavailable"}</h1>
         {message && <p role={status ? "status" : undefined}>{message}</p>}
+        {codeFailed && <p role="alert">Grace couldn’t verify the request. Try again.</p>}
+        {approval && needsSignIn && provider && (
+          <GraceSignInCode provider={provider} pending={pending} run={runCode} onClose={() => {
+            setCodeFailed(false);
+            setProvider(undefined);
+          }} />
+        )}
         <div className="flex flex-wrap gap-3">
-          {approval && status?.kind !== "returning" && (
+          {approval && needsSignIn && !provider && (
+            <>
+              {providers.google && <Button variant="prominent" size="pill" disabled={pending} onClick={() => run(async () => {
+                if (!await signInForApproval(approval)) setCodeFailed(true);
+              })}>Continue with Google</Button>}
+              {providers.email && <Button variant="capsule" size="pill" disabled={pending} onClick={() => setProvider("email")}>Use email</Button>}
+              {providers.sms && <Button variant="capsule" size="pill" disabled={pending} onClick={() => setProvider("sms")}>Use a text message</Button>}
+              {!providers.google && !providers.email && !providers.sms && <p role="status">Sign-in is unavailable.</p>}
+            </>
+          )}
+          {approval && account && !needsSignIn && status?.kind !== "returning" && (
             <Button variant="prominent" size="pill" disabled={pending} onClick={() => run(async () => {
-              if (needsSignIn) {
-                if (!await signInForApproval(approval)) setStatus({ kind: "unavailable" });
-              } else {
-                setStatus(await confirmPasswordApproval(approval, account.id));
-              }
-            })}>{needsSignIn ? "Sign in to continue" : "Approve"}</Button>
+              setStatus(await confirmPasswordApproval(approval, account.id));
+            })}>Approve</Button>
           )}
           {status?.kind === "returning" && <a href={status.href} rel="noreferrer" className="text-primary underline">Return to Grace</a>}
           <Button variant="capsule" size="pill" disabled={pending} onClick={() => void cancelPasswordApproval()}>Cancel</Button>
