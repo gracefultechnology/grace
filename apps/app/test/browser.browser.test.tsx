@@ -201,7 +201,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   const outcome: Record<string, unknown> = {
-    chatProvider: "fixture", observationPermission: "synthetic test-device grant",
+    chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
   };
   const native = androidPagePluginAtItsBoundary({
@@ -241,12 +241,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       answer: JSON.stringify({ text: "Review the browser step.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadChangedBrowser"] }] }),
     }]), client));
     await transport({ kind: "decisionRoute", cloud });
-    const { runtime, workspace } = await launch(native.plugin, { url: cloud, key: secret });
-    await runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (machine) =>
-      Effect.flatMap(machine.get(), ({ device }) => machine.send({
-        type: "setAvailability",
-        availability: { connection: navigator.onLine ? "Online" : "Offline", reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true },
-      }, "Host"))));
+    const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -256,6 +251,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     outcome.start = { url: initial.url, documentId: initial.documentId };
     expect(initial.url).toBe(new URL(startUrl).href);
     await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+    await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
+    outcome.observationPermission = "person granted browser reading in Grace";
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
@@ -332,16 +330,14 @@ it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld stat
       said: question,
       answer: JSON.stringify({ text: "Review the statement read.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadStatement"] }] }),
     }]), client));
-    const { runtime, workspace } = await launch(native.plugin, { url: cloud, key: secret });
-    await runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (machine) =>
-      Effect.flatMap(machine.get(), ({ device }) => machine.send({
-        type: "setAvailability", availability: { connection: "Online", reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: true },
-      }, "Host"))));
+    const { workspace } = await launch(native.plugin, { url: cloud, key: secret });
     await userEvent.click(page.getByRole("button", { name: "Internet", exact: true }));
     await userEvent.fill(page.getByRole("textbox", { name: "Address" }), url);
     await userEvent.click(page.getByRole("button", { name: "Go", exact: true }));
     await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
     await userEvent.type(page.getByRole("button", { name: "Ask Grace", exact: true }), "{Enter}");
+    await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+    await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), question);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
