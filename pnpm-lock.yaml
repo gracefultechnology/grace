@@ -267,6 +267,9 @@ importers:
       '@capacitor/core':
         specifier: 8.5.2
         version: 8.5.2
+      '@elizaos/os':
+        specifier: link:../../vendor/eliza/packages/os
+        version: link:../../vendor/eliza/packages/os
       '@repo/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system

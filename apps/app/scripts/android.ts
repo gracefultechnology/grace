@@ -6,11 +6,11 @@ import path from "node:path";
 import { parseArgs, promisify } from "node:util";
 import { Schema } from "effect";
 import { parseAst } from "vite";
-import { stageRuntimePayload } from "../../../vendor/eliza/packages/os/android/android-runtime-inventory.mjs";
-import { buildAndroidConsumer } from "../../../vendor/eliza/packages/os/android/build-consumer.mjs";
-import { generateAndroidConsumerHost } from "../../../vendor/eliza/packages/os/android/consumer-host.mjs";
-import { readApkSignerDigest } from "../../../vendor/eliza/packages/os/android/apk-distribution.mjs";
-import { resolveAndroidSdkRoot, resolveJavaHome } from "../../../vendor/eliza/packages/os/android/toolchain.ts";
+import { stageRuntimePayload } from "@elizaos/os/android/android-runtime-inventory.mjs";
+import { buildAndroidConsumer } from "@elizaos/os/android/build-consumer.mjs";
+import { generateAndroidConsumerHost } from "@elizaos/os/android/consumer-host.mjs";
+import { readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
+import { resolveAndroidSdkRoot, resolveJavaHome } from "@elizaos/os/android/toolchain.ts";
 import config from "../capacitor.config.ts";
 
 const app = path.resolve(import.meta.dirname, "..");

@@ -36,6 +36,9 @@
     }
   },
   "dependencies": [
-    { "configuration": "implementation", "module": "androidx.appcompat:appcompat", "toolchainVersion": "androidxAppCompatVersion" }
+    { "configuration": "implementation", "module": "androidx.appcompat:appcompat", "toolchainVersion": "androidxAppCompatVersion" },
+    { "configuration": "implementation", "coordinate": "androidx.credentials:credentials:1.6.0" },
+    { "configuration": "implementation", "coordinate": "androidx.credentials:credentials-play-services-auth:1.6.0" },
+    { "configuration": "implementation", "coordinate": "com.google.android.libraries.identity.googleid:googleid:1.1.1" }
   ]
 }

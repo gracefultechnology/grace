@@ -32,10 +32,104 @@ establish that an agent can start or complete a turn.
 | Voice | Legacy speech bridge and cloud relay | OS audio and cloud speech with account-bound admission | Renew or revoke a real speech session and hear a reply |
 | Grace screens | Grace React app, design system and UI library | Grace | Build the production Vite entry without an Eliza UI import |
 
-The agent policy in `apps/app/agent/policy.json` lists the previously loaded
-assistant, cloud inference and SQL plugins. The remaining names in its
-refusal list describe capabilities outside the tablet’s authority. Their
-presence in that list does not add them to the migration.
+The old pin loaded three runtime plugins. Each has a replacement in the
+four shared packages.
+
+| Previously loaded plugin | Current implementation | Grace integration |
+| --- | --- | --- |
+| `@elizaos/plugin-assistant` | `packages/agent/src/conversation` dispatches owner messages through Core. | The tablet submits turns over the native socket. Grace decodes proposed actions and applies its own rules. |
+| `@elizaos/plugin-elizacloud` | `packages/agent/src/host/cloud-model.vibe` uses the native device credential. The `@elizaos/cloud/worker` entry point authenticates the caller, reserves funding and settles usage. | `apps/app/android/agent.json` selects the Grace API. The device keeps its bearer in Android-protected storage. |
+| `@elizaos/plugin-sql` | `packages/agent/src/storage` supplies Core's database adapter with an owner-bound PGlite store. | The device host initializes its own store. The hosted accounts and billing ledger use a separate Grace PostgreSQL database. |
+
+An independent comparison of Eliza `origin/develop` at `68d3069434` with
+Grace's shipped launcher paths found these ownership boundaries. A plugin's
+presence in the upstream tree is evidence of an available implementation to
+review. Release evidence still comes from the Grace entry point.
+
+| Grace control | Relevant Eliza develop capability | Grace runtime coverage and launch gaps |
+| --- | --- | --- |
+| Home, Settings and preferences | Core turns supply the model reply. OS owns the device surfaces. | Grace owns the launcher, Settings, and exact-turn action controls. Tapped text-size, in-app dimming, and voice changes reuse the workspace preferences. Device-wide brightness and preference persistence need device evidence. |
+| Browser navigation and pointing | `plugin-browser` and `plugin-computeruse` can directly operate pages or the desktop. | Grace keeps website navigation inside its Browser and OS bridge. A model reply can offer a supported Grace screen or an exact HTTPS destination. Page-element pointing with verified current geometry remains open. |
+| Gmail | `plugin-inbox` and `plugin-google-workspace` reach provider data. | Grace Cloud owns Gmail grants and provider operations. Hosted Grace supports Inbox previews, reviewed drafts and threaded replies, and Trash with Undo. Search from a model reply resolves a unique result on the currently loaded Inbox page. Full folder search, attachments, forwarding and permanent deletion remain open. |
+| Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace supports reviewed creation of one-time, weekly and monthly appointments and confirmed owned occurrence or whole-series edits and removals. Live Google consent, due reminders and completing a review from Home remain open. |
+| Files | `plugin-files` provides managed files, revision-bound selections and durable receipts. | Grace owns a device library partitioned by the signed-in account. Its Android picker, camera, catalog and bounded previews feed the Files screen. Device acceptance, sharing, printing and deletion remain open. |
+| Bill payment, booking and fill | `plugin-form`, `plugin-browser` and `plugin-computeruse` provide general form and website tools. | Grace has workspace rules for observed contexts and explicit payment approval. Live task review, verified form fill, bill submission and appointment booking are not mounted in the launcher. These need Grace-owned actuation and provider evidence. |
+
+Chromium exercised a structured reply through the actual Grace app with a
+fixture at the EmbeddedAgent boundary. The window stayed on Home until the
+person tapped Open Calendar. A model-only confirmation offered no write
+approval. Separate Google route checks used PostgreSQL and a simulated Google
+transport; the hosted journey checked explicit review and provider receipts.
+Those checks leave live model behavior, signed-device acceptance and live
+Google consent and writes open.
+
+The APK build previously called scripts in Eliza's app and native-agent
+plugin. It now imports Android and AOSP tooling through the public
+`@elizaos/os/android/*` and `@elizaos/os/aosp/*` exports. Native sources
+come from the pinned checkout. The browser address parser uses
+`@elizaos/os/browser/address`, and Wi-Fi and browser bridge types use
+`@elizaos/os/bridges/definitions/*`. Grace renders the browser controls, account settings,
+managed data and voice controls from its own React app. The old policy's
+refusal list records disallowed capabilities. The current plugin load list
+is empty.
+
+The signed launcher consumes OS’s Android consumer host and APK distribution
+tools. The overlay stages that APK for the stock Cuttlefish product through
+`@elizaos/os/aosp/stage-launcher-overlay.ts`. At Eliza `febdeaf`, full OS
+model generation succeeds. The aggregate OS package build still reports
+absent image assembly, owned Chromium, update publication, signing and OTA
+operator modules, and enum-set type errors in the generated APK model.
+Those modules are outside the launcher's imported dependency graph. A
+complete custom OS image or OTA service needs separate implementation.
+The current Eliza Cloud Worker has no Maps service; Grace’s launcher and
+account services make no Maps requests.
+
+The compiled Node 26 device CLI completed a turn through the private socket,
+Eliza Core, an owner-bound PGlite database and the Grace Worker with a real
+Cloudflare Qwen response. A local Cloudflare Worker with the remote Workers
+AI binding also answered a metered chat and returned a 768-value embedding.
+The normal production bundle built from fresh tracked sources and frozen
+installs. Stripe and Google used network fixtures. The speech relay also
+used the real Cartesia service from a local Worker. Julia – Gentle Guide
+synthesized “Welcome to Grace.” The Worker streamed 46,080 bytes of PCM
+back through transcription, which recognized “Grace.” PostgreSQL recorded
+765 microdollars for synthesis and 419 for transcription. Android
+installation, live Google consent, paid checkout and a device microphone
+session still require launch evidence.
+
+On November 17, 2026 the Grace Worker went live on
+[the app host](https://app.graceforseniors.com) and
+[the API host](https://api.graceforseniors.com/health).
+The public readiness check reached Grace’s production PostgreSQL database
+through Hyperdrive. An authorized sign-in email reached the recipient’s Gmail
+inbox. Its ten-minute challenge expired before redemption. The Worker and a
+real PostgreSQL instance also exercised browser-bound Blooio SMS codes with
+simulated delivery, concurrent redemption and previously issued Twilio
+challenges. Live SMS awaits an approved Grace sender.
+
+Grace selected the existing Eliza OAuth client for both sign-in and managed
+Google access. The two callbacks need registration on that client. The legacy
+Grace repository has an established release certificate for
+`technology.graceful.grace`. The production Android registry uses its SHA-256
+fingerprint. The release signing material stays in its existing custody.
+
+Worker version `7d179df3-c254-4e3d-bb2b-bfd0b8fc2590` deployed Grace
+`3de43c1` with Eliza `7b4da95`. The production migration created the
+native Google challenge table. The runtime role can read, insert and
+delete challenges. Native discovery confirmed the seven-day
+credential lifetime that the Android host accepts. Chromium loaded the hosted UI and its
+production assets, read the signed-out session across the API origin, and
+received HTTP 401 on an unauthenticated inference request. Native discovery
+returned the registered callback and S256. The public
+[Android App Links document](https://app.graceforseniors.com/.well-known/assetlinks.json)
+contains the established package and release certificate. The
+[Eliza Google client](https://console.cloud.google.com/auth/clients?project=721050741977)
+was identified from the live Eliza sign-in redirect to Google. Production
+provider discovery currently offers email sign-in. Google callback registration
+and the approved Blooio SMS workspace remain open. Grace Plus uses the USD 30
+monthly plan in Eliza Labs. Live checkout awaits its Stripe product, price,
+credential and webhook. The deployed Worker has its Grace-specific Cartesia
+standard key, stock English voice and metering configuration.
 
 ## Decisions and their defaults
 

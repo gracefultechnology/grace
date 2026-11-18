@@ -1,22 +1,40 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, UserBubble } from "@repo/ui";
-import { Effect, Exit } from "effect";
-import { useRef } from "react";
+import { AnswerChip, AnswerChips, Button, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { Effect, Exit, Stream } from "effect";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
+const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
+
 /** @model spec/app/assistant.md */
+
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const { workspace, can, send, current } = useWorkspace();
   const guide = usePasswordGuide();
   const runtime = useRuntime();
   const { assistant, device } = workspace!;
   const conversation = assistant.conversation;
+  const [unavailable, setUnavailable] = useState<number>();
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(replyOffers, () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  const offered = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ReplyControls, (controls) => controls.get())));
+  const currentOffer = workspace && offered && replyOfferIsVisible(workspace, offered) ? offered : undefined;
+  const choose = (id: number, index: number) => {
+    void runtime.runPromise(Effect.flatMap(ReplyControls, (controls) => controls.choose(id, index))).then((accepted) => {
+      if (!accepted) setUnavailable(current().assistant.conversation.generation);
+      else if (current().assistant.presentation === "Expanded" && can({ type: "interact", input: { tag: "Resize", expanded: false } }))
+        void send({ type: "interact", input: { tag: "Resize", expanded: false } });
+    });
+  };
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   // Prototype `layout()`: the window sits on the keyboard.
@@ -75,6 +93,12 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
+          {currentOffer && currentOffer.labels.length > 0 && (
+            <AnswerChips>{currentOffer.labels.map((label, index) =>
+              <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>
+          )}
+          {(currentOffer?.blocked || unavailable === conversation.generation) &&
+            <PageText role="status">Grace can’t complete that action here.</PageText>}
           {answers.length > 0 && (
             <AnswerChips>{answers.map((text) => <AnswerChip key={text} onClick={() => interact(answerEvent(text))}>{text}</AnswerChip>)}</AnswerChips>
           )}

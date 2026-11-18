@@ -14,6 +14,7 @@
  <queries>
   <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
   <intent><action android:name="android.speech.RecognitionService" /></intent>
+  <package android:name="com.google.android.gms" />
   <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="mailto" /></intent>
   <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="sms" /></intent>
   <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="smsto" /></intent>
@@ -37,5 +38,8 @@
     <data android:scheme="https" android:host="app.graceforseniors.com" android:path="/android/auth/callback" />
    </intent-filter>
   </activity>
+  <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.grace.capture" android:exported="false" android:grantUriPermissions="true">
+   <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/grace_capture_paths" />
+  </provider>
  </application>
 </manifest>

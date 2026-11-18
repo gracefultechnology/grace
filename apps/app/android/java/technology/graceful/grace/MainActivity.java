@@ -29,6 +29,7 @@ public class MainActivity extends ElizaBridgeActivity {
   if (accountCallback != null) setIntent(new Intent(getIntent()).setData(null));
   registerPlugin(EmbeddedAgentPlugin.class);
   registerPlugin(GraceAccount.class);
+  registerPlugin(GraceFiles.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   registerPlugin(PasswordsPlugin.class);
   registerPlugin(GraceGuideSpeechPlugin.class);

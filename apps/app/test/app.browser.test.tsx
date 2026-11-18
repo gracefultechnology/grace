@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, it, onTestFinished, vi } from "vitest";
@@ -417,7 +417,7 @@ it("Use the website under Grace's controls", async () => {
 });
 
 
-it('Send a typed turn through the native agent (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   const listeners = new Map<string, (input: unknown) => void>();
   const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
   const stopped: string[] = [];
@@ -464,11 +464,20 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await expect.poll(() => requests[1]?.body).toEqual({ text: "Tell me more" });
     await act(() => {
       const next = requests[1].id;
-      data(next, { type: "done", fullText: "I can talk with you." });
+      data(next, { type: "done", fullText: JSON.stringify({
+        text: "I can talk with you.", isQuestion: false, answers: [],
+        actions: [{ kind: "open", surface: "Calendar" }, { kind: "confirmAppointment" }],
+      }) });
       listeners.get("streamEnd")?.({ id: next, status: 200 });
       return Promise.resolve();
     });
     await expect.element(page.getByText("I can talk with you.", { exact: true })).toBeVisible();
+    expect(runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.surface).toBe("Home");
+    await expect.element(page.getByText("Grace can’t complete that action here.")).toBeVisible();
+    expect(page.getByRole("button", { name: /Confirm appointment/ }).query()).toBeNull();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Open Calendar", exact: true })));
+    await expect.element(page.getByRole("button", { name: "Close Calendar" })).toBeVisible();
+    expect(page.getByRole("button", { name: "Open Calendar", exact: true }).query()).toBeNull();
 
     await act(() => userEvent.type(input, "My password is c0mputer{Enter}"));
     await expect.poll(() => state().messages.at(-1)?.text).toBe("[Private information removed]");
@@ -481,6 +490,14 @@ it('Send a typed turn through the native agent (spec/app/conversation.md, "Story
     await expect.poll(() => requests[2]?.body).toEqual({ text: "One more question" });
     await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
     await expect.poll(() => stopped).toEqual(["/api/turns/room/abort"]);
+    await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "changeLifecycle", lifecycle: "SleepDevice" }, "Host"))));
+    await expect.element(page.getByRole("button", { name: "Wake Grace" })).toBeVisible();
+    expect(page.getByRole("button", { name: "Ask Grace" }).query()).toBeNull();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Wake Grace" })));
+    await expect.element(page.getByRole("button", { name: "Ask Grace" })).toBeVisible();
+    expect(runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).device.surface).toBe("Calendar");
+
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
@@ -631,7 +648,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
-  const mail = { externalId: "inbox-1", from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true };
+  const mail = { externalId: "inbox-1", from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true, metadata: { historyId: "8" } };
+  const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
+  let trashed = false;
+  const sent: string[] = [];
+  let changed: string[] = [];
   const literalText = "<strong>This stays plain text.</strong>";
   const oldURL = window.location.href;
   const oldIntent = sessionStorage.getItem("grace-hosted-read");
@@ -645,7 +666,30 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let signedIn = false;
   let replyFromOwner = false;
   const fetch = window.fetch.bind(window);
+  let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
+  const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
+  let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
+  events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
+  const changeInput = Schema.fromJsonString(Schema.Struct({
+    accountId: Schema.String,
+    grantId: Schema.String,
+    operationId: Schema.String,
+    recipient: Schema.optional(Schema.String),
+    subject: Schema.optional(Schema.String),
+    text: Schema.optional(Schema.String),
+    messageId: Schema.optional(Schema.String),
+    version: Schema.optional(Schema.String),
+    undoOf: Schema.optional(Schema.String),
+    replyTo: Schema.optional(Schema.String),
+    seriesFor: Schema.optional(Schema.String),
+    id: Schema.optional(Schema.String),
+    action: Schema.optional(Schema.Literals(["create", "update", "delete"])),
+    event: Schema.optional(Schema.Struct({ title: Schema.String, startAt: Schema.String, endAt: Schema.String, location: Schema.String,
+      repeat: Schema.optional(Schema.Struct({ frequency: Schema.Literals(["Weekly", "Monthly"]), timeZone: Schema.String })),
+    })),
+  }));
+  const decodeChange = Schema.decodeUnknownSync(changeInput);
   const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
@@ -662,22 +706,68 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status":
         return reply({
-          provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
-          identity: { email: person.email }, grantedCapabilities: ["google.gmail.triage", "google.calendar.read"],
+          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
+          identity: { email: person.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"],
         });
-      case "/api/v1/eliza/gmail/triage": return reply({ accountId: person.id, messages: [mail], nextPageToken: null });
+      case "/api/v1/eliza/gmail/triage": return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
       case "/api/v1/eliza/gmail/read":
         expect(api.searchParams.get("messageId")).toBe(mail.externalId);
         return reply({
           accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
+          reply: { recipient: "robin@example.test", subject: "Your receipt" },
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
+      case "/api/v1/eliza/google/gmail/send": {
+        const outbound = decodeChange(options?.body);
+        expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test" });
+        if (outbound.replyTo)
+          expect(outbound).toMatchObject({ replyTo: mail.externalId, subject: "Your receipt", text: "Thank you." });
+        else expect(outbound).toMatchObject({ subject: "Hello", text: "See you soon." });
+        sent.push(outbound.replyTo ? "reply" : "new");
+        return reply({ accountId: person.id, operationId: outbound.operationId, messageId: "sent-1" });
+      }
+      case "/api/v1/eliza/google/gmail/trash": {
+        const outbound = decodeChange(options?.body);
+        expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
+        if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
+        trashed = !trashed;
+        return reply({ accountId: person.id, operationId: outbound.operationId, itemId: mail.externalId, version: "9" });
+      }
+      case "/api/v1/eliza/google/calendar/series":
+        expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
+        expect(api.searchParams.get("grantId")).toBe(grant);
+        return reply({ accountId: person.id, occurrenceId: occurrence.externalId, event: series });
+      case "/api/v1/eliza/google/calendar/change": {
+        const outbound = decodeChange(options?.body);
+        expect(outbound).toMatchObject({ accountId: person.id, grantId: grant });
+        if (!outbound.action) throw new Error("Missing calendar action");
+        changed = [...changed, outbound.action];
+        const itemId = outbound.id ?? outbound.operationId.replaceAll("-", "");
+        if (outbound.seriesFor) {
+          expect(itemId).toBe(series.externalId);
+          expect(outbound.seriesFor).toBe(occurrence.externalId);
+          expect(outbound.version).toBe(series.etag);
+          if (outbound.action === "delete") events = events.filter((event) => event.seriesId !== series.externalId);
+          else if (outbound.event) {
+            series = { ...series, ...outbound.event, etag: '"series-two"' };
+            events = events.map((event) => event.seriesId === series.externalId ? { ...event, title: series.title } : event);
+          }
+        } else if (outbound.action === "delete") events = events.filter((event) => event.externalId !== itemId);
+        else if (outbound.event && outbound.action === "update") {
+          expect(outbound.version).toBe('"one"');
+          events = events.map((event) => event.externalId === itemId ? { ...event, ...outbound.event, etag: '"two"' } : event);
+        } else if (outbound.event) {
+          expect(outbound.event.repeat).toEqual({ frequency: "Weekly", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+          events = [...events, { ...outbound.event, externalId: itemId, description: "", isAllDay: false, editable: true, seriesId: null, etag: '"new"' }];
+        }
+        return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
+      }
       case "/api/v1/eliza/calendar/feed":
         expect(api.searchParams.get("timeMin")).not.toBeNull();
         expect(api.searchParams.get("timeMax")).not.toBeNull();
         return reply({
           accountId: person.id, nextPageToken: null,
-          events: [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false }],
+          events,
         });
       default: return fetch(input, options);
     }
@@ -705,11 +795,70 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText(literalText, { exact: true })).toBeVisible();
     expect(Array.from(document.querySelectorAll("strong")).some((node) => node.textContent === "This stays plain text.")).toBe(false);
 
-    await tap("Back to Inbox");
+    await tap("Reply");
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message", exact: true }), "Thank you."));
+    await tap("Review email");
+    await expect.element(page.getByText("To robin@example.test")).toBeVisible();
+    expect(sent).toEqual([]);
+    await tap("Confirm and send");
+    await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
+    expect(sent).toEqual(["reply"]);
+
+    await tap("Move to Trash");
+    await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
+    await tap("Undo");
+    await expect.element(page.getByText("Message restored.")).toBeVisible();
+    await tap("New email");
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "To", exact: true }), "robin@example.test"));
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Subject", exact: true }), "Hello"));
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message", exact: true }), "See you soon."));
+    await tap("Review email");
+    await expect.element(page.getByText("To robin@example.test")).toBeVisible();
+    expect(sent).toEqual(["reply"]);
+    await tap("Confirm and send");
+    await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
+    expect(sent).toEqual(["reply", "new"]);
     await tap("Close Email");
     await tap("Calendar");
     await tap(/Dentist/);
     await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
+    await tap("Change appointment");
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
+    await tap("Review appointment");
+    await expect.element(page.getByText("Dentist follow-up")).toBeVisible();
+    expect(changed).toEqual([]);
+    await tap("Confirm appointment");
+    await expect.element(page.getByText("Appointment saved.")).toBeVisible();
+    await tap(/Dentist follow-up/);
+    await tap("Change appointment");
+    await tap("Remove appointment");
+    await tap("Confirm removal");
+    await expect.element(page.getByText("Appointment removed.")).toBeVisible();
+    await tap("New appointment");
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Lunch"));
+    await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
+    await tap("Review appointment");
+    await expect.element(page.getByText("Every week · " + Intl.DateTimeFormat().resolvedOptions().timeZone)).toBeVisible();
+    await tap("Confirm appointment");
+    await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
+    await tap(/Therapy/);
+    await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
+    await tap("Change entire series");
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
+    await tap("Review appointment");
+    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
+    await tap("Confirm appointment");
+    await expect.element(page.getByText("Appointment saved.")).toBeVisible();
+    await tap(/Therapy sessions/);
+    await tap("Change entire series");
+    await tap("Remove appointment");
+    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
+    await tap("Confirm removal");
+    await expect.element(page.getByText("Appointment removed.")).toBeVisible();
+    expect(changed).toEqual(["update", "delete", "create", "update", "delete"]);
+    await tap("Close Calendar");
+    await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();

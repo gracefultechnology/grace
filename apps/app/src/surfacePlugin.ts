@@ -3,13 +3,13 @@
 // (definitions.ts); none of their runtime code is bundled. Beside them, what the WebView itself knows of the network.
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Effect } from "effect";
-import type { ElizaSurfaceManagerPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/browser-surface.ts";
-import type { WiFiPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/wifi.ts";
+import type { ElizaSurfaceManagerPlugin } from "@elizaos/os/bridges/definitions/browser-surface";
+import type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
 import { createPasswordsClient } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
-import type { ElizaPasswordsPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/passwords.ts";
+import type { ElizaPasswordsPlugin } from "@elizaos/os/bridges/definitions/passwords";
 
-export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/browser-surface.ts";
-export type { WiFiPlugin } from "../../../vendor/eliza/packages/os/src/bridges/definitions/wifi.ts";
+export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "@elizaos/os/bridges/definitions/browser-surface";
+export type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
 
 /** The plugin on Android; elsewhere (Vite in a browser) there is no native page under the interface. */
 export const devicePlugin = Capacitor.isNativePlatform() ? registerPlugin<ElizaSurfaceManagerPlugin>("ElizaSurfaceManager") : undefined;

@@ -13,12 +13,14 @@ schema Destination { url: string }
 schema DeviceApproval { redirectUrl: string }
 schema DeviceAttempt { challenge: string; state: string }
 const GoogleStatus = Schema.Struct({
+  accountId: Schema.NonEmptyString,
   provider: Schema.Literal("google"),
   side: Schema.Literal("owner"),
   mode: Schema.Literal("cloud_managed"),
   configured: Schema.Boolean,
   connected: Schema.Boolean,
   grantedCapabilities: Schema.Array(Schema.String),
+  connectionId: Schema.optional(Schema.NullOr(Schema.String)),
   identity: Schema.NullOr(Schema.Struct({ email: Schema.NonEmptyString })),
 })
 schema GoogleAuthorization { authorizeUrl: string }
@@ -51,9 +53,10 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 
 export type CodeProvider = "email" | "sms"
 export type Operation =
-  | { kind: "refresh" | "signIn" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
-  | { kind: "connectGoogle"; mail: boolean; calendar: boolean; expectedEmail: string }
+  | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
 type RequestPath = `/api/auth/${CodeProvider}/${"send" | "verify"}` | "/api/auth/providers" | "/api/auth/device/authorize" | "/api/auth/session" | "/api/auth/refresh" | "/api/auth/logout" | "/api/v1/billing/subscription" | "/api/v1/billing/checkout" | "/api/v1/billing/portal" | `/api/v1/eliza/google/${"status" | "connect/initiate" | "disconnect"}`
 type Transport = {
@@ -139,12 +142,17 @@ effect function readAccount(transport: Transport): GraceAccount!unknown {
   return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan: subscription === undefined ? "PlanUnknown" : planFrom(subscription) }
 }
 
-effect function googleLink(transport: Transport): GoogleLink!unknown {
+effect function googleLink(transport: Transport, accountId: string): GoogleLink!unknown {
   const status = try decode(try accepted(transport, "/api/v1/eliza/google/status", "GET"), GoogleStatus)
+  if (status.accountId !== accountId) throw new AccountRequestFailed()
   if (!status.configured) return { tag: "GoogleLinkUnavailable" }
   if (!status.connected) return { tag: "GoogleLinkReady" }
   if (status.identity === null) throw new AccountRequestFailed()
   return { tag: "GoogleLinkConnected", email: status.identity.email,
+    grant: status.connectionId ?? "",
+    trashMail: status.grantedCapabilities.includes("google.gmail.trash"),
+    writeCalendar: status.grantedCapabilities.includes("google.calendar.write"),
+    sendMail: status.grantedCapabilities.includes("google.gmail.send"),
     mail: status.grantedCapabilities.includes("google.gmail.triage"),
     calendar: status.grantedCapabilities.includes("google.calendar.read"),
   }
@@ -152,7 +160,7 @@ effect function googleLink(transport: Transport): GoogleLink!unknown {
 
 effect function connectGoogle(transport: Transport, operation: Extract<Operation, { kind: "connectGoogle" }>) {
   const response = try accepted(transport, "/api/v1/eliza/google/connect/initiate", "POST", {
-    mail: operation.mail, calendar: operation.calendar, expectedEmail: operation.expectedEmail,
+    mail: operation.mail, calendar: operation.calendar, sendMail: operation.sendMail, trashMail: operation.trashMail, writeCalendar: operation.writeCalendar, expectedEmail: operation.expectedEmail,
   })
   const { authorizeUrl } = try decode(response, GoogleAuthorization)
   const url = try Effect.try(() => new URL(authorizeUrl))
@@ -187,7 +195,7 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     const account: GraceAccount = native ? (readDevice() catch () => ({ tag: "AccountUnavailable" } as const)) :
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
     const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
-      (googleLink(webTransport) catch () => ({ tag: "GoogleLinkUnknown" } as const))
+      (googleLink(webTransport, account.accountId) catch () => ({ tag: "GoogleLinkUnknown" } as const))
     setup.send({ type: "reportGraceAccount", report: account, link }) catch () => undefined
     return account
   }
@@ -206,7 +214,8 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       const plugin = accountPlugin
       if (plugin === undefined) return false
       const current = try refresh()
-      if (operation.kind === "signIn" && current.tag === "GraceDeviceSignedOut") try tryPromise(() => plugin.beginSignIn())
+      if (operation.kind === "signIn" && current.tag === "GraceDeviceSignedOut") try tryPromise(() =>
+        operation.method === "browser" ? plugin.beginSignIn({ method: "browser" }) : plugin.beginSignIn())
       else if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
       else if (operation.kind === "signOut" && current.tag === "GraceDeviceSignedIn") {
         try tryPromise(() => plugin.signOut())

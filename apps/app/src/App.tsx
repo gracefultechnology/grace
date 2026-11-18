@@ -1,27 +1,30 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
-import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, Slider, WifiSlash, cn } from "@repo/ui";
-import { CalendarDays, Folder, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { AppWindow, AskGraceButton, besideRail, Button, EmptyState, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
+import { Effect, Stream } from "effect";
+import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
-import { muteChoice, volumeChoice } from "../gen/app__preferences.ts";
+import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
-import { privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
+import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { ManagedReads } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
+import { Files, useFilesHome } from "./Files.tsx";
 import { Grace } from "./Grace.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
-import { RuntimeContext, type Runtime, useKeyboardHeight, useWebsiteRequests, useWorkspace } from "./useApp.ts";
+import { RuntimeContext, type Runtime, useKeyboardHeight, useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
 
 /** The surfaces that open in an app window, with nothing in them yet. */
 const apps: Partial<Record<Surface, { name: string; icon: ReactNode }>> = {
   Calendar: { name: "Calendar", icon: <CalendarDays size={26} /> },
   Email: { name: "Email", icon: <Mail size={26} /> },
-  Files: { name: "Files", icon: <Folder size={26} /> },
 };
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": the two that end what websites ask,
@@ -43,6 +46,22 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | keyof typeof website
 /** A window right of the rail, 6px from the screen's edges (design.md, "Windows"); its bottom follows Grace's compact window and the keyboard (prototype `layout()`). */
 const lifted = "absolute top-1.5 right-1.5 transition-[bottom] duration-window ease-standard motion-reduce:transition-none";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
+const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
+const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+
+function useHomeCards() {
+  const runtime = useRuntime();
+  const account = useSetup(runtime).state;
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards())));
+  return snapshot && account?.graceAccount.tag === "GraceSignedIn" && snapshot.accountId === account.graceAccount.accountId &&
+    account.googleLink.tag === "GoogleLinkConnected" && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+}
+
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
 
 /** The time now, to the minute. */
@@ -62,6 +81,8 @@ const wifiWords: Record<Connectivity, string> = {
 };
 
 function Screen() {
+  const cards = useHomeCards();
+  const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
   const website = useWebsiteRequests();
   const now = useMinute();
@@ -115,10 +136,15 @@ function Screen() {
   const bottom = keyboard + (!privateSurface && assistant.presentation === "Compact" ? 6 + graceHeight + 6 : 6);
   const clock = Object.fromEntries(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
+  const sleeping = device.readiness === "Sleeping";
+  const wake = () => {
+    if (canChangeLifecycle(current(), "WakeDevice", "Host")) void send({ type: "changeLifecycle", lifecycle: "WakeDevice" }, "Host");
+  };
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
-    <div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+    <TextScale percent={textScalePercent(volume)}><div className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+      <div className="contents" {...under(sleeping)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
@@ -133,8 +159,14 @@ function Screen() {
         <OverPage className={cn(lifted, "left-1.5")} style={{ bottom }}>
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <HomeScreen className="inset-0" {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-            calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), events: [], ...visit("Calendar") }}
-            email={{ messages: [], ...visit("Email") }} internet={visit("Browser")} files={{ photos: [], ...visit("Files") }} passwords={visit("Passwords")}
+            calendar={{ weekday: appointmentDay.format(now).toUpperCase(), day: now.getDate(), events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
+              return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
+                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0 };
+            }), ...visit("Calendar") }}
+            email={{ messages: (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
+              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })),
+              ...visit("Email") }} internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
             page={device.homePage === "FilesCard" ? "files" : "main"}
             onPageChange={(page) => { const event = { type: "chooseHomePage", page: page === "files" ? "FilesCard" : "MainCards" } as const; if (can(event)) void send(event); }} />
         </OverPage>
@@ -146,6 +178,11 @@ function Screen() {
           <AppWindow {...under(covered)} title="Passwords" icon={<KeyRound size={26} aria-hidden />} closeLabel="Close Passwords" onClose={visit("Home").onClick}>
             <PasswordsApp />
           </AppWindow>
+        </OverPage>
+      )}
+      {surface === "Files" && (
+        <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
+          <Files {...under(covered)} onClose={() => { if (can({ type: "visit", destination: "Home" })) void send({ type: "visit", destination: "Home" }); }} />
         </OverPage>
       )}
       {app && (
@@ -173,7 +210,15 @@ function Screen() {
         </OverPage>
       )}
       {!privateSurface && <Grace onHeightChange={setGraceHeight} />}
-    </div>
+      </div>
+      {sleeping && <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
+        time={`${clock.hour}:${clock.minute}`}
+        date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+        hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
+        }} />}
+      {volume.brightness < 100 && <div aria-hidden className="pointer-events-none fixed inset-0 z-50 bg-foreground" style={{ opacity: (100 - volume.brightness) / 100 }} />}
+    </div></TextScale>
   );
 }
 

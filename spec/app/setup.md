@@ -527,12 +527,13 @@ names the Google address to connect. The cloud checks the confirmed Google
 identity against the Grace account and discloses only the resulting connection.
 
 ```quint
-type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool })
-pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true }))
+type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool, grant: str, sendMail: bool, trashMail: bool, writeCalendar: bool })
+pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false, grant: "linked", sendMail: true, trashMail: true, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }))
 pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
   match account {
     | GraceSignedIn(_) => match link {
       | GoogleLinkReady => true
+      | GoogleLinkConnected(_) => true
       | _ => false
     }
     | _ => false
@@ -551,12 +552,16 @@ pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
 ### Managed reads show only the matching signed-in account and the capability it granted
 
 The hosted read views show the Inbox and upcoming primary calendar, with
-no send, archive, delete, or appointment changes. A message opens into a
+read access by default. A message opens into a
 plain-text preview for the chosen reference, never executable HTML.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. A
 tablet's hosted handoff retains the selected view through sign-in, and
 uses the browser account matching that tablet when there is a bound owner.
+On Home the signed-in web account can see the first two recently loaded Inbox
+messages and the next three appointments for its current grant. The cards
+open their named surfaces. If the account or grant changes, old summaries
+disappear.
 
 ```quint
 type ManagedReadView = ManagedEmail | ManagedCalendar
@@ -574,6 +579,53 @@ pure def lawADeviceSessionAloneDoesNotReadGoogle(link: GoogleLink, view: Managed
   not(mayReadManaged(GraceDeviceSignedIn, link, view))
 pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: str, ref: str): bool =
   accountId != receiptAccountId implies not(managedReadMatches(accountId, receiptAccountId, ref, ref))
+```
+
+### A managed draft can be sent only through the current owner grant
+
+The person reviews the exact address, subject and draft text before sending.
+A reply attaches to the selected message's thread. Its address and subject
+come from the selected message and stay fixed through review.
+Send requires a separate opt-in. Grace submits the confirmed draft only for the
+current account and grant. A stale or uncertain attempt cannot be submitted again
+as a new draft automatically.
+
+```quint
+pure def maySendManagedMail(account: GraceAccount, link: GoogleLink, accountId: str, grant: str): bool =
+  match account {
+    | GraceSignedIn(person) => match link {
+      | GoogleLinkConnected(g) => person.accountId == accountId and g.grant == grant and grant != "" and g.mail and g.sendMail
+      | _ => false
+    }
+    | _ => false
+  }
+pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: str, grant: str): bool =
+  not(maySendManagedMail(GraceDeviceSignedIn, link, accountId, grant))
+```
+
+### Trash and Calendar changes use the exact selected version
+
+The owner may separately enable Trash and Undo, and appointment changes. Undo
+is available only once the provider confirms moving the selected message to
+Trash. Appointments are read back to the person before confirmation. For a
+new weekly or monthly appointment, the review includes its frequency and
+time zone. A monthly series skips months without the selected day. Edits and
+removals apply to the selected version of an appointment in the primary
+calendar. For a repeating appointment, the person chooses a single occurrence
+or reviews and confirms the entire series separately. Grace checks provider
+evidence before showing success.
+
+```quint
+type ManagedChange = ManagedTrash | ManagedAppointmentChange
+pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
+  match account {
+    | GraceSignedIn(person) => match link {
+      | GoogleLinkConnected(g) => person.accountId == accountId and g.grant == grant and grant != "" and
+        (if (request == ManagedTrash) g.mail and g.trashMail else g.calendar and g.writeCalendar)
+      | _ => false
+    }
+    | _ => false
+  }
 ```
 
 ## Story: Approve a password backup in my browser

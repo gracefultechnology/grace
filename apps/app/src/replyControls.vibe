@@ -1,0 +1,244 @@
+// spec/app/workspace.md, "Story: Open an available control from Grace's reply"
+import { brightnessChoice, muteChoice, volumeChoice } from "../gen/app__preferences.effect.vibe"
+import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
+import { Machine as Workspaces, enabled, replyControlContext, replyControlsCurrent, type Event, type ReplyControlContext, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Setup, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
+import { ManagedReads, type ManagedSnapshot, type ProposedWork } from "./managedReads.vibe"
+import { withhold } from "./private.ts"
+import type { Action } from "./reply.schema.ts"
+
+type Suggested = typeof Action.Type
+type Control =
+  | { kind: "workspace"; title: string; event: Event }
+  | { kind: "website"; title: string; url: string }
+  | { kind: "cancelReview"; title: string; number: number }
+  | { kind: "hosted"; title: string; view: "Email" | "Calendar" }
+  | { kind: "managed"; title: string; proposed: ProposedWork }
+  | { kind: "read"; title: string; accountId: string; grant: string; id: string }
+export type ReplyOffer = { id: number; context: ReplyControlContext; messageIndex: number; messageText: string; labels: string[]; blocked: boolean }
+type RequestScene = { context: ReplyControlContext; managed: ManagedSnapshot }
+type Offer = { visible: ReplyOffer; controls: readonly Control[] }
+
+export service ReplyControls {
+  readonly state: Stream.Stream<ReplyOffer | undefined>
+  get(): (ReplyOffer | undefined)!!
+  capture(): RequestScene!!
+  offer(scene: RequestScene, response: Workspace, actions: readonly Suggested[]): void!!
+  choose(id: number, index: number): boolean!!
+}
+
+export function replyOfferIsVisible(w: Workspace, offer: ReplyOffer) {
+  const conversation = w.assistant.conversation
+  const message = conversation.messages[offer.messageIndex]
+  return replyControlsCurrent(w, offer.context) && conversation.messages.length === offer.messageIndex + 1 &&
+    message?.author === "GraceMessage" && message.text === offer.messageText
+}
+
+const surfaceName: Record<Surface, string> = {
+  Home: "Home", Calendar: "Calendar", Email: "Email", Browser: "Internet", Files: "Files", DeviceSettings: "Settings",
+}
+const settingName: Record<SettingsPage, string> = {
+  TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi",
+  AccountSettings: "Account", AboutSettings: "About this tablet",
+}
+
+function website(target: string) {
+  try {
+    const url = new URL(target)
+    return url.protocol === "https:" && !url.username && !url.password && withhold({ text: url.href, passwords: [] }) === url.href ? url : undefined
+  } catch { return undefined }
+}
+
+function ownerControl(title: string, event: Event): Control {
+  return { kind: "workspace", title, event }
+}
+
+function safeText(text: string, max: number) {
+  return text.length <= max && withhold({ text, passwords: [] }) === text
+}
+
+function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot): Control | undefined {
+  const settings = w.preferences.session
+  const selected = managed.kind === "calendar" ? managed.selected : undefined
+  const selectedFor = (entry: string) => selected?.externalId === entry || selected?.title.toLowerCase() === entry.toLowerCase() ? selected : undefined
+  switch (action.kind) {
+    case "open": return ownerControl("Open " + surfaceName[action.surface], { type: "visit", destination: action.surface })
+    case "showSetting": return ownerControl("Show " + settingName[action.page], { type: "chooseSettingsPage", page: action.page })
+    case "setTextSize": return ownerControl("Set text size to " + (action.size === "StandardText" ? "Normal" : action.size), { type: "changePreferences", settings: { ...settings, textSize: action.size } })
+    case "setPace": return ownerControl("Set speaking pace to " + action.pace, { type: "changePreferences", settings: { ...settings, pace: action.pace } })
+    case "setVolume": {
+      const next = volumeChoice(settings, action.volume)
+      return ownerControl("Set volume to " + next.volume + "%", { type: "changePreferences", settings: next })
+    }
+    case "setMuted": return ownerControl(action.muted ? "Mute audio" : "Unmute audio", { type: "changePreferences", settings: muteChoice(settings, action.muted) })
+    case "setBrightness": {
+      const next = brightnessChoice(settings, action.brightness)
+      return ownerControl("Set brightness to " + next.brightness + "%", { type: "changePreferences", settings: next })
+    }
+    case "setVoiceOutput": return ownerControl(action.on ? "Turn on Grace’s voice" : "Turn off Grace’s voice", { type: "changePreferences", settings: { ...settings, voiceOutput: action.on } })
+    case "undoSetting": return ownerControl("Undo last setting change", { type: "undoPreferences" })
+    case "browse": return w.device.surface === "Browser" ? ownerControl(
+      { Back: "Go back", Forward: "Go forward", Reload: "Reload this page", NewTab: "Open a tab" }[action.control],
+      { type: "changePage", browserInput: { tag: action.control } },
+    ) : undefined
+    case "navigate": {
+      const url = website(action.url)
+      return url ? { kind: "website", title: "Open " + url.hostname, url: url.href } : undefined
+    }
+    case "guide": {
+      const hint = action.target.trim().toLowerCase()
+      const surface = (Object.entries(surfaceName).find(([key, name]) => key.toLowerCase() === hint || name.toLowerCase() === hint))?.[0]
+      if (surface === "Home" || surface === "Calendar" || surface === "Email" || surface === "Browser" || surface === "Files" || surface === "DeviceSettings") {
+        return ownerControl("Show " + surfaceName[surface], { type: "visit", destination: surface })
+      }
+      return undefined
+    }
+    case "draftMessage":
+      return managed.kind === "mail" && safeText(action.to, 254) && safeText(action.subject ?? "", 120) && safeText(action.body, 8192)
+        ? { kind: "managed", title: "Review email draft", proposed: { kind: "draft", accountId: managed.accountId, grant: managed.grant,
+          recipient: action.to, subject: action.subject ?? "", text: action.body } } : undefined
+    case "draftReply":
+      return managed.kind === "mail" && managed.selected?.reply && safeText(action.body, 8192)
+        ? { kind: "managed", title: "Review reply draft", proposed: { kind: "draft", accountId: managed.accountId, grant: managed.grant,
+          ...managed.selected.reply, text: action.body, replyTo: managed.selected.message.externalId } } : undefined
+    case "openMessage": {
+      if (managed.kind !== "mail") return undefined
+      const matches = managed.rows.filter((row) => row.externalId === action.message || row.subject.toLowerCase() === action.message.toLowerCase())
+      return matches.length === 1 ? { kind: "read", title: "Read selected email", accountId: managed.accountId,
+        grant: managed.grant, id: matches[0].externalId } : undefined
+    }
+    case "searchMail": {
+      if (managed.kind !== "mail" || !safeText(action.query, 120)) return undefined
+      const search = action.query.toLowerCase()
+      const matches = managed.rows.filter((row) => row.subject.toLowerCase().includes(search) || row.from.toLowerCase().includes(search))
+      return matches.length === 1 ? { kind: "read", title: "Open matching email", accountId: managed.accountId,
+        grant: managed.grant, id: matches[0].externalId } : undefined
+    }
+    case "chooseFolder":
+      return action.folder === "InboxFolder" ? ownerControl("Open Inbox", { type: "visit", destination: "Email" }) : undefined
+    case "proposeAppointment":
+      return managed.kind === "calendar" && (!action.entry || action.repeat === "Once") && safeText(action.title, 160) && safeText(action.place ?? "", 320) &&
+        (!action.entry || (selectedFor(action.entry)?.editable && !selectedFor(action.entry)?.isAllDay))
+        ? { kind: "managed", title: "Review appointment", proposed: { kind: "appointment", accountId: managed.accountId, grant: managed.grant,
+          id: action.entry ? selectedFor(action.entry)?.externalId : undefined, version: action.entry ? selectedFor(action.entry)?.etag ?? undefined : undefined, title: action.title, start: action.day + "T" + action.time, location: action.place ?? "", repeat: action.repeat } } : undefined
+    case "deleteAppointment": {
+      const target = selectedFor(action.entry)
+      return managed.kind === "calendar" && target?.editable && target.etag
+        ? { kind: "managed", title: action.scope === "EntireSeries" ? "Review series removal" : "Review appointment removal",
+          proposed: { kind: "removeAppointment", accountId: managed.accountId, grant: managed.grant, id: target.externalId, version: target.etag, series: action.scope === "EntireSeries" } } : undefined
+    }
+    case "trashMessage":
+      return managed.kind === "mail" && managed.selected?.message.metadata?.historyId
+        ? { kind: "managed", title: "Review moving email to Trash", proposed: { kind: "trash", accountId: managed.accountId,
+          grant: managed.grant, id: managed.selected.message.externalId, version: managed.selected.message.metadata.historyId } } : undefined
+    case "cancelAppointment":
+      return managed.kind === "calendar" && managed.proposed &&
+        (managed.proposed.proposal.kind === "appointment" || managed.proposed.proposal.kind === "removeAppointment")
+        ? { kind: "cancelReview", title: "Cancel appointment review", number: managed.proposed.number } : undefined
+    case "confirmAppointment":
+    case "dismissReminder":
+    case "findFile":
+    case "beginTask":
+    case "fill": return undefined
+  }
+}
+
+function managedView(action: Suggested): "Email" | "Calendar" | undefined {
+  switch (action.kind) {
+    case "openMessage":
+    case "searchMail":
+    case "chooseFolder":
+    case "draftMessage":
+    case "draftReply":
+    case "trashMessage": return "Email"
+    case "proposeAppointment":
+    case "deleteAppointment": return "Calendar"
+    default: return undefined
+  }
+}
+
+export const replyControls = (native: boolean) => Layer.effect(ReplyControls, effect {
+  const desk = try Workspaces
+  const managed = try ManagedReads
+  const setup = try Setup
+  const active = try SubscriptionRef.make<Offer | undefined>(undefined)
+  const serial = try Ref.make(0)
+  const gate = try Semaphore.make(1)
+
+  effect function offer(scene: RequestScene, response: Workspace, actions: readonly Suggested[]) {
+    if (!actions.length) return try SubscriptionRef.set(active, undefined)
+    const w = response
+    const context = replyControlContext(w)
+    const index = w.assistant.conversation.messages.length - 1
+    const message = w.assistant.conversation.messages[index]
+    if (message?.author !== "GraceMessage") return
+    const account = try setup.get()
+    const planned = actions.slice(0, 3).map((action) => {
+      const direct = plan(action, w, scene.managed)
+      const view = !direct ? managedView(action) : undefined
+      const control: Control | undefined = direct ?? (view && native
+        ? { kind: "hosted", title: "Open " + view + " on Grace’s website", view }
+        : view && w.device.surface !== view ? ownerControl("Open " + view, { type: "visit", destination: view }) : undefined)
+      if (control?.kind === "workspace" && !enabled(w, control.event, "Person")) return undefined
+      if (control?.kind !== "managed") return control
+      const proposal = control.proposed
+      const allowed = proposal.kind === "draft"
+        ? maySendManagedMail(account.graceAccount, account.googleLink, proposal.accountId, proposal.grant)
+        : mayChangeManaged(account.graceAccount, account.googleLink, proposal.accountId, proposal.grant, proposal.kind === "trash" ? "ManagedTrash" : "ManagedAppointmentChange")
+      return allowed ? control : undefined
+    })
+    const controls = [...new Map(planned.flatMap((control) => control ? [[control.title, control] as const] : [])).values()]
+    const id = try Ref.updateAndGet(serial, (prior) => prior + 1)
+    try SubscriptionRef.set(active, { visible: { id, context, messageIndex: index, messageText: message.text, labels: controls.map((control) => control.title), blocked: planned.some((item) => item === undefined) }, controls })
+  }
+
+  effect function choose(id: number, index: number) {
+    const kept = try SubscriptionRef.get(active)
+    if (kept?.visible.id !== id || !replyOfferIsVisible(try desk.get(), kept.visible)) return false
+    const choice = kept.controls[index]
+    if (!choice) return false
+    try SubscriptionRef.set(active, undefined)
+    switch (choice.kind) {
+      case "workspace":
+        try desk.send(choice.event, "Person")
+        return true
+      case "website": {
+        if ((try desk.get()).device.surface !== "Browser") try desk.send({ type: "visit", destination: "Browser" }, "Person")
+        try desk.send({ type: "changePage", browserInput: { tag: "Navigate", url: choice.url } }, "Person")
+        return true
+      }
+      case "hosted": {
+        if ((try desk.get()).device.surface !== choice.view) try desk.send({ type: "visit", destination: choice.view }, "Person")
+        return try managed.send({ kind: "openHosted" })
+      }
+      case "cancelReview": {
+        const shown = try managed.get()
+        return shown.kind === "calendar" && shown.proposed?.number === choice.number && (try managed.send({ kind: "dismissProposal" }))
+      }
+      case "read": {
+        const shown = try managed.get()
+        if (shown.kind !== "mail" || shown.accountId !== choice.accountId || shown.grant !== choice.grant) return false
+        return try managed.send({ kind: "open", id: choice.id })
+      }
+      case "managed": return try managed.stage(choice.proposed)
+    }
+  }
+  try fork.scoped Stream.runForEach(desk.changes, () => gate.withPermit(effect {
+    const workspace = try desk.get()
+    try SubscriptionRef.update(active, (proposal) => {
+      if (!proposal) return undefined
+      const context = proposal.visible.context
+      const conversation = workspace.assistant.conversation
+      return replyOfferIsVisible(workspace, proposal.visible) || (conversation.turn === "Thinking" &&
+        conversation.generation === context.generation && workspace.device.contextVersion === context.device &&
+        workspace.preferences.revision === context.preferences) ? proposal : undefined
+    })
+  }))
+  return {
+    state: Stream.map(SubscriptionRef.changes(active), (offer) => offer?.visible),
+    get: () => Effect.map(SubscriptionRef.get(active), (offer) => offer?.visible),
+    capture: effect () => ({ context: replyControlContext(try desk.get()), managed: try managed.get() }),
+    offer: (scene, response, actions) => gate.withPermit(offer(scene, response, actions)),
+    choose: effect (id, index) => gate.withPermit(choose(id, index)) catch () => false
+  }
+})

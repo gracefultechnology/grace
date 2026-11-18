@@ -5,6 +5,19 @@ import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.CancellationSignal;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.CustomCredential;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.exceptions.GetCredentialCancellationException;
+import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException;
+import androidx.credentials.exceptions.GetCredentialUnsupportedException;
+import androidx.credentials.exceptions.NoCredentialException;
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -73,6 +86,9 @@ public final class GraceAccount extends Plugin {
   });
  }
 
+ private record Picker(CloudDeviceAccount.NativeGoogleAttempt attempt, CancellationSignal signal, PluginCall call) {}
+ private Picker picker;
+
  static CloudDeviceAccount account(Context context) {
   return new CloudDeviceAccount(context, "https://app.graceforseniors.com", "https://api.graceforseniors.com", "/android/auth/callback");
  }
@@ -97,9 +113,80 @@ public final class GraceAccount extends Plugin {
     CloudDeviceAccount account = account(getContext());
     account.retryRevocation();
     if (finishAcknowledgment(account)) { didSignIn(); call.resolve(); return; }
-    open(account.begin(), call);
+    closePicker(account);
+    var attempt = "browser".equals(call.getString("method")) || !hasGooglePlayServices() ? null
+        : account.prepareNativeGoogle(getContext().getPackageName(), "production");
+    if (attempt == null) open(account.begin(), call);
+    else {
+     Picker next = new Picker(attempt, new CancellationSignal(), call);
+     picker = next;
+     getActivity().runOnUiThread(() -> pickGoogle(next));
+    }
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
   });
+ }
+
+ private boolean hasGooglePlayServices() {
+  try { return getContext().getPackageManager().getApplicationInfo("com.google.android.gms", 0).enabled; }
+  catch (android.content.pm.PackageManager.NameNotFoundException unavailable) { return false; }
+ }
+
+ private void closePicker(CloudDeviceAccount account) throws Exception {
+  if (picker == null) return;
+  Picker previous = picker;
+  picker = null;
+  previous.signal().cancel();
+  previous.call().resolve();
+  account.cancelNativeGoogle(previous.attempt());
+ }
+
+ private void pickGoogle(Picker pending) {
+  if (pending.signal().isCanceled()) return;
+  try {
+   var option = new GetGoogleIdOption.Builder().setServerClientId(pending.attempt().serverClientId())
+       .setNonce(pending.attempt().nonce()).setFilterByAuthorizedAccounts(false).setAutoSelectEnabled(false).build();
+   var request = new GetCredentialRequest.Builder().addCredentialOption(option).build();
+   CredentialManager.create(getActivity()).getCredentialAsync(getActivity(), request, pending.signal(), ACCOUNT,
+       new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+        @Override public void onResult(GetCredentialResponse response) { finishPicker(pending, response, null); }
+        @Override public void onError(GetCredentialException error) { finishPicker(pending, null, error); }
+       });
+  } catch (RuntimeException unavailable) {
+   ACCOUNT.execute(() -> finishPicker(pending, null, new GetCredentialProviderConfigurationException()));
+  }
+ }
+
+ private void finishPicker(Picker pending, GetCredentialResponse response, GetCredentialException error) {
+  if (picker != pending) return;
+  picker = null;
+  CloudDeviceAccount account = account(getContext());
+  try {
+   if (response != null) {
+    if (!(response.getCredential() instanceof CustomCredential custom)
+        || !GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(custom.getType()))
+     throw new IllegalStateException("Invalid Google credential type");
+    String idToken = GoogleIdTokenCredential.createFrom(custom.getData()).getIdToken();
+    try {
+     GracePasswordsOwner.enteringAccountChange(getContext());
+     if (!account.finishNativeGoogle(pending.attempt(), idToken)) throw new IllegalStateException("Google sign-in expired");
+     GracePasswordsOwner.confirmVerifiedAccount(getContext());
+     didSignIn();
+    } finally { GracePasswordsOwner.leavingAccountChange(); }
+    pending.call().resolve();
+   } else if (error instanceof NoCredentialException || error instanceof GetCredentialProviderConfigurationException
+       || error instanceof GetCredentialUnsupportedException) {
+    open(account.begin(), pending.call());
+   } else if (error instanceof GetCredentialCancellationException) {
+    pending.call().resolve();
+   } else {
+    pending.call().reject("Couldn't sign in with Google");
+   }
+  } catch (Exception unavailable) {
+   pending.call().reject("Couldn't sign in with Google");
+  } finally {
+   try { account.cancelNativeGoogle(pending.attempt()); }
+   catch (Exception unavailable) { }
+  }
  }
 
  @PluginMethod public void manageAccount(PluginCall call) {
@@ -138,7 +225,9 @@ public final class GraceAccount extends Plugin {
    try {
     try {
      GracePasswordsOwner.enteringAccountChange(getContext());
-     account(getContext()).clear();
+     CloudDeviceAccount account = account(getContext());
+     closePicker(account);
+     account.clear();
     } finally { GracePasswordsOwner.leavingAccountChange(); }
     getActivity().runOnUiThread(() -> {
      getContext().stopService(new Intent(getContext(), GraceAgentService.class));

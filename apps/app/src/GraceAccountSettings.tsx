@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
-import { AccountFacts, Button, Input, PageHeading, PageText, RetryNotice } from "@repo/ui";
+import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNotice } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
@@ -16,7 +16,7 @@ export function GraceAccountSettings() {
   const link = setup?.googleLink;
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
-  const [returnFailed, dismissReturnFailure] = useState(() => {
+  const [returnFailed, setReturnFailed] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("authError") === "google_failed") return "Google sign-in didn’t finish.";
     if (params.get("googleConnectionError") === "authorization_failed") return "Google didn’t connect. Check which account you chose and try again.";
@@ -25,12 +25,15 @@ export function GraceAccountSettings() {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [provider, setProvider] = useState<"email" | "sms">();
   const [mail, setMail] = useState(false);
+  const [trashMail, setTrashMail] = useState(false);
+  const [writeCalendar, setWriteCalendar] = useState(false);
+  const [sendMail, setSendMail] = useState(false);
   const [calendar, setCalendar] = useState(false);
   const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
   const run = (operation: Operation, onSuccess?: () => void) => startTransition(async () => {
     setFailed(false);
-    dismissReturnFailure("");
+    setReturnFailed("");
     const result = await runtime.runPromiseExit(Effect.flatMap(AccountActions, (actions) => actions.run(operation)));
     if (Exit.isSuccess(result) && result.value) {
       setConfirmingSignOut(false);
@@ -59,7 +62,10 @@ export function GraceAccountSettings() {
       ))}
       {canRetry && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>}
       {snapshot?.tag === "GraceDeviceSignedOut" && (
-        <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in to Grace</Button>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in to Grace</Button>
+          <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
+        </div>
       )}
       {setup?.tabletSignIn && (
         <>
@@ -97,17 +103,29 @@ export function GraceAccountSettings() {
           {link !== undefined && mayOfferGoogleLink(snapshot, link) && (
             <form className="flex flex-col items-start gap-3" onSubmit={(event) => {
               event.preventDefault();
-              run({ kind: "connectGoogle", mail, calendar, expectedEmail: expectedEmail.trim() });
+              run({ kind: "connectGoogle", mail, calendar, sendMail: mail && sendMail, trashMail: mail && trashMail, writeCalendar: calendar && writeCalendar, expectedEmail: expectedEmail.trim() });
             }}>
               <fieldset disabled={pending || confirmingSignOut} className="flex flex-col gap-3">
-                <legend>Connect Google</legend>
+                <legend>{link.tag === "GoogleLinkConnected" ? "Change Google permissions" : "Connect Google"}</legend>
                 <label className="flex items-center gap-3">
-                  <input type="checkbox" checked={mail} onChange={(event) => setMail(event.target.checked)} />
-                  Gmail (read only)
+                  <Checkbox checked={mail} onCheckedChange={(checked) => setMail(checked === true)} />
+                  Read Gmail
                 </label>
                 <label className="flex items-center gap-3">
-                  <input type="checkbox" checked={calendar} onChange={(event) => setCalendar(event.target.checked)} />
-                  Google Calendar (read only)
+                  <Checkbox checked={calendar} onCheckedChange={(checked) => setCalendar(checked === true)} />
+                  Read Google Calendar
+                </label>
+                <label className="flex items-center gap-3">
+                  <Checkbox checked={mail && sendMail} disabled={!mail} onCheckedChange={(checked) => setSendMail(checked === true)} />
+                  Send Gmail messages I approve
+                </label>
+                <label className="flex items-center gap-3">
+                  <Checkbox checked={mail && trashMail} disabled={!mail} onCheckedChange={(checked) => setTrashMail(checked === true)} />
+                  Move Gmail messages to Trash and undo
+                </label>
+                <label className="flex items-center gap-3">
+                  <Checkbox checked={calendar && writeCalendar} disabled={!calendar} onCheckedChange={(checked) => setWriteCalendar(checked === true)} />
+                  Add, edit and remove appointments I approve
                 </label>
                 {snapshot.email === "" && (
                   <>

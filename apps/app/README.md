@@ -141,14 +141,26 @@ agent over an authenticated private Unix socket. The native service publishes a 
 the child credential and loopback token on stdin. Startup waits for an authenticated health response
 with the current launch epoch.
 
-Grace opens the hosted account page in the system browser. After explicit device approval, the
+On devices with Google Play services and native Google enabled in Grace Cloud, Grace opens the
+Android Google account picker. Cloud issues a one-time nonce tied to the device PKCE challenge.
+Android sends the Google result directly to Cloud and exchanges the returned device code. The
+Google ID token and PKCE verifier stay in the Android host.
+
+Register an Android OAuth client for `technology.graceful.grace` with release certificate SHA-1
+`7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02` in the same Google project as
+Grace’s Web OAuth client. Credential Manager and Cloud token verification both use that Web
+client ID. Enable native Google for this app in the Cloud registry after registration.
+
+Grace uses the hosted account page in the system browser when the native picker is unavailable
+or the person chooses browser sign-in. After explicit device approval, the
 Android App Link returns to `https://app.graceforseniors.com/android/auth/callback`. Android uses
 the stored PKCE verifier to exchange the one-time code with
 `https://api.graceforseniors.com/api/auth/device/exchange`. The device token and account IDs stay in
 Android's encrypted, no-backup store. A Cloud acknowledgement activates the token before
 Grace puts it into use. The app bridge reports only whether the device is signed in.
 Signing out stops the device agent, removes the credential and requests revocation. The hosted app
-must publish Android Digital Asset Links for the release signer to validate the callback.
+must publish Android Digital Asset Links for the release signer to validate the callback. Device
+sessions expire after seven days, when the person signs in again.
 
 `android/agent.json` names the Grace Cloud origin and admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent

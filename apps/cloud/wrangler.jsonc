@@ -38,9 +38,27 @@
       "vars": {
         "PUBLIC_API_ORIGIN": "https://api.graceforseniors.com",
         "WEB_ORIGIN": "https://app.graceforseniors.com",
+        "GOOGLE_CLIENT_ID": "721050741977-rovpvq9usa9as3ca8u33shtfo7issdfu.apps.googleusercontent.com",
         "NATIVE_AUTH_CALLBACK": "https://app.graceforseniors.com/android/auth/callback",
+        "NATIVE_CLIENT_ID": "technology.graceful.grace",
+        "NATIVE_CLIENT_REGISTRY": "[{\"clientId\":\"technology.graceful.grace\",\"environment\":\"production\",\"displayName\":\"Grace\",\"androidPackage\":\"technology.graceful.grace\",\"certFingerprints\":[\"B8:9E:0E:36:E3:6E:75:3E:9E:95:1C:EA:A6:3B:AE:85:3F:AB:76:93:5D:F7:A4:15:3B:CF:C2:CC:EB:C7:D3:D7\"],\"signInReturn\":\"https://app.graceforseniors.com/android/auth/callback\",\"billingReturn\":\"https://app.graceforseniors.com/\",\"credentialTtlMs\":604800000,\"enabled\":true}]",
         "CLOUD_ENVIRONMENT": "production",
-        "CLOUD_IDENTITY_DIGEST": "54d302ab7acb27c0a3b326e5bc4301d8963d5eac4e181da58598d4968f95c3ec"
+        "CLOUD_IDENTITY_DIGEST": "54d302ab7acb27c0a3b326e5bc4301d8963d5eac4e181da58598d4968f95c3ec",
+        "CHAT_MODEL": "qwen-3.8-27b",
+        "CHAT_UPSTREAM_MODEL": "@cf/qwen/qwen3.8-27b",
+        "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
+        "CHAT_INPUT_MICROS_PER_1K": "450",
+        "CHAT_OUTPUT_MICROS_PER_1K": "3200",
+        "EMBEDDING_INPUT_MICROS_PER_1K": "67",
+        "MAX_COMPLETION_TOKENS": "2048",
+        "EMAIL_FROM": "signin@auth.graceforseniors.com",
+        "STRIPE_PLAN": "plus_monthly",
+        "CARTESIA_VOICE_ID": "273f9ef7-9fc2-4def-88bb-ab108c6249ca",
+        "SPEECH_STT_MICROS_PER_SECOND": "135",
+        "SPEECH_TTS_MICROS_PER_CHARACTER": "45",
+        "SPEECH_DAILY_SESSION_LIMIT": "120",
+        "SMS_ALLOWED_COUNTRY_CODES": "+1",
+        "SMS_HOURLY_BUDGET": "300"
       },
       "durable_objects": {
         "bindings": [
@@ -54,7 +72,24 @@
         "crons": [
           "*/5 * * * *"
         ]
-      }
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ac2a7441e8a34d368262ac2891356834"
+        }
+      ],
+      "ai": {
+        "binding": "AI"
+      },
+      "send_email": [
+        {
+          "name": "SIGN_IN_EMAIL",
+          "allowed_sender_addresses": [
+            "signin@auth.graceforseniors.com"
+          ]
+        }
+      ]
     }
   },
   "durable_objects": {
