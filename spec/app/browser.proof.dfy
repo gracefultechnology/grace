@@ -280,10 +280,10 @@ lemma EndedAtFold(xs: seq<string>, cursor: int, endedAt: string)
   }
 }
 
-lemma lawALoadRecordsWhereItEnded_ensures(t: Tab, endedAt: string)
-  ensures (lawALoadRecordsWhereItEnded(t, endedAt) == true)
+lemma lawALoadRecordsWhereItEnded_ensures(endingTab: Tab, endedAt: string)
+  ensures (lawALoadRecordsWhereItEnded(endingTab, endedAt) == true)
 {
-  EndedAtFold(t.history, t.cursor, endedAt);
+  EndedAtFold(endingTab.history, endingTab.cursor, endedAt);
 }
 
 lemma lawAFailedLoadOffersReload_ensures(b: Browser, loadVersion: int, endedAt: string)

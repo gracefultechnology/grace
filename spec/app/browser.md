@@ -418,9 +418,17 @@ pure def endedAtCursor(t: Tab, endedAt: str): Tab =
     ...t, history: t.history.foldl(List(), (kept, visit) =>
       kept.append(if (kept.length() == t.cursor) endedAt else visit))
   }
-pure def lawALoadRecordsWhereItEnded(t: Tab, endedAt: str): bool =
-  endedAt != "" and t.cursor >= 0 and t.cursor < t.history.length() implies
-    (endedAtCursor(t, endedAt).history.length() == t.history.length() and tabUrl(endedAtCursor(t, endedAt)) == endedAt)
+pure def lawALoadRecordsWhereItEnded(endingTab: Tab, endedAt: str): bool =
+  endedAt != "" and endingTab.cursor >= 0 and endingTab.cursor < endingTab.history.length() implies
+    (endedAtCursor(endingTab, endedAt).history.length() == endingTab.history.length() and tabUrl(endedAtCursor(endingTab, endedAt)) == endedAt)
+pure val redirectHistory = List("https://utility.example/start", "https://utility.example", "https://utility.example/charges")
+pure val endingTabValues = Set(
+  blankTab(1, 0),
+  { ...blankTab(1, 0), history: redirectHistory, cursor: 0 },
+  { ...blankTab(1, 0), history: redirectHistory, cursor: 1 },
+  { ...blankTab(1, 0), history: redirectHistory, cursor: 2 },
+  { ...blankTab(1, 0), history: redirectHistory, cursor: -1 },
+  { ...blankTab(1, 0), history: redirectHistory, cursor: 3 })
 pure val redirectedTo: str = "https://www.utility.example/home"
 pure def sometimesARedirectIsFollowed(b: Browser): bool =
   activeTab(b).load == Loaded and tabUrl(activeTab(b)) == redirectedTo and activeTab(b).cursor > 0
