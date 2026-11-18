@@ -18,8 +18,8 @@ export function useFilesHome() {
     const fiber = runtime.runFork(Stream.runForEach(home, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
   }, [runtime]);
-  const value = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.getHome())));
-  return account === "GraceDeviceSignedIn" ? value : undefined;
+  return useSyncExternalStore(subscribe, () => account === "GraceDeviceSignedIn"
+    ? runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.getHome())) : undefined);
 }
 
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });

@@ -4,7 +4,7 @@
 import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
@@ -55,9 +55,11 @@ function useHomeCards() {
     const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
   }, [runtime]);
-  const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards())));
-  return snapshot && account?.graceAccount.tag === "GraceSignedIn" && snapshot.accountId === account.graceAccount.accountId &&
-    account.googleLink.tag === "GoogleLinkConnected" && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+  return useSyncExternalStore(subscribe, () => {
+    if (account?.graceAccount.tag !== "GraceSignedIn" || account.googleLink.tag !== "GoogleLinkConnected") return undefined;
+    const snapshot = runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards()));
+    return snapshot?.accountId === account.graceAccount.accountId && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+  });
 }
 
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
@@ -240,9 +242,10 @@ function Screen() {
 
 /** The application over `runtime`, from `application` of app.vibe. */
 export function App({ runtime }: { runtime: Runtime }) {
+  const screen = useMemo(() => runtime.context().then(() => <Screen />), [runtime]);
   return (
     <RuntimeContext value={runtime}>
-      <PageMeasurer runtime={runtime}><Suspense><Screen /></Suspense></PageMeasurer>
+      <PageMeasurer runtime={runtime}><Suspense>{screen}</Suspense></PageMeasurer>
     </RuntimeContext>
   );
 }

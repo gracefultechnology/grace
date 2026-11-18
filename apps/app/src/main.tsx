@@ -8,14 +8,14 @@ import { PasswordBackupConsent } from "./PasswordBackupConsent.tsx";
 import { backupSignInProviders, pendingPasswordApproval } from "./passwordBackupConsent.vibe";
 import { agentPlugin } from "./agentPlugin.ts";
 import { application } from "./app.vibe";
-import { devicePlugin, wifiPlugin, passwordClient } from "./surfacePlugin.ts";
+import { devicePlugin, guideSpeechPlugin, passwordClient, wifiPlugin } from "./surfacePlugin.ts";
 import "./main.css";
 
 const root = createRoot(document.getElementById("root")!);
 const native = Capacitor.isNativePlatform();
 
 function renderApp() {
-  root.render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, { native, agent: agentPlugin, vault: passwordClient }))} /></StrictMode>);
+  root.render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, { native, agent: agentPlugin, vault: passwordClient, guideSpeech: guideSpeechPlugin }))} /></StrictMode>);
 }
 
 if (native) {
