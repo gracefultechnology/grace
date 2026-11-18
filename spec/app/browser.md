@@ -205,6 +205,8 @@ pure val candidateValues = Set(blankTab(1, 0), blankTab(2, 1))
 pure val tabValues = candidateValues
 pure val tValues = tabValues.union(Set(
   { ...blankTab(1, 0), history: List("https://utility.example", "https://utility.example/home"), cursor: 1 },
+  { ...blankTab(1, 0), history: List("first", "middle", "last"), cursor: 1 },
+  { ...blankTab(1, 0), history: List(), cursor: -1 },
   { ...blankTab(2, 1), history: List("https://utility.example"), manualSignIn: true }))
 pure val capacityValues = Set(-1, 0, 1, 2, 3)
 ```
@@ -427,13 +429,6 @@ pure def endedAtCursor(t: Tab, endedAt: str): Tab =
     ...t, history: t.history.foldl(List(), (kept, visit) =>
       kept.append(if (kept.length() == t.cursor) endedAt else visit))
   }
-pure val tValues: Set[Tab] = {
-  val tab = blankTab(1, 0)
-  val visits = List("https://example.org", "https://example.org/bill", "https://example.org/help")
-  Set(tab, { ...tab, history: List(), cursor: -1 },
-    { ...tab, history: visits, cursor: 0 }, { ...tab, history: visits, cursor: 1 },
-    { ...tab, history: visits, cursor: 2 }, { ...tab, history: visits, cursor: 3 })
-}
 pure def lawALoadRecordsWhereItEnded(t: Tab, endedAt: str): bool =
   endedAt != "" and t.cursor >= 0 and t.cursor < t.history.length() implies
     (endedAtCursor(t, endedAt).history.length() == t.history.length() and tabUrl(endedAtCursor(t, endedAt)) == endedAt)
