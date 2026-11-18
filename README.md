@@ -16,8 +16,8 @@ pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --
 pnpm install --frozen-lockfile
 ```
 
-Create an empty local PostgreSQL database for Grace and set its connection
-string as `DATABASE_URL` in the ignored file `apps/cloud/.dev.vars`.
+Create an empty local PostgreSQL database for Grace. In `apps/cloud`, create
+the ignored file `.dev.vars` and set `DATABASE_URL` to the connection string.
 Initialize it and start the local Worker. Run Vite in a second terminal.
 
 ```sh
