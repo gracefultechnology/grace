@@ -643,6 +643,10 @@ from reasoning availability. While a wake exchange or its silence notice is
 active, website execution is idle or paused. Starting or resuming website work
 cancels that wake exchange before its timer can hide Grace.
 
+When the silence notice restores a closed Grace window, it also quiets any
+retained payment. A proof witness showed that a live retained record could
+otherwise remain active after the window paused an unfinished task.
+
 ```quint
 pure def priorWindow(a: A::Assistant): W::PriorWindow =
   if (a.presentation == A::Closed) W::WasClosed else if (a.presentation == A::Compact) W::WasCompact else W::WasExpanded
@@ -682,7 +686,8 @@ pure def canWakeReturn(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): b
 pure def wakeReturn(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): Workspace = {
   ...w, wake: W::returnAfterSilence(w.wake, timer, W::WakeHost).state,
   assistant: if (w.wake.prior == W::WasClosed) A::close(w.assistant, C::ConversationUser)
-    else A::resize(w.assistant, w.wake.prior == W::WasExpanded, C::ConversationUser)
+    else A::resize(w.assistant, w.wake.prior == W::WasExpanded, C::ConversationUser),
+  payment: if (w.wake.prior == W::WasClosed) quietPayment(w.payment) else w.payment
 }
 pure def canCancelWake(w: Workspace, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.wake.phase != W::Dormant
@@ -805,7 +810,10 @@ The host identifies a document change caused by the currently dispatched
 ordinary operation or payment. It records that navigation in the actual
 browser and invalidates the old target. Fresh observation follows within
 the active task. A payment result page continues its existing outcome wait;
-it never becomes another submit. An unexpected change pauses instead.
+it never becomes another submit. An unexpected change pauses instead. A payment progress callback must belong
+to the attached task and an active execution. A proof witness showed that an
+unrelated retained payment could otherwise create ordinary website work inside
+an active guided plan.
 
 ```quint
 pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): bool =
@@ -815,6 +823,7 @@ pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: Workspac
   ((progress.kind == OrdinaryProgress and w.execution.phase == X::InFlight and
     progress.generation == w.execution.generation and progress.observation == w.execution.observation) or
    (progress.kind == PaymentProgress and w.assistant.activity == A::WebsiteWait and
+    w.paymentTask != "" and w.paymentTask == progress.task and X::canInvalidate(w.execution, X::BrowserBridge) and
     w.payment.stage == P::Checking and w.payment.dispatched and
     progress.paymentRevision == w.payment.revision and progress.attempt == w.payment.attempt))
 pure def receiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): Workspace = {
