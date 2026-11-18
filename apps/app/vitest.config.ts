@@ -23,6 +23,7 @@ const BenchmarkDefinition = Schema.Struct({
   chat: Schema.optional(Schema.Literal("upstream")),
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
+  requiredStep: Schema.optional(Schema.Literal("ReachNamedPage")),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
@@ -355,7 +356,7 @@ declare module "vitest/browser" {
 }
 declare module "vitest" {
   interface ProvidedContext {
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl"> & { gradeWholeCohort: boolean })[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
     releasedBillworldEnabled: boolean;
   }
 }
@@ -370,7 +371,7 @@ export default defineConfig(async (env) => {
           test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl }) => ({ taskId, intent, startUrl, gradeWholeCohort: Boolean(fleet) }));
+  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep }) => ({ taskId, intent, startUrl, requiredStep, gradeWholeCohort: Boolean(fleet) }));
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
   return { ...config, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, releasedBillworldEnabled: releasedDirectory !== undefined }, globalSetup: ["test/setup.vibe"] } };
 });

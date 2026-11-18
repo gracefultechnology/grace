@@ -16,7 +16,7 @@ on:
         type: string
         required: false
       webarena:
-        description: Run official Shopping task 260 with hosted link guidance
+        description: Run official Shopping tasks 260 and 261 with hosted guidance
         type: boolean
         default: false
   pull_request:
@@ -155,27 +155,33 @@ jobs:
             await browser.close();
           }
           JS
-      - name: Grade official task 260
+      - name: Grade official Shopping navigation
         env:
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
         run: |
           test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
-            jq -e --arg start "$SHOPPING_ORIGIN/" --arg receipt "$WEBARENA_RESULTS/task-260.json" \
+            jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
               --arg state "$WEBARENA_PRIVATE/shopping-state.json" \
-              '.[] | select(.task_id == 260) | {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: $receipt, siteStorageState: $state, evaluator: "webarena"}' \
+              '[.[] | select(.task_id == 260 or .task_id == 261) |
+                {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
+                 siteStorageState: $state, evaluator: "webarena"} +
+                (if .task_id == 261 then {chat: "upstream", requiredStep: "ReachNamedPage"} else {} end)]' \
               > "$GRACE_BROWSER_BENCHMARK_FILE"
-          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 260' |
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log"
-          jq -e '.webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true' "$WEBARENA_RESULTS/task-260.json"
+          jq -es 'length == 2 and all(.[]; .webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true)' \
+            "$WEBARENA_RESULTS/task-260.json" "$WEBARENA_RESULTS/task-261.json"
+          jq -e '.chatStatus == 200 and .outcome.chatProvider == "upstream" and
+            (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked' "$WEBARENA_RESULTS/task-261.json"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: webarena-shopping-260
+          name: webarena-shopping
           path: |
             ${{ runner.temp }}/grace-webarena-results/shopping-image.json
-            ${{ runner.temp }}/grace-webarena-results/task-260.json
+            ${{ runner.temp }}/grace-webarena-results/task-*.json
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
           if-no-files-found: warn
   billworld:

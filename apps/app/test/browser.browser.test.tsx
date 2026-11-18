@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { guidedReadKind, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -195,7 +195,7 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, gradeWholeCohort }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
@@ -257,39 +257,61 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
+    const named = workspace().review.request.steps.find(step => guidedReadKind(step) === "ReachNamedPage");
+    if (requiredStep === "ReachNamedPage") {
+      expect(named).toBeDefined();
+      expect(workspace().review.request.steps).toHaveLength(1);
+    }
+    if (named) outcome.reviewedDestination = named.subject;
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Start read plan" }));
     const showLink = page.getByRole("button", { name: "Show me the link" });
-    try {
-      await userEvent.click(showLink);
-    } catch (error) {
-      const { device, assistant, browser } = workspace();
-      outcome.guideBoundary = {
-        connection: device.connectivity, observationAllowed: device.observationAllowed, reasoningAvailable: device.reasoningAvailable,
-        surface: device.surface, presentation: assistant.presentation, activity: assistant.activity, load: browser.tabs[0]?.load,
-      };
-      throw error;
-    }
-    await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
-    outcome.ringTap = true;
-    await expect.poll(async () => (await read()).documentId, { timeout: 15_000 }).not.toBe(initial.documentId);
-    const landed = await read();
-    outcome.destination = { url: landed.url, documentId: landed.documentId };
-    expect(landed.url).not.toBe(initial.url);
-    const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
-    native.started(landed.url);
-    native.finished(landed.url);
-    await expect.poll(() => {
-      const tab = workspace().browser.tabs[0];
-      return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-    }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
-    const resume = page.getByRole("button", { name: "Resume Grace" });
-    const check = page.getByRole("button", { name: "Check page", exact: true });
-    await expect.poll(() => resume.query() !== null || check.query() !== null).toBe(true);
-    if (resume.query() !== null) await userEvent.click(resume);
-    await userEvent.click(check);
     const plan = page.getByRole("region", { name: "Task plan" });
-    await expect.element(plan.getByText("Read checks complete", { exact: true })).toBeVisible();
+    const finished = plan.getByText("Read checks complete", { exact: true });
+    const continuing = page.getByRole("status", { name: "Page check result" });
+    const visited = new Set([initial.url]);
+    const hops: { url: string; documentId: string; checked: boolean }[] = [];
+    outcome.hops = hops;
+    let previous = initial;
+    while (hops.length < (named ? 8 : 1)) {
+      try {
+        await userEvent.click(showLink);
+      } catch (error) {
+        const { device, assistant, browser } = workspace();
+        outcome.guideBoundary = {
+          connection: device.connectivity, observationAllowed: device.observationAllowed, reasoningAvailable: device.reasoningAvailable,
+          surface: device.surface, presentation: assistant.presentation, activity: assistant.activity, load: browser.tabs[0]?.load,
+        };
+        throw error;
+      }
+      await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
+      outcome.ringTap = true;
+      await expect.poll(async () => (await read()).documentId, { timeout: 15_000 }).not.toBe(previous.documentId);
+      const landed = await read();
+      outcome.destination = { url: landed.url, documentId: landed.documentId };
+      expect(visited.has(landed.url)).toBe(false);
+      visited.add(landed.url);
+      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
+      native.started(landed.url);
+      native.finished(landed.url);
+      await expect.poll(() => {
+        const tab = workspace().browser.tabs[0];
+        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
+      }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
+      const resume = page.getByRole("button", { name: "Resume Grace" });
+      const check = page.getByRole("button", { name: "Check page", exact: true });
+      await expect.poll(() => resume.query() !== null || check.query() !== null).toBe(true);
+      if (resume.query() !== null) await userEvent.click(resume);
+      await userEvent.click(check);
+      await expect.poll(() => finished.query() !== null || continuing.query() !== null).toBe(true);
+      const checked = finished.query() !== null;
+      hops.push({ url: landed.url, documentId: landed.documentId, checked });
+      if (checked) break;
+      expect(named).toBeDefined();
+      expect(workspace().plan.receipts).toHaveLength(0);
+      previous = landed;
+    }
+    await expect.element(finished).toBeVisible();
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
     outcome.failure = error instanceof Error ? error.message : String(error);
@@ -297,7 +319,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   } finally {
     await transport({ kind: "receipt", outcome });
   }
-}, 120_000);
+}, 240_000);
 
 it.skipIf(!inject("releasedBillworldEnabled"))('Read the released BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   const transport = commands.releasedStatement;
