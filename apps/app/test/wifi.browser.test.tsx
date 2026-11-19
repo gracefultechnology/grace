@@ -15,7 +15,7 @@ const nearby = (ssid: string, rssi: number, security: NonNullable<WiFiNetwork["s
   ({ ssid, bssid: "", rssi, frequency: 2412, capabilities: "", secured: security !== "open", security });
 
 function android() {
-  const tablet = { location: "prompt" as "prompt" | "granted", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0 };
+  const tablet = { location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0 };
   const plugin: WiFiPlugin = {
     checkPermissions: () => Promise.resolve({ location: tablet.location }),
     requestPermissions: () => { tablet.location = "granted"; return Promise.resolve({ location: "granted" }); },
@@ -101,6 +101,19 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     tablet.ssid = "Sunrise Community Center";
     await shown();
     await joinedTo("Sunrise Community Center");
+    expect(tablet.joins).toHaveLength(4);
+
+    await tap("NETGEAR-4F2");
+    await act(() => userEvent.type(page.getByLabelText("Password"), "unfinished"));
+    tablet.location = "denied";
+    await shown();
+    await expect.element(page.getByLabelText("Password")).not.toBeInTheDocument();
+    await expect.element(page.getByText("Sunrise Community Center")).not.toBeInTheDocument();
+    await joinedTo("Your Wi-Fi network");
+    tablet.location = "granted";
+    await shown();
+    await tap("NETGEAR-4F2");
+    await expect.element(page.getByLabelText("Password")).toHaveValue("");
     expect(tablet.joins).toHaveLength(4);
   });
 });

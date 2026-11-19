@@ -58,8 +58,11 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
     tryPromise(() => wifi.openInternetPanel()) catch () => undefined
   }
 
-  effect function report(found: ScanResult) {
-    networks.send({ type: "reportScan", found }, "OperatingSystem") catch () => undefined
+  effect function report(found: ScanResult, offers: readonly Offer[] = []) {
+    const next = networks.send({ type: "reportScan", found }, "OperatingSystem") catch () => undefined
+    if (next === undefined) return
+    shown = offers
+    for (const listener of listeners) listener()
   }
 
   effect function list() {
@@ -74,9 +77,8 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
       network: { id: found.security + ":" + found.ssid, authentication: authentication[found.security], remembered: found.ssid === active?.network?.ssid },
       name: found.ssid, signal: bars(found.rssi), security: found.security,
     }))
-    shown = [...offers.filter((offer) => offer.network.remembered), ...offers.filter((offer) => !offer.network.remembered)]
-    for (const listener of listeners) listener()
-    try report(shown.length === 0 ? "NoneNearby" : "Found")
+    try report(offers.length === 0 ? "NoneNearby" : "Found",
+      [...offers.filter((offer) => offer.network.remembered), ...offers.filter((offer) => !offer.network.remembered)])
   }
 
   const look = scanning.withPermits(1)(list())
@@ -106,7 +108,7 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
   effect function returned() {
     const n = try networks.get()
     if (n.phase !== "AndroidPanel" && n.phase !== "PortalEntry") {
-      if (listAction(n.discovery) === "OpenPanel") try look
+      if (n.discovery === "NetworksFound" || listAction(n.discovery) === "OpenPanel") try look
       return
     }
     const name = ssidOf(n)

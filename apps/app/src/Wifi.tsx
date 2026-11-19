@@ -46,18 +46,9 @@ function notice(n: NetworkJoin, name: string) {
   return undefined;
 }
 
-/** @model spec/app/network.md */
-export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
-  const { state: n, can, send } = useMachine(runtime);
-  const page = runtime.runSync(Effect.service(WifiPage));
-  const offers = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string; person: (event: Event) => void; join: (password: string) => void }) {
   const [password, setPassword] = useState("");
-  if (!n) return null;
-  const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
-  const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
-  const name = offers.find((offer) => offer.network.id === n.selected.id)?.name ?? "";
-
-  if (n.phase === "PrivateEntry") return (
+  return (
     <WifiJoinForm network={name} password={password} showPassword={n.privateVisible}
       onPasswordChange={(typed) => {
         setPassword(typed);
@@ -65,9 +56,21 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
       }}
       onShowPasswordChange={(visible) => person({ type: "showPrivate", visible })}
       error={n.explanation && (helpOffered(n) ? `${n.explanation} ${fixSteps}` : n.explanation)}
-      onJoin={() => { setPassword(""); run(page.join(password)); }}
-      onCancel={() => { setPassword(""); person({ type: "cancel" }); }} />
+      onJoin={() => { setPassword(""); join(password); }}
+      onCancel={() => person({ type: "cancel" })} />
   );
+}
+
+/** @model spec/app/network.md */
+export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
+  const { state: n, can, send } = useMachine(runtime);
+  const page = runtime.runSync(Effect.service(WifiPage));
+  const offers = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+  if (!n) return null;
+  const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
+  const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
+  const name = offers.find((offer) => offer.network.id === n.selected.id)?.name ?? "";
+  if (n.phase === "PrivateEntry") return <PrivateEntry key={n.version} n={n} name={name} person={person} join={(password) => run(page.join(password))} />;
 
   const current = online ? offers.find((offer) => offer.network.remembered) : undefined;
   const connected = current ? row(current) : online ? unnamed : undefined;
