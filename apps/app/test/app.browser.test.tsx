@@ -134,6 +134,12 @@ async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: strin
   return { ...routedControls(native), dispose: view.dispose };
 }
 
+async function pressBack() {
+  const event = new Event("hardware-back", { cancelable: true });
+  await act(() => { window.dispatchEvent(event); return Promise.resolve(); });
+  return event.defaultPrevented;
+}
+
 actOnScreen();
 
 it("Use the website under Grace's controls", async () => {
@@ -244,11 +250,6 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   await native.route();
 
-  const pressBack = async () => {
-    const event = new Event("hardware-back", { cancelable: true });
-    await act(() => { window.dispatchEvent(event); return Promise.resolve(); });
-    return event.defaultPrevented;
-  };
   /** The website's question is drawn once the host routes its rect. */
   const asked = () => expect.poll(async () => { await native.route(); return shown(page.getByRole("alertdialog")); }).toBe(true);
   // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": Back closes a website's prompt as its Cancel does.
@@ -485,6 +486,23 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Clear browsing data");
   await expect.element(page.getByRole("dialog")).toBeVisible();
   await tap("Cancel");
+
+  await tap("Home");
+  await tap("More apps");
+  await tap("More apps");
+  await tap("Expand");
+  expect(await pressBack()).toBe(true);
+  await expect.element(button("Expand")).toBeVisible();
+  await expect.element(button("Passwords")).toBeVisible();
+  await tap("Expand");
+  await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+    machine.send({ type: "visit", destination: "Passwords" }, "Person"))));
+  const workspace = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get()));
+  expect(workspace()).toMatchObject({ device: { surface: "Passwords" }, assistant: { presentation: "Expanded" } });
+  expect(await pressBack()).toBe(true);
+  await expect.element(page.getByRole("button", { name: /^Internet\b/ })).toBeVisible();
+  expect(workspace()).toMatchObject({ device: { surface: "Home", homePage: "MainCards" }, assistant: { presentation: "Compact" } });
+  expect(await pressBack()).toBe(false);
 });
 
 function vaultStatus(locked: boolean): ReturnType<PasswordVault["status"]> {
@@ -697,6 +715,9 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await native.report("tab-4", "https://utility.example", 100);
   await expect.element(unavailable).not.toBeInTheDocument();
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  expect(await pressBack()).toBe(true);
+  await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
+  expect(await pressBack()).toBe(false);
 });
 
 it('Use only the current local speech for Passwords guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {

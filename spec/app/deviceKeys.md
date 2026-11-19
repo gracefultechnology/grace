@@ -19,15 +19,16 @@ Reference: the previous application's HardwareBack (NA-1).
 
 ### Back closes the nearest open thing first and leaves only from a resting Home
 
-In order: Clear browsing data's confirmation is cancelled; the question a
-website asked that Grace shows over the page is closed the way its own
-decline button closes it (next rule); an open rail popover closes; the
-browser's address editor is
-dismissed; Grace's own keyboard (chat or website typing) is dismissed;
-expanded Grace collapses to compact, never closing it; the selected tab goes
-back in its history while the browser is shown; any other surface, Settings
-included, goes Home, which hides the browser and keeps its tabs; Back from
-either the Files or Passwords launcher page returns to the main Home cards. Going Home or
+Android gives its keyboard and native dialogs the first chance to handle Back.
+When Grace receives Back, she first cancels a Clear browsing data confirmation,
+declines a visible website question, closes a rail popover, or dismisses the
+browser’s address editor, whichever comes first. Where conversation controls
+are available, Back next dismisses the chat or website keyboard, then collapses
+an expanded Grace window. These controls work on the public Passwords Home card.
+On the native Passwords surface or a private website sign-in tab, a retained
+conversation cannot consume Back. Back then follows the selected browser tab’s
+history, or returns Home from another surface, including Settings, keeping the
+tabs. On either the Files or Passwords launcher page, Back returns to the main Home cards. Going Home or
 returning to the main cards always lands on a resting Home, so the Back after
 it leaves. The address editor counts only while the Browser surface is shown:
 on any other surface it is hidden and Back passes over it. A website's
@@ -66,13 +67,14 @@ pure def restingAtHome(shell: S::Shell, a: A::Assistant, r: WR::WebsiteRequests)
   a.keyboard == A::NoKeyboard and a.presentation != A::Expanded and
   r.clearing != WR::ConfirmingClear and not(WR::presented(r).id > 0)
 pure def backAction(shell: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): BackAction =
+  val w = workspaceOf(shell, a, b)
   if (shell.readiness != S::Ready) Unconsumed
   else if (r.clearing == WR::ConfirmingClear) CancelClearData
   else if (WR::presented(r).id > 0) DismissWebsiteRequest
   else if (shell.railPopover != S::NoPopover) DismissPopover
   else if (addressKeyboardOpen(shell, b)) DismissAddress
-  else if (a.keyboard != A::NoKeyboard) DismissKeyboard
-  else if (a.presentation == A::Expanded) CollapseGrace
+  else if (WS::canInteract(w, I::DismissKeyboard, WS::Person)) DismissKeyboard
+  else if (a.presentation == A::Expanded and WS::canInteract(w, I::Resize({ expanded: false }), WS::Person)) CollapseGrace
   else if (shell.surface == S::Browser and B::canGoBack(b)) PageBack
   else if (shell.surface != S::Home) GoHome
   else if (shell.homePage != S::MainCards) ShowMainCards
@@ -80,9 +82,13 @@ pure def backAction(shell: S::Shell, a: A::Assistant, b: B::Browser, r: WR::Webs
 pure def lawBackLeavesOnlyFromARestingHome(shell: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): bool =
   backAction(shell, a, b, r) == Unconsumed iff (shell.readiness != S::Ready or restingAtHome(shell, a, r))
 pure def lawShellBackRestsAtHome(shell: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests): bool =
-  (backAction(shell, a, b, r) == GoHome implies backAction(S::openSurface(shell, S::Home), a, b, r) == Unconsumed) and
+  val w = workspaceOf(shell, a, b)
+  val home = WS::visit(w, S::Home, WS::Person)
+  val cards = WS::chooseHomePage(w, S::MainCards, WS::Person)
+  (backAction(shell, a, b, r) == GoHome implies
+    backAction(home.device, home.assistant, home.browser, homeRequests(r)) == Unconsumed) and
   (backAction(shell, a, b, r) == ShowMainCards implies
-    backAction(S::chooseHomePage(shell, S::MainCards), a, b, r) == Unconsumed)
+    backAction(cards.device, cards.assistant, cards.browser, r) == Unconsumed)
 pure val shellValues = Set(S::initial, S::finishStartup(S::initial, false), S::finishStartup(S::initial, true),
   S::chooseHomePage(S::finishStartup(S::initial, true), S::FilesCard),
   S::chooseHomePage(S::finishStartup(S::initial, true), S::PasswordsCard),
@@ -93,6 +99,7 @@ pure val shellValues = Set(S::initial, S::finishStartup(S::initial, false), S::f
   S::openSurface(S::finishStartup(S::initial, true), S::Calendar),
   S::togglePopover(S::openSurface(S::finishStartup(S::initial, true), S::Browser), S::WifiPopover),
   S::chooseSettingsPage(S::openSurface(S::finishStartup(S::initial, true), S::Browser), S::NetworkSettings),
+  S::openSurface(S::finishStartup(S::initial, true), S::Passwords),
   S::sleep(S::finishStartup(S::initial, true)),
   S::sleep(S::openSurface(S::finishStartup(S::initial, true), S::Browser)))
 pure val aValues = Set(A::initial, A::open(A::initial, C::ConversationUser),
@@ -101,6 +108,7 @@ pure val aValues = Set(A::initial, A::open(A::initial, C::ConversationUser),
   A::focusWebsite(A::open(A::initial, C::ConversationUser), C::ConversationUser),
   A::focusWebsite(A::resize(A::open(A::initial, C::ConversationUser), false, C::ConversationUser), C::ConversationUser))
 pure val bValues = Set(B::initial, B::navigate(B::initial, "page"),
+  B::openPrivateSignIn(B::navigate(B::initial, "https://utility.example"), "https://utility.example"),
   B::editAddress(B::initial, ""), B::editAddress(B::navigate(B::initial, "page"), "next"),
   B::goBack(B::navigate(B::initial, "page")), B::openTab(B::navigate(B::initial, "page")))
 pure def askedOnTab1(ask: WR::Ask): WR::WebsiteRequests =
