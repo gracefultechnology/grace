@@ -39,10 +39,7 @@ export function OverPage({ className, ...props }: ComponentProps<"div">) {
 
 const r = parseFloat(tokens.rounded.window);
 
-const adopt = (element: HTMLDivElement) => {
-  element.append(websites);
-  return () => websites.remove();
-};
+const adopt = (element: HTMLDivElement | null) => { element?.append(websites); };
 
 export function PageBackdrop({ className }: { className?: string }) {
   const layer = usePageLayer();
