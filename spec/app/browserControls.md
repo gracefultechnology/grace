@@ -118,7 +118,7 @@ pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAdd
 
 ## Story: Ask Grace to start a private sign-in for my bill
 
-> When I ask Grace to sign me in on the bill website I have open, she can bring up private sign-in. I unlock the tablet, choose the login and decide whether to submit the form.
+> When I ask Grace to sign me in on the bill website I have open, she can bring up private sign-in. I choose the matching login in Android and decide whether to submit the form.
 
 ### A direct request uses the selected page and revision
 
