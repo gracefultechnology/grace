@@ -163,8 +163,12 @@ of unanswered questions. The language service must make `isQuestion` truthful
 and ask only that decision. Every reply is written in the transcript. It is
 also spoken when the person's voice output is on (`audible`), whether they
 spoke or typed (prototype 1325); with voice output off it is only written.
-Speaking never turns the microphone on: only an active voice exchange returns
-to listening after a question, at once when the reply is not spoken.
+Speaking never turns the microphone on, and a reply ends the voice exchange:
+when Grace asks a question she is not listened to again until she taps Talk.
+The microphone stays on while Grace speaks only so that she can be
+interrupted, and closes when that reply ends. The one exception is Grace's
+single request to say an unusable utterance again, which listens once more
+because no statement has been heard yet.
 
 ```quint
 pure def canRespond(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], by: ConversationActor): bool =
@@ -172,15 +176,21 @@ pure def canRespond(c: Conversation, token: int, text: str, isQuestion: bool, an
   offersAnswers(answers, isQuestion)
 pure def respond(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: ConversationActor): Conversation =
   { ...appended(GraceMessage, text, c), question: isQuestion, answers: answers,
-    turn: if (audible) Speaking else if (c.voice and isQuestion) Listening else Ready,
-    voice: if (audible) c.voice else c.voice and isQuestion }
+    turn: if (audible) Speaking else Ready, voice: audible and c.voice }
 pure def stepSpeakingNeverOpensTheMicrophone(before: Conversation, via: str, after: Conversation): bool =
   (via == "respond" or via == "repeatReply" or via == "resumeSpeech") implies (after.voice implies before.voice)
 
 pure def canFinishSpeech(c: Conversation, token: int, by: ConversationActor): bool =
   by == ConversationRuntime and c.turn == Speaking and token == c.generation
+pure def awaitsAStatement(c: Conversation): bool = c.voice and c.unusable > 0
 pure def finishSpeech(c: Conversation, token: int, by: ConversationActor): Conversation =
-  { ...c, turn: if (c.voice and c.question) Listening else Ready, voice: c.voice and c.question }
+  { ...c, turn: if (awaitsAStatement(c)) Listening else Ready, voice: awaitsAStatement(c) }
+pure def lawTheMicrophoneClosesAfterOneStatement(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: ConversationActor): bool =
+  val replied = respond(c, token, text, isQuestion, answers, audible, by)
+  val finished = finishSpeech(c, token, by)
+  (canRespond(c, token, text, isQuestion, answers, by) implies
+    replied.turn != Listening and (replied.voice implies replied.turn == Speaking)) and
+  ((canFinishSpeech(c, token, by) and c.unusable == 0) implies not(finished.voice) and finished.turn == Ready)
 ```
 
 ### Answer chips come only with a closed question, two or three at a time
@@ -589,14 +599,18 @@ pure def sometimesActionRecorded(c: Conversation): bool = c.messages.some(m => m
 ### Each turn sends a bounded window of the transcript
 
 The workspace transcript is the only conversation history. Each turn sends
-its last 24 messages to the agent, which keeps no copy of its own.
+its last 24 messages to the agent, which keeps no copy of its own: never more
+than 24, all of them while the transcript is shorter, and always the newest.
 
 ```quint
 pure val historyMessages = 24
-pure def historyStart(c: Conversation): int =
-  if (c.messages.length() > historyMessages) c.messages.length() - historyMessages else 0
+pure def sentHistory(c: Conversation): List[Message] =
+  c.messages.foldl(List(), (kept, m) => (if (kept.length() < historyMessages) kept else kept.tail()).append(m))
 pure def lawHistoryWindowIsBounded(c: Conversation): bool =
-  historyStart(c) >= 0 and c.messages.length() - historyStart(c) <= historyMessages
+  val sent = sentHistory(c)
+  val count = c.messages.length()
+  sent.length() == (if (count < historyMessages) count else historyMessages) and
+  sent.nthOr(sent.length() - 1, emptyHumanMessage) == c.messages.nthOr(count - 1, emptyHumanMessage)
 ```
 
 ### A typed reply can be written and not spoken

@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "sideEffects": ["./src/fonts.ts"],
+  "sideEffects": ["./src/fonts.css"],
   "exports": {
     ".": "./src/index.ts",
-    "./fonts": "./src/fonts.ts",
+    "./fonts.css": "./src/fonts.css",
     "./styles.css": "./styles.css"
   },
   "scripts": {
@@ -38,7 +38,7 @@
     "tailwind-merge": "catalog:"
   },
   "devDependencies": {
-    "@fontsource/figtree": "catalog:",
+    "@fontsource-variable/figtree": "catalog:",
     "@repo/design-system": "workspace:*",
     "@storybook/addon-a11y": "catalog:",
     "@storybook/addon-vitest": "catalog:",

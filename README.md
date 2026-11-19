@@ -7,7 +7,8 @@ and the [validation record](docs/validation-status.md).
 
 Use Node 26, the repository's pinned pnpm, and PostgreSQL. Initialize the exact
 upstream commit before installing. The Worker imports the upstream cloud
-package. Grace supplies the origins, assets and provider bindings.
+package. Grace supplies the origins, assets and provider bindings. The root install
+generates Eliza’s Cloud decision model for the Worker and the browser client.
 
 ```sh
 git submodule update --init vendor/eliza
@@ -15,8 +16,8 @@ pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --
 pnpm install --frozen-lockfile
 ```
 
-Create an empty local PostgreSQL database for Grace and set its connection
-string as `DATABASE_URL` in the ignored file `apps/cloud/.dev.vars`.
+Create an empty local PostgreSQL database for Grace. In `apps/cloud`, create
+the ignored file `.dev.vars` and set `DATABASE_URL` to the connection string.
 Initialize it and start the local Worker. Run Vite in a second terminal.
 
 ```sh
@@ -34,7 +35,7 @@ configuration. The migration refuses an occupied database on first install.
 | Capability | Deployment bindings and registration |
 | --- | --- |
 | Database | The production `HYPERDRIVE` binding points to a dedicated PostgreSQL service in [Grace’s Railway project](https://railway.com/project/9ef3865f-1538-44d7-aa1f-6734e2c2caac). The runtime uses its own non-admin role. Hyperdrive checks the database’s private CA and has query caching disabled. Run migrations with the Railway owner connection and `CLOUD_ENVIRONMENT=production`. |
-| Google sign-in | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. The production configuration pins the public ID of the existing Eliza Google OAuth web client for Grace sign-in and managed connections. The project owner supplies its matching secret to the Worker. Register both `https://api.graceforseniors.com/api/auth/google/callback` and `https://api.graceforseniors.com/api/v1/eliza/google/connect/callback` on that client. In the same Google project, register the Android package `technology.graceful.grace` with the release certificate’s SHA-1 fingerprint `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02` before binding the web client secret. Grace then offers the native Google picker and browser sign-in. |
+| Google sign-in | The production Worker stores `GOOGLE_CLIENT_ID` and its matching `GOOGLE_CLIENT_SECRET` together. Grace sign-in and managed connections share this ElizaCloud project web client. Its registered callbacks are `https://api.graceforseniors.com/api/auth/google/callback` and `https://api.graceforseniors.com/api/v1/eliza/google/connect/callback`. The Android client pairs `technology.graceful.grace` with the release certificate SHA-1 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`. |
 | Email and SMS | The production `SIGN_IN_EMAIL` binding sends codes from `signin@auth.graceforseniors.com`. Local tests can use a Resend test project via `RESEND_API_KEY` and `EMAIL_FROM`. Set `EMAIL_CODE_SECRET` to at least 32 random characters. Grace SMS uses a dedicated `BLOOIO_API_KEY` and the approved sender’s `BLOOIO_SMS_CHANNEL_ID`. A Twilio Verify deployment can use `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_VERIFY_SERVICE_SID` instead. Both transports enforce `SMS_ALLOWED_COUNTRY_CODES` and `SMS_HOURLY_BUDGET`. |
 | Gmail and Calendar | A new 32-byte hex `GOOGLE_CONNECT_TOKEN_KEY` for this deployment. Grace currently uses the sign-in client for managed access as well. Optional `GOOGLE_CONNECT_CLIENT_ID` and `GOOGLE_CONNECT_CLIENT_SECRET` apply when a deployment has a separate managed-data client. Users choose Gmail read, send and Trash permissions and Calendar read and owned-event edits separately. |
 | Subscriptions | Grace Plus costs USD 30 per month. The production configuration maps `plus_monthly` to its dedicated live product and price in Eliza Labs. Bind `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to Grace and enable the hosted customer portal. Register `https://api.graceforseniors.com/api/v1/billing/webhook` for checkout completion, subscription changes, paid invoices, refunds and dispute changes. The Worker verifies the event signature, retrieves the customer's current subscription and applies each paid invoice once. [Grace Plus in Stripe](https://dashboard.stripe.com/acct_1SRAVOJjh0QG9ZAX/products/prod_VeHYVJT4exsbJE) |
@@ -42,6 +43,11 @@ configuration. The migration refuses an occupied database on first install.
 | Browser guidance | Grace imports the decision client from `@elizaos/cloud/clef-decisions`. The signed-in browser or tablet sends page candidates to the Grace API at `POST /api/v1/decisions`. The upstream Worker uses Grace’s `AI` binding to select a candidate with Clef Flash. Grace checks the current page again and highlights the link for the person to tap. |
 | Speech | The Worker uses its Grace-specific `CARTESIA_API_KEY` in the Eliza organization and Julia – Gentle Guide, a stock English voice. The organization's Startup model overage costs USD 45 per million credits. At three credits per second of transcription and one per character of synthesis, Grace meters 135 and 45 microdollars respectively. Each account can start up to 120 one-minute speech sessions per rolling day, carrying forward the previous integration's 120-minute ceiling. Grace owns the `SPEECH_RELAY_SESSIONS` Durable Objects. |
 | Android | Register the Grace app package, release signer SHA-256 fingerprint, HTTPS return URLs and `credentialTtlMs: 604800000` (seven days) in `NATIVE_CLIENT_REGISTRY`, and select its `NATIVE_CLIENT_ID`. The app host serves the resulting Digital Asset Links document. Only the native app receives the inference credential. |
+
+For Grace’s restricted Stripe key, allow the Worker to create customers, Checkout sessions and
+customer portal sessions. It also retrieves Checkout sessions and reads prices and their
+products, subscriptions, invoices, invoice payments, PaymentIntents, charges and disputes.
+Stripe webhook reconciliation applies only to customers already bound to a Grace organization.
 
 Google identity sign-in requests basic identity scopes. The Gmail and Calendar
 consent screen lists the permissions the person chose. In Google’s testing mode, the designated

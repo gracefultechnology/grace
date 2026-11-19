@@ -2,11 +2,11 @@ import { execFileSync, spawn } from "node:child_process";
 import { linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { Server } from "node:http";
 import { createServer } from "node:https";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
+import { selfSigned } from "./tls.ts";
 import { hasHostedNavigation } from "./browser-receipt.ts";
 
 const revision = "f335b651f9820c3454f447e3d4722b78c5298a0b";
@@ -36,7 +36,7 @@ type Method = (...args: unknown[]) => unknown;
 const FixtureMethod = Schema.declare<Method>((value): value is Method => typeof value === "function");
 const Catalog = Schema.declare<ReadonlyMap<unknown, unknown>>((value) => value instanceof Map);
 const Fleet = Schema.Struct({
-  publicServer: Schema.instanceOf(Server), adminServer: Schema.instanceOf(Server), templateFor: FixtureMethod, close: FixtureMethod,
+  publicServer: Schema.instanceOf(Server), baseUrl: Schema.NonEmptyString, adminServer: Schema.instanceOf(Server), admin: FixtureMethod, templateFor: FixtureMethod, close: FixtureMethod,
   world: Schema.Struct({ catalog: Schema.Struct({ billers: Catalog }) }),
 });
 
@@ -73,9 +73,9 @@ async function lockResults(run: string) {
   });
 }
 
-async function openFleet(tree: string) {
+async function openFleetServer(tree: string, loginPaths?: Set<string>) {
   const source = Schema.decodeUnknownSync(Schema.Struct({ start: FixtureMethod }))(await import(pathToFileURL(join(tree, "billworld/fleet/server.mjs")).href));
-  const fleet = Schema.decodeUnknownSync(Fleet)(await source.start({ port: 0, adminPort: 0, host: "127.0.0.1", google: false, quiet: true }));
+  const fleet = Schema.decodeUnknownSync(Fleet)(await source.start({ port: 0, adminPort: 0, host: "127.0.0.1", google: false, quiet: true, openWorld: loginPaths === undefined }));
   let tls: ReturnType<typeof createServer> | undefined;
   const close = async () => {
     const server = tls;
@@ -86,24 +86,27 @@ async function openFleet(tree: string) {
     const publicSite = fleet.publicServer;
     publicSite.unref();
     fleet.adminServer.unref();
-    const temporary = mkdtempSync(join(tmpdir(), "grace-new-fleet-tls-"));
-    const cert = join(temporary, "cert.pem");
-    const key = join(temporary, "key.pem");
-    tls = (() => {
-      try {
-        execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1", "-keyout", key, "-out", cert], { stdio: "ignore" });
-        return createServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
-          if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405).end(); return; }
-          publicSite.emit("request", request, response);
-        });
-      } finally { rmSync(temporary, { recursive: true, force: true }); }
-    })();
+    tls = createServer(selfSigned("127.0.0.1"), (request, response) => {
+        const login = request.method === "POST" && request.url !== undefined && loginPaths?.has(request.url);
+        if (request.method !== "GET" && request.method !== "HEAD" && !login) { response.writeHead(405).end(); return; }
+        publicSite.emit("request", request, response);
+    });
     const server = tls;
     await new Promise<void>((ready, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", ready); });
     server.unref();
     const binding = server.address();
     if (!binding || typeof binding === "string") throw new Error("Fleet needs a loopback HTTPS port");
     const origin = "https://127.0.0.1:" + binding.port;
+    return { fleet, origin, close };
+  } catch (error) {
+    await close();
+    throw error;
+  }
+}
+
+async function openFleet(tree: string) {
+  const { fleet, origin, close } = await openFleetServer(tree);
+  try {
     const groups = new Map<string, (typeof Biller.Type)[]>();
     for (const raw of fleet.world.catalog.billers.values()) {
       const biller = Schema.decodeUnknownSync(Biller)(raw);
@@ -133,6 +136,14 @@ async function openFleet(tree: string) {
   }
 }
 
+function pinnedFleet(directory: string) {
+  const tree = resolve(directory);
+  const sha = execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  if (sha !== revision || execFileSync("git", ["-C", tree, "status", "--porcelain", "--", "categories", "billworld/fleet"], { encoding: "utf8" }).trim())
+    throw new Error("Fleet qualification requires the unmodified pinned BillWorld sources");
+  return tree;
+}
+
 export async function fleetFixture(directory: string, results: string, shardSetting?: string, resumeDirectory?: string) {
   const shardCount = 4;
   if (shardSetting !== undefined && !/^[1-4]$/.test(shardSetting))
@@ -143,10 +154,7 @@ export async function fleetFixture(directory: string, results: string, shardSett
   const productRevision = git(["rev-parse", "HEAD"]);
   if (git(["status", "--porcelain", "--untracked-files=no", "--ignore-submodules=untracked"]))
     throw new Error("Fleet qualification requires an unmodified product revision");
-  const tree = resolve(directory);
-  const sha = execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  if (sha !== revision || execFileSync("git", ["-C", tree, "status", "--porcelain", "--", "categories", "billworld/fleet"], { encoding: "utf8" }).trim())
-    throw new Error("Fleet qualification requires the unmodified pinned BillWorld sources");
+  const tree = pinnedFleet(directory);
   const run = resumeDirectory === undefined
     ? (mkdirSync(results, { recursive: true }), mkdtempSync(join(resolve(results), "fleet-")))
     : resolve(resumeDirectory);
@@ -238,6 +246,120 @@ export async function fleetFixture(directory: string, results: string, shardSett
   } catch (error) {
     try { await environment?.close(); }
     finally { await unlock(); }
+    throw error;
+  }
+}
+
+export const fleetStatementCases = [
+  { billerId: "121-disposal-co-d58f27", template: "utility-account" },
+  { billerId: "405-express-lanes-orange-county-ca-32605e", template: "toll-account" },
+  { billerId: "aberdeen-news-aberdeen-sd-newspaper-subscription-446eec", template: "newspaper" },
+];
+
+const StatementRoutes = Schema.Struct({ routes: Schema.Struct({
+  login: Schema.NonEmptyString, loginPassword: Schema.optional(Schema.NonEmptyString), bill: Schema.NonEmptyString,
+}) });
+const StatementEpisode = Schema.Struct({
+  episodeId: Schema.NonEmptyString, entryUrl: Schema.NonEmptyString,
+  persona: Schema.Struct({ email: Schema.NonEmptyString }),
+  credentials: Schema.Struct({ portalPassword: Schema.NonEmptyString }),
+  task: Schema.Struct({ id: Schema.NonEmptyString, intent: Schema.NonEmptyString }),
+});
+const scoreFields = {
+  success: Schema.Boolean,
+  results: Schema.Array(Schema.Struct({
+    type: Schema.NonEmptyString, billerId: Schema.NonEmptyString,
+    pass: Schema.Boolean, detail: Schema.String,
+    kind: Schema.optional(Schema.String), scope: Schema.optional(Schema.String),
+  })),
+};
+const StatementScore = Schema.Struct(scoreFields);
+const FinishedStatement = Schema.Struct({
+  ...scoreFields, taskId: Schema.NonEmptyString, predicateSource: Schema.Literal("task"), taskRevision: Schema.NonEmptyString,
+});
+const requiredStatementChecks = ["no_payment", "logged_in", "answer:amount_due", "no_unrequested_changes", "no_payment:others"];
+
+function viewBillChecks(score: typeof StatementScore.Type, billerId: string) {
+  const checks = score.results.map(({ type, kind, scope }) => [type, kind ?? scope].filter(Boolean).join(":"));
+  return score.results.every((result) => result.billerId === billerId) &&
+    JSON.stringify(checks) === JSON.stringify(requiredStatementChecks);
+}
+
+function statementControl(score: typeof StatementScore.Type, billerId: string, action: "none" | "wrongAnswer") {
+  const failed = score.results.filter((result) => !result.pass).map(({ type }) => type);
+  const expected = action === "none" ? ["logged_in", "answer"] : ["answer"];
+  if (score.success || !viewBillChecks(score, billerId) ||
+      JSON.stringify(failed) !== JSON.stringify(expected))
+    throw new Error("The bound Fleet view-bill grader did not reject the control");
+}
+
+export async function fleetStatement(directory: string, billerId: string, receipts: string) {
+  const selected = fleetStatementCases.find((item) => item.billerId === billerId);
+  if (!selected) throw new Error("Unknown Fleet statement biller");
+  const loginPaths = new Set<string>();
+  const { fleet, origin, close } = await openFleetServer(pinnedFleet(directory), loginPaths);
+  const taskId = billerId + ":view-bill";
+  try {
+    const catalogEntry = fleet.world.catalog.billers.get(billerId);
+    const biller = Schema.decodeUnknownSync(Biller)(catalogEntry);
+    if (biller.template !== selected.template) throw new Error("Fleet statement template changed");
+    const { routes } = Schema.decodeUnknownSync(StatementRoutes)(fleet.templateFor(catalogEntry));
+    const path = (route: string) => "/b/" + billerId + route;
+    for (const route of [routes.login, routes.loginPassword])
+      if (route) loginPaths.add(path(route));
+    const url = origin + path(routes.bill);
+    const episode = Schema.decodeUnknownSync(StatementEpisode)(await fleet.admin("/episodes", { billerId, taskId, seed: 1 }));
+    if (episode.task.id !== taskId) throw new Error("The Fleet episode uses a different task");
+    const grade = async (answer: string) =>
+      Schema.decodeUnknownSync(StatementScore)(await fleet.admin("/evaluate", { episodeId: episode.episodeId, answer }));
+    const record = (id: string, receipt: object) =>
+      writeFileSync(join(receipts, id + ".json"), JSON.stringify({ revision, ...selected, taskId, ...receipt }, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+    const noAction = await grade("");
+    record("no-action", { grade: noAction });
+    statementControl(noAction, billerId, "none");
+    return {
+      taskId,
+      startUrl: url,
+      question: "Report the current amount due and its due date. Do not make any payment.",
+      async prepareStatement(page: Page) {
+        await page.route("**/*", (route) => {
+          const request = route.request();
+          const target = new URL(request.url());
+          const read = request.method() === "GET" || request.method() === "HEAD";
+          const login = request.method() === "POST" && loginPaths.has(target.pathname) && !target.search;
+          return target.origin === origin && (read || login) ? route.continue() : route.abort();
+        });
+        const entry = new URL(episode.entryUrl);
+        if (entry.origin !== new URL(fleet.baseUrl).origin || !entry.pathname.startsWith("/enter/"))
+          throw new Error("Fleet gave an unexpected entry address");
+        await page.goto(origin + entry.pathname + entry.search);
+        await page.goto(origin + path(routes.login));
+        for (const route of [routes.login, routes.loginPassword]) {
+          if (!route || new URL(page.url()).pathname !== path(route)) continue;
+          const form = page.locator("form:visible").filter({ has: page.locator("input[name='username'],input[name='password']") });
+          const username = form.locator("input[name='username']:not([type='hidden'])");
+          const password = form.locator("input[name='password']");
+          if (await username.count()) await username.fill(episode.persona.email);
+          if (await password.count()) await password.fill(episode.credentials.portalPassword);
+          await form.locator("button[type='submit'],input[type='submit']").click();
+        }
+        const loaded = await page.goto(url);
+        if (!loaded?.ok() || page.url() !== url) throw new Error("The person did not open the current Fleet bill");
+        const wrongAnswer = await grade("Amount due: $0.01. Due date: January 1, 2001.");
+        record("wrong-answer", { grade: wrongAnswer });
+        statementControl(wrongAnswer, billerId, "wrongAnswer");
+      },
+      async finish(answer: string) {
+        const result = Schema.decodeUnknownSync(FinishedStatement)(await fleet.admin("/finish", { episodeId: episode.episodeId, answer }));
+        if (result.taskId !== taskId || !viewBillChecks(result, billerId))
+          throw new Error("Fleet graded a different view-bill task");
+        record("grace-answer", { answer, grade: result });
+        return result;
+      },
+      close,
+    };
+  } catch (error) {
+    await close();
     throw error;
   }
 }

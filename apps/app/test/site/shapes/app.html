@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Power account</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+  nav, main { padding: 12px 24px; }
+  nav { display: flex; gap: 16px; }
+</style>
+<nav aria-label="Account">
+  <a href="#/billing">Billing</a>
+  <a href="#/usage">Usage</a>
+  <a href="#/help">Help</a>
+</nav>
+<main id="view"></main>
+<script>
+  const views = {
+    "#/home": "<h1>Your account</h1><p>Your bill of $84.12 is due on December 5. Choose Billing to see the bill and ways to pay.</p>",
+    "#/billing": "<h1>Billing</h1><p>Amount due: $84.12. Due date: December 5, 2026.</p>",
+    "#/usage": "<h1>Usage</h1><p>You used 612 kWh this month.</p>",
+    "#/help": "<h1>Help</h1><p>Call us any time.</p>",
+  };
+  const show = () => { document.getElementById("view").innerHTML = views[location.hash] ?? views["#/home"]; };
+  addEventListener("hashchange", show);
+  show();
+</script>

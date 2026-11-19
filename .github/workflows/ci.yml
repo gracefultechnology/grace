@@ -46,7 +46,7 @@ permissions:
 jobs:
   webarena:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.webarena
-    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     defaults:
       run:
@@ -197,7 +197,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -247,7 +247,7 @@ jobs:
   billworld-aggregate:
     if: always() && github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     needs: billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -371,7 +371,7 @@ jobs:
           if-no-files-found: error
   billworld-released:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
       GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
@@ -445,8 +445,8 @@ jobs:
             JSON.stringify({ revision, upstream, assets }, null, 2) + "\n");
           JS
       - run: pnpm gen
-      - name: Read the original released statement and grade both controls
-        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the released BillWorld statement'
+      - name: Read the released and Fleet statements through Grace
+        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the .* BillWorld statement'
       - name: Require the negative witness and six positive checks
         run: |
           node --input-type=module <<'JS'
@@ -491,11 +491,64 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: billworld-released-task-md9
-          path: ${{ github.workspace }}/.cache/grace-released-billworld-results
+          path: |
+            ${{ github.workspace }}/.cache/grace-released-billworld-results/assets.json
+            ${{ github.workspace }}/.cache/grace-released-billworld-results/released-statement-*/
+          if-no-files-found: error
+      - name: Verify the separate Fleet view-bill receipts and controls
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { fleetStatementCases } from "./apps/app/test/fleet.fixture.ts";
+
+          const root = process.env.GRACE_BILLWORLD_RESULTS;
+          const fixtureRevision = process.env.GRACE_BILLWORLD_REVISION;
+          const assigned = new Map(fleetStatementCases.map((item) => [item.billerId, item.template]));
+          const cases = readdirSync(root, { withFileTypes: true }).filter((item) => item.isDirectory() && item.name.startsWith("fleet-view-bill-"));
+          assert.equal(cases.length, assigned.size);
+          const accepted = [];
+          for (const { name } of cases) {
+            const read = (filename) => JSON.parse(readFileSync(join(root, name, filename), "utf8"));
+            const positive = read("grace-answer.json");
+            const { billerId, template, taskId } = positive;
+            assert.equal(assigned.get(billerId), template);
+            assert.equal(taskId, billerId + ":view-bill");
+            assert.equal(positive.grade.taskId, taskId);
+            assert.equal(positive.grade.predicateSource, "task");
+            assert.ok(positive.grade.taskRevision);
+            assert.match(positive.answer, /^Statement amount due: .+\. Due date: .+\.$/u);
+            for (const [receipt, failed] of [
+              [positive, []], [read("no-action.json"), ["logged_in", "answer"]], [read("wrong-answer.json"), ["answer"]],
+            ]) {
+              assert.deepEqual([receipt.revision, receipt.billerId, receipt.template, receipt.taskId], [fixtureRevision, billerId, template, taskId]);
+              assert.equal(receipt.grade.success, failed.length === 0);
+              const checks = receipt.grade.results;
+              assert.ok(checks.every((item) => item.billerId === billerId && typeof item.pass === "boolean"));
+              assert.deepEqual(checks.map(({ type, kind, scope }) => [type, kind ?? scope].filter(Boolean).join(":")),
+                ["no_payment", "logged_in", "answer:amount_due", "no_unrequested_changes", "no_payment:others"]);
+              assert.deepEqual(checks.filter((item) => !item.pass).map((item) => item.type), failed);
+            }
+            accepted.push({ taskId, template, checks: positive.grade.results.length, controlsRejected: 2 });
+            assigned.delete(billerId);
+          }
+          assert.equal(assigned.size, 0);
+          writeFileSync(join(root, "fleet-view-bill-qualification.json"), JSON.stringify({
+            productRevision: process.env.GITHUB_SHA, fixtureRevision, cases: accepted,
+          }, null, 2) + "\n");
+          JS
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: billworld-fleet-view-bill
+          path: |
+            ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-*/
+            ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-qualification.json
           if-no-files-found: error
   verify:
     if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)
-    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}

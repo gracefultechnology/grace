@@ -1,11 +1,13 @@
 import { ExperimentalNodeHttpServer } from "vibelang-runtime/experimental/platform-node"
 import type { TestProject } from "vitest/node"
 import { answered, cloud } from "./cloud.vibe"
+import { loopbackNames, secureListener } from "./tls.ts"
 
 declare module "vitest" {
   export interface ProvidedContext {
     site: string
     cloud: string
+    groundProxy: string
   }
 }
 
@@ -36,6 +38,11 @@ effect function routes() {
     return HttpServerResponse.redirect(`/${visit}/bill/amount.html`, { status: 303 })
   }
 
+  effect function moved() {
+    const { visit } = try HttpRouter.schemaPathParams(Visit)
+    return HttpServerResponse.redirect(`https://www.bank.localhost/${visit}/shapes/bank.html`, { status: 301 })
+  }
+
   return [
     HttpRouter.route("GET", "/", HttpServerResponse.empty({ status: 404 })),
     HttpRouter.route("POST", "/:visit/bill", answered(signIn())),
@@ -43,6 +50,7 @@ effect function routes() {
     HttpRouter.route("GET", "/:visit/paid", answered(listed("paid"))),
     HttpRouter.route("POST", "/:visit/book", answered(keep("booked", Booking, "booking/booked.html"))),
     HttpRouter.route("GET", "/:visit/booked", answered(listed("booked"))),
+    HttpRouter.route("GET", "/:visit/moved", answered(moved())),
     HttpRouter.route("GET", "/:visit/slow", effect {
       try sleep("3 seconds")
       return HttpServerResponse.text("<!doctype html><title>A page that took its time</title><h1>A page that took its time</h1>", { contentType: "text/html" })
@@ -53,9 +61,8 @@ effect function routes() {
 
 const site = Layer.mergeAll(HttpStaticServer.layer({ root: `${import.meta.dirname}/site`, prefix: "/:visit" }), HttpRouter.addAll(routes()), HttpRouter.cors())
 
-effect function serve(app: Layer.Layer<never, PlatformError.PlatformError, HttpRouter.HttpRouter | FileSystem.FileSystem | Path.Path | HttpPlatform.HttpPlatform>) {
-  const listening = Layer.fresh(ExperimentalNodeHttpServer.layer({ port: 0, host: "127.0.0.1", gracefulShutdownTimeout: 0 }))
-  const context = try Layer.build(Layer.provideMerge(HttpRouter.serve(app, { disableLogger: true, disableListenLog: true }), listening))
+effect function serve(app: Layer.Layer<never, PlatformError.PlatformError, HttpRouter.HttpRouter | FileSystem.FileSystem | Path.Path | HttpPlatform.HttpPlatform>, listener = ExperimentalNodeHttpServer.layer({ port: 0, host: "127.0.0.1", gracefulShutdownTimeout: 0 })) {
+  const context = try Layer.build(Layer.provideMerge(HttpRouter.serve(app, { disableLogger: true, disableListenLog: true }), Layer.fresh(listener)))
   return HttpServer.formatAddress(Context.get(context, HttpServer.HttpServer).address)
 }
 
@@ -63,9 +70,12 @@ export default async function setup(project: TestProject) {
   const scope = await runPromise(Scope.make())
   const started = await runPromise(provideService(effect {
     const served = try serve(site)
-    return { site: served, cloud: try serve(cloud(served)) }
+    const ground = Number(new URL(try serve(site, secureListener())).port)
+    const names = try acquireRelease(tryPromise(() => loopbackNames(ground)), (opened) => promise(() => opened.close()))
+    return { site: served, cloud: try serve(cloud(served)), groundProxy: names.proxy }
   }, Scope.Scope, scope))
   project.provide("site", started.site)
   project.provide("cloud", started.cloud)
+  project.provide("groundProxy", started.groundProxy)
   return () => runPromise(Scope.close(scope, Exit.void))
 }

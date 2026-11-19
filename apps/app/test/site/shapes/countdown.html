@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your statement | Riverbank</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+  main { padding: 12px 24px; max-width: 640px; }
+  [role=timer] { font-weight: 600; }
+</style>
+<main>
+  <p>For your security, you will be signed out in <span role="timer" id="left">4:59</span>.</p>
+  <h1>Your statement</h1>
+  <p>Statement balance: $612.40. Payment due date: 12/05/2026.</p>
+  <p><a href="topic.html?history">Payment history</a></p>
+  <p><a href="topic.html?pdf">Download statement (PDF)</a></p>
+  <p><a href="topic.html?signout">Sign out</a></p>
+</main>
+<script>
+  let left = 299;
+  setInterval(() => {
+    left = Math.max(0, left - 1);
+    document.getElementById("left").textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  }, 1000);
+</script>

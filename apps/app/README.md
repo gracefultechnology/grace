@@ -12,11 +12,12 @@ and traces (SPEC.md, "One spec tree").
 | `src/useApp.ts`, `src/PageLayer.tsx` | React hooks over both machines; what the interface measures (`PageArea`, `OverPage`) |
 | `src/App.tsx`, `src/Browser.tsx`, `src/Grace.tsx` | Home, the browser window and Grace's window, on `@repo/ui` |
 | `test/app.browser.test.tsx` | the journey "Use the website under Grace's controls", with the plugin faked at its boundary (`pnpm test:browser`) |
+| `scripts/android.ts`, `scripts/aosp.ts` | the Android and AOSP runners, checked by `pnpm typecheck` against upstream's Android tools read from their source. Strict mode cannot use two of them, so `scripts/toolchain.d.ts` and `scripts/build-consumer.d.ts` declare what the runners call: `toolchain.ts` leaves its parameters untyped, and the defaults of `build-consumer.mjs` infer `null` and `never[]`; a change to those two shows only when a runner runs |
 
 | Command | Does |
 |---|---|
 | `pnpm dev` | the app, with Vite |
-| `pnpm typecheck`, `pnpm build` | `vibelang --noEmit`; `vite build` to `dist/` |
+| `pnpm typecheck`, `pnpm build` | Check types or build `dist/` from the current Grace model and design tokens. The Android and Cloud releases use this same web build. |
 | `pnpm test`, `pnpm test:browser` | the tests in Node, with the derived property tests; the browser tests in Chromium |
 
 ## Browser qualification
@@ -134,15 +135,17 @@ build copies it into `android/generated/android-user/` and points Gradle's `ANDR
 Anyone holding the repository can sign a debug build with it, which is why no production registration
 may list it.
 
-A release APK is the one handed to user QA. R8 shrinks and optimizes its Java (`releaseMinify` in
-`android/host.json`; Capacitor's own keep rules keep every plugin and its methods), and it is not
-debuggable, so no computer on USB can read or drive Grace's page, which holds her email, calendar
-and bank sessions; the content check fails a release APK that is debuggable, and
-`apk-manifest.json` records `debuggable` for each APK. The repository holds no release key and none
-has been made: whoever makes it keeps it and its passwords outside the repository and gives them to
-the build in the four variables. Built from `84a7a00` with a throwaway key, both release APKs were
-102,042,101 bytes against 113,479,785 for debug, their code 1.15 MB of dex against 10.3 MB, and
-`aapt` reported neither debuggable.
+User QA receives the release-signed APK. R8 shrinks the release build, Capacitor preserves its
+plugin methods, and the content check enforces `debuggable=false`. The Grace release key for
+`technology.graceful.grace` is held outside this repository. Supply the established key through
+the four signing variables above. The [production App Links document](https://app.graceforseniors.com/.well-known/assetlinks.json)
+publishes the certificate SHA-256. The SHA-1 for Android Google client registration is
+`7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`.
+
+The ARM64 launcher and standalone APKs built from Grace `ace4d8e` and Eliza `3423598` are each
+135,640,693 bytes. Both passed release certificate, package, agent payload, Node runtime and
+16 KiB alignment checks. Only the launcher registers as Android Home.
+[Release source](https://github.com/gracefultechnology/grace-new/pull/90)
 
 ### On the tablet
 
@@ -165,8 +168,7 @@ preparing the tablet does this by hand; Grace's scripts refuse any serial that i
 
 No model runs on the tablet, so the old minimums sized for models no longer apply: Grace needs what
 her process and her agent hold (about 270 MB and 170 MB resident, measured below) and the storage
-for the APK and what it unpacks (the 102 MB APK and a 202 MB agent payload on the build host; not yet
-measured on a tablet); a 4 GB tablet such as the TB336FU has room.
+for the APK and what it unpacks (the ARM64 release APK above and its unpacked agent payload); a 4 GB tablet such as the TB336FU has room.
 
 ### On the emulator
 
@@ -232,7 +234,7 @@ process. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, and `records.json` the record store, reminders and file library.
+`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, and `records.json` the record store, reminders and signed-out Files refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens it after a process restart, renders its page and removes the file by its returned ID.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
