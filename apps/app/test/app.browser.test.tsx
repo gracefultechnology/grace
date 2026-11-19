@@ -1003,19 +1003,18 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const press = (control: Locator) => act(() => userEvent.click(control));
     const notice = page.getByRole("dialog", { name: "Talk to Grace" });
     const continueTalk = notice.getByRole("button", { name: "Continue to Talk" });
-    const startTalk = () => press(page.getByRole("button", { name: "Allow mic" }).query() ?
-      page.getByRole("button", { name: "Allow mic" }) : page.getByRole("switch", { name: "Mic off" }));
+    const talkControl = page.getByRole("button", { name: "Allow mic" }).or(page.getByRole("switch", { name: "Mic off" }));
     await press(page.getByRole("button", { name: "Settings", exact: true }));
     await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
     await expect.element(page.getByText(voiceDisclosure, { exact: true })).toBeVisible();
     await press(page.getByRole("button", { name: "Close Settings", exact: true }));
     await press(page.getByRole("button", { name: "Ask Grace" }));
-    await startTalk();
+    await press(talkControl);
     await expect.element(notice.getByText(voiceDisclosure)).toBeVisible();
     await press(notice.getByRole("button", { name: "Cancel" }));
     expect(audio).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
-    await startTalk();
+    await press(talkControl);
     await expect.element(notice).toBeVisible();
     accountId = secondAccount;
     await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
@@ -1042,12 +1041,12 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     expect(phrases).toEqual([voiceOutput]);
     await expect.poll(() => calls).toEqual([speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"]);
     audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
-    await startTalk();
+    await press(talkControl);
     await expect.poll(() => audio.mock.calls.length).toBe(2);
     await expect.element(notice).not.toBeInTheDocument();
     accountId = firstAccount;
     await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
-    await startTalk();
+    await press(talkControl);
     await expect.element(notice).toBeVisible();
     expect(audio).toHaveBeenCalledTimes(2);
   } finally {
