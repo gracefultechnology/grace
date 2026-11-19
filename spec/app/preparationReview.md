@@ -33,6 +33,7 @@ performed equivalent provider-form/choice verification, not an alternative BP ha
 
 ```quint
 import billpay as BP from "./billpay"
+import billKind as BK from "./billKind"
 import commitment as CM from "./commitment"
 import task as T from "./task"
 import taskKinds as K from "./taskKinds"
@@ -131,7 +132,7 @@ pure val preparationValues = {
   val paused = BP::pause(handed, T::Person)
   Set(BP::initial, chosen, verified, handed, paused, BP::resume(paused, T::Person))
 }
-pure val wBound = {
+pure val wValues = {
   val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
   val opened = W::openGrace(W::visit(started, S::Browser, W::Person), W::Person)
   val allowed = W::setBrowserObservation(opened, { allowed: true,
@@ -146,10 +147,7 @@ pure val wBound = {
   val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
-  W::bindCommitment(observed, CM::exampleKey, W::Person)
-}
-pure val wValues = {
-  val bound = wBound
+  val bound = W::bindCommitment(observed, CM::exampleKey, W::Person)
   val reviewed = W::reviewCommitment(bound,
     { deviceVersion: bound.device.contextVersion, browserRevision: bound.browser.revision,
       taskVersion: bound.assistant.workVersion, review: CM::exampleReview }, W::Host)
@@ -163,21 +161,20 @@ pure val wValues = {
   Set(W::initial, bound, reviewed, changed, other)
 }
 pure val transferValues = {
-  val captured = { deviceVersion: wBound.device.contextVersion, browserRevision: wBound.browser.revision,
-    taskVersion: wBound.assistant.workVersion, revision: 0, attempt: 0 }
   val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
-  val valid = { handoff: BP::ReviewPayment(details), captured: captured }
-  Set(valid,
-    { ...valid, handoff: BP::ReviewPayment({ ...details, version: 3 }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "" }) },
-    { ...valid, captured: { ...captured, deviceVersion: captured.deviceVersion - 1 } },
-    { ...valid, captured: { ...captured, browserRevision: captured.browserRevision - 1 } },
-    { ...valid, captured: { ...captured, taskVersion: captured.taskVersion - 1 } },
-    { ...valid, captured: { ...captured, revision: 1 } },
-    { ...valid, captured: { ...captured, attempt: 1 } })
+  val valid = wValues.map(w => { handoff: BP::ReviewPayment(details), captured: { deviceVersion: w.device.contextVersion,
+    browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion, revision: 0, attempt: 0 } })
+  valid
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, version: 3 }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, evidence: "" }) }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, deviceVersion: t.captured.deviceVersion - 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, browserRevision: t.captured.browserRevision - 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, taskVersion: t.captured.taskVersion - 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, revision: 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, attempt: 1 } }))
 }
 pure val byValues = Set(W::Host, W::Person, W::Store, W::Actuator)
 ```
