@@ -779,7 +779,11 @@ sign-in, is a call Grace makes, which Android can still fail: another file
 picker is already open (`FILE_CHOOSER_BUSY`) or none is available
 (`FILE_CHOOSER_UNAVAILABLE`), no app on the tablet opens the link, no other
 browser is installed, Android refuses the launch, or the page moved on first.
-The host reports how that call ended for the request it answered. When it
+The host reports how that call ended for the request it answered. An
+`intent:` link can name a secure web page to show when no app opens it,
+which the surface checks is an `https://` address: when no app on the tablet
+opens such a link, the host shows that page in the same tab, as a link the
+website followed by itself, and the call counts as opened. When it
 opened, nothing more is said; when it did not, the person is told plainly
 what did not open until they close the notice, and a file request that got
 no picker gets no file. Leaving the page, hiding the browser and Close

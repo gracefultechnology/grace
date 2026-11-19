@@ -473,18 +473,25 @@ The address bar shows the padlock for the selected tab only once its load
 ended Loaded and the adapter reported the connection secure. A blank tab, a
 page still loading, one that failed and one blocked for security never show
 it, and every new load, Back, Forward and reload takes it away until that
-load ends. An `http://` address, typed or followed from a page, opens as any
+load ends. While the person types an address the bar shows her draft, not
+the page's address, so the padlock is hidden until she submits or dismisses
+it. An `http://` address, typed or followed from a page, opens as any
 other: the adapter reports its connection as not secure, so the page loads
-without the padlock. Decision: the prototype draws the padlock in every address bar,
+without the padlock. On the tablet the surface refuses every certificate
+error and all mixed content, so the adapter reports a page that loaded at an
+`https://` address as secure. Decision: the prototype draws the padlock in every address bar,
 even on an empty new tab (`prototype/Grace Prototype.html`, line 829); that is
 a drawing shortcut, not product behavior, since an origin is never itself
 proof that a website is safe.
 
 ```quint
-pure def showsSecureIndicator(b: Browser): bool = activeTab(b).load == Loaded and activeTab(b).secure
+pure def showsSecureIndicator(b: Browser): bool =
+  not(b.editingAddress) and activeTab(b).load == Loaded and activeTab(b).secure
 pure def alwaysOnlyALoadedPageIsSecure(b: Browser): bool = b.tabs.every(t => t.secure implies t.load == Loaded)
 pure def sometimesASecurePageShowsThePadlock(b: Browser): bool = showsSecureIndicator(b)
-pure def sometimesALoadedPageIsNotSecure(b: Browser): bool = activeTab(b).load == Loaded and not(showsSecureIndicator(b))
+pure def sometimesALoadedPageIsNotSecure(b: Browser): bool = activeTab(b).load == Loaded and not(activeTab(b).secure)
+pure def sometimesTypingHidesThePadlock(b: Browser): bool =
+  b.editingAddress and activeTab(b).load == Loaded and activeTab(b).secure
 ```
 
 ## Story: Adjust the page without stale assistance

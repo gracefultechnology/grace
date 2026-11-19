@@ -140,7 +140,7 @@ pure val wValues = {
   val opened = W::openGrace(W::visit(available, S::Browser, W::Person), W::Person)
   val begun = W::begin(opened,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, W::Person)
-  val loaded = W::receiveLoad(begun, { id: 1, version: 1, result: B::Loaded }, W::Host)
+  val loaded = W::receiveLoad(begun, { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, W::Host)
   val observed = W::observe(loaded, { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
   val bound = W::bindCommitment(observed, CM::exampleKey, W::Person)

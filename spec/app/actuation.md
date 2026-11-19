@@ -89,7 +89,7 @@ pure def observedSample(starting: WS::Workspace): WS::Workspace = {
   val opened = WS::interact(WS::openGrace(WS::visit(online, S::Browser, WS::Person), WS::Person),
     I::Resize({ expanded: false }), WS::Person)
   val task = WS::begin(opened, { owner: "owner", task: "task", goal: "Read the account", origin: CM::exampleKey.origin }, WS::Person)
-  val page = WS::receiveLoad(task, { id: 1, version: 1, result: B::Loaded }, WS::Host)
+  val page = WS::receiveLoad(task, { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: CM::exampleKey.origin }, WS::Host)
   WS::observe(page, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation,
     checkpoint: "Read the current account" }, WS::Host)
 }
