@@ -1,0 +1,114 @@
+// spec/app/files.md, "A library belongs to one owner and identifies files independently of their names"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
+import { browserFilesAccess } from "./graceAccount.vibe"
+import type { FileAttachment, FilesPort } from "./filesPlugin.ts"
+import { HeldFile } from "./instances.vibe"
+import { webView } from "./surfacePlugin.ts"
+
+error BrowserFilesUnavailable
+schema MailFile { id: Schema.NonEmptyString; name: Schema.NonEmptyString; kind: "photo" | "pdf"; savedAt: Schema.Int; pages: Schema.Int; source: HeldFile; version: Schema.NonEmptyString }
+schema StoredFile { entry: MailFile; data: string }
+type Access = { owner: string; session: string }
+const storedFiles = Schema.decodeUnknownSync(Schema.Array(StoredFile))
+const sourceIdentity = (file: HeldFile) => JSON.stringify([file.origin, file.account, file.container, file.sourceRef, file.contentRef])
+
+function contentType(name: string) {
+  const ext = name.toLowerCase().split(".").at(-1)
+  return ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg"
+}
+
+effect function opened(owner: string) {
+  return try acquireRelease(tryPromise(() => new Promise<IDBDatabase>((resolve, reject) => {
+    const request = webView.window.indexedDB.open("grace-files/" + owner, 1)
+    request.onupgradeneeded = () => { request.result.createObjectStore("files", { keyPath: "entry.id" }) }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })), (db) => sync(() => db.close()))
+}
+
+effect function transact<A>(owner: string, mode: IDBTransactionMode, update: (rows: readonly StoredFile[], store: IDBObjectStore) => A | undefined) {
+  return try scoped(effect {
+    const db = try opened(owner)
+    return try tryPromise(() => new Promise<A>((resolve, reject) => {
+      const tx = db.transaction("files", mode)
+      const store = tx.objectStore("files")
+      const request = store.getAll()
+      let result: A
+      tx.onabort = () => reject(tx.error ?? new Error("File transaction failed"))
+      tx.oncomplete = () => resolve(result)
+      request.onsuccess = () => {
+        try {
+          const value = update(storedFiles(request.result), store)
+          if (value === undefined) tx.abort()
+          else result = value
+        }
+        catch { tx.abort() }
+      }
+    }))
+  })
+}
+
+export function browserFiles(): FilesPort {
+  const leases = new Map<string, Access>()
+
+  effect function current(token: string) {
+    const saved = leases.get(token)
+    if (!saved) throw new BrowserFilesUnavailable()
+    const now = try browserFilesAccess()
+    if (saved.owner !== now.owner || saved.session !== now.session || leases.get(token) !== saved) throw new BrowserFilesUnavailable()
+    return now.owner
+  }
+
+  effect function read<A>(lease: string, mode: IDBTransactionMode, update: (rows: readonly StoredFile[], store: IDBObjectStore) => A | undefined) {
+    const owner = try current(lease)
+    const result = try transact(owner, mode, update)
+    try current(lease)
+    return result
+  }
+
+  function imported(rows: readonly StoredFile[], store: IDBObjectStore, attachments: readonly FileAttachment[]) {
+    if (attachments.length === 0 || attachments.length > 250) return undefined
+    const known = new Map(rows.map((row) => [sourceIdentity(row.entry.source), row]))
+    const entries: MailFile[] = []
+    for (const { file, data, version } of attachments) {
+      const key = sourceIdentity(file)
+      const prior = known.get(key)
+      if (prior) {
+        if (prior.data !== data || prior.entry.kind !== (file.kind === "Pdf" ? "pdf" : "photo")) return undefined
+        entries.push(prior.entry)
+        continue
+      }
+      if (!version || !data || data.length > 6_990_508 || known.size >= 250) return undefined
+      const entry: MailFile = { id: webView.window.crypto.randomUUID(), name: file.name, kind: file.kind === "Pdf" ? "pdf" : "photo",
+        savedAt: Date.now(), pages: file.pages, source: file, version }
+      const row = { entry, data }
+      store.add(row)
+      known.set(key, row)
+      entries.push(entry)
+    }
+    return { entries }
+  }
+
+  return {
+    open: () => runPromise(effect {
+      const access = try browserFilesAccess()
+      const lease = try Effect.try(() => webView.window.crypto.randomUUID())
+      leases.clear()
+      leases.set(lease, access)
+      return { lease }
+    }),
+    close: ({ lease }) => runPromise(sync(() => { leases.delete(lease) })),
+    list: ({ lease }) => runPromise(read(lease, "readonly", (rows) => ({ entries: rows.map((row) => row.entry).sort((a, b) => b.savedAt - a.savedAt) }))),
+    preview: ({ lease, id, page }) => runPromise(read(lease, "readonly", (rows) => {
+      const row = rows.find((item) => item.entry.id === id)
+      if (!row || (row.entry.kind === "pdf" ? page < 1 || page > row.entry.pages : page !== 0)) return undefined
+      return { id, page, image: "data:" + contentType(row.entry.name) + ";base64," + row.data }
+    })),
+    remove: ({ lease, id }) => runPromise(read(lease, "readwrite", (rows, store) => {
+      const row = rows.find((item) => item.entry.id === id)
+      if (!row || row.entry.kind !== "photo") return undefined
+      store.delete(id)
+      return true
+    }) |> Effect.asVoid(%)),
+    saveAttachments: ({ lease, attachments }) => runPromise(read(lease, "readwrite", (rows, store) => imported(rows, store, attachments))),
+  }
+}

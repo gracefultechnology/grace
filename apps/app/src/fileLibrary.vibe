@@ -2,20 +2,14 @@
 import { type Files, type SavedFile, type FileActor, type Event, captureFile, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import type { FilesPort } from "./filesPlugin.ts"
+import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes } from "./files.vibe"
 
-const idFormat = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/))
-const displayName = Schema.NonEmptyString.check(Schema.isMaxLength(180))
-const timestamp = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(8640000000000000))
-const picture = Schema.String.check(Schema.isMaxLength(1_000_035), Schema.isPattern(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/))
-schema Lease { lease: idFormat }
-schema Entry { id: idFormat; name: displayName; kind: "photo" | "pdf"; savedAt: timestamp; pages: Schema.Int }
-schema Catalog { entries: Entry[] }
-schema Preview { id: idFormat; page: Schema.Int; image: picture }
-schema Completion { id: idFormat }
+const picture = Schema.String.check(Schema.isMaxLength(6_990_560), Schema.isPattern(/^data:(?:image\/(?:jpeg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/]+=*$/))
+schema Preview { id: fileId; page: Schema.Int; image: picture }
+schema Completion { id: fileId }
 
 type Closed = { kind: "out" | "signedOut" | "opening" | "unavailable" | "unsupported" }
-type Ready = { kind: "ready"; lease: string; model: Files; thumbs: Readonly<Record<string, string>>; image?: string; busy: boolean; issue: boolean }
+type Ready = { kind: "ready"; owner: string; canImport: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>; image?: string; busy: boolean; issue: boolean }
 export type FileSnapshot = Closed | Ready
 export type FileHome = { photos: { src: string; alt: string }[]; document?: { name: string } }
 type Command =
@@ -42,7 +36,8 @@ function localFile(entry: Entry, lease: string): SavedFile {
     name: entry.name, kind: entry.kind === "pdf" ? "Pdf" : "Photo", takenAt: entry.savedAt, pages: entry.pages })
 }
 
-export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLibrary, effect {
+export const fileLibrary = Layer.effect(FileLibrary, effect {
+  const { port } = try FileStorage
   const desk = try Workspaces
   const setup = try Setup
   const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
@@ -51,12 +46,12 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
 
   effect function admitted() {
     const w = try desk.get()
-    return w.device.readiness === "Ready" && w.device.surface === "Files" && (try setup.get()).graceAccount.tag === "GraceDeviceSignedIn"
+    return w.device.readiness === "Ready" && w.device.surface === "Files" ? filesAccount((try setup.get()).graceAccount) : undefined
   }
 
   effect function keep(ready: Ready) {
     const current = try SubscriptionRef.get(latest)
-    if (current.kind !== "ready" || current.lease !== ready.lease || !(try admitted())) throw new FilesRejected()
+    if (current.kind !== "ready" || current.lease !== ready.lease || (try admitted()) !== ready.owner) throw new FilesRejected()
     try SubscriptionRef.set(latest, ready)
   }
 
@@ -101,18 +96,19 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
   }
 
   effect function openLibrary() {
-    if (!port || !(try admitted())) return
+    const owner = try admitted()
+    if (!port || !owner) return
     try SubscriptionRef.set(latest, { kind: "opening" })
     const opened = Schema.decodeUnknownEffect(Lease)(try tryPromise(() => port.open())) catch () => undefined
     if (!opened) {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
       return
     }
-    if (!(try admitted())) {
+    if ((try admitted()) !== owner) {
       tryPromise(() => port.close(opened)) catch () => undefined
       return
     }
-    const ready: Ready = { kind: "ready", lease: opened.lease, model: initial, thumbs: {}, busy: false, issue: false }
+    const ready: Ready = { kind: "ready", owner, canImport: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, busy: false, issue: false }
     try SubscriptionRef.set(latest, ready)
     load(ready) catch effect () => {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
@@ -134,11 +130,12 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
   }
 
   effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" }) {
-    if (!port || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || ready.model.selected !== "") return false
+    if (!port?.pick || !port.capture || !port.commit || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || ready.model.selected !== "") return false
+    const { capture, pick, commit } = port
     const input = { lease: ready.lease }
     try keep({ ...ready, busy: true, issue: false })
     const entry = Schema.decodeUnknownEffect(Entry)(try tryPromise(() =>
-      command.kind === "capture" ? port.capture(input) : port.pick({ ...input, kind: command.file }))) catch () => undefined
+      command.kind === "capture" ? capture(input) : pick({ ...input, kind: command.file }))) catch () => undefined
     if (!entry) {
       try keep({ ...ready, busy: false })
       return false
@@ -147,7 +144,7 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
       owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
     } }, "FileHost")
-    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => port.commit({ ...input, id: entry.id }))) catch () => undefined
+    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => commit({ ...input, id: entry.id }))) catch () => undefined
     const success = stored?.id === entry.id
     const { ready: after } = try advance(storing, { type: "writeResult", fileReceipt: {
       owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
@@ -226,17 +223,18 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
   }
 
   const contexts = Stream.changes(Stream.map(Stream.zipLatest(desk.changes, setup.changes), ([w, account]) =>
-    account.graceAccount.tag !== "GraceDeviceSignedIn" ? w.device.surface === "Files" ? "signedOut" : "outSignedOut" :
-    w.device.surface === "Files" && w.device.readiness === "Ready" ? "files" : "out"))
-  try fork.scoped Stream.runForEach(contexts, effect (context) => {
+    JSON.stringify([filesAccount(account.graceAccount) ?? "", w.device.surface === "Files" && w.device.readiness === "Ready"])))
+  let lastOwner: string | undefined
+  try fork.scoped Stream.runForEach(Stream.merge(Stream.map(contexts, () => false), Stream.map(accountRefreshes(), () => true)), effect (renew) => {
+    const w = try desk.get()
+    const owner = filesAccount((try setup.get()).graceAccount)
+    const visible = w.device.surface === "Files" && w.device.readiness === "Ready"
     const prior = try SubscriptionRef.get(latest)
-    if (context === "signedOut" || context === "outSignedOut") try SubscriptionRef.set(home, undefined)
-    if (context === "files" && port) {
-      try fork.scoped serial.withPermit(openLibrary())
-    } else {
-      try SubscriptionRef.set(latest, { kind: context === "signedOut" || context === "files" ? !port ? "unsupported" : "signedOut" : "out" })
-      if (prior.kind === "ready" && port) tryPromise(() => port.close({ lease: prior.lease })) catch () => undefined
-    }
+    if (renew || owner !== lastOwner || !owner) try SubscriptionRef.set(home, undefined)
+    lastOwner = owner
+    if (prior.kind === "ready" && port) tryPromise(() => port.close({ lease: prior.lease })) catch () => undefined
+    try SubscriptionRef.set(latest, { kind: !visible ? "out" : !owner ? "signedOut" : !port ? "unsupported" : "opening" })
+    if (visible && owner && port) try fork.scoped serial.withPermit(openLibrary())
   })
   return {
     changes: SubscriptionRef.changes(latest),

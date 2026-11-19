@@ -1413,6 +1413,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     files: {
+      saveAttachments: () => Promise.reject(new Error("No mail attachments in this journey")),
       open: async () => ({ lease }),
       close: async () => undefined,
       list: async () => ({ entries }),

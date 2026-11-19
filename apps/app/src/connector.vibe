@@ -23,7 +23,7 @@ export type AccountRef = { readonly provider: Provider; readonly address: string
 export type SignInRequest = { readonly provider: Provider; readonly attempt: number; readonly renewing: string }
 export type OtherForm = { readonly attempt: number; readonly address: string; readonly password: SecretPassword }
 export type ServersForm = OtherForm & { readonly incoming: string; readonly outgoing: string }
-export type MailContent = {
+export schema MailContent {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
   readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
   readonly to: readonly string[]; readonly attachment?: boolean; readonly replied?: string
@@ -147,7 +147,7 @@ function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment):
   const kind = type !== undefined && type.name.test(a.filename) && a.size <= attachmentLimit ? type.kind : undefined
   const pages = kind === "Pdf" ? a.pages ?? 0 : 0
   return kind === undefined || a.filename === "" || (kind === "Pdf" && pages < 1) ? [] : [{
-    id: `${m.externalId}/${a.partId}`, kind, name: a.filename, origin: account.provider, account: account.address, container: m.externalId,
+    id: JSON.stringify([account.provider, account.address, m.externalId, a.partId]), kind, name: a.filename, origin: account.provider, account: account.address, container: m.externalId,
     sourceRef: `${m.externalId}/${a.partId}`, contentRef: a.partId, group: m.externalId, savedAt, pages
   }]
 }

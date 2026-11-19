@@ -1,12 +1,13 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
-import { expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { application } from "../src/app.vibe";
+import { AccountActions } from "../src/graceAccount.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
 import { actOnScreen, mount } from "./screen.tsx";
@@ -48,7 +49,21 @@ function kept(): Accounts {
 }
 
 async function start(withAccounts = true) {
-  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud, withAccounts), client));
+  const { secret, credentialId } = await Effect.runPromise(Effect.provide(signIn(cloud, withAccounts), client));
+  const digest = async (purpose: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(purpose + credentialId))), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const scope = { owner: await digest("files/owner"), session: await digest("files/session") };
+  let signedIn = true;
+  const fetchOriginal = window.fetch.bind(window);
+  const browserSession = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input, location.href);
+    if (url.origin !== location.origin) return fetchOriginal(input, init);
+    if (url.pathname === "/api/auth/session") return Promise.resolve(Response.json({ account: signedIn ? { id: credentialId, email: null } : null }));
+    if (url.pathname === "/api/product/files/scope") return Promise.resolve(Response.json(signedIn ? scope : {}, { status: signedIn ? 200 : 401 }));
+    if (url.pathname === "/api/auth/providers") return Promise.resolve(Response.json({ google: true, email: true, sms: false }));
+    if (url.pathname === "/api/auth/refresh") return Promise.resolve(new Response(null, { status: 401 }));
+    if (url.pathname === "/api/v1/billing/subscription" || url.pathname === "/api/v1/eliza/google/status") return Promise.resolve(new Response(null, { status: 404 }));
+    return fetchOriginal(input, init);
+  });
   localStorage.clear();
   if (withAccounts) {
     await allowOutlook(secret);
@@ -58,10 +73,19 @@ async function start(withAccounts = true) {
   const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
   const runtime = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
   const connectivity = () => runtime.runPromise(Effect.map(Effect.flatMap(Effect.service(Workspaces), (w) => w.get()), (w) => w.device.connectivity));
-  onTestFinished(() => localStorage.clear());
   await mount(runtime);
+  onTestFinished(async () => {
+    browserSession.mockRestore();
+    await forgotten(scope.owner);
+    localStorage.clear();
+  });
   return {
     secret,
+    libraryOwner: scope.owner,
+    changeSession: (active: boolean) => act(async () => {
+      signedIn = active;
+      await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
+    }),
     host: async (availability: "Online" | "Offline") => {
       network.online = availability === "Online";
       await act(() => Promise.resolve(window.dispatchEvent(new Event(availability === "Online" ? "online" : "offline"))));
@@ -78,13 +102,13 @@ const row = (name: string) => folders().getByRole("button", { name: new RegExp(`
 const email = (from: RegExp) => page.getByRole("button", { name: from });
 const subject = () => page.getByLabelText("Subject");
 const words = () => page.getByRole("textbox", { name: "Write your message, or ask Grace to help" });
-const library = (version: number) => new Promise<IDBDatabase>((resolve, reject) => {
-  const request = indexedDB.open("grace-files", version);
+const library = (owner: string, version: number) => new Promise<IDBDatabase>((resolve, reject) => {
+  const request = indexedDB.open("grace-files/" + owner, version);
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(new Error("The test could not open the file library", { cause: request.error }));
 });
-const forgotten = () => new Promise<void>((resolve, reject) => {
-  const request = indexedDB.deleteDatabase("grace-files");
+const forgotten = (owner: string) => new Promise<void>((resolve, reject) => {
+  const request = indexedDB.deleteDatabase("grace-files/" + owner);
   request.onsuccess = () => resolve();
   request.onerror = () => reject(new Error("The test could not delete the file library", { cause: request.error }));
 });
@@ -196,7 +220,7 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
 });
 
 it("See all my email in one place", async () => {
-  const { secret, host, person, company } = await start();
+  const { secret, host, person, company, libraryOwner, changeSession } = await start();
 
   // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"
   const card = page.getByRole("button", { name: /^Email/ });
@@ -270,7 +294,7 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Next photo" }));
   await expect.element(page.getByRole("heading", { name: "Photo 2 of 3" })).toBeVisible();
   await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", expect.stringMatching(png));
-  const blocking = await library(2);
+  const blocking = await library(libraryOwner, 2);
   await click(page.getByRole("button", { name: "Save to Files" }));
   const unsaved = page.getByRole("alert");
   await expect.element(unsaved).toBeVisible();
@@ -281,7 +305,7 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Save to Files" }));
   await expect.element(unsaved).toBeVisible();
   blocking.close();
-  await forgotten();
+  await forgotten(libraryOwner);
   await click(page.getByRole("button", { name: "Try again" }));
   await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
   await click(page.getByRole("button", { name: "Previous photo" }));
@@ -328,6 +352,18 @@ it("See all my email in one place", async () => {
 
   await click(page.getByRole("button", { name: "Close Email" }));
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
+  await click(page.getByRole("button", { name: "Page 2", exact: true }));
+  await click(page.getByRole("button", { name: /^Files/ }));
+  const piano = page.getByRole("button", { name: "Piano.png", exact: true });
+  await expect.element(piano).toBeVisible();
+  await click(piano);
+  await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", expect.stringMatching(png));
+  await changeSession(false);
+  await expect.element(page.getByText("Sign in to see your files")).toBeVisible();
+  await expect.element(page.getByRole("img", { name: "Piano.png" })).not.toBeInTheDocument();
+  await changeSession(true);
+  await expect.element(piano).toBeVisible();
+
 }, 300_000);
 
 it("Write or reply and confirm before sending", async () => {
