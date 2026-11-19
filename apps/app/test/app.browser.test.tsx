@@ -1026,7 +1026,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 });
 
 
-it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment")', async () => {
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
@@ -1037,6 +1037,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let changed: string[] = [];
   const reminders: number[] = [];
   const literalText = "<strong>This stays plain text.</strong>";
+  const originalText = "<script>Original attachment</script>";
+  const originalHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(originalText))),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const attachment = { partId: "1", name: "Receipt.txt", mimeType: "text/plain", size: originalText.length, supported: true };
+  const archive = { partId: "2", name: "Extras.zip", mimeType: "application/zip", size: 100, supported: false };
+  let attachmentOwner = "different-owner";
+  let attachmentReads = 0;
   const oldURL = window.location.href;
   const oldIntent = sessionStorage.getItem("grace-hosted-read");
   const oldAccounts = localStorage.getItem("accounts");
@@ -1108,10 +1115,15 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/gmail/read":
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
-          accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
+          accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive], bodyTextAvailable: true,
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
+      case "/api/v1/eliza/google/gmail/attachment":
+        attachmentReads++;
+        expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant, historyId: "8", partId: attachment.partId });
+        return reply({ ...attachment, version: 1, accountId: attachmentOwner, messageId: mail.externalId, historyId: "8",
+          dataBase64: btoa(originalText), sha256: originalHash });
       case "/api/v1/eliza/google/gmail/send": {
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test" });
@@ -1224,6 +1236,24 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     replyFromOwner = true;
     await tap(/Your receipt/);
     await expect.element(page.getByText(literalText, { exact: true })).toBeVisible();
+    const openOriginal = page.getByRole("button", { name: "Open original", exact: true });
+    await expect.element(openOriginal.nth(1)).toBeDisabled();
+    expect(attachmentReads).toBe(0);
+    await act(() => openOriginal.nth(0).click());
+    const original = page.getByRole("region", { name: "Original attachment" });
+    await expect.element(page.getByText("Grace couldn’t open that. Try again.", { exact: true })).toBeVisible();
+    expect(original.query()).toBeNull();
+    attachmentOwner = person.id;
+    await act(() => openOriginal.nth(0).click());
+    await expect.element(original.getByText(originalText, { exact: true })).toBeVisible();
+    const download = original.getByRole("link", { name: "Download original" });
+    await expect.element(download).toHaveAttribute("download", attachment.name);
+    const originalUrl = download.element().getAttribute("href") ?? "";
+    expect(await fetch(originalUrl).then((response) => response.text())).toBe(originalText);
+    await act(() => original.getByRole("button", { name: "Close attachment" }).click());
+    expect(original.query()).toBeNull();
+    await expect(fetch(originalUrl)).rejects.toThrow();
+    expect(attachmentReads).toBe(2);
     expect(Array.from(document.querySelectorAll("strong")).some((node) => node.textContent === "This stays plain text.")).toBe(false);
 
     await tap("Reply");
@@ -1908,7 +1938,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/v1/eliza/google/gmail/read": {
         expect(url.searchParams.get("grantId")).toBe(grant);
         const row = url.searchParams.get("messageId") === second.externalId ? second : selected;
-        return respond({ accountId: person.id, message: { ...row, metadata: { historyId } },
+        return respond({ accountId: person.id, message: { ...row, metadata: { historyId } }, historyId: null, attachments: [],
           bodyText: row.from + " message body", bodyTextAvailable: true });
       }
       case "/api/v1/eliza/google/calendar/feed":

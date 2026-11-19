@@ -15,6 +15,8 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
   onOpen?: () => void;
   /** The Open button's words. */
   openLabel?: string;
+  /** Whether the original can be opened. */
+  openDisabled?: boolean;
   /** What saving it to Files actually did, shown in place of `detail`. */
   saveStatus?: MailSaveStatus;
   /** Tries the failed save again. */
@@ -28,7 +30,7 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
  * @model spec/app/email.md
  * @design packages/design-system/design.md#windows
  */
-export function MailAttachment({ name, detail, kind = "PDF", onOpen, openLabel = "Open", saveStatus, onRetry, statusLabels, className, ...props }: MailAttachmentProps) {
+export function MailAttachment({ name, detail, kind = "PDF", onOpen, openLabel = "Open", openDisabled, saveStatus, onRetry, statusLabels, className, ...props }: MailAttachmentProps) {
   return (
     <div className={cn("flex max-w-[760px] items-center gap-4 rounded-row bg-panel px-4 py-3.5 font-sans", className)} {...props}>
       <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-[13px] leading-none font-bold text-destructive shadow-tile">
@@ -43,7 +45,7 @@ export function MailAttachment({ name, detail, kind = "PDF", onOpen, openLabel =
           detail && <div className="mt-0.5 text-body leading-[26px] font-medium text-muted-foreground">{detail}</div>
         )}
       </div>
-      <Button variant="capsule" size="pill" className={cn(appButton, "ml-auto")} onClick={onOpen}>
+      <Button variant="capsule" size="pill" className={cn(appButton, "ml-auto")} onClick={onOpen} disabled={openDisabled}>
         {openLabel}
       </Button>
     </div>
