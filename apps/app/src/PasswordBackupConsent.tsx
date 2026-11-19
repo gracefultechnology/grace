@@ -49,7 +49,7 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
   return (
     <main className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <section className="w-full max-w-lg flex flex-col items-start gap-5" aria-busy={pending || undefined}>
-        <h1 className="text-2xl font-semibold">{approval ? titles[approval.purpose] : "Password backup unavailable"}</h1>
+        <h1 className="text-title font-semibold">{approval ? titles[approval.purpose] : "Password backup unavailable"}</h1>
         {message && <p role={status ? "status" : undefined}>{message}</p>}
         {codeFailed && <p role="alert">Grace couldn’t verify the request. Try again.</p>}
         {approval && needsSignIn && provider && (
