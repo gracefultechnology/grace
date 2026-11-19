@@ -2,14 +2,18 @@
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
-import { House, KeyRound, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Effect, Stream } from "effect";
+import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
+import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
 import { mailAccounts } from "../gen/app__accounts.ts";
 import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment, reminderToast } from "./Calendar.tsx";
@@ -19,7 +23,7 @@ import { NoticeBanner, Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
-import { RuntimeContext, type Runtime, useAccounts, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
+import { RuntimeContext, type Runtime, useAccounts, useRuntime, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": the two that end what websites ask,
 const websiteBackEvents: Record<"CancelClearData" | "DismissWebsiteRequest", (r: WebsiteRequests) => WebsiteEvent> = {
@@ -40,6 +44,24 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | keyof typeof website
 /** A window right of the rail, 6px from the screen's edges (design.md, "Windows"); its bottom follows Grace's compact window and the keyboard (prototype `layout()`). */
 const lifted = "absolute top-1.5 right-1.5 transition-[bottom] duration-window ease-standard motion-reduce:transition-none";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
+const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
+const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+
+function useHomeCards() {
+  const runtime = useRuntime();
+  const account = useSetup(runtime).state;
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  return useSyncExternalStore(subscribe, () => {
+    if (account?.graceAccount.tag !== "GraceSignedIn" || account.googleLink.tag !== "GoogleLinkConnected") return undefined;
+    const snapshot = runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards()));
+    return snapshot?.accountId === account.graceAccount.accountId && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+  });
+}
+
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
 
 /** The time now, to the minute. */
@@ -59,6 +81,8 @@ const wifiWords: Record<Connectivity, string> = {
 };
 
 function Screen() {
+  const account = useSetup(useRuntime()).state?.graceAccount;
+  const cards = useHomeCards();
   const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
   const website = useWebsiteRequests();
@@ -105,6 +129,7 @@ function Screen() {
       void send({ type: "togglePopover", popover });
     },
   });
+  const useManaged = usesManagedSurfaces(account, window.location.hash);
   const online = device.connectivity === "Online";
   const volume = preferences.session;
   // spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone": zero volume is muted, and Unmute at zero chooses 50.
@@ -140,10 +165,15 @@ function Screen() {
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-            <HomeScreen className="inset-0" banner={<><NoticeBanner />{accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}</>} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: [] }, ...visit("Calendar") }}
+            <HomeScreen className="inset-0" banner={<><NoticeBanner />{!useManaged && accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}</>} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
+              return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
+                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0 };
+            }) }, ...visit("Calendar") }}
               email={{
-                messages: accounts ? homeMail(accounts, boxes, read) : [], notConnected: accounts !== undefined && mailAccounts(accounts).length === 0,
+                messages: useManaged ? (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
+              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })) : accounts ? homeMail(accounts, boxes, read) : [], notConnected: !useManaged && accounts !== undefined && mailAccounts(accounts).length === 0,
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
               }}
               internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
@@ -154,11 +184,11 @@ function Screen() {
         </OverPage>
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
-      {surface === "Calendar" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
-      {accounts && surface !== "Home" && surface !== "Calendar" && device.readiness !== "Sleeping" && (
+      {surface === "Calendar" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
+      {!useManaged && accounts && surface !== "Home" && surface !== "Calendar" && device.readiness !== "Sleeping" && (
         <WithCalendars keys={calendarKeys(accounts)}>{(calendars) => reminderToast(accounts, calendars, now.getTime(), bottom)}</WithCalendars>
       )}
-      {surface === "Email" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
+      {surface === "Email" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {surface === "Passwords" && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
@@ -170,6 +200,13 @@ function Screen() {
       {surface === "Files" && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <Files {...under(covered)} onClose={() => { if (can({ type: "visit", destination: "Home" })) void send({ type: "visit", destination: "Home" }); }} />
+        </OverPage>
+      )}
+      {useManaged && (surface === "Email" || surface === "Calendar") && (
+        <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
+          <AppWindow {...under(covered)} title={surface} icon={surface === "Email" ? <Mail size={26} /> : <CalendarDays size={26} />} closeLabel={`Close ${surface}`} onClose={visit("Home").onClick}>
+            <ManagedRead view={surface} />
+          </AppWindow>
         </OverPage>
       )}
       {device.railPopover !== "NoPopover" && (

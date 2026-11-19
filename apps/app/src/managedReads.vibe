@@ -1,12 +1,51 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
-import type { Setup as SetupState } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
+import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
+import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
+import { AccountActions, apiOrigin } from "./graceAccount.vibe"
+import { webView } from "./surfacePlugin.ts"
 
-type MailRow = { metadata?: { historyId?: string | null }; externalId: string; from: string; subject: string; receivedAt: string; isUnread: boolean }
-type EventRow = { etag?: string | null; editable?: boolean; seriesId?: string | null; timezone?: string | null; externalId: string; title: string; description: string; location: string; startAt: string; endAt: string; isAllDay: boolean }
-type MailBody = { accountId: string; message: MailRow; reply?: { recipient: string; subject: string } | null; bodyText: string; bodyTextAvailable: boolean }
+export type ReadView = "Email" | "Calendar"
+const fragments = { Email: "email", Calendar: "calendar" } as const
+const retained = "grace-hosted-read"
+const idField = Schema.NonEmptyString
+const dateField = Schema.String.check(Schema.makeFilter((text) => Number.isFinite(Date.parse(text))))
+schema Intent { view: "Email" | "Calendar"; returning: boolean; owner?: string; occurrence?: string }
+const nullableText = Schema.NullOr(Schema.String)
+schema MailMetadata { historyId?: nullableText }
+export schema MailRow { metadata?: MailMetadata; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
+export schema EventRow { etag?: nullableText; editable?: boolean; seriesId?: nullableText; timezone?: nullableText; externalId: idField; title: string; description: string; location: string; startAt: dateField; endAt: dateField; isAllDay: boolean }
+const MailPage = Schema.Struct({ accountId: idField, messages: Schema.Array(MailRow), nextPageToken: Schema.NullOr(Schema.String) })
+const CalendarPage = Schema.Struct({ accountId: idField, events: Schema.Array(EventRow), nextPageToken: Schema.NullOr(Schema.String) })
+export schema MailReply { recipient: string; subject: string }
+const MailBody = Schema.Struct({ accountId: idField, message: MailRow, reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
 
+export schema LocalMailDraft { recipient: string; subject: string; text: string; operationId?: string; grant?: string }
+schema SentMail { accountId: idField; operationId: idField; messageId: idField }
+const draftKey = (accountId: string, email: string, replyTo?: string) => "grace-managed-draft-" + JSON.stringify([accountId, email, ...(replyTo ? [replyTo] : [])])
+
+export effect function localMailDraft(accountId: string, email: string, replyTo?: string): LocalMailDraft!! {
+  const raw = Effect.try(() => webView.window.sessionStorage.getItem(draftKey(accountId, email, replyTo))) catch () => null
+  const value = Schema.decodeUnknownOption(Schema.fromJsonString(LocalMailDraft))(raw)
+  return Option.isSome(value) ? value.value : { recipient: "", subject: "", text: "" }
+}
+
+export effect function keepMailDraft(accountId: string, email: string, draft: LocalMailDraft | null, replyTo?: string) {
+  return try Effect.try(() => {
+    const key = draftKey(accountId, email, replyTo)
+    if (draft === null) webView.window.sessionStorage.removeItem(key)
+    else webView.window.sessionStorage.setItem(key, JSON.stringify(draft))
+  })
+}
+
+export type AppointmentEdit = { title: string; startAt: string; endAt: string; location: string; allDay?: boolean }
+export type ManagedWrite =
+  | { kind: "trash"; id: string; version: string }
+  | { kind: "undo"; id: string; version: string; prior: string }
+  | { kind: "appointment"; action: "create"; event: AppointmentEdit & { repeat?: { frequency: Exclude<Recurrence, "Once">; timeZone: string } } }
+  | { kind: "appointment"; action: "update"; id: string; version: string; seriesFor?: string; event: AppointmentEdit }
+  | { kind: "appointment"; action: "delete"; id: string; version: string; seriesFor?: string }
 export type ProposedWork = { accountId: string; grant: string } & (
   | { kind: "draft"; recipient: string; subject: string; text: string; replyTo?: string }
   | { kind: "appointment"; id?: string; version?: string; title: string; start: string; location: string; repeat: Recurrence }
@@ -14,23 +53,48 @@ export type ProposedWork = { accountId: string; grant: string } & (
   | { kind: "trash"; id: string; version: string }
 )
 type StagedWork = { number: number; proposal: ProposedWork }
+schema Series { accountId: idField; occurrenceId: idField; event: EventRow }
+schema ActionReceipt { accountId: idField; operationId: idField; itemId: idField; version?: string }
+export type WriteReceipt = typeof ActionReceipt.Type
+type WriteScope = { accountId: string; grant: string }
+
+type Waiting = "native" | "checking" | "unavailable" | "signedOut" | "connect" | "connectorUnavailable" | "mismatch"
+type Scope =
+  | { kind: "closed" }
+  | { kind: "waiting"; view: ReadView; reason: Waiting }
+  | { kind: "ready"; view: ReadView; accountId: string; grant: string }
+type ReadyScope = Extract<Scope, { kind: "ready" }>
+type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type }
+type Calendar = { proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
-  | { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: MailBody }
-  | { proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
+  | { kind: "waiting"; view: ReadView; reason: Waiting }
+  | { kind: "loading"; view: ReadView; accountId: string }
+  | { kind: "failed"; view: ReadView; accountId: string }
+  | Mail
+  | Calendar
 
-type Command = { kind: "openHosted" | "dismissProposal" } | { kind: "open"; id: string }
+type Command = { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
   ({ kind: "mail"; subject: string } | { kind: "calendar"; title: string; startAt: string })
 )
 
+export function usesManagedSurfaces(account: SetupState["graceAccount"] | undefined, hash: string): boolean {
+  return account?.tag === "GraceSignedIn" || account?.tag === "GraceDeviceSignedIn" || viewOf(hash) !== undefined
+}
+
 export type GuidedAuthority = { device: string; connected: string | undefined }
 
-export function guidedAuthority(setup: SetupState | undefined, _hash: string): GuidedAuthority {
+export function guidedAuthority(setup: SetupState | undefined, hash: string): GuidedAuthority {
   const account = setup?.graceAccount
-  return { device: account?.tag === "GraceSignedIn" ? JSON.stringify(["grace", account.accountId]) : "tablet", connected: "tablet" }
+  const link = setup?.googleLink
+  const device = account?.tag === "GraceSignedIn" ? JSON.stringify(["grace", account.accountId]) : "tablet"
+  const connected = !usesManagedSurfaces(account, hash) ? "tablet" :
+    account?.tag === "GraceSignedIn" && link?.tag === "GoogleLinkConnected" && link.email.trim() !== ""
+      ? JSON.stringify(["google", account.accountId, link.email.trim().toLowerCase()]) : undefined
+  return { device, connected }
 }
 
 export function guidedOwner(authority: GuidedAuthority, steps: readonly GuidedStep[]): string | undefined {
@@ -40,18 +104,432 @@ export function guidedOwner(authority: GuidedAuthority, steps: readonly GuidedSt
   }) ? authority.connected : authority.device
 }
 
+export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[]; events: readonly EventRow[] }
+
 export service ManagedReads {
+  readonly state: Stream.Stream<ManagedSnapshot>
+  readonly home: Stream.Stream<HomeCards | undefined>
+  homeCards(): (HomeCards | undefined)!!
   get(): ManagedSnapshot!!
   ownsSurfaces(): boolean!!
   guidedSelection(): GuidedManagedSelection!!
   send(command: Command): boolean!!
   stage(proposal: ProposedWork): boolean!!
+  series(scope: WriteScope, occurrenceId: string): (EventRow | undefined)!!
+  change(scope: WriteScope, action: ManagedWrite): (WriteReceipt | undefined)!!
+  sendMail(input: { accountId: string; email: string; grant: string; draft: LocalMailDraft; checkOnly: boolean; replyTo?: string }): boolean!!
 }
 
-export const managedReads = (_native: boolean) => Layer.succeed(ManagedReads, {
-  get: () => Effect.succeed({ kind: "closed" } as const),
-  ownsSurfaces: () => Effect.succeed(false),
-  guidedSelection: () => Effect.succeed({ kind: "legacy" } as const),
-  send: () => Effect.succeed(false),
-  stage: () => Effect.succeed(false),
+error ManagedReadFailed
+
+function viewOf(hash: string): ReadView | undefined {
+  if (hash === "#email") return "Email"
+  if (hash === "#calendar") return "Calendar"
+  return undefined
+}
+
+effect function intentOfPage() {
+  const found = Effect.try(() => {
+    const kept = webView.window.sessionStorage.getItem(retained)
+    const previous = Schema.decodeUnknownOption(Schema.fromJsonString(Intent))(kept)
+    const active = viewOf(webView.window.location.hash)
+    if (active !== undefined) {
+      const url = new URL(webView.window.location.href)
+      const hint = url.searchParams.get("owner_hint")
+      const owner = hint ?? (Option.isSome(previous) ? previous.value.owner : undefined)
+      const occurrence = url.searchParams.get("occurrence") ?? undefined
+      if (hint !== null || occurrence !== undefined) {
+        url.searchParams.delete("owner_hint")
+        url.searchParams.delete("occurrence")
+        webView.window.history.replaceState(undefined, "", url)
+      }
+      return { view: active, owner, occurrence: active === "Calendar" && owner && occurrence && /^[a-zA-Z0-9_-]{1,255}$/.test(occurrence) ? occurrence : undefined, returning: false }
+    }
+    return Option.isSome(previous) ? previous.value : undefined
+  }) catch () => undefined
+  const result = Schema.decodeUnknownEffect(Intent)(found) catch () => undefined
+  if (result?.owner !== undefined && !/^[a-f0-9]{64}$/.test(result.owner)) return { ...result, owner: "invalid" }
+  return result
+}
+
+effect function ownerHash(owner: string) {
+  const bytes = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(owner)))
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+const google = apiOrigin + "/api/v1/eliza/google/"
+type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series" | "calendar/reminder/event"
+type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change" | "calendar/reminder"
+
+effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
+  const params = new URLSearchParams(Object.entries(search).flatMap(([name, value]) => value ? [[name, value]] : []))
+  const get = () => timeout(tryPromise((signal) => webView.window.fetch(google + route + "?" + params, {
+    method: "GET", credentials: "include", cache: "no-store", headers: { Accept: "application/json" }, signal,
+  })), "12 seconds")
+  const first = try get()
+  const response = first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try get()) : first
+  if (!response.ok) throw new ManagedReadFailed()
+  const input: unknown = try tryPromise(() => response.json())
+  return try Schema.decodeUnknownEffect(schema)(input)
+}
+
+effect function postChange<A>(route: GoogleChange, payload: object, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
+  const post = () => timeout(tryPromise((signal) => webView.window.fetch(google + route, {
+    method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload),
+  })), "32 seconds")
+  const first = try post()
+  const response = first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try post()) : first
+  if (!response.ok) throw new ManagedReadFailed()
+  return try Schema.decodeUnknownEffect(schema)(try tryPromise(() => response.json()))
+}
+
+function range(now: number) {
+  return { from: new Date(now).toISOString(), until: new Date(now + 30 * 86400000).toISOString() }
+}
+
+export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effect {
+  const desk = try Workspaces
+  const setup = try Setup
+  const authorization = try AccountActions
+  const pending = try Ref.make(native ? undefined : (try intentOfPage()))
+  const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
+  const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
+  const gate = try Semaphore.make(1)
+  const proposedNumber = try Ref.make(0)
+
+  effect function saveIntent(intent: Intent | undefined) {
+    try Ref.set(pending, intent)
+    Effect.try(() => {
+      if (intent === undefined) webView.window.sessionStorage.removeItem(retained)
+      else webView.window.sessionStorage.setItem(retained, JSON.stringify(intent))
+    }) catch () => undefined
+  }
+
+  effect function scopeOf(view: ReadView, account: SetupState, intent: Intent | undefined): Scope!! {
+    if (native) return { kind: "waiting", view, reason: "native" }
+    if (account.graceAccount.tag === "CheckingAccount") return { kind: "waiting", view, reason: "checking" }
+    if (account.graceAccount.tag === "AccountUnavailable") return { kind: "waiting", view, reason: "unavailable" }
+    if (account.graceAccount.tag !== "GraceSignedIn") return { kind: "waiting", view, reason: "signedOut" }
+    const accountId = account.graceAccount.accountId
+    if (intent?.owner !== undefined) {
+      const hash = ownerHash(accountId) catch () => ""
+      if (hash !== intent.owner) return { kind: "waiting", view, reason: "mismatch" }
+    }
+    if (account.googleLink.tag === "GoogleLinkUnavailable") return { kind: "waiting", view, reason: "connectorUnavailable" }
+    if (!mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar")) {
+      return { kind: "waiting", view, reason: "connect" }
+    }
+    return { kind: "ready", view, accountId, grant: account.googleLink.tag === "GoogleLinkConnected" ? account.googleLink.grant : "" }
+  }
+
+  effect function activeScope(): Scope!! {
+    const surface = (try desk.get()).device.surface
+    if (surface !== "Email" && surface !== "Calendar") return { kind: "closed" }
+    return try scopeOf(surface, try setup.get(), try Ref.get(pending))
+  }
+
+  effect function still(scope: ReadyScope): boolean!! {
+    const current = try activeScope()
+    return current.kind === "ready" && current.view === scope.view && current.accountId === scope.accountId && current.grant === scope.grant
+  }
+
+  effect function ownsSurfaces(): boolean!! {
+    return usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
+  }
+
+  effect function guidedSelection(): GuidedManagedSelection!! {
+    const account = try setup.get()
+    if (!usesManagedSurfaces(account.graceAccount, webView.window.location.hash)) return { kind: "legacy" }
+    const scope = try activeScope()
+    const shown = try SubscriptionRef.get(latest)
+    if (scope.kind !== "ready" || account.graceAccount.tag !== "GraceSignedIn" ||
+        account.googleLink.tag !== "GoogleLinkConnected" || account.graceAccount.accountId !== scope.accountId ||
+        account.googleLink.grant !== scope.grant ||
+        (shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
+        (shown.kind === "mail") !== (scope.view === "Email")) return { kind: "unavailable" }
+    const googleEmail = account.googleLink.email.trim().toLowerCase()
+    if (googleEmail === "" || scope.grant === "") return { kind: "unavailable" }
+    const ownership = { accountId: scope.accountId, grant: scope.grant, googleEmail }
+    if (shown.kind === "mail") {
+      const selected = shown.selected
+      const version = selected?.message.metadata?.historyId
+      if (!selected || !version || selected.accountId !== scope.accountId) return { kind: "unavailable" }
+      return { ...ownership, kind: "mail", id: selected.message.externalId, version, subject: selected.message.subject }
+    }
+    const selected = shown.selected
+    if (!selected?.etag) return { kind: "unavailable" }
+    return { ...ownership, kind: "calendar", id: selected.externalId, version: selected.etag, title: selected.title, startAt: selected.startAt }
+  }
+
+  effect function fetchPage(scope: ReadyScope, prior?: Mail | Calendar, next?: string) {
+    const paging = { pageToken: next, grantId: scope.grant }
+    if (scope.view === "Email") {
+      const loaded = try query("gmail/triage", { maxResults: "20", ...paging }, MailPage, authorization)
+      if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
+      const existing = prior?.kind === "mail" ? prior.rows : []
+      const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
+      return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken }
+    }
+    const window = prior?.kind === "calendar" ? { from: prior.from, until: prior.until } : range(try Clock.currentTimeMillis)
+    const loaded = try query("calendar/feed", { timeMin: window.from, timeMax: window.until, ...paging }, CalendarPage, authorization)
+    if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
+    const existing = prior?.kind === "calendar" ? prior.rows : []
+    const rows = [...new Map([...existing, ...loaded.events].map((row) => [row.externalId, row])).values()]
+    return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, ...window }
+  }
+
+  effect function refresh(scope: Scope) {
+    if (scope.kind !== "ready") return try SubscriptionRef.set(latest, scope)
+    try SubscriptionRef.set(latest, { kind: "loading", view: scope.view, accountId: scope.accountId })
+    const result = fetchPage(scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
+    const intent = try Ref.get(pending)
+    if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
+      const occurrence = intent.occurrence
+      const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
+        Schema.Struct({ accountId: idField, event: EventRow }), authorization) catch () => undefined
+      if (try still(scope)) {
+        try saveIntent({ ...intent, occurrence: undefined })
+        if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
+          return try SubscriptionRef.set(latest, { ...result, selected: selected.event })
+      }
+    }
+    if (try still(scope)) try SubscriptionRef.set(latest, result)
+  }
+
+  effect function send(command: Command) {
+    const scope = try activeScope()
+    if (scope.kind === "closed") return false
+    if (command.kind === "enableReminders") {
+      const host = reminderPlugin
+      if (!native || scope.view !== "Calendar" || host === undefined) return false
+      try tryPromise(() => host.enableManagedReminders())
+      return true
+    }
+    if (command.kind === "openHosted") {
+      const host = accountPlugin
+      if (!native || host === undefined) return false
+      try tryPromise(() => host.openHostedView({ view: fragments[scope.view] }))
+      return true
+    }
+    if (command.kind === "account") {
+      if (scope.kind !== "waiting" || !["signedOut", "connect", "mismatch"].includes(scope.reason)) return false
+      const kept = try Ref.get(pending)
+      try saveIntent({ view: scope.view, owner: kept?.owner, occurrence: kept?.occurrence, returning: true })
+      try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
+      return true
+    }
+    if (command.kind === "refresh") {
+      try authorization.run({ kind: "refresh" })
+      try refresh(try activeScope())
+      return true
+    }
+    if (scope.kind !== "ready") return false
+    const shown = try SubscriptionRef.get(latest)
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
+      (shown.kind === "mail") !== (scope.view === "Email")) return false
+    if (command.kind === "reminder") {
+      if (shown.kind !== "calendar" || shown.selected?.externalId !== command.id ||
+          shown.selected.etag !== command.version || shown.selected.isAllDay || !shown.selected.editable) return false
+      const receipt = try postChange("calendar/reminder", { accountId: scope.accountId, grantId: scope.grant,
+        occurrenceId: command.id, version: command.version, minutes: command.minutes },
+        Schema.Struct({ accountId: idField, grantId: idField, occurrenceId: idField, version: idField,
+          status: Schema.Literals(["saved", "cancelled"]), minutes: Schema.optional(Schema.Int), fireAt: Schema.optional(Schema.Int) }), authorization)
+      return (try still(scope)) && receipt.accountId === scope.accountId && receipt.grantId === scope.grant &&
+        receipt.occurrenceId === command.id && receipt.version === command.version &&
+        (command.minutes === 0 ? receipt.status === "cancelled" : receipt.status === "saved" &&
+          receipt.minutes === command.minutes && receipt.fireAt === Date.parse(shown.selected.startAt) - command.minutes * 60_000)
+    }
+    if (command.kind === "dismissProposal") {
+      try SubscriptionRef.set(latest, { ...shown, proposed: undefined })
+      return true
+    }
+    if (command.kind === "back") {
+      try SubscriptionRef.set(latest, shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, proposed: undefined })
+      return true
+    }
+    if (command.kind === "more") {
+      if (shown.next === null) return false
+      const page = try fetchPage(scope, shown, shown.next)
+      if (!(try still(scope))) return false
+      try SubscriptionRef.set(latest, page)
+      return true
+    }
+    if (command.kind !== "open" || !shown.rows.some((row) => row.externalId === command.id)) return false
+    if (shown.kind === "calendar") {
+      try SubscriptionRef.set(latest, { ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
+      return true
+    }
+    const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
+    if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) || !(try still(scope))) return false
+    try SubscriptionRef.set(latest, { ...shown, selected: preview, proposed: undefined })
+    return true
+  }
+
+  effect function stage(proposal: ProposedWork) {
+    const scope = try activeScope()
+    const { accountId, grant } = proposal
+    const mail = proposal.kind === "draft" || proposal.kind === "trash"
+    if (scope.kind !== "ready" || scope.accountId !== accountId || scope.grant !== grant ||
+      scope.view !== (mail ? "Email" : "Calendar")) return false
+    const account = try setup.get()
+    const shown = try SubscriptionRef.get(latest)
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== accountId || shown.grant !== grant) return false
+    if (proposal.kind === "draft") {
+      if (shown.kind !== "mail" || account.googleLink.tag !== "GoogleLinkConnected" ||
+        !maySendManagedMail(account.graceAccount, account.googleLink, accountId, grant)) return false
+      if (proposal.replyTo ? shown.selected?.message.externalId !== proposal.replyTo ||
+        shown.selected.reply?.recipient !== proposal.recipient || shown.selected.reply.subject !== proposal.subject : shown.selected !== undefined) return false
+      const email = account.googleLink.email
+      const saved = try localMailDraft(accountId, email, proposal.replyTo)
+      if (saved.operationId || saved.recipient || saved.subject || saved.text) return false
+      try keepMailDraft(accountId, email, { recipient: proposal.recipient, subject: proposal.subject, text: proposal.text }, proposal.replyTo)
+    } else if (proposal.kind === "trash") {
+      if (shown.kind !== "mail" || shown.selected?.message.externalId !== proposal.id || shown.selected.message.metadata?.historyId !== proposal.version ||
+        !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
+    } else {
+      if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange") ||
+        (proposal.id !== undefined && (shown.selected?.externalId !== proposal.id || shown.selected.etag !== proposal.version))) return false
+      if (proposal.kind === "removeAppointment" && proposal.series) {
+        if (!(try series({ accountId, grant }, proposal.id))) return false
+      }
+    }
+    const current = try SubscriptionRef.get(latest)
+    if (!(try still(scope)) || (current.kind !== "mail" && current.kind !== "calendar")) return false
+    const number = try Ref.updateAndGet(proposedNumber, (prior) => prior + 1)
+    try SubscriptionRef.set(latest, { ...current, proposed: { number, proposal } })
+    return true
+  }
+
+  effect function series({ accountId, grant }: WriteScope, occurrenceId: string) {
+    const scope = try activeScope()
+    const account = try setup.get()
+    if (scope.kind !== "ready" || scope.view !== "Calendar" || scope.accountId !== accountId || scope.grant !== grant ||
+      !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return undefined
+    const shown = try SubscriptionRef.get(latest)
+    if (shown.kind !== "calendar" || shown.grant !== grant || shown.selected?.externalId !== occurrenceId || !shown.selected.seriesId) return undefined
+    const found = try query("calendar/series", { grantId: grant, occurrenceId }, Series, authorization)
+    if (!managedReadMatches(accountId, found.accountId, occurrenceId, found.occurrenceId) ||
+      found.event.externalId !== shown.selected.seriesId || !(try still(scope))) return undefined
+    try SubscriptionRef.set(latest, { ...shown, series: found.event })
+    return found.event
+  }
+
+  effect function change({ accountId, grant }: WriteScope, action: ManagedWrite) {
+    const scope = try activeScope()
+    const kind = action.kind === "appointment" ? "ManagedAppointmentChange" : "ManagedTrash"
+    const view = action.kind === "appointment" ? "Calendar" : "Email"
+    const account = try setup.get()
+    if (scope.kind !== "ready" || scope.view !== view || scope.accountId !== accountId ||
+      !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, kind)) return undefined
+    const shown = try SubscriptionRef.get(latest)
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
+    if (action.kind === "trash" && (shown.kind !== "mail" || shown.selected?.message.externalId !== action.id ||
+      shown.selected.message.metadata?.historyId !== action.version)) return undefined
+    if (action.kind === "appointment" && action.action !== "create") {
+      if (shown.kind !== "calendar") return undefined
+      const target = action.seriesFor === undefined ? shown.selected
+        : shown.selected?.externalId === action.seriesFor && shown.selected.seriesId === action.id ? shown.series : undefined
+      if (target?.externalId !== action.id || target.etag !== action.version) return undefined
+    }
+    const operationId = try Effect.try(() => webView.window.crypto.randomUUID())
+    const common = { accountId, grantId: grant, operationId }
+    const payload = action.kind === "appointment"
+      ? action.action === "create" ? { ...common, action: action.action, event: action.event }
+        : { ...common, action: action.action, id: action.id, version: action.version, seriesFor: action.seriesFor, event: action.action === "update" ? action.event : undefined }
+      : { ...common, messageId: action.id, version: action.version, undoOf: action.kind === "undo" ? action.prior : undefined }
+    const receipt = try postChange(action.kind === "appointment" ? "calendar/change" : "gmail/trash", payload, ActionReceipt, authorization)
+    const expected = "id" in action ? action.id : operationId.replaceAll("-", "")
+    if (!managedReadMatches(accountId, receipt.accountId, expected, receipt.itemId) || receipt.operationId !== operationId ||
+      !(try still(scope))) return undefined
+    if (action.kind === "trash" && shown.kind === "mail") {
+      try SubscriptionRef.set(latest, { ...shown, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, proposed: undefined })
+    }
+    if (action.kind === "undo" || action.kind === "appointment") try refresh(scope)
+    return receipt
+  }
+
+  effect function sendMail({ accountId, email, grant, draft, checkOnly, replyTo }: { accountId: string; email: string; grant: string; draft: LocalMailDraft; checkOnly: boolean; replyTo?: string }) {
+    const scope = try activeScope()
+    if (scope.kind !== "ready" || scope.view !== "Email" || scope.accountId !== accountId) return false
+    const account = try setup.get()
+    if (!maySendManagedMail(account.graceAccount, account.googleLink, accountId, grant) ||
+      account.googleLink.tag !== "GoogleLinkConnected" || account.googleLink.email !== email) return false
+    const operationId = draft.operationId
+    if (!operationId || draft.grant !== grant) return false
+    if (replyTo && !checkOnly) {
+      const current = try SubscriptionRef.get(latest)
+      if (current.kind !== "mail" || current.grant !== grant || current.selected?.message.externalId !== replyTo ||
+        current.selected.reply?.recipient !== draft.recipient || current.selected.reply.subject !== draft.subject) return false
+    }
+    try keepMailDraft(accountId, email, draft, replyTo)
+    const payload = { accountId, grantId: grant, operationId, recipient: draft.recipient, subject: draft.subject, text: draft.text, replyTo }
+    const receipt = checkOnly
+      ? (try query("gmail/send/status", { grantId: grant, operationId }, SentMail, authorization))
+      : (try postChange("gmail/send", payload, SentMail, authorization))
+    if (!managedReadMatches(accountId, receipt.accountId, operationId, receipt.operationId)) return false
+    try keepMailDraft(accountId, email, null, replyTo)
+    return try still(scope)
+  }
+
+  if (!native) {
+    const onOpening = try Ref.get(pending)
+    if (onOpening !== undefined && viewOf(webView.window.location.hash) !== undefined) {
+      try saveIntent(onOpening)
+      try fork.scoped effect {
+        try Stream.runHead(Stream.filter(desk.changes, (w) => w.device.readiness === "Ready"))
+        desk.send({ type: "visit", destination: onOpening.view }, "Person") catch () => undefined
+      }
+    }
+    try fork.scoped Stream.runForEach(Stream.zipLatest(desk.changes, setup.changes), effect ([workspace, account]) => {
+      const next = try Ref.get(pending)
+      if (next?.returning && workspace.device.surface === "DeviceSettings" && workspace.device.settingsPage === "AccountSettings") {
+        const scope = try scopeOf(next.view, account, next)
+        if (scope.kind !== "ready" && (scope.kind !== "waiting" || scope.reason !== "connectorUnavailable")) return
+        const opened = desk.send({ type: "visit", destination: next.view }, "Person") catch () => undefined
+        if (opened !== undefined) try saveIntent({ ...next, returning: false })
+      }
+    })
+  }
+  if (!native) {
+    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes),
+      effect ([workspace, account]) => {
+        if (workspace.device.surface !== "Home" || workspace.device.readiness !== "Ready") return undefined
+        const intent = try Ref.get(pending)
+        return [try scopeOf("Email", account, intent), try scopeOf("Calendar", account, intent)]
+          .filter((scope): scope is ReadyScope => scope.kind === "ready")
+      }), (a, b) => JSON.stringify(a) === JSON.stringify(b))
+    try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
+      try SubscriptionRef.set(cards, undefined)
+      const one = selected?.[0]
+      if (!one || !selected) return
+      const loaded = try Effect.forEach(selected, effect (scope) => {
+        return fetchPage(scope) catch () => undefined
+      }, { concurrency: 2 })
+      const account = try setup.get()
+      if (account.graceAccount.tag !== "GraceSignedIn" || account.graceAccount.accountId !== one.accountId ||
+        account.googleLink.tag !== "GoogleLinkConnected" || account.googleLink.grant !== one.grant ||
+        (try desk.get()).device.surface !== "Home") return
+      try SubscriptionRef.set(cards, { accountId: one.accountId, grant: one.grant,
+        mail: loaded.find((page) => page?.kind === "mail")?.rows ?? [],
+        events: loaded.find((page) => page?.kind === "calendar")?.rows ?? [] })
+    })))
+  }
+  const scopes = Stream.changesWith(
+    Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes), () => activeScope()),
+    (left, right) => JSON.stringify(left) === JSON.stringify(right),
+  )
+  try fork.scoped Stream.runDrain(Stream.switchMap(scopes, (scope) => Stream.fromEffect(refresh(scope))))
+  return {
+    state: SubscriptionRef.changes(latest),
+    home: SubscriptionRef.changes(cards),
+    homeCards: () => SubscriptionRef.get(cards),
+    get: () => SubscriptionRef.get(latest),
+    ownsSurfaces,
+    guidedSelection,
+    send: effect (command) => gate.withPermit(send(command)) catch () => false,
+    stage: effect (proposal) => gate.withPermit(stage(proposal)) catch () => false,
+    series: effect (scope, occurrenceId) => gate.withPermit(series(scope, occurrenceId)) catch () => undefined,
+    change: effect (scope, action) => gate.withPermit(change(scope, action)) catch () => undefined,
+    sendMail: effect (input) => gate.withPermit(sendMail(input)) catch () => false,
+  }
 })
