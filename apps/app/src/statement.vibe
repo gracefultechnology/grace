@@ -1,29 +1,60 @@
-// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
-import { hasOneStatementAnswer } from "../gen/app__workspace.effect.vibe"
+// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"
+import { hasOneStatementAnswer, statementAmounts } from "../gen/app__workspace.effect.vibe"
 import { type LinkObservation } from "./nativePage.schema.ts"
 
-const totalLabel = /^(?:total amount due|amount due|total due|balance due|statement balance)(?:\s*:\s*|\s+|$)(.*)$/iu
-const dateLabel = /^(?:payment due date|bill due date|due date|payment due by|payment due|due by|pay by)(?:\s*:\s*|\s+|$)(.*)$/iu
-const money = /^(?:[$£€]\s*\d+(?:[,.]\d{3})*(?:[.,]\d{2})?|(?:USD|EUR|GBP)\s+\d+(?:[,.]\d{3})*(?:[.,]\d{2})?)$/iu
-const date = /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},?\s+\d{4})$/iu
+export type StatementFact = "RemainingBalance" | "AmountDue" | "DueDate"
+export type Labeled = { readonly fact: StatementFact; readonly label: string; readonly value: string }
+export type StatementRead =
+  | { readonly tag: "Read"; readonly document: string; readonly amount: Labeled; readonly due: Labeled }
+  | { readonly tag: "Unread"; readonly reason: "NotFound" | "Several" | "Past" }
 
-function labeled(lines: string[], label: RegExp, value: RegExp): string[] {
-  return [...new Set(lines.flatMap((line, index) => {
-    const match = label.exec(line)
-    if (!match) return []
-    const candidate = match[1]?.trim() || lines[index + 1] || ""
-    return [value.test(candidate) ? candidate : ""]
-  }))]
+const facts: readonly StatementFact[] = ["RemainingBalance", "AmountDue", "DueDate"]
+const labels: Record<StatementFact, string> = {
+  RemainingBalance: String.raw`remaining\s+(?:statement\s+)?balance(?:\s+due)?`,
+  AmountDue: String.raw`(?:your\s+)?(?:(?:total|current|new)\s+)?(?:amount|balance)\s+due|(?:your\s+)?total\s+due|(?:your\s+)?(?:new|statement)\s+balance(?:\s+due)?`,
+  DueDate: String.raw`(?:(?:payment|bill)\s+)?due\s+date|(?:payment\s+)?due\s+(?:by|on)|payment\s+due|pay\s+by`,
+}
+const label = new RegExp(String.raw`(?<!\p{L}\s*)(?:${facts.map((fact) => `(?<${fact}>${labels[fact]})`).join("|")})(?!\p{L})\s*:?\s*`, "giu")
+const ends = String.raw`(?=$|[\s.,;:|·)\]](?!\d))`
+const number = String.raw`\d+(?:[,.]\d{3})*(?:[.,]\d{2})?`
+const money = new RegExp(String.raw`^(?:[-−]\s*)?(?:[$£€]\s*(?:[-−]\s*)?${number}|(?:USD|EUR|GBP)\s*${number}|${number}\s*(?:USD|EUR|GBP|[£€]))${ends}`, "iu")
+const month = String.raw`(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?`
+const weekday = String.raw`(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+)?`
+const day = String.raw`\d{1,2}(?:st|nd|rd|th)?`
+const date = new RegExp(String.raw`^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[-/.]\d{1,2}[-/.](?:\d{4}|\d{2})|${weekday}${month}\s+${day}(?:,?\s+\d{4})?|${weekday}${day}\s+${month},?\s+\d{4})${ends}`, "iu")
+const pastStatement = /\b(?:past|previous|prior)\s+(?:bills?|statements?|invoices?)\b/iu
+
+function joinedFragments(lines: readonly string[]): string[] {
+  return lines.reduce<string[]>((joined, line) => {
+    const last = joined.at(-1) ?? ""
+    const split = (/(?:^|\s)[-−]?[$£€]$/u.test(last) && /^[-−]?\d/u.test(line)) || (/[$£€]\s*[-−]?\d+$/u.test(last) && /^[.,]\d{2}(?!\d)/u.test(line))
+    return split ? [...joined.slice(0, -1), last + line] : [...joined, line]
+  }, [])
 }
 
-export function statementFacts(snapshot: LinkObservation, url: string) {
-  const result = snapshot.result
-  if (result.url !== url || result.readyState !== "complete" || result.domRevision === undefined ||
-      result.blockers.some(item => item.covers !== "partial") || !result.text || !result.title ||
-      !/\b(?:current|latest)\s+(?:utility\s+)?(?:bill|statement|invoice)\b|\b(?:bill|statement|invoice)\s+for\s+the\s+current\s+period\b/iu.test(result.title)) return undefined
-  const lines = result.text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map(line => line.trim()).filter(Boolean)
-  const amounts = labeled(lines, totalLabel, money)
-  const dates = labeled(lines, dateLabel, date)
-  if (!hasOneStatementAnswer(amounts, dates)) return undefined
-  return { document: snapshot.documentId, revision: result.domRevision, amount: amounts[0], due: dates[0] }
+export function statementLabels(text: string): Labeled[] {
+  const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean))
+  return lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
+    const fact = facts.find((name) => match.groups?.[name] !== undefined)
+    const words = fact === undefined ? undefined : match.groups?.[fact]
+    if (fact === undefined || words === undefined) return []
+    const rest = line.slice(match.index + match[0].length)
+    const value = (fact === "DueDate" ? date : money).exec(rest === "" ? lines[index + 1] ?? "" : rest)?.[0]
+    return value === undefined ? [] : [{ fact, label: words.replace(/\s+/gu, " "), value: value.replace(/\s+/gu, " ") }]
+  }))
+}
+
+export function statementRead(snapshot: LinkObservation, url: string): StatementRead | undefined {
+  const { result } = snapshot
+  if (result.url !== url || result.readyState !== "complete" || result.blockers.some((item) => item.covers !== "partial")) return undefined
+  if (pastStatement.test(result.title ?? "")) return { tag: "Unread", reason: "Past" }
+  const found = statementLabels(result.text ?? "")
+  const values = (fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))]
+  const amounts = statementAmounts(values("AmountDue"), values("RemainingBalance"))
+  const dates = values("DueDate")
+  const amount = found.find((item) => item.fact !== "DueDate" && item.value === amounts[0])
+  const due = found.find((item) => item.fact === "DueDate")
+  if (!hasOneStatementAnswer(amounts, dates) || amount === undefined || due === undefined)
+    return { tag: "Unread", reason: amounts.length > 1 || dates.length > 1 ? "Several" : "NotFound" }
+  return { tag: "Read", document: snapshot.documentId, amount, due }
 }
