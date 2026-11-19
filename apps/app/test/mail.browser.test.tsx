@@ -18,6 +18,7 @@ const gmail = "owner@grace.test";
 const outlook = "margaret@outlook.com";
 
 const Kept = Schema.Struct({
+  sendLookups: Schema.Array(Schema.String),
   googleRequests: Schema.Array(Schema.String),
   boxes: Schema.Array(Schema.Struct({
     address: Schema.String,
@@ -352,6 +353,37 @@ it("Write or reply and confirm before sending", async () => {
   const after = (await sends()).filter((id) => !before.includes(id));
   expect(after).toHaveLength(1);
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
+});
+
+it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
+  const { secret, host, company } = await start();
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(row("All inboxes 5")).toBeVisible();
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
+  await act(() => userEvent.fill(words(), "Please call me tomorrow."));
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  const operations = async () => (await company()).changes.filter((c) => c.receipt.kind === "send");
+  const previous = (await operations()).length;
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
+  await click(send);
+  await expect.element(page.getByText(/The email wasn’t sent/)).toBeVisible();
+  expect(await operations()).toHaveLength(previous);
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "dispatch"), client));
+  await act(() => userEvent.fill(words(), "Please call me this afternoon."));
+  await click(send);
+  await expect.element(page.getByText(/I’m not sure this email was sent/)).toBeVisible();
+  await expect.element(send).toBeDisabled();
+  expect((await operations()).slice(previous).map((c) => c.receipt.state)).toEqual(["prepared"]);
+  await expect.poll(async () => (await company()).sendLookups.includes("prepared")).toBe(true);
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "lookupMissing"), client));
+  await host("Offline");
+  await host("Online");
+  await expect.poll(async () => (await company()).sendLookups.includes("missing")).toBe(true);
+  await expect.element(send).toBeDisabled();
+  expect((await company()).boxes.flatMap((box) => box.mail).filter((message) => message.subject === "Re: Reminder: your appointment tomorrow at 10 am" && message.labels.includes("SENT"))).toHaveLength(0);
+  expect(await operations()).toHaveLength(previous + 1);
 });
 
 it("Delete a message and recover it safely", async () => {
