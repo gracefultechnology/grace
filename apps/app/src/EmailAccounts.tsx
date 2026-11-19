@@ -3,25 +3,20 @@ import {
   type AccountColour, Alert, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm,
   OtherEmailForm, type OtherEmailProblem, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
-import { Effect } from "effect";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
 import { secretPassword } from "./connector.vibe";
-import type { Help } from "./context.vibe";
-import { Conversation } from "./conversation.vibe";
-import type { Guidance } from "./Settings.tsx";
-import { type MailInstance, useAccounts, useRuntime, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
+import { type MailInstance, useAccounts, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
-type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack"> & { guidance?: Guidance };
+type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack">;
 
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
-const tileTargets = new Map((Object.keys(providers) as Provider[]).map((p) => [`prov-${p}`, providers[p]]));
+const tiles = new Map((Object.keys(providers) as Provider[]).map((p) => [`prov-${p}`, providers[p]]));
 const anyDomain = "example.com";
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
-const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
 const home = "Email & calendar";
 const add = "Add an email";
 const other = "Other email";
@@ -52,16 +47,15 @@ function otherProblem(registry: Accounts): OtherEmailProblem | undefined {
 }
 
 /** @model spec/app/accounts.md */
-export function EmailAccounts({ guidance, ...frame }: Frame) {
+export function EmailAccounts(frame: Frame) {
   const { accounts } = useAccounts();
   if (!accounts) return null;
-  return <WithMailboxes ids={accounts.accounts.map((a) => a.id)}>{(boxes) => <Settings registry={accounts} boxes={boxes} frame={frame} guidance={guidance} />}</WithMailboxes>;
+  return <WithMailboxes ids={accounts.accounts.map((a) => a.id)}>{(boxes) => <Settings registry={accounts} boxes={boxes} frame={frame} />}</WithMailboxes>;
 }
 
-function Settings({ registry, boxes, frame, guidance }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame; guidance: Guidance | undefined }) {
+function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
   const { can, send } = useAccounts();
-  const runtime = useRuntime();
-  const workspace = useWorkspace();
+  const { guide, askGrace } = useWorkspace();
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -70,17 +64,10 @@ function Settings({ registry, boxes, frame, guidance }: { registry: Accounts; bo
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
 
-  const opening = workspace.can({ type: "openGrace" });
-  const help = async (need: Help) => {
-    await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
-    if (opening) await workspace.send({ type: "openGrace" });
-    await workspace.send(compact);
-  };
-  const askGrace = (need: Help) => opening || workspace.can(compact) ? () => void help(need) : undefined;
   const choosing = Object.values(chosen).some((provider) => can({ type: "chooseProvider", provider }));
   const choose = choosing ? (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.() : undefined;
-  const tile = guidance && tileTargets.get(guidance.target);
-  const tileGuide = guidance && tile ? { ...guidance.pointing, targetId: tile } : undefined;
+  const tileGuide = guide((target) => tiles.get(target));
+  const rowGuide = guide((target) => registry.accounts.some((a) => target === `acc-${a.id}`) ? target : undefined);
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;
 
@@ -93,10 +80,10 @@ function Settings({ registry, boxes, frame, guidance }: { registry: Accounts; bo
             <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} guide={tileGuide} />
           </EmailAccountList>
         ) : (
-          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={guidance?.target === "acadd" ? { ...guidance.pointing, targetId: "add" } : undefined}>
+          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={guide((target) => target === "acadd" ? "add" : undefined)}>
             {registry.accounts.map((a) => (
               <EmailAccountRow key={a.id} address={a.address} provider={providers[a.provider]} uses={a.use} status={status(a.id)} colour={colour(a)}
-                onOpen={offer({ type: "openAccount", id: a.id })} guide={guidance?.target === `acc-${a.id}` ? guidance.pointing : undefined} />
+                onOpen={offer({ type: "openAccount", id: a.id })} guide={rowGuide?.targetId === `acc-${a.id}` ? { kind: rowGuide.kind, title: rowGuide.title, onClose: rowGuide.onClose } : undefined} />
             ))}
           </EmailAccountList>
         );
