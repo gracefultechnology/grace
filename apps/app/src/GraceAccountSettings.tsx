@@ -71,7 +71,7 @@ export function GraceAccountSettings() {
         <>
           <PageText>Sign in on your tablet{signedIn && snapshot.email ? ` as ${snapshot.email}` : ""}?</PageText>
           <div className="flex flex-wrap gap-3">
-            {signedIn && <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "authorizeDevice" })}>Sign in on tablet</Button>}
+            {signedIn && <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "authorizeDevice", expectedAccountId: snapshot.accountId })}>Sign in on tablet</Button>}
             <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "cancelDevice" })}>Cancel tablet sign-in</Button>
           </div>
         </>
