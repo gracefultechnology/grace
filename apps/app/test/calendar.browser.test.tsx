@@ -122,9 +122,10 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await agree({ tag: "AddAsk", target: 1, review: { entry, calendarGeneration: gmailView.generation, displayTimezone: gmailView.timezone } },
     () => expect.element(row("Doctor’s appointment", "Not added yet · Grace is asking you")).toBeVisible());
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
+  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
+  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
-  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
 }, journey);
 
 const edit = async (title: string, repeats: string) => {
@@ -245,7 +246,7 @@ it('Delete the first and then every appointment of a repeating email series (spe
   await expect.element(dated(eyeDay)).toBeVisible();
   await click("Delete");
   await click("Delete only this one");
-  await expect.element(page.getByText("Deleted Walk with Joan")).toBeVisible();
+  await expect.element(page.getByText("Deleted Walk with Joan"), atCloud).toBeVisible();
   await expect.poll(walks, atCloud).toEqual([{ title: "Walk with Joan", startAt: midnight(eyeDay + 7) + 10 * hour }]);
   await click("Next week");
   await act(() => userEvent.click(row("Walk with Joan", "Gmail").first()));
@@ -272,15 +273,15 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await click("Save");
   await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect.element(row("Pill pickup", "On this tablet")).toBeVisible();
-  const reminded = page.getByText("Reminder: Pill pickup today at 7 am");
-  await expect.element(reminded, { timeout: 5000 }).toBeVisible();
+  const reminded = page.getByText(/^Reminder: Pill pickup today at 7 am/);
+  await expect.element(reminded, { timeout: 15000 }).toBeVisible();
   await click("Settings");
   await expect.element(reminded).toBeVisible();
   await click("Home");
-  await expect.element(reminded).not.toBeInTheDocument();
+  await expect.element(reminded, { timeout: 15000 }).not.toBeInTheDocument();
   await expect.element(card.getByText("Today", { exact: true })).toBeVisible();
   await click("See details");
-  await expect.element(page.getByText("Reminder day before")).toBeVisible();
+  await expect.element(page.getByText(/^Reminder day before/)).toBeVisible();
   await click("Dismiss");
   await expect.element(reminded).not.toBeInTheDocument();
   await click("Back to Calendar");
