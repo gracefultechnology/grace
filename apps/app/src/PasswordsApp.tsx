@@ -1,25 +1,23 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 import { Button, Dialog, DialogActions, DialogClose, DialogContent, DialogTitle, DialogTrigger, EmptyState, GuideRing, SearchField } from "@repo/ui";
 import { Effect } from "effect";
-import { ChevronRight, KeyRound, LockKeyhole, Plus, Volume2 } from "lucide-react";
+import { ChevronRight, KeyRound, Plus } from "lucide-react";
 import { useRef, useState } from "react";
-import { type LoginSummary, type PasswordGuide, type VaultIssue, type VaultNotice, passwordsHelpText } from "../gen/app.ts";
+import { type LoginSummary, type PasswordGuide, type VaultIssue, type VaultNotice } from "../gen/app.ts";
 import { useMachine } from "../gen/app.react.ts";
 import { Passwords, type PasswordAction } from "./passwords.vibe";
-import { androidHost } from "./surfacePlugin.ts";
 import { useRuntime } from "./useApp.ts";
 
 const vaultMessage: Record<VaultIssue, string> = {
-  NoDeviceLock: "Set a screen lock in Android settings to use Passwords.",
+  LegacyAuthorization: "Android needs your permission to open passwords saved by an earlier version of Grace.",
   UnsupportedVault: "Passwords is available on your Grace tablet.",
   LostVaultKey: "This tablet can no longer open these saved passwords. Use each website’s password recovery.",
   VaultClosed: "Grace can’t verify the account that owns the saved passwords on this tablet.",
 };
 const noticeText: Record<VaultNotice, string> = {
   QuietVault: "",
-  CancelledVaultAction: "Passwords is still locked.",
+  CancelledVaultAction: "Your saved passwords are still protected.",
   BackupUnavailable: "Backup and recovery is unavailable right now.",
-  SpokenHelpUnavailable: "Spoken help is unavailable. You can read the instructions here.",
   FailedVaultAction: "Something went wrong. Please try again.",
   SavedLogin: "Password saved.",
   DeletedLogin: "Password deleted.",
@@ -83,7 +81,7 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="capsule" size="pill" onClick={() => act({ kind: "Add" })}><Plus aria-hidden /> Add password</Button>
-        <Button variant="capsule" size="pill" onClick={() => act({ kind: "Lock" })}><LockKeyhole aria-hidden /> Lock</Button>
+        <Button variant="capsule" size="pill" onClick={() => act({ kind: "Autofill" })}>Set up autofill in Android</Button>
         {entries.length > 0 && (
           <div className="relative">
             {guide === "FindPasswordGuide" && <GuideRing motion="tap" tight />}
@@ -119,7 +117,6 @@ export function PasswordsApp() {
   const runtime = useRuntime();
   const { state, can, send } = useMachine(runtime);
   const act = (action: PasswordAction) => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.act(action)));
-  const speak = () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.speak()));
   const vault = state?.vault;
   const guide = state?.guide ?? "NoPasswordGuide";
   const finishGuide = () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide()));
@@ -133,27 +130,13 @@ export function PasswordsApp() {
       {(!vault || vault.tag === "ClosedPasswords" || vault.tag === "CheckingVault") && <p role="status" className="text-body">Checking Passwords…</p>}
       {vault?.tag === "UnavailableVault" && (
         <EmptyState title={vaultMessage[vault.reason]}>
-          {androidHost && vault.reason === "NoDeviceLock" && <Button variant="capsule" size="pill" onClick={() => act({ kind: "SetupLock" })}>Open screen lock settings</Button>}
+          {vault.reason === "LegacyAuthorization" && <Button variant="capsule" size="pill" onClick={() => act({ kind: "Unlock" })}>Open saved passwords</Button>}
         </EmptyState>
       )}
-      {vault?.tag === "LockedVault" && (
-        <div className="flex flex-wrap gap-3">
-          <div className="relative">
-            {guide !== "NoPasswordGuide" && <GuideRing motion="tap" tight />}
-            <Button variant="capsule" size="pill" onClick={() => act({ kind: "Unlock" })}><LockKeyhole aria-hidden /> Unlock Passwords</Button>
-          </div>
-          <Button variant="capsule" size="pill" onClick={() => act({ kind: "Autofill" })}>Set up autofill in Android</Button>
-        </div>
-      )}
+      {vault?.tag === "LockedVault" && <p role="status" className="text-body">Waiting for Passwords…</p>}
       {vault?.tag === "OpenVault" && <OpenLogins entries={vault.entries} selected={vault.selected} choose={choose} act={act} guide={guide} finishGuide={finishGuide} />}
       {state && state.notice !== "QuietVault" && <p role="status" className="text-body">{noticeText[state.notice]}</p>}
-      {vault?.tag === "LockedVault" && <p className="text-body text-muted-foreground">Passwords are saved on this tablet.</p>}
       {state?.backupReady && <Button className="self-start" variant="capsule" size="pill" onClick={() => act({ kind: "Backup" })}>Backup and recovery</Button>}
-      <details className="max-w-prose text-body">
-        <summary className="cursor-pointer font-semibold">How to use saved passwords</summary>
-        <p className="my-3">{passwordsHelpText(guide)}</p>
-        {(androidHost || typeof window.speechSynthesis !== "undefined") && <Button variant="capsule" size="pill" onClick={speak}><Volume2 aria-hidden /> Read instructions aloud</Button>}
-      </details>
     </div>
   );
 }

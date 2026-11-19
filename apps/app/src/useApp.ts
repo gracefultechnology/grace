@@ -60,7 +60,6 @@ export function usePasswordGuide() {
     listen: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.listenForGuide())),
     stopListening: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.stopGuideMic())),
     request: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Passwords), (service) => service.guideTyped(revision))),
-    finish: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide())),
   };
 }
 
@@ -81,7 +80,6 @@ export function useWorkspace() {
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
     /** The person's Close browser, which the page host also tells what websites asked. */
-    supportsPrivateSignIn: () => runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.privateSignIn)),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
