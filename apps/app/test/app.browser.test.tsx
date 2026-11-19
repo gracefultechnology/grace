@@ -2068,8 +2068,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
-  const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
-  const tap = async (target: Locator) => { await routeTo(target); await act(() => userEvent.click(target)); };
+  const { routeTo, tap } = routedControls(native);
   const send = async (message: string) => {
     const text = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(text);
