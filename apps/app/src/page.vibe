@@ -91,7 +91,7 @@ data Signal {
   Visible { visible: boolean }
   Android { request: number; verdict: AndroidOutcome }
   Purged { clean: boolean }
-  Waited { tab: number; version: number }
+  Waited { tab: Tab }
 }
 
 const sameHistory = (a: Tab, b: Tab) => a.history.length === b.history.length && a.history.every((url, i) => url === b.history[i])
@@ -204,6 +204,10 @@ effect function report(workspace: Workspaces.Shape, event: Event) {
   workspace.send(event, "Host") catch effect (error) => match (error) {
     when Rejected: undefined;
   }
+}
+
+effect function failLoad(workspace: Workspaces.Shape, tab: Tab) {
+  try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed", secure: false, endedAt: tabUrl(tab) } })
 }
 
 effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth: number) {
@@ -372,7 +376,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (!made) {
       if (tab.load !== "Loading") return
       unmade.set(tab.id, tab.loadVersion)
-      try fail(tab)
+      try failLoad(workspace, tab)
       return
     }
     unmade.delete(tab.id)
@@ -385,15 +389,11 @@ export const pageHost = Layer.effect(PageHost, effect {
     else native.route(id, l.routed) catch effect (cause) => { try warn("route", id, cause); try close(tab.id) }
   }
 
-  effect function fail(tab: Tab) {
-    try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed", secure: false, endedAt: tabUrl(tab) } })
-  }
-
   effect function wait(tab: Tab) {
     waiting.set(tab.id, tab.loadVersion)
     try fork.in(scope) effect {
       try sleep(`${loadWaitSeconds} seconds`)
-      try Queue.offer(signals, Signal.Waited({ tab: tab.id, version: tab.loadVersion }))
+      try Queue.offer(signals, Signal.Waited({ tab }))
     }
   }
 
@@ -518,11 +518,7 @@ export const pageHost = Layer.effect(PageHost, effect {
         return
       }
       case "Purged": return try website({ type: "purgeFinished", clean: signal.clean }, "WebsiteHost")
-      case "Waited": {
-        const tab = (try workspace.get()).browser.tabs.find((t) => t.id === signal.tab)
-        if (tab?.loadVersion === signal.version) try fail(tab)
-        return
-      }
+      case "Waited": return try failLoad(workspace, signal.tab)
       case "Android": {
         forget(signal.request)
         try website({ type: "androidAnswered", id: signal.request, verdict: signal.verdict }, "WebsiteHost")
