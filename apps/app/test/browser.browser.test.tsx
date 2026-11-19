@@ -144,6 +144,10 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await expect.poll(() => workspace().browser.tabs.length).toBe(3);
   await userEvent.click(page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: `Close ${host}` }));
   await expect.poll(() => ({ tabs: workspace().browser.tabs.length, top: onTop(frames().find((frame) => !frame.hidden) ?? null) })).toEqual({ tabs: 2, top: true });
+  const framed = showing();
+  await address.fill("https://bank.invalid/");
+  await enter();
+  await expect.poll(() => ({ load: workspace().browser.tabs.find((t) => t.id === workspace().browser.selected)?.load, showing: showing() })).toEqual({ load: "LoadFailed", showing: framed });
 
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
