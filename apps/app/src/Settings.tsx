@@ -1,9 +1,11 @@
 // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/accounts.md, "Story: Connect the email I already use"
-import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
+import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, type GuidePointing, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
+import { type GuidanceKind, guidanceInstruction } from "../gen/app__assistant.ts";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
+import { guidanceVisible } from "../gen/app__workspace.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { retryPreferences } from "./preferences.vibe";
@@ -13,6 +15,11 @@ const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 const pages = Object.values(names);
+const navTargets = new Map((Object.keys(names) as SettingsPage[]).map((p) => [`nav-${p}`, names[p]]));
+const pointings = { Look: "point", Tap: "instruction", Done: "confirm" } as const satisfies Record<GuidanceKind, GuidePointing["kind"]>;
+
+export type Guidance = { target: string; pointing: GuidePointing };
+
 const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 
@@ -37,8 +44,18 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
-  const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
-  if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
+  const shown = guidanceVisible(workspace!) ? workspace!.assistant.guidance : undefined;
+  const dismiss = shown && { type: "interact", input: { tag: "DismissGuidance", revision: shown.revision } } as const;
+  const guidance: Guidance | undefined = shown && {
+    target: shown.target,
+    pointing: { kind: pointings[shown.kind], title: guidanceInstruction(workspace!.assistant), onClose: dismiss && can(dismiss) ? () => void send(dismiss) : undefined },
+  };
+  const nav = guidance && navTargets.get(guidance.target);
+  const frame = {
+    pages, page: names[page], onPageChange: choose, guide: guidance && nav ? { ...guidance.pointing, targetId: nav } : undefined,
+    onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
+  };
+  if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} guidance={guidance} />;
 
   return (
     <SettingsApp {...frame}>
