@@ -154,24 +154,26 @@ public class GraceRemindersPlugin extends ReminderPlugin {
  static ReminderEngine reminderEngine(Context context) { return ReminderEngine.get(context, CONFIGURATION, STORE); }
 
  public static class Receiver extends BroadcastReceiver {
-  private static final Executor BOOT_RESTORE = Executors.newSingleThreadExecutor();
+  private static final Executor RESTORE_WORK = Executors.newSingleThreadExecutor();
 
   @Override public void onReceive(Context context, Intent intent) {
-   if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+   String action = intent.getAction();
+   if (!Intent.ACTION_BOOT_COMPLETED.equals(action) && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action) &&
+       !Intent.ACTION_TIME_CHANGED.equals(action) && !Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
     dispatch(context, intent);
     return;
    }
    var application = context.getApplicationContext();
    var pending = goAsync();
    try {
-    BOOT_RESTORE.execute(() -> {
+    RESTORE_WORK.execute(() -> {
      try { dispatch(application, intent); }
-     catch (RuntimeException unavailable) { Log.w("GraceReminders", "Could not restore reminders after boot", unavailable); }
+     catch (RuntimeException unavailable) { Log.w("GraceReminders", "Could not restore reminders for " + action, unavailable); }
      finally { pending.finish(); }
     });
    } catch (RejectedExecutionException unavailable) {
     pending.finish();
-    Log.w("GraceReminders", "Could not schedule reminder restoration after boot", unavailable);
+    Log.w("GraceReminders", "Could not schedule reminder restoration for " + action, unavailable);
    }
   }
 
