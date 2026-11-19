@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine } from "../gen/app__network.effect.vibe";
-import { Wifi } from "../src/Wifi.tsx";
+import { WifiNetworks } from "../src/Wifi.tsx";
 import { wifiPage } from "../src/wifi.vibe";
 import "../src/main.css";
 import { actOnScreen } from "./screen.tsx";
@@ -53,7 +53,10 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     });
     const state = () => runtime.runPromise(Effect.flatMap(Effect.service(Machine), (m) => m.get()));
     const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name })));
-    await act(() => Promise.resolve(root.render(<Wifi runtime={runtime} />)));
+    let fixes = 0;
+    await act(() => Promise.resolve(root.render(<WifiNetworks runtime={runtime} online={false} onFix={() => { fixes += 1; }} />)));
+    await tap("Fix Wi-Fi");
+    expect(fixes).toBe(1);
 
     await tap("Look for networks");
     expect(tablet.location).toBe("prompt");
@@ -76,10 +79,15 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     ]);
     expect(JSON.stringify(await state())).not.toContain("garden2024");
 
+    const shown = () => act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
     await tap("Sunrise Community Center");
     await expect.poll(() => tablet.panels).toBe(1);
+    await shown();
+    await expect.poll(async () => (await state()).phase).toBe("JoinFailed");
+    await tap("Try again");
+    await expect.poll(() => tablet.panels).toBe(2);
     tablet.ssid = "Sunrise Community Center";
-    await act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
+    await shown();
     await expect.poll(async () => (await state()).phase).toBe("JoinComplete");
     expect(tablet.joins).toHaveLength(3);
   });

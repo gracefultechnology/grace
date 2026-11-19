@@ -1,5 +1,5 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"
-import { type Authentication, type JoinResult, type Network, type NetworkJoin, type ScanResult, Machine, canAllowLocation, machine } from "../gen/app__network.effect.vibe"
+import { type Authentication, type JoinResult, type Network, type NetworkJoin, type ScanResult, Machine, canAllowLocation, listAction, machine } from "../gen/app__network.effect.vibe"
 import type { JoinableWiFiSecurity, WiFiSecurity } from "@elizaos/os/bridges/definitions/wifi"
 import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
 
@@ -98,15 +98,17 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
 
   effect function returned() {
     const n = try networks.get()
-    if (n.phase === "AndroidPanel" || n.phase === "PortalEntry") {
-      const name = offerOf(n)?.name
-      const read = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
-      if (read !== undefined && !(read.captivePortal && n.phase === "PortalEntry")) {
-        const result = read.captivePortal ? "PortalRequired" : read.online && read.ssid === name ? "Joined" : read.online ? "Unverified" : "Unavailable"
-        try answer(n, result, result === "Unavailable" ? "The tablet didn't join " + (name ?? "the network") + "." : "")
-      }
+    if (n.phase !== "AndroidPanel" && n.phase !== "PortalEntry") {
+      if (listAction(n.discovery) === "OpenPanel") try look
+      return
     }
-    try look
+    const name = offerOf(n)?.name ?? "the network"
+    const read = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
+    if (read === undefined || (read.captivePortal && n.phase === "PortalEntry")) return
+    const elsewhere = read.online && read.ssid !== null && read.ssid !== name
+    const result = read.captivePortal ? "PortalRequired" : !read.online || elsewhere ? "Unavailable" : read.ssid === null ? "Unverified" : "Joined"
+    const explanation = elsewhere ? "The tablet is still on " + read.ssid + ", not " + name + "." : "The tablet didn't join " + name + "."
+    try answer(n, result, result === "Unavailable" ? explanation : "")
   }
 
   const searches = Stream.filter(Stream.changes(Stream.map(networks.changes, (n) => n.discovery === "Scanning")), (searching) => searching)
