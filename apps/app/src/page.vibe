@@ -1,7 +1,7 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/browser.md, "A load that never starts or never ends becomes the failure view with Reload"; spec/app/workspace.md, "Starting and changing pages use the browser's real navigation state"
 import { type Rect, Machine as PageLayers, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
-import { type Tab, tabUrl } from "../gen/app__browser.effect.vibe"
+import { type Tab, loadWaitSeconds, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canChangePage, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
 import type { BrowserInput } from "../gen/app__browserControls.effect.vibe"
 import { type AndroidOutcome, type Event as WebsiteEvent, Machine as WebsiteRequests, Rejected as RequestRejected, type WebsiteActor, type WebsiteReply, canFollowView, opensElsewhere } from "../gen/app__websiteRequests.effect.vibe"
@@ -91,6 +91,7 @@ data Signal {
   Visible { visible: boolean }
   Android { request: number; verdict: AndroidOutcome }
   Purged { clean: boolean }
+  Waited { tab: number; version: number }
 }
 
 const sameHistory = (a: Tab, b: Tab) => a.history.length === b.history.length && a.history.every((url, i) => url === b.history[i])
@@ -99,9 +100,12 @@ const holds = (held: Held, cursor: number) => cursor >= held.from && cursor <= h
 
 const samePast = (before: Tab, after: Tab) => before.history.slice(0, before.cursor + 1).every((url, i) => url === after.history[i])
 
+const endedElsewhere = (before: Tab, after: Tab) => before.loadVersion === after.loadVersion && before.cursor === after.cursor &&
+  before.history.length === after.history.length && before.history.every((url, i) => i === before.cursor || url === after.history[i])
+
 function track(page: Page, tab: Tab) {
   const { held, tab: before } = page
-  page.held = sameHistory(before, tab) && holds(held, tab.cursor) ? held
+  page.held = (sameHistory(before, tab) || endedElsewhere(before, tab)) && holds(held, tab.cursor) ? held
     : tab.cursor === before.cursor + 1 && samePast(before, tab) ? { from: held.from, to: tab.cursor }
     : { from: tab.cursor, to: tab.cursor }
   page.tab = tab
@@ -237,8 +241,9 @@ effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url:
 effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
   if (goesElsewhere(page, event.url)) try moved(workspace, page, tab, event.url)
   const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
-  if (now !== undefined && !event.loading && now.load === "Loading" && page.load === now.loadVersion)
-    try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result } })
+  if (now === undefined || event.loading || now.load !== "Loading" || page.load !== now.loadVersion) return
+  const endedAt = now.manualSignIn || !event.url ? tabUrl(now) : event.url
+  try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result, secure: event.secure, endedAt } })
 }
 
 effect function step(native: NativePage.Shape, page: Page, tab: Tab, close: (tab: number) => void!!) {
@@ -268,6 +273,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   const signals = try Queue.unbounded<Signal>()
   const pages = new Map<PageId, Page>()
   const unmade = new Map<number, number>()
+  const waiting = new Map<number, number>()
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
   let presented: PageId | null | undefined = null
   const privacy = privateViewPlugin
@@ -366,7 +372,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     if (!made) {
       if (tab.load !== "Loading") return
       unmade.set(tab.id, tab.loadVersion)
-      try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed" } })
+      try fail(tab)
       return
     }
     unmade.delete(tab.id)
@@ -379,14 +385,28 @@ export const pageHost = Layer.effect(PageHost, effect {
     else native.route(id, l.routed) catch effect (cause) => { try warn("route", id, cause); try close(tab.id) }
   }
 
+  effect function fail(tab: Tab) {
+    try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed", secure: false, endedAt: tabUrl(tab) } })
+  }
+
+  effect function wait(tab: Tab) {
+    waiting.set(tab.id, tab.loadVersion)
+    try fork.in(scope) effect {
+      try sleep(`${loadWaitSeconds} seconds`)
+      try Queue.offer(signals, Signal.Waited({ tab: tab.id, version: tab.loadVersion }))
+    }
+  }
+
   effect function syncTabs() {
     const w = try workspace.get()
     const tabs = w.browser.tabs
     for (const { tab } of [...pages.values()]) if (!tabs.some((t) => t.id === tab.id)) try close(tab.id)
     if (!tabs.some((tab) => tab.manualSignIn)) try protectBrowser(false)
     for (const id of [...unmade.keys()]) if (!tabs.some((t) => t.id === id)) unmade.delete(id)
+    for (const id of [...waiting.keys()]) if (!tabs.some((t) => t.id === id)) waiting.delete(id)
     const purging = (try requests.get()).clearing === "Purging"
     for (const tab of tabs) {
+      if (tab.load === "Loading" && waiting.get(tab.id) !== tab.loadVersion) try wait(tab)
       const page = pages.get(pageOf(tab.id))
       if (page === undefined) { if (tabUrl(tab) !== "" && !purging) try open(tab, tab.id === w.browser.selected && pageShows(w.device, w.assistant)) }
       else if (tabUrl(tab) === "") try close(tab.id)
@@ -498,6 +518,11 @@ export const pageHost = Layer.effect(PageHost, effect {
         return
       }
       case "Purged": return try website({ type: "purgeFinished", clean: signal.clean }, "WebsiteHost")
+      case "Waited": {
+        const tab = (try workspace.get()).browser.tabs.find((t) => t.id === signal.tab)
+        if (tab?.loadVersion === signal.version) try fail(tab)
+        return
+      }
       case "Android": {
         forget(signal.request)
         try website({ type: "androidAnswered", id: signal.request, verdict: signal.verdict }, "WebsiteHost")

@@ -9,7 +9,7 @@ const draft = fn();
 export const meta: ComponentMeta<AddressBarProps> = {
   args: { value: "" },
   examples: {
-    Address: { value: "chase.com/pay" },
+    Address: { value: "chase.com/pay", secure: true },
     Guided: { value: "chase.com", guided: true },
     Editable: { value: "", onValueChange: edit, onSubmit: submit },
     "Empty Go": { value: "", notice: "Type a website or what you’re looking for.", onValueChange: draft },

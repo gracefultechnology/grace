@@ -1,10 +1,17 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 import type { Rect } from "../gen/app__surface.effect.vibe"
-import { NativePage, PageEvent, PageFailed } from "./nativePage.vibe"
+import { NativePage, PageEvent, PageFailed, secureAddress } from "./nativePage.vibe"
 import { type PageId, Url } from "./nativePage.schema.ts"
 import { webView } from "./surfacePlugin.ts"
 
 type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined; placed: Rect; routed: Rect[] | undefined }
+
+const loopbackHosts = ["localhost", "127.0.0.1", "[::1]"]
+
+const opensHere = (address: string) => {
+  const host = URL.parse(address)?.hostname
+  return host !== undefined && (loopbackHosts.includes(host) || host.endsWith(".localhost"))
+}
 
 const hole = (r: Rect, placed: Rect) => `M${r.x - placed.x} ${r.y - placed.y}h${r.width}v${r.height}h${-r.width}Z`
 
@@ -20,15 +27,17 @@ export function webPage() {
     const frames = new Map<PageId, Frame>()
 
     const go = (id: PageId, frame: Frame, url: string) => {
-      frame.going = url
-      frame.element.src = url
+      const opens = opensHere(url)
+      frame.going = opens ? url : undefined
+      if (opens) frame.element.src = url
       Queue.offerUnsafe(events, PageEvent.Started({ id, url: Url.make(url) }))
+      if (!opens) Queue.offerUnsafe(events, PageEvent.Changed({ id, url: Url.make(url), loading: false, result: "LoadFailed", secure: false }))
     }
     const loaded = (id: PageId, frame: Frame) => {
       const url = frame.going === undefined ? undefined : Url.make(frame.going)
       frame.going = undefined
       if (url === undefined) Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
-      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded" }))
+      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded", secure: secureAddress(url) }))
     }
     const remove = (id: PageId) => {
       frames.get(id)?.element.remove()

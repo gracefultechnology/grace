@@ -53,13 +53,20 @@ export const SitePermissionRequested = Schema.Struct({
 
 export const SitePermissionWithdrawn = Schema.Struct({ ...surface, requestId: RequestKey })
 
-export const ExternalLinkRequested = Schema.Struct({ ...surface, url: Url, handoff: Schema.Literals(["send-to", "dial", "view", "refuse"]) })
+export const ExternalLinkRequested = Schema.Struct({
+  ...surface,
+  url: Url,
+  handoff: Schema.Literals(["send-to", "dial", "view", "refuse"]),
+  fallbackUrl: Schema.optional(Schema.NullOr(Url))
+})
 
 export const IdentityProviderRequested = Schema.Struct({ ...surface, requestId: RequestKey, provider: Schema.Literals(["google", "facebook"]) })
 
 export const SitePermissionAnswer = Schema.Struct({ outcome: Schema.Literals(["granted", "denied", "android-refused", "ended"]) })
 
 export const PermissionClosed = Schema.Struct({ code: Schema.Literal("SITE_PERMISSION_CLOSED") })
+
+export const AppUnavailable = Schema.Struct({ code: Schema.Literal("EXTERNAL_APP_UNAVAILABLE") })
 
 export const PurgeResult = Schema.Struct({ clean: Schema.optional(Schema.Boolean) })
 

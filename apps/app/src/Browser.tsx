@@ -1,10 +1,10 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"
-// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
+// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, GuideRing, NewTabPage } from "@repo/ui";
 import { LockKeyhole } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 import type { BrowserInput } from "../gen/app__browserControls.ts";
-import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, tabUrl, visibleTabs } from "../gen/app__browser.ts";
+import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { Part } from "./page.vibe";
@@ -50,12 +50,13 @@ function secureOrigin(address: string): string {
 
 type PrivateToolbarProps = {
   active: Tab;
+  secure: boolean;
   edit(input: BrowserInput): void;
   offered(input: BrowserInput): boolean;
   navigate(tab: number, address: string): Promise<boolean>;
 };
 
-function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps) {
+function PrivateToolbar({ active, secure, edit, offered, navigate }: PrivateToolbarProps) {
   const field = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
@@ -77,7 +78,7 @@ function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps
     <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
       reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })}
       onGo={go} trailing={<span className="flex items-center gap-2 whitespace-nowrap text-body"><LockKeyhole aria-hidden /> Private sign-in</span>}>
-      <AddressBar ref={field} value={draft ?? tabUrl(active)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+      <AddressBar ref={field} value={draft ?? tabUrl(active)} secure={draft === null && secure} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
         notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); }} onSubmit={go} />
     </BrowserToolbar>
   );
@@ -119,7 +120,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
-      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} edit={edit} offered={offered} navigate={navigatePrivate} /> : (
+      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} secure={showsSecureIndicator(browser)} edit={edit} offered={offered} navigate={navigatePrivate} /> : (
         <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}
@@ -129,7 +130,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
               <Button variant="capsule" size="pill" onClick={() => { finish(); edit(privateInput); }}><LockKeyhole aria-hidden /> Private sign-in</Button>
             </div>
           ) : undefined}>
-          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : guide === "FillPasswordGuide" && !offered(privateInput) ? "Open a secure website first." : undefined}
+          <AddressBar ref={fieldRef} value={address} secure={showsSecureIndicator(browser)} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : guide === "FillPasswordGuide" && !offered(privateInput) ? "Open a secure website first." : undefined}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>
