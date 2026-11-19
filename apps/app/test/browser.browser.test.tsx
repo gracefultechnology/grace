@@ -1,10 +1,13 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
-import { Effect, ManagedRuntime, Schema } from "effect";
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/browser.md, "A load that never starts or never ends becomes the failure view with Reload"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished } from "vitest";
 import { CLEF_DECISION_TIMEOUT_MS, createClefDecisionsClient } from "@elizaos/cloud/clef-decisions";
 import { commands, page, userEvent } from "vitest/browser";
+import { loadWaitSeconds } from "../gen/app__browser.ts";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
+import { Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
 import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
@@ -19,9 +22,9 @@ const topmost = (element: Element) => {
 const onTop = (element: Element | null) => element !== null && element.contains(topmost(element));
 const typedAddress = () => document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value;
 
-async function launch(plugin?: SurfacePlugin, cloud?: Parameters<typeof application>[2]) {
+async function launch(plugin?: SurfacePlugin, cloud?: Parameters<typeof application>[2], testClock = false) {
   await page.viewport(1280, 800);
-  const runtime = ManagedRuntime.make(application(plugin, undefined, cloud));
+  const runtime = ManagedRuntime.make(testClock ? Layer.provideMerge(application(plugin, undefined, cloud), TestClock.layer()) : application(plugin, undefined, cloud));
   const container = document.body.appendChild(document.createElement("div"));
   const root = createRoot(container);
   onTestFinished(async () => {
@@ -178,7 +181,8 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
     refused,
     called: (method: string) => calls.filter(([m]) => m === method).map(([, options]) => options),
     started: (url = "") => emit("pageStarted", { url }),
-    finished: (url: string) => emit("navigationChanged", { exists: true, currentUrl: url, progress: 100 }),
+    finished: (url: string, state: Record<string, unknown> = {}) => emit("navigationChanged", { exists: true, currentUrl: url, progress: 100, ...state }),
+    ask: (event: string, fields: Record<string, unknown>) => emit(event, fields),
     crashed: () => emit("surfaceCrashed", {}),
   };
 }
@@ -444,8 +448,10 @@ it.each(inject("billworldStatements"))('Read the $label BillWorld statement (spe
 }, 120_000);
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
-  const device = androidPagePluginAtItsBoundary();
-  const { workspace } = await launch(device.plugin);
+  const device = androidPagePluginAtItsBoundary({
+    openExternalLink: () => Promise.reject(Object.assign(new Error("No app on this device opens this link"), { code: "EXTERNAL_APP_UNAVAILABLE" })),
+  });
+  const { runtime, workspace } = await launch(device.plugin, undefined, true);
   const tab = () => workspace().browser.tabs[0];
   const address = page.getByRole("textbox", { name: "Address" });
   const at = () => ({ url: tab().history[tab().cursor], load: tab().load, address: document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value });
@@ -477,4 +483,60 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.started("https://example.com/b");
   device.finished("https://example.com/b");
   await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
-});
+  const padlock = page.getByRole("img", { name: "Secure connection" });
+  await expect.element(padlock).toBeVisible();
+  await userEvent.type(address, "x");
+  await expect.element(padlock).not.toBeInTheDocument();
+  const go = async (text: string, url: string) => {
+    await userEvent.fill(address, text);
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => device.called("navigate").at(-1)?.url).toBe(url);
+  };
+
+  await go("example.com/start", "https://example.com/start");
+  const history = tab().history.length;
+  device.started("https://example.com/start");
+  device.finished("https://www.example.com/home");
+  await expect.poll(at).toEqual({ url: "https://www.example.com/home", load: "Loaded", address: "https://www.example.com/home" });
+  expect(tab().history).toHaveLength(history);
+  await expect.element(padlock).toBeVisible();
+  const navigated = device.called("navigate").length;
+  await userEvent.click(page.getByRole("button", { name: "Back" }));
+  await expect.poll(() => device.called("goBack")).toHaveLength(1);
+  expect(device.called("navigate")).toHaveLength(navigated);
+  device.started("https://example.com/b");
+  device.finished("https://example.com/b");
+  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+
+  await go("example.com/slow", "https://example.com/slow");
+  device.started("https://example.com/slow");
+  await runtime.runPromise(TestClock.adjust(`${loadWaitSeconds - 1} seconds`));
+  expect(tab().load).toBe("Loading");
+  await runtime.runPromise(TestClock.adjust("1 second"));
+  await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "LoadFailed", address: "https://example.com/slow" });
+  expect(padlock.query()).toBeNull();
+  await userEvent.click(page.getByRole("button", { name: "Try again" }));
+  await expect.poll(() => device.called("reloadSurface")).toHaveLength(1);
+  device.started("https://example.com/slow");
+  device.finished("https://example.com/slow", { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
+  await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "SecurityBlocked", address: "https://example.com/slow" });
+  expect(padlock.query()).toBeNull();
+
+  await go("http://example.com/plain", "http://example.com/plain");
+  device.started("http://example.com/plain");
+  device.finished("http://example.com/plain");
+  await expect.poll(at).toEqual({ url: "http://example.com/plain", load: "Loaded", address: "http://example.com/plain" });
+  expect(padlock.query()).toBeNull();
+
+  const fallback = "https://example.com/pay";
+  device.ask("externalLinkRequested", { url: "intent://pay#Intent;scheme=examplepay;package=com.example.pay;end", handoff: "view", fallbackUrl: fallback });
+  const question = page.getByRole("alertdialog");
+  await expect.element(question).toBeVisible();
+  expect(device.called("navigate").map((n) => n.url)).not.toContain(fallback);
+  await userEvent.click(question.getByRole("button", { name: "Open" }));
+  await expect.poll(() => device.called("navigate").at(-1)?.url).toBe(fallback);
+  device.started(fallback);
+  device.finished(fallback);
+  await expect.poll(at).toEqual({ url: fallback, load: "Loaded", address: fallback });
+  expect(runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())).openings).toEqual([]);
+}, 120_000);

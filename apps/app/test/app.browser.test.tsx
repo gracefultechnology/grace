@@ -1912,7 +1912,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       default: return fetch(input, options);
     }
   });
-  const browserUrl = "https://example.org/";
+  const browserUrl = "https://www.example.org/";
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: "owner-guide-page", frameScope: "main", result: {
@@ -2037,9 +2037,11 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     const address = page.getByRole("textbox", { name: "Address" });
     await routeTo(address);
     await act(() => userEvent.type(address, "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe("https://example.org/");
     await native.started("tab-1");
+    // spec/app/browser.md, "A load that ends at another address records where the page really is"
     await native.report("tab-1", browserUrl, 100);
+    await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
     await send(browserAsk);
     await routeTo(page.getByRole("region", { name: "Review read plan" }));
     if (button("Collapse").query()) await tap(button("Collapse"));
