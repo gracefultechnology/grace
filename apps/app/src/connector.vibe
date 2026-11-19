@@ -37,7 +37,7 @@ export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Ex
 export type DraftStored = { readonly draftId: string; readonly persisted: boolean }
 export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
 export type Published = { readonly incoming: Calendar; readonly seriesVersion: number; readonly scheduleVerified: boolean }
-export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly published: readonly Published[] }
+export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly providerId?: string; readonly published: readonly Published[] }
 export type DeletionReceipt = { readonly succeeded: boolean; readonly evidence: string }
 
 export error NeedsSignIn
@@ -509,7 +509,9 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       const request = entry.hasSaved
         ? HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)
         : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body)
-      try fetched(Effect.succeed(request), Stored)
+      const { event: saved } = try fetched(Effect.succeed(request), Stored)
+      if (saved.calendarId !== calendarId || (entry.hasSaved && saved.externalId !== id)) throw new ProviderRefused({ status: 409 })
+      return saved
     }
 
     effect function readEvents(view: CalendarView, from: number, until: number) {
@@ -532,7 +534,10 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       },
       write: effect (entry) => {
         const revision = entry.revision
-        return Effect.as(stored(entry), { revision, succeeded: true, published: [] } satisfies StoreReceipt) catch effect (e) => match (e) {
+        return Effect.map(stored(entry), (saved): StoreReceipt => ({
+          revision, succeeded: true, published: [],
+          providerId: !entry.hasSaved && entry.draft.recurrence === "Once" && entry.draft.seriesId === "" ? saved.externalId : undefined
+        })) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           default: { revision, succeeded: false, published: [] };
         }
