@@ -19,25 +19,26 @@ import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
-const checkLabels: Record<GuidedStep["tag"], string> = {
-  ReadMail: "Check email",
-  ReadBrowser: "Check page",
-  ReadChangedBrowser: "Check page",
-  ReachNamedPage: "Check page",
-  ReadStatement: "Read statement",
-  ReadCalendar: "Check appointment",
-  SaveMailAppointment: "Check saved appointment",
-  SurfaceOutcome: "",
+const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: string }> = {
+  ReadMail: { label: "Check email", item: "email", missing: "I couldn’t read an open email. Open the one you want me to check." },
+  ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
+  ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
+  ReachNamedPage: { label: "Check page", item: "page", missing: "" },
+  ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
+  ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
+  SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t find that saved appointment in your calendar." },
+  SurfaceOutcome: { label: "", item: "item", missing: "I couldn’t confirm this step yet." },
 };
 
 const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep | undefined): string => {
+  const { item, missing } = checks[step?.tag ?? "SurfaceOutcome"];
   switch (check) {
-    case "NotFound": return step?.tag === "ReadStatement" ? "I couldn’t find one amount due and one due date on this page."
-      : step?.tag === "ReachNamedPage" ? `I couldn’t verify “${step.subject}” on this page. Check the page again or try another link.`
-      : "I couldn’t confirm this step yet.";
+    case "NotFound": return step?.tag === "ReachNamedPage" ? `I couldn’t verify “${step.subject}” on this page. Check the page again or try another link.` : missing;
     case "Several": return "I found more than one amount due or due date on this page.";
     case "Past": return "This is an earlier statement. Open the current one.";
-    case "Changed": return "The page changed while I checked it. Check it again.";
+    case "Changed": return `The ${item} changed while I checked it. Check it again.`;
+    case "Covered": return "Something on the website covers the page. Close it or answer it there, then check again.";
+    case "Used": return `You already used this ${item} for an earlier step. Open the next one.`;
     case "Refused": return "I couldn’t confirm this step yet.";
   }
 };
@@ -98,7 +99,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep?.tag ?? "SurfaceOutcome";
   const details = currentStep && guidedDetails(currentStep);
-  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
+  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checks[stepKind].label;
   const canCheck = ownsPlan && label && (details?.surface !== "Browser" || workspace?.device.observationAllowed) &&
     details?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&

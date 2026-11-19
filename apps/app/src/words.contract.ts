@@ -9,11 +9,11 @@ const inWord = (text: string) => text.replace(/(?<=[A-Za-zÀ-ÖØ-öø-ɏ])[’�
 
 const texts = Arbitrary.schema(pieces).pipe(Arbitrary.map((parts) => parts.join("")));
 
-const offers = Arbitrary.schema(Schema.Struct({ before: pieces, name: pieces, after: pieces, typed: Schema.Boolean, other: pieces })).pipe(
-  Arbitrary.map(({ before, name, after, typed, other }) => {
+const offers = Arbitrary.schema(Schema.Struct({ before: pieces, name: pieces, after: pieces, typed: Schema.Boolean, lowered: Schema.Boolean, other: pieces })).pipe(
+  Arbitrary.map(({ before, name, after, typed, lowered, other }) => {
     const hers = name.join("");
     const copied = other.length > 0 ? other.join("") : typed ? hers.replace(/’/gu, "'") : hers.replace(/'/gu, "’");
-    return { words: before.join("") + hers + after.join(""), name: copied };
+    return { words: before.join("") + hers + after.join(""), name: lowered ? copied.toLowerCase() : copied };
   }),
 );
 type Offer = { words: string; name: string };

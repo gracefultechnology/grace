@@ -1,54 +1,73 @@
 // spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"
 import { Arbitrary, Schema } from "effect";
 import { contract } from "vibestack/testing";
-import { type Labeled, type StatementFact, statementLabels } from "./statementLabels.ts";
+import { type StatementAnswer, type StatementFact, statementAnswer } from "./statementLabels.ts";
 
-const amountLabels = ["Total amount due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "New Balance", "Statement balance", "Your amount due", "AMOUNT DUE"] as const;
-const remainingLabels = ["Remaining statement balance", "Remaining balance due", "Remaining Balance"] as const;
-const dateLabels = ["Payment due date", "Due date", "Bill due date", "Payment due", "Due by", "Payment due by", "Pay by", "Due on", "PAYMENT DUE DATE"] as const;
-const amounts = ["$84.12", "$1,284.56", "$ 84.12", "-$12.00", "$-12.00", "USD 84.12", "84.12 USD", "€84,12", "$84", "$40.00"] as const;
-const dates = ["12/05/2026", "12/05/26", "2026-12-05", "Dec 5, 2026", "December 5, 2026", "Friday, December 5, 2026", "Fri, Dec 5, 2026", "5 December 2026", "Dec. 5, 2026", "December 5th, 2026", "Dec 5"] as const;
+const dueLabels = ["Total amount due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "Your amount due", "AMOUNT DUE"] as const;
+const balanceLabels = ["New Balance", "Statement balance", "Last statement balance", "Your new balance", "New balance due"] as const;
+const remainingLabels = ["Remaining statement balance", "Remaining Balance Due", "REMAINING STATEMENT BALANCE"] as const;
+const dateLabels = ["Payment due date", "Due date", "Bill due date", "Payment due", "Due by", "Payment due by", "Pay by", "Due on", "PAYMENT DUE DATE",
+  "Next payment due date", "Please pay by", "Due"] as const;
+const amounts = [["$84.12", "$84.12"], ["$1,284.56", "$1,284.56"], ["$ 84.12", "$ 84.12"], ["-$12.00", "-$12.00"], ["$-12.00", "$-12.00"],
+  ["USD 84.12", "USD 84.12"], ["84.12 USD", "84.12 USD"], ["€84,12", "€84,12"], ["$84", "$84"], ["$40.00", "$40.00"], ["$12.00 CR", "$12.00 CR"],
+  ["$612.40*", "$612.40"], ["$18,422.10", "$18,422.10"]] as const;
+const dates = ["12/05/2026", "12/05/26", "2026-12-05", "Dec 5, 2026", "December 5, 2026", "Friday, December 5, 2026", "Fri, Dec 5, 2026",
+  "5 December 2026", "Dec. 5, 2026", "December 5th, 2026", "Dec 5", "12/05"] as const;
 const others = [
   "Minimum payment due $35.00", "Minimum Payment Due\n$35.00", "Minimum amount due: $35.00", "Previous balance $1,102.13", "Current balance $912.40",
   "Credit limit $5,000.00", "Available credit $3,715.44", "Pending charges $48.10", "Last payment $120.00 on Oct 28, 2026", "Statement date 11/09/26",
   "Balance due upon receipt", "Amount Due\nDue Date\nAccount ending 4471", "Pay by phone: 1-800-555-0100", "Due date for autopay: the 5th of each month",
-  "Past due amount $0.00", "Interest charge $12.40", "Your session ends in 4:59", "Updated 3 seconds ago",
+  "Past due amount $0.00", "Interest charge $12.40", "Your session ends in 4:59", "Updated 3 seconds ago", "Previous statement balance $1,102.13",
+  "Prior statement balance $980.00", "Remaining balance $18,422.10", "Principal balance $18,000.00", "Payoff amount $18,450.00",
+  "Statement balance $12.00 credit", "Autopay date 12/03/26", "Due upon receipt",
 ] as const;
 const layouts = ["colon", "space", "next", "dot"] as const;
+const kinds = ["due", "balance", "remaining", "agreeing", "conflict", "cents"] as const;
 
 const pick = <T>(values: readonly T[], n: number): T => values[((Math.trunc(n) % values.length) + values.length) % values.length];
 
-const placed = (label: string, value: string, layout: (typeof layouts)[number], split: boolean) => {
-  const money = /^\$(\d+)\.(\d{2})$/u.exec(value);
-  const shown = split && money ? `$${money[1]}\n.${money[2]}` : value;
-  return layout === "colon" ? `${label}: ${shown}` : layout === "space" ? `${label} ${shown}` : layout === "next" ? `${label}\n${shown}` : `${label} · ${shown}`;
+const split = (value: string, how: number) => {
+  const money = /^(-?\$)(\d[\d,]*)\.(\d{2})$/u.exec(value);
+  if (money === null) return value;
+  const [, sign, whole, cents] = money;
+  return pick([value, `${sign}\n${whole}.${cents}`, `${sign}${whole}\n.${cents}`], how);
 };
 
+const placed = (label: string, value: string, layout: (typeof layouts)[number]) =>
+  layout === "colon" ? `${label}: ${value}` : layout === "space" ? `${label} ${value}` : layout === "next" ? `${label}\n${value}` : `${label} · ${value}`;
+
 const statements = Arbitrary.schema(Schema.Struct({
-  amountLabel: Schema.Int, remainingLabel: Schema.Int, dateLabel: Schema.Int, amount: Schema.Int, remaining: Schema.Int, date: Schema.Int,
-  amountLayout: Schema.Int, dateLayout: Schema.Int, withRemaining: Schema.Boolean, split: Schema.Boolean, together: Schema.Boolean,
-  noise: Schema.Array(Schema.Int), order: Schema.Boolean,
+  kind: Schema.Int, dueLabel: Schema.Int, balanceLabel: Schema.Int, remainingLabel: Schema.Int, dateLabel: Schema.Int,
+  amount: Schema.Int, other: Schema.Int, date: Schema.Int, amountLayout: Schema.Int, dateLayout: Schema.Int, split: Schema.Int,
+  together: Schema.Boolean, noise: Schema.Array(Schema.Int), order: Schema.Boolean,
 })).pipe(Arbitrary.map((drawn) => {
-  const amount = pick(amounts, drawn.amount);
-  const remaining = pick(amounts.filter((value) => value !== amount), drawn.remaining);
+  const kind = pick(kinds, drawn.kind);
+  const [shownAmount, readAmount] = pick(amounts, drawn.amount);
+  const [shownOther] = pick(amounts.filter(([, read]) => read !== readAmount), drawn.other);
   const date = pick(dates, drawn.date);
-  const owed = placed(pick(amountLabels, drawn.amountLabel), amount, pick(layouts, drawn.amountLayout), drawn.split);
-  const due = placed(pick(dateLabels, drawn.dateLabel), date, pick(layouts, drawn.dateLayout), false);
-  const left = drawn.withRemaining ? [placed(pick(remainingLabels, drawn.remainingLabel), remaining, "colon", drawn.split)] : [];
+  const labelOf = (of: StatementFact) => of === "StatementBalance" ? pick(balanceLabels, drawn.balanceLabel)
+    : of === "RemainingBalance" ? pick(remainingLabels, drawn.remainingLabel) : pick(dueLabels, drawn.dueLabel);
+  const owedFact: StatementFact = kind === "remaining" || kind === "balance" ? "StatementBalance" : "AmountDue";
+  const owed = placed(labelOf(owedFact), kind === "cents" ? "$84\n12" : split(kind === "remaining" || kind === "conflict" ? shownOther : shownAmount, drawn.split),
+    pick(layouts, drawn.amountLayout));
+  const dueLabel = pick(dateLabels, drawn.dateLabel);
+  const due = placed(dueLabel, date, pick(layouts, drawn.dateLayout));
+  const left = kind === "remaining" || kind === "agreeing" || kind === "conflict"
+    ? [placed(labelOf("RemainingBalance"), split(shownAmount, drawn.split + 1), "colon")] : [];
   const facts = drawn.together && !owed.includes("\n") && !due.includes("\n") ? [`${owed}. ${due}.`] : drawn.order ? [due, owed] : [owed, due];
   const noise = drawn.noise.map((n) => pick(others, n));
-  const lines = [...noise.slice(0, 2), ...facts.flatMap((fact, k) => [fact, ...noise.slice(2 + k * 2, 4 + k * 2)]), ...left, ...noise.slice(6)];
-  return { text: lines.join("\n"), amount, remaining: drawn.withRemaining ? remaining : undefined, date };
+  const lines = [...noise.slice(0, 2), ...facts.flatMap((line, k) => [line, ...noise.slice(2 + k * 2, 4 + k * 2)]), ...left, ...noise.slice(6)];
+  const fact: StatementFact = kind === "balance" ? "StatementBalance" : kind === "remaining" || kind === "agreeing" ? "RemainingBalance" : "AmountDue";
+  const expected: StatementAnswer = kind === "conflict" ? { tag: "Unread", reason: "Several" }
+    : kind === "cents" ? { tag: "Unread", reason: "NotFound" }
+    : { tag: "Read", amount: { fact, label: labelOf(fact), value: readAmount }, due: { fact: "DueDate", label: dueLabel, value: date } };
+  return { text: lines.join("\n"), expected };
 }));
-type Statement = { text: string; amount: string; remaining?: string; date: string };
+type Statement = { text: string; expected: StatementAnswer };
 
-const values = (found: readonly Labeled[], fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))];
-
-export const labeled = contract({
+export const answered = contract({
   input: statements,
-  run: ({ text }: Statement) => statementLabels(text),
+  run: ({ text }: Statement) => statementAnswer(text),
   deterministic: true,
-  invariant: ({ amount, remaining, date }, found) =>
-    JSON.stringify([values(found, "AmountDue"), values(found, "RemainingBalance"), values(found, "DueDate")]) ===
-    JSON.stringify([[amount], remaining === undefined ? [] : [remaining], [date]]),
+  invariant: ({ expected }, answer) => JSON.stringify(answer) === JSON.stringify(expected),
 });

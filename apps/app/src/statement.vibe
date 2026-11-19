@@ -1,25 +1,22 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"
-import { hasOneStatementAnswer, statementAmounts } from "../gen/app__workspace.effect.vibe"
 import { type LinkObservation } from "./nativePage.schema.ts"
-import { type Labeled, type StatementFact, statementLabels } from "./statementLabels.ts"
+import { type Labeled, statementAnswer } from "./statementLabels.ts"
 
 export type StatementRead =
-  | { readonly tag: "Read"; readonly document: string; readonly amount: Labeled; readonly due: Labeled }
-  | { readonly tag: "Unread"; readonly reason: "NotFound" | "Several" | "Past" }
+  | { readonly tag: "Read"; readonly document: string; readonly text: string }
+  | { readonly tag: "Unread"; readonly reason: "NotFound" | "Several" | "Past" | "Changed" | "Covered" }
 
 const pastStatement = /\b(?:past|previous|prior)\s+(?:bills?|statements?|invoices?)\b/iu
 
-export function statementRead(snapshot: LinkObservation, url: string): StatementRead | undefined {
+function sentence({ label, value }: Labeled): string {
+  return label.charAt(0).toUpperCase() + label.slice(1) + ": " + value + "."
+}
+
+export function statementRead(snapshot: LinkObservation, url: string): StatementRead {
   const { result } = snapshot
-  if (result.url !== url || result.readyState !== "complete" || result.blockers.some((item) => item.covers !== "partial")) return undefined
+  if (result.url !== url || result.readyState !== "complete") return { tag: "Unread", reason: "Changed" }
+  if (result.blockers.some((item) => item.covers !== "partial")) return { tag: "Unread", reason: "Covered" }
   if (pastStatement.test(result.title ?? "")) return { tag: "Unread", reason: "Past" }
-  const found = statementLabels(result.text ?? "")
-  const values = (fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))]
-  const amounts = statementAmounts(values("AmountDue"), values("RemainingBalance"))
-  const dates = values("DueDate")
-  const amount = found.find((item) => item.fact !== "DueDate" && item.value === amounts[0])
-  const due = found.find((item) => item.fact === "DueDate")
-  if (!hasOneStatementAnswer(amounts, dates) || amount === undefined || due === undefined)
-    return { tag: "Unread", reason: amounts.length > 1 || dates.length > 1 ? "Several" : "NotFound" }
-  return { tag: "Read", document: snapshot.documentId, amount, due }
+  const answer = statementAnswer(result.text ?? "")
+  return answer.tag === "Unread" ? answer : { tag: "Read", document: snapshot.documentId, text: sentence(answer.amount) + " " + sentence(answer.due) }
 }
