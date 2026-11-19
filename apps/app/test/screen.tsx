@@ -3,11 +3,17 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
 import { page } from "vitest/browser";
+import { allowedUse, chooseProvider, initial, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { App } from "../src/App.tsx";
 import type { Runtime } from "../src/useApp.ts";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+
+export function storedGmail(address: string) {
+  const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
+  return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, "Gmail", "AccountConnector");
+}
 
 export function actOnScreen() {
   beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
