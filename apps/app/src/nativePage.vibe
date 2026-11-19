@@ -28,6 +28,11 @@ export type Reply = { id: PageId; key: RequestKey; ask: Ask; answer: Answer; tex
 
 export type LinkPointer = Extract<NonNullable<Parameters<SurfacePlugin["controlPage"]>[0]["command"]["guidance"]>, { kind: "show" }>
 
+const levelOne = ':is(h1,[role="heading"][aria-level="1"])'
+const mainHeading = `:is(main,[role="main"]) ${levelOne}:not(:is(nav,aside,footer,[role="navigation"],[hidden],[aria-hidden="true"]) *)`
+const pageHeading = `:root:not(:has(${mainHeading})) ${levelOne}:not(:is(nav,aside,footer,body > header,[role="navigation"],[role="banner"],[role="complementary"],[role="contentinfo"],[hidden],[aria-hidden="true"]) *)`
+const primaryHeading = `${mainHeading}, ${pageHeading}`
+
 export service NativePage {
   readonly privateSignIn: boolean
   observeLinks(id: PageId): LinkObservation!PageFailed
@@ -139,7 +144,7 @@ function devicePage(plugin: SurfacePlugin) {
     privateSignIn: true,
     observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
     readPrimaryHeading: (id) => observe(id, () => ask(VisibleTextRead, (p) => p.readPage({ ...own(id),
-      selector: ':is(main,[role="main"]) :is(h1,[role="heading"][aria-level="1"]):not(:is(nav,aside,footer,[role="navigation"],[hidden],[aria-hidden="true"]) *)'
+      selector: primaryHeading
     }))),
     hasNavigationMenu: (id, selector, url) => Effect.orElseSucceed(observe(id, () => Effect.map(ask(VisibleTextRead, (p) =>
       p.readPage({ ...own(id), selector: `:is(${selector}):is([aria-haspopup="true"],[aria-haspopup="menu"])` })), (reply) => reply.url === url)), () => false),
