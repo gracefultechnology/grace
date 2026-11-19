@@ -56,12 +56,11 @@ pure val formReportValues = {
   val edited = { ...form, proposal: T::PayTerms({ pay: { amount: 3500, fee: 0, currency: "USD", day: 1, funding: "bank-ref" } }) }
   Set(-4, -3, -2, -1, 0, 1).map(n => { ...form, revision: chosen.version + n })
     .union(Set(0, 1).map(n => { ...edited, revision: chosen.version + n }))
-    .union(Set({ ...form, key: { ...form.key, origin: "https://credit.example" } }, { ...form, evidence: "" }, { ...form, proposal: T::NoTerms },
-      { ...form, proposal: T::BookTerms({ book: { service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "", shares: List("name"), acceptsClash: false } }) }))
+    .union(Set({ ...form, key: { ...form.key, origin: "https://credit.example" } }, { ...form, evidence: "" }, { ...form, proposal: T::NoTerms }))
+    .union(T::bookValues.map(b => { ...form, proposal: T::BookTerms({ book: b }) }))
 }
-pure val termsValues = Set(K::samplePayTerms, T::NoTerms,
-  T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } }),
-  T::BookTerms({ book: { service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "", shares: List("name"), acceptsClash: false } }))
+pure val termsValues = K::termsValues.union(Set(K::samplePayTerms,
+  T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } })))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 2
