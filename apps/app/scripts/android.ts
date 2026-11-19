@@ -1035,6 +1035,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   };
   let episode: typeof Episode.Type | undefined;
   let step = "open fixture";
+  let journeyFailure: Error | undefined;
   try {
     const started = await fixture.startPasswordLoginEpisode({
       provision: async (input: unknown) => {
@@ -1121,7 +1122,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         if (await installedApk(editorFixturePackage) !== editorDigest) throw new Error("Android did not install the native editor test package");
         step = "start the owned native editor instrumentation";
         const editor = runPasswordEditorFixture(serial, signal);
-        cleanup.push(async () => { editor.stop(); });
+        cleanup.push(() => Promise.resolve().then(editor.stop));
         await editor.wait("ready", 480);
         step = "start the Grace tablet app";
         const started = await shell(serial, `am start -n ${activity}`, 120);
@@ -1181,23 +1182,22 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     step = "submit the website form and grade";
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
-    while (Date.now() < until) {
+    for (;;) {
       signal.throwIfAborted();
+      if (Date.now() >= until) throw new Error("BillWorld did not confirm the account view");
       const after = await readGrade();
       if (after.paymentCount !== 0) throw new Error("The sign-in run encountered a payment");
-      if (after.grade.success) return;
+      if (after.grade.success) break;
       await delay(1000);
     }
-    throw new Error("BillWorld did not confirm the account view");
   } catch {
-    if (buildFailure) throw buildFailure;
-    throw new Error(`BillWorld password journey stopped at: ${step}`);
-  } finally {
-    let clean = true;
-    for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
-    await episode?.close();
-    if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.");
+    journeyFailure = buildFailure ?? new Error(`BillWorld password journey stopped at: ${step}`);
   }
+  let clean = true;
+  for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
+  try { await episode?.close(); } catch { clean = false; }
+  if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.", { cause: journeyFailure });
+  if (journeyFailure) throw journeyFailure;
 }
 
 if (import.meta.main) {
