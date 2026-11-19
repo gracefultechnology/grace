@@ -64,6 +64,21 @@
         ".cache/test-result-*.json"
       ]
     },
+    "@repo/app#typecheck": {
+      "dependsOn": [
+        "gen",
+        "//#gen",
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/package.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/{src,gen,android,aosp}/**/*.{ts,tsx,mjs,js,vibe}"
+      ],
+      "outputs": [
+        ".vibe/declarations/**"
+      ]
+    },
     "test:browser": {
       "dependsOn": [
         "gen",
@@ -285,6 +300,14 @@
       "persistent": true
     },
     "//#studio": {
+      "cache": false,
+      "persistent": true
+    },
+    "vibestack-studio#dev": {
+      "dependsOn": [
+        "gen",
+        "^build"
+      ],
       "cache": false,
       "persistent": true
     },

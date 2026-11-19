@@ -284,7 +284,7 @@ function buildAndroid({ release = false, abi, fixture }: { release?: boolean; ab
     output: fixture?.output ?? "artifacts",
     signing: { environment: Object.values(signing) },
     prepare: [
-      { command: path.join(app, "node_modules/.bin/vite"), args: ["build"] },
+      { command: "pnpm", args: ["run", "build"] },
       { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
     ],
     verify: { command: process.execPath, args: [import.meta.filename, ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
@@ -853,6 +853,7 @@ const LoginFixture = Schema.Struct({
   login: Schema.Struct({ label: Schema.String, origin: Schema.String, username: Schema.String, password: Schema.String }),
 });
 const Grade = Schema.Struct({ grade: Schema.Struct({ success: Schema.Boolean }), paymentCount: Schema.Int });
+class GradeFailure extends Error {}
 const Callable = Schema.declare((value: unknown): value is (...args: unknown[]) => unknown => typeof value === "function");
 const isEpisodeHost = Schema.is(Schema.Struct({ startPasswordLoginEpisode: Callable }));
 const Episode = Schema.Struct({ grade: Callable, close: Callable });
@@ -889,7 +890,7 @@ function buildPasswordEditorFixture(directory: string, login: typeof LoginFixtur
   const manifest = path.join(work, "AndroidManifest.xml");
   writeFileSync(manifest, `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${editorFixturePackage}"><uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36"/><application android:testOnly="true" android:allowBackup="false"/><instrumentation android:name=".BillWorldPasswordEditor" android:targetPackage="${identity.appId}"/></manifest>`);
   const compile = (tool: string, args: string[]) => execFileSync(tool, args, { stdio: "ignore", timeout: 180_000 });
-  compile(path.join(resolveJavaHome(), "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
+  compile(path.join(environment().JAVA_HOME, "bin/javac"), ["--release", "17", "-cp", sdkJar, "-d", classes,
     path.join(app, "test/device/BillWorldPasswordEditor.java")]);
   const compiled = path.join(classes, "technology/graceful/fixture/BillWorldPasswordEditor.class");
   compile(buildTool("d8"), ["--lib", sdkJar, "--min-api", "29", "--output", work, compiled]);
@@ -1035,6 +1036,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   };
   let episode: typeof Episode.Type | undefined;
   let step = "open fixture";
+  let journeyFailure: Error | undefined;
   try {
     const started = await fixture.startPasswordLoginEpisode({
       provision: async (input: unknown) => {
@@ -1121,7 +1123,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         if (await installedApk(editorFixturePackage) !== editorDigest) throw new Error("Android did not install the native editor test package");
         step = "start the owned native editor instrumentation";
         const editor = runPasswordEditorFixture(serial, signal);
-        cleanup.push(async () => { editor.stop(); });
+        cleanup.push(() => Promise.resolve().then(editor.stop));
         await editor.wait("ready", 480);
         step = "start the Grace tablet app";
         const started = await shell(serial, `am start -n ${activity}`, 120);
@@ -1176,28 +1178,29 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     if (!isEpisode(started)) throw new Error("The fixture did not start");
     episode = started;
     const readGrade = async () => Schema.decodeUnknownSync(Grade)(await started.grade());
+    step = "grade the autofilled form";
     const before = await readGrade();
-    if (before.grade.success || before.paymentCount !== 0) throw new Error("Autofill must not submit or pay");
+    if (before.grade.success || before.paymentCount !== 0) throw new GradeFailure("Autofill must not submit or pay");
     step = "submit the website form and grade";
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
-    while (Date.now() < until) {
+    for (;;) {
       signal.throwIfAborted();
+      if (Date.now() >= until) throw new GradeFailure("BillWorld did not confirm the account view");
       const after = await readGrade();
-      if (after.paymentCount !== 0) throw new Error("The sign-in run encountered a payment");
-      if (after.grade.success) return;
+      if (after.paymentCount !== 0) throw new GradeFailure("The sign-in run encountered a payment");
+      if (after.grade.success) break;
       await delay(1000);
     }
-    throw new Error("BillWorld did not confirm the account view");
-  } catch {
-    if (buildFailure) throw buildFailure;
-    throw new Error(`BillWorld password journey stopped at: ${step}`);
-  } finally {
-    let clean = true;
-    for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
-    await episode?.close();
-    if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.");
+  } catch (error) {
+    journeyFailure = buildFailure ?? (error instanceof GradeFailure ? error : new Error(`BillWorld password journey ${signal.aborted ? "was interrupted" : "stopped"} at: ${step}`));
   }
+  const failures: unknown[] = [];
+  for (const release of cleanup.reverse()) await release().catch((error: unknown) => { failures.push(error); });
+  const unclean = failures.length > 0;
+  try { await episode?.close(); } catch (error) { failures.push(error); }
+  if (failures.length) throw new AggregateError(failures, unclean ? "BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use." : "The BillWorld episode did not close. The emulator's cleanup was verified.", { cause: journeyFailure });
+  if (journeyFailure) throw journeyFailure;
 }
 
 if (import.meta.main) {

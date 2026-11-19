@@ -51,13 +51,13 @@ function secureOrigin(address: string): string {
 type PrivateToolbarProps = {
   active: Tab;
   secure: boolean;
-  edit(input: BrowserInput): void;
-  offered(input: BrowserInput): boolean;
-  navigate(tab: number, address: string): Promise<boolean>;
+  edit: (input: BrowserInput) => void;
+  offered: (input: BrowserInput) => boolean;
+  navigate: (tab: number, address: string) => Promise<boolean>;
 };
 
 function PrivateToolbar({ active, secure, edit, offered, navigate }: PrivateToolbarProps) {
-  const field = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const go = () => {
@@ -68,17 +68,17 @@ function PrivateToolbar({ active, secure, edit, offered, navigate }: PrivateTool
     const address = draft;
     setDraft(null);
     setNotice(undefined);
-    field.current?.blur();
+    fieldRef.current?.blur();
     void navigate(active.id, address).then(
       (opened) => { if (!opened) setNotice("This private address couldn't open."); },
       () => setNotice("This private address couldn't open."),
     );
   };
   return (
-    <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
+    <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
       reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })}
       onGo={go} trailing={<span className="flex items-center gap-2 whitespace-nowrap text-body"><LockKeyhole aria-hidden /> Private sign-in</span>}>
-      <AddressBar ref={field} value={draft ?? tabUrl(active)} secure={draft === null && secure} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+      <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} secure={draft === null && secure} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
         notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); }} onSubmit={go} />
     </BrowserToolbar>
   );
@@ -115,13 +115,13 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
       tabStrip={
-        <BrowserTabStrip ref={strip} selectedId={browser.selected}
+        <BrowserTabStrip ref={strip} className="pointer-events-auto" selectedId={browser.selected}
           tabs={visibleTabs(browser).map(tabItem)} overflow={overflow.map(tabItem)} overflowOpen={listingTabs} onOverflowOpenChange={setListingTabs}
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
       toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} secure={showsSecureIndicator(browser)} edit={edit} offered={offered} navigate={navigatePrivate} /> : (
-        <BrowserToolbar canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
+        <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}
           trailing={supportsPrivateSignIn() && offered(privateInput) ? (

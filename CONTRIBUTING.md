@@ -24,7 +24,7 @@ does not import React, and a UI package holds no business rules. A shared type l
 |---|---|
 | `pnpm dev` | Studio, and every package's `dev` script beside it |
 | `pnpm quick` | the fast local check: types, tests, ESLint and Stylelint, in every package |
-| `pnpm verify` | what CI runs: build, types, tests, browser tests, every `check`, lint, `pnpm analyze` and `pnpm selftest`, which also installs and checks each example |
+| `pnpm verify` | what CI runs: build, types, tests, browser tests, every `check`, lint and `pnpm analyze` |
 | `pnpm all <task>…` | one or more kinds of task in every package: `pnpm all build typecheck test` |
 | `pnpm test:browser` | the browser tests |
 | `pnpm test:models` | every workspace `check`: the root's, which is its owners' too, and Studio's |
@@ -62,7 +62,7 @@ Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is 
 | `vibestack/gen/vibe.ts` | `gen/<name>.effect.vibe`, read off the generated TypeScript |
 | `vibestack/gen/react.ts` | `gen/<name>.react.ts` (`useMachine`), in a package that depends on React |
 | `vibestack/scan.ts` | how a spec's lines are read; imports nothing, so Studio's page uses it too |
-| `vibestack/studio/` | Studio, a workspace package with its own spec, checked by `pnpm --filter vibestack-studio check`: change `spec/`, then its shell in `src/` |
+| `vibestack/studio/` | Studio, a workspace package with its own spec, checked by `pnpm --filter vibestack-studio check`: change `spec/`, then its shell in `src/`. Under `pnpm dev`, its `dev` script waits for what its build does, Studio's `gen` and the packages it builds on, then rebuilds the page it serves on each save of the page's sources, and builds afresh when the Vite config, `vibestack/design` or the tokens change: reload the browser, no restart |
 | `vibestack/prove.ts` | proves one unit: checks and splices the proof file, runs LemmaScript and `dafny audit`, verifies again with every assertion isolated each definition that fails, and alone every postcondition a failing one could hide |
 | `vibestack/proof/lib.dfy` | the library proof files call |
 | `vibestack/std/` | specs that ship with the tools, which any spec may import, each with its proof file |
@@ -87,15 +87,16 @@ it is reported, then that object as its last line. Each result has `ok`, `stage`
 line ends with. `pnpm selftest` builds scratch projects from this project's spec or from `vibestack/fixtures/`, breaks
 one thing at a time and asserts which stage catches each. It runs as three cached tasks, each keyed by what its tests
 read: `selftest:docs` the documents against every file they can name, `selftest:examples` each standalone example
-against its own files and the tools, and `selftest:tools` everything else, which no example but the order one reaches.
-`pnpm selftest` runs all three through Turborepo, as `pnpm verify` does. What a change to the
+against its own files and the tools, and `selftest:tools` everything else, which no example but the order one reaches. The tools share completed tool runs in `.cache/selftest/.spec-cache` between scratch projects and prune entries unused for a week. Tests which observe the tools executing use an empty cache.
+`pnpm selftest` runs all three through Turborepo. What a change to the
 tools owes it, and the sync skill, is in [AGENTS.md, "Definition of done"](AGENTS.md#definition-of-done).
 
 ## Releasing
 
-Set `version` in the root `package.json`, merge to `main`, and push the tag `v<version>` from it.
-`.github/workflows/release.yml` builds, packs with `pnpm pack`, runs `pnpm selftest`, which the shared cache answers for a commit CI has verified, and attaches the tarball to a GitHub release of that tag.
-A project installs it as [README.md, "Using it from another package"](README.md#using-it-from-another-package) says.
+The Android workflow builds debug APKs for arm64 and x86_64 and uploads them with
+their manifests. For release builds, follow the signing instructions in
+[the Android app guide](apps/app/README.md#android).
+
 ## Architecture
 
 The spec owns the rules and state; generated code is its runtime contract.
@@ -137,7 +138,8 @@ generators, write files only when their bytes change and remove outputs whose
 sources have gone: a check that changes no spec leaves `gen/` and the owners'
 `gen/` untouched, so nothing that watches them rebuilds. A check loads each
 generated module from its own `.spec-cache/run-<time>/`, removed when it ends. `.spec-cache/`
-remembers each run of Quint, and of LemmaScript and Dafny on a proof, under the program as installed, its arguments and
+remembers each run of Quint (which parses and typechecks a harness once for all its simulations, each run by Quint's
+evaluator on the result: `vibestack/simulator.ts`), and of LemmaScript and Dafny on a proof, under the program as installed, its arguments and
 the files it reads, without their prose, comments and layout (`vibestack/action.ts`),
 and each simulation and proof result under a fingerprint of a spec and its
 imports, the versions of the programs beneath (Quint and Node for a
@@ -149,7 +151,11 @@ nothing again. A
 simulation cites each rule at the line it is on now, so prose that only moves
 the rules simulates nothing again. The programs and their versions are read
 for each key, so a process that outlives a reinstall, as `watch` does, runs and
-remembers under the programs installed now. A run
+remembers under the programs installed now. Each tool runs in a process group
+of its own, and a check that is interrupted, or that exits, ends each group
+still running and the group of each process a tool started outside its own, as
+a browser is: no verifier, simulation or browser outlives it. A tool stopped
+for its time or its output is ended the same way. A run
 of a tool is remembered when it reached its answer, a refusal of its input
 included, never when it was stopped, timed out or failed for want of a file or
 program: an unchanged unit whose proof failed runs neither again, and an edit
@@ -255,7 +261,7 @@ failing exploration found is saved and replayed instead
 | Model-based | Real shell against the spec: journeys, malformed input, walks and saved counterexamples | `test/drivers/app.ts` and the recorded `test/traces/app.jsonl`, run by `traces` |
 | Journey/integration | A story through real services, including what a driver cannot see | `@effect/vitest` in `test/app.test.vibe`: reload from storage |
 | Component/browser | Story interactions and accessibility; browser-only behavior such as focus and storage | Component metadata `play`; `test/app.browser.test.tsx` in Chromium |
-| Exploratory/browser | The served page under random clicks, typing, scrolling and reloads: no uncaught error, console error or failed request, and the properties each rule gives the page, in every state reached | `test/bombadil.ts`, or nothing for Bombadil's defaults; `apps/app/test/bombadil.ts`, run by `explore` |
+| Exploratory/browser | The served page under random clicks, typing, scrolling and reloads: no uncaught error, console error or failed request, and the properties each rule gives the page, in every state reached | `test/bombadil.ts`, or nothing for Bombadil's defaults; `vibestack/examples/fullstack/test/bombadil.ts`, run by `explore` |
 | Property | What a schema or declared contract promises for generated values | Generated from `src/link.contract.ts` and other `*.schema.*` or `*.contract.*` files |
 
 A generated test asserts its schema or contract, never a recorded result of
@@ -296,9 +302,9 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 
 | When | Runs |
 |---|---|
-| Pull request or push to `develop` or `main` | `pnpm verify --continue`: build, types, tests, browser tests, all checks, ESLint, Stylelint, Knip, Madge, jscpd and selftest |
+| Pull request or push to `develop` or `main` | `pnpm verify --continue`: build, types, tests, browser tests, all checks, ESLint, Stylelint, Knip, Madge and jscpd |
 | Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `develop` |
-| A `v*` tag (`release.yml`) | Build, `pnpm pack`, `pnpm selftest` read from the shared cache, and the tarball attached to a GitHub release |
+| Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
 run keeps `test/counterexamples/` and `test/__traces__/`, where a broken
