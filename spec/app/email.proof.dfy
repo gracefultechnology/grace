@@ -1382,9 +1382,9 @@ lemma OutboxMissing(xs: seq<QueuedSend>, operationId: string)
 lemma OutboxFacts(m: Mailbox)
   requires alwaysQueuedSendsAreIssued(m)
   ensures ProofLib.DistinctBy(m.outbox, (x: QueuedSend) => x.operationId)
-  ensures forall q :: q in m.outbox ==> q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" &&
+  ensures forall q :: q in m.outbox ==> (q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" &&
     q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
-    (q.status.DispatchFailed? ==> q.evidence != "")
+    (q.status.DispatchFailed? ==> q.evidence != ""))
   ensures m.outboxSent >= 0
 {
   OutboxIssuedView(m);
@@ -1393,9 +1393,9 @@ lemma OutboxFacts(m: Mailbox)
 
 lemma OutboxValid(m: Mailbox)
   requires ProofLib.DistinctBy(m.outbox, (x: QueuedSend) => x.operationId)
-  requires forall q :: q in m.outbox ==> q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" &&
+  requires forall q :: q in m.outbox ==> (q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" &&
     q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
-    (q.status.DispatchFailed? ==> q.evidence != "")
+    (q.status.DispatchFailed? ==> q.evidence != ""))
   requires m.outboxSent >= 0
   ensures alwaysQueuedSendsAreIssued(m)
 {
@@ -1429,10 +1429,10 @@ lemma OutboxMapped(m: Mailbox, after: Mailbox)
   requires alwaysQueuedSendsAreIssued(m)
   requires |after.outbox| == |m.outbox| && after.outboxSent == m.outboxSent
   requires forall x :: x in m.issuedSends ==> x in after.issuedSends
-  requires forall i :: 0 <= i < |m.outbox| ==> after.outbox[i].operationId == m.outbox[i].operationId &&
+  requires forall i :: 0 <= i < |m.outbox| ==> (after.outbox[i].operationId == m.outbox[i].operationId &&
     after.outbox[i].snapshot == m.outbox[i].snapshot &&
     (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
-    ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==> (m.outbox[i].status.Waiting? || m.outbox[i].status == after.outbox[i].status))
+    ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==> (m.outbox[i].status.Waiting? || m.outbox[i].status == after.outbox[i].status)))
   ensures alwaysQueuedSendsAreIssued(after)
   ensures stepQueuedSendGoesOnce(m, after)
 {
@@ -1466,15 +1466,15 @@ lemma OutboxMapped(m: Mailbox, after: Mailbox)
 
 lemma OutboxFenceShape(outbox: seq<QueuedSend>)
   ensures |fenceQueue(outbox)| == |outbox|
-  ensures forall i :: 0 <= i < |outbox| ==> fenceQueue(outbox)[i] ==
-    (if outbox[i].status.Dispatching? then outbox[i].(status := OutboxStatus.DispatchUnknown) else outbox[i])
+  ensures forall i :: 0 <= i < |outbox| ==> (fenceQueue(outbox)[i] ==
+    (if outbox[i].status.Dispatching? then outbox[i].(status := OutboxStatus.DispatchUnknown) else outbox[i]))
 {
 }
 
 lemma OutboxStatusShape(outbox: seq<QueuedSend>, operationId: string, queueStatus: OutboxStatus, evidence: string)
   ensures |withStatus(outbox, operationId, queueStatus, evidence)| == |outbox|
-  ensures forall i :: 0 <= i < |outbox| ==> withStatus(outbox, operationId, queueStatus, evidence)[i] ==
-    (if outbox[i].operationId == operationId then outbox[i].(status := queueStatus, evidence := evidence) else outbox[i])
+  ensures forall i :: 0 <= i < |outbox| ==> (withStatus(outbox, operationId, queueStatus, evidence)[i] ==
+    (if outbox[i].operationId == operationId then outbox[i].(status := queueStatus, evidence := evidence) else outbox[i]))
 {
 }
 
