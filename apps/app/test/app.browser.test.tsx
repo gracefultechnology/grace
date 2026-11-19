@@ -4,7 +4,7 @@
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
@@ -1330,12 +1330,12 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     display: {
-      getDevice: async () => {
+      getDevice: () => {
         readback.push({ brightness, muted: audio.muted, step: audio.step });
-        return { volume: { ...audio }, brightness: { percent: brightness } };
+        return Promise.resolve({ volume: { ...audio }, brightness: { percent: brightness } });
       },
-      setBrightness: async ({ percent }) => { if (!denyBrightness) brightness = percent; },
-      setVolume: async ({ step, muted }) => { Object.assign(audio, { step, muted }); },
+      setBrightness: ({ percent }) => { if (!denyBrightness) brightness = percent; return Promise.resolve(); },
+      setVolume: ({ step, muted }) => { Object.assign(audio, { step, muted }); return Promise.resolve(); },
     },
   }));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
@@ -1364,15 +1364,15 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   const options = {
     native: true,
     preferences: {
-      read: async () => stored,
-      write: async ({ revision, value }: { revision: number; value: string }) => {
+      read: () => Promise.resolve(stored),
+      write: ({ revision, value }: { revision: number; value: string }) => {
         expect(revision).toBe(stored.revision);
         if (rejectNextWrite) {
           rejectNextWrite = false;
-          throw new Error("Device storage unavailable");
+          return Promise.reject(new Error("Device storage unavailable"));
         }
         stored = { revision: revision + 1, value };
-        return { revision: stored.revision };
+        return Promise.resolve({ revision: stored.revision });
       },
     },
   };
@@ -1380,12 +1380,12 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   let runtime = ManagedRuntime.make(application(undefined, undefined, options));
   let root = createRoot(host);
   onTestFinished(async () => {
-    await act(() => root.unmount());
+    act(() => root.unmount());
     await runtime.dispose();
     host.remove();
   });
   const mountSettings = async () => {
-    await act(() => root.render(<App runtime={runtime} />));
+    act(() => root.render(<App runtime={runtime} />));
     await act(() => userEvent.click(page.getByRole("button", { name: "Settings", exact: true })));
   };
   const larger = page.getByRole("radio", { name: "Larger", exact: true });
@@ -1396,7 +1396,7 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   expect(stored.revision).toBe(0);
   await act(() => userEvent.click(page.getByRole("button", { name: "Try again", exact: true })));
   await expect.poll(() => stored.revision).toBe(1);
-  await act(() => root.unmount());
+  act(() => root.unmount());
   await runtime.dispose();
   root = createRoot(host);
   runtime = ManagedRuntime.make(application(undefined, undefined, options));
@@ -1414,18 +1414,19 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
     native: true,
     files: {
       saveAttachments: () => Promise.reject(new Error("No mail attachments in this journey")),
-      open: async () => ({ lease }),
-      close: async () => undefined,
-      list: async () => ({ entries }),
-      preview: async ({ id, page }) => ({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
-      pick: async () => undefined,
-      capture: async () => undefined,
-      commit: async () => undefined,
-      remove: async (request) => {
+      open: () => Promise.resolve({ lease }),
+      close: () => Promise.resolve(undefined),
+      list: () => Promise.resolve({ entries }),
+      preview: ({ id, page }) => Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
+      pick: () => Promise.resolve(undefined),
+      capture: () => Promise.resolve(undefined),
+      commit: () => Promise.resolve(undefined),
+      remove: (request) => {
         expect(request).toEqual({ lease, id: photo.id });
         removals.push(request.id);
-        if (removals.length === 1) throw new Error("Device storage unavailable");
+        if (removals.length === 1) return Promise.reject(new Error("Device storage unavailable"));
         entries = [];
+        return Promise.resolve();
       },
     },
   }));
@@ -1516,7 +1517,7 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
   await expect.poll(() => typeof finishSpeech).toBe("function");
-  await act(async () => { finishSpeech?.({ status: "complete", text: "Open passwords" }); });
+  await act(() => Promise.resolve(finishSpeech?.({ status: "complete", text: "Open passwords" })));
   await expect.element(unlock).toBeEnabled();
 });
 
@@ -1541,15 +1542,15 @@ it('Approve the shown account before returning to the tablet (spec/app/setup.md,
   const network = window.fetch.bind(window);
   const fetch = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     if (typeof input !== "string" || !input.endsWith("/api/v1/app-auth/mobile/password-backup")) return network(input, init);
-    requests.push(JSON.parse(String(init?.body)));
+    requests.push(await new Request(input, init).json());
     return Response.json({ redirectUrl: returned.href });
   });
-  onTestFinished(async () => {
+  onTestFinished(() => {
     fetch.mockRestore();
-    await act(() => root.unmount());
+    act(() => root.unmount());
     element.remove();
   });
-  await act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }} />));
+  act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }} />));
   expect(requests).toEqual([]);
   await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
   await expect.element(page.getByRole("link", { name: "Return to Grace" })).toHaveAttribute("href", returned.href);
@@ -1574,15 +1575,15 @@ it('Refresh an email-only sign-in before approving a password backup (spec/app/s
     if (pathname !== "/api/v1/app-auth/mobile/password-backup") return network(input, init);
     calls.push(pathname);
     if (++approves === 1) return new Response(null, { status: 401 });
-    expect(JSON.parse(String(init?.body))).toEqual({ approval, expectedOwnerId: "owner" });
+    expect(await new Request(input, init).json()).toEqual({ approval, expectedOwnerId: "owner" });
     return Response.json({ redirectUrl: returned.href });
   });
-  onTestFinished(async () => {
+  onTestFinished(() => {
     mock.mockRestore();
-    await act(() => root.unmount());
+    act(() => root.unmount());
     element.remove();
   });
-  await act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }}
+  act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }}
     providers={{ google: false, email: true, sms: false }} />));
   await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
   await act(async () => { await page.getByRole("button", { name: "Use email" }).click(); });
@@ -1689,14 +1690,14 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let replaceGuideOwner = true;
   const browserFetch = window.fetch.bind(window);
   const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
-    const url = new URL(String(input), window.location.origin);
+    const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (url.origin !== window.location.origin) return browserFetch(input, init);
     switch (url.pathname) {
       case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
       case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
-      case "/api/v1/decisions":
+      case "/api/v1/decisions": {
         guideCalls++;
         expect(init?.credentials).toBe("include");
         const headers = new Headers(init?.headers);
@@ -1710,6 +1711,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
           }
           return response;
         });
+      }
       default: return browserFetch(input, init);
     }
   });
@@ -1767,9 +1769,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     guideOwner = "guide-owner";
     await tap(showLink);
     await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
-    expect(native.calls("controlPage")).not.toContainEqual(expect.objectContaining({
-      command: expect.objectContaining({ subaction: "guide", guidance: expect.objectContaining({ kind: "show" }) }),
-    }));
+    const shown: unknown = expect.objectContaining({ kind: "show" });
+    const guide: unknown = expect.objectContaining({ subaction: "guide", guidance: shown });
+    expect(native.calls("controlPage")).not.toContainEqual(expect.objectContaining({ command: guide }));
     guideOwner = "guide-owner";
     await tap(showLink);
     await routeTo(page.getByText("Look for “Help center” on example.org."));
@@ -2125,7 +2127,7 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     const Kept = Schema.Struct({
       boxes: Schema.Array(Schema.Struct({ address: Schema.String, calendar: Schema.Array(Schema.Struct({ title: Schema.String, startAt: Schema.String, location: Schema.String })) })),
     });
-    const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } });
+    const response = await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } });
     const { boxes } = Schema.decodeUnknownSync(Kept)(await response.json());
     return boxes;
   };
