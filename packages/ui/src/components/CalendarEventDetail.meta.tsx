@@ -10,7 +10,7 @@ const dismissReminder = fn();
 const snoozeReminder = fn();
 
 export const meta: ComponentMeta<CalendarEventDetailProps> = {
-  args: { ...doctor, onEdit: fn(), onDelete: fn() },
+  args: doctor,
   examples: {
     "Reminder showing": { ...doctor, onDismissReminder: dismissReminder, onSnoozeReminder: snoozeReminder },
     "Without a note": {

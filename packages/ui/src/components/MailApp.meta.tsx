@@ -98,12 +98,7 @@ export const meta: ComponentMeta<MailAppProps> = {
       onFixWifi: fixWifi,
       accounts: [mailAccounts[0], { ...mailAccounts[1], needsSignIn: true }],
       messages: tagged,
-      banners: (
-        <>
-          <MailSignInBanner name="Outlook" others onSignIn={signIn} />
-          <MailSyncingRow name="Yahoo" />
-        </>
-      ),
+      banners: <MailSignInBanner name="Outlook" others onSignIn={signIn} />,
     },
     Outbox: { folder: "outbox", counts: { inbox: 2, outbox: 1 }, messages: [{ id: "o1", from: people.susan, subject: "Sunday", time: "Just now" }] },
     "No account": { noAccount: true, messages: [], onConnect: connect, onAskGrace: fn() },
@@ -121,6 +116,7 @@ export const meta: ComponentMeta<MailAppProps> = {
       counts: { inbox: 3 },
       accounts: mailAccounts,
       messages: tagged.filter((m) => m.id !== "scam"),
+      banners: <MailSyncingRow name="Yahoo" />,
       toast: (
         <Toast placement="screen" onUndo={undo}>
           Moved to Trash
@@ -162,7 +158,6 @@ export const meta: ComponentMeta<MailAppProps> = {
     },
     "With banners": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
-      await expect(canvas.getByText(/Yahoo/)).toBeTruthy();
       await userEvent.click(canvas.getByRole("button", { name: "Sign in again" }));
       await expect(signIn).toHaveBeenCalled();
       await userEvent.click(canvas.getByRole("button", { name: "Fix Wi-Fi" }));
@@ -172,6 +167,7 @@ export const meta: ComponentMeta<MailAppProps> = {
     "Moved to Trash": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.getByRole("button", { name: /Lunch on Thursday/ })).toBeTruthy();
+      await expect(canvas.getByText(/Yahoo/)).toBeTruthy();
       await expect(canvas.getByText("Moved to Trash")).toBeTruthy();
       await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
       await expect(undo).toHaveBeenCalled();

@@ -117,6 +117,8 @@ export const detail: CalendarEventDetailProps & { title: string } = {
   reminder: "Reminder day before",
   repeat: "Doesn’t repeat",
   note: "From the clinic’s email · Visit form attached",
+  onEdit: fn(),
+  onDelete: fn(),
 };
 
 const times = Array.from({ length: 25 }, (_, i) => {
@@ -177,12 +179,14 @@ export const form: CalendarEventFormProps & { heading: string } = {
 const openEvent = fn();
 const onMode = fn();
 const save = fn();
+const previous = fn();
+const step = { onModeChange: onMode, onPrevious: previous, onNext: fn() };
 const lunch = { ...form, title: "Lunch", time: { ...form.time, value: "12 pm to 1 pm", selected: "720" }, remind: { ...form.remind, value: "No" } };
 
 export const meta: ComponentMeta<CalendarAppProps> = {
   args: {
     view: "week",
-    nav: { period: "November 9 – 15", onModeChange: onMode },
+    nav: { period: "November 9 – 15", ...step },
     week,
     month: { weekdays, days: monthDays },
     dayHeading: "Today",
@@ -196,13 +200,13 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     onClose: fn(),
   },
   examples: {
-    Month: { view: "month", nav: { period: "November 2026" } },
+    Month: { view: "month", nav: { period: "November 2026", ...step } },
     "Grace points at an appointment": {
       upcoming: taggedUpcoming,
       guide: { targetId: doctor.id, kind: "instruction", title: "Tap Doctor’s appointment", onClose: fn() },
     },
     "With connect banner": { banner: connectBanner },
-    Detail: { view: "detail", event: { ...detail, onEdit: fn(), onDelete: fn() } },
+    Detail: { view: "detail" },
     Form: { view: "form" },
     "Form, picking a time": {
       view: "form",
@@ -232,6 +236,8 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByRole("button", { name: /Doctor’s appointment/ }));
       await expect(openEvent).toHaveBeenCalledWith("1");
+      await userEvent.click(canvas.getByRole("button", { name: "Previous week" }));
+      await expect(previous).toHaveBeenCalled();
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
     },
