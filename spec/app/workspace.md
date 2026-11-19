@@ -169,6 +169,8 @@ pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
 pure def privateSurfaceActive(w: Workspace): bool =
   w.device.surface == S::Passwords or privateSignInActive(w)
+pure def localPasswordCommands(device: S::Shell): bool =
+  device.surface == S::Home and device.homePage == S::PasswordsCard
 pure def mayAssist(w: Workspace): bool =
   not(privateSignInActive(w)) and w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
@@ -184,7 +186,11 @@ pure def quietCommitment(p: CM::Commitment): CM::Commitment =
   else if (CM::canInvalidate(p, T::Host)) CM::invalidate(p, T::Host) else p
 pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Workspace =
   val leavesSurface = device.surface != w.device.surface or device.readiness != S::Ready
-  val assistant = quietAssistant(w.assistant)
+  val quiet = quietAssistant(w.assistant)
+  val crossesPasswordCommands = localPasswordCommands(device) != localPasswordCommands(w.device)
+  val assistant = if (crossesPasswordCommands) {
+    ...quiet, conversation: C::editDraft(quiet.conversation, "", C::ConversationUser), keyboard: A::NoKeyboard
+  } else quiet
   {
     ...w, device: device,
     browser: if (leavesSurface and browser.editingAddress) B::dismissAddress(browser) else browser,
@@ -414,10 +420,11 @@ pure val choiceValues = Set(
 
 Home retains all browser tabs. Close browser resets the tabs and returns Home.
 Close Grace hides its window and retains the website. All three preserve the
-task, transcript and draft while pausing unfinished work and stopping speech.
+task and transcript while pausing unfinished work and stopping speech.
 Returning to an application or reopening Grace reveals that same paused task.
-Leaving the surface or sleeping dismisses keyboard focus while retaining the
-draft. Opening Grace ends an active address-editor focus; browser address entry
+Leaving the surface or sleeping dismisses keyboard focus. The draft survives
+these interruptions unless the person enters or leaves the Passwords card.
+Opening Grace ends an active address-editor focus. Browser address entry
 still works independently while Grace is closed.
 Choosing Home or Settings moves expanded chat into the lower pane, including
 when the selected surface is already open. Compact chat stays compact and
@@ -623,6 +630,9 @@ pure val guidanceReportValues = Set(
 
 Choosing Wi-Fi on the rail moves expanded chat into the lower pane, just as
 Home and Settings do. The Wi-Fi popover still toggles on each tap.
+An interruption keeps the task, checkpoint, goal and transcript and stops the
+current voice turn. Entering or leaving the Passwords card clears the draft.
+Other interruptions preserve it.
 
 ```quint
 pure def canChooseHomePage(w: Workspace, page: S::HomePage, by: WorkspaceActor): bool =
@@ -654,7 +664,9 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
   implies after.assistant.taskId == before.assistant.taskId and
     after.assistant.goal == before.assistant.goal and after.assistant.checkpoint == before.assistant.checkpoint and
     after.assistant.conversation.messages == before.assistant.conversation.messages and
-    after.assistant.conversation.draft == before.assistant.conversation.draft and
+    after.assistant.conversation.draft ==
+      (if (localPasswordCommands(before.device) != localPasswordCommands(after.device)) ""
+       else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
 ```
 
@@ -1369,10 +1381,16 @@ pure def canApproveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTo
   A::canHear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) and
   CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person)
 pure def approveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::hear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime),
+  ...w, assistant: { ...w.assistant,
+    conversation: C::hear(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) },
   commitment: CM::authorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person),
   wake: W::cancel(w.wake, W::WakeUser)
 }
+pure def lawClassifiedApprovalPreservesTheReviewedStep(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): bool =
+  val approved = approveSpokenCommitment(w, commitmentTokens, spoken, by)
+  canApproveSpokenCommitment(w, commitmentTokens, spoken, by) and w.assistant.presentation == A::Compact implies
+    canSubmitCommitment(approved, commitmentTokens, Actuator) and
+    not(canApproveSpokenCommitment(approved, commitmentTokens, spoken, by))
 pure def lawCorrectedSpeechCannotApprove(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): bool =
   (not(spoken.complete) or not(spoken.approves) or spoken.correction)
   implies not(canApproveSpokenCommitment(w, commitmentTokens, spoken, by))
@@ -1410,6 +1428,12 @@ pure def observeCommitmentTap(w: Workspace, commitmentTokens: CommitmentTokens, 
   val working = A::startStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime)
   { ...w, commitment: CM::observeManualSubmit(w.commitment, commitmentTokens.attempt, T::Host),
     assistant: A::waitForWebsite(working, working.taskId, working.workVersion, C::ConversationRuntime) }
+pure def lawOneApprovalIssuesExactlyOneSubmission(w: Workspace, commitmentTokens: CommitmentTokens): bool =
+  val submitted = submitCommitment(w, commitmentTokens, Actuator)
+  canSubmitCommitment(w, commitmentTokens, Actuator) implies
+    submitted.out.length() == 1 and not(canSubmitCommitment(submitted.state, commitmentTokens, Actuator))
+pure def lawStopRevokesCommitmentSubmission(w: Workspace, commitmentTokens: CommitmentTokens): bool =
+  canStop(w, Person) implies not(canSubmitCommitment(stop(w, Person), commitmentTokens, Actuator))
 pure def lawHiddenCommitmentCannotSubmit(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   (w.device.surface != S::Browser or not(A::isVisible(w.assistant)) or w.device.readiness != S::Ready)
   implies not(canSubmitCommitment(w, commitmentTokens, by))
