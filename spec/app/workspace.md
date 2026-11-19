@@ -486,7 +486,9 @@ The pure interaction dispatcher calls existing assistant operations. User
 controls are authenticated as user input and service callbacks as runtime
 input. Typing, answer chips, speech, replies, failures, reading, Repeat and
 keyboard/window controls all update this workspace's actual conversation.
-Every accepted interaction cancels obsolete wake timers.
+Every accepted interaction cancels obsolete wake timers. On the Passwords Home card
+the guide handles recognized commands directly. Free text, transcribed words and
+conversation replies cannot enter the general reasoning interaction.
 
 Newly submitted content and geometry changes invalidate browser targets and
 payment review. Active work rechecks; already paused work stays paused. A
@@ -502,7 +504,7 @@ A fully classified payment approval uses its separate atomic route below.
 
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
-  (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
+  (I::needsReasoning(input) implies (not(localPasswordCommands(w.device)) and S::mayRequestReasoning(w.device))) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
   I::canInteract(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime)
