@@ -31,7 +31,8 @@ function android() {
     getConnectivity: () => Promise.resolve({ online: tablet.ssid !== null, validated: tablet.ssid !== null, captivePortal: false, ssid: tablet.ssid }),
     addNetworkWithApproval: (options) => {
       tablet.joins.push(options);
-      if (options.password === "wrong") return Promise.resolve({ status: "wrongPassword" });
+      if (options.password !== undefined && options.password.length < 8) return Promise.reject(Object.assign(new Error("short"), { code: "INVALID_ARGUMENT" }));
+      if (options.password === "wrongpass") return Promise.resolve({ status: "wrongPassword" });
       tablet.ssid = options.ssid;
       return Promise.resolve({ status: "connected" });
     },
@@ -52,11 +53,17 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
       host.remove();
     });
     const state = () => runtime.runPromise(Effect.flatMap(Effect.service(Machine), (m) => m.get()));
+    const draw = (online: boolean) => act(() => Promise.resolve(root.render(<WifiNetworks runtime={runtime} online={online} onFix={() => { fixes += 1; }} />)));
+    const joinedTo = (name: string) => expect.element(page.getByRole("region", { name: "Wi-Fi" }).getByText(name, { exact: true }).first()).toBeVisible();
+    const button = (name: string) => page.getByRole("button", { name });
     const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name })));
     let fixes = 0;
-    await act(() => Promise.resolve(root.render(<WifiNetworks runtime={runtime} online={false} onFix={() => { fixes += 1; }} />)));
+    await draw(false);
     await tap("Fix Wi-Fi");
     expect(fixes).toBe(1);
+    await draw(true);
+    await expect.element(button("Fix Wi-Fi")).not.toBeInTheDocument();
+    await joinedTo("Your Wi-Fi network");
 
     await tap("Look for networks");
     expect(tablet.location).toBe("prompt");
@@ -64,17 +71,22 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     await expect.element(page.getByRole("button", { name: "Riverside Library Guest" })).toBeVisible();
 
     await tap("Riverside Library Guest");
-    await expect.poll(async () => (await state()).phase).toBe("JoinComplete");
+    await expect.element(button("Riverside Library Guest")).not.toBeInTheDocument();
+    await joinedTo("Riverside Library Guest");
 
     await tap("NETGEAR-4F2");
-    await act(() => userEvent.type(page.getByLabelText("Password"), "wrong"));
-    await tap("Join");
-    await expect.element(page.getByRole("alert")).toBeVisible();
+    for (const typed of ["abc", "wrongpass"]) {
+      await act(() => userEvent.type(page.getByLabelText("Password"), typed));
+      await tap("Join");
+      await expect.element(page.getByRole("alert")).toBeVisible();
+    }
     await act(() => userEvent.type(page.getByLabelText("Password"), "garden2024{Enter}"));
-    await expect.poll(async () => (await state()).phase).toBe("JoinComplete");
+    await expect.element(page.getByLabelText("Password")).not.toBeInTheDocument();
+    await joinedTo("NETGEAR-4F2");
     expect(tablet.joins).toEqual([
       { ssid: "Riverside Library Guest", security: "open" },
-      { ssid: "NETGEAR-4F2", security: "wpa2", password: "wrong" },
+      { ssid: "NETGEAR-4F2", security: "wpa2", password: "abc" },
+      { ssid: "NETGEAR-4F2", security: "wpa2", password: "wrongpass" },
       { ssid: "NETGEAR-4F2", security: "wpa2", password: "garden2024" },
     ]);
     expect(JSON.stringify(await state())).not.toContain("garden2024");
@@ -83,12 +95,12 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     await tap("Sunrise Community Center");
     await expect.poll(() => tablet.panels).toBe(1);
     await shown();
-    await expect.poll(async () => (await state()).phase).toBe("JoinFailed");
+    await expect.element(page.getByRole("alert")).toBeVisible();
     await tap("Try again");
     await expect.poll(() => tablet.panels).toBe(2);
     tablet.ssid = "Sunrise Community Center";
     await shown();
-    await expect.poll(async () => (await state()).phase).toBe("JoinComplete");
-    expect(tablet.joins).toHaveLength(3);
+    await joinedTo("Sunrise Community Center");
+    expect(tablet.joins).toHaveLength(4);
   });
 });

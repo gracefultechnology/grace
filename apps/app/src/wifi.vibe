@@ -12,6 +12,7 @@ export service WifiPage {
   join(password: string): void!!
   retry(): void!!
   openPanel(): void!!
+  reopenPanel(): void!!
   allowLocation(): void!!
 }
 
@@ -36,6 +37,8 @@ const unlisted: Readonly<Record<string, ScanResult>> = { LOCATION_PERMISSION_REQ
 
 const bars = (rssi: number) => rssi >= -55 ? 3 : rssi >= -67 ? 2 : rssi >= -80 ? 1 : 0
 const joinable = (security: WiFiSecurity): JoinableWiFiSecurity | undefined => security === "eap" || security === "wep" ? undefined : security
+const ssidOf = (n: NetworkJoin) => n.selected.id.slice(n.selected.id.indexOf(":") + 1)
+const refusals: Readonly<Record<string, string>> = { UNSUPPORTED: "This tablet’s Android can’t join from Grace. Use Android’s Wi-Fi instead." }
 const codeOf = (cause: unknown) => new Refused({ code: typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "" })
 
 effect function ask<A>(decode: (input: unknown) => A!Schema.SchemaError, run: () => Promise<unknown>): A!Refused {
@@ -89,11 +92,15 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
     if (n?.phase === "AndroidPanel") return try panel()
     if (n?.phase !== "Joining") return
     const offer = offerOf(n)
-    if (offer === undefined) return try answer(n, "Unavailable", "The tablet can't see this network now.")
+    if (offer === undefined) return try answer(n, "Unavailable", "The tablet can’t see this network now.")
     if (offer.network.remembered) return try answer(n, "Joined", "")
-    const joined = ask(Schema.decodeUnknownEffect(Join), () => wifi.addNetworkWithApproval({ ssid: offer.name, security: joinable(offer.security), ...(password === undefined ? {} : { password }) })) catch () => undefined
-    const result = joined === undefined ? "Unavailable" : joined.status === "wrongPassword" && n.selected.authentication !== "SharedPassword" ? "Unavailable" : outcomes[joined.status]
-    try answer(n, result, result === "RejectedCredentials" ? "That password didn't work." : result === "Unavailable" ? "The tablet couldn't join " + offer.name + "." : "")
+    const joined = ask(Schema.decodeUnknownEffect(Join), () => wifi.addNetworkWithApproval({ ssid: offer.name, security: joinable(offer.security), ...(password === undefined ? {} : { password }) })) catch (refused) => refused.code
+    if (typeof joined === "string") {
+      if (joined === "INVALID_ARGUMENT" && n.selected.authentication === "SharedPassword") return try answer(n, "RejectedCredentials", "Android won’t take that password. Wi-Fi passwords have 8 to 63 characters.")
+      return try answer(n, "Unavailable", refusals[joined] ?? "The tablet couldn’t join " + offer.name + ".")
+    }
+    const result = joined.status === "wrongPassword" && n.selected.authentication !== "SharedPassword" ? "Unavailable" : outcomes[joined.status]
+    try answer(n, result, result === "RejectedCredentials" ? "That password didn’t work." : result === "Unavailable" ? "The tablet couldn’t join " + offer.name + "." : "")
   }
 
   effect function returned() {
@@ -102,12 +109,12 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
       if (listAction(n.discovery) === "OpenPanel") try look
       return
     }
-    const name = offerOf(n)?.name ?? "the network"
+    const name = ssidOf(n)
     const read = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
     if (read === undefined || (read.captivePortal && n.phase === "PortalEntry")) return
     const elsewhere = read.online && read.ssid !== null && read.ssid !== name
     const result = read.captivePortal ? "PortalRequired" : !read.online || elsewhere ? "Unavailable" : read.ssid === null ? "Unverified" : "Joined"
-    const explanation = elsewhere ? "The tablet is still on " + read.ssid + ", not " + name + "." : "The tablet didn't join " + name + "."
+    const explanation = elsewhere ? "The tablet is still on " + read.ssid + ", not " + name + "." : "The tablet didn’t join " + name + "."
     try answer(n, result, result === "Unavailable" ? explanation : "")
   }
 
@@ -136,6 +143,10 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
     effect openPanel() {
       const opened = networks.send({ type: "openPanel" }, "Person") catch () => undefined
       if (opened !== undefined) try panel()
+    },
+    effect reopenPanel() {
+      const n = try networks.get()
+      if (n.phase === "AndroidPanel" || n.phase === "PortalEntry") try panel()
     },
     effect allowLocation() {
       if (!canAllowLocation(try networks.get(), "Person")) return

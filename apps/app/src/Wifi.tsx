@@ -28,6 +28,7 @@ const actionLabels: Readonly<Record<ListAction, string>> = { NoAction: "", OpenP
 const fixSteps = "Check the password on the internet box; capitals count. If it still won’t join, ask whoever looks after this network.";
 const offlineSteps = "Check that the internet box is plugged in and its lights are on, then choose your network below. Its password is often on a sticker on the box.";
 const fix = { type: "openGrace" } as const;
+const unnamed: WifiNetwork = { name: "Your Wi-Fi network", signal: 3 };
 
 export function Wifi() {
   const { workspace, can, send } = useWorkspace();
@@ -41,7 +42,7 @@ const row = (offer: Offer): WifiNetwork => ({ name: offer.name, signal: offer.si
 function notice(n: NetworkJoin, name: string) {
   if (n.phase === "JoinFailed") return `${n.explanation} ${fixSteps}`;
   if (n.phase === "JoinUnconfirmed") return "The tablet is online, but Android didn’t say on which network.";
-  if (n.phase === "PortalEntry") return `Sign in to ${name} on the page Android shows.`;
+  if (n.phase === "PortalEntry") return `${name} has a sign-in page. Sign in there to finish joining.`;
   return undefined;
 }
 
@@ -69,12 +70,13 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
   );
 
   const current = online ? offers.find((offer) => offer.network.remembered) : undefined;
+  const connected = current ? row(current) : online ? unnamed : undefined;
   const action = listAction(n.discovery);
   const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
   const said = notice(n, name);
   return (
     <>
-      <WifiNetworkList status={statuses[n.discovery]} current={current && row(current)} networks={offers.filter((offer) => offer !== current).map(row)}
+      <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => offer !== current).map(row)}
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
         connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? name : undefined}
         failed={n.phase === "JoinFailed" ? name : undefined} onRetry={() => run(page.retry())}
@@ -86,6 +88,7 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
         noneLabel={reasons[n.discovery]}
         action={action !== "NoAction" && <Button variant="prominent" size="pill" onClick={act}>{actionLabels[action]}</Button>} />
       {said && <Alert variant={n.phase === "JoinFailed" ? "caution" : "info"} className="mt-4">{said}</Alert>}
+      {n.phase === "PortalEntry" && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>Open the sign-in page</Button>}
       {!online && n.discovery !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
     </>
   );
