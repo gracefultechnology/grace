@@ -414,13 +414,29 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Forward" }));
   await click(page.getByRole("button", { name: "David" }));
   await expect.element(subject()).toHaveValue("Fwd: Reminder: your appointment tomorrow at 10 am");
-  await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Remove Visit form.pdf" }));
+  await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).not.toBeInTheDocument();
   await click(page.getByRole("button", { name: "Send" }));
-  await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[{ filename: "Visit form.pdf" }]]);
+  await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[]]);
+  await opened(/^Ruth.*Has attachments/, "Lunch on Sunday?");
+  await click(page.getByRole("button", { name: "Bow.png" }));
+  await expect.element(page.getByRole("heading", { name: "Photo 1 of 3" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Forward" }));
+  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "David" }));
+  await expect.element(subject()).toHaveValue("Fwd: Lunch on Sunday?");
+  await expect.element(page.getByRole("button", { name: "Remove Bow.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.poll(async () => (await sent("Fwd: Lunch on Sunday?")).map((m) => m.attachments)).toEqual([[{ filename: "Bow.png" }]]);
 
   // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name: "Susan" }));
+  await act(() => userEvent.fill(words(), "Never mind."));
+  await click(page.getByRole("button", { name: "Discard" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
 
   // spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
@@ -439,6 +455,26 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(email(/^To Susan.*Lunch next week/)).toBeVisible();
   await expect.element(row("Drafts 1")).toBeVisible();
+
+  // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await click(row("All inboxes"));
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name: "Susan" }));
+  await act(() => userEvent.fill(subject(), "Tea on Friday"));
+  await act(() => userEvent.fill(words(), "Would you come for tea on Friday?"));
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Tea on Friday").map((m) => m.labels))).toEqual([["DRAFT"]]);
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await click(row("Drafts"));
+  await expect.element(email(/^To Susan.*Tea on Friday/)).toBeVisible();
+  await expect.element(row("Drafts 2")).toBeVisible();
+  await expect.element(page.getByText("Saved to Drafts")).not.toBeInTheDocument();
+  await click(email(/^To Susan.*Lunch next week/));
+  await expect.element(subject()).toHaveValue("Lunch next week");
+  await click(page.getByRole("button", { name: "Discard" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await expect.element(email(/^To Susan.*Lunch next week/)).not.toBeInTheDocument();
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
@@ -465,7 +501,35 @@ it("Write or reply and confirm before sending", async () => {
   const after = (await sends()).filter((id) => !before.includes(id));
   expect(after).toHaveLength(1);
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
-}, 300_000);
+
+  // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
+  await host("Offline");
+  await click(page.getByRole("button", { name: "Write" }));
+  await act(() => userEvent.type(page.getByRole("searchbox"), "susan@family"));
+  await click(page.getByRole("button", { name: "susan@family", exact: true }));
+  await act(() => userEvent.fill(subject(), "Recital photos"));
+  await act(() => userEvent.fill(words(), "I loved the recital."));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(row("Outbox 1")).toBeVisible();
+  await host("Online");
+  await click(row("Outbox 1"));
+  const refused = email(/Recital photos/);
+  await expect.poll(async () => {
+    if (refused.query()) await click(refused);
+    return subject().query() !== null;
+  }, { timeout: 15000 }).toBe(true);
+  await host("Offline");
+  await expect.element(subject()).toHaveValue("Recital photos");
+  await expect.element(words()).toHaveValue("I loved the recital.");
+  await click(page.getByRole("button", { name: "Remove susan@family" }));
+  await click(page.getByRole("button", { name: "Add to To" }));
+  await click(page.getByRole("button", { name: "Susan" }));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(row("Outbox 1")).toBeVisible();
+  await host("Online");
+  await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
+  await expect.element(row("Outbox")).not.toBeInTheDocument();
+}, 600_000);
 
 it("Delete a message and recover it safely", async () => {
   const { company } = await start();
