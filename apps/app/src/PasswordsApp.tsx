@@ -6,6 +6,8 @@ import { useRef, useState } from "react";
 import { type LoginSummary, type PasswordGuide, type VaultIssue, type VaultNotice, passwordsHelpText } from "../gen/app.ts";
 import { useMachine } from "../gen/app.react.ts";
 import { Passwords, type PasswordAction } from "./passwords.vibe";
+import { VoiceNoticeDialog } from "./VoiceNoticeDialog.tsx";
+import { SpeechActions, type VoiceNotice } from "./graceSpeech.vibe";
 import { androidHost } from "./surfacePlugin.ts";
 import { useRuntime } from "./useApp.ts";
 
@@ -117,9 +119,16 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
 
 export function PasswordsApp() {
   const runtime = useRuntime();
+  const [notice, setNotice] = useState<VoiceNotice>();
+  const read = (acknowledged?: VoiceNotice) => {
+    if (acknowledged) setNotice(undefined);
+    runtime.runFork(Effect.flatMap(SpeechActions, (speech) => Effect.tap(speech.readInstructions(acknowledged), (next) => Effect.sync(() => setNotice(next)))));
+  };
   const { state, can, send } = useMachine(runtime);
-  const act = (action: PasswordAction) => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.act(action)));
-  const speak = () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.speak()));
+  const act = (action: PasswordAction) => void runtime.runPromiseExit(Effect.andThen(
+    Effect.flatMap(SpeechActions, (speech) => speech.stopInstructions()),
+    Effect.flatMap(Passwords, (passwords) => passwords.act(action)),
+  ));
   const vault = state?.vault;
   const guide = state?.guide ?? "NoPasswordGuide";
   const finishGuide = () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide()));
@@ -152,8 +161,9 @@ export function PasswordsApp() {
       <details className="max-w-prose text-body">
         <summary className="cursor-pointer font-semibold">How to use saved passwords</summary>
         <p className="my-3">{passwordsHelpText(guide)}</p>
-        {(androidHost || typeof window.speechSynthesis !== "undefined") && <Button variant="capsule" size="pill" onClick={speak}><Volume2 aria-hidden /> Read instructions aloud</Button>}
+        <Button variant="capsule" size="pill" onClick={() => read()}><Volume2 aria-hidden /> Read instructions aloud</Button>
       </details>
+      <VoiceNoticeDialog notice={notice} continueWith={read} cancel={() => setNotice(undefined)} />
     </div>
   );
 }

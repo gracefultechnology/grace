@@ -32,8 +32,6 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [What Grace may do with email and the calendar, each action routed to its guarded event](./agentActions.md)
 - [Saved photos, documents and Email sharing](./files.md)
 - [The vocabulary of a task: its kind, subject and terms](./task.md)
-- [The task kinds: what each needs, its facts and its fill](./taskKinds.md)
-- [A bill as a task kind: its facts and fitting payment](./billKind.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
@@ -167,23 +165,24 @@ pure val latestValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
 ### Grace can describe private sign-in without operating the vault
 
 Help uses fixed instructions to open Passwords, follow Android's unlock
-prompt and choose a saved login. The same action can speak these instructions
-when voice is available. It receives no vault state, account text or website
+prompt and choose a saved login. The private screen can display the instructions or read the fixed text aloud. Guidance receives no vault state, account text or website
 form values and has no authority over the editor or browser. Recognized
-requests from the current typed draft or a current complete human utterance
-work while Cloud reasoning is unavailable. They select only the general Passwords screen or Browser and a cue for the
-named control. Guidance never chooses or reveals an entry, copies a
+commands choose the general Passwords screen or Browser and a cue for the
+named control. Typed commands work when Cloud speech is unavailable. Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit
 sign-in command has a separate [browser admission rule](./browserControls.md).
 
-The regular Ask Grace message field and microphone both accept password
-requests. During a voice conversation, a recognized password request goes
-directly from the final human utterance to password guidance. The request
-stays out of the conversation history and the reasoning agent. When conversational voice is unavailable,
-the same microphone starts one local Android recognition request for guidance.
-Unmatched local speech is discarded. Leaving Grace, typing, opening a
-protected surface or cancelling stops the request. An unavailable local
-recognizer leaves Type available.
+On the Passwords Home card the person may type a local command or explicitly
+start Cloud speech under their signed-in Grace account. The person sees the
+disclosure before first use. Cloud speech receives the microphone audio for a
+single command. Only the current complete utterance can select a known guide
+command. An unmatched or retired utterance is discarded. Neither the recording
+nor its transcript is added to the chat or sent to the reasoning agent. Leaving
+the card, changing accounts, typing, going offline or hiding Grace retires
+capture. Entering or leaving this card clears the unsent draft. When speech is
+unavailable the person can still type. In the private Passwords screen reading
+instructions aloud sends the fixed public help text and never opens a microphone.
+It sends no saved entries, usernames, passwords or website details.
 Password guidance recognizes a short list of spoken or typed phrases, such
 as “Open Passwords,” “Where can I find my saved passwords?”, “Show my password,”
 “Copy my password,” and “Use a saved password.” The person chooses the

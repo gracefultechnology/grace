@@ -1,16 +1,16 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, Button, besideRail, cn, Dialog, DialogContent, DialogTitle, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { guidedDetails, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
-import { voiceDisclosure } from "../gen/app__conversation.ts";
+import { guidedDetails, localPasswordCommands, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
+import { VoiceNoticeDialog } from "./VoiceNoticeDialog.tsx";
 import { mayOfferTalk, SpeechActions, type VoiceNotice } from "./graceSpeech.vibe";
 import { useDraft, useKeyboardHeight, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
 
@@ -65,6 +65,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     });
   };
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [pageCheck, setPageCheck] = useState<{ key: string; pending: boolean }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; result?: BrowserGuidance }>();
@@ -74,10 +75,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const expanded = assistant.presentation === "Expanded";
   const canTalk = mayOfferTalk(workspace!);
   const talk = (acknowledged?: VoiceNotice) => {
-    guide.stopListening();
-    void runtime.runPromise(Effect.flatMap(SpeechActions, (speech) => speech.talk(acknowledged))).then(setVoiceNotice);
+    if (acknowledged) setVoiceNotice(undefined);
+    runtime.runFork(Effect.flatMap(SpeechActions, (speech) =>
+      Effect.tap(speech.talk(acknowledged), (notice) => Effect.sync(() => setVoiceNotice(notice)))));
   };
-  const listeningLocally = guide.mic === "GuideMicListening";
   const needsMicPermission = canTalk && !device.microphoneAllowed;
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
@@ -145,17 +146,19 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} maxLines={expanded ? 6 : 4} mic={conversation.voice || listeningLocally} listening={listeningLocally}
-            quiet={(!device.reasoningAvailable && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
-            micUnavailable={needsMicPermission ? "Allow the microphone to talk to Grace" : undefined}
-            onFixMic={() => talk()} fixMicLabel="Allow mic"
-            onMicChange={(on) => { if (on && canTalk) talk(); else if (on) guide.listen(); else { guide.stopListening(); interact({ tag: "StopVoice" }); } }}
-            onFieldFocus={(event) => { guide.stopListening(); fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
+          <GraceDock value={draft} placeholder={localCommands ? "Type a Passwords command" : undefined} maxLines={expanded ? 6 : 4} mic={conversation.voice}
+            quiet={((localCommands || !device.reasoningAvailable) && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
+            micUnavailable={!canTalk ? (localCommands ? "Type a Passwords command" : "Type your request") : needsMicPermission ? "Allow the microphone to talk to Grace" : undefined}
+            onFixMic={needsMicPermission ? () => talk() : undefined} fixMicLabel={needsMicPermission ? "Allow mic" : undefined}
+            onMicChange={(on) => { if (on && canTalk) talk(); else if (!on) interact({ tag: "StopVoice" }); }}
+            onFieldFocus={(event) => { fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
             onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
             onSend={() => {
-              const revision = current().assistant.conversation.draftRevision;
+              const state = current();
+              const revision = state.assistant.conversation.draftRevision;
               void guide.request(revision).then(async (guided) => {
                 if (guided) { setDraft(""); return; }
+                if (localPasswordCommands(state.device)) return;
                 const sent = await say({ tag: "SendDraft", revision });
                 if (sent && fieldRef.current?.isConnected && current().assistant.keyboard === "NoKeyboard") fieldRef.current.blur();
               });
@@ -165,8 +168,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
-          {!canTalk && guide.mic === "GuideMicUnavailable" && <PageText role="status">The microphone is unavailable. You can type your request.</PageText>}
-          {!canTalk && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that request. Try typing it.</PageText>}
+
           {currentOffer && currentOffer.labels.length > 0 && (
             <AnswerChips>{currentOffer.labels.map((label, index) =>
               <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>
@@ -212,6 +214,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {namedCheck?.pending === false && (
             <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{details?.subject}” on this page. Check the page again or try another link.</GraceBubble>
           )}
+          {localCommands && guide.mic === "GuideMicUnavailable" && <PageText role="status">Cloud speech is unavailable. You can type a Passwords command.</PageText>}
+          {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
           {canCheck && <AnswerChips>
             {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
             <AnswerChip disabled={namedCheck?.pending} onClick={check}>{label}</AnswerChip>
@@ -223,14 +227,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           )}
         </GraceMessages>
       </GraceWindow>
-      <Dialog open={voiceNotice !== undefined} onOpenChange={(open) => { if (!open) setVoiceNotice(undefined); }}>
-        <DialogContent>
-          <DialogTitle>Talk to Grace</DialogTitle>
-          <PageText>{voiceDisclosure}</PageText>
-          <Button variant="capsule" size="pill" onClick={() => talk(voiceNotice)}>Continue to Talk</Button>
-          <Button variant="plain" size="pill" onClick={() => setVoiceNotice(undefined)}>Cancel</Button>
-        </DialogContent>
-      </Dialog>
+      <VoiceNoticeDialog notice={voiceNotice} continueWith={talk} cancel={() => setVoiceNotice(undefined)} />
     </OverPage>
   );
 }

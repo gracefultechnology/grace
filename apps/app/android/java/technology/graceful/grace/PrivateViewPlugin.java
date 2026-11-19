@@ -1,10 +1,8 @@
 package technology.graceful.grace;
 
-import ai.eliza.plugins.passwords.PasswordSurfaces;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.provider.Settings;
-import android.speech.tts.TextToSpeech;
 import android.view.WindowManager;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -15,16 +13,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public final class PrivateViewPlugin extends Plugin {
  private boolean vault;
  private boolean browser;
- private TextToSpeech speech;
- private volatile boolean speechReady;
- private final PasswordSurfaces.Listener secretSurface = visible -> {
-  if (visible) stopSpeech();
- };
-
- @Override public void load() {
-  PasswordSurfaces.addListener(secretSurface);
-  speech = new TextToSpeech(getContext(), status -> speechReady = status == TextToSpeech.SUCCESS);
- }
 
  @PluginMethod public void protect(PluginCall call) {
   String view = call.getString("view");
@@ -36,7 +24,6 @@ public final class PrivateViewPlugin extends Plugin {
   getActivity().runOnUiThread(() -> {
    if ("vault".equals(view)) {
     vault = active;
-    if (!active) stopSpeech();
    } else {
     browser = active;
    }
@@ -55,36 +42,5 @@ public final class PrivateViewPlugin extends Plugin {
     call.reject("Android security settings are unavailable");
    }
   });
- }
-
- @PluginMethod public void readHelp(PluginCall call) {
-  getActivity().runOnUiThread(() -> {
-   if (!vault || PasswordSurfaces.visible() || !speechReady || speech == null
-       || speech.speak(getContext().getString(R.string.grace_passwords_help), TextToSpeech.QUEUE_FLUSH, null, "passwords-help") == TextToSpeech.ERROR) {
-    call.reject("Spoken help is unavailable");
-    return;
-   }
-   call.resolve();
-  });
- }
-
- @PluginMethod public void stopHelp(PluginCall call) {
-  getActivity().runOnUiThread(() -> {
-   stopSpeech();
-   call.resolve();
-  });
- }
-
- private void stopSpeech() {
-  if (speech != null) speech.stop();
- }
-
- @Override protected void handleOnStop() {
-  stopSpeech();
- }
-
- @Override protected void handleOnDestroy() {
-  PasswordSurfaces.removeListener(secretSurface);
-  if (speech != null) speech.shutdown();
  }
 }

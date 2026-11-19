@@ -22,24 +22,10 @@ export const passwordClient = Capacitor.isPluginAvailable("ElizaPasswords")
 type PrivateViewPlugin = {
   protect(input: { view: "vault" | "browser"; active: boolean }): Promise<void>;
   openLockSettings(): Promise<void>;
-  readHelp(): Promise<void>;
-  stopHelp(): Promise<void>;
 };
 
 export const androidHost = Capacitor.isNativePlatform();
 export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;
-
-export type GuideSpeechResult =
-  | { status: "complete"; text: string }
-  | { status: "cancelled" | "unavailable" | "no-match" };
-
-export type GuideSpeechPlugin = {
-  listen(input: { id: string }): Promise<GuideSpeechResult>;
-  cancel(input: { id: string }): Promise<void>;
-};
-
-export const guideSpeechPlugin = Capacitor.isPluginAvailable("GraceGuideSpeech")
-  ? registerPlugin<GuideSpeechPlugin>("GraceGuideSpeech") : undefined;
 
 export type PasswordBackupPlugin = {
   addListener(event: "passwordOwnerChanged", changed: () => void): Promise<PluginListenerHandle>;

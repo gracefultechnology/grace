@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
+import { passwordsHelpText } from "../gen/app.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
@@ -19,7 +20,7 @@ import { Conversation } from "../src/conversation.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
-import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
+import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, otherPassword, reply, script, signIn, turns } from "./cloud.vibe";
 import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
@@ -720,36 +721,24 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   expect(await pressBack()).toBe(false);
 });
 
-it('Use only the current local speech for Passwords guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  type Heard = { status: "complete"; text: string };
-  const requests: ((result: Heard) => void)[] = [];
-  const cancellations: string[] = [];
-  const runtime = ManagedRuntime.make(application(undefined, undefined, undefined, undefined, undefined, {
-    listen: () => new Promise<Heard>((resolve) => requests.push(resolve)),
-    cancel: ({ id }) => { cancellations.push(id); return Promise.resolve(); },
-  }));
+it('Use the current typed Passwords command when cloud speech is unavailable (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+  const runtime = ManagedRuntime.make(application(undefined));
   await mount(runtime);
-  const ask = page.getByRole("button", { name: "Ask Grace" });
-  const mic = () => page.getByRole("switch", { name: "Mic off" });
-  await act(() => userEvent.click(ask));
-  expect(requests).toHaveLength(0);
-  await act(() => userEvent.click(mic()));
-  await expect.poll(() => requests.length).toBe(1);
-  await act(() => userEvent.click(page.getByRole("textbox", { name: "Message to Grace" })));
-  await expect.poll(() => cancellations.length).toBe(1);
-  await act(() => { requests[0]?.({ status: "complete", text: "open passwords" }); return Promise.resolve(); });
+  const card = page.getByRole("button", { name: "Page 3", exact: true });
+  await act(() => userEvent.click(card));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  const mic = page.getByRole("switch", { name: "Mic off" });
+  const draft = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.element(mic).toBeDisabled();
+  await act(() => userEvent.type(draft, "sample secret words"));
+  await act(() => userEvent.keyboard("{Enter}"));
+  await expect.element(draft).toHaveValue("sample secret words");
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(mic()));
-  await expect.poll(() => requests.length).toBe(2);
-  await act(() => { requests[1]?.({ status: "complete", text: "sample secret words" }); return Promise.resolve(); });
-  await expect.element(mic()).toBeVisible();
-  await expect.element(page.getByText("sample secret words")).not.toBeInTheDocument();
-  await act(() => userEvent.click(mic()));
-  await expect.poll(() => requests.length).toBe(3);
-  await act(() => { requests[2]?.({ status: "complete", text: "Open passwords." }); return Promise.resolve(); });
+  await act(() => userEvent.clear(draft));
+  await act(() => userEvent.type(draft, "Open passwords."));
+  await act(() => userEvent.keyboard("{Enter}"));
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
 });
-
 
 function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<EmbeddedAgent, "abort" | "addListener"> {
   return {
@@ -899,13 +888,14 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open Passwords and read fixed instructions"] as const)(
+  '%s through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
   const firstAccount = crypto.randomUUID();
   const secondAccount = crypto.randomUUID();
-  let accountId = firstAccount;
+  let accountId: string | undefined = firstAccount;
   const calls: string[] = [];
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
@@ -913,21 +903,22 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
-  const microphone = new AudioContext({ sampleRate: 16_000 });
-  const source = microphone.createOscillator();
-  const inputMedia = microphone.createMediaStreamDestination();
-  source.connect(inputMedia);
-  source.start();
+  const microphones: AudioContext[] = [];
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
+    const microphone = new AudioContext({ sampleRate: 16_000 });
+    microphones.push(microphone);
+    const source = microphone.createOscillator();
+    const input = microphone.createMediaStreamDestination();
+    source.connect(input);
+    source.start();
     await microphone.resume();
-    const stream = inputMedia.stream.clone();
-    captures.push(...stream.getAudioTracks());
-    return stream;
+    captures.push(...input.stream.getAudioTracks());
+    return input.stream;
   });
   const originalFetch = window.fetch.bind(window);
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const pathname = new URL(input instanceof Request ? input.url : input, location.href).pathname;
-    if (pathname === "/api/auth/session") return Response.json({ account: { id: accountId, email: null } });
+    if (pathname === "/api/auth/session") return accountId ? Response.json({ account: { id: accountId, email: null } }) : new Response(null, { status: 401 });
     if (pathname === "/api/v1/billing/subscription" || pathname === "/api/v1/eliza/google/status") return new Response(null, { status: 404 });
     if (!pathname.startsWith(speechPath)) return originalFetch(input, options);
     calls.push(pathname);
@@ -944,12 +935,15 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     }
     return Response.json({ revoked: true });
   });
+  const sockets: FixtureSocket[] = [];
+  let recordedFrames = 0;
   class FixtureSocket extends EventTarget {
     readyState = 0;
     bufferedAmount = 0;
 
     constructor(url: string) {
       super();
+      sockets.push(this);
       expect(new URL(url).pathname).toBe(speechPath + "/ws");
       queueMicrotask(() => {
         this.readyState = 1;
@@ -965,6 +959,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 
     send(value: string | ArrayBuffer) {
       if (value instanceof ArrayBuffer) {
+        recordedFrames++;
         expect(value.byteLength % 2).toBe(0);
         if (nextTranscript) {
           this.receive({ t: "stt", event: { type: "start-of-turn", transcript: "" } });
@@ -1025,56 +1020,132 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const notice = page.getByRole("dialog", { name: "Talk to Grace" });
     const continueTalk = notice.getByRole("button", { name: "Continue to Talk" });
     const talkControl = page.getByRole("button", { name: "Allow mic" }).or(page.getByRole("switch", { name: "Mic off" }));
-    await press(page.getByRole("button", { name: "Settings", exact: true }));
-    await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
-    await expect.element(page.getByText(voiceDisclosure, { exact: true })).toBeVisible();
-    await press(page.getByRole("button", { name: "Close Settings", exact: true }));
-    await press(page.getByRole("button", { name: "Ask Grace" }));
-    await press(talkControl);
-    await expect.element(notice.getByText(voiceDisclosure)).toBeVisible();
-    await press(notice.getByRole("button", { name: "Cancel" }));
-    expect(audio).not.toHaveBeenCalled();
-    expect(calls).toEqual([]);
-    await press(talkControl);
-    await expect.element(notice).toBeVisible();
-    accountId = secondAccount;
-    await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
-    await press(continueTalk);
-    await expect.element(notice).toBeVisible();
-    expect(audio).not.toHaveBeenCalled();
-    expect(calls).toEqual([]);
-    await press(continueTalk);
-    await act(async () => {
-      await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
-      await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
-      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
-    });
+    const ask = page.getByRole("button", { name: "Ask Grace" });
     const speechSession = [speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"];
-    await expect.poll(() => calls).toEqual(speechSession);
+    const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "chooseHomePage", page }, "Person")));
+    const refresh = () => act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    if (journey === "Talk and hear a reply") {
+      await press(page.getByRole("button", { name: "Settings", exact: true }));
+      await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
+      await expect.element(page.getByText(voiceDisclosure, { exact: true })).toBeVisible();
+      await press(page.getByRole("button", { name: "Close Settings", exact: true }));
+      await press(ask);
+      await press(talkControl);
+      await expect.element(notice.getByText(voiceDisclosure)).toBeVisible();
+      await press(notice.getByRole("button", { name: "Cancel" }));
+      expect(audio).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      await press(talkControl);
+      await expect.element(notice).toBeVisible();
+      accountId = secondAccount;
+      await refresh();
+      await press(continueTalk);
+      await expect.element(notice).toBeVisible();
+      expect(audio).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      await press(continueTalk);
+      await act(async () => {
+        await expect.poll(() => recordedFrames).toBeGreaterThan(0);
+        await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+        await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
+        await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+      });
+      await expect.poll(() => calls).toEqual(speechSession);
 
+      audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
+      await press(talkControl);
+      await expect.poll(() => audio.mock.calls.length).toBe(2);
+      await expect.element(notice).not.toBeInTheDocument();
+      accountId = firstAccount;
+      await refresh();
+      await press(talkControl);
+      await expect.element(notice).toBeVisible();
+      expect(audio).toHaveBeenCalledTimes(2);
+      await press(notice.getByRole("button", { name: "Cancel" }));
+      return;
+    }
+    if (journey === "Keep private card inputs out of chat") {
+      nextTranscript = "";
+      await press(ask);
+      await press(talkControl);
+      await press(continueTalk);
+      await expect.poll(() => recordedFrames).toBeGreaterThan(0);
+      await act(() => choosePage("PasswordsCard").then(() => undefined));
+      await expect.poll(() => calls).toEqual(speechSession);
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+      await act(() => Promise.resolve(sockets.at(-1)?.receive({ t: "stt", event: { type: "end-of-turn", transcript: "fixture stale utterance" } })));
+      const recordedBeforeGuide = audio.mock.calls.length;
+      await press(talkControl);
+      await expect.element(notice).toBeVisible();
+      await press(notice.getByRole("button", { name: "Cancel" }));
+      expect(audio).toHaveBeenCalledTimes(recordedBeforeGuide);
+      expect(calls).toEqual(speechSession);
+      nextTranscript = "fixture unrecognized private phrase";
+      await press(talkControl);
+      await press(continueTalk);
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+      await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+      expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([]);
+      expect(turns).toEqual([]);
+      const draft = page.getByRole("textbox", { name: "Message to Grace" });
+      await act(() => userEvent.fill(draft, "fixture arbitrary credential"));
+      const revision = workspace().assistant.conversation.draftRevision;
+      await expect(runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+        machine.send({ type: "interact", input: { tag: "SendDraft", revision } }, "Person")))).rejects.toBeDefined();
+      await expect.element(page.getByRole("button", { name: "Send", exact: true })).not.toBeInTheDocument();
+      await act(() => userEvent.keyboard("{Enter}"));
+      expect(calls).toEqual([...speechSession, ...speechSession]);
+      expect(captures).toHaveLength(2);
+      expect(turns).toEqual([]);
+      await expect.element(page.getByText("I couldn’t recognize that Passwords command. Try typing it.")).toBeVisible();
+      await act(() => choosePage("MainCards").then(() => undefined));
+      await expect.element(draft).toHaveValue("");
+      expect(workspace().assistant.conversation.draft).toBe("");
+
+      return;
+    }
+    await act(() => choosePage("PasswordsCard").then(() => undefined));
+    await press(ask);
     nextTranscript = "Where can I find my saved passwords?";
-    await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+    await press(talkControl);
+    await press(continueTalk);
     await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
-    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
-    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
-    expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
-    expect(turns).toEqual([{ text: voiceInput }]);
-    expect(phrases).toEqual([voiceOutput]);
-    await expect.poll(() => calls).toEqual([speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"]);
-    audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+    await expect.poll(() => calls).toEqual(speechSession);
+    expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([]);
+    expect(turns).toEqual([]);
+    expect(phrases).toEqual([]);
+    await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).not.toBeInTheDocument();
+    await press(page.getByText("How to use saved passwords", { exact: true }));
+    await press(page.getByRole("button", { name: "Read instructions aloud" }));
+    const helpNotice = page.getByRole("dialog", { name: "Read Passwords instructions aloud" });
+    await expect.element(helpNotice).toBeVisible();
+    const inputCount = audio.mock.calls.length;
+    await press(helpNotice.getByRole("button", { name: "Cancel" }));
+    expect(calls).toHaveLength(speechSession.length);
+    await press(page.getByRole("button", { name: "Read instructions aloud" }));
+    await press(helpNotice.getByRole("button", { name: "Read aloud", exact: true }));
+    await expect.poll(() => phrases).toEqual([passwordsHelpText("NoPasswordGuide")]);
+    await expect.poll(() => calls).toHaveLength(speechSession.length * 2);
+    expect(audio).toHaveBeenCalledTimes(inputCount);
+    await press(page.getByRole("button", { name: "Close Passwords" }));
+    await act(() => choosePage("PasswordsCard").then(() => undefined));
+    accountId = undefined;
+    await refresh();
+    await press(ask);
     await press(talkControl);
-    await expect.poll(() => audio.mock.calls.length).toBe(2);
-    await expect.element(notice).not.toBeInTheDocument();
-    accountId = firstAccount;
-    await act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
-    await press(talkControl);
-    await expect.element(notice).toBeVisible();
-    expect(audio).toHaveBeenCalledTimes(2);
+    await expect.element(page.getByText("Cloud speech is unavailable. You can type a Passwords command.")).toBeVisible();
+    expect(audio).toHaveBeenCalledTimes(inputCount);
+    expect(calls).toHaveLength(speechSession.length * 2);
+    expect(turns).toEqual([]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
-    localStorage.removeItem("grace/voice-disclosure/web/" + secondAccount);
-    await microphone.close();
+    for (const person of [firstAccount, secondAccount]) {
+      for (const suffix of ["", "/command", "/instructions"]) localStorage.removeItem("grace/voice-disclosure/web/" + person + suffix);
+    }
+    await Promise.all(microphones.map((microphone) => microphone.close()));
     host.remove();
     request.mockRestore();
     audio.mockRestore();
@@ -1504,7 +1575,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
 });
 
-it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   let locked = true;
   let saved = { id: "first-login", revision: 4, updatedAt: 1, label: "Utility account", username: "Pat", bindings: [] };
   let shown = false;
@@ -1528,14 +1599,7 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
     },
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
-  let finishSpeech: ((result: GuideSpeechResult) => void) | undefined;
-  const runtime = ManagedRuntime.make(application(undefined, undefined, {
-    native: false, vault,
-    guideSpeech: {
-      listen: () => new Promise<GuideSpeechResult>((resolve) => { finishSpeech = resolve; }),
-      cancel: () => { finishSpeech?.({ status: "cancelled" }); return Promise.resolve(); },
-    },
-  }));
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, vault }));
   await mount(runtime);
   const unlock = await askToShowPassword();
   await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
@@ -1569,9 +1633,9 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
   await expect.element(unlock).toBeEnabled();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
-  await expect.poll(() => typeof finishSpeech).toBe("function");
-  await act(() => Promise.resolve(finishSpeech?.({ status: "complete", text: "Open passwords" })));
+  const draft = page.getByRole("textbox", { name: "Message to Grace" });
+  await act(() => userEvent.type(draft, "Open passwords"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
   await expect.element(unlock).toBeEnabled();
 });
 
