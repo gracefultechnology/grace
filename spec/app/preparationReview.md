@@ -33,7 +33,6 @@ performed equivalent provider-form/choice verification, not an alternative BP ha
 
 ```quint
 import billpay as BP from "./billpay"
-import billKind as BK from "./billKind"
 import commitment as CM from "./commitment"
 import task as T from "./task"
 import taskKinds as K from "./taskKinds"
@@ -132,7 +131,7 @@ pure val preparationValues = {
   val paused = BP::pause(handed, T::Person)
   Set(BP::initial, chosen, verified, handed, paused, BP::resume(paused, T::Person))
 }
-pure val wValues = {
+pure val wBound = {
   val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
   val opened = W::openGrace(W::visit(started, S::Browser, W::Person), W::Person)
   val allowed = W::setBrowserObservation(opened, { allowed: true,
@@ -147,7 +146,10 @@ pure val wValues = {
   val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
-  val bound = W::bindCommitment(observed, CM::exampleKey, W::Person)
+  W::bindCommitment(observed, CM::exampleKey, W::Person)
+}
+pure val wValues = {
+  val bound = wBound
   val reviewed = W::reviewCommitment(bound,
     { deviceVersion: bound.device.contextVersion, browserRevision: bound.browser.revision,
       taskVersion: bound.assistant.workVersion, review: CM::exampleReview }, W::Host)
@@ -161,7 +163,8 @@ pure val wValues = {
   Set(W::initial, bound, reviewed, changed, other)
 }
 pure val transferValues = {
-  val captured = { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 0, attempt: 0 }
+  val captured = { deviceVersion: wBound.device.contextVersion, browserRevision: wBound.browser.revision,
+    taskVersion: wBound.assistant.workVersion, revision: 0, attempt: 0 }
   val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
   val valid = { handoff: BP::ReviewPayment(details), captured: captured }
   Set(valid,
@@ -170,9 +173,9 @@ pure val transferValues = {
     { ...valid, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) },
     { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) },
     { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "" }) },
-    { ...valid, captured: { ...captured, deviceVersion: 5 } },
-    { ...valid, captured: { ...captured, browserRevision: 1 } },
-    { ...valid, captured: { ...captured, taskVersion: 0 } },
+    { ...valid, captured: { ...captured, deviceVersion: captured.deviceVersion - 1 } },
+    { ...valid, captured: { ...captured, browserRevision: captured.browserRevision - 1 } },
+    { ...valid, captured: { ...captured, taskVersion: captured.taskVersion - 1 } },
     { ...valid, captured: { ...captured, revision: 1 } },
     { ...valid, captured: { ...captured, attempt: 1 } })
 }
