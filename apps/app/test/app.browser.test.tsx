@@ -158,7 +158,6 @@ const askForPasswords = async () => {
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
-  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
 };
 
 const showThenEdit = async (revealed: () => boolean) => {
@@ -1451,12 +1450,19 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
 
 it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
   let lockRequests = 0;
+  let needsMigration = true;
   let saved = { id: "first-login", revision: 4, updatedAt: 1, label: "Utility account", username: "Pat", bindings: [] };
   let shown = false;
   const vault: PasswordVault = {
-    status: () => Promise.resolve(foregroundVault),
+    status: () => Promise.resolve(needsMigration
+      ? { ...foregroundVault, locked: true, reason: "legacy-authorization-required" }
+      : foregroundVault),
     lock: () => { lockRequests += 1; return Promise.resolve(); },
-    unlock: () => Promise.reject(new Error("The foreground vault must open directly")),
+    unlock: async () => {
+      if (!needsMigration) throw new Error("The existing sign-in was already migrated");
+      needsMigration = false;
+      return { unlockRemainingMs: null };
+    },
     list: () => Promise.resolve([saved]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
@@ -1483,6 +1489,10 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
   }));
   await mount(runtime);
   await askForPasswords();
+  const migrate = page.getByRole("button", { name: "Open saved passwords" });
+  await expect.element(migrate).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: /Utility account/ })).not.toBeInTheDocument();
+  await act(() => userEvent.click(migrate));
   await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
   await showThenEdit(() => shown);
   saved = { ...saved, username: "Updated on this tablet", revision: 6 };
