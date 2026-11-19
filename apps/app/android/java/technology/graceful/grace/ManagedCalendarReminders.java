@@ -240,9 +240,15 @@ final class ManagedCalendarReminders {
   try {
    if (connection.getResponseCode() != 200) throw new IllegalStateException();
    try (var stream = connection.getInputStream()) {
-    var bytes = stream.readNBytes(65_537);
-    if (bytes.length > 65_536) throw new IllegalStateException();
-    return new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+    byte[] bytes = new byte[65_536];
+    int size = 0;
+    while (size < bytes.length) {
+     int read = stream.read(bytes, size, bytes.length - size);
+     if (read < 0) break;
+     size += read;
+    }
+    if (size == bytes.length && stream.read() != -1) throw new IllegalStateException();
+    return new JSONObject(new String(bytes, 0, size, StandardCharsets.UTF_8));
    }
   } finally { connection.disconnect(); }
  }

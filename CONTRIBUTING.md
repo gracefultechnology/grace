@@ -93,9 +93,10 @@ tools owes it, and the sync skill, is in [AGENTS.md, "Definition of done"](AGENT
 
 ## Releasing
 
-Set `version` in the root `package.json`, merge to `main`, and push the tag `v<version>` from it.
-`.github/workflows/release.yml` builds, packs with `pnpm pack`, runs `pnpm selftest`, which the shared cache answers for a commit CI has verified, and attaches the tarball to a GitHub release of that tag.
-A project installs it as [README.md, "Using it from another package"](README.md#using-it-from-another-package) says.
+The Android workflow builds debug APKs for arm64 and x86_64 and uploads them with
+their manifests. For release builds, follow the signing instructions in
+[the Android app guide](apps/app/README.md#android).
+
 ## Architecture
 
 The spec owns the rules and state; generated code is its runtime contract.
@@ -255,7 +256,7 @@ failing exploration found is saved and replayed instead
 | Model-based | Real shell against the spec: journeys, malformed input, walks and saved counterexamples | `test/drivers/app.ts` and the recorded `test/traces/app.jsonl`, run by `traces` |
 | Journey/integration | A story through real services, including what a driver cannot see | `@effect/vitest` in `test/app.test.vibe`: reload from storage |
 | Component/browser | Story interactions and accessibility; browser-only behavior such as focus and storage | Component metadata `play`; `test/app.browser.test.tsx` in Chromium |
-| Exploratory/browser | The served page under random clicks, typing, scrolling and reloads: no uncaught error, console error or failed request, and the properties each rule gives the page, in every state reached | `test/bombadil.ts`, or nothing for Bombadil's defaults; `apps/app/test/bombadil.ts`, run by `explore` |
+| Exploratory/browser | The served page under random clicks, typing, scrolling and reloads: no uncaught error, console error or failed request, and the properties each rule gives the page, in every state reached | `test/bombadil.ts`, or nothing for Bombadil's defaults; `vibestack/examples/fullstack/test/bombadil.ts`, run by `explore` |
 | Property | What a schema or declared contract promises for generated values | Generated from `src/link.contract.ts` and other `*.schema.*` or `*.contract.*` files |
 
 A generated test asserts its schema or contract, never a recorded result of
@@ -298,7 +299,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 |---|---|
 | Pull request or push to `develop` or `main` | `pnpm verify --continue`: build, types, tests, browser tests, all checks, ESLint, Stylelint, Knip, Madge, jscpd and selftest |
 | Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `develop` |
-| A `v*` tag (`release.yml`) | Build, `pnpm pack`, `pnpm selftest` read from the shared cache, and the tarball attached to a GitHub release |
+| Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
 run keeps `test/counterexamples/` and `test/__traces__/`, where a broken
