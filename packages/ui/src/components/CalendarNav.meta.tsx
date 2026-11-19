@@ -11,7 +11,7 @@ export const meta: ComponentMeta<CalendarNavProps> = {
     onNext: fn(),
     onModeChange: fn(),
   },
-  examples: { Month: { period: "November 2026", mode: "month" } },
+  examples: { Month: { period: "November 2026", mode: "month" }, Refused: { onPrevious: undefined, onNext: undefined } },
   decorator: onWindow,
   play: {
     Default: async ({ args, canvasElement }: { args: CalendarNavProps; canvasElement: HTMLElement }) => {
@@ -20,6 +20,11 @@ export const meta: ComponentMeta<CalendarNavProps> = {
       await expect(args.onNext).toHaveBeenCalled();
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(args.onModeChange).toHaveBeenCalledWith("month");
+    },
+    Refused: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByRole("button", { name: "Previous week" })).toBeDisabled();
+      await expect(canvas.getByRole("button", { name: "Next week" })).toBeDisabled();
     },
   },
 };

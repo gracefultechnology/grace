@@ -21,6 +21,7 @@ export const meta: ComponentMeta<CalendarEventDetailProps> = {
       when: "Monday, November 16 · 12 pm to 1:30 pm",
       reminder: "Reminder 1 hour before",
     },
+    "Edit and Delete refused": { onEdit: undefined, onDelete: undefined },
     Bill: {
       ...doctor,
       who: undefined,
@@ -36,6 +37,12 @@ export const meta: ComponentMeta<CalendarEventDetailProps> = {
     Default: async ({ args, canvasElement }: { args: CalendarEventDetailProps; canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete" }));
       await expect(args.onDelete).toHaveBeenCalled();
+    },
+    "Edit and Delete refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText("Saturday, November 14 · 10 am to 11 am")).toBeTruthy();
+      await expect(canvas.queryByRole("button", { name: "Edit" })).toBeNull();
+      await expect(canvas.queryByRole("button", { name: "Delete" })).toBeNull();
     },
     "Reminder showing": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);

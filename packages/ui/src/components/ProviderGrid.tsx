@@ -41,7 +41,7 @@ const defaultLabels = {
 export type ProviderGridProps = Omit<ComponentProps<"div">, "children"> & {
   /** The companies to offer, in order. */
   providers?: readonly EmailProvider[];
-  /** Called with the company she taps. */
+  /** Called with the company she taps; without it the tiles are shown but not offered. */
   onChoose?: (provider: EmailProvider) => void;
   /** Only the tiles, without the question above them or the help below (prototype Add an email). */
   bare?: boolean;
@@ -65,7 +65,7 @@ export function ProviderGrid({ providers = allProviders, onChoose, bare = false,
       <div className={cn("grid grid-cols-2 gap-3", bare ? "mt-4" : "mt-3")}>
         {providers.map((provider) => {
           const { name, subtitle } = emailProviders[provider];
-          const row = <ListRow className="min-h-[84px]" leading={<ProviderTile provider={provider} />} title={name} subtitle={subtitle} onClick={() => onChoose?.(provider)} />;
+          const row = <ListRow className="min-h-[84px]" leading={<ProviderTile provider={provider} />} title={name} subtitle={subtitle} onClick={onChoose && (() => onChoose(provider))} />;
           return <Fragment key={provider}>{guided(guide, provider, row, { radius: 22, placement: "below", className: "flex [&>div]:flex-1" })}</Fragment>;
         })}
       </div>

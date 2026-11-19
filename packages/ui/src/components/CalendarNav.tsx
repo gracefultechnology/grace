@@ -13,9 +13,9 @@ export type CalendarNavProps = ComponentProps<"div"> & {
   mode: CalendarMode;
   /** Called with the view a person chooses. */
   onModeChange?: (mode: CalendarMode) => void;
-  /** Goes to the period before. */
+  /** Goes to the period before; without it ‹ is drawn disabled. */
   onPrevious?: () => void;
-  /** Goes to the period after. */
+  /** Goes to the period after; without it › is drawn disabled. */
   onNext?: () => void;
   /** The accessible name of ‹: "Previous week". */
   previousLabel?: string;
@@ -48,11 +48,11 @@ export function CalendarNav({
   const arrow = { size: 28, strokeWidth: 2.4, "aria-hidden": true } as const;
   return (
     <div className={cn("flex items-center gap-3.5 font-sans", className)} {...props}>
-      <Button variant="capsule" size="pill-icon" className="text-chrome transition-none active:scale-96" aria-label={previousLabel} onClick={onPrevious}>
+      <Button variant="capsule" size="pill-icon" className="text-chrome transition-none active:scale-96" aria-label={previousLabel} disabled={!onPrevious} onClick={onPrevious}>
         <ChevronLeft {...arrow} />
       </Button>
       <h2 className="m-0 text-title leading-[34px] font-bold text-chrome">{period}</h2>
-      <Button variant="capsule" size="pill-icon" className="text-chrome transition-none active:scale-96" aria-label={nextLabel} onClick={onNext}>
+      <Button variant="capsule" size="pill-icon" className="text-chrome transition-none active:scale-96" aria-label={nextLabel} disabled={!onNext} onClick={onNext}>
         <ChevronRight {...arrow} />
       </Button>
       <span className="flex-1" />

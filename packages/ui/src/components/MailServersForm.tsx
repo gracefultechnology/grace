@@ -63,7 +63,7 @@ export function MailServersForm({
   return (
     <form aria-label="Mail settings" onSubmit={submit} className={cn("font-sans", className)} {...props}>
       <PageText tone="secondary">
-        The tablet couldn’t find the mail settings for {domain} by itself. Your email company lists them on its help page, or Grace can look them up.
+        The tablet couldn’t find the mail settings for {domain} by itself. Your email company lists them on its help page, and Grace can explain what they are.
       </PageText>
       {refused && (
         <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-4 max-w-[620px]">

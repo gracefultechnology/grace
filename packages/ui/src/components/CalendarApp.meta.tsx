@@ -197,9 +197,12 @@ export const meta: ComponentMeta<CalendarAppProps> = {
   },
   examples: {
     Month: { view: "month", nav: { period: "November 2026" } },
-    Tagged: { upcoming: taggedUpcoming },
+    "Grace points at an appointment": {
+      upcoming: taggedUpcoming,
+      guide: { targetId: doctor.id, kind: "instruction", title: "Tap Doctor’s appointment", onClose: fn() },
+    },
     "With connect banner": { banner: connectBanner },
-    Detail: { view: "detail" },
+    Detail: { view: "detail", event: { ...detail, onEdit: fn(), onDelete: fn() } },
     Form: { view: "form" },
     "Form, picking a time": {
       view: "form",
@@ -231,6 +234,11 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       await expect(openEvent).toHaveBeenCalledWith("1");
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
+    },
+    "Grace points at an appointment": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText("Tap Doctor’s appointment")).toBeTruthy();
+      await expect(canvas.getByRole("button", { name: /Doctor’s appointment/ })).toBeTruthy();
     },
     "Today and Add refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);

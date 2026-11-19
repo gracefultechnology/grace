@@ -11,6 +11,7 @@ export const meta: ComponentMeta<ProviderGridProps> = {
   examples: {
     "Add an email": { bare: true },
     "Ask Grace refused": { onAskGrace: undefined },
+    "Choosing refused": { onChoose: undefined },
     "Grace points at Outlook": { guide: { targetId: "outlook", kind: "instruction", title: "Tap Outlook", onClose: fn() } },
   },
   decorator: settingsPage,
@@ -27,6 +28,12 @@ export const meta: ComponentMeta<ProviderGridProps> = {
       const canvas = within(canvasElement);
       await expect(canvas.getByText("Not sure which?")).toBeTruthy();
       await expect(canvas.queryByRole("button", { name: "Ask Grace" })).toBeNull();
+    },
+    "Choosing refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText("Outlook")).toBeTruthy();
+      await expect(canvas.queryByRole("button", { name: /Outlook/ })).toBeNull();
+      await expect(canvas.queryByRole("button", { name: "Other email" })).toBeNull();
     },
     "Add an email": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
