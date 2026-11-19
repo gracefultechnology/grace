@@ -1,4 +1,5 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"
+import { sendsHerVoice } from "../gen/app__conversation.effect.vibe"
 import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
@@ -132,6 +133,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   let ready = false
   let speaking: number | null = null
   let paused = false
+  let sending = false
 
   effect function stopPlayback() {
     if (speaking === null) return
@@ -145,10 +147,11 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     const { conversation } = state.assistant
     const prefs = state.preferences.session
     try Effect.try(() => speaker.volume(prefs.muted || !prefs.voiceOutput ? 0 : prefs.volume / 100))
-    if (conversation.voice && mayOfferTalk(state)) {
+    sending = sendsHerVoice(conversation) && mayOfferTalk(state)
+    if (sending) {
       const device = try Ref.get(mic)
       if (device) try Effect.try(() => device.attach((pcm) => {
-        if (socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
+        if (sending && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
       }))
     }
     if (!prefs.voiceOutput || prefs.muted || prefs.volume === 0) {
