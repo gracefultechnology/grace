@@ -1213,13 +1213,17 @@ lemma lawATabIsWhereItsLoadEnded_ensures(w: Workspace, loadReport: LoadReport, b
     var after := app__browser_finishPageLoad(b, id, loadReport.version, loadReport.result, loadReport.secure, endedAt);
     ProofLib.FilterPointwise((t: app__browser_Tab) => (t.id == id), (t: app__browser_Tab) => (t.id == id),
       (x: app__browser_Tab, y: app__browser_Tab) => (x.id == id ==> y == app__browser_endedAtCursor(x, endedAt).(load := loadReport.result, secure := loadReport.secure && loadReport.result == app__browser_Load.Loaded)), b.tabs, after.tabs);
+    var received := receiveLoad(w, loadReport, by_).browser;
+    assert received.tabs == after.tabs;
     BrowserLookupFilter(b, id);
     BrowserLookupFilter(after, id);
+    BrowserLookupFilter(received, id);
     var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs);
+    var witness :| witness in b.tabs && witness.id == id;
+    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, witness);
     var found := matches[|matches|-1];
     ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, found);
     app__browser_lawALoadRecordsWhereItEnded_ensures(found, endedAt);
-    assert receiveLoad(w, loadReport, by_).browser.tabs == after.tabs;
   }
 }
 
