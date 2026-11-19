@@ -958,7 +958,7 @@ reason and its checkpoint. When the step the task needs, at the current
 observation, is one Grace may not take, because it is out of her reach or is
 the person's to tap, the task is blocked for the person with that step named,
 and an approved payment review on the old page is no longer current, also
-when the step left to her is a payment's own pay button. Either
+when the step left to the person is a payment's own pay button. Either
 way Grace's visible work waits for the person and fences older reports, so
 she continues only after the person chooses Continue and a fresh observation
 on the task's own origin arrives. Neither changes the conversation.
