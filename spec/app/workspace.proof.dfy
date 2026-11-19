@@ -1379,6 +1379,50 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
   }
 }
 
+lemma ChangePageInvariant(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  requires inv(w)
+  requires canChangePage(w, browserInput, by_)
+  ensures inv(changePage(w, browserInput, by_))
+{
+  ComponentInvariants(w);
+  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
+  app__browserControls_lawControlsPreserveBrowser_ensures(w.browser, browserInput, actor);
+  app__browserControls_lawRecentEditsKeepPage_ensures(w.browser, browserInput, actor);
+  var browser := app__browserControls_control(w.browser, browserInput, actor);
+  if browser.revision != w.browser.revision {
+    InterruptedInvariant(w.device, browser, w);
+  } else {
+    BrowserControlKeepsPage(w.browser, browserInput, actor);
+  }
+  var updated := if browser.revision != w.browser.revision then interrupted(w.device, browser, w) else w.(browser := browser, wake := app__wake_cancel(w.wake, app__wake_WakeActor.WakeHost));
+  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  assert inv(updated);
+  var keyboard := if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser)
+    then app__assistant_KeyboardOwner.WebsiteKeyboard
+    else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard
+    then app__assistant_KeyboardOwner.NoKeyboard else updated.assistant.keyboard;
+  KeyboardInvariant(updated, keyboard);
+  assert changePage(w, browserInput, by_) == updated.(assistant := updated.assistant.(keyboard := keyboard));
+}
+
+lemma ChangePageTransitionFacts(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  requires inv(w)
+  requires canChangePage(w, browserInput, by_)
+  ensures stepInterruptionsKeepTask(w, "changePage", changePage(w, browserInput, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "changePage", changePage(w, browserInput, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, changePage(w, browserInput, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "changePage", changePage(w, browserInput, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "changePage", changePage(w, browserInput, by_))
+{
+  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
+  var browser := app__browserControls_control(w.browser, browserInput, actor);
+  if browser.revision != w.browser.revision {
+    assert changePage(w, browserInput, by_).commitment == quietCommitment(w.commitment);
+  } else {
+    assert changePage(w, browserInput, by_).commitment == w.commitment;
+  }
+}
+
 lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentAssociation(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysPausedCommitmentCannotSubmit(changePage(w, browserInput, by_)))
@@ -1405,27 +1449,12 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "changePage", changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changePage", changePage(w, browserInput, by_)))
 {
-if inv(w) && canChangePage(w, browserInput, by_) {
-  ComponentInvariants(w);
-  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
-  app__browserControls_lawControlsPreserveBrowser_ensures(w.browser, browserInput, actor);
-  app__browserControls_lawRecentEditsKeepPage_ensures(w.browser, browserInput, actor);
-  var browser := app__browserControls_control(w.browser, browserInput, actor);
-  if browser.revision != w.browser.revision {
-    InterruptedInvariant(w.device, browser, w);
-  } else {
-    BrowserControlKeepsPage(w.browser, browserInput, actor);
+  hide *;
+  reveal inv;
+  if inv(w) && canChangePage(w, browserInput, by_) {
+    ChangePageInvariant(w, browserInput, by_);
+    ChangePageTransitionFacts(w, browserInput, by_);
   }
-  var updated := if browser.revision != w.browser.revision then interrupted(w.device, browser, w) else w.(browser := browser, wake := app__wake_cancel(w.wake, app__wake_WakeActor.WakeHost));
-  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
-  assert inv(updated);
-  var keyboard := if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser)
-    then app__assistant_KeyboardOwner.WebsiteKeyboard
-    else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard
-    then app__assistant_KeyboardOwner.NoKeyboard else updated.assistant.keyboard;
-  KeyboardInvariant(updated, keyboard);
-  assert changePage(w, browserInput, by_) == updated.(assistant := updated.assistant.(keyboard := keyboard));
-}
 }
 
 lemma initialHolds_ensures()
