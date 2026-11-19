@@ -35,7 +35,7 @@ function joinedFragments(lines: readonly string[]): string[] {
   }, []);
 }
 
-export function statementLabels(text: string): Labeled[] {
+function statementLabels(text: string): Labeled[] {
   const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
   return lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
     const fact = facts.find((name) => match.groups?.[name] !== undefined);
