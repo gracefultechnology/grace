@@ -1219,8 +1219,8 @@ lemma lawATabIsWhereItsLoadEnded_ensures(w: Workspace, loadReport: LoadReport, b
     BrowserLookupFilter(after, id);
     BrowserLookupFilter(received, id);
     var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs);
-    var witness :| witness in b.tabs && witness.id == id;
-    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, witness);
+    var holder :| holder in b.tabs && holder.id == id;
+    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, holder);
     var found := matches[|matches|-1];
     ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, found);
     app__browser_lawALoadRecordsWhereItEnded_ensures(found, endedAt);
