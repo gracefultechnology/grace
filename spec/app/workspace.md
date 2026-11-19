@@ -31,9 +31,9 @@ Discovered by the proof: every retained plan step has a named subject and
 nonempty outcome, so the next instruction still exists after a receipt.
 The workspace also retains the component rules for a loaded page's security,
 the assistant's visible work, guidance and conversation offers, and the
-execution's verified observation context. Discovered by the proof: retained
-website facts have a source quotation, and a queued step must still be one
-Grace may take. The workspace keeps the same rules as the execution it holds.
+execution's verified observation context, including its quoted page facts
+and that a queued step is one Grace may take herself. The workspace keeps the
+same rules as the execution it holds.
 
 ```quint
 import shell as S from "./shell"
@@ -954,18 +954,24 @@ pure def prepare(w: Workspace, operationRequest: OperationRequest, by: Workspace
 
 An observation that arrives on every current version but reads a page on
 another origin than the task's is not dropped: the task is blocked with that
-reason until a fresh observation on its own origin. When the step the task
-needs, at the current observation, is one Grace may not take, because it is
-out of her reach or is the person's to tap, the task is blocked for the
-person with that step named, and an approved payment review on the old page
-is no longer current. Neither changes the conversation; Grace continues
-only on a fresh observation.
+reason and its checkpoint. When the step the task needs, at the current
+observation, is one Grace may not take, because it is out of her reach or is
+the person's to tap, the task is blocked for the person with that step named,
+and an approved payment review on the old page is no longer current. Either
+way Grace's visible work waits for the person and fences older reports, so
+she continues only after the person chooses Continue and a fresh observation
+on the task's own origin arrives. Neither changes the conversation.
 
 ```quint
 pure def canRefuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
   observationArrives(w, currentObservation, by) and X::canRefuseOrigin(w.execution, currentObservation.website, X::BrowserBridge)
-pure def refuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace =
-  { ...w, execution: X::refuseOrigin(w.execution, currentObservation.website, X::BrowserBridge) }
+pure def waitForPerson(a: A::Assistant, checkpoint: str): A::Assistant =
+  { ...a, activity: A::UserWait, checkpoint: checkpoint, operation: "", workVersion: a.workVersion + 1 }
+pure def refuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace = {
+  ...w, execution: X::refuseOrigin(w.execution, currentObservation.website, X::BrowserBridge),
+  assistant: waitForPerson(w.assistant, currentObservation.checkpoint),
+  observedDevice: currentObservation.deviceVersion, observedBrowser: currentObservation.browserRevision
+}
 pure def canLeaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): bool =
   by == Host and mayAssist(w) and observationIsCurrent(w) and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   operationRequest.deviceVersion == w.device.contextVersion and operationRequest.browserRevision == w.browser.revision and
@@ -974,12 +980,13 @@ pure def canLeaveToPerson(w: Workspace, operationRequest: OperationRequest, by: 
   X::canLeaveToPerson(w.execution, operationRequest.target, X::BrowserBridge)
 pure def leaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): Workspace = {
   ...w, execution: X::leaveToPerson(w.execution, operationRequest.target, X::BrowserBridge),
+  assistant: waitForPerson(w.assistant, w.assistant.checkpoint),
   commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment
 }
 pure def sometimesOtherOriginBlocksTask(w: Workspace): bool =
-  A::unfinished(w.assistant) and X::sometimesOtherOriginRefused(w.execution)
+  w.assistant.activity == A::UserWait and X::sometimesOtherOriginRefused(w.execution)
 pure def sometimesStepLeftToPerson(w: Workspace): bool =
-  A::unfinished(w.assistant) and X::sometimesOutOfReachStepIsThePersons(w.execution)
+  w.assistant.activity == A::UserWait and X::sometimesOutOfReachStepIsThePersons(w.execution)
 ```
 
 ### Dispatch checks the context again and readback establishes the result
@@ -1050,9 +1057,10 @@ A successfully verified step does not itself complete the person's goal.
 The trusted domain integration separately reports that the requested goal
 has been fulfilled, with nonempty endpoint evidence and the same owner,
 task, goal, page, device and operation versions. The report counts only
-when the current observation of the page, taken after the last step,
-carries the goal's own fact with its quote; a report from the host with no
-quoted fact establishes nothing. That report retires the
+when the current observation of the page carries the goal's own fact with
+its quote; a report from the host with no quoted fact establishes nothing.
+No step is required first: a goal that only reads the page finishes on the
+observation that quotes it. That report retires the
 ordinary controller and permits a later task without labelling this one
 abandoned. An attached payment must use its durable payment-result path;
 an ordinary completion report cannot bypass its unresolved ledger.
@@ -1610,6 +1618,7 @@ pure val currentObservationValues = Set(observed,
   { ...observed, browserRevision: 4, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 5, taskVersion: 3,
     website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } },
+  { ...observed, taskVersion: 3, checkpoint: "Back on the account page", website: { ...X::goodObservation, generation: 3 } },
   { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } },
   { ...observed, taskVersion: 2, checkpoint: "Account read",
     website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } },
