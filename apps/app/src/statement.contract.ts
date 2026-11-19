@@ -1,7 +1,7 @@
 // spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"
 import { Arbitrary, Schema } from "effect";
 import { contract } from "vibestack/testing";
-import { type Labeled, type StatementFact, statementLabels } from "./statement.vibe";
+import { type Labeled, type StatementFact, statementLabels } from "./statementLabels.ts";
 
 const amountLabels = ["Total amount due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "New Balance", "Statement balance", "Your amount due", "AMOUNT DUE"] as const;
 const remainingLabels = ["Remaining statement balance", "Remaining balance due", "Remaining Balance"] as const;
