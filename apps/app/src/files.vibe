@@ -40,14 +40,12 @@ export service FileStorage { readonly port: FilesPort | undefined }
 export const fileStorage = (native: boolean, port: FilesPort | undefined) => Layer.sync(FileStorage, () => ({ port: native ? port : browserFiles() }))
 
 export type SavedPhoto = { readonly file: SavedFile; readonly src?: string }
-export type DeviceSource = "camera" | "file"
 
 export service Library {
   readonly changes: Stream.Stream<FileState>
   get(): FileState!!
   save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, from: string): (FileFeedback | undefined)!!
   photos(): readonly SavedPhoto[]!!
-  capture(source: DeviceSource): (SavedFile | undefined)!!
 }
 export const library = Layer.effect(Library, effect {
   const { port } = try FileStorage
@@ -75,14 +73,6 @@ export const library = Layer.effect(Library, effect {
       const preview = Schema.decodeUnknownEffect(Preview)(try tryPromise(() => actual.preview({ lease, id: entry.id, page: 0, small: true }))) catch () => undefined
       return { file: savedFile(entry, owner, lease), src: preview?.id === entry.id ? preview.image : undefined }
     }, { concurrency: 3 })
-  }
-
-  effect function capture(source: DeviceSource) {
-    const { port: actual, owner, lease } = try leased()
-    const { capture, pick } = actual
-    const taking = source === "camera" ? capture && (() => capture({ lease })) : pick && (() => pick({ lease, kind: "pdf" }))
-    if (!taking) return undefined
-    return deviceFile(try Schema.decodeUnknownEffect(FileEntry)(try tryPromise(taking)), owner, lease)
   }
 
   effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, from: string) {
@@ -123,7 +113,6 @@ export const library = Layer.effect(Library, effect {
 
   return { changes: SubscriptionRef.changes(status), get: () => SubscriptionRef.get(status),
     save: effect (chosen, content, authorization, version, from) => serial.withPermit(scoped(save(chosen, content, authorization, version, from))) catch () => "WriteFailed" as const,
-    photos: effect () => scoped(photos()) catch () => [],
-    capture: effect (source) => scoped(capture(source)) catch () => undefined }
+    photos: effect () => serial.withPermit(scoped(photos())) catch () => [] }
 
 })

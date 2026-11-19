@@ -352,12 +352,17 @@ export const mailing = Layer.effect(Mail, effect {
       const box = shelf.mail(account.id) catch () => undefined
       return box === undefined ? [] : [{ account: account.id, mailbox: try box.get() }]
     })
+    if (sources.flat().some((source) => source.mailbox.composeVisible)) return false
     const id = startFrom(a, sources.flat(), "")
     const box = shelf.mail(id) catch () => undefined
     const m = box === undefined ? undefined : try box.get()
     if (box === undefined || m === undefined || !enabled(m, { type: "startDraft", reply: false }, "MailUser")) return false
     const placed = place(box, { ...emptyContent, subject: "A photo" }, [photo]) catch () => false
     if (placed) post({ sharing: id })
+    else {
+      quiet.add(id)
+      box.send({ type: "discardDraft", confirmed: true }, "MailUser") catch () => quiet.delete(id)
+    }
     return placed
   }
 

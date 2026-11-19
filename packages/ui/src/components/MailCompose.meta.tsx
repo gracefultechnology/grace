@@ -30,7 +30,7 @@ export const meta: ComponentMeta<MailComposeProps> = {
     onSubjectChange: fn(),
     onBodyChange: fn(),
     onRemoveAttachment: fn(),
-    onAttach: fn(),
+    onAttach: { camera: fn(), photos: fn(), file: fn() },
     onDiscard: fn(),
     onBack: fn(),
     onClose: fn(),

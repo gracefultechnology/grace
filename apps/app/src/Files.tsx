@@ -81,7 +81,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   }
 
   const { model } = snapshot;
-  const now = new Date();
+  const now = new Date(snapshot.listedAt);
   const selected = fileAt(model, model.selected);
   const photos = model.entries.filter((entry) => entry.kind === "Photo");
   const documents = model.entries.filter((entry) => entry.kind === "Pdf");
@@ -105,7 +105,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
         last={!enabled(model, { type: "movePhoto", direction: 1 }, "FileUser")}
         onPrevious={() => run({ kind: "photo", direction: -1 })} onNext={() => run({ kind: "photo", direction: 1 })}
         onShare={share} onDelete={remove}
-        deleteError={deleteFailed ? "This photo wasn’t deleted." : unshared === selected.id ? "This photo couldn’t be shared. Finish the email you’re writing first." : undefined}
+        deleteError={deleteFailed ? "This photo wasn’t deleted." : unshared === selected.id ? "This photo couldn’t be shared." : undefined}
         onRetryDelete={deleteFailed ? remove : share} />;
     }
     return <PdfViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} pageLabel={`Page ${model.page} of ${selected.pages}`}

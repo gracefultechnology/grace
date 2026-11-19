@@ -1,9 +1,9 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "The visible Send button approves exactly the composer the user sees"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "From offers each account that has Email on and can send"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
 import {
-  Dialog, DialogActions, DialogContent, DialogTitle, FileTile, type Guide, type MailAttachSource, type MailComposeTarget, type MailContact, MailCompose,
+  Dialog, DialogActions, DialogContent, DialogTitle, FileTile, type MailContact, MailCompose,
   type MailPhoto, type MailRecipientField, MailRecipientPicker, type MailSendStatus, PageText, Button,
 } from "@repo/ui";
-import { Effect, Exit, Option } from "effect";
+import { Effect, Exit } from "effect";
 import { Suspense, use, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import { type DraftContent, emptyContent, enabled, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
@@ -11,7 +11,7 @@ import { canMoveDraft, contactAccounts, fromChoices, type MailSource, sourceOf, 
 import type { Contact } from "./connector.vibe";
 import type { SavedFile } from "../gen/app__files.ts";
 import { Library, type SavedPhoto } from "./files.vibe";
-import { Mail, recipientsOf, recipientsValid } from "./mail.vibe";
+import { recipientsOf, recipientsValid } from "./mail.vibe";
 import { type MailInstance, type MailWriter, useRuntime } from "./useApp.ts";
 
 export type Picking = { readonly field: MailRecipientField; readonly query: string };
@@ -74,7 +74,6 @@ export type EmailComposeProps = {
   mail: MailWriter;
   sender: (box: MailInstance) => string;
   frame: Frame;
-  guide?: Guide<MailComposeTarget>;
 };
 
 function PhotoChoice({ photos, onChoose }: { photos: Promise<readonly SavedPhoto[]>; onChoose: (file: SavedFile) => void }) {
@@ -88,7 +87,7 @@ function PhotoChoice({ photos, onChoose }: { photos: Promise<readonly SavedPhoto
 }
 
 /** @model spec/app/email.md */
-export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking, mail, sender, frame, guide }: EmailComposeProps) {
+export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking, mail, sender, frame }: EmailComposeProps) {
   const runtime = useRuntime();
   const people = use(mail.contacts(contactAccounts(registry).join(",")));
   const [choosing, setChoosing] = useState<Promise<readonly SavedPhoto[]>>();
@@ -146,12 +145,7 @@ export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking,
   const settling = Object.values(typed).some((t) => t !== undefined);
   const sendable = !settling && recipientsValid(m.draft) && box.can({ type: "confirmVisibleSend", revision: m.revision });
   const retry = undeleted ? throwAway : keep;
-  const writer = Option.getOrUndefined(runtime.runSync(Effect.serviceOption(Mail)));
-  const attach = (file: SavedFile | undefined) => file && writer && runtime.runPromise(writer.attach(box.id, file));
-  const attachFrom = (source: MailAttachSource) => {
-    if (source === "photos") return setChoosing(runtime.runPromise(Effect.flatMap(Library, (files) => files.photos())));
-    void runtime.runPromise(Effect.flatMap(Library, (files) => files.capture(source))).then(attach);
-  };
+  const choosePhoto = () => setChoosing(runtime.runPromise(Effect.flatMap(Library, (files) => files.photos())));
 
   return (
     <>
@@ -171,8 +165,7 @@ export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking,
       draftError={m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
       onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
-      onAttach={editable ? attachFrom : undefined}
-      guide={guide}
+      onAttach={editable ? { photos: choosePhoto } : undefined}
       {...frame}
       onClose={frame.onClose && (() => { void leave(box, mail.hush); frame.onClose?.(); })} />
     <Dialog open={choosing !== undefined} onOpenChange={(open) => { if (!open) setChoosing(undefined); }}>
@@ -180,7 +173,7 @@ export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking,
         <DialogTitle>Choose from Photos</DialogTitle>
         {choosing && (
           <Suspense fallback={<PageText role="status">Opening your photos…</PageText>}>
-            <PhotoChoice photos={choosing} onChoose={(file) => { setChoosing(undefined); if (editable) void attach(file); }} />
+            <PhotoChoice photos={choosing} onChoose={(file) => { setChoosing(undefined); if (editable) void mail.attach(box.id, file); }} />
           </Suspense>
         )}
         <DialogActions><Button variant="capsule" size="pill" onClick={() => setChoosing(undefined)}>Cancel</Button></DialogActions>
