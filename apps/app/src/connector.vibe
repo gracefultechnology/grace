@@ -251,7 +251,7 @@ function sendOutcome(r: Receipt): SendOutcome {
   return match (r.state) {
     when "succeeded": r.providerResult?.messageId === undefined ? outcome("SendUnknown", "") : outcome("Sent", `message:${r.providerResult.messageId}`);
     when "rejected": outcome("SendFailed", `rejected:${r.rejectionCode ?? ""}`);
-    when "prepared": outcome("SendFailed", "not-sent");
+    when "prepared": outcome("SendUnknown", "");
     when "dispatched": outcome("SendUnknown", "");
     when "outcome-unknown": outcome("SendUnknown", "");
   }
@@ -354,7 +354,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     effect function lookup(operationId: string) {
       return looked(operationId) catch effect (e) => match (e) {
         when NeedsSignIn: throw e;
-        when ProviderRefused: e.status === 404 ? outcome("SendFailed", "not-sent") : outcome("SendUnknown", "");
+        when ProviderRefused: outcome("SendUnknown", "");
         when Unreachable: outcome("SendUnknown", "");
       }
     }
@@ -412,10 +412,24 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         }
       },
       send: effect (operationId, snapshot) => {
-        const sent = effect { return sendOutcome(try operate(requestOf(`send:${operationId}`), try outgoing(snapshot))) }
-        return sent catch effect (e) => match (e) {
+        const requestId = requestOf(`send:${operationId}`)
+        const preflight = effect {
+          const grantId = try grantOf(account)
+          const proposal = try outgoing(snapshot)
+          const { receipt } = try fetched(post(`${at}/inbox-v1/operations`, { grantId, requestId, proposal }), Operation)
+          if (receipt.state !== "prepared") return { kind: "receipt" as const, result: sendOutcome(receipt) }
+          const request = try post(`${at}/inbox-v1/operations/${requestId}/dispatch`, { grantId, reviewDigest: receipt.reviewDigest, proposal })
+          return { kind: "dispatch" as const, request }
+        }
+        const next = preflight catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          when ProviderRefused: e.status === 409 || !certain(e) ? try lookup(operationId) : outcome("SendFailed", `refused:${e.status}`);
+          when ProviderRefused: { kind: "receipt" as const, result: outcome("SendFailed", `preflight-refused:${e.status}`) };
+          when Unreachable: { kind: "receipt" as const, result: outcome("SendFailed", "preflight-unreachable") };
+        }
+        if (next.kind === "receipt") return next.result
+        return Effect.map(fetched(Effect.succeed(next.request), Operation), ({ receipt }) => sendOutcome(receipt)) catch effect (e) => match (e) {
+          when NeedsSignIn: throw e;
+          when ProviderRefused: try lookup(operationId);
           when Unreachable: outcome("SendUnknown", "");
         }
       },
