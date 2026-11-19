@@ -4,6 +4,7 @@ import { cn } from "@repo/ui";
 import { Effect } from "effect";
 import { type ComponentProps, type ReactNode, createContext, use, useCallback, useMemo, useState } from "react";
 import { PageHost, Part } from "./page.vibe";
+import { androidHost } from "./surfacePlugin.ts";
 import { type Runtime, usePageLayer } from "./useApp.ts";
 import { websites } from "./webPage.vibe";
 
@@ -43,7 +44,7 @@ const adopt = (element: HTMLDivElement | null) => { element?.append(websites); }
 
 export function PageBackdrop({ className }: { className?: string }) {
   const layer = usePageLayer();
-  const page = layer?.shown ? layer.page : undefined;
+  const page = androidHost && layer?.shown ? layer.page : undefined;
   const hole = page && `M${page.x} ${page.y}H${page.x + page.width}V${page.y + page.height - r}A${r} ${r} 0 0 1 ${page.x + page.width - r} ${page.y + page.height}H${page.x + r}A${r} ${r} 0 0 1 ${page.x} ${page.y + page.height - r}Z`;
   return (
     <>
