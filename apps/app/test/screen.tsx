@@ -1,18 +1,26 @@
-import { Effect } from "effect";
+import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
 import { page } from "vitest/browser";
 import { allowedUse, chooseProvider, initial, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Setup } from "../gen/app__setup.effect.vibe";
+import { application } from "../src/app.vibe";
+import type { CloudLink } from "../src/conversation.vibe";
 import { App } from "../src/App.tsx";
 import type { Runtime } from "../src/useApp.ts";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
-export function storedGmail(address: string) {
+export async function mountGmail(address: string, cloud: CloudLink) {
   const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
-  return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, "Gmail", "AccountConnector");
+  const connected = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, "Gmail", "AccountConnector");
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(connected));
+  onTestFinished(() => localStorage.clear());
+  const runtime = ManagedRuntime.make(application(undefined, undefined, cloud));
+  await mount(runtime);
+  return runtime;
 }
 
 export function actOnScreen() {
