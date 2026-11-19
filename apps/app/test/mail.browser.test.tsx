@@ -346,13 +346,13 @@ it("Write or reply and confirm before sending", async () => {
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
 });
 
-it('Allow a new approval only when the prior send could not have reached Gmail (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
+it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
   const { secret, host, company } = await start();
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(row("All inboxes 5")).toBeVisible();
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
-  await act(() => userEvent.fill(subject(), "Preflight unavailable"));
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
   await act(() => userEvent.fill(words(), "Please call me tomorrow."));
   const send = page.getByRole("button", { name: "Send", exact: true });
   const operations = async () => (await company()).changes.filter((c) => c.receipt.kind === "send");
@@ -373,7 +373,7 @@ it('Allow a new approval only when the prior send could not have reached Gmail (
   await host("Online");
   await expect.poll(async () => (await company()).sendLookups.includes("missing")).toBe(true);
   await expect.element(send).toBeDisabled();
-  expect((await company()).boxes.flatMap((box) => box.mail).filter((message) => message.subject === "Preflight unavailable" && message.labels.includes("SENT"))).toHaveLength(0);
+  expect((await company()).boxes.flatMap((box) => box.mail).filter((message) => message.subject === "Re: Reminder: your appointment tomorrow at 10 am" && message.labels.includes("SENT"))).toHaveLength(0);
   expect(await operations()).toHaveLength(previous + 1);
 });
 
