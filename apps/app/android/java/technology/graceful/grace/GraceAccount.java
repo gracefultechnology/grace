@@ -1,5 +1,6 @@
 package technology.graceful.grace;
 
+import ai.eliza.plugins.passwords.PasswordSurfaces;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import android.content.Context;
@@ -318,7 +319,13 @@ public final class GraceAccount extends Plugin {
  @PluginMethod public void startSpeech(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {
-    var speech = account(getContext()).startSpeech();
+    if (PasswordSurfaces.visible()) throw new IllegalStateException("Private surface active");
+    var device = account(getContext());
+    var speech = device.startSpeech();
+    if (PasswordSurfaces.visible()) {
+     device.stopSpeech(speech.sessionId());
+     throw new IllegalStateException("Private surface active");
+    }
     call.resolve(new JSObject().put("version", 1).put("sessionId", speech.sessionId()).put("token", speech.token())
        .put("expiresAt", speech.expiresAt()).put("wsUrl", speech.wsUrl()));
    } catch (Exception unavailable) { call.reject("Speech is unavailable"); }

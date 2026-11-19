@@ -23,6 +23,7 @@ error SpeechUnavailable
 type InputFrame = { kind: "context" } | { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
   { kind: "received"; payload: unknown } | { kind: "played"; token: number }
 
+type VoiceCapture = { microphone: Microphone; guide?: { person: string; ticket: number } }
 type VoiceUse = "talk" | "command" | "instructions"
 export type VoiceNotice = { scope: string | undefined; use: VoiceUse }
 
@@ -134,13 +135,14 @@ effect function speechConnection(native: boolean) {
   return { lease, socket }
 }
 
-effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>) {
+effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<VoiceCapture | null>) {
   const passwords = try Passwords
   const view = try PasswordViews
   const setup = try Setup
   const current = try workspace.get()
   const card = localPasswordCommands(current.device)
-  const person = try voiceNoticeScope(native, setup)
+  const capture = try Ref.get(mic)
+  const person = capture?.guide?.person
   const initialView = try view.get()
   const passwordOwner = initialView.generation
   const ticket = initialView.guideMicEpoch
@@ -152,7 +154,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   }
   const sameCard = (next: Workspace) => !privateSurfaceActive(next) && localPasswordCommands(next.device) === card &&
     (!card || next.device.contextVersion === current.device.contextVersion && currentPerson() && Effect.runSync(view.get()).guideMicEpoch === ticket)
-  if (card && (!person || !currentPerson())) throw new SpeechUnavailable()
+  if (card && (!person || capture?.guide?.ticket !== ticket || (try voiceNoticeScope(native, setup)) !== person || !currentPerson())) throw new SpeechUnavailable()
   const { lease, socket } = try speechConnection(native)
   if (!speechWanted(try workspace.get()) || !sameCard(try workspace.get())) return
   const speaker = try acquireRelease(Effect.try(gracePlayback), (player) => Effect.ignore(tryPromise(() => player.close())))
@@ -186,7 +188,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     sending = sendsHerVoice(conversation) && mayOfferTalk(state)
     if (sending) {
       const device = try Ref.get(mic)
-      if (device) try Effect.try(() => device.attach((pcm) => {
+      if (device) try Effect.try(() => device.microphone.attach((pcm) => {
         const now = Effect.runSync(workspace.get())
         if (sending && sameCard(now) && sendsHerVoice(now.assistant.conversation) && now.assistant.conversation.generation === conversation.generation && !webView.hidden() && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
       }))
@@ -347,11 +349,11 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
   const views = try PasswordViews
   const activeHelp = try Ref.make<Deferred.Deferred<void> | null>(null)
   const life = try Scope.Scope
-  const mic = try Ref.make<Microphone | null>(null)
+  const mic = try Ref.make<VoiceCapture | null>(null)
   const opening = try Semaphore.make(1)
   effect function closeMic() {
     const current = try Ref.getAndSet(mic, null)
-    if (current) try Effect.ignore(tryPromise(() => current.close()))
+    if (current) try Effect.ignore(tryPromise(() => current.microphone.close()))
   }
   effect function reportMic(allowed: boolean) {
     const { device } = try workspace.get()
@@ -465,7 +467,7 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
       }
       try reportMic(true)
       const accepted = (workspace.send({ type: "talk" }, "Person") |> Effect.as(%, true)) catch () => false
-      if (accepted) try Ref.set(mic, opened)
+      if (accepted) try Ref.set(mic, { microphone: opened, guide: scope && pending ? { person: scope, ticket: pending.guideMicEpoch } : undefined })
       else {
         try finishGuide(pending?.guideMicEpoch, "GuideMicUnavailable")
         try Effect.ignore(tryPromise(() => opened.close()))
