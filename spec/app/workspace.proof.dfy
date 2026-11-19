@@ -108,6 +108,9 @@ lemma VisitTransitionFacts(w: Workspace, destination: app__shell_Surface, by_: W
 }
 
 lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRegistryIsCanonical(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentAssociation(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedCommitmentCannotSubmit(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOneTask(visit(w, destination, by_)))
@@ -121,9 +124,6 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysDeviceRules(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysBrowserRules(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysAssistantRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRegistryIsCanonical(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentUsesCanonicalIdentity(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCurrentBeforeAction(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentReviewUsesCurrentContext(visit(w, destination, by_)))
