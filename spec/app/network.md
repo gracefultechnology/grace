@@ -244,8 +244,8 @@ pure def canReportScan(n: NetworkJoin, by: NetworkActor): bool =
   by == OperatingSystem and n.discovery != ExplainingLocation
 pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): NetworkJoin = {
   val refused = if (n.locationAsked) LocationRefused else LocationAccessNeeded
-  val next = if (found != Found and n.phase != Selecting) cleared(n.version + 1, n) else n
-  { ...next, discovery: match found {
+  val selection = if (found != Found and n.phase != Selecting) cleared(n.version + 1, n) else n
+  { ...selection, discovery: match found {
     | RadioOff => WifiOff
     | NoLocationAccess => refused
     | LocationDisabled => LocationOff
