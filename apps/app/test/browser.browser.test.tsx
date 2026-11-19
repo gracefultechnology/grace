@@ -426,7 +426,7 @@ it.each(inject("billworldStatements"))('Read the $label BillWorld statement (spe
     await userEvent.click(check);
     await expect.element(complete).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Expand", exact: true }));
-    const answer = page.getByRole("region", { name: "Grace" }).getByText(/^Statement amount due:/);
+    const answer = page.getByRole("region", { name: "Task plan" }).getByRole("listitem");
     await expect.element(answer).toBeVisible();
     const grade = await transport({ kind: "answer", text: answer.element().textContent ?? "" });
     if (billerId === undefined) {
