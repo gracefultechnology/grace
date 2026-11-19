@@ -68,6 +68,136 @@ lemma CloseQuietWorkspace(w: Workspace)
   assert closed.activity == w.assistant.activity;
 }
 
+lemma CompactRailInvariant(w: Workspace, revealControls: bool)
+  requires inv(w)
+  ensures inv(makeRoomForRail(revealControls, w))
+{
+  if revealControls && w.assistant.presentation.Expanded? {
+    ComponentInvariants(w);
+    app__assistant_resize_ensures(w.assistant, false, app__conversation_ConversationActor.ConversationUser);
+    assert app__assistant_resize(w.assistant, false, app__conversation_ConversationActor.ConversationUser) ==
+      w.assistant.(presentation := app__assistant_Presentation.Compact);
+  }
+}
+
+lemma VisitInvariant(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  requires inv(w)
+  requires canVisit(w, destination, by_)
+  ensures inv(visit(w, destination, by_))
+{
+  ComponentInvariants(w);
+  var device := if app__shell_isTaskSurface(destination) then app__shell_openSurface(w.device, destination) else app__shell_openNative(w.device, destination);
+  if app__shell_isTaskSurface(destination) {
+    app__shell_openSurface_ensures(w.device, destination);
+  } else {
+    app__shell_openNative_ensures(w.device, destination);
+  }
+  InterruptedInvariant(device, w.browser, w);
+  CompactRailInvariant(interrupted(device, w.browser, w), destination.Home? || destination.DeviceSettings?);
+}
+
+lemma VisitTransitionFacts(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  requires inv(w)
+  requires canVisit(w, destination, by_)
+  ensures stepInterruptionsKeepTask(w, "visit", visit(w, destination, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "visit", visit(w, destination, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, visit(w, destination, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "visit", visit(w, destination, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "visit", visit(w, destination, by_))
+{
+}
+
+lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentAssociation(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedCommitmentCannotSubmit(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOneTask(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedTogether(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysRecordingHasPermission(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOperationHasVisibleTask(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysEvidenceVersionsAreNonnegative(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysWakeRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysActiveWakePausesWebsiteWork(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPreferencesRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysDeviceRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysBrowserRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysAssistantRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRegistryIsCanonical(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentUsesCanonicalIdentity(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCurrentBeforeAction(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentReviewUsesCurrentContext(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepInterruptionsKeepTask(w, "visit", visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepWakeNeverDispatchesWebsite(w, "visit", visit(w, destination, by_), []))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepEffectsRequireCurrentContext(w, visit(w, destination, by_), []))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "visit", visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepCommitmentSwitchRetainsRecords(w, "visit", visit(w, destination, by_)))
+{
+  hide *;
+  reveal inv;
+  if inv(w) && canVisit(w, destination, by_) {
+    VisitInvariant(w, destination, by_);
+    VisitTransitionFacts(w, destination, by_);
+  }
+}
+
+lemma PopoverInvariant(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  requires inv(w)
+  requires canTogglePopover(w, popover, by_)
+  ensures inv(togglePopover(w, popover, by_))
+{
+  ComponentInvariants(w);
+  app__shell_togglePopover_ensures(w.device, popover);
+  var device := app__shell_togglePopover(w.device, popover);
+  InterruptedInvariant(device, w.browser, w);
+  CompactRailInvariant(interrupted(device, w.browser, w), popover.WifiPopover?);
+}
+
+lemma PopoverTransitionFacts(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  requires inv(w)
+  requires canTogglePopover(w, popover, by_)
+  ensures stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_))
+{
+}
+
+lemma togglePopover_ensures(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentAssociation(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedCommitmentCannotSubmit(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOneTask(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedTogether(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysRecordingHasPermission(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOperationHasVisibleTask(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysEvidenceVersionsAreNonnegative(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysWakeRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysActiveWakePausesWebsiteWork(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPreferencesRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysDeviceRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysBrowserRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysAssistantRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysExecutionRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentRegistryIsCanonical(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentUsesCanonicalIdentity(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCurrentBeforeAction(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentReviewUsesCurrentContext(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), []))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), []))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_)))
+{
+  hide *;
+  reveal inv;
+  if inv(w) && canTogglePopover(w, popover, by_) {
+    PopoverInvariant(w, popover, by_);
+    PopoverTransitionFacts(w, popover, by_);
+  }
+}
+
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentAssociation(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysPausedCommitmentCannotSubmit(openGrace(w, by_)))
