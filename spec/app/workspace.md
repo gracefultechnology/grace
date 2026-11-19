@@ -1569,9 +1569,8 @@ pure val unexpectedValues = Set(
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
   { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
-  { id: 1, version: 1, result: B::Loaded, secure: false, endedAt: "http://utility.example" },
-  { id: 1, version: 1, result: B::LoadFailed, secure: false, endedAt: "https://utility.example" },
-  { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: "https://utility.example" })
+  { id: 1, version: 1, result: B::LoadFailed, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 3, result: B::Loaded, secure: false, endedAt: "https://utility.example" })
 pure val observed: CurrentObservation = {
   deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
