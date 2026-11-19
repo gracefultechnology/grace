@@ -5,7 +5,7 @@ import { type CalendarSource, type CalRow, changeOf, confirmationOf, deletionOf,
 import { type Machine as CalendarMachine, enabled, entryAt, hasEditing, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
-import { guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { enabled as admits, guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Watched } from "./accounts.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
 import { Instances, tablet, watchEach } from "./instances.vibe"
@@ -188,6 +188,7 @@ const device: Store = {
 export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
 export type CalendarNote = { readonly id: number; readonly row: string }
 export type Opening = "Occurrence" | "Reminder"
+export type Reminded = { readonly key: number; readonly id: string }
 
 export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
@@ -197,6 +198,7 @@ export service CalendarNews {
   open(key: number, id: string, how: Opening): void!!
   edit(key: number, id: string): void!!
   add(day: number): void!!
+  readonly reminderAt: (subject: string) => Reminded | undefined
 }
 
 const noteFor = "2600 millis"
@@ -284,7 +286,11 @@ function matchesGuidedApproval(key: number, c: Calendar, approval: GuidedCalenda
     draft.endAt === approval.ends && draft.timezone === approval.timezone && draft.location === approval.location && draft.notes === approval.notes
 }
 
-effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!, workspace: Workspaces.Shape) {
+const deletedBy = (host: NoticeHost.Shape) => effect (title: string) => {
+  host.raise({ source: "Calendar", offer: "NoOffer", subject: `Deleted ${title}` }) catch () => undefined
+}
+
+effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!, workspace: Workspaces.Shape, deleted: (title: string) => void!!) {
   const sent = try Ref.make<ReadonlySet<string>>(new Set())
   const last = try Ref.make<CalendarView | undefined>(undefined)
   effect function first(mark: string) {
@@ -315,8 +321,12 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     return { succeeded: receipt.succeeded, evidence: receipt.succeeded ? `moved:${plan.entry.identity.occurrenceId}` : "" }
   }
   effect function erased(v: CalendarView) {
+    try Console.log(`DEBUGERASE ${key} ${v.selectedId} ${removal(v).tag} ${v.scope}`)
     const result = try removedBy(v, removal(v))
-    box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
+    try Console.log(`DEBUGERASED ${result.succeeded} ${result.evidence}`)
+    const answered = Effect.as(box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore"), true) catch () => false
+    try Console.log(`DEBUGANSWERED ${answered}`)
+    if (answered && result.succeeded) try deleted(entryAt(v, v.selectedId).committed.title)
   }
   try Stream.runForEach(box.changes, effect (v) => {
     const before = try Ref.getAndSet(last, v)
@@ -357,8 +367,6 @@ const consented = (p: Pending): CalendarEvent | undefined => match (p.ask) {
   when { tag: "NoAsk" }: undefined;
 }
 
-type Reminded = { readonly key: number; readonly id: string }
-
 export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect {
   const connector = try Effect.serviceOption(Connector)
   const registry = try Accounts
@@ -372,7 +380,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const lead = try Effect.orDie(shelf.calendar(tablet))
 
   if ((try lead.get()).owner === "") lead.send({ type: "bindCalendar", owner: "tablet", calendarId: "tablet", timezone: zone() }, "ViewStore") catch () => undefined
-  try fork.scoped keep(tablet, lead, device, publish, spanOf(lead), workspace)
+  try fork.scoped keep(tablet, lead, device, publish, spanOf(lead), workspace, deletedBy(host))
 
   effect function boxOf(key: number) {
     return shelf.calendar(key) catch () => undefined
@@ -429,12 +437,9 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   effect function heard(report: CalendarReport) {
     if (!("told" in report) || report.told.news === "NoCalendarNews") return undefined
     const { news, key, id } = report.told
+    if (news === "DeletedAppointment") return undefined
     const box = try boxOf(key)
     const entry = box === undefined ? undefined : (try box.get()).entries.find((c) => c.identity.occurrenceId === id)
-    if (news === "DeletedAppointment") {
-      if (entry !== undefined) host.raise({ source: "Calendar", offer: "NoOffer", subject: `Deleted ${entry.committed.title}` }) catch () => undefined
-      return undefined
-    }
     host.raise({ source: "Calendar", offer: "NoOffer", subject: "Saved to your calendar" }) catch () => undefined
     if (news === "AddedAppointment" && box !== undefined && entry !== undefined) try selectDay([lead, box], dayOf(entry.committed.startAt))
     return `${key}/${id}`
@@ -466,8 +471,9 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       const taken = (try notices.get()).reminders
       let subject = label
       for (let i = 2; known.has(subject) || taken.includes(subject); i++) subject = `${label} (${i})`
+      known.set(subject, { key: r.key, id: r.identity.occurrenceId })
       const admitted = Effect.as(notices.send({ type: "remind", subject }, "App"), true) catch () => false
-      if (admitted) known.set(subject, { key: r.key, id: r.identity.occurrenceId })
+      if (!admitted) known.delete(subject)
     }
   }))
 
@@ -477,20 +483,20 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   try fork.scoped watchEach(registry.changes, (a) => a.accounts, (id) => shelf.calendar(id), follow)
   try fork.scoped Stream.runForEach(Stream.merge(registry.changes, lead.changes), () => noticeReminders)
 
-  effect function visitCalendar() {
-    workspace.send({ type: "visit", destination: "Calendar" }, "Person") catch () => undefined
-  }
+  const arrival = { type: "visit", destination: "Calendar" } as const
 
   effect function open(key: number, id: string, how: Opening) {
     const box = try boxOf(key)
-    if (box === undefined) return
+    const w = try workspace.get()
+    const arrive = w.device.surface !== "Calendar"
+    if (box === undefined || (arrive && !admits(w, arrival, "Person"))) return
     const plan = openingPlan(try lead.get(), try box.get(), key === tablet, dayOf(entryAt(try box.get(), id).committed.startAt), how, id)
     if (plan === undefined) return
     for (const { onLead, event } of plan) {
       const sent = Effect.as((onLead ? lead : box).send(event, "ViewUser"), true) catch () => false
       if (!sent) return
     }
-    try visitCalendar()
+    if (arrive) workspace.send(arrival, "Person") catch () => undefined
   }
 
   effect function edit(key: number, id: string) {
@@ -571,7 +577,8 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     add: effect (n) => {
       const id = `tablet-${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
       lead.send(adding(try lead.get(), n, id), "ViewUser") catch () => undefined
-    }
+    },
+    reminderAt: (subject) => known.get(subject)
   }
 })
 
@@ -581,6 +588,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
   const connector = try Connector
   const news = try CalendarNews
   const workspace = try Workspaces
+  const host = try NoticeHost
   const lead = try Effect.orDie(shelf.calendar(tablet))
 
   effect function watch(account: Account, box: CalendarMachine.Shape) {
@@ -604,7 +612,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
       Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch effect (cause) => try annotateLogs(logWarning("Calendar feed not fetched; asked again on sign-in, reconnection, opening Calendar or within 5 minutes", cause), { account: account.id })
       try repeat(box, span)
     })
-    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace), fill], { concurrency: "unbounded" }))
+    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace, deletedBy(host)), fill], { concurrency: "unbounded" }))
   }
 
   try fork.scoped watchEach(registry.changes, (a) => a.accounts.filter((x) => x.use.calendar), (id) => shelf.calendar(id), watch)
