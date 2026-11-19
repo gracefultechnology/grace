@@ -109,6 +109,9 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const failure = failures[active.load];
   const privateFailure = active.manualSignIn && active.load === "LoadFailed";
+  const fillNotice = guide === "FillPasswordGuide"
+    ? secureOrigin(tabUrl(active)) === "" ? "Open a secure website first." : "Ask Grace to use a saved password."
+    : undefined;
 
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
@@ -122,7 +125,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
-          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : guide === "FillPasswordGuide" && secureOrigin(tabUrl(active)) === "" ? "Open a secure website first." : undefined}
+          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>

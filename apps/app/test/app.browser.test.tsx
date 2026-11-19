@@ -660,14 +660,17 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   const runtime = ManagedRuntime.make(application(native.plugin));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  await askForPrivateSignIn(native, "use a saved password");
+  await expect.element(page.getByText("Open a secure website first.")).toBeVisible();
+  expect(native.calls("createSurface")).toEqual([]);
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal{Enter}"));
   await expect.poll(() => native.calls("createSurface").length).toBe(1);
   await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
   await expect.element(page.getByRole("button", { name: "Private sign-in", exact: true })).not.toBeInTheDocument();
-  await askForPrivateSignIn(native, "use my saved password");
+  await expect.element(page.getByText("Ask Grace to use a saved password.")).toBeVisible();
+  await askForPrivateSignIn(native, "fill my password");
   await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -699,7 +702,7 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const browserState = await signInPrivately(native);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
-  await askForPrivateSignIn(native, "use my saved password");
+  await askForPrivateSignIn(native, "use a saved password");
   const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
   await expect.element(unavailable).toBeVisible();
   await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");
