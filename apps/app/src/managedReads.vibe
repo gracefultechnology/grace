@@ -74,7 +74,9 @@ export type ManagedSnapshot =
   | Mail
   | Calendar
 
-type Command = { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string }
+type HomeOccurrence = { accountId: string; grant: string; id: string; version: string | null }
+type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
+type Command = { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
@@ -191,7 +193,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   const desk = try Workspaces
   const setup = try Setup
   const authorization = try AccountActions
-  const pending = try Ref.make(native ? undefined : (try intentOfPage()))
+  const pending = try Ref.make<ReadIntent | undefined>(native ? undefined : (try intentOfPage()))
   const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
   const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
   const gate = try Semaphore.make(1)
@@ -279,9 +281,18 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   }
 
   effect function refresh(scope: Scope) {
+    const home = try Ref.modify(pending, (intent) => {
+      if (!intent?.homeOccurrence) return [undefined, intent] as const
+      const { homeOccurrence, ...next } = intent
+      return [homeOccurrence, next] as const
+    })
     if (scope.kind !== "ready") return try SubscriptionRef.set(latest, scope)
     try SubscriptionRef.set(latest, { kind: "loading", view: scope.view, accountId: scope.accountId })
     const result = fetchPage(scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
+    if (home && result.kind === "calendar" && scope.accountId === home.accountId && scope.grant === home.grant && (try still(scope))) {
+      const selected = result.rows.find((row) => row.externalId === home.id && (row.etag ?? null) === home.version)
+      return try SubscriptionRef.set(latest, { ...result, selected })
+    }
     const intent = try Ref.get(pending)
     if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
       const occurrence = intent.occurrence
@@ -297,6 +308,20 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   }
 
   effect function send(command: Command) {
+    if (command.kind === "homeOccurrence") {
+      const { row } = command
+      const home = try SubscriptionRef.get(cards)
+      const before = try Ref.get(pending)
+      const scope = try scopeOf("Calendar", try setup.get(), before)
+      if ((try desk.get()).device.surface !== "Home" || scope.kind !== "ready" ||
+        scope.accountId !== row.accountId || scope.grant !== row.grant ||
+        home?.accountId !== row.accountId || home.grant !== row.grant ||
+        !home.events.some((event) => event.externalId === row.id && (event.etag ?? null) === row.version)) return false
+      try Ref.set(pending, { ...before, view: "Calendar", returning: false, occurrence: undefined, homeOccurrence: row })
+      const visited = desk.send({ type: "visit", destination: "Calendar" }, "Person") catch () => undefined
+      if (visited === undefined) try Ref.set(pending, before)
+      return visited !== undefined
+    }
     const scope = try activeScope()
     if (scope.kind === "closed") return false
     if (command.kind === "enableReminders") {
