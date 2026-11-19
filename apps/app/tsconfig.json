@@ -24,7 +24,7 @@
         "./node_modules/@capacitor/core"
       ],
       "@elizaos/os/android/build-consumer.mjs": [
-        "./scripts/build-consumer.d.ts"
+        "./scripts/build-consumer.ts"
       ],
       "@elizaos/os/android/toolchain.ts": [
         "./scripts/toolchain.d.ts"
