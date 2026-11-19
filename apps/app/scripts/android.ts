@@ -853,6 +853,7 @@ const LoginFixture = Schema.Struct({
   login: Schema.Struct({ label: Schema.String, origin: Schema.String, username: Schema.String, password: Schema.String }),
 });
 const Grade = Schema.Struct({ grade: Schema.Struct({ success: Schema.Boolean }), paymentCount: Schema.Int });
+class GradeFailure extends Error {}
 const Callable = Schema.declare((value: unknown): value is (...args: unknown[]) => unknown => typeof value === "function");
 const isEpisodeHost = Schema.is(Schema.Struct({ startPasswordLoginEpisode: Callable }));
 const Episode = Schema.Struct({ grade: Callable, close: Callable });
@@ -1177,26 +1178,28 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     if (!isEpisode(started)) throw new Error("The fixture did not start");
     episode = started;
     const readGrade = async () => Schema.decodeUnknownSync(Grade)(await started.grade());
+    step = "grade the autofilled form";
     const before = await readGrade();
-    if (before.grade.success || before.paymentCount !== 0) throw new Error("Autofill must not submit or pay");
+    if (before.grade.success || before.paymentCount !== 0) throw new GradeFailure("Autofill must not submit or pay");
     step = "submit the website form and grade";
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
     for (;;) {
       signal.throwIfAborted();
-      if (Date.now() >= until) throw new Error("BillWorld did not confirm the account view");
+      if (Date.now() >= until) throw new GradeFailure("BillWorld did not confirm the account view");
       const after = await readGrade();
-      if (after.paymentCount !== 0) throw new Error("The sign-in run encountered a payment");
+      if (after.paymentCount !== 0) throw new GradeFailure("The sign-in run encountered a payment");
       if (after.grade.success) break;
       await delay(1000);
     }
-  } catch {
-    journeyFailure = buildFailure ?? new Error(`BillWorld password journey stopped at: ${step}`);
+  } catch (error) {
+    journeyFailure = buildFailure ?? (error instanceof GradeFailure ? error : new Error(`BillWorld password journey ${signal.aborted ? "was interrupted" : "stopped"} at: ${step}`));
   }
-  let clean = true;
-  for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
-  try { await episode?.close(); } catch { clean = false; }
-  if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.", { cause: journeyFailure });
+  const failures: unknown[] = [];
+  for (const release of cleanup.reverse()) await release().catch((error: unknown) => { failures.push(error); });
+  const unclean = failures.length > 0;
+  try { await episode?.close(); } catch (error) { failures.push(error); }
+  if (failures.length) throw new AggregateError(failures, unclean ? "BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use." : "The BillWorld episode did not close. The emulator's cleanup was verified.", { cause: journeyFailure });
   if (journeyFailure) throw journeyFailure;
 }
 
