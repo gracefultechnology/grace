@@ -545,9 +545,20 @@ pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
 }
 pure def lawAFailedCheckOffersToCheckAgain(accountId: str, email: str): bool =
   mayCheckAccountAgain(AccountUnavailable) and mayCheckAccountAgain(GraceSignedIn({ accountId: accountId, email: email, plan: PlanUnknown }))
-pure def managesOnTheWeb(account: GraceAccount): bool = account == GraceDeviceSignedIn
+pure def managesOnTheWeb(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedIn => true
+  | _ => false
+}
 pure def lawATabletManagesItsSubscriptionOnTheWeb(account: GraceAccount): bool =
   managesOnTheWeb(account) implies (not(mayStartCheckout(account)) and not(mayOpenBillingPortal(account)))
+pure def linkUnknown(link: GoogleLink): bool = match link {
+  | GoogleLinkUnknown => true
+  | _ => false
+}
+pure def tabletSignInAsked(t: TabletSignIn): bool = match t {
+  | TabletSignInAsked => true
+  | _ => false
+}
 pure def webAccountId(account: GraceAccount): str = match account {
   | GraceSignedIn(person) => person.accountId
   | _ => ""
@@ -557,15 +568,15 @@ pure def keptTabletSignIn(t: TabletSignIn, report: GraceAccount): TabletSignIn =
   | _ => t
 }
 pure def canReportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): bool =
-  reportedBy(TabletSession, report) and link == GoogleLinkUnknown
+  reportedBy(TabletSession, report) and linkUnknown(link)
 pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
   { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def canReportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): bool =
-  reportedBy(GraceService, report) and (link == GoogleLinkUnknown or webAccountId(report) != "")
+  reportedBy(GraceService, report) and (linkUnknown(link) or webAccountId(report) != "")
 pure def reportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
   { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: if (waiting) TabletSignInAsked else NoTabletSignIn }
-pure def canConfirmTabletSignIn(s: Setup): bool = s.tabletSignIn == TabletSignInAsked and webAccountId(s.graceAccount) != ""
+pure def canConfirmTabletSignIn(s: Setup): bool = tabletSignInAsked(s.tabletSignIn) and webAccountId(s.graceAccount) != ""
 pure def confirmTabletSignIn(s: Setup): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: webAccountId(s.graceAccount) }) }
 pure def tabletSignInConfirmed(s: Setup): bool =
   val t = s.tabletSignIn
@@ -581,13 +592,13 @@ pure def alwaysATabletSignInIsConfirmedForTheSignedInAccount(s: Setup): bool =
   }
 pure def stepOnlyThePersonConfirmsATabletSignIn(before: Setup, via: str, after: Setup): bool =
   (tabletSignInConfirmed(after) and not(tabletSignInConfirmed(before))) implies
-    (via == "confirmTabletSignIn" and before.tabletSignIn == TabletSignInAsked)
+    (via == "confirmTabletSignIn" and tabletSignInAsked(before.tabletSignIn))
 pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after: Setup): bool =
   after.graceAccount != before.graceAccount implies
     ((via == "reportGraceAccount" and reportedBy(TabletSession, after.graceAccount)) or
      (via == "reportGraceService" and reportedBy(GraceService, after.graceAccount)))
 pure def alwaysOnlyAWebAccountCarriesAGoogleConnection(s: Setup): bool =
-  s.googleLink == GoogleLinkUnknown or webAccountId(s.graceAccount) != ""
+  linkUnknown(s.googleLink) or webAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
   CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignedIn, AccountUnavailable,
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
