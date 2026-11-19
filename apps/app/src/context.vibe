@@ -89,7 +89,7 @@ const said = (text: string) => text.trim() === "" ? "(empty)" : `“${oneLine(te
 const quoted = (text: string) => `“${oneLine(text)}”`
 
 function masked(c: MailContent) {
-  const coded = namesCode(`${c.from}\n${c.subject}\n${c.body}`)
+  const coded = namesCode([c.from, c.fromAddress, c.subject, c.snippet, c.body].join("\n"))
   const mail = (text: string) => withholdMail({ text, passwords: [] }, coded)
   return { from: mail(c.from), subject: mail(c.subject), body: mail(c.body) }
 }
