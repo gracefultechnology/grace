@@ -453,7 +453,7 @@ set-up waiting on Home at the hand-over for Grace to be able to think are
 all reachable.
 
 ```quint
-pure val weight_answer = 12
+pure val weight_answer = 17
 pure val weight_hostStarted = 2
 pure def sometimesFinished(s: Setup): bool = s.phase == Ended
 pure def sometimesSaveFailed(s: Setup): bool = s.phase == EndFailed
@@ -741,17 +741,13 @@ pure def grantOf(link: GoogleLink): str = match link {
   | GoogleLinkConnected(g) => g.grant
   | _ => ""
 }
-pure def lawAManagedChangeNeedsTheNamedAccountAndItsCurrentGrant(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
+pure def lawAManagedChangeNeedsItsAccountItsGrantAndItsOwnPermission(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
   not(mayChangeManaged(GraceDeviceSignedIn, link, accountId, grant, request)) and
   (mayChangeManaged(account, link, accountId, grant, request) implies
-    (grant != "" and webAccountId(account) == accountId and grantOf(link) == grant))
-pure def lawTrashAndAppointmentChangesAreEnabledSeparately(account: GraceAccount, link: GoogleLink, accountId: str, grant: str): bool =
-  match link {
-    | GoogleLinkConnected(g) =>
-      (mayChangeManaged(account, link, accountId, grant, ManagedTrash) implies (g.mail and g.trashMail)) and
-      (mayChangeManaged(account, link, accountId, grant, ManagedAppointmentChange) implies (g.calendar and g.writeCalendar))
-    | _ => true
-  }
+    (grant != "" and webAccountId(account) == accountId and grantOf(link) == grant and match link {
+      | GoogleLinkConnected(g) => if (request == ManagedTrash) (g.mail and g.trashMail) else (g.calendar and g.writeCalendar)
+      | _ => false
+    }))
 ```
 
 ## Story: Approve a password backup in my browser
@@ -789,12 +785,9 @@ pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccoun
   registered and recentSignIn and sameAccount
 pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
   mayOfferBackupApproval(registered, recentSignIn, sameAccount) and confirmed
-pure def lawOnlyTheRegisteredPageApprovesABackup(recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
-  not(mayApprovePasswordBackup(false, recentSignIn, sameAccount, confirmed))
-pure def lawCancelApprovesNoBackup(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
-  not(mayApprovePasswordBackup(registered, recentSignIn, sameAccount, false))
-pure def lawAChangedOrStaleAccountMustChooseAgain(registered: bool, confirmed: bool): bool =
-  not(mayApprovePasswordBackup(registered, true, false, confirmed)) and not(mayApprovePasswordBackup(registered, false, true, confirmed))
+pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
+  mayApprovePasswordBackup(registered, recentSignIn, sameAccount, confirmed) implies
+    (registered and recentSignIn and sameAccount and confirmed)
 ```
 
 ## Story: Keep my passwords private when the tablet account changes
