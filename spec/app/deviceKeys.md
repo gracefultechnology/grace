@@ -182,10 +182,11 @@ pure val askValues = Set(alertMessage, WR::WebsiteMessage({ dialog: WR::ConfirmM
 
 Launcher Home is `visit` Home, the same event as Home in the rail: it opens
 the main Home cards and closes any rail popover; the browser is hidden with
-its tabs kept; Grace keeps its transcript, task and draft, while unfinished
-work pauses and speech stops. Leaving another surface also dismisses the
-keyboards and the address editor, so a keyboard survives only when Home is
-pressed while already on Home. Hiding the browser ends the website's question
+its tabs kept. Grace retains the transcript and task, pauses unfinished work
+and stops speech. Leaving the Passwords card clears its draft and dismisses its
+keyboard. Other drafts survive. Leaving another surface dismisses the keyboard
+and the address editor. Pressing Home on the main cards or Files preserves an
+open keyboard. Hiding the browser ends the website's question
 over the page, and closing Settings cancels Clear browsing data's
 confirmation (`settingsClosed`). A device that is not ready ignores it.
 Home moves an expanded conversation into the lower pane. Afterwards Back
@@ -203,5 +204,5 @@ pure def lawLauncherHomeLeavesOnlyGraceToStepBack(shell: S::Shell, a: A::Assista
   val afterHome = backAction(home.device, home.assistant, home.browser, homeRequests(r))
   WS::canVisit(w, S::Home, WS::Person) implies
     (afterHome == DismissKeyboard or afterHome == Unconsumed) and
-    (afterHome == Unconsumed iff (a.keyboard == A::NoKeyboard or shell.surface != S::Home))
+    (afterHome == Unconsumed iff (a.keyboard == A::NoKeyboard or shell.surface != S::Home or shell.homePage == S::PasswordsCard))
 ```
