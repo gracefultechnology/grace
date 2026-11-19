@@ -15,12 +15,15 @@ export function actOnScreen() {
 }
 
 export async function mount(runtime: Runtime) {
+  const outside = environment.IS_REACT_ACT_ENVIRONMENT;
+  environment.IS_REACT_ACT_ENVIRONMENT = true;
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   onTestFinished(async () => {
     await act(() => Promise.resolve(root.unmount()));
     host.remove();
     await runtime.dispose();
+    environment.IS_REACT_ACT_ENVIRONMENT = outside;
   });
   await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
 }
