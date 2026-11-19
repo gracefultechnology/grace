@@ -164,7 +164,7 @@ and ask only that decision. Every reply is written in the transcript. It is
 also spoken when the person's voice output is on (`audible`), whether they
 spoke or typed (prototype 1325); with voice output off it is only written.
 Speaking never turns the microphone on, and a reply ends the voice exchange:
-when Grace asks a question she is not listened to again until she taps Talk.
+when Grace asks a question, the person answers by tapping Talk.
 The microphone stays on while Grace speaks only so that she can be
 interrupted, and closes when that reply ends. The one exception is Grace's
 single request to say an unusable utterance again, which listens once more
