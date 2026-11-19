@@ -873,9 +873,6 @@ function deviceNodes(xml: string) {
 }
 
 type DeviceNode = ReturnType<typeof deviceNodes>[number];
-const legacyCredential = (node: DeviceNode) =>
-  node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui");
-
 const editorFixturePackage = "technology.graceful.fixture";
 const editorFixtureRunner = `${editorFixturePackage}/.BillWorldPasswordEditor`;
 
@@ -941,23 +938,6 @@ function fullscreenTip(nodes: DeviceNode[]) {
   return buttons.length === 1 ? buttons[0] : undefined;
 }
 
-function systemPinPad(nodes: DeviceNode[]) {
-  const system = nodes.filter((node) => node.packageName === "com.android.systemui");
-  if (!system.some((node) => node.id === "compose_credential_view" && node.className === "androidx.compose.ui.platform.ComposeView") ||
-      !system.some((node) => node.id === "cred_pin_pad")) return undefined;
-  const buttons = system.filter((node) => node.enabled && node.clickable);
-  const enter = buttons.find((node) => node.id === "key_enter" && node.className === "android.widget.Button");
-  if (!enter) return undefined;
-  const digits = new Map<string, DeviceNode>();
-  for (const button of buttons) {
-    const digit = [button.label, button.description].find((value) => /^[0-9]$/.test(value));
-    if (digit === undefined) continue;
-    if (digits.has(digit)) return undefined;
-    digits.set(digit, button);
-  }
-  return digits.size === 10 ? { digits, enter } : undefined;
-}
-
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi, signal: AbortSignal) {
   const installedApk = async (packageName = identity.appId) => {
     const packages = (await shell(serial, `cmd package list packages -f ${packageName}`)).trim();
@@ -974,12 +954,18 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       await installedApk() !== undefined || await installedApk(editorFixturePackage) !== undefined) {
     throw new Error("BillWorld requires an emulator with no existing Grace installation");
   }
+  const requireNoScreenLock = async () => {
+    const result = (await shell(serial, "locksettings verify", 180)).trim();
+    if (!/^(?:lock )?credential verified successfully\.?$|^no (?:lock )?credential (?:is )?set\.?$/i.test(result)) {
+      throw new Error("BillWorld requires a disposable emulator with no Android screen lock");
+    }
+  };
+  await requireNoScreenLock();
   const fixture: unknown = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
   if (!isEpisodeHost(fixture)) throw new Error("BillWorld password fixture is unavailable");
   const cleanup: Array<() => Promise<unknown>> = [];
   let buildFailure: Error | undefined;
   const screenFile = `/data/local/tmp/grace-billworld-ui-${randomUUID()}.xml`;
-  const pin = "7539";
   const screen = async () => {
     signal.throwIfAborted();
     const redact = String.raw`s/(<node[^>]*[[:space:]]text=")[^"]*("[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*>)/\1\2/g; s/(<node[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*[[:space:]]text=")[^"]*("[^>]*>)/\1\3/g`;
@@ -1009,30 +995,6 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const waitForNode = (matches: (node: DeviceNode) => boolean, label: string) => waitForUi((nodes) => nodes.find(matches), label);
   const tapNode = ({ x, y }: DeviceNode) => shell(serial, `input tap ${x} ${y}`);
   const tap = async (matches: (node: DeviceNode) => boolean, label: string) => tapNode(await waitForNode(matches, label));
-  const text = (value: string) => shell(serial, `input text '${value.replaceAll(" ", "%s").replaceAll("'", "'\\''")}'`)
-    .catch(() => { throw new Error("Android did not accept a fixture field"); });
-  const submitPin = async (purpose: "Passwords" | "Autofill") => {
-    step = `find Android’s credential prompt for ${purpose}`;
-    const credential = await waitForUi((nodes) => nodes.find(legacyCredential) ?? systemPinPad(nodes), "the system screen lock");
-    if ("digits" in credential) {
-      step = `enter the disposable PIN for ${purpose}`;
-      for (const digit of pin) {
-        const key = credential.digits.get(digit);
-        if (!key) throw new Error("The Android PIN pad changed");
-        await tapNode(key);
-      }
-      step = `confirm Android’s credential prompt for ${purpose}`;
-      await tapNode(await waitForUi((nodes) => systemPinPad(nodes)?.enter, "the system PIN confirmation"));
-      return;
-    }
-    await tapNode(credential);
-    step = `focus Android’s credential field for ${purpose}`;
-    await waitForNode((node) => legacyCredential(node) && node.focused, "the focused system screen lock");
-    step = `enter the disposable PIN for ${purpose}`;
-    await text(pin);
-    step = `confirm Android’s credential prompt for ${purpose}`;
-    await shell(serial, "input keyevent KEYCODE_ENTER");
-  };
   let episode: typeof Episode.Type | undefined;
   let step = "open fixture";
   try {
@@ -1083,18 +1045,6 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         });
         await shell(serial, `pm install -t ${remote}`, 300).catch(() => undefined);
         if (await installedApk() !== digest) throw new Error("Android did not install the episode APK");
-        step = "configure the disposable screen lock";
-        const verified = /credential verified successfully|no credential (?:is )?set/i;
-        if (!verified.test(await shell(serial, "locksettings verify", 180))) throw new Error("The fixture requires an empty screen lock");
-        cleanup.push(async () => {
-          await shell(serial, `locksettings clear --old ${pin}`, 180).catch(() => undefined);
-          if (!verified.test(await shell(serial, "locksettings verify", 180))) throw new Error("Android still reports a screen lock after fixture cleanup");
-        });
-        step = "set the disposable PIN";
-        const set = await shell(serial, `locksettings set-pin ${pin}`, 180);
-        if (!/pin set to/i.test(set)) throw new Error("Android did not set the fixture lock");
-        step = "confirm the disposable PIN was set";
-        if (!verified.test(await shell(serial, `locksettings verify --old ${pin}`, 180))) throw new Error("Android did not confirm the fixture lock");
         cleanup.push(() => shell(serial, `rm -f ${screenFile}`));
         step = "select Grace as the disposable autofill provider";
         const autofill = `${identity.appId}/ai.eliza.plugins.passwords.ElizaPasswordAutofillService`;
@@ -1143,10 +1093,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           process.stdout.write("The Passwords card is ready on the third Grace Home page.\n");
           step = "open Passwords from the third Grace Home page";
           await page.tapAt(passwords, AbortSignal.timeout(120_000));
-          step = "request Passwords unlock";
-          await page.step({ tap: "Unlock Passwords" });
-          await submitPin("Passwords");
-          step = "open the protected password editor";
+          step = "open the native password editor without a screen lock";
           await page.step({ tap: "Add password" });
           step = "save through the focused native editor";
           await editor.wait("save-dispatched", 90);
@@ -1169,13 +1116,14 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "request Android autofill and choose the matching entry";
         await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
         await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
-        await submitPin("Autofill");
         await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
       },
     });
     if (!isEpisode(started)) throw new Error("The fixture did not start");
     episode = started;
     const readGrade = async () => Schema.decodeUnknownSync(Grade)(await started.grade());
+    step = "verify Android still has no screen lock";
+    await requireNoScreenLock();
     const before = await readGrade();
     if (before.grade.success || before.paymentCount !== 0) throw new Error("Autofill must not submit or pay");
     step = "submit the website form and grade";
@@ -1195,6 +1143,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   } finally {
     let clean = true;
     for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
+    await requireNoScreenLock().catch(() => { clean = false; });
     await episode?.close();
     if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.");
   }
@@ -1233,7 +1182,7 @@ if (import.meta.main) {
       interrupt.signal.throwIfAborted();
       await billworldPasswords(target.serial, billworld, abi, interrupt.signal);
       interrupt.signal.throwIfAborted();
-      process.stdout.write("BillWorld sign-in passed through installed Android Autofill. No payment was made.\n");
+      process.stdout.write("BillWorld sign-in passed through installed Android Autofill without a screen lock. No payment was made.\n");
     } finally {
       process.off("SIGINT", cancel);
       process.off("SIGTERM", cancel);
