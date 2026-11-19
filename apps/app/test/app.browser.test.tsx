@@ -2161,7 +2161,7 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
       ? { ...box, calendar: [...box.calendar, { title, startAt: when.toISOString(), location: place }] }
       : box));
     await tap(button("Home"));
-    await tap(button(/^Calendar/));
+    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
     await tap(button("Resume Grace"));
     await tap(button("Check saved appointment"));
     await routeTo(plan.getByText("Planned checks complete", { exact: true }));
