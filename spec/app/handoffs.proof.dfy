@@ -80,3 +80,58 @@ lemma lawCurrentResolutionCanNavigate_ensures(r: Registry, expectedVersion: int,
     assert bindingFor(after, r.pending.source.key).recordRef == recordRef;
   }
 }
+
+lemma EmailLinkSelectedTab(b: app__browser_Browser, id: int)
+  ensures app__browser_tabById(b, id) == (var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs); if |matches| > 0 then matches[|matches|-1] else app__browser_blankTab(0, 0))
+{
+}
+
+lemma lawAReleasedLinkOpensInANewBrowserTab_ensures(device: app__shell_Shell, reader: app__email_Mailbox, browser: app__browser_Browser, link: string)
+  ensures (lawAReleasedLinkOpensInANewBrowserTab(device, reader, browser, link) == true)
+{
+  if mayOpenEmailLink(device, reader, browser, link) {
+    var id := browser.nextId;
+    var newTabs := app__browser_openTab(browser);
+    var navigated := app__browser_navigate(newTabs, link);
+    var added := app__browser_blankTab(id, browser.serial + 1);
+    var loaded := app__browser_navigated(added, link, newTabs.revision + 1);
+    forall i | 0 <= i < |browser.tabs|
+      ensures navigated.tabs[i] == browser.tabs[i]
+    {
+      assert browser.tabs[i] in browser.tabs;
+      assert browser.tabs[i].id != id;
+    }
+    assert navigated.tabs[|browser.tabs|] == loaded;
+    assert navigated.tabs == browser.tabs + [loaded];
+    ProofLib.FilterNone((t: app__browser_Tab) => (t.id == id), browser.tabs);
+    ProofLib.FilterAppend((t: app__browser_Tab) => (t.id == id), browser.tabs, loaded);
+    EmailLinkSelectedTab(navigated, id);
+    assert app__browser_activeTab(navigated) == loaded;
+    assert loaded.history == ["", link];
+  }
+}
+
+lemma OnlyEmailLinkMessage(m: app__email_Mailbox, ref: string)
+  requires |m.messages| == 1 && m.messages[0].identity.ref == ref
+  ensures app__email_messageRecord(m, ref) == m.messages[0]
+{
+  assert app__email_messageRecord(m, ref) == (var matches := ProofLib.Filter((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages); if |matches| == 1 then matches[0] else app__emailItem_initial);
+  ProofLib.FilterCons((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages);
+  ProofLib.FilterNil((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages[1..]);
+}
+
+lemma lawConfirmingAFlaggedMessageLinkCanReachTheBrowser_ensures(link: string)
+  ensures (lawConfirmingAFlaggedMessageLinkCanReachTheBrowser(link) == true)
+{
+  if link != "" {
+    var held := app__email_openLink(flaggedMailbox, link, app__email_MailActor.MailUser);
+    var confirmed := app__email_confirmLink(held, link, true, app__email_MailActor.MailUser);
+    OnlyEmailLinkMessage(flaggedMailbox, flaggedMailbox.messageRef);
+    OnlyEmailLinkMessage(held, held.messageRef);
+    OnlyEmailLinkMessage(confirmed, confirmed.messageRef);
+    assert app__email_selectedMessageIsCurrent(flaggedMailbox);
+    assert app__email_selectedMessageIsCurrent(held);
+    assert app__email_selectedMessageIsCurrent(confirmed);
+    assert !app__browser_hasTab(app__browser_initial, app__browser_initial.nextId);
+  }
+}
