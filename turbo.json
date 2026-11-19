@@ -278,7 +278,8 @@
         ".madgerc",
         ".jscpd.json"
       ],
-      "outputs": []
+      "outputs": [],
+      "cache": false
     },
     "dev": {
       "cache": false,
