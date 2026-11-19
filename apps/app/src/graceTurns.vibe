@@ -143,7 +143,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       const current = try Ref.get(opened)
       const conversation = current !== undefined && current.messages < messages.length ? current.conversation : (try timeout(createConversation(plugin), turnTimeout))
       try Ref.set(opened, { conversation, messages: messages.length })
-      const raw = try finalReply(plugin, conversation, text)
+      const raw = try finalReply(plugin, conversation, text.trim())
       const reply = try Schema.decodeUnknownEffect(Reply)(raw)
       const safe = try Effect.orDie(Effect.try(() => withhold({ text: reply.text, passwords: [] })))
       const choicesSafe = try Effect.orDie(Effect.try(() => reply.answers.every((answer) => withhold({ text: answer, passwords: [] }) === answer)))
