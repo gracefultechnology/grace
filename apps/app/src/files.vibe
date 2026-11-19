@@ -1,5 +1,5 @@
 // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/files.md, "Opening and retrying load the authoritative local library"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
-import { canLoadForSave, canSaveFiles, type FileFeedback, type Files as FileState, initial, Machine as Files, machine, type SavedFile } from "../gen/app__files.effect.vibe"
+import { canLoadForSave, canSaveFiles, captureFile, type FileFeedback, type Files as FileState, initial, Machine as Files, machine, type SavedFile } from "../gen/app__files.effect.vibe"
 import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { webView } from "./surfacePlugin.ts"
@@ -12,9 +12,17 @@ export const fileId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9
 export schema FileLease { lease: fileId }
 export schema FileEntry {
   id: fileId; name: Schema.NonEmptyString; kind: "photo" | "pdf"; savedAt: Schema.Int; pages: Schema.Int
-  source?: HeldFile; version?: Schema.NonEmptyString
+  source?: HeldFile; version?: Schema.NonEmptyString; from?: Schema.NonEmptyString
 }
 export schema FileCatalog { entries: FileEntry[] }
+
+function deviceFile(entry: FileEntry, owner: string, session: string): SavedFile {
+  return captureFile({ owner, session, captureId: entry.id, contentRef: entry.id,
+    name: entry.name, kind: entry.kind === "pdf" ? "Pdf" : "Photo", takenAt: entry.savedAt, pages: entry.pages })
+}
+export function savedFile(entry: FileEntry, owner: string, session: string): SavedFile {
+  return entry.source ? { ...entry.source, id: entry.id, name: entry.name, savedAt: entry.savedAt } : deviceFile(entry, owner, session)
+}
 
 export function filesAccount(account: GraceAccount | undefined) {
   return account?.tag === "GraceSignedIn" ? "web/" + account.accountId : account?.tag === "GraceDeviceSignedIn" ? "device" : undefined
@@ -24,13 +32,22 @@ export const accountRefreshes = () => nativeAccount
   ? Stream.callback<void>((queue) => acquireRelease(promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })), (handle) => promise(() => handle.remove())))
   : Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
 
+error FilesUnavailable
+const picture = Schema.String.check(Schema.isMaxLength(6_990_560), Schema.isPattern(/^data:(?:image\/(?:jpeg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/]+=*$/))
+export schema Preview { id: fileId; page: Schema.Int; image: picture }
+
 export service FileStorage { readonly port: FilesPort | undefined }
 export const fileStorage = (native: boolean, port: FilesPort | undefined) => Layer.sync(FileStorage, () => ({ port: native ? port : browserFiles() }))
+
+export type SavedPhoto = { readonly file: SavedFile; readonly src?: string }
+export type DeviceSource = "camera" | "file"
 
 export service Library {
   readonly changes: Stream.Stream<FileState>
   get(): FileState!!
-  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string): (FileFeedback | undefined)!!
+  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, from: string): (FileFeedback | undefined)!!
+  photos(): readonly SavedPhoto[]!!
+  capture(source: DeviceSource): (SavedFile | undefined)!!
 }
 export const library = Layer.effect(Library, effect {
   const { port } = try FileStorage
@@ -40,7 +57,35 @@ export const library = Layer.effect(Library, effect {
   try fork.scoped Stream.runForEach(Stream.merge(Stream.map(owners, () => undefined), Stream.map(accountRefreshes(), () => undefined)), () => SubscriptionRef.set(status, initial))
   const serial = try Semaphore.make(1)
 
-  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string) {
+  effect function leased() {
+    if (!port) throw new FilesUnavailable()
+    const owner = filesAccount((try setup.get()).graceAccount)
+    if (!owner) throw new FilesUnavailable()
+    const actual = port
+    const { lease } = try acquireRelease(
+      tryPromise(() => actual.open()) |> Effect.flatMap(%, Schema.decodeUnknownEffect(FileLease)),
+      (opened) => Effect.ignore(tryPromise(() => actual.close(opened))))
+    return { port: actual, owner, lease }
+  }
+
+  effect function photos() {
+    const { port: actual, owner, lease } = try leased()
+    const catalog = try Schema.decodeUnknownEffect(FileCatalog)(try tryPromise(() => actual.list({ lease })))
+    return try Effect.forEach(catalog.entries.filter((entry) => entry.kind === "photo").slice(0, 40), effect (entry) => {
+      const preview = Schema.decodeUnknownEffect(Preview)(try tryPromise(() => actual.preview({ lease, id: entry.id, page: 0, small: true }))) catch () => undefined
+      return { file: savedFile(entry, owner, lease), src: preview?.id === entry.id ? preview.image : undefined }
+    }, { concurrency: 3 })
+  }
+
+  effect function capture(source: DeviceSource) {
+    const { port: actual, owner, lease } = try leased()
+    const { capture, pick } = actual
+    const taking = source === "camera" ? capture && (() => capture({ lease })) : pick && (() => pick({ lease, kind: "pdf" }))
+    if (!taking) return undefined
+    return deviceFile(try Schema.decodeUnknownEffect(FileEntry)(try tryPromise(taking)), owner, lease)
+  }
+
+  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, from: string) {
     if (!port || !version || chosen.length === 0) return "WriteFailed" as const
     const owner = filesAccount((try setup.get()).graceAccount)
     if (!owner) return "WriteFailed" as const
@@ -64,7 +109,7 @@ export const library = Layer.effect(Library, effect {
     const writing = try files.get()
     try SubscriptionRef.set(status, writing)
     const stored = effect {
-      const attachments = try Effect.forEach(chosen, effect (file) => ({ file, data: (try content(file)).data, version }))
+      const attachments = try Effect.forEach(chosen, effect (file) => ({ file, data: (try content(file)).data, version, from }))
       const receipt = try Schema.decodeUnknownEffect(FileCatalog)(try tryPromise(() => actual.saveAttachments({ lease, attachments })))
       return chosen.every((source) => receipt.entries.some((entry) => entry.source?.id === source.id &&
         entry.source.account === source.account && entry.source.origin === source.origin && entry.source.contentRef === source.contentRef))
@@ -77,6 +122,8 @@ export const library = Layer.effect(Library, effect {
   }
 
   return { changes: SubscriptionRef.changes(status), get: () => SubscriptionRef.get(status),
-    save: effect (chosen, content, authorization, version) => serial.withPermit(scoped(save(chosen, content, authorization, version))) catch () => "WriteFailed" as const }
+    save: effect (chosen, content, authorization, version, from) => serial.withPermit(scoped(save(chosen, content, authorization, version, from))) catch () => "WriteFailed" as const,
+    photos: effect () => scoped(photos()) catch () => [],
+    capture: effect (source) => scoped(capture(source)) catch () => undefined }
 
 })

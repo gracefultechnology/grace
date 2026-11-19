@@ -1,9 +1,9 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
-import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
+import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
-import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
+import { contactAccounts, moveDraft as movedDraft, startFrom, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
@@ -11,7 +11,10 @@ import { type Held, Instances, watchEach } from "./instances.vibe"
 
 export type Note = { readonly id: number; readonly text: string }
 
-export type Board = { readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string> }
+export type Board = {
+  readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string>
+  readonly sharing?: number
+}
 
 export type Boards = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Board }
 
@@ -21,6 +24,8 @@ export service Mail {
   moveDraft(from: number, to: number): void!!
   discarded(): void!!
   save(id: number, refs: readonly string[]): void!!
+  attach(id: number, asset: SavedFile): boolean!!
+  share(photo: SavedFile): boolean!!
   contacts(): readonly Contact[]!!
   readonly hush: (id: number) => void
   readonly nameOf: (address: string) => string
@@ -184,6 +189,7 @@ export const mailing = Layer.effect(Mail, effect {
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
     if (opened && answerable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
+    if (board.sharing === account.id && (!after.composeVisible || after.draft.to !== "")) post({ sharing: undefined })
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
       const opened = mail.read(record.identity.ref, after.generation) catch () => undefined
@@ -331,6 +337,30 @@ export const mailing = Layer.effect(Mail, effect {
     return true
   }
 
+  effect function attach(id: number, asset: SavedFile) {
+    const owned = try ownedMailbox(id)
+    if (!owned) return false
+    const { box, m } = owned
+    const event: MailEvent = { type: "attachAsset", owner: m.owner, asset, draftRevision: m.revision, selected: true }
+    if (!enabled(m, event, "MailHost")) return false
+    return (box.send(event, "MailHost") catch () => undefined) !== undefined
+  }
+
+  effect function share(photo: SavedFile) {
+    const a = try registry.get()
+    const sources = try Effect.forEach(a.accounts, effect (account) => {
+      const box = shelf.mail(account.id) catch () => undefined
+      return box === undefined ? [] : [{ account: account.id, mailbox: try box.get() }]
+    })
+    const id = startFrom(a, sources.flat(), "")
+    const box = shelf.mail(id) catch () => undefined
+    const m = box === undefined ? undefined : try box.get()
+    if (box === undefined || m === undefined || !enabled(m, { type: "startDraft", reply: false }, "MailUser")) return false
+    const placed = place(box, { ...emptyContent, subject: "A photo" }, [photo]) catch () => false
+    if (placed) post({ sharing: id })
+    return placed
+  }
+
   effect function save(id: number, refs: readonly string[]) {
     const owned = try ownedMailbox(id)
     if (!owned) return
@@ -345,7 +375,7 @@ export const mailing = Layer.effect(Mail, effect {
       const current = try box.get()
       if (current.messageRef !== m.messageRef || !mayExportAttachments(current, [...refs]) || shelf.content(id, current.messageRef)?.version !== version) throw new AttachmentChanged()
       return try fetched(shelf, mail, id, file, version)
-    }, `${account.provider}:${account.address}/${m.messageRef}`, version)
+    }, `${account.provider}:${account.address}/${m.messageRef}`, version, shelf.content(id, m.messageRef)?.from ?? "")
     if (feedback === "FilesSaved") try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
     if (feedback === "WriteFailed" || feedback === "CatalogFailed") post({ unsaved: new Set([...board.unsaved, ...ids]) })
   }
@@ -359,6 +389,8 @@ export const mailing = Layer.effect(Mail, effect {
     moveDraft: (from, to) => asBuilt(moveDraft(from, to)),
     discarded: () => show("Email discarded"),
     save: (id, refs) => asBuilt(save(id, refs)),
+    attach: (id, asset) => asBuilt(attach(id, asset)),
+    share: (photo) => asBuilt(share(photo)),
     contacts: () => asBuilt(people()),
     hush: (id) => { quiet.add(id) },
     nameOf,

@@ -1,20 +1,23 @@
-// spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share and remove the chosen file"
-import { type Files, type SavedFile, type FileActor, type Event, captureFile, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+// spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/files.md, "Sharing a photo opens a draft without sending it"
+import { type Files, type FileActor, type Event, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
+import { enabled as deskEnabled, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes } from "./files.vibe"
+import { Mail } from "./mail.vibe"
+import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes, Preview, savedFile } from "./files.vibe"
 
-const picture = Schema.String.check(Schema.isMaxLength(6_990_560), Schema.isPattern(/^data:(?:image\/(?:jpeg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/]+=*$/))
-schema Preview { id: fileId; page: Schema.Int; image: picture }
 schema Completion { id: fileId }
 
 type Closed = { kind: "out" | "signedOut" | "opening" | "unavailable" | "unsupported" }
-type Ready = { kind: "ready"; owner: string; canImport: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>; image?: string; busy: boolean; issue: boolean }
+type Ready = {
+  kind: "ready"; owner: string; canImport: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>
+  senders: Readonly<Record<string, string>>; image?: string; busy: boolean; issue: boolean
+}
 export type FileSnapshot = Closed | Ready
 export type FileHome = { photos: { src: string; alt: string }[]; document?: { name: string } }
 type Command =
   | { kind: "open"; id: string }
   | { kind: "deletePhoto"; id: string; lease: string; generation: number }
+  | { kind: "sharePhoto"; id: string; lease: string; generation: number }
   | { kind: "tab"; tab: "Photos" | "Documents" }
   | { kind: "photo" | "page"; direction: -1 | 1 }
   | { kind: "search"; query: string }
@@ -31,15 +34,11 @@ export service FileLibrary {
 
 error FilesRejected
 
-function localFile(entry: Entry, lease: string): SavedFile {
-  return captureFile({ owner: lease, session: lease, captureId: entry.id, contentRef: entry.id,
-    name: entry.name, kind: entry.kind === "pdf" ? "Pdf" : "Photo", takenAt: entry.savedAt, pages: entry.pages })
-}
-
 export const fileLibrary = Layer.effect(FileLibrary, effect {
   const { port } = try FileStorage
   const desk = try Workspaces
   const setup = try Setup
+  const mail = try Effect.serviceOption(Mail)
   const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
   const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
   const serial = try Semaphore.make(1)
@@ -88,8 +87,10 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
     if (loading.model.pending !== "ReadingCatalog") return
     const catalog = Schema.decodeUnknownEffect(Catalog)(try tryPromise(() => port.list({ lease: ready.lease }))) catch () => undefined
-    const entries = catalog?.entries.slice(0, 250).map((entry) => localFile(entry, ready.lease)) ?? []
-    const { ready: loaded } = try advance(loading, { type: "loadCatalog", catalogReport: {
+    const listed = catalog?.entries.slice(0, 250) ?? []
+    const entries = listed.map((entry) => savedFile(entry, ready.owner, ready.lease))
+    const senders = Object.fromEntries(listed.flatMap((entry) => entry.from ? [[entry.id, entry.from]] : []))
+    const { ready: loaded } = try advance({ ...loading, senders }, { type: "loadCatalog", catalogReport: {
       owner: ready.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
     } }, "FileStore")
     if (loaded.model.loaded) try exposeCatalog(loaded)
@@ -108,7 +109,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
       tryPromise(() => port.close(opened)) catch () => undefined
       return
     }
-    const ready: Ready = { kind: "ready", owner, canImport: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, busy: false, issue: false }
+    const ready: Ready = { kind: "ready", owner, canImport: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, senders: {}, busy: false, issue: false }
     try SubscriptionRef.set(latest, ready)
     load(ready) catch effect () => {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
@@ -140,7 +141,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
       try keep({ ...ready, busy: false })
       return false
     }
-    const file = localFile(entry, ready.lease)
+    const file = savedFile(entry, ready.owner, ready.lease)
     const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
       owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
     } }, "FileHost")
@@ -168,6 +169,17 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     return succeeded
   }
 
+  effect function sharePhoto(ready: Ready, command: Extract<Command, { kind: "sharePhoto" }>) {
+    const { id, generation } = command
+    const event: Event = { type: "sharePhoto", id, generation }
+    if (ready.lease !== command.lease || !enabled(ready.model, event, "FileUser") || !deskEnabled(try desk.get(), { type: "visit", destination: "Email" }, "Person")) return false
+    const accepted = Option.isSome(mail) && (try mail.value.share(fileAt(ready.model, id)))
+    if (!accepted) return false
+    try advance({ ...ready, image: undefined, issue: false }, event, "FileUser")
+    try desk.send({ type: "visit", destination: "Email" }, "Person")
+    return true
+  }
+
   effect function run(command: Command) {
     if (command.kind === "account") {
       try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
@@ -190,6 +202,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
         try load(current)
         return true
       case "deletePhoto": return try deletePhoto(current, command)
+      case "sharePhoto": return try sharePhoto(current, command)
       case "capture": return try importOwner(current, { kind: "capture" })
       case "pick": return try importOwner(current, command)
       case "tab":
