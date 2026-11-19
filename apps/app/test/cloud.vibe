@@ -87,6 +87,8 @@ type Account = {
   boxes: Box[]
   sessions: Session[]
   outage: boolean
+  mailFault?: "dispatch" | "lookupMissing"
+  sendLookups: string[]
   script: Scripted[]
   turns: (Turn & { id: number })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
@@ -146,7 +148,7 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; answer: string }
 schema Script { replies: Scripted[] }
@@ -365,7 +367,7 @@ function seed(n: number, grantId: string | null, at: number, site: string): Acco
   return {
     key: `fake-key-${uuid(n)}`, credentialId: uuid(n), code: `code-${n}`, expiresAt: new Date(at + lifetimes.credential * 1000).toISOString(), acknowledged: false,
     boxes: grantId === null ? [] : [box("google", owner, grantId, at, site, uuid(n))], sessions: [], outage: false, script: [...scripted],
-    turns: [], changes: [], consents: [], googleRequests: [], speech: []
+    turns: [], changes: [], sendLookups: [], consents: [], googleRequests: [], speech: []
   }
 }
 
@@ -680,6 +682,7 @@ effect function store(site: string) {
     const { key, box: found, account } = try connection(fixed, grantId, true)
     const prepared = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
     if (!prepared) throw new NoOperation()
+    if (proposal.kind === "send" && account.mailFault !== undefined) throw new Unavailable()
     if (prepared.receipt.reviewDigest !== reviewDigest) throw new DigestChanged()
     if (prepared.receipt.state !== "prepared") return try HttpServerResponse.json({ version: 1, receipt: prepared.receipt, providerExactlyOnce: false })
     const review = proposal.kind === "send" ? (try reviewedSend(found, proposal)).review : (try reviewedChange(found, proposal)).review
@@ -696,7 +699,9 @@ effect function store(site: string) {
     const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
     const { account } = try connection(fixed, grantId, true)
     const known = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
-    if (!known) throw new NoOperation()
+    if (known?.receipt.kind === "send" && account.mailFault !== undefined)
+      try change(account.key, (a) => ({ ...a, sendLookups: [...a.sendLookups, account.mailFault === "lookupMissing" ? "missing" : known.receipt.state] }))
+    if (!known || (known.receipt.kind === "send" && account.mailFault === "lookupMissing")) throw new NoOperation()
     return try HttpServerResponse.json({ version: 1, receipt: known.receipt, providerExactlyOnce: false })
   }
 
@@ -998,8 +1003,8 @@ effect function store(site: string) {
 
   effect function outage() {
     const { key } = try signedIn()
-    const { down } = try HttpServerRequest.schemaBodyJson(Outage)
-    try change(key, (a) => ({ ...a, outage: down }))
+    const { down, mailFault } = try HttpServerRequest.schemaBodyJson(Outage)
+    try change(key, (a) => ({ ...a, outage: down, mailFault }))
     return try HttpServerResponse.json({ ok: true })
   }
 
@@ -1239,8 +1244,8 @@ export effect function expire(cloud: string, key: string, address: string) {
   try post(cloud, "/fake/expire", { address }, key)
 }
 
-export effect function outage(cloud: string, key: string, down: boolean) {
-  try post(cloud, "/fake/outage", { down }, key)
+export effect function outage(cloud: string, key: string, down: boolean, mailFault?: "dispatch" | "lookupMissing") {
+  try post(cloud, "/fake/outage", { down, mailFault }, key)
 }
 
 export effect function sentMail(cloud: string, key: string) {
