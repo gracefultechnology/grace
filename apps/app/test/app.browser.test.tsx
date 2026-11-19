@@ -8,6 +8,7 @@ import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vit
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as PasswordViews } from "../gen/app.effect.vibe";
+import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -1026,300 +1027,68 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 });
 
 
-it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
-  const person = { id: "private-qa-account", email: "reader@example.test" };
-  const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
-  const mail = { externalId: "inbox-1", from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true, metadata: { historyId: "8" } };
-  const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
-  let trashed = false;
-  const sent: string[] = [];
-  let changed: string[] = [];
-  const reminders: number[] = [];
-  const literalText = "<strong>This stays plain text.</strong>";
-  const oldURL = window.location.href;
-  const oldIntent = sessionStorage.getItem("grace-hosted-read");
-  const oldAccounts = localStorage.getItem("accounts");
-  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
-  const legacyAccount = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "previous@example.test", granted: allowedUse }, "Gmail", "AccountConnector");
-  localStorage.setItem("accounts", JSON.stringify(legacyAccount));
-  const hint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(person.id));
-  const ownerHint = Array.from(new Uint8Array(hint), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  const url = new URL(oldURL);
-  url.hash = "email";
-  url.searchParams.set("owner_hint", ownerHint);
-  window.history.replaceState(undefined, "", url);
-
-  let signedIn = false;
-  let connectorConfigured = false;
-  let inboxRequests = 0;
-  let replyFromOwner = false;
-  let unconfirmed: string | undefined;
+async function signedInTablet(accounts?: unknown) {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const person = { id: "tablet-reader", email: "reader@grace.test" };
+  const hosted: string[] = [];
   const fetch = window.fetch.bind(window);
-  let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
-  const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
-  const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
-  let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
-  events.push(occurrence);
-  const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
-  const changeInput = Schema.fromJsonString(Schema.Struct({
-    accountId: Schema.String,
-    grantId: Schema.String,
-    operationId: Schema.String,
-    recipient: Schema.optional(Schema.String),
-    subject: Schema.optional(Schema.String),
-    text: Schema.optional(Schema.String),
-    messageId: Schema.optional(Schema.String),
-    version: Schema.optional(Schema.String),
-    undoOf: Schema.optional(Schema.String),
-    replyTo: Schema.optional(Schema.String),
-    seriesFor: Schema.optional(Schema.String),
-    id: Schema.optional(Schema.String),
-    action: Schema.optional(Schema.Literals(["create", "update", "delete"])),
-    event: Schema.optional(Schema.Struct({ title: Schema.String, startAt: Schema.String, endAt: Schema.String, location: Schema.String,
-      repeat: Schema.optional(Schema.Struct({ frequency: Schema.Literals(["Weekly", "Monthly"]), timeZone: Schema.String })),
-    })),
-  }));
-  const decodeChange = Schema.decodeUnknownSync(changeInput);
   const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
-    const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
-    switch (api.pathname) {
-      case "/api/auth/session": return reply({ account: signedIn ? person : null });
-      case "/api/auth/refresh": return reply({}, 401);
-      case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
-      case "/api/auth/email/send":
-        expect(options?.body).toBe(JSON.stringify({ email: person.email }));
-        return reply({});
-      case "/api/auth/email/verify":
-        expect(options?.body).toBe(JSON.stringify({ email: person.email, code: "123456" }));
-        signedIn = true;
-        return reply({ account: person });
-      case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
-      case "/api/v1/eliza/google/status":
-        return reply({
-          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
-          identity: connectorConfigured ? { email: person.email } : null, connectionId: connectorConfigured ? grant : null,
-          grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
-        });
-      case "/api/v1/eliza/google/gmail/triage":
-        expect(Object.fromEntries(api.searchParams)).toEqual({ maxResults: "20", grantId: grant });
-        inboxRequests++;
-        return reply({ accountId: person.id, messages: trashed ? [] : [mail], nextPageToken: null });
-      case "/api/v1/eliza/google/gmail/read":
-        expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
-        return reply({
-          accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
-          reply: { recipient: "robin@example.test", subject: "Your receipt" },
-          bodyText: replyFromOwner ? literalText : "Another person’s message",
-        });
-      case "/api/v1/eliza/google/gmail/send": {
-        const outbound = decodeChange(options?.body);
-        expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test" });
-        if (outbound.replyTo)
-          expect(outbound).toMatchObject({ replyTo: mail.externalId, subject: "Your receipt", text: "Thank you." });
-        else expect(outbound).toMatchObject({ subject: "Hello", text: "See you soon." });
-        sent.push(outbound.replyTo ? "reply" : "new");
-        if (!outbound.replyTo) {
-          unconfirmed = outbound.operationId;
-          return reply({ error: "google_action_outcome_unknown" }, 409);
-        }
-        return reply({ accountId: person.id, operationId: outbound.operationId, messageId: "sent-1" });
-      }
-      case "/api/v1/eliza/google/gmail/send/status":
-        expect(Object.fromEntries(api.searchParams)).toEqual({ grantId: grant, operationId: unconfirmed });
-        return reply({ accountId: person.id, operationId: unconfirmed, messageId: "sent-2" });
-      case "/api/v1/eliza/google/gmail/trash": {
-        const outbound = decodeChange(options?.body);
-        expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
-        if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
-        trashed = !trashed;
-        return reply({ accountId: person.id, operationId: outbound.operationId, itemId: mail.externalId, version: "9" });
-      }
-      case "/api/v1/eliza/google/calendar/reminder/event":
-        expect(options?.method).toBe("GET");
-        expect(Object.fromEntries(api.searchParams)).toEqual({ occurrenceId: reminderEvent.externalId, grantId: grant });
-        return reply({ accountId: person.id, event: reminderEvent });
-      case "/api/v1/eliza/google/calendar/reminder": {
-        const input = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
-          accountId: Schema.String, grantId: Schema.String, occurrenceId: Schema.String,
-          version: Schema.String, minutes: Schema.Int,
-        })))(options?.body);
-        expect(input).toMatchObject({ accountId: person.id, grantId: grant, occurrenceId: "event-1", version: '"one"' });
-        reminders.push(input.minutes);
-        return reply({ ...input, status: input.minutes === 0 ? "cancelled" : "saved",
-          fireAt: Date.parse(time) - input.minutes * 60_000 });
-      }
-      case "/api/v1/eliza/google/calendar/series":
-        expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
-        expect(api.searchParams.get("grantId")).toBe(grant);
-        return reply({ accountId: person.id, occurrenceId: occurrence.externalId, event: series });
-      case "/api/v1/eliza/google/calendar/change": {
-        const outbound = decodeChange(options?.body);
-        expect(outbound).toMatchObject({ accountId: person.id, grantId: grant });
-        if (!outbound.action) throw new Error("Missing calendar action");
-        changed = [...changed, outbound.action];
-        const itemId = outbound.id ?? outbound.operationId.replaceAll("-", "");
-        if (outbound.seriesFor) {
-          expect(itemId).toBe(series.externalId);
-          expect(outbound.seriesFor).toBe(occurrence.externalId);
-          expect(outbound.version).toBe(series.etag);
-          if (outbound.action === "delete") events = events.filter((event) => event.seriesId !== series.externalId);
-          else if (outbound.event) {
-            series = { ...series, ...outbound.event, etag: '"series-two"' };
-            events = events.map((event) => event.seriesId === series.externalId ? { ...event, title: series.title } : event);
-          }
-        } else if (outbound.action === "delete") events = events.filter((event) => event.externalId !== itemId);
-        else if (outbound.event && outbound.action === "update") {
-          expect(outbound.version).toBe('"one"');
-          events = events.map((event) => event.externalId === itemId ? { ...event, ...outbound.event, etag: '"two"' } : event);
-        } else if (outbound.event) {
-          expect(outbound.event.repeat).toEqual({ frequency: "Weekly", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-          events = [...events, { ...outbound.event, externalId: itemId, description: "", isAllDay: false, editable: true, seriesId: null, etag: '"new"' }];
-        }
-        return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
-      }
-      case "/api/v1/eliza/google/calendar/feed":
-        expect(api.searchParams.get("grantId")).toBe(grant);
-        expect(api.searchParams.get("timeMin")).not.toBeNull();
-        expect(api.searchParams.get("timeMax")).not.toBeNull();
-        return reply({
-          accountId: person.id, nextPageToken: null,
-          events,
-        });
-      default: return fetch(input, options);
+    const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
+    if (url.origin === new URL(cloud).origin) return fetch(input, options);
+    const respond = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
+    switch (url.pathname) {
+      case "/api/auth/session": return respond({ account: person });
+      case "/api/auth/refresh": return respond({}, 401);
+      case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
+      case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
+      case "/api/v1/eliza/google/status": return respond({
+        accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
+        identity: { email: person.email }, connectionId: "58b549ef-4b49-4210-a3d1-ec31369a9f06",
+        grantedCapabilities: ["google.gmail.triage", "google.calendar.read"],
+      });
+      default:
+        if (url.pathname.startsWith("/api/v1/eliza/google/")) hosted.push(url.pathname);
+        return fetch(input, options);
     }
   });
-
-  let runtime = ManagedRuntime.make(application(undefined));
-  const host = document.body.appendChild(document.createElement("div"));
-  let root = createRoot(host);
-  const tap = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
-  try {
-    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-    await tap("Go to Account");
-    await tap("Use email");
-    await act(() => userEvent.type(page.getByRole("textbox", { name: "Email address" }), person.email));
-    await tap("Send code");
-    await act(() => userEvent.type(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
-    await tap("Sign in");
-    await expect.element(page.getByRole("button", { name: "Close Email" })).toBeVisible();
-    await expect.element(page.getByRole("button", { name: "Go to Account" })).not.toBeInTheDocument();
-    expect(inboxRequests).toBe(0);
-
-    connectorConfigured = true;
-    await act(async () => {
-      await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
-    });
-    await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
-    const homeUrl = new URL(window.location.href);
-    homeUrl.hash = "";
-    window.history.replaceState(undefined, "", homeUrl);
-    await tap("Close Email");
-    await tap(/^Email/);
-    await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
-
-    await tap(/Your receipt/);
-    await expect.element(page.getByRole("alert")).toBeVisible();
-    expect(page.getByText("Another person’s message").query()).toBeNull();
-    replyFromOwner = true;
-    await tap(/Your receipt/);
-    await expect.element(page.getByText(literalText, { exact: true })).toBeVisible();
-    expect(Array.from(document.querySelectorAll("strong")).some((node) => node.textContent === "This stays plain text.")).toBe(false);
-
-    await tap("Reply");
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message", exact: true }), "Thank you."));
-    await tap("Review email");
-    await expect.element(page.getByText("To robin@example.test")).toBeVisible();
-    expect(sent).toEqual([]);
-    await tap("Confirm and send");
-    await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
-    expect(sent).toEqual(["reply"]);
-
-    await tap("Move to Trash");
-    await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
-    await tap("Undo");
-    await expect.element(page.getByText("Message restored.")).toBeVisible();
-    await tap("New email");
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "To", exact: true }), "robin@example.test"));
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Subject", exact: true }), "Hello"));
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message", exact: true }), "See you soon."));
-    await tap("Review email");
-    await expect.element(page.getByText("To robin@example.test")).toBeVisible();
-    expect(sent).toEqual(["reply"]);
-    await tap("Confirm and send");
-    await tap("Check send status");
-    await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
-    expect(sent).toEqual(["reply", "new"]);
-    await tap("Close Email");
-    await tap("Calendar");
-    await tap(/Dentist/);
-    await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
-    expect(reminders).toEqual([]);
-    await tap("One hour before");
-    await expect.poll(() => reminders).toEqual([60]);
-    await expect.element(page.getByText("Reminder choice saved. Your tablet schedules it when it reconnects.")).toBeVisible();
-    await tap("Remove reminder");
-    await expect.poll(() => reminders).toEqual([60, 0]);
-    await tap("Change appointment");
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
-    await tap("Review appointment");
-    await expect.element(page.getByText("Dentist follow-up")).toBeVisible();
-    expect(changed).toEqual([]);
-    await tap("Confirm appointment");
-    await expect.element(page.getByText("Appointment saved.")).toBeVisible();
-    await tap(/Dentist follow-up/);
-    await tap("Change appointment");
-    await tap("Remove appointment");
-    await tap("Confirm removal");
-    await expect.element(page.getByText("Appointment removed.")).toBeVisible();
-    await tap("New appointment");
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Lunch"));
-    await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
-    await tap("Review appointment");
-    await expect.element(page.getByText("Every week · " + Intl.DateTimeFormat().resolvedOptions().timeZone)).toBeVisible();
-    await tap("Confirm appointment");
-    await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
-    await tap(/Therapy/);
-    await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
-    await tap("Change entire series");
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
-    await tap("Review appointment");
-    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
-    await tap("Confirm appointment");
-    await expect.element(page.getByText("Appointment saved.")).toBeVisible();
-    await tap(/Therapy sessions/);
-    await tap("Change entire series");
-    await tap("Remove appointment");
-    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
-    await tap("Confirm removal");
-    await expect.element(page.getByText("Appointment removed.")).toBeVisible();
-    expect(changed).toEqual(["update", "delete", "create", "update", "delete"]);
-    await tap("Close Calendar");
-    await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
-    await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    const reminderUrl = new URL(oldURL);
-    reminderUrl.hash = "calendar";
-    reminderUrl.searchParams.set("owner_hint", ownerHint);
-    reminderUrl.searchParams.set("occurrence", reminderEvent.externalId);
-    window.history.replaceState(undefined, "", reminderUrl);
-    runtime = ManagedRuntime.make(application(undefined));
-    root = createRoot(host);
-    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-    await expect.element(page.getByText(reminderEvent.description, { exact: true })).toBeVisible();
-    await expect.element(page.getByRole("button", { name: "Back to calendar" })).toBeVisible();
-  } finally {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    host.remove();
+  const kept = localStorage.getItem("accounts");
+  if (accounts === undefined) localStorage.removeItem("accounts");
+  else localStorage.setItem("accounts", JSON.stringify(accounts));
+  onTestFinished(() => {
     provider.mockRestore();
-    if (oldAccounts === null) localStorage.removeItem("accounts");
-    else localStorage.setItem("accounts", oldAccounts);
-    if (oldIntent === null) sessionStorage.removeItem("grace-hosted-read");
-    else sessionStorage.setItem("grace-hosted-read", oldIntent);
-    window.history.replaceState(undefined, "", oldURL);
-  }
+    if (kept === null) localStorage.removeItem("accounts");
+    else localStorage.setItem("accounts", kept);
+  });
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  await mount(runtime);
+  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).googleLink.tag).toBe("GoogleLinkConnected");
+  return hosted;
+}
+
+const tapNamed = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+
+it('Connect email on a signed-in tablet (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+  const hosted = await signedInTablet();
+  await expect.element(page.getByText("Connect your email to see it here.")).toBeVisible();
+  await tapNamed(/^Email/);
+  await expect.element(page.getByText("Get your email on this tablet")).toBeVisible();
+  await tapNamed("Connect your email");
+  await expect.element(page.getByRole("button", { name: /^Gmail/ })).toBeVisible();
+  expect(hosted).toEqual([]);
+});
+
+it('Read connected mail on a signed-in tablet (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
+  const hosted = await signedInTablet(sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector"));
+  await expect.element(page.getByRole("button", { name: /^Email/ }).getByText("Riverside Power")).toBeVisible();
+  await tapNamed(/^Email/);
+  await tapNamed(/Main St Clinic/);
+  await expect.element(page.getByText(/appointment with Dr\. Patel/)).toBeVisible();
+  await tapNamed("Close Email");
+  await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
+  await expect.element(page.getByRole("button", { name: "Close Calendar" })).toBeVisible();
+  expect(hosted).toEqual([]);
 });
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
@@ -1840,22 +1609,13 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const ask = "Check my two open emails and one calendar appointment.";
-  const save = "Read this email and save its appointment.";
+  const ask = "Check the email I have open.";
   const browserAsk = "Check the website I have open.";
-  const newAppointment = "Check the open appointment on this account.";
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
-    { said: ask, context: {
-      includes: ["Selected email subject: Managed appointment details"],
-      excludes: ["appointment with Dr. Patel", "Main St Clinic", "Eye check with Dr. Patel"],
-    }, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
-      actions: [{ kind: "proposeReadPlan", steps: ["ReadMail", "ReadMail", "ReadCalendar"] }] }) },
-    { said: newAppointment, context: { includes: ["Selected calendar appointment: Account B appointment"], excludes: ["Managed appointment details"] },
-      answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadCalendar"] }] }) },
+    { said: ask, context: { includes: ["Main St Clinic"], excludes: ["Selected email subject"] },
+      answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadMail"] }] }) },
     { said: browserAsk, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: ["ReadBrowser"] }] }) },
-    { said: save, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
-      actions: [{ kind: "proposeReadPlan", steps: ["ReadMail", "SaveMailAppointment"] }] }) },
   ]), client));
 
   const firstOwner = { id: "managed-plan-owner", email: "managed-a@grace.test" };
@@ -1864,23 +1624,11 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let browserCookieOwner: typeof firstOwner | undefined;
   let ownerProbes = 0;
   let hostedChoices = 0;
-  const when = Date.now();
-  const receivedAt = new Date(when).toISOString();
-  const selected = { externalId: "mail-one", from: "Riverview Clinic", subject: "Managed appointment details", receivedAt,
-    isUnread: true, metadata: { historyId: "one" } };
-  const second = { ...selected, externalId: "mail-two", from: "Eastwood Clinic" };
-  const appointment = { externalId: "event-one", title: "Managed calendar appointment", description: "", location: "Riverview",
-    startAt: new Date(when + 3_600_000).toISOString(), endAt: new Date(when + 7_200_000).toISOString(), isAllDay: false, etag: "one" };
-  const otherAppointment = { ...appointment, externalId: "event-b", title: "Account B appointment" };
   const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
   const legacy = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(legacy));
 
-  let signedIn = false;
-  let grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
-  let connected = true;
-  let historyId = "one";
   const fetch = window.fetch.bind(window);
   const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
@@ -1889,7 +1637,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     switch (url.pathname) {
       case "/api/auth/session":
         if (browserCookieOwner) ownerProbes++;
-        return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+        return respond({ account: browserCookieOwner ?? person });
       case "/api/v1/decisions":
         hostedChoices++;
         expect(new Headers(options?.headers).get("X-Eliza-Account")).toBe(secondOwner.id);
@@ -1899,22 +1647,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
       case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status": return respond({
-        accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connected, connected,
-        identity: connected ? { email: person.email } : null, connectionId: connected ? grant : null,
-        grantedCapabilities: connected ? ["google.gmail.triage", "google.calendar.read"] : [],
+        accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
+        identity: { email: person.email }, connectionId: "58b549ef-4b49-4210-a3d1-ec31369a9f06",
+        grantedCapabilities: ["google.gmail.triage", "google.calendar.read"],
       });
-      case "/api/v1/eliza/google/gmail/triage":
-        expect(url.searchParams.get("grantId")).toBe(grant);
-        return respond({ accountId: person.id, messages: [selected, second], nextPageToken: null });
-      case "/api/v1/eliza/google/gmail/read": {
-        expect(url.searchParams.get("grantId")).toBe(grant);
-        const row = url.searchParams.get("messageId") === second.externalId ? second : selected;
-        return respond({ accountId: person.id, message: { ...row, metadata: { historyId } },
-          bodyText: row.from + " message body", bodyTextAvailable: true });
-      }
-      case "/api/v1/eliza/google/calendar/feed":
-        expect(url.searchParams.get("grantId")).toBe(grant);
-        return respond({ accountId: person.id, events: [person === firstOwner ? appointment : otherAppointment], nextPageToken: null });
       default: return fetch(input, options);
     }
   });
@@ -1945,11 +1681,6 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const refresh = () => act(async () => {
     await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
   });
-  const check = async () => {
-    const result = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
-    await act(() => result.then(() => undefined));
-    return result;
-  };
   const receipts = () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.plan.receipts.map(({ evidence }) => evidence))));
 
   try {
@@ -1957,87 +1688,20 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button(/^Email/));
     await tap(button(/Main St Clinic/));
     await routeTo(page.getByText(/appointment with Dr\. Patel/));
-    signedIn = true;
-    await refresh();
-    await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
-    await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
     await tap(button("Ask Grace"));
     await send(ask);
     const review = page.getByRole("region", { name: "Review read plan" });
     await routeTo(review);
-    const revision = await runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.review.revision)));
     person = secondOwner;
-    await refresh();
-    expect(review.query()).toBeNull();
-    const staleStart = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.startReadReview(revision)));
-    await act(() => staleStart.then(() => undefined));
-    expect(await staleStart).toBe(false);
-    person = firstOwner;
     await refresh();
     await routeTo(review);
     await tap(button("Collapse"));
     await tap(button("Start read plan"));
-
-    await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
-    expect(await check()).toBe(false);
-    expect(await receipts()).toEqual([]);
-
-    await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
     await tap(button("Check email"));
-    const mailReceipt = "Open message: " + selected.subject;
-    await expect.poll(receipts).toEqual([mailReceipt]);
-
-    connected = false;
-    await refresh();
-    await routeTo(page.getByText("Google mail isn’t available right now", { exact: true }));
-    expect(await check()).toBe(false);
-    expect(await receipts()).toEqual([mailReceipt]);
-    grant = "a356abb1-f5a0-4d82-8b9b-69e4235a4990";
-    historyId = "two";
-    connected = true;
-    await refresh();
-    await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
-    expect(await check()).toBe(false);
-    expect(await receipts()).toEqual([mailReceipt]);
-
-    await tap(button("Back to Inbox"));
-    await tap(button(/Eastwood Clinic/));
-    await routeTo(page.getByText("Eastwood Clinic message body"));
-    await tap(button("Check email"));
-    await expect.poll(receipts).toEqual([mailReceipt, mailReceipt]);
-    await tap(button("Close Email"));
-    await tap(button(/^Calendar/));
-    await tap(button(/Managed calendar appointment/));
-    await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
-
-    person = secondOwner;
-    grant = "52c1abb1-6d1d-4ee4-8bd9-70e42a5d4458";
-    await refresh();
-    await tap(button(/Account B appointment/));
-    await routeTo(page.getByRole("heading", { name: otherAppointment.title, exact: true }));
-    const resumed = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.resumeReadPlan()));
-    await act(() => resumed.then(() => undefined));
-    expect(await resumed).toBe(false);
-    expect(await check()).toBe(false);
-    expect(await receipts()).toEqual([mailReceipt, mailReceipt]);
-    expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
-    await tap(button("End previous task"));
-
-    await send(newAppointment);
-    await routeTo(page.getByRole("region", { name: "Review read plan" }));
-    await tap(button("Start read plan"));
-    await tap(button("Check appointment"));
+    await expect.poll(receipts).toEqual(["Open message: Reminder: your appointment tomorrow at 10 am"]);
     await routeTo(page.getByText("Read checks complete", { exact: true }));
-    expect(await receipts()).toEqual([expect.stringMatching(/^Account B appointment · /)]);
 
-    await send(save);
-    await routeTo(page.getByText("I can check your mail and calendar, but I can’t save an appointment from that plan.", { exact: true }));
-    expect(page.getByRole("region", { name: "Review read plan" }).query()).toBeNull();
-
-    await tap(button("Close Calendar"));
+    await tap(button("Close Email"));
     await tap(button("Internet"));
     const address = page.getByRole("textbox", { name: "Address" });
     await routeTo(address);
