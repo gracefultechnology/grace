@@ -7,7 +7,8 @@ The shell constructs sources through the projections below from decoded domain s
 The photo handoff below is a stateless operation over the actual Files and
 chosen mailbox states. An accepted result replaces those two states atomically;
 a declined result supplies no replacement. It is not another Files or Email store.
-Close is the same kind of operation over the device and the app on screen.
+Close is the same kind of operation over the device and the app on screen,
+and so is opening an email's link over the device, Email and the Browser.
 
 ## Story: Open the same bill from any surface
 
@@ -407,6 +408,88 @@ pure val photoRequestValues = Set(
   { id: "photo", fileGeneration: 2, owner: "owner", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 0 },
   { id: "photo", fileGeneration: 3, owner: "other", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 0 },
   { id: "photo", fileGeneration: 3, owner: "owner", provider: "mail-provider", account: "mail-account", mailGeneration: 0, mailRevision: 1 })
+```
+
+## Story: Open a link from an email in my browser
+
+> As a person reading an email, I can tap a link in it and see that page in
+> Grace's Browser, while a link Grace warned me about opens only after I
+> confirm it.
+
+### A link Email released opens in a new Browser tab, and no other link does
+
+Email decides when a tapped link may leave the message: a link in an
+unflagged message is released at once, and one behind a scam warning only
+after the person confirms that same link (`spec/app/email.md`, "A scam
+warning needs current evidence and holds that message's links"). The host
+then hands that one released link to the Browser while the device is ready
+and the message it came from is still the one on screen in Email. Email marks the link opened, the
+Browser opens it in a new tab after the others, selected and loading, and the
+device shows the Browser. The pages already open stay in their tabs. A held
+link, an empty link, a link Email did not release, a different link, a message no longer
+on screen, or a message covered by a composer opens nothing and leaves all three as they were. If the browser’s next tab identifier is already in use, the handoff also declines. Opening a link
+never sends mail and leaves the messages and the outbox as they were. With a ready device and a fresh browser, a person reading a flagged message can tap its link, confirm the warning and open that link.
+
+```quint
+type LinkHandoff = LinkDeclined | OpenedLink({ device: S::Shell, mail: E::Mailbox, browser: B::Browser })
+pure def mayOpenEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
+  device.surface == S::Email and S::canOpenSurface(device, S::Browser) and
+  reader.view == E::Message and not(reader.composeVisible) and reader.link.ref == reader.messageRef and
+  E::canLinkOpened(reader, link, E::MailHost) and E::selectedMessageIsCurrent(reader) and
+  not(B::hasTab(browser, browser.nextId)) and B::canNavigate(browser, link)
+pure def openEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): LinkHandoff =
+  if (mayOpenEmailLink(device, reader, browser, link)) OpenedLink({
+    device: S::openSurface(device, S::Browser),
+    mail: E::linkOpened(reader, link, E::MailHost),
+    browser: B::navigate(B::openTab(browser), link)
+  }) else LinkDeclined
+pure def lawOnlyAReleasedLinkOpens(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
+  val handoff = openEmailLink(device, reader, browser, link)
+  (reader.link.status != E::LinkReleased or reader.link.link != link or reader.view != E::Message or
+    reader.composeVisible or reader.link.ref != reader.messageRef) implies (match handoff {
+    | LinkDeclined => true
+    | OpenedLink(_) => false
+  })
+pure def lawAReleasedLinkOpensInANewBrowserTab(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
+  val handoff = openEmailLink(device, reader, browser, link)
+  mayOpenEmailLink(device, reader, browser, link) implies (match handoff {
+    | LinkDeclined => false
+    | OpenedLink(result) => result.device.surface == S::Browser and result.mail.link == E::noLink and
+        result.browser.selected == browser.nextId and result.browser.tabs.length() == browser.tabs.length() + 1 and
+        browser.tabs.every(t => result.browser.tabs.includes(t)) and
+        B::tabUrl(B::activeTab(result.browser)) == link and B::activeTab(result.browser).load == B::Loading
+  })
+pure def lawOpeningALinkNeverSends(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
+  val handoff = openEmailLink(device, reader, browser, link)
+  match handoff {
+    | LinkDeclined => true
+    | OpenedLink(result) => result.mail.issuedSends.subseteq(reader.issuedSends) and reader.issuedSends.subseteq(result.mail.issuedSends) and
+        result.mail.sendStatus == reader.sendStatus and result.mail.messages == reader.messages and result.mail.outbox.length() == reader.outbox.length()
+  }
+pure val readerMailbox: E::Mailbox = { ...photoMailbox, connection: E::Connected, canRead: true,
+  messages: List(I::loadMessage(I::initial,
+    { identity: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
+      folder: I::InboxFolder, unread: false, answered: false }, I::MessageProvider)),
+  view: E::Message, messageRef: "message", messageRefs: Set("message") }
+pure val flaggedMailbox: E::Mailbox = { ...readerMailbox, warning: { ref: "message", generation: 0, evidence: "classifierScam" } }
+pure def lawConfirmingAFlaggedMessageLinkCanReachTheBrowser(link: str): bool =
+  val device = { ...S::initial, readiness: S::Ready, surface: S::Email }
+  val held = E::openLink(flaggedMailbox, link, E::MailUser)
+  val confirmed = E::confirmLink(held, link, true, E::MailUser)
+  link != "" implies (
+    E::canOpenLink(flaggedMailbox, link, E::MailUser) and
+    not(mayOpenEmailLink(device, held, B::initial, link)) and
+    E::canConfirmLink(held, link, true, E::MailUser) and
+    mayOpenEmailLink(device, confirmed, B::initial, link))
+pure val emailLink: str = "https://utility.example/statement"
+pure val readerValues = Set(readerMailbox,
+  E::openLink(readerMailbox, emailLink, E::MailUser),
+  E::openLink(flaggedMailbox, emailLink, E::MailUser),
+  E::confirmLink(E::openLink(flaggedMailbox, emailLink, E::MailUser), emailLink, true, E::MailUser),
+  { ...E::openLink(readerMailbox, emailLink, E::MailUser), view: E::Inbox },
+  { ...E::openLink(readerMailbox, emailLink, E::MailUser), view: E::Attachment },
+  { ...E::openLink(readerMailbox, emailLink, E::MailUser), composeVisible: true })
+pure val linkValues = Set(emailLink, "https://elsewhere.example", "")
 ```
 
 ## Story: Close an app without losing what I was doing
