@@ -1,7 +1,7 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"
-import { Effect, ManagedRuntime } from "effect";
+import { Effect } from "effect";
 import { act } from "react";
-import { expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { allowedUse } from "../gen/app__accounts.ts";
@@ -9,11 +9,10 @@ import { type Ask, type Event as ProposalEvent, Machine as Proposal } from "../g
 import { proposalOf } from "../gen/app__proposal.ts";
 import { consent, type Request } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { application } from "../src/app.vibe";
 import { day, dayOf, hour, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, outage, signIn } from "./cloud.vibe";
-import { actOnScreen, mount, storedGmail } from "./screen.tsx";
+import { actOnScreen, mountGmail } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -44,11 +43,7 @@ async function start(down = false) {
   if (down) await reachable(false);
   const eyeAt = Date.parse(eye.startAt);
   const eyeDay = dayOf(eyeAt);
-  localStorage.clear();
-  localStorage.setItem("accounts", JSON.stringify(storedGmail(gmail)));
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  onTestFinished(() => localStorage.clear());
-  await mount(runtime);
+  const runtime = await mountGmail(gmail, { url: cloud, key: secret });
   const run = <A,>(effect: Effect.Effect<A, unknown, Workspaces | AccountsMachine | Proposal | Instances>) => act(() => runtime.runPromise(effect));
   const card = page.getByRole("group", { name: "Calendar", exact: true });
   return {

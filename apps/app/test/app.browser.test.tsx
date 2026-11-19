@@ -1251,8 +1251,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply", "new"]);
     await tap("Close Email");
-    await tap("Calendar");
-    await tap(/Dentist/);
+    await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /Dentist/ })));
     await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
     expect(reminders).toEqual([]);
     await tap("One hour before");
