@@ -1,13 +1,15 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
+import { historyStart, type MessageAuthor } from "../gen/app__conversation.effect.vibe"
 import { audible } from "../gen/app__preferences.effect.vibe"
 import { fromPerson } from "../gen/app__request.effect.vibe"
 import { Machine as Workspaces, enabled, privateSurfaceActive, replyControlContext, step, type Event, type ReplyControlContext } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
+import { looker, render } from "./context.vibe"
 import { Conversation } from "./conversation.vibe"
 import { withhold } from "./private.ts"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedAuthority } from "./managedReads.vibe"
+import { ManagedReads, guidedAuthority } from "./managedReads.vibe"
 import { ReplyControls } from "./replyControls.vibe"
 import { Reply } from "./reply.schema.ts"
 import { webView } from "./surfacePlugin.ts"
@@ -25,6 +27,16 @@ type BridgeEvent = { kind: "data" | "end"; payload: unknown }
 type DecodedEvent = { kind: "data"; value: typeof StreamData.Type } | { kind: "end"; value: typeof StreamEnd.Type }
 
 error TurnUnavailable
+
+const turnLimit = 32768
+const speakers: Record<MessageAuthor, string> = { HumanMessage: "The person", GraceMessage: "Grace", ActionMessage: "The tablet" }
+const asking = "The conversation so far, oldest first. Answer the person’s last message."
+
+function turnText(shown: string, lines: readonly string[]): string {
+  const conversation = [asking, ...lines].join("\n")
+  if (shown.length + conversation.length + 2 > turnLimit && lines.length > 1) return turnText(shown, lines.slice(1))
+  return `${shown.slice(0, Math.max(0, turnLimit - conversation.length - 2))}\n\n${conversation}`.trim()
+}
 
 function sameContext(a: ReplyControlContext, b: ReplyControlContext) {
   return a.generation === b.generation && a.device === b.device && a.browser === b.browser && a.preferences === b.preferences
@@ -90,12 +102,12 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
   const turns = try Conversation
   const setup = try Setup
   const agent = try Agent
-  const opened = try Ref.make<typeof Creation.Type.data.conversation | undefined>(undefined)
+  const managed = try ManagedReads
+  const look = try looker()
 
   effect function setReady(raw: unknown) {
     const status = Schema.decodeUnknownEffect(Status)(raw) catch () => undefined
     const ready = status?.state === "running"
-    if (!ready) try Ref.set(opened, undefined)
     const { device } = try workspace.get()
     if (device.reasoningAvailable !== ready) {
       const availability = { connection: device.connectivity, reasoning: ready, microphone: device.microphoneAllowed, observation: device.observationAllowed }
@@ -122,20 +134,20 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
     if (privateSurfaceActive(scene)) return
     const request = try controls.capture()
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
-    const { messages } = scene.assistant.conversation
+    const transcript = scene.assistant.conversation
+    const { messages } = transcript
     const index = messages.length - 1
     const message = messages[index]
     if (message === undefined || message.author !== "HumanMessage") return
-    const text = try Effect.orDie(Effect.try(() => withhold({ text: message.text, passwords: [] })))
-    if (text !== message.text) {
+    const lines = try Effect.orDie(Effect.try(() => messages.slice(historyStart(transcript)).map(({ author, text }) => `${speakers[author]}: ${withhold({ text, passwords: [] })}`)))
+    if (lines.at(-1) !== `${speakers.HumanMessage}: ${message.text}`) {
       workspace.send({ type: "purgePrivate", token, messageIndex: index, purgeDraft: false }, "Host") catch () => undefined
       return
     }
+    const shown = render(try look(), try Clock.currentTimeMillis, [], [], try managed.guidedSelection())
     effect {
-      const current = try Ref.get(opened)
-      const conversation = current ?? (try createConversation(plugin))
-      if (current === undefined) try Ref.set(opened, conversation)
-      const raw = try finalReply(plugin, conversation, text)
+      const conversation = try createConversation(plugin)
+      const raw = try finalReply(plugin, conversation, turnText(shown.text, lines))
       const reply = try Schema.decodeUnknownEffect(Reply)(raw)
       const safe = try Effect.orDie(Effect.try(() => withhold({ text: reply.text, passwords: [] })))
       const choicesSafe = try Effect.orDie(Effect.try(() => reply.answers.every((answer) => withhold({ text: answer, passwords: [] }) === answer)))

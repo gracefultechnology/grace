@@ -1,4 +1,4 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"; spec/app/mailboxes.md, "Grace is shown only what Margaret can see"; spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"; spec/app/mailboxes.md, "Grace is shown only what Margaret can see"; spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
 import { Machine as Accounts, type Accounts as Registry, mailAccounts, type Problem, type Provider, told as accountsTold } from "../gen/app__accounts.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { calendarContext, type CalendarSource, type CalendarTold, dayRows, lead, openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
@@ -61,10 +61,10 @@ const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook"
 const folders: Record<Folder, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts", TrashFolder: "Trash", PurgedFolder: "deleted for good" }
 const problems: Record<Problem, string> = {
   NoProblem: "",
-  ListedProvider: "The address she typed belongs to a company with its own sign-in page, so the tablet sends her there.",
-  PasswordRefused: "Her email company said the password she typed was wrong. You cannot see it: help her calmly to type it again exactly.",
-  ServersRefused: "Her email company did not accept the mail server settings.",
-  SignInUnfinished: "Signing in at her email company was not finished.",
+  ListedProvider: "The address the person typed belongs to a company with its own sign-in page, so the tablet sends them there.",
+  PasswordRefused: "Their email company said the password they typed was wrong. You cannot see it: help them calmly to type it again exactly.",
+  ServersRefused: "Their email company did not accept the mail server settings.",
+  SignInUnfinished: "Signing in at their email company was not finished.",
   AlreadyOnTablet: "That email is already on the tablet.",
   EmailWaiting: "That email cannot be removed yet: an email from it still waits in Outbox."
 }
@@ -72,11 +72,11 @@ const outcomes: Record<Outcome, string> = {
   Applied: "was done",
   NotYetAvailable: "is not available on this tablet yet",
   NotFound: "found nothing that matched what you named",
-  NotHerTurn: "was not done: only Margaret’s own words in her latest turn can ask for it",
+  NotHerTurn: "was not done: only the person’s own words in their latest turn can ask for it",
   NotShown: "was not done: that email or calendar is not shown on the tablet",
   OwnerRefused: "was not done: the screen does not allow it as it is now",
-  AlreadyInCalendar: "was not done: it is already in her calendar, or you already asked her",
-  NothingAsked: "was not done: you are not waiting on her answer to a question",
+  AlreadyInCalendar: "was not done: it is already in their calendar, or you already asked them",
+  NothingAsked: "was not done: you are not waiting on their answer to a question",
   NotOnScreen: "was not done: that is not on the screen"
 }
 
@@ -100,9 +100,9 @@ function appointment(registry: Registry, key: number, d: EntryDetails) {
 
 function asked(s: Scene, ask: Ask): string {
   return match (ask) {
-    when { tag: "AddAsk", let target, let review }: `You asked Margaret whether to add ${appointment(s.registry, target, review.entry.details)}.`;
-    when { tag: "ChangeAsk", let target, let review }: `You asked Margaret whether to change ${quoted(entryAt(sourceAt(s.calendars, target).view, review.id).committed.title)} to ${appointment(s.registry, target, review.details)}.`;
-    when { tag: "DeleteAsk", let target, let review }: `You asked Margaret whether to remove ${review.scope === "EntireSeries" ? "every repeat of " : ""}${appointment(s.registry, target, entryAt(sourceAt(s.calendars, target).view, review.id).committed)}.`;
+    when { tag: "AddAsk", let target, let review }: `You asked the person whether to add ${appointment(s.registry, target, review.entry.details)}.`;
+    when { tag: "ChangeAsk", let target, let review }: `You asked the person whether to change ${quoted(entryAt(sourceAt(s.calendars, target).view, review.id).committed.title)} to ${appointment(s.registry, target, review.details)}.`;
+    when { tag: "DeleteAsk", let target, let review }: `You asked the person whether to remove ${review.scope === "EntireSeries" ? "every repeat of " : ""}${appointment(s.registry, target, entryAt(sourceAt(s.calendars, target).view, review.id).committed)}.`;
     when { tag: "NoAsk" }: "";
   }
 }
@@ -118,12 +118,12 @@ function always(s: Scene, now: number): readonly string[] {
   const inbox = mailContext(registry, mail).filter((r) => r.record.folder === "InboxFolder")
   const waiting = outboxCount(registry, mail)
   return [
-    `Margaret’s calendar for the next two weeks: ${rows.length === 0 ? "nothing planned" : rows.map((r) => appointment(registry, r.key, r.details)).join("; ")}.`,
-    ...pending.ask.tag === "NoAsk" ? [] : [`${asked(s, pending.ask)} It happens only if she says yes${pending.agreed > 0 ? ", and she has said yes" : ""}.`],
+    `The person’s calendar for the next two weeks: ${rows.length === 0 ? "nothing planned" : rows.map((r) => appointment(registry, r.key, r.details)).join("; ")}.`,
+    ...pending.ask.tag === "NoAsk" ? [] : [`${asked(s, pending.ask)} It happens only if they say yes${pending.agreed > 0 ? ", and they have said yes" : ""}.`],
     `Email accounts on the tablet: ${registry.accounts.length === 0 ? "none yet" : registry.accounts.map((a) => {
       const box = mail.find((m) => m.account === a.id)
       const uses = [a.use.mail && "email", a.use.calendar && "calendar", a.use.contacts && "contacts"].filter((u) => u !== false)
-      return `${a.name} (${a.address}${box !== undefined && needsSignIn(box.mailbox) ? ", needs her to sign in again" : ""}; ${uses.length === 0 ? "nothing turned on" : `${uses.join(", ")} on`})`
+      return `${a.name} (${a.address}${box !== undefined && needsSignIn(box.mailbox) ? ", needs them to sign in again" : ""}; ${uses.length === 0 ? "nothing turned on" : `${uses.join(", ")} on`})`
     }).join("; ")}.`,
     ...mailAccounts(registry).length === 0 ? [] : [`Email inbox: ${inbox.length === 0 ? "empty" : inbox.map((r) => `${sender(s, r.account, r.record.identity.ref)}${r.record.unread ? " (unread)" : ""} [${mailTarget(r.account, r.record.identity.ref)}]`).join("; ")}.`],
     ...waiting === 0 ? [] : [`${waiting === 1 ? "One email waits" : `${waiting} emails wait`} in Outbox and will go by itself when the tablet is back online.`]
@@ -138,7 +138,7 @@ function reading(s: Scene, account: number, m: Mailbox): Part {
   const linked = c !== undefined && /https?:\/\//.test(c.body)
   return {
     lines: [
-      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "her"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(unlinked(c?.body ?? ""))}.`,
+      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "them"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(unlinked(c?.body ?? ""))}.`,
       ...files.length === 0 ? [] : [`Attached: ${files.join(", ")}.`],
       ...photos === 0 ? [] : [`${photos} photo${photos === 1 ? "" : "s"} attached.`],
       ...scam ? ["The caution strip says this email looks like a scam."] : []
@@ -152,8 +152,8 @@ function composing(s: Scene, account: number, m: Mailbox): Part {
   const several = fromChoices(s.registry, s.mail).length > 1
   return {
     lines: [
-      `Email: Margaret is writing ${m.replyTo === "" ? "a new email" : "a reply"} to ${m.draft.to === "" ? "nobody yet" : m.draft.to} from ${from}. Subject ${said(m.draft.subject)}. Message so far: ${said(m.draft.body)}.${m.draftAttachments.length === 0 ? "" : ` ${m.draftAttachments.length} attached.`}`,
-      "Only Margaret taps Send."
+      `Email: the person is writing ${m.replyTo === "" ? "a new email" : "a reply"} to ${m.draft.to === "" ? "nobody yet" : m.draft.to} from ${from}. Subject ${said(m.draft.subject)}. Message so far: ${said(m.draft.body)}.${m.draftAttachments.length === 0 ? "" : ` ${m.draftAttachments.length} attached.`}`,
+      "Only the person taps Send."
     ],
     targets: [...several ? ["from"] : [], "body", "send"]
   }
@@ -200,19 +200,19 @@ function accountsPage(s: Scene): Part {
   const { registry: a } = s
   const company = companies[a.signIn.provider]
   if (a.signIn.stage === "ProviderPage")
-    return { lines: [`Her ${company} sign-in page is open; you cannot see it. She types her own email address and password there, and you never ask for them.`], targets: [] }
+    return { lines: [`Their ${company} sign-in page is open; you cannot see it. They type their own email address and password there, and you never ask for them.`], targets: [] }
   const shown = a.accounts.find((x) => x.id === a.shown)
   const grid = Object.keys(companies).map((p) => `prov-${p}`)
   const parts: Record<Registry["page"], Part> = {
     AccountList: a.accounts.length === 0
-      ? { lines: ["It asks which email she uses, with a tile for each email company."], targets: grid }
-      : { lines: ["It lists her emails, with Add another email."], targets: [...a.accounts.map((x) => `acc-${x.id}`), "acadd"] },
-    AddAccount: { lines: ["It asks which email company she uses, with a tile for each."], targets: grid },
-    OtherEmailPage: { lines: ["It shows the Other email form: her name, her email address and her password, which she types herself."], targets: [] },
+      ? { lines: ["It asks which email they use, with a tile for each email company."], targets: grid }
+      : { lines: ["It lists their emails, with Add another email."], targets: [...a.accounts.map((x) => `acc-${x.id}`), "acadd"] },
+    AddAccount: { lines: ["It asks which email company they use, with a tile for each."], targets: grid },
+    OtherEmailPage: { lines: ["It shows the Other email form: their name, their email address and their password, which they type themselves."], targets: [] },
     MailServersPage: { lines: [`It shows Mail settings for ${a.signIn.domain}: the incoming and outgoing mail servers, which are not secret.`], targets: [] },
     AccountDetail: { lines: [`It shows ${shown?.name ?? "an email"} (${shown?.address ?? ""}), with Email, Calendar and Contacts switches and Remove from this tablet.`], targets: [] }
   }
-  const checking = a.signIn.stage === "CheckingOther" || a.signIn.stage === "CheckingServers" ? ["The tablet is checking her email details with her email company."] : []
+  const checking = a.signIn.stage === "CheckingOther" || a.signIn.stage === "CheckingServers" ? ["The tablet is checking their email details with their email company."] : []
   const part = parts[a.page]
   return { lines: [...part.lines, ...checking, ...problems[a.problem] === "" ? [] : [problems[a.problem]]], targets: part.targets }
 }
@@ -226,11 +226,11 @@ function settingsScreen(s: Scene): Part {
 
 /** What Grace is told of an email that changed, in words; empty when nothing is told. */
 export function toldOfMail(s: Scene, news: MailTold): string {
-  const name = s.registry.accounts.find((a) => a.id === news.account)?.name ?? "her email"
+  const name = s.registry.accounts.find((a) => a.id === news.account)?.name ?? "their email"
   return match (news.news) {
-    when "OpenedEmail": `Margaret opened ${sender(s, news.account, news.ref)}.`;
-    when "SentEmail": `Margaret tapped Send, and her email from ${name} is sent.`;
-    when "QueuedEmail": `Margaret tapped Send while the tablet is offline: her email from ${name} waits in Outbox and goes by itself when the tablet is back online.`;
+    when "OpenedEmail": `The person opened ${sender(s, news.account, news.ref)}.`;
+    when "SentEmail": `The person tapped Send, and their email from ${name} is sent.`;
+    when "QueuedEmail": `The person tapped Send while the tablet is offline: their email from ${name} waits in Outbox and goes by itself when the tablet is back online.`;
     when "OutboxSent": `An email waiting in Outbox from ${name} was sent.`;
     when "TrashedEmail": `${sender(s, news.account, news.ref)} was moved to Trash; Undo can bring it back.`;
     when "NoMailNews": "";
@@ -239,7 +239,7 @@ export function toldOfMail(s: Scene, news: MailTold): string {
 
 /** What Grace is told of a calendar that changed, or of a yes the calendar could not take. */
 export function toldOfCalendar(s: Scene, report: { readonly told: CalendarTold } | { readonly refused: Ask }): string {
-  if ("refused" in report) return "Margaret said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if she still wants it."
+  if ("refused" in report) return "The person said yes, but the calendar could not take it as you asked, so nothing changed. Ask again if they still want it."
   const { news, key, id } = report.told
   const c = entryAt(sourceAt(s.calendars, key).view, id)
   const what = appointment(s.registry, key, c.committed)
@@ -257,10 +257,10 @@ export function toldOfAccounts(before: Registry, after: Registry): string {
   const account = [...after.accounts, ...before.accounts].find((a) => a.id === t.account)
   const company = companies[t.provider]
   return match (t.kind) {
-    when "TellPageOpen": `Margaret chose ${company}. ${company}’s own sign-in page is open on the tablet; she types her own email address and password there, and you cannot see it.`;
-    when "TellConnected": `Margaret connected her ${account?.name ?? company} email (${account?.address ?? ""}) to the tablet.`;
-    when "TellRenewed": `Margaret signed in to ${account?.name ?? company} again.`;
-    when "TellRemoved": `Margaret removed her ${account?.name ?? company} email from the tablet. Its emails and appointments no longer show here; they are still safe with ${company}.`;
+    when "TellPageOpen": `The person chose ${company}. ${company}’s own sign-in page is open on the tablet; they type their own email address and password there, and you cannot see it.`;
+    when "TellConnected": `The person connected their ${account?.name ?? company} email (${account?.address ?? ""}) to the tablet.`;
+    when "TellRenewed": `The person signed in to ${account?.name ?? company} again.`;
+    when "TellRemoved": `The person removed their ${account?.name ?? company} email from the tablet. Its emails and appointments no longer show here; they are still safe with ${company}.`;
     when "TellProblem": problems[t.problem];
     when "TellNothing": "";
   }
@@ -295,7 +295,7 @@ export function render(s: Scene, now: number, notDone: readonly Applied[], told:
   const visibleManaged = selected.kind === "mail" && device.surface === "Email" ? "Selected email subject: " + selected.subject
     : selected.kind === "calendar" && device.surface === "Calendar" ? "Selected calendar appointment: " + selected.title : ""
   const part = legacy || (device.surface !== "Email" && device.surface !== "Calendar") ? screen(s)
-    : { lines: visibleManaged === "" ? [] : [withhold({ text: visibleManaged, passwords: [] })], targets: [] }
+    : { lines: visibleManaged === "" ? [] : [visibleManaged], targets: [] }
   const lines = [
     `It is ${when(now)}.`,
     `On the screen: ${surfaces[device.surface]}. The internet is ${device.connectivity === "Online" ? "connected" : "not connected"}. Your window is ${assistant.presentation === "Expanded" ? "expanded" : "compact"}.`,
@@ -307,5 +307,5 @@ export function render(s: Scene, now: number, notDone: readonly Applied[], told:
     ...notDone.map(({ action, outcome }) => `Last time, ${action.kind} ${outcomes[outcome]}; say so if it matters.`),
     ...!legacy || told.length === 0 ? [] : [`What happened on the tablet since, as the tablet tells you (it asks nothing of you): ${told.join(" ")}`]
   ]
-  return { text: lines.join("\n"), targets: new Set(part.targets) }
+  return { text: withhold({ text: lines.join("\n"), passwords: [] }), targets: new Set(part.targets) }
 }
