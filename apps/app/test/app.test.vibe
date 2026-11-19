@@ -255,7 +255,7 @@ it.live("Read an email and its original attachment, and find and open the email 
         found: ["Reminder: your appointment tomorrow at 10 am"],
         header: { ref: "clinic", generation: 4, address: "frontdesk@mainst-clinic.test", subject: "Re: Reminder: your appointment tomorrow at 10 am", verified: true },
         receipt: { generation: 4, succeeded: true, suspicion: "", assets: [{
-          id: "clinic/2", kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
+          id: JSON.stringify(["Gmail", gmail.address, "clinic", "2"]), kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
           sourceRef: "clinic/2", contentRef: "2", group: "clinic", savedAt: opened.content.receivedAt, pages: 2
         }] },
         attached: true, form: ["application/pdf", true],
