@@ -1,7 +1,7 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
-import { expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
@@ -53,13 +53,22 @@ async function start(withAccounts = true) {
     await allowOutlook(secret);
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
+  const connectivity = vi.spyOn(window.navigator, "onLine", "get");
   const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  onTestFinished(() => localStorage.clear());
+  onTestFinished(() => {
+    connectivity.mockRestore();
+    localStorage.clear();
+  });
   await mount(runtime);
   return {
     secret,
-    host: (availability: "Online" | "Offline") => act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
-      w.send({ type: "setAvailability", availability: { connection: availability, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed } }, "Host"))))),
+    host: (availability: "Online" | "Offline") => act(async () => {
+      const online = availability === "Online";
+      connectivity.mockReturnValue(online);
+      window.dispatchEvent(new Event(online ? "online" : "offline"));
+      await expect.poll(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
+        Effect.map(workspace.get(), ({ device }) => device.connectivity)))).toBe(availability);
+    }),
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
     company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } })).json()),
   };
