@@ -372,6 +372,10 @@ affected entries, the adapter applies this operation successively with each
 new generation before releasing the conversation for further use. Sanitized
 state replaces any retained prompt/context copy; raw capture buffers and logs
 are outside this model and must be scrubbed by the same privacy boundary.
+What the tablet tells Grace with each turn, on either path, passes through
+the same detection before it leaves the tablet: the screen, the open
+website's host, the inbox, the open email and the calendar. What it finds
+there is masked, not removed from her transcript.
 
 ```quint
 pure val privateNotice = "[Private information removed]"
@@ -589,7 +593,10 @@ pure def sometimesActionRecorded(c: Conversation): bool = c.messages.some(m => m
 ### Each turn sends a bounded window of the transcript
 
 The workspace transcript is the only conversation history. Each turn sends
-its last 24 messages to the agent, which keeps no copy of its own.
+at most its last 24 messages to the agent, with what the tablet tells Grace,
+dropping the oldest messages when they do not all fit what the agent accepts.
+The agent answers from what the turn sends and never from earlier turns it
+kept itself.
 
 ```quint
 pure val historyMessages = 24
