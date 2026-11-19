@@ -16,7 +16,7 @@ const others = [
 ] as const;
 const layouts = ["colon", "space", "next", "dot"] as const;
 
-const pick = <T>(values: readonly T[], n: number): T => values[((Math.trunc(n) % values.length) + values.length) % values.length]!;
+const pick = <T>(values: readonly T[], n: number): T => values[((Math.trunc(n) % values.length) + values.length) % values.length];
 
 const placed = (label: string, value: string, layout: (typeof layouts)[number], split: boolean) => {
   const money = /^\$(\d+)\.(\d{2})$/u.exec(value);

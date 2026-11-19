@@ -28,7 +28,6 @@ import { foldApostrophes } from "./words.ts"
 
 /** Where Grace's agent answers, and the tablet's credential for it. */
 export type CloudLink = { readonly url: string; readonly key: string }
-/** What a check of the plan's next outcome found: it counted, or why it did not. */
 export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Refused"
 /** A turn the person takes: typed, or one of the answers Grace offered. */
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>

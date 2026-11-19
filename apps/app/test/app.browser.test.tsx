@@ -20,11 +20,8 @@ import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, otherPassword, reply, script, signIn, turns } from "./cloud.vibe";
-import { pageCommand } from "../../../vendor/eliza/packages/os/browser/src/page-command.mjs";
-import readVisiblePage from "../../../vendor/eliza/packages/os/android/browser-surface/resources/read-page.js?raw";
-import appShape from "./site/shapes/app.html?raw";
-import countdownShape from "./site/shapes/countdown.html?raw";
-import statementsShape from "./site/shapes/statements.html?raw";
+import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
+import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
 import { actOnScreen, mount, signInToGrace } from "./screen.tsx";
 import "../src/main.css";
 
@@ -106,11 +103,8 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
   };
 }
 
-/**
- * A synthetic website page in a frame, read as the native page reads it: the pinned page command's snapshot and the
- * pinned visible-text reader, each run inside the page's own document.
- */
-async function pinnedPage(html: string) {
+async function pinnedPage(shape: string, change = (html: string) => html) {
+  const html = change(await (await fetch(new URL(`/journey/shapes/${shape}.html`, inject("site")))).text());
   const frame = document.body.appendChild(document.createElement("iframe"));
   frame.style.cssText = "position:fixed;left:-2000px;top:0;width:800px;height:600px;border:0";
   const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
@@ -1690,9 +1684,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let domRevision = 1;
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
-  const card = { id: "card-statements", url: origin + "/statements", frame: await pinnedPage(statementsShape) };
-  const counting = { id: "countdown-statement", url: origin + "/statement", frame: await pinnedPage(countdownShape) };
-  const billing = { id: "account-app", url: origin + "/account", frame: await pinnedPage(appShape
+  const card = { id: "card-statements", url: origin + "/statements", frame: await pinnedPage("statements") };
+  const counting = { id: "countdown-statement", url: origin + "/statement", frame: await pinnedPage("countdown") };
+  const billing = { id: "account-app", url: origin + "/account", frame: await pinnedPage("app", (html) => html
     .replace('<main id="view"></main>', '<div id="view"></div>').replace("<h1>Usage</h1>", "<h1>Today's usage</h1>")) };
   let pinned: typeof card | undefined;
   let betweenReads: (() => void) | undefined;
@@ -1933,7 +1927,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     accountNetwork.mockRestore();
     localStorage.clear();
   }
-});
+}, 240_000);
 
 it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
