@@ -149,6 +149,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).toBeVisible();
   await expect.element(row("Eye check with Dr\\. Patel")).not.toBeInTheDocument();
   await click("Connect email");
+  await expect.element(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" })).toHaveAttribute("aria-current", "page");
   await expect.element(page.getByRole("switch", { name: "Calendar" })).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: new RegExp(gmail) })).toBeVisible();
   await click("Close Settings");
@@ -161,6 +162,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
   // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendarView.md, "Coming up lists saved events after the selected day"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
   await toEyeWeek();
+  await expect.element(row("Eye check with Dr\\. Patel", "Gmail")).toBeVisible();
   const gmailView = await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get()));
   const startAt = midnight(eyeDay) + 15 * hour;
   const entry = {
@@ -332,8 +334,15 @@ it('Delete the first and then every appointment of a repeating email series (spe
   await expect.poll(walks, atCloud).toEqual([]);
 }, journey);
 
-it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
+it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event"; spec/app/notices.md, "Story: See what needs me on Home")', async () => {
   const { card } = await start();
+  const network = { online: true };
+  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
+  running.push(async () => { Reflect.deleteProperty(navigator, "onLine"); });
+  const reach = (online: boolean) => act(() => {
+    network.online = online;
+    window.dispatchEvent(new Event(online ? "online" : "offline"));
+  });
   // spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
   const today = dayOf(Date.now());
   const addToday = async (title: string, time: string) => {
@@ -364,6 +373,12 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(reminded("Tea with Joan", "8 am")).toBeVisible();
   await expect.element(reminded("Pill pickup", "7 am")).not.toBeInTheDocument();
   await click("Home");
+  // spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"
+  await reach(false);
+  await expect.element(page.getByText("Not connected to the internet")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
+  await reach(true);
+  await expect.element(page.getByText("Not connected to the internet")).not.toBeInTheDocument();
   await click("See details");
   await expect.element(page.getByText(/8 am to 9 am/)).toBeVisible();
   await expect.element(page.getByText("Reminder day before")).toBeVisible();

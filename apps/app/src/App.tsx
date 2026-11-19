@@ -165,7 +165,7 @@ function Screen() {
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-            <HomeScreen className="inset-0" banner={<><NoticeBanner />{!useManaged && accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}</>} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+            <HomeScreen className="inset-0" banner={<><NoticeBanner />{online && !useManaged && accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}</>} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
