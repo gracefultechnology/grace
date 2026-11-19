@@ -1,5 +1,5 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
-import { historyStart, type MessageAuthor } from "../gen/app__conversation.effect.vibe"
+import { sentHistory, type MessageAuthor } from "../gen/app__conversation.effect.vibe"
 import { audible } from "../gen/app__preferences.effect.vibe"
 import { fromPerson } from "../gen/app__request.effect.vibe"
 import { Machine as Workspaces, enabled, privateSurfaceActive, replyControlContext, step, type Event, type ReplyControlContext } from "../gen/app__workspace.effect.vibe"
@@ -139,7 +139,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
     const index = messages.length - 1
     const message = messages[index]
     if (message === undefined || message.author !== "HumanMessage") return
-    const lines = try Effect.orDie(Effect.try(() => messages.slice(historyStart(transcript)).map(({ author, text }) => `${speakers[author]}: ${withhold({ text, passwords: [] })}`)))
+    const lines = try Effect.orDie(Effect.try(() => sentHistory(transcript).map(({ author, text }) => `${speakers[author]}: ${withhold({ text, passwords: [] })}`)))
     if (lines.at(-1) !== `${speakers.HumanMessage}: ${message.text}`) {
       workspace.send({ type: "purgePrivate", token, messageIndex: index, purgeDraft: false }, "Host") catch () => undefined
       return

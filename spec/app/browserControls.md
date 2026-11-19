@@ -122,7 +122,7 @@ pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAdd
 
 ### A direct request uses the selected page and revision
 
-The tablet receives a current request from the person and derives the HTTPS origin from the selected page. The browser refuses stale requests. For an active task the origin must match the task destination. Help questions show the relevant control. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
+The tablet receives a current request from the person and derives the HTTPS origin from the selected page; the browser host cannot start private sign-in. The browser refuses stale requests. For an active task the origin must match the task destination. Help questions show the relevant control. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
 
 A few fixed phrases open it at once, even while Cloud reasoning is unavailable. Any other way she asks goes to Grace, whose reply can offer Private sign-in as a control for the secure page selected when she asked. Her tap on it is the request, for that page and revision; Grace never sends it herself.
 
@@ -140,11 +140,18 @@ pure def lawAnActiveBillCannotHandOffToAnotherOrigin(task: str, origin: str, oth
 pure def lawStaleSignInRequestIsIgnored(b: B::Browser, id: int, revision: int, origin: str): bool =
   (id != b.selected or revision != b.revision) implies
     not(canControl(b, RequestPrivateSignIn({ id: id, revision: revision, origin: origin }), BrowserControlUser))
+pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str): bool =
+  not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
+```
+
+### A private sign-in tab keeps its address and page position to itself
+
+While the selected tab is a private sign-in, the person cannot edit its address or navigate it elsewhere, and the browser host cannot report its scroll position or open page panel.
+
+```quint
 pure def lawPrivateAddressesAndPanelsStayOutOfControls(b: B::Browser, text: str, scroll: int): bool =
   B::activeTab(b).manualSignIn implies
     (not(canControl(b, EditAddress({ text: text }), BrowserControlUser)) and
      not(canControl(b, Navigate({ url: text }), BrowserControlUser)) and
      not(canControl(b, RememberPage({ id: b.selected, revision: b.revision, scroll: scroll, pagePanel: text }), BrowserControlHost)))
-pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str): bool =
-  not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```

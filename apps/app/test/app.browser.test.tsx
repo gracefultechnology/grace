@@ -118,15 +118,20 @@ const vaultStatus = (locked: boolean): ReturnType<PasswordVault["status"]> => Pr
   autofill: { supported: true, selected: "this-app" },
 });
 
-const openRouted = async (native: ReturnType<typeof fakePlugin>, cloud: Parameters<typeof application>[2]) => {
-  const runtime = ManagedRuntime.make(application(native.plugin, undefined, cloud));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
   const tap = async (target: Locator) => {
     await routeTo(target);
     await act(() => userEvent.click(target));
   };
+  return { routeTo, tap };
+}
+
+const openRouted = async (native: ReturnType<typeof fakePlugin>, cloud: Parameters<typeof application>[2]) => {
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, cloud));
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  const { routeTo, tap } = routedControls(native);
   const browse = async () => {
     await tap(page.getByRole("button", { name: "Internet" }));
     await native.route();
@@ -1452,7 +1457,7 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   expect(stored.revision).toBe(1);
 });
 
-it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share, print and remove the chosen file")', async () => {
+it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and remove the chosen file")', async () => {
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
   let entries = [photo];
@@ -1984,8 +1989,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
-  const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
-  const tap = async (target: Locator) => { await routeTo(target); await act(() => userEvent.click(target)); };
+  const { routeTo, tap } = routedControls(native);
   const send = async (message: string) => {
     const text = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(text);
