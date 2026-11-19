@@ -3,6 +3,7 @@ package technology.graceful.grace;
 import android.Manifest;
 import android.content.Context;
 import android.util.Base64;
+import android.util.Log;
 import ai.eliza.plugins.reminders.ReminderConfiguration;
 import ai.eliza.plugins.reminders.ReminderEngine;
 import ai.eliza.plugins.reminders.ReminderPlugin;
@@ -18,6 +19,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.annotation.Permission;
 import java.io.File;
@@ -152,7 +154,30 @@ public class GraceRemindersPlugin extends ReminderPlugin {
  static ReminderEngine reminderEngine(Context context) { return ReminderEngine.get(context, CONFIGURATION, STORE); }
 
  public static class Receiver extends BroadcastReceiver {
+  private static final Executor RESTORE_WORK = Executors.newSingleThreadExecutor();
+
   @Override public void onReceive(Context context, Intent intent) {
+   String action = intent.getAction();
+   if (!Intent.ACTION_BOOT_COMPLETED.equals(action) && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action) &&
+       !Intent.ACTION_TIME_CHANGED.equals(action) && !Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
+    dispatch(context, intent);
+    return;
+   }
+   var application = context.getApplicationContext();
+   var pending = goAsync();
+   try {
+    RESTORE_WORK.execute(() -> {
+     try { dispatch(application, intent); }
+     catch (RuntimeException unavailable) { Log.w("GraceReminders", "Could not restore reminders for " + action, unavailable); }
+     finally { pending.finish(); }
+    });
+   } catch (RejectedExecutionException unavailable) {
+    pending.finish();
+    Log.w("GraceReminders", "Could not schedule reminder restoration for " + action, unavailable);
+   }
+  }
+
+  private static void dispatch(Context context, Intent intent) {
    String id = intent.getStringExtra(CONFIGURATION.idExtra);
    synchronized (GracePasswordsOwner.class) {
     var engine = reminderEngine(context);

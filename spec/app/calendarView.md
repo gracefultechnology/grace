@@ -360,6 +360,37 @@ pure def sometimesOwnedReminderShown(v: CalendarView): bool = v.entries.some(c =
 pure def sometimesOwnedReminderDismissed(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderDismissed)
 ```
 
+### A provider's create receipt names the saved occurrence
+
+The store binds the approved revision of one new appointment to the occurrence
+ID returned by that calendar’s create request. In one save the provider ID
+takes the place of the local draft ID, carrying its source and details. An
+open selection follows that same appointment. A different account, calendar,
+revision, occupied ID or repeated receipt cannot replace an entry.
+
+```quint
+type CreatedReceipt = { owner: str, calendarId: str, localId: str, providerId: str, revision: int }
+pure def canStoreCreated(v: CalendarView, created: CreatedReceipt, by: ViewActor): bool =
+  val c = entryAt(v, created.localId)
+  canChangeOccurrence(v, created.localId, EntryStored({ revision: created.revision, succeeded: true }), by) and
+  not(c.hasSaved) and c.identity.kind == C::Appointment and
+  created.owner == v.owner and created.calendarId == v.calendarId and created.providerId != "" and
+  not(v.cancelledIds.contains(created.providerId)) and
+  (created.providerId == created.localId or v.entries.every(e => e.identity.occurrenceId != created.providerId))
+pure def storeCreated(v: CalendarView, created: CreatedReceipt, by: ViewActor): CalendarView =
+  val saved = changeOccurrence(v, created.localId, EntryStored({ revision: created.revision, succeeded: true }), by)
+  { ...saved,
+    entries: saved.entries.listMap(c => if (c.identity.occurrenceId == created.localId)
+      { ...c, identity: { ...c.identity, occurrenceId: created.providerId } } else c),
+    selectedId: if (saved.selectedId == created.localId) created.providerId else saved.selectedId,
+    cancelledIds: if (created.providerId == created.localId) saved.cancelledIds else saved.cancelledIds.union(Set(created.localId)) }
+pure def lawCreatedReceiptIsSpent(v: CalendarView, created: CreatedReceipt): bool =
+  canStoreCreated(v, created, ViewStore) implies not(canStoreCreated(storeCreated(v, created, ViewStore), created, ViewStore))
+pure val createdValues = Set(
+  { owner: "ownerA", calendarId: "calendarA", localId: "visitA", providerId: "providerA", revision: 1 },
+  { owner: "ownerB", calendarId: "calendarA", localId: "visitA", providerId: "periodA", revision: 2 })
+```
+
 ### An exact confirmed appointment enters the calendar without opening it
 
 Grace can propose an appointment while the person stays on Home or another

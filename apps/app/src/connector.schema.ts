@@ -36,7 +36,7 @@ export const DraftRead = Schema.Struct({
 })
 export const ContactList = Schema.Struct({ contacts: Schema.Array(Schema.Struct({ name: Text, email: Text })) })
 export const WireEvent = Schema.Struct({
-  externalId: Text, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,
+  calendarId: Text, externalId: Schema.NonEmptyString, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,
   attendees: Schema.Array(Schema.Struct({ email: NullableText, displayName: NullableText, self: Flag })),
 })
 export const Feed = Schema.Struct({ events: Schema.Array(WireEvent) })

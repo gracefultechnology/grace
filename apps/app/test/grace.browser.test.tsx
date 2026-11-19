@@ -1,20 +1,17 @@
 // spec/app/agentActions.md, "Story: Ask Grace to help with my email"; spec/app/agentActions.md, "Story: Ask Grace about my calendar"; spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
-import { Effect, ManagedRuntime } from "effect";
+import { Effect } from "effect";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished } from "vitest";
+import { afterAll, beforeAll, expect, inject, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
-import { allowedUse, chooseProvider, initial, sheetResult } from "../gen/app__accounts.ts";
+import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import type { Origin } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { Agent, type GraceAction } from "../src/agent.vibe";
-import { App } from "../src/App.tsx";
-import { application } from "../src/app.vibe";
 import { day, dayOf, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, otherPassword, script, signIn } from "./cloud.vibe";
+import { mountGmail } from "./screen.tsx";
 import "../src/main.css";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -46,11 +43,6 @@ const tile = (n: number) => new RegExp(`^(Today|${new Date(midnight(n)).toLocale
 const mondayOf = (n: number) => n - ((new Date(n * day).getUTCDay() + 6) % 7);
 const row = (title: string, tag: string) => page.getByRole("button", { name: new RegExp(`${title}.*${tag}`) });
 
-function kept(): Accounts {
-  const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
-  return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: gmail, granted: allowedUse }, "Gmail", "AccountConnector");
-}
-
 async function company(key: string) {
   const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${key}` } });
   return await response.json() as { boxes: { calendar: { title: string; startAt: string }[]; mail: { subject: string; labels: string[] }[] }[] };
@@ -58,16 +50,7 @@ async function company(key: string) {
 
 async function start() {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  localStorage.clear();
-  localStorage.setItem("accounts", JSON.stringify(kept()));
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  onTestFinished(async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    localStorage.clear();
-  });
+  const runtime = await mountGmail(gmail, { url: cloud, key: secret });
   const run = <A,>(effect: Effect.Effect<A, unknown, Runs>) => act(() => runtime.runPromise(effect));
   const scripted = (said: string, reply: Reply) =>
     Effect.runPromise(Effect.provide(script(cloud, secret, [{ said, answer: JSON.stringify({ isQuestion: false, answers: [], ...reply }) }]), client));
