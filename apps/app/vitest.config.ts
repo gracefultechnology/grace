@@ -411,6 +411,23 @@ async function releasedStatement(context: BrowserCommandContext, action: Stateme
   return observeSite(existing.site, { kind: "control", request: action.request });
 }
 
+const agentModel = Schema.decodeUnknownSync(Schema.Struct({ model: Schema.NonEmptyString }))(JSON.parse(readFileSync(join(import.meta.dirname, "agent/policy.json"), "utf8"))).model;
+const ModelReply = Schema.Struct({ choices: Schema.Array(Schema.Struct({ message: Schema.Struct({ content: Schema.String }) })) });
+const realModelCredential = process.env.GRACE_BENCHMARK_CLEF_ORIGIN && process.env.GRACE_BENCHMARK_CLEF_KEY
+  ? { origin: process.env.GRACE_BENCHMARK_CLEF_ORIGIN, key: process.env.GRACE_BENCHMARK_CLEF_KEY } : undefined;
+async function realModel(_context: BrowserCommandContext, system: string, messages: readonly { role: "user" | "assistant"; content: string }[]) {
+  if (!realModelCredential || new URL(realModelCredential.origin).protocol !== "https:") throw new Error("The real model requires a test credential");
+  const response = await fetch(new URL("/api/v1/chat/completions", realModelCredential.origin), {
+    method: "POST", redirect: "error", signal: AbortSignal.timeout(60000),
+    headers: { Authorization: `Bearer ${realModelCredential.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: agentModel, max_tokens: 1024, messages: [{ role: "system", content: system }, ...messages] }),
+  });
+  if (!response.ok) throw new Error(`The real model answered ${response.status}`);
+  const [choice] = Schema.decodeUnknownSync(ModelReply)(await response.json()).choices;
+  if (!choice) throw new Error("The real model gave no reply");
+  return choice.message.content;
+}
+
 async function googleConsent(context: BrowserCommandContext, endpoint: string, address: string) {
   const expected = new URL(endpoint);
   if (expected.hostname !== "127.0.0.1" || expected.pathname !== "/o/oauth2/v2/auth" || !address.endsWith("@grace.test"))
@@ -440,12 +457,14 @@ declare module "vitest/browser" {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
     releasedStatement: (action: StatementAction) => Promise<Record<string, unknown>>;
+    realModel: (system: string, messages: readonly { role: "user" | "assistant"; content: string }[]) => Promise<string>;
   }
 }
 declare module "vitest" {
   interface ProvidedContext {
     browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
     billworldStatements: readonly { label: string; billerId?: string }[];
+    realModel: boolean;
   }
 }
 
@@ -456,7 +475,7 @@ export default defineConfig(async (env) => {
       ? {
           ...entry,
           optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto"] },
-          test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
+          test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement, realModel } } },
         }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep }) => ({ taskId, intent, startUrl, requiredStep, gradeWholeCohort: Boolean(fleet) }));
@@ -465,5 +484,5 @@ export default defineConfig(async (env) => {
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
   ];
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
-  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements }, globalSetup: ["test/setup.vibe"] } };
+  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements, realModel: realModelCredential !== undefined }, globalSetup: ["test/setup.vibe"] } };
 });
