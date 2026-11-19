@@ -80,7 +80,7 @@ type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, gu
 
 pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide, backupReady: false, guideMic: GuideMicIdle, guideMicEpoch: 0 }
 pure def canOpenPasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsHost and (isClosedVault(v.vault) or isLockedVault(v.vault))
+  by == PasswordsHost and not(isCheckingVault(v.vault)) and not(isOpenVault(v.vault))
 pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
 pure def canClosePasswords(v: PasswordView, by: VaultActor): bool =
