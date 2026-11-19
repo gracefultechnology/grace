@@ -9,6 +9,7 @@ import { Machine } from "../gen/app__network.effect.vibe";
 import { Wifi } from "../src/Wifi.tsx";
 import { wifiPage } from "../src/wifi.vibe";
 import "../src/main.css";
+import { actOnScreen } from "./screen.tsx";
 
 const nearby = (ssid: string, rssi: number, security: NonNullable<WiFiNetwork["security"]>): WiFiNetwork =>
   ({ ssid, bssid: "", rssi, frequency: 2412, capabilities: "", secured: security !== "open", security });
@@ -38,8 +39,9 @@ function android() {
   return { tablet, plugin };
 }
 
-describe('Join the network I choose (spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed")', () => {
-  it("explains location, joins an open and a password network, and hands an account network to Android", async () => {
+describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed")', () => {
+  actOnScreen();
+  it("joins open and password networks", async () => {
     const { tablet, plugin } = android();
     const runtime = ManagedRuntime.make(wifiPage(plugin));
     const host = document.body.appendChild(document.createElement("div"));
