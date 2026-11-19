@@ -36,6 +36,7 @@ export const Action = Schema.Union([
   action("undoSetting", {}),
   action("navigate", { url: Words }),
   action("browse", { control: of<BrowserInput["tag"]>()(["Back", "Forward", "Reload", "NewTab"]) }),
+  action("privateSignIn", {}),
   action("guide", { target: Words, emphasis: Schema.Literals(["point", "instruction", "confirm"]), title: Words, detail: Schema.optionalKey(Words) }),
   action("searchMail", { query: Words }),
   action("openMessage", { message: Words }),

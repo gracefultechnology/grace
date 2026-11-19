@@ -1,11 +1,13 @@
-// spec/app/workspace.md, "Story: Open an available control from Grace's reply"
+// spec/app/workspace.md, "Story: Open an available control from Grace's reply"; spec/app/browserControls.md, "A direct request uses the selected page and revision"
 import { brightnessChoice, muteChoice, volumeChoice } from "../gen/app__preferences.effect.vibe"
 import type { SettingsPage } from "../gen/app__shell.effect.vibe"
 import { Machine as Workspaces, enabled, privateSurfaceActive, replyControlContext, replyControlsCurrent, type Event, type ReplyControlContext, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { ManagedReads, type ManagedSnapshot, type ProposedWork } from "./managedReads.vibe"
+import { NativePage } from "./nativePage.vibe"
 import { withhold } from "./private.ts"
 import type { Action } from "./reply.schema.ts"
+import { privateSignInRequest } from "./requestedPrivateSignIn.vibe"
 
 type Suggested = typeof Action.Type
 type Control =
@@ -57,7 +59,7 @@ function safeText(text: string, max: number) {
   return text.length <= max && withhold({ text, passwords: [] }) === text
 }
 
-function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot): Control | undefined {
+function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot, signsIn: boolean): Control | undefined {
   const settings = w.preferences.session
   const selected = managed.kind === "calendar" ? managed.selected : undefined
   const selectedFor = (entry: string) => selected?.externalId === entry || selected?.title.toLowerCase() === entry.toLowerCase() ? selected : undefined
@@ -81,6 +83,10 @@ function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot): Contro
       { Back: "Go back", Forward: "Go forward", Reload: "Reload this page", NewTab: "Open a tab" }[action.control],
       { type: "changePage", browserInput: { tag: action.control } },
     ) : undefined
+    case "privateSignIn": {
+      const browserInput = signsIn ? privateSignInRequest(w) : undefined
+      return browserInput && ownerControl("Open Private sign-in", { type: "changePage", browserInput })
+    }
     case "navigate": {
       const url = website(action.url)
       return url ? { kind: "website", title: "Open " + url.hostname, url: url.href } : undefined
@@ -167,6 +173,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
   const desk = try Workspaces
   const managed = try ManagedReads
   const setup = try Setup
+  const page = try NativePage
   const active = try SubscriptionRef.make<Offer | undefined>(undefined)
   const serial = try Ref.make(0)
   const gate = try Semaphore.make(1)
@@ -180,7 +187,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     if (message?.author !== "GraceMessage") return
     const account = try setup.get()
     const planned = actions.slice(0, 3).map((action) => {
-      const direct = plan(action, w, scene.managed)
+      const direct = plan(action, w, scene.managed, page.privateSignIn)
       const view = !direct ? managedView(action) : undefined
       const control: Control | undefined = direct ?? (view && native
         ? { kind: "hosted", title: "Open " + view + " on Grace’s website", view }

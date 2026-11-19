@@ -79,9 +79,10 @@
       "GRACE_BROWSER": {
         "returns": [
           "navigate",
-          "browse"
+          "browse",
+          "privateSignIn"
         ],
-        "becomes": "spec/app/workspace.md changePage, with the browserControls.md input Navigate, Back, Forward, Reload or NewTab"
+        "becomes": "spec/app/workspace.md changePage, with the browserControls.md input Navigate, Back, Forward, Reload or NewTab; privateSignIn only offers Private sign-in, and the person's own tap sends RequestPrivateSignIn for the page and revision of that reply"
       },
       "GRACE_GUIDE": {
         "returns": [
