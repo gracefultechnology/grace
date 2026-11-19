@@ -32,6 +32,8 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [What Grace may do with email and the calendar, each action routed to its guarded event](./agentActions.md)
 - [Saved photos, documents and Email sharing](./files.md)
 - [The vocabulary of a task: its kind, subject and terms](./task.md)
+- [The task kinds: what each needs, its facts and its fill](./taskKinds.md)
+- [A bill as a task kind: its facts and fitting payment](./billKind.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)

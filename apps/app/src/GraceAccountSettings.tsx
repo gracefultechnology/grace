@@ -3,7 +3,7 @@ import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNoti
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { managesOnTheWeb, mayCheckAccountAgain, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout } from "../gen/app__setup.ts";
+import { managesOnTheWeb, mayCheckAccountAgain, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsTabletSignIn } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -67,7 +67,7 @@ export function GraceAccountSettings() {
           <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
         </div>
       )}
-      {setup && setup.tabletSignIn.tag !== "NoTabletSignIn" && (
+      {setup && showsTabletSignIn(setup.tabletSignIn) && (
         <>
           <PageText>Sign in on your tablet{signedIn && snapshot.email ? ` as ${snapshot.email}` : ""}?</PageText>
           <div className="flex flex-wrap gap-3">

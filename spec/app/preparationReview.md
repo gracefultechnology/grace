@@ -161,20 +161,20 @@ pure val wValues = {
   Set(W::initial, bound, reviewed, changed, other)
 }
 pure val transferValues = {
-  val captured = { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 0, attempt: 0 }
   val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
-  val valid = { handoff: BP::ReviewPayment(details), captured: captured }
-  Set(valid,
-    { ...valid, handoff: BP::ReviewPayment({ ...details, version: 3 }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) },
-    { ...valid, handoff: BP::ReviewPayment({ ...details, evidence: "" }) },
-    { ...valid, captured: { ...captured, deviceVersion: 5 } },
-    { ...valid, captured: { ...captured, browserRevision: 1 } },
-    { ...valid, captured: { ...captured, taskVersion: 0 } },
-    { ...valid, captured: { ...captured, revision: 1 } },
-    { ...valid, captured: { ...captured, attempt: 1 } })
+  val valid = wValues.map(w => { handoff: BP::ReviewPayment(details), captured: { deviceVersion: w.device.contextVersion,
+    browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion, revision: w.commitment.revision, attempt: w.commitment.attempt } })
+  valid
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, version: 3 }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) }))
+    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, evidence: "" }) }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, deviceVersion: t.captured.deviceVersion - 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, browserRevision: t.captured.browserRevision - 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, taskVersion: t.captured.taskVersion - 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, revision: t.captured.revision + 1 } }))
+    .union(valid.map(t => { ...t, captured: { ...t.captured, attempt: t.captured.attempt + 1 } }))
 }
 pure val byValues = Set(W::Host, W::Person, W::Store, W::Actuator)
 ```

@@ -39,27 +39,26 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
     }
     onSuccess();
   });
-  const needsSignIn = !account || status?.kind === "signInRequired" || status?.kind === "accountChanged";
   const offersApproval = mayOfferBackupApproval(approval !== null, status?.kind !== "signInRequired", account !== null && status?.kind !== "accountChanged");
   const message = !approval ? "Open Passwords on your tablet and try again." :
     status?.kind === "unavailable" ? "Grace couldn’t finish. Please try again." :
     status?.kind === "accountChanged" ? "Your signed-in account changed. Sign in to continue." :
     status?.kind === "returning" ? "Return to the Grace app to finish." :
-    needsSignIn ? "Sign in with the Grace account you use on this tablet." : account.email ?? "Your signed-in Grace account";
+    !offersApproval || !account ? "Sign in with the Grace account you use on this tablet." : account.email ?? "Your signed-in Grace account";
   return (
     <main className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <section className="w-full max-w-lg flex flex-col items-start gap-5" aria-busy={pending || undefined}>
         <h1 className="text-title font-semibold">{approval ? titles[approval.purpose] : "Password backup unavailable"}</h1>
         {message && <p role={status ? "status" : undefined}>{message}</p>}
         {codeFailed && <p role="alert">Grace couldn’t verify the request. Try again.</p>}
-        {approval && needsSignIn && provider && (
+        {approval && !offersApproval && provider && (
           <GraceSignInCode provider={provider} pending={pending} run={runCode} onClose={() => {
             setCodeFailed(false);
             setProvider(undefined);
           }} />
         )}
         <div className="flex flex-wrap gap-3">
-          {approval && needsSignIn && !provider && (
+          {approval && !offersApproval && !provider && (
             <>
               {providers.google && <Button variant="prominent" size="pill" disabled={pending} onClick={() => run(async () => {
                 if (!await signInForApproval(approval)) setCodeFailed(true);

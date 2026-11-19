@@ -490,9 +490,10 @@ only whether this tablet is signed in, and the Grace service's authenticated
 response only the web account, its plan and its Google connection; either may
 report that the account could not be checked. Only a signed-in web account
 carries any Google link state. Every change to the account shown comes from one
-of these two reports, and another service, a checkout return or a browser
-tab's sign-in is never the source of a signed-in report, so none of them
-establishes a session, and with it a plan. A tablet
+of these two reports, each carrying only what its source may report. Another
+service, a checkout return and a browser tab's sign-in have no way to change
+the account, so none of them establishes a session, and with it a plan; this
+is the step rule's promise, not a separate law. A tablet
 asking to sign in is confirmed only by the person's own choice, while a web
 account is signed in, and the confirmation holds only while the reports name
 that signed-in account: any other report, even one that the account could
@@ -511,7 +512,7 @@ Settings account page's sensitive marking, which no rule checks yet.
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
 type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
-type AccountSource = TabletSession | GraceService | OtherService | CheckoutReturn | BrowserTab
+type AccountSource = TabletSession | GraceService
 type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
   | GraceSignedIn(info) => info.plan == PlanInactive or info.plan == PlanInactiveManagedCheckout
@@ -529,15 +530,6 @@ pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match r
   | AccountUnavailable => source == TabletSession or source == GraceService
   | CheckingAccount => false
 }
-pure def establishesASession(source: AccountSource, report: GraceAccount): bool =
-  reportedBy(source, report) and match report {
-    | GraceDeviceSignedIn => true
-    | GraceSignedIn(_) => true
-    | _ => false
-  }
-pure def lawNoOtherServiceCheckoutReturnOrBrowserTabEstablishesASession(report: GraceAccount): bool =
-  not(establishesASession(OtherService, report)) and not(establishesASession(CheckoutReturn, report)) and
-  not(establishesASession(BrowserTab, report))
 pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
   | AccountUnavailable => true
   | GraceSignedIn(info) => info.plan == PlanUnknown
@@ -558,6 +550,10 @@ pure def linkUnknown(link: GoogleLink): bool = match link {
 pure def tabletSignInAsked(t: TabletSignIn): bool = match t {
   | TabletSignInAsked => true
   | _ => false
+}
+pure def showsTabletSignIn(t: TabletSignIn): bool = match t {
+  | NoTabletSignIn => false
+  | _ => true
 }
 pure def webAccountId(account: GraceAccount): str = match account {
   | GraceSignedIn(person) => person.accountId
@@ -725,17 +721,18 @@ Set-up's part is who may change anything: only the signed-in web account
 named by the change, through its current grant, and a device session alone
 never. Trash needs mail with Trash enabled, and an appointment change needs
 the calendar with changes enabled, so enabling one never enables the other.
-The rest is the mail and calendar rules': Undo only after the provider's
-confirmation is [Email](./email.md)'s "Selected-message changes update the
-same canonical record and invalidate stale actions"; the read-back and the
-selected version are [Calendar view](./calendarView.md)'s "Grace's change
-takes effect only for the exact change the person agreed to" and "The
-deletion question binds its selected occurrence and explicit scope", which
-also has a repeating appointment's one-or-all choice and the stored evidence
-before success; the first of these also has the review naming a change's
-complete new details, a new series' frequency and time zone among them; and
-skipped months and time zones are [Calendar](./calendar.md)'s "Recurrence
-creates another occurrence rather than changing an existing identity".
+No rule here checks the rest yet. The managed Google Trash, Undo and
+appointment change run in the shell, which consults only this guard: it
+compares the selected message's version or the selected appointment's
+version with the change before sending it, and the provider's receipt with
+the change before showing success, by hand. They do not go through the
+[Email](./email.md) or [Calendar view](./calendarView.md) machines, whose
+rules hold Undo after confirmation, the read-back, the one-or-all choice
+and the evidence before success for the local mailbox and calendar only.
+Until those machines govern the managed path, the selected version, Undo
+only after the provider's confirmation, the read-back with a new series'
+frequency and time zone, skipped months, the one-or-all choice and the
+evidence before success are promises of this heading that no rule checks.
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -787,18 +784,17 @@ the Grace service refuses it when the browser account is no longer that one,
 or the sign-in is not recent, and the page then asks her to sign in and
 choose again. Nothing is approved on a page that is not the registered one,
 after Cancel, for an account other than the one shown, or without a recent
-sign-in. The single-use return and keeping the recovery key and passwords on
-the tablet are the [Grace MVP product contract](./index.md)'s "Backup and
-recovery uses a fresh approval".
+sign-in. The page returns to the tablet only to the registered callback,
+with the native request's own state and one code; the request it reads
+carries neither the recovery key nor any password. That the code is used
+once and only by the native request that asked for it is the Grace
+service's and the tablet's own exchange, and no rule here checks it.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
   registered and recentSignIn and sameAccount
 pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
   mayOfferBackupApproval(registered, recentSignIn, sameAccount) and confirmed
-pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
-  mayApprovePasswordBackup(registered, recentSignIn, sameAccount, confirmed) implies
-    (registered and recentSignIn and sameAccount and confirmed)
 pure def lawStaleSignInCannotApprovePasswordBackup(registered: bool, sameAccount: bool, confirmed: bool): bool =
   not(mayApprovePasswordBackup(registered, false, sameAccount, confirmed))
 ```
