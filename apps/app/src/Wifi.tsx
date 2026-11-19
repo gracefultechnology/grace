@@ -26,14 +26,14 @@ const reasons: Readonly<Partial<Record<Discovery, string>>> = {
 };
 const actionLabels: Readonly<Record<ListAction, string>> = { NoAction: "", OpenPanel: "Open Android’s Wi-Fi", Explain: "Look for networks", Allow: "Allow", Rescan: "Look again" };
 const fixSteps = "Check the password on the internet box; capitals count. If it still won’t join, ask whoever looks after this network.";
+const offlineSteps = "Check that the internet box is plugged in and its lights are on, then choose your network below. Its password is often on a sticker on the box.";
+const fix = { type: "openGrace" } as const;
 
-export function Wifi({ runtime = device }: { runtime?: WifiRuntime }) {
-  return runtime ? <Networks runtime={runtime} /> : <Connection />;
-}
-
-function Connection() {
-  const { workspace } = useWorkspace();
-  return <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{workspace?.device.connectivity === "Online" ? "Connected" : "No internet connection"}</PageText></>;
+export function Wifi() {
+  const { workspace, can, send } = useWorkspace();
+  const online = workspace?.device.connectivity === "Online";
+  if (!device) return <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{online ? "Connected" : "No internet connection"}</PageText></>;
+  return <WifiNetworks runtime={device} online={online} onFix={() => { if (can(fix)) void send(fix); }} />;
 }
 
 const row = (offer: Offer): WifiNetwork => ({ name: offer.name, signal: offer.signal, locked: offer.network.authentication !== "OpenNetwork" });
@@ -61,7 +61,7 @@ function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string;
 }
 
 /** @model spec/app/network.md */
-function Networks({ runtime }: { runtime: WifiRuntime }) {
+export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
   const { state: n, can, send } = useMachine(runtime);
   const page = runtime.runSync(Effect.service(WifiPage));
   const offers = useSyncExternalStore(page.offers.subscribe, page.offers.current);
@@ -71,7 +71,7 @@ function Networks({ runtime }: { runtime: WifiRuntime }) {
   const name = offers.find((offer) => offer.network.id === n.selected.id)?.name ?? "";
   if (n.phase === "PrivateEntry") return <PrivateEntry key={n.version} n={n} name={name} person={person} join={(password) => run(page.join(password))} />;
 
-  const current = offers.find((offer) => offer.network.remembered);
+  const current = online ? offers.find((offer) => offer.network.remembered) : undefined;
   const action = listAction(n.discovery);
   const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
   const said = notice(n, name);
@@ -81,7 +81,7 @@ function Networks({ runtime }: { runtime: WifiRuntime }) {
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
         connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? name : undefined}
         failed={n.phase === "JoinFailed" ? name : undefined} onRetry={() => run(page.retry())}
-        onTurnOn={() => run(page.openPanel())}
+        onTurnOn={() => run(page.openPanel())} onFix={onFix}
         onSelect={(picked) => {
           const offer = offers.find((candidate) => candidate.name === picked);
           if (offer && can({ type: "choose", network: offer.network }, "Person")) run(page.choose(offer));
@@ -89,6 +89,7 @@ function Networks({ runtime }: { runtime: WifiRuntime }) {
         noneLabel={reasons[n.discovery]}
         action={action !== "NoAction" && <Button variant="prominent" size="pill" onClick={act}>{actionLabels[action]}</Button>} />
       {said && <Alert variant={n.phase === "JoinFailed" ? "caution" : "info"} className="mt-4">{said}</Alert>}
+      {!online && n.discovery !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
     </>
   );
 }

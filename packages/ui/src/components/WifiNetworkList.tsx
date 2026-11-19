@@ -40,7 +40,7 @@ export type WifiNetworkListProps = Omit<ComponentProps<"section">, "onSelect"> &
   onTurnOn?: () => void;
   /** Called with the network a person taps. */
   onSelect?: (name: string) => void;
-  /** Called by Fix Wi-Fi, offline: Grace helps reconnect. Without it the offline row offers nothing. */
+  /** Called by Fix Wi-Fi, offline: Grace helps reconnect. */
   onFix?: () => void;
   /** The one control under an empty list, such as Look again. */
   action?: ReactNode;
@@ -125,14 +125,12 @@ export function WifiNetworkList({
             <ListRow
               className="mt-[18px]"
               title={offlineLabel}
-              subtitle={onFix && offlineHint}
+              subtitle={offlineHint}
               leading={<WifiSlash size={30} />}
               trailing={
-                onFix && (
-                  <Button variant="prominent" size="pill" onClick={onFix}>
-                    {fixLabel}
-                  </Button>
-                )
+                <Button variant="prominent" size="pill" onClick={onFix}>
+                  {fixLabel}
+                </Button>
               }
             />
           )}
