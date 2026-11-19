@@ -648,6 +648,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   expect(locked).toBe(true);
 });
 
+const askForPrivateSignIn = async (native: ReturnType<typeof fakePlugin>, request: string) => {
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
+  await act(() => userEvent.type(message, request));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+};
+
 const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   const runtime = ManagedRuntime.make(application(native.plugin));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
@@ -658,7 +666,8 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await expect.element(page.getByRole("button", { name: "Private sign-in", exact: true })).not.toBeInTheDocument();
+  await askForPrivateSignIn(native, "use my saved password");
   await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -677,11 +686,7 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  const message = page.getByRole("textbox", { name: "Message to Grace" });
-  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
-  await act(() => userEvent.type(message, "sign me in to pay my bill"));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  await askForPrivateSignIn(native, "sign me in to pay my bill");
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -694,7 +699,7 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const browserState = await signInPrivately(native);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await askForPrivateSignIn(native, "use my saved password");
   const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
   await expect.element(unavailable).toBeVisible();
   await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");

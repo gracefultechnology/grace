@@ -122,7 +122,7 @@ pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAdd
 
 ### A direct request uses the selected page and revision
 
-The tablet receives a current request from the person and derives the HTTPS origin from the selected page; the browser host cannot start private sign-in. The browser refuses stale requests. For an active task the origin must match the task destination. Help questions show the relevant control. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
+The tablet receives a current request from the person and derives the HTTPS origin from the selected page; the browser host cannot start private sign-in. The browser refuses stale requests. For an active task the origin must match the task destination. Help questions explain how to request private sign-in. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
 
 ```quint
 pure def directSignInRequest(words: str): bool =
