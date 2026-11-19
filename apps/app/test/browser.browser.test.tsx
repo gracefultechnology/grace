@@ -375,7 +375,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   }
 }, 240_000);
 
-it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ billerId }, context) => {
+it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', { timeout: 120_000 }, async ({ billerId }, context) => {
   const attempt = crypto.randomUUID();
   context.onTestFinished(async () => { await commands.releasedStatement(attempt, { kind: "close" }); });
   const transport = async (action: Parameters<typeof commands.releasedStatement>[1]) => {
@@ -450,7 +450,7 @@ it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec
       results: [{ pass: true }, { pass: true }, { pass: true }, { pass: true }, { pass: true }],
     });
   }
-}, 120_000);
+});
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
   const device = androidPagePluginAtItsBoundary();
