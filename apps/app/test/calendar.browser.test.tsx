@@ -247,7 +247,7 @@ it('Delete the first and then every appointment of a repeating email series (spe
   const walks = async () => (await held(secret)).filter((e) => e.title === "Walk with Joan");
   await agree({ tag: "AddAsk", target: 1, review: { entry: walk, calendarGeneration: gmailView.generation, displayTimezone: gmailView.timezone } });
   await expect.poll(walks, atCloud).toEqual([{ title: "Walk with Joan", startAt: walkAt }]);
-  await act(() => userEvent.click(row("Walk with Joan", "Gmail").first()));
+  await expect.element(dated(eyeDay)).toBeVisible();
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByText("Deleted Walk with Joan")).toBeVisible();
