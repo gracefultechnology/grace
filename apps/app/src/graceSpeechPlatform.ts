@@ -15,6 +15,7 @@ export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
   let media: MediaStream;
   try {
     await audio.resume();
+    if (audio.state !== "running") throw new Error("Microphone audio did not start");
     media = await webView.window.navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
       video: false,
