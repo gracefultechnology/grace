@@ -652,6 +652,8 @@ screens.
 ```quint
 pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
   registered and recentSignIn and sameAccount and confirmed
+pure def lawStaleSignInCannotApprovePasswordBackup(registered: bool, sameAccount: bool, confirmed: bool): bool =
+  not(mayApprovePasswordBackup(registered, false, sameAccount, confirmed))
 ```
 
 ## Story: Keep my passwords private when the tablet account changes
@@ -852,4 +854,6 @@ pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recovery
   ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
 pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
   not(passwordRestoreAdmitted(ownerMatches, freshUnlock, recoveryKeyMatches, false))
+pure def lawStaleUnlockCannotRestorePasswords(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, false, recoveryKeyMatches, vaultEmpty))
 ```
