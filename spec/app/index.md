@@ -174,15 +174,14 @@ named control. Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit
 sign-in command has a separate [browser admission rule](./browserControls.md).
 
-On the Passwords Home card, the regular Ask Grace microphone uses only one
-on-device Android recognition request. Audio and transcripts from that card
-never reach Cloud speech or the reasoning agent. The message field accepts
-only the local Passwords commands and never submits other typing. Entering
-or leaving the card discards the draft and stops the current voice turn.
+The regular Ask Grace message field and microphone both accept password
+requests. During a voice conversation, a recognized password request goes
+directly from the final human utterance to password guidance. The request
+stays out of the conversation history and the reasoning agent. When conversational voice is unavailable,
+the same microphone starts one local Android recognition request for guidance.
 Unmatched local speech is discarded. Leaving Grace, typing, opening a
-protected surface or cancelling stops recognition. An unavailable local
-recognizer leaves Type available. Elsewhere the regular Ask Grace mic and
-message field retain their existing conversational behavior.
+protected surface or cancelling stops the request. An unavailable local
+recognizer leaves Type available.
 Password guidance recognizes a short list of spoken or typed phrases, such
 as “Open Passwords,” “Where can I find my saved passwords?”, “Show my password,”
 “Copy my password,” and “Use a saved password.” The person chooses the
