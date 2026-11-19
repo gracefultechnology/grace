@@ -556,14 +556,14 @@ pure def keptTabletSignIn(t: TabletSignIn, report: GraceAccount): TabletSignIn =
   | TabletSignInConfirmed(c) => if (c.accountId == webAccountId(report)) TabletSignInConfirmed({ accountId: c.accountId }) else TabletSignInAsked
   | _ => t
 }
-pure def withAccountReport(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
-  { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def canReportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): bool =
   reportedBy(TabletSession, report) and link == GoogleLinkUnknown
-pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup = withAccountReport(s, report, link)
+pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
+  { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def canReportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): bool =
   reportedBy(GraceService, report) and (link == GoogleLinkUnknown or webAccountId(report) != "")
-pure def reportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): Setup = withAccountReport(s, report, link)
+pure def reportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
+  { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: if (waiting) TabletSignInAsked else NoTabletSignIn }
 pure def canConfirmTabletSignIn(s: Setup): bool = s.tabletSignIn == TabletSignInAsked and webAccountId(s.graceAccount) != ""
 pure def confirmTabletSignIn(s: Setup): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: webAccountId(s.graceAccount) }) }
