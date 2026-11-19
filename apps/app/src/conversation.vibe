@@ -15,7 +15,7 @@ import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
-import { looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
+import { looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
@@ -41,7 +41,7 @@ export service Conversation {
 
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
-const remembered = 12
+const noControls = "This conversation shows no controls under your reply, so never offer {kind:\"privateSignIn\"}: tell the person to tap Private sign-in on the website instead."
 
 schema Delta { content?: string }
 schema Choice { delta: Delta }
@@ -238,16 +238,15 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const scene = try look()
     const w = scene.workspace
     if (privateSurfaceActive(w)) return
-    const { messages } = w.assistant.conversation
-    const latest = messages.length - 1
-    const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
-    if (outgoing.at(-1)?.content !== messages[latest]?.text) {
-      workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
+    const window = try Effect.orDie(Effect.try(() => sendable(w.assistant.conversation)))
+    if (window === undefined) {
+      workspace.send({ type: "purgePrivate", token, messageIndex: w.assistant.conversation.messages.length - 1, purgeDraft: false }, "Host") catch () => undefined
       return
     }
+    const outgoing = window.map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: text }))
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const shown = render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), try Ref.getAndSet(told, []), try managed.guidedSelection())
-    const said = ask(link, [{ role: "system", content: `${character.system}\n\n${shown.text}` }, ...outgoing]) catch () => undefined
+    const said = ask(link, [{ role: "system", content: `${character.system}\n\n${noControls}\n\n${shown.text}` }, ...outgoing]) catch () => undefined
     const reply = said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
     if (reply === undefined) return try fail(token)
     try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, authority))

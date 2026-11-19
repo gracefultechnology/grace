@@ -85,7 +85,7 @@ function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot, signsIn
     ) : undefined
     case "privateSignIn": {
       const browserInput = signsIn ? privateSignInRequest(w) : undefined
-      return browserInput && ownerControl("Open Private sign-in", { type: "changePage", browserInput })
+      return browserInput && ownerControl("Open Private sign-in for " + new URL(browserInput.origin).hostname, { type: "changePage", browserInput })
     }
     case "navigate": {
       const url = website(action.url)
