@@ -150,6 +150,38 @@ const listening = (listeners: Map<string, (input: unknown) => void>): Pick<Embed
   },
 });
 
+const sentTurn = (body: unknown) => {
+  const text = typeof body === "object" && body !== null && "text" in body && typeof body.text === "string" ? body.text : "";
+  const [shown = "", said = ""] = text.split("\n\nThe conversation so far, oldest first. Answer the person’s last message.\n");
+  return { shown, said: said.split("\n") };
+};
+
+const deviceAgent = () => {
+  const listeners = new Map<string, (input: unknown) => void>();
+  const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
+  const stopped: string[] = [];
+  const agent: EmbeddedAgent = {
+    getStatus: () => Promise.resolve({ state: "running" }),
+    request: ({ path }) => {
+      if (path.startsWith("/api/turns/")) {
+        stopped.push(path);
+        return Promise.resolve({ status: 200, data: {} });
+      }
+      expect(path).toBe("/api/conversations");
+      return Promise.resolve({ status: 201, data: { conversation: { id: "conversation", roomId: "room" } } });
+    },
+    requestStream: (input) => { requests.push(input); return Promise.resolve({ id: input.id }); },
+    ...listening(listeners),
+  };
+  const answer = (index: number, reply: object) => act(() => {
+    const { id } = requests[index];
+    listeners.get("streamData")?.({ id, data: JSON.stringify({ type: "done", fullText: JSON.stringify(reply) }) });
+    listeners.get("streamEnd")?.({ id, status: 200 });
+    return Promise.resolve();
+  });
+  return { agent, requests, answer, listeners, stopped };
+};
+
 const askForPasswords = async () => {
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
@@ -643,8 +675,8 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   expect(locked).toBe(true);
 });
 
-const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
-  const runtime = ManagedRuntime.make(application(native.plugin));
+const signInPrivately = async (native: ReturnType<typeof fakePlugin>, host?: Parameters<typeof application>[2]) => {
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, host));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
@@ -685,8 +717,10 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
 };
 
 it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
+  // spec/app/browserControls.md, "Story: Ask Grace to start a private sign-in for my bill"
   const native = fakePlugin(undefined, true);
-  const browserState = await signInPrivately(native);
+  const { agent, requests, answer } = deviceAgent();
+  const browserState = await signInPrivately(native, { native: false, agent });
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
   await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
@@ -703,6 +737,36 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await native.report("tab-4", "https://utility.example", 100);
   await expect.element(unavailable).not.toBeInTheDocument();
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser" })));
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  const ask = async (words: string) => {
+    await act(() => userEvent.type(message, words));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  };
+  const privateSurfaces = () => native.calls("createSurface").filter(({ purpose }) => purpose === "manual-sign-in");
+  const opened = privateSurfaces().length;
+  const offer = page.getByRole("button", { name: "Open Private sign-in" });
+  const signInReply = { text: "Tap Open Private sign-in, then choose your saved sign-in.", isQuestion: false, answers: [], actions: [{ kind: "privateSignIn" }] };
+  await ask("Please sign me in to Chase");
+  await expect.poll(() => sentTurn(requests[0]?.body).said).toEqual(["The person: Please sign me in to Chase"]);
+  expect(sentTurn(requests[0].body).shown).toContain("The person already has a website open in the selected tab on utility.example.");
+  await answer(0, signInReply);
+  await expect.element(offer).toBeVisible();
+  await native.report("tab-1", "https://utility.example/bills", 100);
+  await expect.element(offer).not.toBeInTheDocument();
+  expect(privateSurfaces()).toHaveLength(opened);
+  await ask("Can you log me in here?");
+  await expect.poll(() => sentTurn(requests[1]?.body).said).toEqual([
+    "The person: Please sign me in to Chase", "Grace: " + signInReply.text, "The person: Can you log me in here?",
+  ]);
+  await answer(1, signInReply);
+  expect(privateSurfaces()).toHaveLength(opened);
+  await act(() => userEvent.click(offer));
+  await expect.poll(() => privateSurfaces().at(-1)).toMatchObject({ id: "tab-5", url: "https://utility.example", storage: "isolated", process: "isolated" });
+  expect(browserState().recent).toEqual(["https://utility.example/bills", "https://utility.example/normal"]);
 });
 
 it('Use only the current local speech for Passwords guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
@@ -738,22 +802,7 @@ it('Use only the current local speech for Passwords guidance (spec/app/index.md,
 
 it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
-  const listeners = new Map<string, (input: unknown) => void>();
-  const requests: Parameters<EmbeddedAgent["requestStream"]>[0][] = [];
-  const stopped: string[] = [];
-  const agent: EmbeddedAgent = {
-    getStatus: () => Promise.resolve({ state: "running" }),
-    request: ({ path }) => {
-      if (path.startsWith("/api/turns/")) {
-        stopped.push(path);
-        return Promise.resolve({ status: 200, data: {} });
-      }
-      expect(path).toBe("/api/conversations");
-      return Promise.resolve({ status: 201, data: { conversation: { id: "conversation", roomId: "room" } } });
-    },
-    requestStream: (input) => { requests.push(input); return Promise.resolve({ id: input.id }); },
-    ...listening(listeners),
-  };
+  const { agent, requests, listeners, stopped } = deviceAgent();
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
@@ -764,7 +813,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     const input = page.getByRole("textbox", { name: "Message to Grace" });
     await act(() => input.fill("What can you do?"));
     await act(() => userEvent.click(page.getByRole("button", { name: "Send" })));
-    await expect.poll(() => requests[0]?.body).toEqual({ text: "What can you do?" });
+    await expect.poll(() => sentTurn(requests[0]?.body).said).toEqual(["The person: What can you do?"]);
     const id = requests[0].id;
     const data = (eventId: string, payload: Record<string, unknown>) => listeners.get("streamData")?.({ id: eventId, data: JSON.stringify(payload) });
     await act(() => {
@@ -777,7 +826,9 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     const state = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get())).assistant.conversation;
     await expect.poll(() => state().messages.map((message) => message.text)).toEqual(["What can you do?", "Would you like a quick introduction?"]);
     await act(() => userEvent.click(page.getByRole("button", { name: "Tell me more" })));
-    await expect.poll(() => requests[1]?.body).toEqual({ text: "Tell me more" });
+    await expect.poll(() => sentTurn(requests[1]?.body).said).toEqual([
+      "The person: What can you do?", "Grace: Would you like a quick introduction?", "The person: Tell me more",
+    ]);
     await act(() => {
       const next = requests[1].id;
       data(next, { type: "done", fullText: JSON.stringify({
@@ -805,7 +856,8 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
 
     await act(() => input.fill("One more question"));
     await act(() => userEvent.keyboard("{Enter}"));
-    await expect.poll(() => requests[2]?.body).toEqual({ text: "One more question" });
+    await expect.poll(() => sentTurn(requests[2]?.body).said.slice(-2)).toEqual(["The person: [Private information removed]", "The person: One more question"]);
+    expect(JSON.stringify(requests[2].body)).not.toContain("c0mputer");
     await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
     await expect.poll(() => stopped).toEqual(["/api/turns/room/abort"]);
     await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
@@ -829,7 +881,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
       const count = requests.length;
       await act(() => input.fill(words));
       await act(() => userEvent.keyboard("{Enter}"));
-      await expect.poll(() => requests[count]?.body).toEqual({ text: words });
+      await expect.poll(() => sentTurn(requests[count]?.body).said.at(-1)).toBe("The person: " + words);
       expect(review.query()).toBeNull();
       expect(plan.query()).toBeNull();
       await act(() => {
@@ -1007,7 +1059,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
     await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
     expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
-    expect(turns).toEqual([{ text: voiceInput }]);
+    expect(turns.map((body) => sentTurn(body).said)).toEqual([["The person: " + voiceInput]]);
     expect(phrases).toEqual([voiceOutput]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
@@ -1630,18 +1682,21 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const ask = 'Help me reach the help page named "Help center", then read my two appointment emails and saved appointment. Leave everything unchanged.';
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{
     said: ask,
+    // spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+    context: { includes: ["is your Chase verification code"], excludes: ["482913"] },
     answer: JSON.stringify({
       text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }, "ReadMail", "ReadMail", "ReadCalendar"] }],
     }),
   }]), client));
   const subject = "Reminder: your appointment tomorrow at 10 am";
-  const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
+  const deliver = (from: string, fromEmail: string, subject: string, body: string) => fetch(new URL("/fake/gmail/incoming", cloud), {
     method: "POST",
     headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ to: "owner@grace.test", from: "Westside Reception", fromEmail: "desk@westside.test", subject, body: "Your appointment is at our Westside office." }),
+    body: JSON.stringify({ to: "owner@grace.test", from, fromEmail, subject, body }),
   });
-  expect(incoming.ok).toBe(true);
+  expect((await deliver("Westside Reception", "desk@westside.test", subject, "Your appointment is at our Westside office.")).ok).toBe(true);
+  expect((await deliver("Chase", "no.reply.alerts@chase.com", "482913 is your Chase verification code", "Use 482913 to finish signing in.")).ok).toBe(true);
   const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
   const account = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.clear();
