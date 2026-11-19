@@ -330,9 +330,9 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
         saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Visit form.pdf"], removed: true,
         sends: [["Sent", true], ["Sent", true]], same: true,
         sent: ["Re: Lunch on Sunday?"], answered: ["family"],
-        looked: ["Sent", "SendFailed"], never: { resultStatus: "SendFailed", evidence: "not-sent" },
-        offline: { resultStatus: "SendUnknown", evidence: "" },
-        later: ["SendFailed", "Sent", "Sent"], again: true,
+        looked: ["Sent", "SendUnknown"], never: { resultStatus: "SendUnknown", evidence: "" },
+        offline: { resultStatus: "SendFailed", evidence: "preflight-unreachable" },
+        later: ["SendUnknown", "Sent", "Sent"], again: true,
         copied: "Sent",
         unsendable: { resultStatus: "SendFailed", evidence: "refused:422" },
         carried: [["Re: Lunch on Sunday?", [], []], ["Sunday", [], ["Visit form.pdf"]], ["Re: Lunch on Sunday?", ["david@family.test"], []]]
