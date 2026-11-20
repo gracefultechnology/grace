@@ -182,8 +182,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     if (!ready) return
     const { conversation } = state.assistant
     const prefs = state.preferences.session
-    try Effect.try(() => speaker.volume(prefs.muted || !prefs.voiceOutput ? 0 : prefs.volume / 100))
-    sending = sendsHerVoice(conversation) && mayOfferTalk(state)
+    const audible = prefs.voiceOutput && !prefs.muted && prefs.volume > 0
+    try Effect.try(() => speaker.volume(audible ? prefs.volume / 100 : 0))
+    sending = sendsHerVoice(conversation) && mayOfferTalk(state) && (conversation.turn !== "Speaking" || audible)
     if (sending) {
       const device = try Ref.get(mic)
       if (device) try Effect.try(() => device.microphone.attach((pcm) => {
@@ -192,9 +193,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       }))
     }
     if (card) return
-    if (!prefs.voiceOutput || prefs.muted || prefs.volume === 0) {
+    if (!audible) {
       try stopPlayback()
-      workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: conversation.generation } }, "Host") catch () => undefined
+      workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: conversation.generation, played: false } }, "Host") catch () => undefined
       return
     }
     if (conversation.turn !== "Speaking" && conversation.turn !== "Paused") {
@@ -234,7 +235,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     if (frame.kind === "played") {
       if (speaking === frame.token) {
         speaking = null
-        workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: frame.token } }, "Host") catch () => undefined
+        workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: frame.token, played: true } }, "Host") catch () => undefined
       }
       return
     }
@@ -332,7 +333,7 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
     scoped(runSpeech(native, workspace, mic, heardIn)) catch effect () => {
       const { assistant } = try workspace.get()
       const token = assistant.conversation.generation
-      workspace.send({ type: "interact", input: { tag: "FinishSpeech", token } }, "Host") catch () => undefined
+      workspace.send({ type: "interact", input: { tag: "FinishSpeech", token, played: false } }, "Host") catch () => undefined
       try reportMic(false)
     }
   }) : Stream.empty))
