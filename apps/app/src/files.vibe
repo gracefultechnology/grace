@@ -1,0 +1,86 @@
+// spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/files.md, "Opening and retrying load the authoritative local library"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
+import { canLoadForSave, canSaveFiles, type FileFeedback, type Files as FileState, initial, Machine as Files, machine, type SavedFile } from "../gen/app__files.effect.vibe"
+import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vibe"
+import { accountPlugin } from "./accountPlugin.ts"
+import { webView } from "./surfacePlugin.ts"
+import type { Attached } from "./connector.vibe"
+import { HeldFile } from "./instances.vibe"
+import type { FilesPort } from "./filesPlugin.ts"
+import { browserFiles } from "./webFiles.vibe"
+
+export const fileId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/))
+export schema FileLease { lease: fileId }
+const displayName = Schema.NonEmptyString.check(Schema.isMaxLength(180))
+const fileTimestamp = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(8640000000000000))
+const attachmentDigest = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))
+export schema FileEntry {
+  attachmentSource?: attachmentDigest; attachmentSha256?: attachmentDigest
+  id: fileId; name: displayName; kind: "photo" | "pdf"; savedAt: fileTimestamp; pages: Schema.Int
+  source?: HeldFile; version?: Schema.NonEmptyString
+}
+export schema FileCatalog { entries: FileEntry[] }
+
+export function filesAccount(account: GraceAccount | undefined) {
+  return account?.tag === "GraceSignedIn" ? "web/" + account.accountId : account?.tag === "GraceDeviceSignedIn" ? "device" : undefined
+}
+const nativeAccount = accountPlugin
+export const accountRefreshes = () => nativeAccount
+  ? Stream.callback<void>((queue) => acquireRelease(promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })), (handle) => promise(() => handle.remove())))
+  : Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
+
+export service FileStorage { readonly port: FilesPort | undefined }
+export const fileStorage = (native: boolean, port: FilesPort | undefined) => Layer.sync(FileStorage, () => ({ port: native ? port : browserFiles() }))
+
+export service Library {
+  readonly changes: Stream.Stream<FileState>
+  get(): FileState!!
+  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, expectedOwner?: string): (FileFeedback | undefined)!!
+}
+export const library = Layer.effect(Library, effect {
+  const { port } = try FileStorage
+  const setup = try Setup
+  const status = try SubscriptionRef.make(initial)
+  const owners = Stream.changes(Stream.map(setup.changes, (state) => filesAccount(state.graceAccount)))
+  try fork.scoped Stream.runForEach(Stream.merge(Stream.map(owners, () => undefined), Stream.map(accountRefreshes(), () => undefined)), () => SubscriptionRef.set(status, initial))
+  const serial = try Semaphore.make(1)
+
+  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, expectedOwner?: string) {
+    if (!port || !version || chosen.length === 0) return "WriteFailed" as const
+    const owner = filesAccount((try setup.get()).graceAccount)
+    if (!owner) return "WriteFailed" as const
+    const files = try Effect.provide(Files, machine())
+    const actual = port
+    const { lease } = try acquireRelease(
+      tryPromise(() => actual.open(expectedOwner ? { owner: expectedOwner } : undefined)) |> Effect.flatMap(%, Schema.decodeUnknownEffect(FileLease)),
+      (opened) => Effect.ignore(tryPromise(() => actual.close(opened))))
+    if (!canLoadForSave(try files.get(), lease, "FileHost")) return "WriteFailed" as const
+    try files.send({ type: "loadForSave", owner: lease }, "FileHost")
+    const loading = try files.get()
+    const catalog = Schema.decodeUnknownEffect(FileCatalog)(try tryPromise(() => actual.list({ lease }))) catch () => undefined
+    const entries = catalog?.entries.flatMap((entry) => entry.source ? [entry.source] : []) ?? []
+    try files.send({ type: "loadCatalog", catalogReport: { owner: lease, generation: loading.generation,
+      entries, succeeded: catalog !== undefined, evidence: catalog ? lease : "" } }, "FileStore")
+    const library = try files.get()
+    if (!library.loaded) return library.feedback
+    const fileImport = { owner: lease, generation: library.generation, entries: [...chosen], authorization }
+    if (!canSaveFiles(library, fileImport, "FileHost")) return "WriteFailed" as const
+    try files.send({ type: "saveFiles", fileImport }, "FileHost")
+    const writing = try files.get()
+    try SubscriptionRef.set(status, writing)
+    const stored = effect {
+      const attachments = try Effect.forEach(chosen, effect (file) => ({ file, data: (try content(file)).data, version }))
+      const receipt = try Schema.decodeUnknownEffect(FileCatalog)(try tryPromise(() => actual.saveAttachments({ lease, attachments })))
+      return chosen.every((source) => receipt.entries.some((entry) => entry.source?.id === source.id &&
+        entry.source.account === source.account && entry.source.origin === source.origin && entry.source.contentRef === source.contentRef))
+    } catch () => false
+    try files.send({ type: "writeResult", fileReceipt: { owner: lease, generation: writing.generation, id: "", succeeded: stored, evidence: stored ? lease : "" } }, "FileStore")
+    const after = try files.get()
+    if (filesAccount((try setup.get()).graceAccount) !== owner) return "WriteFailed" as const
+    try SubscriptionRef.set(status, after)
+    return after.feedback
+  }
+
+  return { changes: SubscriptionRef.changes(status), get: () => SubscriptionRef.get(status),
+    save: effect (chosen, content, authorization, version, expectedOwner) => serial.withPermit(scoped(save(chosen, content, authorization, version, expectedOwner))) catch () => "WriteFailed" as const }
+
+})

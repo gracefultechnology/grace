@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { AlarmClockPlus, X } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { BillOffer, type BillOfferProps } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
@@ -14,6 +15,12 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
   who?: string;
   /** Its reminder: "Reminder day before", "No reminder". */
   reminder: string;
+  /** Its reminder is showing now: the bell turns red, with Dismiss beside it. */
+  onDismissReminder?: () => void;
+  /** Its reminder is showing now and can come back later: Snooze beside the bell. */
+  onSnoozeReminder?: () => void;
+  dismissReminderLabel?: string;
+  snoozeReminderLabel?: string;
   /** How it repeats: "Doesn’t repeat", "Repeats every week". */
   repeat: string;
   /** Where it came from: "From the clinic’s email · Visit form attached". */
@@ -29,11 +36,31 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
 };
 
 /**
- * One event's details, a line each with its icon, then Edit and Delete (prototype `calView` detail).
+ * One event's details, a line each with its icon, then Edit and Delete (prototype `calView` detail). While its reminder
+ * is showing, Dismiss and Snooze stand on the reminder's line.
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
  */
-export function CalendarEventDetail({ when, where, who, reminder, repeat, note, onEdit, onDelete, editLabel = "Edit", deleteLabel = "Delete", bill, className, ...props }: CalendarEventDetailProps) {
+export function CalendarEventDetail({
+  when,
+  where,
+  who,
+  reminder,
+  onDismissReminder,
+  onSnoozeReminder,
+  dismissReminderLabel = "Dismiss",
+  snoozeReminderLabel = "Snooze",
+  repeat,
+  note,
+  onEdit,
+  onDelete,
+  editLabel = "Edit",
+  deleteLabel = "Delete",
+  bill,
+  className,
+  ...props
+}: CalendarEventDetailProps) {
+  const due = Boolean(onDismissReminder ?? onSnoozeReminder);
   const lines = [
     ["clock", when],
     ["pin", where],
@@ -48,11 +75,27 @@ export function CalendarEventDetail({ when, where, who, reminder, repeat, note, 
         <ul className="m-0 list-none p-0">
           {lines.map(([glyph, text]) =>
             text ? (
-              <li key={glyph} className="mt-4 flex items-center gap-4 text-body-lg leading-[30px] text-foreground">
-                <span className="flex text-primary">
+              <li key={glyph} className="mt-4 flex flex-wrap items-center gap-4 text-body-lg leading-[30px] text-foreground">
+                <span className={cn("flex", glyph === "bell" && due ? "text-alert" : "text-primary")}>
                   <CalendarGlyph name={glyph} size={28} strokeWidth={2} />
                 </span>
                 {text}
+                {glyph === "bell" && due && (
+                  <span className="ml-auto flex gap-3">
+                    {onSnoozeReminder && (
+                      <Button variant="capsule" size="compact" onClick={onSnoozeReminder}>
+                        <AlarmClockPlus aria-hidden size={22} strokeWidth={2.2} />
+                        {snoozeReminderLabel}
+                      </Button>
+                    )}
+                    {onDismissReminder && (
+                      <Button variant="capsule" size="compact" onClick={onDismissReminder}>
+                        <X aria-hidden size={22} strokeWidth={2.2} />
+                        {dismissReminderLabel}
+                      </Button>
+                    )}
+                  </span>
+                )}
               </li>
             ) : null,
           )}

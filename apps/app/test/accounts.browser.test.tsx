@@ -12,11 +12,20 @@ actOnScreen();
 const cloud = inject("cloud");
 const outlook = "margaret@outlook.com";
 const riverview = "margaret@riverview.net";
+const yahoo = "margaret@yahoo.com";
 const wrongPassword = "Not-the-password-7";
 
 const chatBodies: string[] = [];
 const otherChecks: string[] = [];
 const providerPages: string[] = [];
+const toasts: string[] = [];
+const seen = new WeakSet<Element>();
+const watcher = new MutationObserver(() => {
+  for (const toast of document.querySelectorAll('[role="status"]')) if (!seen.has(toast)) {
+    seen.add(toast);
+    toasts.push(toast.textContent ?? "");
+  }
+});
 const fetched = globalThis.fetch;
 const opened = window.open.bind(window);
 const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "";
@@ -34,9 +43,11 @@ beforeAll(() => {
     providerPages.push(String(url));
     return opened(url, ...rest);
   };
+  watcher.observe(document.body, { childList: true, subtree: true });
 });
 beforeEach(async () => {
   localStorage.clear();
+  toasts.length = 0;
   chatBodies.length = 0;
   otherChecks.length = 0;
   providerPages.length = 0;
@@ -46,6 +57,7 @@ beforeEach(async () => {
   onTestFinished(() => { localStorage.clear(); });
 });
 afterAll(() => {
+  watcher.disconnect();
   globalThis.fetch = fetched;
   window.open = opened;
 });
@@ -66,6 +78,11 @@ async function answerOutlook(choice: "allow" | "unfinished") {
   const body = new URLSearchParams({ address: choice === "allow" ? outlook : "", choice });
   await act(async () => { await fetched(await providerPage(), { method: "POST", body }); });
   await expect.element(sheet("Outlook")).not.toBeInTheDocument();
+}
+
+async function toasted(text: string) {
+  await expect.poll(() => toasts).toContain(text);
+  toasts.splice(toasts.indexOf(text), 1);
 }
 
 async function openEmailSettings() {
@@ -91,7 +108,7 @@ it("Connect the email I already use", async () => {
   await answerOutlook("allow");
   await expect.element(page.getByRole("heading", { name: "Outlook", level: 1 })).toBeVisible();
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
-  await expect.element(page.getByText("Outlook connected", { exact: true })).toBeVisible();
+  await toasted("Outlook connected");
 
   await readOutlookFromHome();
   await tap(page.getByRole("button", { name: "Close Email" }));
@@ -105,6 +122,7 @@ it("Connect the email I already use", async () => {
   await tap(tile("Outlook"));
   await expect.element(sheet("Outlook")).toBeVisible();
   await providerPage();
+  await expect.element(sheet("Outlook").getByText(`Outlook’s own sign-in page · ${new URL(cloud).host}`)).toBeVisible();
   await tap(sheet("Outlook").getByRole("button", { name: "Cancel" }));
   await expect.element(sheet("Outlook")).not.toBeInTheDocument();
   await expect.element(caution()).not.toBeInTheDocument();
@@ -153,7 +171,7 @@ it("Connect the email I already use", async () => {
   await tap(servers.getByRole("button", { name: "Connect" }));
   await expect.element(page.getByRole("heading", { name: "Riverview", level: 1 })).toBeVisible();
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();
-  await expect.element(page.getByText("Riverview connected", { exact: true })).toBeVisible();
+  await toasted("Riverview connected");
 
   // spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"
   const kept = Object.keys(localStorage).map((key) => localStorage.getItem(key) ?? "").join("\n");
@@ -198,7 +216,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Sign in again" }));
   await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
-  await expect.element(page.getByText("Outlook connected", { exact: true })).toBeVisible();
+  await toasted("Outlook connected");
 
   // spec/app/accounts.md, "Turning a use off hides it and keeps the account"
   await tap(page.getByRole("switch", { name: "Calendar" }));
@@ -215,12 +233,24 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   await tap(question.getByRole("button", { name: "Remove from tablet" }));
   await expect.element(row(outlook)).not.toBeInTheDocument();
-  await expect.element(page.getByText("Outlook removed from this tablet", { exact: true })).toBeVisible();
+  await toasted("Outlook removed from this tablet");
   await expect.element(row(riverview)).toBeVisible();
 
   await tap(page.getByRole("button", { name: "Add another email" }));
   await tap(tile("Outlook"));
   await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
+
+  await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
+  await tap(page.getByRole("button", { name: "Add another email" }));
+  await tap(tile("Yahoo"));
+  const provider = page.frameLocator(sheet("Yahoo").getByTitle("Yahoo’s own sign-in page"));
+  await expect.element(sheet("Yahoo").getByText(`Yahoo’s own sign-in page · ${new URL(cloud).host}`)).toBeVisible();
+  await act(() => provider.getByLabelText("Email").fill(yahoo));
+  await tap(provider.getByRole("button", { name: "Allow" }));
+  await expect.element(sheet("Yahoo")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Yahoo · Connected")).toBeVisible();
+  await toasted("Yahoo connected");
+  expect(providerPages).toEqual([]);
   await readOutlookFromHome();
 });

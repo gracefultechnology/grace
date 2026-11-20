@@ -2,12 +2,14 @@
 // them, and the one way a component changes the workspace.
 // spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
 import { Effect, type ManagedRuntime, Option, Stream } from "effect";
-import { createContext, createElement, type ReactNode, use, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, createElement, type ReactNode, use, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
 import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
+import { Library } from "./files.vibe";
+
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
 import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
@@ -31,7 +33,7 @@ import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
 import { BrowserGuide, type BrowserGuidance } from "./browserGuide.vibe";
-import { settled } from "./calendar.vibe";
+import { CalendarNews, settled } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
 import type { Contact } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
@@ -40,7 +42,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -114,8 +116,10 @@ export function useSignIns() {
   const runtime = useRuntime();
   const flows = runtime.runSync(Effect.service(SignIns));
   const note = useSyncExternalStore(flows.notes.subscribe, flows.notes.current);
+  const page = useSyncExternalStore(flows.page.subscribe, flows.page.current);
   return {
     note,
+    page,
     other: (details: OtherDetails) => runtime.runPromise(flows.other(details)),
     servers: (servers: MailServers) => runtime.runPromise(flows.servers(servers)),
   };
@@ -139,6 +143,23 @@ function useInstances() {
 
 export function useMailContent() {
   return useInstances().content;
+}
+
+export function useMailFile() {
+  return useInstances().file;
+}
+
+export function useMailHeld() {
+  return useInstances().held;
+}
+
+export function useFiles() {
+  const runtime = useRuntime();
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Effect.flatMap(Library, (library) => Stream.runForEach(library.changes, () => Effect.sync(changed))));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  return useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(Library, (library) => library.get())));
 }
 
 type NestedProps<T> = { ids: readonly number[]; use: (id: number) => T | undefined; children: (all: readonly T[]) => ReactNode };
@@ -171,7 +192,7 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() };
 const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 
@@ -187,6 +208,7 @@ export function useMail() {
     confirmSend: (id: number, revision: number) => runtime.runPromise(mail.confirmSend(id, revision)),
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
     discarded: () => runtime.runPromise(mail.discarded()),
+    save: (id: number, refs: readonly string[]) => runtime.runPromise(mail.save(id, refs)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);
@@ -196,6 +218,13 @@ export function useMail() {
       return known;
     },
   };
+}
+
+const unnoted = () => undefined;
+
+export function useCalendarNote() {
+  const news = Option.getOrUndefined(useRuntime().runSync(Effect.serviceOption(CalendarNews)));
+  return useSyncExternalStore(news?.notes.subscribe ?? silence, news?.notes.current ?? unnoted);
 }
 
 export type MailWriter = NonNullable<ReturnType<typeof useMail>>;
