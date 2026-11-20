@@ -21,7 +21,7 @@ schema UnavailableEvent { t: "error"; code: string }
 
 error SpeechUnavailable
 type InputFrame = { kind: "context" } | { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
-  { kind: "received"; payload: unknown } | { kind: "played"; token: number }
+  { kind: "received"; payload: unknown } | { kind: "drained"; token: number; played: boolean }
 
 type VoiceCapture = { microphone: Microphone; guide?: { person: string; ticket: number } }
 type VoiceUse = "talk" | "command"
@@ -33,6 +33,10 @@ export service SpeechActions {
 
 export function mayOfferTalk(state: Workspace) {
   return !privateSurfaceActive(state) && state.device.surface !== "Browser" && state.device.reasoningAvailable && state.device.connectivity === "Online"
+}
+
+function outputVolume(prefs: Workspace["preferences"]["session"]) {
+  return prefs.voiceOutput && !prefs.muted ? prefs.volume / 100 : 0
 }
 
 effect function cloudPost(path: string, body: object) {
@@ -167,13 +171,13 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       webView.hidden() ? Result.succeed({ kind: "closed" } as const) : Result.failVoid),
   ], { concurrency: "unbounded" })
   let ready = false
-  let speaking: number | null = null
+  let speaking: { token: number; receivedAudio: boolean } | null = null
   let paused = false
   let sending = false
 
   effect function stopPlayback() {
     if (speaking === null) return
-    wire(socket, { t: "cancel", id: String(speaking) }) catch () => undefined
+    wire(socket, { t: "cancel", id: String(speaking.token) }) catch () => undefined
     speaking = null
     try Effect.try(() => speaker.cancel())
   }
@@ -182,9 +186,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     if (!ready) return
     const { conversation } = state.assistant
     const prefs = state.preferences.session
-    const audible = prefs.voiceOutput && !prefs.muted && prefs.volume > 0
-    try Effect.try(() => speaker.volume(audible ? prefs.volume / 100 : 0))
-    sending = sendsHerVoice(conversation) && mayOfferTalk(state) && (conversation.turn !== "Speaking" || audible)
+    const volume = outputVolume(prefs)
+    try Effect.try(() => speaker.volume(volume))
+    sending = sendsHerVoice(conversation) && mayOfferTalk(state) && (conversation.turn !== "Speaking" || volume > 0)
     if (sending) {
       const device = try Ref.get(mic)
       if (device) try Effect.try(() => device.microphone.attach((pcm) => {
@@ -193,7 +197,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       }))
     }
     if (card) return
-    if (!audible) {
+    if (volume === 0) {
       try stopPlayback()
       workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: conversation.generation, played: false } }, "Host") catch () => undefined
       return
@@ -207,14 +211,14 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       paused = shouldPause
       try timeout(tryPromise(() => speaker.paused(paused)), "2 seconds")
     }
-    if (conversation.turn !== "Speaking" || speaking === conversation.generation) return
+    if (conversation.turn !== "Speaking" || speaking?.token === conversation.generation) return
     try stopPlayback()
     const last = conversation.messages.at(-1)
     if (last?.author !== "GraceMessage") return
     const output = phrases(last.text)
     if (output.length === 0) return
-    speaking = conversation.generation
-    const id = String(speaking)
+    speaking = { token: conversation.generation, receivedAudio: false }
+    const id = String(speaking.token)
     try wire(socket, { t: "prepare", id })
     for (const text of output) try wire(socket, { t: "tts", id, text, flush: true })
     try wire(socket, { t: "finish", id })
@@ -232,22 +236,24 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       try update(frame.workspace)
       return
     }
-    if (frame.kind === "played") {
-      if (speaking === frame.token) {
+    const state = try workspace.get()
+    const volume = outputVolume(state.preferences.session)
+    if (frame.kind === "drained") {
+      if (speaking?.token === frame.token) {
         speaking = null
-        workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: frame.token, played: true } }, "Host") catch () => undefined
+        workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: frame.token, played: frame.played && volume > 0 } }, "Host") catch () => undefined
       }
       return
     }
-    const state = try workspace.get()
     const { conversation } = state.assistant
     const token = conversation.generation
     const received = frame.payload
     if (received instanceof ArrayBuffer) {
       const sample = try Effect.try(() => speechFrame(received))
       const prefs = state.preferences.session
-      if (sample?.context === String(speaking) && token === speaking) {
-        try Effect.try(() => speaker.play(sample.pcm, prefs.volume / 100, prefs.pace === "Slower" ? 0.85 : prefs.pace === "Faster" ? 1.15 : 1))
+      if (speaking && token === speaking.token && sample?.context === String(token) && volume > 0) {
+        try Effect.try(() => speaker.play(sample.pcm, volume, prefs.pace === "Slower" ? 0.85 : prefs.pace === "Faster" ? 1.15 : 1))
+        speaking.receivedAudio = true
       }
       return
     }
@@ -261,8 +267,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       return
     }
     const completed = Schema.decodeUnknownOption(Complete)(payload)
-    if (Option.isSome(completed) && speaking === token && completed.value.id === String(token)) {
-      try Effect.try(() => speaker.whenDrained(() => { Queue.offerUnsafe(notifications, { kind: "played", token }) }))
+    if (Option.isSome(completed) && speaking?.token === token && completed.value.id === String(token)) {
+      const played = speaking.receivedAudio
+      try Effect.try(() => speaker.whenDrained(() => { Queue.offerUnsafe(notifications, { kind: "drained", token, played }) }))
       return
     }
     const recognized = Schema.decodeUnknownOption(Input)(payload)
