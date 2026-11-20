@@ -43,7 +43,7 @@ public final class GraceAccount extends Plugin {
  private static final ExecutorService CHOICES = Executors.newSingleThreadExecutor();
  private static final ScheduledExecutorService CHOICE_DEADLINE = Executors.newSingleThreadScheduledExecutor();
  private static final int CHOICE_DEADLINE_MS = 30_000;
- private static final String CLOUD_ORIGIN = "https://api.graceforseniors.com";
+ static final String CLOUD_ORIGIN = "https://api.graceforseniors.com";
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
  private record GuideLease(String id, CloudDeviceAccount.Session owner) {}
@@ -121,7 +121,6 @@ public final class GraceAccount extends Plugin {
     CloudDeviceAccount account = account(getContext());
     if (finishAcknowledgment(account)) didSignIn();
     boolean signedIn = GracePasswordsOwner.stableSession(getContext()) != null;
-    if (signedIn) GracePasswordsOwner.confirmVerifiedAccount(getContext());
     call.resolve(projection(signedIn));
    }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
