@@ -460,6 +460,8 @@ Three registrations participate in shared native sign-in. Android App Links list
 
 On November 18, Google web sign-in on shared staging returned to the Eliza app. Steward still reported the Grace native client as missing or disabled. A staging Login Worker binding edit activated an inactive configuration and briefly interrupted sign-in. Restoring the prior active version returned both the Login Worker and the Cloud sign-in proxy to HTTP 200. For a future change, base the candidate on the version serving traffic, compare its bindings and runtime with that version, and verify web sign-in and the Grace native challenge separately. Cloudflare can inherit bindings from a specific Worker version. Its default is the most recently uploaded version. [Worker version settings](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/script_and_version_settings/) · [Staging provider discovery](https://login-staging.eliza.app/auth/providers?tenantId=elizacloud-staging)
 
+On November 20, both shared staging origins served `944b688` and returned HTTP 204 with `X-Password-Backup-Version: 2` for the registered Grace client. The staging deployment and validation passed. The `elizacloud-staging` Steward tenant reported `googleNative=false`, returned HTTP 404 for Grace’s native challenge and rejected its browser callback with HTTP 400. An authenticated backup and restore on shared staging still need that tenant registration. [Staging deployment](https://github.com/elizaOS/eliza/actions/runs/44778304229) · [Staging validation](https://github.com/elizaOS/eliza/actions/runs/44778209475)
+
 ## PRD requirements
 
 ### Always-applicable rules
