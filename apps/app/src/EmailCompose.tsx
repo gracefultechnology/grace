@@ -1,8 +1,9 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "The visible Send button approves exactly the composer the user sees"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "From offers each account that has Email on and can send"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
 import { type MailContact, MailCompose, type MailPhoto, type MailRecipientField, MailRecipientPicker, type MailSendStatus } from "@repo/ui";
+import { Exit } from "effect";
 import { use, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
-import { type DraftContent, emptyContent, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
+import { type DraftContent, emptyContent, enabled, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
 import { canMoveDraft, contactAccounts, fromChoices, type MailSource, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
 import { recipientsOf, recipientsValid } from "./mail.vibe";
@@ -10,7 +11,7 @@ import type { MailInstance, MailWriter } from "./useApp.ts";
 
 export type Picking = { readonly field: MailRecipientField; readonly query: string };
 type Field = "subject" | "body";
-type Frame = { onClose: () => void; closeLabel: string; inert?: boolean; "aria-hidden"?: boolean };
+type Frame = { onClose?: () => void; closeLabel: string; inert?: boolean; "aria-hidden"?: boolean };
 
 const questions: Record<MailRecipientField, string> = { to: "Who is it to?", cc: "Who should get a copy?", bcc: "Who should get a hidden copy?" };
 const sending: Record<SendStatus, MailSendStatus> = {
@@ -20,9 +21,9 @@ const anAddress = /^[^@\s,;]+@[^@\s,;]+$/;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const escaped = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-function thumbnail(file: Mailbox["draftAttachments"][number]): MailPhoto {
+export function thumbnail(file: Mailbox["draftAttachments"][number]): MailPhoto {
   const label = file.kind === "Pdf" ? "PDF" : "Photo";
-  const drawn = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 110"><rect width="150" height="110" fill="white"/><text x="75" y="50" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="700">${label}</text><text x="75" y="78" text-anchor="middle" font-family="sans-serif" font-size="13">${escaped(file.name)}</text></svg>`;
+  const drawn = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 110"><desc>${escaped(file.id)}</desc><rect width="150" height="110" fill="white"/><text x="75" y="50" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="700">${label}</text><text x="75" y="78" text-anchor="middle" font-family="sans-serif" font-size="13">${escaped(file.name)}</text></svg>`;
   return { src: `data:image/svg+xml,${encodeURIComponent(drawn)}`, alt: file.name };
 }
 
@@ -90,7 +91,8 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
     if (box) return edit(box, sendTo(box.state.draft, field, address));
     const from = boxes.find((b) => b.id === startFrom(registry, sources, address));
     const start: MailEvent = { type: "startDraft", reply: false };
-    if (from?.can(start)) void from.send(start).then(() => from.send({ type: "editDraft", content: { ...emptyContent, to: address } }));
+    const addressed: MailEvent = { type: "editDraft", content: { ...emptyContent, to: address } };
+    if (from?.can(start)) void from.send(start).then((exit) => { if (Exit.isSuccess(exit) && enabled(exit.value, addressed, "MailUser")) void from.send(addressed); });
   };
 
   if (picking) {
@@ -144,6 +146,6 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
       onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
       {...frame}
-      onClose={() => { void leave(box, mail.hush); frame.onClose(); }} />
+      onClose={frame.onClose && (() => { void leave(box, mail.hush); frame.onClose?.(); })} />
   );
 }

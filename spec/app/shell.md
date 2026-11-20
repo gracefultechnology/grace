@@ -229,3 +229,13 @@ pure def lawBackgroundBrowserIsNotObservable(s: Shell): bool =
 pure def lawSleepingDeviceIsNotObservable(s: Shell): bool =
   s.readiness != Ready implies not(mayObserveBrowser(s))
 ```
+
+### A shell is valid when it meets every rule above
+
+A machine that holds a shell beside its own state requires this one check
+rather than repeating the shell's rules.
+
+```quint
+pure def validShell(s: Shell): bool =
+  alwaysContextVersionIsNonnegative(s) and alwaysReturnDestinationIsAnApplication(s)
+```
