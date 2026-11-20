@@ -34,11 +34,11 @@ let secret = "";
 
 beforeAll(() => {
   globalThis.fetch = (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : input, location.href);
-    const account = browserAccountResponse(url);
+    const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href));
     if (account) return Promise.resolve(account);
-    if (url.pathname.endsWith("/chat/completions")) chatBodies.push(decoded(init?.body));
-    if (url.pathname.endsWith("/connections/other")) otherChecks.push(url.href);
+    if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
+    if (url.includes("/connections/other")) otherChecks.push(url);
     return fetched(input, init);
   };
   window.open = (url, ...rest) => {
