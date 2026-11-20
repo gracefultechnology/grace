@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, ManagedRuntime, Schema } from "effect";
@@ -2141,7 +2141,6 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await act(() => userEvent.type(address, "example.org{Enter}"));
     await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe("https://example.org/");
     await native.started("tab-1");
-    // spec/app/browser.md, "A load that ends at another address records where the page really is"
     await native.report("tab-1", browserUrl, 100);
     await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
     await send(browserAsk);
