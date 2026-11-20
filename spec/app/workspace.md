@@ -1562,9 +1562,9 @@ different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
 Walks include an ordinary task and payments at two different origins. Preparing
 an ordinary step has the weight of the other website callbacks: ordinary
-completion needs browser observation permission, a compact chat, a verified step
-and a fresh observation of its goal, which a rarer preparation
-almost never completes within a sampled walk. Navigation
+completion needs browser observation permission, a compact chat and a fresh
+observation that quotes its goal, and the steps toward that goal come from
+preparation, which a rarer preparation almost never reaches within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Walks also go offline, lose the
 microphone, sleep, wake, restart, fail to start and retry, and open every
