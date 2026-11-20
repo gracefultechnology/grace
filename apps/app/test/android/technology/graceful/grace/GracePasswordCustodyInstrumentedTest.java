@@ -39,21 +39,41 @@ public final class GracePasswordCustodyInstrumentedTest {
   assertEquals("signedIn", status.getString("kind"));
   assertEquals(2, status.length());
   assertTrue(scope.matches("[0-9a-f]{64}"));
-  GracePasswordsOwner.confirmVerifiedAccount(context);
+  assertFalse(GracePasswordsOwner.admitted(context));
+  completeVerifiedSignIn(context);
   assertTrue(GracePasswordsOwner.admitted(context));
 
   sessions.write("credential", credential.put("token", freshToken()).toString());
   GracePasswordsOwner.confirmVerifiedAccount(context);
   assertFalse(GracePasswordsOwner.admitted(context));
 
+  completeVerifiedSignIn(context);
+  assertTrue(GracePasswordsOwner.admitted(context));
   assertEquals(scope, GraceAccount.projection(GracePasswordsOwner.stableSession(context)).getString("voiceDisclosureScope"));
 
   owners.write("password-owner", identity.toString());
   GracePasswordsOwner.confirmVerifiedAccount(context);
   assertFalse(GracePasswordsOwner.admitted(context));
 
+  completeVerifiedSignIn(context);
+  assertTrue(GracePasswordsOwner.admitted(context));
+  owners.write("password-owner", identity.put("issuer", "https://other.example").toString());
+  completeVerifiedSignIn(context);
+  assertFalse(GracePasswordsOwner.admitted(context));
+  owners.write("password-owner", identity.put("issuer", GraceAccount.CLOUD_ORIGIN).toString());
   sessions.write("credential", credential.put("organizationId", UUID.randomUUID().toString()).toString());
+  completeVerifiedSignIn(context);
+  assertFalse(GracePasswordsOwner.admitted(context));
   assertNotEquals(scope, GraceAccount.projection(GracePasswordsOwner.stableSession(context)).getString("voiceDisclosureScope"));
+ }
+
+ private static void completeVerifiedSignIn(Context context) throws Exception {
+  GracePasswordsOwner.enteringAccountChange(context);
+  try {
+   GracePasswordsOwner.confirmVerifiedAccount(context);
+  } finally {
+   GracePasswordsOwner.leavingAccountChange();
+  }
  }
 
  private static String freshToken() {
