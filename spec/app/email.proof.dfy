@@ -833,3 +833,485 @@ lemma EmailPutInto(m: Mailbox, record: app__emailItem_MessageRecord, after: Mail
   EmailPutRecord(m, record);
   EmailPutKeepsHistory(m, record);
 }
+
+lemma OutboxView(m: Mailbox, id: string)
+  ensures alwaysQueuedSendsAreIssued(m) == (m.outboxSent >= 0 && forall q :: q in m.outbox ==>
+    q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" && q.snapshot.version >= 0 &&
+    (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) && (q.status.DispatchFailed? ==> q.evidence != "") &&
+    |ProofLib.Filter((o: QueuedSend) => o.operationId == q.operationId, m.outbox)| == 1)
+  ensures queuedIn(m.outbox, id) == (if |ProofLib.Filter((q: QueuedSend) => q.operationId == id, m.outbox)| > 0 then
+    ProofLib.Filter((q: QueuedSend) => q.operationId == id, m.outbox)[0] else noQueued)
+{
+}
+
+lemma OutboxDistinct(m: Mailbox)
+  requires alwaysQueuedSendsAreIssued(m)
+  ensures ProofLib.DistinctBy(m.outbox, (q: QueuedSend) => q.operationId)
+{
+  OutboxView(m, "");
+  forall i, j | 0 <= i < |m.outbox| && 0 <= j < |m.outbox| && i != j
+    ensures m.outbox[i].operationId != m.outbox[j].operationId
+  {
+    var q := m.outbox[i];
+    ProofLib.FilterCountOneIffUnique((o: QueuedSend) => o.operationId == q.operationId, m.outbox, (o: QueuedSend) => o.operationId, i);
+  }
+}
+
+lemma OutboxEntry(m: Mailbox, q: QueuedSend)
+  requires q in m.outbox
+  requires ProofLib.DistinctBy(m.outbox, (o: QueuedSend) => o.operationId)
+  ensures queuedIn(m.outbox, q.operationId) == q
+  ensures |ProofLib.Filter((o: QueuedSend) => o.operationId == q.operationId, m.outbox)| == 1
+{
+  OutboxView(m, q.operationId);
+  var keep := (o: QueuedSend) => o.operationId == q.operationId;
+  var i :| 0 <= i < |m.outbox| && m.outbox[i] == q;
+  ProofLib.FilterOne(keep, m.outbox, i);
+  var found := ProofLib.Filter(keep, m.outbox);
+  ProofLib.FilterMember(keep, m.outbox, found[0]);
+  var j :| 0 <= j < |m.outbox| && m.outbox[j] == found[0];
+  assert i == j;
+}
+
+lemma OutboxAfter(before: Mailbox, after: Mailbox)
+  requires after.outboxSent >= 0 && ProofLib.DistinctBy(after.outbox, (q: QueuedSend) => q.operationId)
+  requires forall q :: q in after.outbox ==> (q.operationId != "" && q.operationId in after.issuedSends &&
+    q.snapshot.content.to != "" && q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
+    (q.status.DispatchFailed? ==> q.evidence != "") && ((q.status.Waiting? || q.status.Dispatching?) ==>
+      !isQueued(before.outbox, q.operationId) || queuedIn(before.outbox, q.operationId).status.Waiting? ||
+      queuedIn(before.outbox, q.operationId).status == q.status))
+  ensures alwaysQueuedSendsAreIssued(after)
+  ensures stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(after, "");
+  forall q | q in after.outbox
+    ensures queuedIn(after.outbox, q.operationId) == q && |ProofLib.Filter((o: QueuedSend) => o.operationId == q.operationId, after.outbox)| == 1
+  {
+    OutboxEntry(after, q);
+  }
+}
+
+lemma OutboxChanged(before: Mailbox, after: Mailbox)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent == before.outboxSent
+  requires |before.outbox| == |after.outbox|
+  requires forall i :: 0 <= i < |before.outbox| ==>
+    after.outbox[i].operationId == before.outbox[i].operationId && after.outbox[i].snapshot == before.outbox[i].snapshot &&
+    (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
+    ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==>
+      before.outbox[i].status.Waiting? || before.outbox[i].status == after.outbox[i].status)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  assert ProofLib.DistinctBy(after.outbox, (q: QueuedSend) => q.operationId);
+  forall q | q in after.outbox
+    ensures q.operationId != "" && q.operationId in after.issuedSends && q.snapshot.content.to != "" && q.snapshot.version >= 0 &&
+      (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) && (q.status.DispatchFailed? ==> q.evidence != "") &&
+      ((q.status.Waiting? || q.status.Dispatching?) ==> (!isQueued(before.outbox, q.operationId) ||
+        queuedIn(before.outbox, q.operationId).status.Waiting? || queuedIn(before.outbox, q.operationId).status == q.status))
+  {
+    var i :| 0 <= i < |after.outbox| && after.outbox[i] == q;
+    OutboxEntry(before, before.outbox[i]);
+  }
+  OutboxAfter(before, after);
+}
+
+lemma OutboxStatusChanged(before: Mailbox, after: Mailbox, id: string, status: OutboxStatus, evidence: string)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent == before.outboxSent
+  requires after.outbox == withStatus(before.outbox, id, status, evidence)
+  requires status.DispatchFailed? ==> evidence != ""
+  requires status.Dispatching? || status.Waiting? ==> queuedIn(before.outbox, id).status.Waiting?
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  forall i | 0 <= i < |before.outbox|
+    ensures after.outbox[i].operationId == before.outbox[i].operationId && after.outbox[i].snapshot == before.outbox[i].snapshot &&
+      (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
+      ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==>
+        before.outbox[i].status.Waiting? || before.outbox[i].status == after.outbox[i].status)
+  {
+    OutboxEntry(before, before.outbox[i]);
+    assert after.outbox[i] == (if before.outbox[i].operationId == id then before.outbox[i].(status := status, evidence := evidence) else before.outbox[i]);
+  }
+  OutboxChanged(before, after);
+}
+
+lemma OutboxFenced(before: Mailbox, after: Mailbox)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent == before.outboxSent
+  requires after.outbox == fenceQueue(before.outbox)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  forall i | 0 <= i < |before.outbox|
+    ensures after.outbox[i].operationId == before.outbox[i].operationId && after.outbox[i].snapshot == before.outbox[i].snapshot &&
+      (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
+      ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==>
+        before.outbox[i].status.Waiting? || before.outbox[i].status == after.outbox[i].status)
+  {
+    assert after.outbox[i] == (if before.outbox[i].status.Dispatching? then before.outbox[i].(status := OutboxStatus.DispatchUnknown) else before.outbox[i]);
+  }
+  OutboxChanged(before, after);
+}
+
+lemma OutboxAppend(before: Mailbox, after: Mailbox, newEntry: QueuedSend)
+  requires alwaysQueuedSendsAreIssued(before) && after.outboxSent == before.outboxSent
+  requires after.outbox == before.outbox + [newEntry]
+  requires newEntry.operationId != "" && newEntry.operationId !in before.issuedSends && newEntry.operationId in after.issuedSends
+  requires forall id :: id in before.issuedSends ==> id in after.issuedSends
+  requires newEntry.snapshot.content.to != "" && newEntry.snapshot.version >= 0 && newEntry.status.Waiting?
+  requires forall a :: a in newEntry.snapshot.attachments ==> app__files_validFile(a)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  assert !isQueued(before.outbox, newEntry.operationId);
+  assert ProofLib.DistinctBy(after.outbox, (q: QueuedSend) => q.operationId);
+  forall q | q in after.outbox && q != newEntry
+    ensures queuedIn(before.outbox, q.operationId) == q && q in before.outbox
+  {
+    assert q in before.outbox;
+    OutboxEntry(before,q);
+  }
+  OutboxAfter(before,after);
+}
+
+lemma OutboxRemoved(before: Mailbox, after: Mailbox, id: string)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent >= before.outboxSent
+  requires after.outbox == withoutQueued(before.outbox,id)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  var keep := (q: QueuedSend) => q.operationId != id;
+  assert after.outbox == ProofLib.Filter(keep,before.outbox);
+  ProofLib.FilterKeepsDistinctBy(keep,before.outbox,(q: QueuedSend) => q.operationId);
+  ProofLib.FilterSubset(keep,before.outbox);
+  forall q | q in after.outbox
+    ensures q in before.outbox && queuedIn(before.outbox, q.operationId) == q
+  {
+    OutboxEntry(before,q);
+  }
+  OutboxAfter(before,after);
+}
+
+lemma endConnection_ensures(m: Mailbox, resultStatus: Connection, by_: MailActor)
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysConnectedIdentity(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysAccountIdentityIsBound(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysGenerationAndRevision(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysSelectedContent(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysReadAccess(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysReadSelectionIsBound(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysFolderIsVisible(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysSearchMatchesQuery(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysMessageRegistry(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysListedMessagesAreCurrent(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysSelectionUsesCanonicalMessage(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysBillProvenance(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysScamWarningIsCurrent(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysLinkBelongsToSelection(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysFlaggedMessageIsNoBillSource(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysResultPersistenceHasTerminal(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysApprovalIsCurrent(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysSendHasRecipient(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysSendEvidence(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysQueuedSendsAreIssued(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysDraftHasAccount(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysDraftStoreHasRevision(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysRetirementHasMailbox(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysDraftVersions(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysEditableDraftIsNotRetired(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysDraftAssetsAreValid(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> alwaysMessageAssetsAreBound(endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepMessageRecordsAreRetained(m, endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepOnlyThePersonApproves(m, "endConnection", endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepSendingNeedsCurrentApproval(m, "endConnection", endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepUnresolvedDraftIsFixed(m, endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepQueueNeedsCurrentApproval(m, "endConnection", endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepQueuedSendGoesOnce(m, endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepWorthyComposerIsNotDropped(m, "endConnection", endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepMailboxIdentityIsFixed(m, endConnection(m, resultStatus, by_)))
+  ensures (inv(m) ==> canEndConnection(m, resultStatus, by_) ==> stepRetirementRequiresCompletion(m, "endConnection", endConnection(m, resultStatus, by_)))
+{
+  if inv(m) && canEndConnection(m, resultStatus, by_) {
+    OutboxFenced(m, endConnection(m, resultStatus, by_));
+  }
+}
+
+lemma interrupt_ensures(m: Mailbox, by_: MailActor)
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysConnectedIdentity(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysAccountIdentityIsBound(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysGenerationAndRevision(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysSelectedContent(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysReadAccess(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysReadSelectionIsBound(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysFolderIsVisible(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysSearchMatchesQuery(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysMessageRegistry(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysListedMessagesAreCurrent(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysSelectionUsesCanonicalMessage(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysBillProvenance(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysScamWarningIsCurrent(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysLinkBelongsToSelection(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysFlaggedMessageIsNoBillSource(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysResultPersistenceHasTerminal(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysApprovalIsCurrent(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysSendHasRecipient(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysSendEvidence(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysQueuedSendsAreIssued(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysDraftHasAccount(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysDraftStoreHasRevision(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysRetirementHasMailbox(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysDraftVersions(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysEditableDraftIsNotRetired(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysDraftAssetsAreValid(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> alwaysMessageAssetsAreBound(interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepMessageRecordsAreRetained(m, interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepOnlyThePersonApproves(m, "interrupt", interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepSendingNeedsCurrentApproval(m, "interrupt", interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepUnresolvedDraftIsFixed(m, interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepQueueNeedsCurrentApproval(m, "interrupt", interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepQueuedSendGoesOnce(m, interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepWorthyComposerIsNotDropped(m, "interrupt", interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepMailboxIdentityIsFixed(m, interrupt(m, by_)))
+  ensures (inv(m) ==> canInterrupt(m, by_) ==> stepRetirementRequiresCompletion(m, "interrupt", interrupt(m, by_)))
+{
+  if inv(m) && canInterrupt(m, by_) {
+    OutboxFenced(m, interrupt(m, by_));
+  }
+}
+
+lemma restartMailbox_ensures(m: Mailbox, by_: MailActor)
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysConnectedIdentity(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysAccountIdentityIsBound(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysGenerationAndRevision(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysSelectedContent(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysReadAccess(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysReadSelectionIsBound(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysFolderIsVisible(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysSearchMatchesQuery(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysMessageRegistry(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysListedMessagesAreCurrent(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysSelectionUsesCanonicalMessage(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysBillProvenance(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysScamWarningIsCurrent(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysLinkBelongsToSelection(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysFlaggedMessageIsNoBillSource(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysResultPersistenceHasTerminal(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysApprovalIsCurrent(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysSendHasRecipient(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysSendEvidence(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysQueuedSendsAreIssued(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysDraftHasAccount(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysDraftStoreHasRevision(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysRetirementHasMailbox(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysDraftVersions(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysEditableDraftIsNotRetired(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysDraftAssetsAreValid(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> alwaysMessageAssetsAreBound(restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepMessageRecordsAreRetained(m, restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepOnlyThePersonApproves(m, "restartMailbox", restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepSendingNeedsCurrentApproval(m, "restartMailbox", restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepUnresolvedDraftIsFixed(m, restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepQueueNeedsCurrentApproval(m, "restartMailbox", restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepQueuedSendGoesOnce(m, restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepWorthyComposerIsNotDropped(m, "restartMailbox", restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepMailboxIdentityIsFixed(m, restartMailbox(m, by_)))
+  ensures (inv(m) ==> canRestartMailbox(m, by_) ==> stepRetirementRequiresCompletion(m, "restartMailbox", restartMailbox(m, by_)))
+{
+  if inv(m) && canRestartMailbox(m, by_) {
+    OutboxFenced(m, restartMailbox(m, by_));
+  }
+}
+
+lemma dispatchQueued_ensures(m: Mailbox, operationId: string, reachable: bool, by_: MailActor)
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysConnectedIdentity(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysAccountIdentityIsBound(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysGenerationAndRevision(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysSelectedContent(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysReadAccess(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysReadSelectionIsBound(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysFolderIsVisible(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysSearchMatchesQuery(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysMessageRegistry(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysListedMessagesAreCurrent(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysSelectionUsesCanonicalMessage(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysBillProvenance(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysScamWarningIsCurrent(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysLinkBelongsToSelection(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysFlaggedMessageIsNoBillSource(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysResultPersistenceHasTerminal(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysApprovalIsCurrent(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysSendHasRecipient(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysSendEvidence(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysQueuedSendsAreIssued(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysDraftHasAccount(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysDraftStoreHasRevision(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysRetirementHasMailbox(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysDraftVersions(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysEditableDraftIsNotRetired(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysDraftAssetsAreValid(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> alwaysMessageAssetsAreBound(dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepMessageRecordsAreRetained(m, dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepOnlyThePersonApproves(m, "dispatchQueued", dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepSendingNeedsCurrentApproval(m, "dispatchQueued", dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepUnresolvedDraftIsFixed(m, dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepQueueNeedsCurrentApproval(m, "dispatchQueued", dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepQueuedSendGoesOnce(m, dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepWorthyComposerIsNotDropped(m, "dispatchQueued", dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepMailboxIdentityIsFixed(m, dispatchQueued(m, operationId, reachable, by_)))
+  ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepRetirementRequiresCompletion(m, "dispatchQueued", dispatchQueued(m, operationId, reachable, by_)))
+{
+  if inv(m) && canDispatchQueued(m, operationId, reachable, by_) {
+    OutboxStatusChanged(m, dispatchQueued(m, operationId, reachable, by_), operationId, OutboxStatus.Dispatching, "");
+  }
+}
+
+lemma queuedResult_ensures(m: Mailbox, operationId: string, resultStatus: SendStatus, evidence: string, persisted: bool, by_: MailActor)
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysConnectedIdentity(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysAccountIdentityIsBound(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysGenerationAndRevision(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSelectedContent(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysReadAccess(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysReadSelectionIsBound(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysFolderIsVisible(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSearchMatchesQuery(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysMessageRegistry(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysListedMessagesAreCurrent(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSelectionUsesCanonicalMessage(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysBillProvenance(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysScamWarningIsCurrent(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysLinkBelongsToSelection(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysFlaggedMessageIsNoBillSource(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysResultPersistenceHasTerminal(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysApprovalIsCurrent(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSendHasRecipient(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSendEvidence(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysQueuedSendsAreIssued(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftHasAccount(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftStoreHasRevision(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysRetirementHasMailbox(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftVersions(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysEditableDraftIsNotRetired(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftAssetsAreValid(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysMessageAssetsAreBound(queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepMessageRecordsAreRetained(m, queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepOnlyThePersonApproves(m, "queuedResult", queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepSendingNeedsCurrentApproval(m, "queuedResult", queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepUnresolvedDraftIsFixed(m, queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepQueueNeedsCurrentApproval(m, "queuedResult", queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepQueuedSendGoesOnce(m, queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepWorthyComposerIsNotDropped(m, "queuedResult", queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepMailboxIdentityIsFixed(m, queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepRetirementRequiresCompletion(m, "queuedResult", queuedResult(m, operationId, resultStatus, evidence, persisted, by_)))
+{
+  if inv(m) && canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) {
+    var after := queuedResult(m, operationId, resultStatus, evidence, persisted, by_);
+    if resultStatus.Sent? && persisted {
+      OutboxRemoved(m, after, operationId);
+    } else if resultStatus.SendFailed? && persisted {
+      OutboxStatusChanged(m, after, operationId, OutboxStatus.DispatchFailed, evidence);
+    } else {
+      OutboxStatusChanged(m, after, operationId, OutboxStatus.DispatchUnknown, "");
+    }
+  }
+}
+
+lemma queueSend_ensures(m: Mailbox, operationId: string, recipientValid: bool, persisted: bool, reachable: bool, by_: MailActor)
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysConnectedIdentity(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysAccountIdentityIsBound(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysGenerationAndRevision(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysSelectedContent(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysReadAccess(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysReadSelectionIsBound(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysFolderIsVisible(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysSearchMatchesQuery(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysMessageRegistry(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysListedMessagesAreCurrent(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysSelectionUsesCanonicalMessage(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysBillProvenance(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysScamWarningIsCurrent(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysLinkBelongsToSelection(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysFlaggedMessageIsNoBillSource(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysResultPersistenceHasTerminal(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysApprovalIsCurrent(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysSendHasRecipient(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysSendEvidence(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysQueuedSendsAreIssued(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysDraftHasAccount(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysDraftStoreHasRevision(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysRetirementHasMailbox(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysDraftVersions(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysEditableDraftIsNotRetired(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysDraftAssetsAreValid(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> alwaysMessageAssetsAreBound(queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepMessageRecordsAreRetained(m, queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepOnlyThePersonApproves(m, "queueSend", queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepSendingNeedsCurrentApproval(m, "queueSend", queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepUnresolvedDraftIsFixed(m, queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepQueueNeedsCurrentApproval(m, "queueSend", queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepQueuedSendGoesOnce(m, queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepWorthyComposerIsNotDropped(m, "queueSend", queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepMailboxIdentityIsFixed(m, queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+  ensures (inv(m) ==> canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) ==> stepRetirementRequiresCompletion(m, "queueSend", queueSend(m, operationId, recipientValid, persisted, reachable, by_)))
+{
+  if inv(m) && canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) {
+    var after := queueSend(m, operationId, recipientValid, persisted, reachable, by_);
+    ProofLib.FilterMember((set_x: string) => !(set_x in m.issuedSends), [operationId], operationId);
+    OutboxAppend(m, after, QueuedSend(operationId, currentDraft(m), OutboxStatus.Waiting, ""));
+  }
+}
+
+lemma reopenQueued_ensures(m: Mailbox, operationId: string, by_: MailActor)
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysConnectedIdentity(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysAccountIdentityIsBound(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysGenerationAndRevision(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSelectedContent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysReadAccess(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysReadSelectionIsBound(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysFolderIsVisible(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSearchMatchesQuery(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysMessageRegistry(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysListedMessagesAreCurrent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSelectionUsesCanonicalMessage(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysBillProvenance(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysScamWarningIsCurrent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysLinkBelongsToSelection(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysFlaggedMessageIsNoBillSource(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysResultPersistenceHasTerminal(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysApprovalIsCurrent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSendHasRecipient(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSendEvidence(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysQueuedSendsAreIssued(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftHasAccount(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftStoreHasRevision(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysRetirementHasMailbox(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftVersions(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysEditableDraftIsNotRetired(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftAssetsAreValid(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysMessageAssetsAreBound(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepMessageRecordsAreRetained(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepOnlyThePersonApproves(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepSendingNeedsCurrentApproval(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepUnresolvedDraftIsFixed(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepQueueNeedsCurrentApproval(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepQueuedSendGoesOnce(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepWorthyComposerIsNotDropped(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepMailboxIdentityIsFixed(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepRetirementRequiresCompletion(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+{
+  if inv(m) && canReopenQueued(m, operationId, by_) {
+    OutboxView(m, operationId);
+    OutboxDistinct(m);
+    var record :| record in m.outbox && record.operationId == operationId;
+    OutboxEntry(m, record);
+    OutboxRemoved(m, reopenQueued(m, operationId, by_), operationId);
+  }
+}
