@@ -679,7 +679,15 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter: (fi
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
   });
-  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100);
+  await native.report("tab-2", "https://utility.example", 100, { canGoBack: true, canGoForward: false });
+  await expect.element(page.getByRole("button", { name: "Back", exact: true })).toBeEnabled();
+  expect(await pressBack()).toBe(true);
+  await expect.poll(() => native.calls("goBack").at(-1)?.id).toBe("tab-2");
+  await native.report("tab-2", "https://utility.example", 100, { canGoBack: false, canGoForward: true });
+  await expect.element(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Forward", exact: true })));
+  await expect.poll(() => native.calls("goForward").at(-1)?.id).toBe("tab-2");
+  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100, { canGoBack: true, canGoForward: false });
   const state = JSON.stringify(browserState());
   expect(state).not.toContain("one-time");
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);

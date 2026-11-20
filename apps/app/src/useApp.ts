@@ -11,7 +11,8 @@ import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
 import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
-import type { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
+import { Machine as PageLayers, historyFor } from "../gen/app__surface.effect.vibe";
+import type { HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
@@ -80,6 +81,8 @@ export function useWorkspace() {
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
     /** The person's Close browser, which the page host also tells what websites asked. */
     supportsPrivateSignIn: () => runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.privateSignIn)),
+    privateHistory: (tab: number) => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (layer) => Effect.map(layer.get(), (state) => historyFor(state, tab)))),
+    stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
