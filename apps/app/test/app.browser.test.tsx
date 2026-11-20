@@ -892,6 +892,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   let release = () => {};
   let disconnect = () => {};
   let finishes = 0;
+  let sendAudio = true;
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
@@ -965,7 +966,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
         output[0] = 1;
         output[1] = id.length;
         output.set(id, 2);
-        this.receive(output.buffer);
+        if (sendAudio) this.receive(output.buffer);
       } else if (command.t === "finish" && "id" in command && typeof command.id === "string") {
         const complete = { t: "complete", id: command.id };
         finishes++;
@@ -1021,7 +1022,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const question = "Shall I call Anne?";
     const chips = ["Yes, call Anne now", "Not now"];
     const asked = JSON.stringify({ text: question, isQuestion: true, answers: chips });
-    const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more", "Mute the next reply", "Read the last question"];
+    const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more", "Mute the next reply", "Read another question", "Read the last question"];
     const done = "I’ll ring her now.";
     const talk = () => act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
 
@@ -1061,8 +1062,9 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     expect(audio).toHaveBeenCalledTimes(4);
     const preference = (muted: boolean) => act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
       machine.send({ type: "changePreferences", settings: { ...workspace().preferences.session, muted } }, "Person"))).then(() => undefined));
-    for (const cause of ["mute", "disconnect"] as const) {
-      const index = cause === "mute" ? 4 : 5;
+    for (const [offset, cause] of (["mute", "empty", "disconnect"] as const).entries()) {
+      const index = 4 + offset;
+      sendAudio = cause !== "empty";
       const priorFinishes = finishes;
       replies.push(asked);
       nextTranscript = said[index];
@@ -1071,7 +1073,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       await expect.poll(() => [conversation().turn, texts().at(-1), finishes]).toEqual(["Speaking", question, priorFinishes + 1]);
       const delayedComplete = release;
       if (cause === "mute") await preference(true);
-      else await act(() => Promise.resolve(disconnect()));
+      else await act(() => Promise.resolve(cause === "empty" ? release() : disconnect()));
       await expect.poll(() => [conversation().turn, conversation().voice, tracks().at(-1)]).toEqual(["Ready", false, "ended"]);
       await act(() => Promise.resolve(delayedComplete()));
       await expect.element(page.getByRole("button", { name: chips[0] })).toBeEnabled();
@@ -1079,18 +1081,18 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       if (cause === "mute") await preference(false);
     }
     holdComplete = false;
-    const sessions = Array.from({ length: 6 }).flatMap(() => speechSession);
+    const sessions = Array.from({ length: 7 }).flatMap(() => speechSession);
     await expect.poll(() => calls).toEqual(sessions);
     const transcript = texts();
 
     nextTranscript = "Where can I find my saved passwords?";
     await talk();
     await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
-    await expect.poll(() => tracks()).toEqual(Array(7).fill("ended"));
+    await expect.poll(() => tracks()).toEqual(Array(8).fill("ended"));
     await expect.poll(() => calls).toEqual([...sessions, ...speechSession]);
     expect(texts()).toEqual(transcript);
     expect(turns).toEqual([voiceInput, ...said].map((text) => ({ text })));
-    expect(phrases).toEqual([voiceOutput, question, done, question, question, question, question]);
+    expect(phrases).toEqual([voiceOutput, question, done, ...Array(5).fill(question)]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
