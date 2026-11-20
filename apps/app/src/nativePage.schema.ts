@@ -21,6 +21,8 @@ export const NavigationChanged = Schema.Struct({
   ...surface,
   exists: Schema.optional(Schema.Boolean),
   currentUrl: Schema.optional(Schema.NullOr(Url)),
+  canGoBack: Schema.optional(Schema.Boolean),
+  canGoForward: Schema.optional(Schema.Boolean),
   progress: Schema.optional(Schema.Finite),
   pageError: Schema.optional(Schema.NullOr(Schema.String)),
   securityBlocked: Schema.optional(Schema.Boolean)

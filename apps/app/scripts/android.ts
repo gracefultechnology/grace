@@ -68,6 +68,7 @@ const PluginCall = {
 };
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
+  Schema.Struct({ homeCard: Schema.NonEmptyString }),
   Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString, replace: Schema.optional(Schema.Boolean) }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
   Schema.Struct({ expect: Schema.NonEmptyString }),
@@ -425,11 +426,14 @@ const Reply = Schema.Struct({ id: Schema.optional(Schema.Number), result: Schema
 const Nothing = Schema.Struct({});
 const Evaluated = Schema.Struct({ result: Schema.Struct({ value: Schema.optional(Schema.Unknown) }) });
 const Document = Schema.Struct({ root: Schema.Struct({ nodeId: Schema.Number }) });
-const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Schema.Struct({ value: Schema.Unknown })), backendDOMNodeId: Schema.optional(Schema.Number) });
+const AXNode = Schema.Struct({ ignored: Schema.Boolean, role: Schema.optional(Schema.Struct({ value: Schema.Unknown })), name: Schema.optional(Schema.Struct({ value: Schema.String })), backendDOMNodeId: Schema.optional(Schema.Number) });
 const AXNodes = Schema.Struct({ nodes: Schema.Array(AXNode) });
 const Quads = Schema.Struct({ quads: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number, Schema.Number])) });
 const SignInReport = Schema.Struct({
-  status: Schema.Struct({ kind: Schema.Literals(["signedIn", "signedOut"]) }),
+  status: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("signedOut") }),
+    Schema.Struct({ kind: Schema.Literal("signedIn"), voiceDisclosureScope: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)) }),
+  ]),
   google: Schema.Boolean,
 });
 const selectedHome = `[...document.querySelectorAll("button[aria-current=true]:enabled")].some((control) => control.textContent.trim() === "Home")`;
@@ -493,23 +497,25 @@ async function devTools(url: string, signal: AbortSignal) {
     }
   };
 
-  const find = async (name: string, signal: AbortSignal) => {
+  const find = async (target: string | { homeCard: string }, signal: AbortSignal) => {
     const { root } = await send({ method: "DOM.getDocument", params: { depth: 0 }, schema: Document, signal });
-    const { nodes } = await send({ method: "Accessibility.queryAXTree", params: { nodeId: root.nodeId, accessibleName: name }, schema: AXNodes, signal });
-    const matches = nodes.flatMap((node) => !node.ignored && node.role?.value !== "StaticText" && node.backendDOMNodeId !== undefined ? [node.backendDOMNodeId] : []);
-    if (matches.length > 1) throw new Error(`${matches.length} things are named "${name}"`);
+    const query = typeof target === "string" ? { accessibleName: target } : { role: "button" };
+    const { nodes } = await send({ method: "Accessibility.queryAXTree", params: { nodeId: root.nodeId, ...query }, schema: AXNodes, signal });
+    const named = typeof target === "string" ? nodes : nodes.filter(({ name }) => name?.value === target.homeCard || name?.value.startsWith(target.homeCard + " "));
+    const matches = named.flatMap((node) => !node.ignored && node.role?.value !== "StaticText" && node.backendDOMNodeId !== undefined ? [node.backendDOMNodeId] : []);
+    if (matches.length > 1) throw new Error(`${matches.length} controls match ${JSON.stringify(target)}`);
     return matches[0];
   };
 
-  const tap = async (name: string, signal: AbortSignal) => {
-    let node = await find(name, signal);
+  const tap = async (target: string | { homeCard: string }, signal: AbortSignal) => {
+    let node = await find(target, signal);
     while (node === undefined) {
       await until("true", signal);
-      node = await find(name, signal);
+      node = await find(target, signal);
     }
     await send({ method: "DOM.scrollIntoViewIfNeeded", params: { backendNodeId: node }, schema: Nothing, signal });
     const { quads: [quad] } = await send({ method: "DOM.getContentQuads", params: { backendNodeId: node }, schema: Quads, signal });
-    if (!quad) throw new Error(`"${name}" is not on screen`);
+    if (!quad) throw new Error(`${JSON.stringify(target)} is not on screen`);
     const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
     await tapAt({ x, y }, signal);
   };
@@ -579,18 +585,29 @@ async function devTools(url: string, signal: AbortSignal) {
         return;
       }
       if ("signIn" in step) {
-        const expression = `(async () => { const status = await Capacitor.Plugins.GraceAccount.status(); const endpoint = new URL("https://api.graceforseniors.com/api/v1/app-auth/mobile/config"); endpoint.search = new URLSearchParams({clientId: "technology.graceful.grace", environment: "production", redirectUri: "https://app.graceforseniors.com/android/auth/callback"}); const res = await fetch(endpoint); if (!res.ok) throw new Error("Google configuration unavailable"); const config = await res.json(); return JSON.stringify({ status, google: config.google?.nativeSignIn === true }); })()`;
+        const endpoint = new URL("https://api.graceforseniors.com/api/v1/app-auth/mobile/config");
+        endpoint.search = new URLSearchParams({ clientId: identity.appId, environment: "production", redirectUri: "https://app.graceforseniors.com/android/auth/callback" }).toString();
+        const expression = `(async () => {
+          const { GraceAccount, CapacitorHttp } = Capacitor.Plugins;
+          const status = await GraceAccount.status();
+          const config = await CapacitorHttp.get({ url: ${JSON.stringify(endpoint.href)}, responseType: "json" });
+          return { status, google: config.status === 200 ? config.data?.google?.nativeSignIn : undefined };
+        })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
-        const reply = String(result.value);
-        if (/eliza_mobile_/.test(reply)) throw new Error("A sign-in result carries an Eliza Cloud key");
-        const { status, google } = Schema.decodeUnknownSync(Schema.fromJsonString(SignInReport), { onExcessProperty: "error" })(reply);
+        const report = Schema.decodeUnknownOption(SignInReport, { onExcessProperty: "error" })(result.value);
+        if (report._tag === "None") throw new Error("The native account status or public sign-in configuration was unavailable or returned unexpected fields");
+        const { status, google } = report.value;
         const found = { signedIn: status.kind === "signedIn", google };
-        process.stdout.write(`sign-in status ${JSON.stringify({ ...status, ...found })}\n`);
+        process.stdout.write(`sign-in status ${JSON.stringify(found)}\n`);
         if (found.signedIn !== step.signIn.signedIn || found.google !== step.signIn.google)
           throw new Error(`Sign-in is ${JSON.stringify(found)}, not ${JSON.stringify(step.signIn)}`);
         return;
       }
       if ("tap" in step) return await tap(step.tap, signal);
+      if ("homeCard" in step) {
+        await until(selectedHome, signal);
+        return await tap(step, signal);
+      }
       if ("into" in step) {
         await tap(step.into, signal);
         if (step.replace) {
@@ -997,6 +1014,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const tap = async (matches: (node: DeviceNode) => boolean, label: string) => tapNode(await waitForNode(matches, label));
   let episode: typeof Episode.Type | undefined;
   let step = "open fixture";
+  let journeyFailure: Error | undefined;
   try {
     const started = await fixture.startPasswordLoginEpisode({
       provision: async (input: unknown) => {
@@ -1131,24 +1149,23 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     step = "submit the website form and grade";
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
-    while (Date.now() < until) {
+    for (;;) {
       signal.throwIfAborted();
+      if (Date.now() >= until) throw new Error("BillWorld did not confirm the account view");
       const after = await readGrade();
       if (after.paymentCount !== 0) throw new Error("The sign-in run encountered a payment");
-      if (after.grade.success) return;
+      if (after.grade.success) break;
       await delay(1000);
     }
-    throw new Error("BillWorld did not confirm the account view");
   } catch {
-    if (buildFailure) throw buildFailure;
-    throw new Error(`BillWorld password journey stopped at: ${step}`);
-  } finally {
-    let clean = true;
-    for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
-    await requireNoScreenLock().catch(() => { clean = false; });
-    await episode?.close();
-    if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.");
+    journeyFailure = buildFailure ?? new Error(`BillWorld password journey stopped at: ${step}`);
   }
+  let clean = true;
+  for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
+  await requireNoScreenLock().catch(() => { clean = false; });
+  try { await episode?.close(); } catch { clean = false; }
+  if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.", { cause: journeyFailure });
+  if (journeyFailure) throw journeyFailure;
 }
 
 if (import.meta.main) {

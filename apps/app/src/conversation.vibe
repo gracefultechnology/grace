@@ -174,7 +174,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const { committed, identity, revision, hasSaved, phase } = entryAt(view, savedOccurrence)
       if (!view.opened || !hasSaved || phase !== "Saved" || identity.kind !== "Appointment" || identity.owner !== account.address ||
           view.owner !== account.address || identity.calendarId !== calendarApproval.calendar || identity.calendarId !== view.calendarId ||
-          identity.occurrenceId !== savedOccurrence || identity.sourceRef !== calendarApproval.sourceRef ||
+          identity.occurrenceId !== savedOccurrence || identity.sourceAccount !== calendarApproval.account || identity.sourceRef !== calendarApproval.sourceRef ||
           committed.title !== calendarApproval.title || committed.startAt !== calendarApproval.starts || committed.endAt !== calendarApproval.ends ||
           committed.timezone !== calendarApproval.timezone || committed.location !== calendarApproval.location || committed.notes !== calendarApproval.notes) return undefined
       return receipt({ tag: "CurrentAppointment", key: account.id, owner: identity.owner, calendarId: identity.calendarId,

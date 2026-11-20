@@ -14,15 +14,23 @@ export function actOnScreen() {
   afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
 }
 
-export async function mount(runtime: Runtime) {
+export function tabletView(runtime: Runtime) {
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
-  onTestFinished(async () => {
-    await act(() => root.unmount());
-    host.remove();
-    await runtime.dispose();
-  });
-  await act(() => root.render(<App runtime={runtime} />));
+  return {
+    render: () => act(() => Promise.resolve(root.render(<App runtime={runtime} />))),
+    dispose: async () => {
+      await act(() => Promise.resolve(root.unmount()));
+      await runtime.dispose();
+      host.remove();
+    },
+  };
+}
+
+export async function mount(runtime: Runtime) {
+  const view = tabletView(runtime);
+  onTestFinished(view.dispose);
+  await view.render();
 }
 
 export async function signInToGrace(runtime: Runtime) {

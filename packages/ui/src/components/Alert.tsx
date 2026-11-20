@@ -3,14 +3,14 @@ import { TriangleAlert } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../lib/cn.ts";
 
-const alertVariants = cva("rounded-md border-l-4 bg-muted px-4 py-3 text-sm text-foreground", {
+const alertVariants = cva("rounded-md border-l-4 bg-muted px-4 py-3 text-detail text-foreground", {
   variants: {
     variant: {
       info: "border-border",
       ok: "border-ok",
       warn: "border-warn",
       destructive: "border-destructive",
-      caution: "flex items-center gap-4 rounded-row border-0 bg-caution px-5 py-4 text-[21px] leading-7 font-semibold inset-ring-[1.5px] inset-ring-destructive/22",
+      caution: "flex items-center gap-4 rounded-row border-0 bg-caution px-5 py-4 text-body-lg leading-7 font-semibold inset-ring-[1.5px] inset-ring-destructive/22",
     },
   },
   defaultVariants: { variant: "info" },

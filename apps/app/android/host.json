@@ -31,6 +31,7 @@
     }
   ],
   "sourceSets": {
+    "androidTest": { "java": [{ "root": "consumer", "path": "test/android" }] },
     "main": {
       "java": [{ "root": "consumer", "path": "android/java" }],
       "res": [{ "root": "consumer", "path": "android/res" }]

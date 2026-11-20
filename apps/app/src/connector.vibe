@@ -5,16 +5,16 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored, WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
+import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored, type WireAttachment as WireAttachmentSchema, type WireEvent as WireEventSchema, type WireMessage as WireMessageSchema } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
 import { providers } from "./providers.vibe"
 
 export type Routes = { readonly slug: string; readonly accounts: string; readonly mail: string; readonly calendar: string }
 export type SecretPassword = Brand.Branded<Redacted.Redacted<string>, "SecretPassword">
-type WireMessage = typeof WireMessage.Type
-type WireEvent = typeof WireEvent.Type
-type WireAttachment = typeof WireAttachment.Type
+type WireMessage = typeof WireMessageSchema.Type
+type WireEvent = typeof WireEventSchema.Type
+type WireAttachment = typeof WireAttachmentSchema.Type
 const branded = Brand.nominal<SecretPassword>()
 export const secretPassword = (typed: string): SecretPassword => branded(Redacted.make(typed))
 
@@ -84,7 +84,6 @@ const checked: Record<typeof OtherCheck.Type["outcome"], OtherReport["outcome"]>
   allowed: "OtherAllowed", passwordRefused: "OtherPasswordRefused", needsServers: "OtherNeedsServers", refused: "OtherRefused"
 }
 const ended: Record<typeof SessionOutcome.Type["status"], SheetReport["outcome"]> = { allowed: "Allowed", cancelled: "Cancelled", refused: "Refused" }
-const minute = 60 * 1000
 
 function folderOf(labels: readonly string[]): Folder {
   return labels.includes("TRASH") ? "TrashFolder" : labels.includes("DRAFT") ? "DraftsFolder" : labels.includes("SENT") ? "SentFolder" : "InboxFolder"
@@ -187,7 +186,7 @@ const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "
 
 function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent, entry: EntryDetails): Calendar | undefined {
   if (known === undefined) {
-    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
   }
   if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined

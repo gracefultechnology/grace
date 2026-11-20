@@ -1,6 +1,8 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"
-import { sendsHerVoice } from "../gen/app__conversation.effect.vibe"
-import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as PasswordViews, type GuideMic } from "../gen/app.effect.vibe"
+import { sendsHerVoice, voiceDisclosure } from "../gen/app__conversation.effect.vibe"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { Machine as Workspaces, localPasswordCommands, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
 import { Passwords } from "./passwords.vibe"
@@ -18,15 +20,19 @@ schema Complete { t: "complete"; id: string }
 schema UnavailableEvent { t: "error"; code: string }
 
 error SpeechUnavailable
-type InputFrame = { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
+type InputFrame = { kind: "context" } | { kind: "state"; workspace: Workspace } | { kind: "open" } | { kind: "closed" } |
   { kind: "received"; payload: unknown } | { kind: "played"; token: number }
 
+type VoiceCapture = { microphone: Microphone; guide?: { person: string; ticket: number } }
+type VoiceUse = "talk" | "command"
+export type VoiceNotice = { scope: string | undefined; use: VoiceUse }
+
 export service SpeechActions {
-  talk(): void!!
+  talk(acknowledged?: VoiceNotice): (VoiceNotice | undefined)!!
 }
 
 export function mayOfferTalk(state: Workspace) {
-  return state.device.surface !== "Browser" && state.device.reasoningAvailable && state.device.connectivity === "Online"
+  return !privateSurfaceActive(state) && state.device.surface !== "Browser" && state.device.reasoningAvailable && state.device.connectivity === "Online"
 }
 
 effect function cloudPost(path: string, body: object) {
@@ -76,7 +82,7 @@ effect function checkedLease(native: boolean) {
 
 function speechWanted(workspace: Workspace) {
   const { assistant, device } = workspace
-  return assistant.presentation !== "Closed" && device.reasoningAvailable && device.connectivity === "Online" &&
+  return !privateSurfaceActive(workspace) && assistant.presentation !== "Closed" && device.reasoningAvailable && device.connectivity === "Online" &&
     ((assistant.conversation.voice && device.surface !== "Browser") || assistant.conversation.turn === "Speaking" || assistant.conversation.turn === "Paused")
 }
 
@@ -100,14 +106,8 @@ function phrases(text: string) {
   return chunks
 }
 
-effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>) {
-  const passwords = try Passwords
-  const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
-  const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
-    (connected) => Effect.ignore(timeout(tryPromise((signal) => releaseSpeechSocket(connected, signal)), "2 seconds")))
-  const speaker = try acquireRelease(Effect.try(gracePlayback), (player) => Effect.ignore(tryPromise(() => player.close())))
-  const notifications = try Queue.unbounded<InputFrame>()
-  const fromSocket = Stream.callback<InputFrame>((queue) => acquireRelease(Effect.orDie(Effect.try(() => {
+function speechEvents(socket: WebSocket) {
+  return Stream.callback<InputFrame>((queue) => acquireRelease(Effect.orDie(Effect.try(() => {
     const open = () => { Queue.offerUnsafe(queue, { kind: "open" }) }
     const end = () => { Queue.offerUnsafe(queue, { kind: "closed" }) }
     const message = (event: MessageEvent) => { Queue.offerUnsafe(queue, { kind: "received", payload: event.data }) }
@@ -124,8 +124,44 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       socket.removeEventListener("message", message)
     }
   })), (remove) => Effect.ignore(Effect.try(remove))))
+}
+
+effect function speechConnection(native: boolean) {
+  const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
+  const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
+    (connected) => Effect.ignore(timeout(tryPromise((signal) => releaseSpeechSocket(connected, signal)), "2 seconds")))
+  return { lease, socket }
+}
+
+effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<VoiceCapture | null>) {
+  const passwords = try Passwords
+  const view = try PasswordViews
+  const setup = try Setup
+  const current = try workspace.get()
+  const card = localPasswordCommands(current.device)
+  const capture = try Ref.get(mic)
+  const person = capture?.guide?.person
+  const initialView = try view.get()
+  const passwordOwner = initialView.generation
+  const ticket = initialView.guideMicEpoch
+  if (card) try addFinalizer(() => Effect.ignore(view.send({ type: "finishGuideMic", ticket, result: "GuideMicIdle" }, "PasswordsHost")))
+  const currentPerson = () => {
+    const account = Effect.runSync(setup.get()).graceAccount
+    return native ? Effect.runSync(view.get()).generation === passwordOwner :
+      account.tag === "GraceSignedIn" && "web/" + account.accountId === person
+  }
+  const sameCard = (next: Workspace) => !privateSurfaceActive(next) && localPasswordCommands(next.device) === card &&
+    (!card || next.device.contextVersion === current.device.contextVersion && currentPerson() && Effect.runSync(view.get()).guideMicEpoch === ticket)
+  if (card && (!person || capture?.guide?.ticket !== ticket || (try voiceNoticeScope(native, setup)) !== person || !currentPerson())) throw new SpeechUnavailable()
+  const { lease, socket } = try speechConnection(native)
+  if (!speechWanted(try workspace.get()) || !sameCard(try workspace.get())) return
+  const speaker = try acquireRelease(Effect.try(gracePlayback), (player) => Effect.ignore(tryPromise(() => player.close())))
+  const notifications = try Queue.unbounded<InputFrame>()
+  const fromSocket = speechEvents(socket)
   const frames = Stream.mergeAll([
     fromSocket, Stream.fromQueue(notifications),
+    Stream.map(setup.changes, (): InputFrame => ({ kind: "context" })),
+    Stream.map(view.changes, (): InputFrame => ({ kind: "context" })),
     Stream.map(workspace.changes, (state): InputFrame => ({ kind: "state", workspace: state })),
     Stream.filterMap(Stream.fromEventListener(webView.document, "visibilitychange"), () =>
       webView.hidden() ? Result.succeed({ kind: "closed" } as const) : Result.failVoid),
@@ -150,10 +186,12 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     sending = sendsHerVoice(conversation) && mayOfferTalk(state)
     if (sending) {
       const device = try Ref.get(mic)
-      if (device) try Effect.try(() => device.attach((pcm) => {
-        if (sending && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
+      if (device) try Effect.try(() => device.microphone.attach((pcm) => {
+        const now = Effect.runSync(workspace.get())
+        if (sending && sameCard(now) && sendsHerVoice(now.assistant.conversation) && now.assistant.conversation.generation === conversation.generation && !webView.hidden() && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
       }))
     }
+    if (card) return
     if (!prefs.voiceOutput || prefs.muted || prefs.volume === 0) {
       try stopPlayback()
       workspace.send({ type: "interact", input: { tag: "FinishSpeech", token: conversation.generation } }, "Host") catch () => undefined
@@ -182,6 +220,8 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   }
 
   try Stream.runForEach(frames, effect (frame) => {
+    if (!sameCard(try workspace.get())) throw new SpeechUnavailable()
+    if (frame.kind === "context") return
     if (frame.kind === "open") {
       try wire(socket, { t: "hello", token: lease.token, errorReasons: true })
       return
@@ -231,6 +271,15 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       try stopPlayback()
       workspace.send({ type: "interact", input: { tag: "BargeIn", token, spoken: 0, owner: "HumanAudio" } }, "Host") catch () => undefined
     }
+    if (event.type === "end-of-turn" && card) {
+      const text = event.transcript?.trim() ?? ""
+      const live = try view.get()
+      if (live.guideMic !== "GuideMicListening" || live.guideMicEpoch !== ticket || (try voiceNoticeScope(native, setup)) !== person || !sameCard(try workspace.get())) return
+      if (text.length > 0 && text.length <= 160 && (try Effect.uninterruptible(passwords.guideSpeech({ token, text, owner: "HumanAudio", complete: true })))) return
+      view.send({ type: "finishGuideMic", ticket, result: "GuideMicNoMatch" }, "PasswordsHost") catch () => undefined
+      workspace.send({ type: "interact", input: { tag: "StopVoice" } }, "Person") catch () => undefined
+      return
+    }
     if (event.type === "end-of-turn") {
       const text = event.transcript?.trim().slice(0, 8_192) ?? ""
       if (text) {
@@ -245,13 +294,27 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   })
 }
 
+effect function voiceNoticeScope(native: boolean, setup: Setup.Shape) {
+  if (!native) {
+    const { graceAccount } = try setup.get()
+    return graceAccount.tag === "GraceSignedIn" ? "web/" + graceAccount.accountId : undefined
+  }
+  const plugin = accountPlugin
+  if (!plugin) return undefined
+  const status = tryPromise(() => plugin.status()) catch () => undefined
+  return status?.kind === "signedIn" && typeof status.voiceDisclosureScope === "string" && /^[a-f0-9]{64}$/.test(status.voiceDisclosureScope)
+    ? "device/" + status.voiceDisclosureScope : undefined
+}
+
 export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effect {
   const workspace = try Workspaces
-  const mic = try Ref.make<Microphone | null>(null)
+  const setup = try Setup
+  const views = try PasswordViews
+  const mic = try Ref.make<VoiceCapture | null>(null)
   const opening = try Semaphore.make(1)
   effect function closeMic() {
     const current = try Ref.getAndSet(mic, null)
-    if (current) try Effect.ignore(tryPromise(() => current.close()))
+    if (current) try Effect.ignore(tryPromise(() => current.microphone.close()))
   }
   effect function reportMic(allowed: boolean) {
     const { device } = try workspace.get()
@@ -285,24 +348,55 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
     }
   })
   try addFinalizer(() => closeMic())
+  effect function noticeFor(use: VoiceUse, scope: string | undefined, acknowledged?: VoiceNotice) {
+    const key = scope === undefined ? undefined : "grace/voice-disclosure/" + scope + (use === "talk" ? "" : "/" + use)
+    if (acknowledged !== undefined && (acknowledged.scope !== scope || acknowledged.use !== use)) return { scope, use }
+    if (acknowledged === undefined) {
+      const saved = key === undefined ? null : (Effect.try(() => webView.window.localStorage.getItem(key)) catch () => null)
+      if (saved !== voiceDisclosure) return { scope, use }
+    } else if (key !== undefined) {
+      Effect.try(() => webView.window.localStorage.setItem(key, voiceDisclosure)) catch () => undefined
+    }
+    return undefined
+  }
+  effect function finishGuide(ticket: number | undefined, result: GuideMic) {
+    if (ticket !== undefined) views.send({ type: "finishGuideMic", ticket, result }, "PasswordsHost") catch () => undefined
+  }
   return {
-    talk: () => opening.withPermits(1)(effect {
+    talk: (acknowledged) => opening.withPermits(1)(effect {
       const state = try workspace.get()
-      if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return
+      if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return undefined
+      const scope = try voiceNoticeScope(native, setup)
+      const guide = localPasswordCommands(state.device)
+      if (guide && !scope) {
+        const pending = views.send({ type: "startGuideMic" }, "PasswordsPerson") catch () => undefined
+        try finishGuide(pending?.guideMicEpoch, "GuideMicUnavailable")
+        return undefined
+      }
+      const notice = try noticeFor(guide ? "command" : "talk", scope, acknowledged)
+      if (notice) return notice
+      const pending = guide ? (views.send({ type: "startGuideMic" }, "PasswordsPerson") catch () => undefined) : undefined
+      if (guide && pending === undefined) return undefined
       const opened = tryPromise((signal) => openMicrophone(signal)) catch () => null
       if (opened === null) {
+        try finishGuide(pending?.guideMicEpoch, "GuideMicUnavailable")
         try reportMic(false)
-        return
+        return undefined
       }
       const current = try workspace.get()
-      if (!mayOfferTalk(current) || current.assistant.presentation === "Closed") {
+      if (!mayOfferTalk(current) || localPasswordCommands(current.device) !== guide || current.device.contextVersion !== state.device.contextVersion || current.assistant.presentation === "Closed" || (try voiceNoticeScope(native, setup)) !== scope) {
+        try finishGuide(pending?.guideMicEpoch, "GuideMicIdle")
         try Effect.ignore(tryPromise(() => opened.close()))
-        return
+        return undefined
       }
       try reportMic(true)
       const accepted = (workspace.send({ type: "talk" }, "Person") |> Effect.as(%, true)) catch () => false
-      if (accepted) try Ref.set(mic, opened)
-      else try Effect.ignore(tryPromise(() => opened.close()))
+      if (accepted) try Ref.set(mic, { microphone: opened, guide: scope && pending ? { person: scope, ticket: pending.guideMicEpoch } : undefined })
+      else {
+        try finishGuide(pending?.guideMicEpoch, "GuideMicUnavailable")
+        try Effect.ignore(tryPromise(() => opened.close()))
+      }
+      return undefined
     })
   }
 })

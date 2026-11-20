@@ -1,6 +1,7 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
-import { type Rect, Machine as PageLayers, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
+import { type PrivateHistory, type Rect, Machine as PageLayers, canReportHistory, historyFor, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
+import { type HistoryDirection, canStepPrivate } from "../gen/app__deviceKeys.effect.vibe"
 import { type Tab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canChangePage, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
 import type { BrowserInput } from "../gen/app__browserControls.effect.vibe"
@@ -17,6 +18,7 @@ export service PageHost {
   website(event: WebsiteEvent): void!!
   closeBrowser(): void!Rejected
   navigatePrivate(tab: number, address: string): boolean!!
+  stepPrivate(tab: number, direction: HistoryDirection): boolean!!
   readonly privateSignIn: boolean
   readonly said: ReadonlyMap<number, string>
   watch(element: HTMLElement, part: Part): void!!
@@ -255,6 +257,42 @@ effect function step(native: NativePage.Shape, page: Page, tab: Tab, close: (tab
   command catch effect (cause) => { try warn("follow", id, cause); try close(tab.id) }
 }
 
+effect function originOf(address: string | undefined) {
+  if (address === undefined) return undefined
+  const url = Effect.try(() => new URL(address)) catch () => undefined
+  return url?.protocol === "https:" ? Url.make(url.origin) : undefined
+}
+
+const numberOf = (requests: ReadonlyMap<number, Request>, page: PageId, key: RequestKey) => [...requests].find(([, r]) => r.page === page && r.key === key)?.[0]
+
+effect function navigatePrivate(workspace: Workspaces.Shape, native: NativePage.Shape, pages: ReadonlyMap<PageId, Page>, tab: number, address: string) {
+  const w = try workspace.get()
+  const id = pageOf(tab)
+  if (w.device.surface !== "Browser" || w.browser.selected !== tab || pages.get(id)?.tab.manualSignIn !== true || (try sync(() => webView.hidden()))) return false
+  const url = Effect.try(() => new URL(address)) catch () => undefined
+  if (url === undefined || url.protocol !== "https:" || url.username !== "" || url.password !== "") return false
+  return Effect.as(native.navigate(id, url.href), true) catch () => false
+}
+
+effect function listenForPageSignals(workspace: Workspaces.Shape, native: NativePage.Shape, signals: Queue.Queue<Signal>) {
+  native.claim() catch effect (cause) => try warn("claim", undefined, cause)
+  const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
+  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
+  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
+  try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
+}
+
+function browserProtection() {
+  const privacy = privateViewPlugin
+  let privateWindow = false
+  return effect (active: boolean) => {
+    if (privacy === undefined || privateWindow === active) return true
+    const protectedWindow = Effect.as(tryPromise(() => privacy.protect({ view: "browser", active })), true) catch () => false
+    if (protectedWindow) privateWindow = active
+    return protectedWindow
+  }
+}
+
 export const pageHost = Layer.effect(PageHost, effect {
   const workspace = try Workspaces
   const layer = try PageLayers
@@ -270,8 +308,7 @@ export const pageHost = Layer.effect(PageHost, effect {
   const unmade = new Map<number, number>()
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
   let presented: PageId | null | undefined = null
-  const privacy = privateViewPlugin
-  let privateWindow = false
+  const protectBrowser = browserProtection()
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
 
@@ -325,7 +362,12 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
 
+  effect function reportPrivateHistory(history: PrivateHistory) {
+    if (canReportHistory(try layer.get(), history)) try Effect.orDie(layer.send({ type: "reportHistory", history }))
+  }
+
   effect function close(tab: number) {
+    try reportPrivateHistory({ tab, back: false, forward: false })
     const id = pageOf(tab)
     pages.delete(id)
     paused.delete(id)
@@ -337,6 +379,7 @@ export const pageHost = Layer.effect(PageHost, effect {
 
   effect function clearBrowsingData() {
     const former = [...pages.keys()]
+    for (const { tab } of pages.values()) if (tab.manualSignIn) try reportPrivateHistory({ tab: tab.id, back: false, forward: false })
     pages.clear()
     paused.clear()
     presented = undefined
@@ -346,13 +389,6 @@ export const pageHost = Layer.effect(PageHost, effect {
       if (!clean) for (const id of former) native.destroy(id) catch effect (cause) => try warn("destroy", id, cause)
       try Queue.offer(signals, Signal.Purged({ clean }))
     }
-  }
-
-  effect function protectBrowser(active: boolean) {
-    if (privacy === undefined || privateWindow === active) return true
-    const protectedWindow = Effect.as(tryPromise(() => privacy.protect({ view: "browser", active })), true) catch () => false
-    if (protectedWindow) privateWindow = active
-    return protectedWindow
   }
 
   effect function open(tab: Tab, shown: boolean) {
@@ -437,8 +473,6 @@ export const pageHost = Layer.effect(PageHost, effect {
     native.reply({ id: event.id, key: event.key, ask: event.ask, answer: "Refused", text: "" }) catch effect (cause) => try warn("refuse", event.id, cause)
   }
 
-  const numberOf = (requests: ReadonlyMap<number, Request>, page: PageId, key: RequestKey) => [...requests].find(([, r]) => r.page === page && r.key === key)?.[0]
-
   effect function started(page: Page, tab: number, url: string | undefined) {
     const unasked = page.asked.length === 0
     const at = page.asked.findLastIndex((a) => a.url === url)
@@ -449,12 +483,6 @@ export const pageHost = Layer.effect(PageHost, effect {
     try website({ type: "pageStarted", tab }, "WebsiteHost")
   }
 
-  effect function originOf(address: string | undefined) {
-    if (address === undefined) return undefined
-    const url = Effect.try(() => new URL(address)) catch () => undefined
-    return url?.protocol === "https:" ? Url.make(url.origin) : undefined
-  }
-
   effect function hear(event: PageEvent) {
     const page = pages.get(event.id)
     if (page === undefined) return
@@ -463,8 +491,11 @@ export const pageHost = Layer.effect(PageHost, effect {
       case "Crashed": return try close(tab)
       case "Started": return try started(page, tab, page.tab.manualSignIn ? (try originOf(event.url)) : event.url)
       case "Asked": return page.tab.manualSignIn ? undefined : (try raise(tab, event))
-      case "Changed": return try changed(workspace, page, tab, page.tab.manualSignIn
-        ? { ...event, url: try originOf(event.url) } : event)
+      case "Changed": {
+        if (!page.tab.manualSignIn) return try changed(workspace, page, tab, event)
+        try reportPrivateHistory({ tab, back: event.back, forward: event.forward })
+        return try changed(workspace, page, tab, { ...event, url: try originOf(event.url) })
+      }
       case "Downloaded": {
         const id = numberOf(saving, event.id, event.key)
         if (id === undefined) return
@@ -510,11 +541,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
 
-  native.claim() catch effect (cause) => try warn("claim", undefined, cause)
-  const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
-  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
-  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
-  try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
+  try listenForPageSignals(workspace, native, signals)
   try fork.scoped effect {
     while (true) {
       for (const signal of try Queue.takeAll(signals)) try apply(signal)
@@ -522,13 +549,13 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
   return {
-    effect navigatePrivate(tab: number, address: string) {
+    navigatePrivate: (tab, address) => navigatePrivate(workspace, native, pages, tab, address),
+    effect stepPrivate(tab: number, direction: HistoryDirection) {
       const w = try workspace.get()
+      const history = historyFor(try layer.get(), tab)
+      if (!canStepPrivate(w.device, w.browser, history, direction) || (try sync(() => webView.hidden()))) return false
       const id = pageOf(tab)
-      if (w.device.surface !== "Browser" || w.browser.selected !== tab || pages.get(id)?.tab.manualSignIn !== true || (try sync(() => webView.hidden()))) return false
-      const url = Effect.try(() => new URL(address)) catch () => undefined
-      if (url === undefined || url.protocol !== "https:" || url.username !== "" || url.password !== "") return false
-      return Effect.as(native.navigate(id, url.href), true) catch () => false
+      return Effect.as(direction === "HistoryBack" ? native.back(id) : native.forward(id), true) catch () => false
     },
     effect website(event: WebsiteEvent) {
       try Queue.offer(signals, Signal.Person({ event }))

@@ -3,15 +3,16 @@
 // spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
 import { Effect, type ManagedRuntime, Option, Stream } from "effect";
 import { createContext, createElement, type ReactNode, use, useEffect, useState, useSyncExternalStore } from "react";
-import { type Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
+import type { Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
 import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
-import { type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
+import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
-import type { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
+import { Machine as PageLayers, historyFor } from "../gen/app__surface.effect.vibe";
+import type { HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
@@ -57,8 +58,6 @@ export function usePasswordGuide() {
   return {
     guide: state?.guide,
     mic: state?.guideMic,
-    listen: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.listenForGuide())),
-    stopListening: () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.stopGuideMic())),
     request: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Passwords), (service) => service.guideTyped(revision))),
   };
 }
@@ -80,6 +79,8 @@ export function useWorkspace() {
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
     /** The person's Close browser, which the page host also tells what websites asked. */
+    privateHistory: (tab: number) => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (layer) => Effect.map(layer.get(), (state) => historyFor(state, tab)))),
+    stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };

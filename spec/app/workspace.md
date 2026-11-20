@@ -31,7 +31,9 @@ Discovered by the proof: every retained plan step has a named subject and
 nonempty outcome, so the next instruction still exists after a receipt.
 The workspace also retains the component rules for a loaded page's security,
 the assistant's visible work, guidance and conversation offers, and the
-execution's verified observation context.
+execution's verified observation context. Discovered by the proof: retained
+website facts have a source quotation, and a queued step must still be one
+Grace may take. The workspace keeps the same rules as the execution it holds.
 
 ```quint
 import shell as S from "./shell"
@@ -167,6 +169,8 @@ pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
 pure def privateSurfaceActive(w: Workspace): bool =
   w.device.surface == S::Passwords or privateSignInActive(w)
+pure def localPasswordCommands(device: S::Shell): bool =
+  device.surface == S::Home and device.homePage == S::PasswordsCard
 pure def mayAssist(w: Workspace): bool =
   not(privateSignInActive(w)) and w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
@@ -182,7 +186,11 @@ pure def quietCommitment(p: CM::Commitment): CM::Commitment =
   else if (CM::canInvalidate(p, T::Host)) CM::invalidate(p, T::Host) else p
 pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Workspace =
   val leavesSurface = device.surface != w.device.surface or device.readiness != S::Ready
-  val assistant = quietAssistant(w.assistant)
+  val quiet = quietAssistant(w.assistant)
+  val crossesPasswordCommands = localPasswordCommands(device) != localPasswordCommands(w.device)
+  val assistant = if (crossesPasswordCommands) {
+    ...quiet, conversation: C::editDraft(quiet.conversation, "", C::ConversationUser), keyboard: A::NoKeyboard
+  } else quiet
   {
     ...w, device: device,
     browser: if (leavesSurface and browser.editingAddress) B::dismissAddress(browser) else browser,
@@ -200,7 +208,8 @@ pure def alwaysBrowserRules(w: Workspace): bool =
 pure def alwaysAssistantRules(w: Workspace): bool = I::validAssistant(w.assistant)
 pure def alwaysExecutionRules(w: Workspace): bool =
   X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysObservedContextExists(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
+  X::alwaysFactsAreQuoted(w.execution) and X::alwaysObservedContextExists(w.execution) and
+  X::alwaysQueuedStepIsGraces(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
   X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
   X::alwaysNoExhaustedApproachQueued(w.execution)
 pure def alwaysCommitmentRules(w: Workspace): bool =
@@ -411,10 +420,11 @@ pure val choiceValues = Set(
 
 Home retains all browser tabs. Close browser resets the tabs and returns Home.
 Close Grace hides its window and retains the website. All three preserve the
-task, transcript and draft while pausing unfinished work and stopping speech.
+task and transcript while pausing unfinished work and stopping speech.
 Returning to an application or reopening Grace reveals that same paused task.
-Leaving the surface or sleeping dismisses keyboard focus while retaining the
-draft. Opening Grace ends an active address-editor focus; browser address entry
+Leaving the surface or sleeping dismisses keyboard focus. The draft survives
+these interruptions unless the person enters or leaves the Passwords card.
+Opening Grace ends an active address-editor focus. Browser address entry
 still works independently while Grace is closed.
 Choosing Home or Settings moves expanded chat into the lower pane, including
 when the selected surface is already open. Compact chat stays compact and
@@ -476,7 +486,9 @@ The pure interaction dispatcher calls existing assistant operations. User
 controls are authenticated as user input and service callbacks as runtime
 input. Typing, answer chips, speech, replies, failures, reading, Repeat and
 keyboard/window controls all update this workspace's actual conversation.
-Every accepted interaction cancels obsolete wake timers.
+Every accepted interaction cancels obsolete wake timers. On the Passwords Home card
+the guide handles recognized commands directly. Free text, transcribed words and
+conversation replies cannot enter the general reasoning interaction.
 
 Newly submitted content and geometry changes invalidate browser targets and
 payment review. Active work rechecks; already paused work stays paused. A
@@ -492,7 +504,7 @@ A fully classified payment approval uses its separate atomic route below.
 
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
-  (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
+  (I::needsReasoning(input) implies (not(localPasswordCommands(w.device)) and S::mayRequestReasoning(w.device))) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
   I::canInteract(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime)
@@ -620,6 +632,9 @@ pure val guidanceReportValues = Set(
 
 Choosing Wi-Fi on the rail moves expanded chat into the lower pane, just as
 Home and Settings do. The Wi-Fi popover still toggles on each tap.
+An interruption keeps the task, checkpoint, goal and transcript and stops the
+current voice turn. Entering or leaving the Passwords card clears the draft.
+Other interruptions preserve it.
 
 ```quint
 pure def canChooseHomePage(w: Workspace, page: S::HomePage, by: WorkspaceActor): bool =
@@ -651,7 +666,9 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
   implies after.assistant.taskId == before.assistant.taskId and
     after.assistant.goal == before.assistant.goal and after.assistant.checkpoint == before.assistant.checkpoint and
     after.assistant.conversation.messages == before.assistant.conversation.messages and
-    after.assistant.conversation.draft == before.assistant.conversation.draft and
+    after.assistant.conversation.draft ==
+      (if (localPasswordCommands(before.device) != localPasswordCommands(after.device)) ""
+       else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
 ```
 
@@ -1381,10 +1398,16 @@ pure def canApproveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTo
   A::canHear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) and
   CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person)
 pure def approveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::hear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime),
+  ...w, assistant: { ...w.assistant,
+    conversation: C::hear(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) },
   commitment: CM::authorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person),
   wake: W::cancel(w.wake, W::WakeUser)
 }
+pure def lawClassifiedApprovalPreservesTheReviewedStep(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): bool =
+  val approved = approveSpokenCommitment(w, commitmentTokens, spoken, by)
+  canApproveSpokenCommitment(w, commitmentTokens, spoken, by) and w.assistant.presentation == A::Compact implies
+    canSubmitCommitment(approved, commitmentTokens, Actuator) and
+    not(canApproveSpokenCommitment(approved, commitmentTokens, spoken, by))
 pure def lawCorrectedSpeechCannotApprove(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): bool =
   (not(spoken.complete) or not(spoken.approves) or spoken.correction)
   implies not(canApproveSpokenCommitment(w, commitmentTokens, spoken, by))
@@ -1422,6 +1445,12 @@ pure def observeCommitmentTap(w: Workspace, commitmentTokens: CommitmentTokens, 
   val working = A::startStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime)
   { ...w, commitment: CM::observeManualSubmit(w.commitment, commitmentTokens.attempt, T::Host),
     assistant: A::waitForWebsite(working, working.taskId, working.workVersion, C::ConversationRuntime) }
+pure def lawOneApprovalIssuesExactlyOneSubmission(w: Workspace, commitmentTokens: CommitmentTokens): bool =
+  val submitted = submitCommitment(w, commitmentTokens, Actuator)
+  canSubmitCommitment(w, commitmentTokens, Actuator) implies
+    submitted.out.length() == 1 and not(canSubmitCommitment(submitted.state, commitmentTokens, Actuator))
+pure def lawStopRevokesCommitmentSubmission(w: Workspace, commitmentTokens: CommitmentTokens): bool =
+  canStop(w, Person) implies not(canSubmitCommitment(stop(w, Person), commitmentTokens, Actuator))
 pure def lawHiddenCommitmentCannotSubmit(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   (w.device.surface != S::Browser or not(A::isVisible(w.assistant)) or w.device.readiness != S::Ready)
   implies not(canSubmitCommitment(w, commitmentTokens, by))

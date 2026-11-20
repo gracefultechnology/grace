@@ -22,6 +22,12 @@ const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
 const close = "Close Email";
 const unlinked = (body: string) => body.replace(/https?:\/\/\S+/g, "(link removed)");
 
+const notices: Record<BannerKind, (b: MailBanner, name: string) => ReactNode> = {
+  OfflineBanner: () => null,
+  SignInBanner: (b, name) => <MailSignInBanner key={`sign-in-${b.account}`} name={name} others={b.othersFine} />,
+  SyncingRow: (b, name) => <MailSyncingRow key={`syncing-${b.account}`} name={name} />,
+};
+
 function when(at: number, now: Date) {
   if (now.getTime() - at < 60_000) return "Just now";
   const day = new Date(at);
@@ -63,7 +69,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const read = useMailContent();
   const mail = useMail();
   const [picking, setPicking] = useState<Picking | null>(null);
-  const [outboxChosen, setOutbox] = useState(false);
+  const [outboxChosen, setOutboxChosen] = useState(false);
   if (!workspace) return null;
   const now = new Date();
   const online = workspace.device.connectivity === "Online";
@@ -132,13 +138,8 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
       unread: r.record.unread, account: rows.length ? name(r.account) : undefined,
     };
   });
-  const notices: Record<BannerKind, (b: MailBanner) => ReactNode> = {
-    OfflineBanner: () => null,
-    SignInBanner: (b) => <MailSignInBanner key={`sign-in-${b.account}`} name={name(b.account)} others={b.othersFine} />,
-    SyncingRow: (b) => <MailSyncingRow key={`syncing-${b.account}`} name={name(b.account)} />,
-  };
   const shownBanners = banners(registry, sources, online);
-  const notes = shownBanners.filter((b) => b.kind !== "OfflineBanner").map((b) => notices[b.kind](b));
+  const notes = shownBanners.filter((b) => b.kind !== "OfflineBanner").map((b) => notices[b.kind](b, name(b.account)));
   const failed = shown.filter((b) => b.state.readKind === "Search" && b.state.readStatus === "ReadFailed");
   const search = (query: string): MailEvent => ({ type: "readMail", kind: "Search", ref: query, approved: true });
   const undo = shown.flatMap((b) => undoable(b.state).map((r) => ({ b, event: { type: "undoMessageTrash", target: { ref: r.identity.ref, revision: r.undoRevision } } satisfies MailEvent })))[0];
@@ -165,12 +166,12 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
       onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
       onRetry={() => failed.forEach((b) => { const again = search(b.state.query); if (b.can(again)) void b.send(again); })}
       onSelectFolder={(chosen) => {
-        setOutbox(chosen === "outbox");
+        setOutboxChosen(chosen === "outbox");
         if (chosen === "outbox") return;
         if (registry.inboxFilter !== 0) filter(0);
         show(folders[chosen]);
       }}
-      onAccount={(id) => { setOutbox(false); filter(id); show("InboxFolder"); }}
+      onAccount={(id) => { setOutboxChosen(false); filter(id); show("InboxFolder"); }}
       onOpen={(id) => {
         const [owner, ...rest] = id.split("/");
         const box = shown.find((b) => b.id === Number(owner));

@@ -28,7 +28,7 @@ import { type CloudLink, conversation } from "./conversation.vibe"
 import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
-import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, type GuideSpeechPlugin, webView } from "./surfacePlugin.ts"
+import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, webView } from "./surfacePlugin.ts"
 import { pageHost } from "./page.vibe"
 import { reminderPlugin, type ReminderPlugin } from "./accountPlugin.ts"
 import { notices } from "./notices.vibe"
@@ -103,16 +103,16 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
   : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
 
-type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; guideSpeech?: GuideSpeechPlugin }
+type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin }
 
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin, speech?: GuideSpeechPlugin) {
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
   const platform = "native" in host ? host : { native: false }
   const cloud = "url" in host ? host : undefined
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const machines = Layer.mergeAll(preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
   const guidance = Layer.provideMerge(agent, services(cloud))
-  const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech))
+  const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
   const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), voice), machines)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
