@@ -51,7 +51,7 @@ export type SavedPhoto = { readonly file: SavedFile; readonly src?: string }
 export service Library {
   readonly changes: Stream.Stream<FileState>
   get(): FileState!!
-  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, about: Origin): (FileFeedback | undefined)!!
+  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, about: Origin, expectedOwner?: string): (FileFeedback | undefined)!!
   photos(keep: (file: SavedFile) => boolean): (readonly SavedPhoto[] | undefined)!!
 }
 export const library = Layer.effect(Library, effect {
@@ -86,14 +86,14 @@ export const library = Layer.effect(Library, effect {
     }, { concurrency: 3 })
   }
 
-  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, about: Origin) {
+  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, about: Origin, expectedOwner?: string) {
     if (!port || !version || chosen.length === 0) return "WriteFailed" as const
     const owner = filesAccount((try setup.get()).graceAccount)
     if (!owner) return "WriteFailed" as const
     const files = try Effect.provide(Files, machine())
     const actual = port
     const { lease } = try acquireRelease(
-      tryPromise(() => actual.open()) |> Effect.flatMap(%, Schema.decodeUnknownEffect(FileLease)),
+      tryPromise(() => actual.open(expectedOwner ? { owner: expectedOwner } : undefined)) |> Effect.flatMap(%, Schema.decodeUnknownEffect(FileLease)),
       (opened) => Effect.ignore(tryPromise(() => actual.close(opened))))
     if (!canLoadForSave(try files.get(), lease, "FileHost")) return "WriteFailed" as const
     try files.send({ type: "loadForSave", owner: lease }, "FileHost")
@@ -123,7 +123,7 @@ export const library = Layer.effect(Library, effect {
   }
 
   return { changes: SubscriptionRef.changes(status), get: () => SubscriptionRef.get(status),
-    save: effect (chosen, content, authorization, version, about) => serial.withPermit(scoped(save(chosen, content, authorization, version, about))) catch () => "WriteFailed" as const,
+    save: effect (chosen, content, authorization, version, about, expectedOwner) => serial.withPermit(scoped(save(chosen, content, authorization, version, about, expectedOwner))) catch () => "WriteFailed" as const,
     photos: effect (keep) => serial.withPermit(scoped(photos(keep))) catch () => undefined }
 
 })

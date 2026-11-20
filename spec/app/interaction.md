@@ -34,7 +34,7 @@ type Interaction = TypeIntoChat | StopVoice | ReadLatest | ShowChat | DismissKey
   | ReadEarlier({ position: int }) | Resize({ expanded: bool })
   | Hear({ token: int, text: str, owner: C::AudioOwner })
   | BargeIn({ token: int, spoken: int, owner: C::AudioOwner })
-  | Respond({ token: int, text: str, isQuestion: bool, answers: List[str], audible: bool }) | FinishSpeech({ token: int })
+  | Respond({ token: int, text: str, isQuestion: bool, answers: List[str], audible: bool }) | FinishSpeech({ token: int, played: bool })
   | ServiceFailure({ token: int, text: str }) | Silence({ token: int })
   | UnusableSpeech({ token: int, owner: C::AudioOwner })
   | DismissGuidance({ revision: int }) | ShowGuidance({ revision: int })
@@ -60,7 +60,7 @@ pure def canInteract(a: A::Assistant, input: Interaction, by: C::ConversationAct
   | FocusWebsite => A::canFocusWebsite(a, by)
   | Hear(data) => A::canHear(a, data.token, data.text, data.owner, by)
   | Respond(data) => A::canRespond(a, data.token, data.text, data.isQuestion, data.answers, by)
-  | FinishSpeech(data) => A::canFinishSpeech(a, data.token, by)
+  | FinishSpeech(data) => A::canFinishSpeech(a, data.token, data.played, by)
   | ServiceFailure(data) => A::canServiceFailure(a, data.token, data.text, by)
   | Silence(data) => A::canSilence(a, data.token, by)
   | UnusableSpeech(data) => A::canUnusableSpeech(a, data.token, data.owner, by)
@@ -86,7 +86,7 @@ pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor)
   | FocusWebsite => A::focusWebsite(a, by)
   | Hear(data) => A::hear(a, data.token, data.text, data.owner, by)
   | Respond(data) => A::respond(a, data.token, data.text, data.isQuestion, data.answers, data.audible, by)
-  | FinishSpeech(data) => A::finishSpeech(a, data.token, by)
+  | FinishSpeech(data) => A::finishSpeech(a, data.token, data.played, by)
   | ServiceFailure(data) => A::serviceFailure(a, data.token, data.text, by)
   | Silence(data) => A::silence(a, data.token, by)
   | UnusableSpeech(data) => A::unusableSpeech(a, data.token, data.owner, by)
@@ -170,7 +170,7 @@ pure val inputValues = Set(DismissGuidance({ revision: 1 }), ShowGuidance({ revi
   Respond({ token: 2, text: "Here is the explanation.", isQuestion: false, answers: List(), audible: true }),
   Respond({ token: 2, text: "Pay it?", isQuestion: true, answers: List("Yes"), audible: true }),
   BargeIn({ token: 1, spoken: 2, owner: C::HumanAudio }),
-  FinishSpeech({ token: 1 }), FinishSpeech({ token: 2 }),
+  FinishSpeech({ token: 1, played: true }), FinishSpeech({ token: 2, played: false }),
   ServiceFailure({ token: 1, text: "Voice is unavailable." }), Silence({ token: 1 }),
   UnusableSpeech({ token: 1, owner: C::HumanAudio }), UnusableSpeech({ token: 2, owner: C::HumanAudio }),
   HostTurn({ turnOrigin: C::PageEvent }), HostTurn({ turnOrigin: C::HerRequest }))

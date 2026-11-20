@@ -1431,10 +1431,16 @@ pure def canApproveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTo
   A::canHear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) and
   CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person)
 pure def approveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::hear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime),
+  ...w, assistant: { ...w.assistant,
+    conversation: C::hear(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) },
   commitment: CM::authorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person),
   wake: W::cancel(w.wake, W::WakeUser)
 }
+pure def lawClassifiedApprovalPreservesTheReviewedStep(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): bool =
+  val approved = approveSpokenCommitment(w, commitmentTokens, spoken, by)
+  canApproveSpokenCommitment(w, commitmentTokens, spoken, by) and w.assistant.presentation == A::Compact implies
+    canSubmitCommitment(approved, commitmentTokens, Actuator) and
+    not(canApproveSpokenCommitment(approved, commitmentTokens, spoken, by))
 pure def lawCorrectedSpeechCannotApprove(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): bool =
   (not(spoken.complete) or not(spoken.approves) or spoken.correction)
   implies not(canApproveSpokenCommitment(w, commitmentTokens, spoken, by))
@@ -1472,6 +1478,12 @@ pure def observeCommitmentTap(w: Workspace, commitmentTokens: CommitmentTokens, 
   val working = A::startStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime)
   { ...w, commitment: CM::observeManualSubmit(w.commitment, commitmentTokens.attempt, T::Host),
     assistant: A::waitForWebsite(working, working.taskId, working.workVersion, C::ConversationRuntime) }
+pure def lawOneApprovalIssuesExactlyOneSubmission(w: Workspace, commitmentTokens: CommitmentTokens): bool =
+  val submitted = submitCommitment(w, commitmentTokens, Actuator)
+  canSubmitCommitment(w, commitmentTokens, Actuator) implies
+    submitted.out.length() == 1 and not(canSubmitCommitment(submitted.state, commitmentTokens, Actuator))
+pure def lawStopRevokesCommitmentSubmission(w: Workspace, commitmentTokens: CommitmentTokens): bool =
+  canStop(w, Person) implies not(canSubmitCommitment(stop(w, Person), commitmentTokens, Actuator))
 pure def lawHiddenCommitmentCannotSubmit(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   (w.device.surface != S::Browser or not(A::isVisible(w.assistant)) or w.device.readiness != S::Ready)
   implies not(canSubmitCommitment(w, commitmentTokens, by))

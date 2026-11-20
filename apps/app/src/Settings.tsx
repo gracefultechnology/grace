@@ -3,11 +3,14 @@ import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow,
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
+import { usesManagedSurfaces } from "./managedReads.vibe";
 import { retryPreferences } from "./preferences.vibe";
 import { useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
+import { Wifi } from "./Wifi.tsx";
 
 const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
@@ -24,6 +27,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
   const { workspace, can, send, guide } = useWorkspace();
   const website = useWebsiteRequests();
   const runtime = useRuntime();
+  const setup = useSetup(runtime).state;
   const page = workspace!.device.settingsPage;
   const preferences = workspace!.preferences.session;
   const preview = (settings: DisplayPreferences) => {
@@ -43,7 +47,14 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     pages, page: names[page], onPageChange: choose, guide: guide((target) => navTargets.get(target)),
     onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
   };
-  if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
+  if (page === "EmailCalendarSettings") {
+    if (!usesManagedSurfaces(setup, window.location.hash)) return <EmailAccounts {...frame} />;
+    return <SettingsApp {...frame}>
+      <PageHeading>Email &amp; calendar</PageHeading>
+      {setup?.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
+      <Button variant="prominent" size="pill" onClick={() => choose("account")}>Manage connections in Grace account</Button>
+    </SettingsApp>;
+  }
 
   return (
     <SettingsApp {...frame}>
@@ -65,7 +76,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
             if (value === "Slower" || value === "Normal" || value === "Faster") preview({ ...preferences, pace: value });
           }} speaks={preferences.voiceOutput} onSpeaksChange={(value) => preview({ ...preferences, voiceOutput: value })} wake="unavailable" />
       ) : page === "NetworkSettings" ? (
-        <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{workspace?.device.connectivity === "Online" ? "Connected" : "No internet connection"}</PageText></>
+        <Wifi />
       ) : page === "AboutSettings" ? (
         <>
           <PageHeading>About this tablet</PageHeading>
