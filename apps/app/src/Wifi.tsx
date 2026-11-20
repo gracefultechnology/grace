@@ -7,7 +7,7 @@ import { type Discovery, type Event, type ListAction, type NetworkJoin, helpOffe
 import { useMachine } from "../gen/app__network.react.ts";
 import { wifiPlugin } from "./surfacePlugin.ts";
 import { useWorkspace } from "./useApp.ts";
-import { type Offer, WifiPage, wifiPage } from "./wifi.vibe";
+import { type Offer, WifiPage, ssidOf, wifiPage } from "./wifi.vibe";
 
 export type WifiRuntime = ManagedRuntime.ManagedRuntime<WifiPage | Machine, never>;
 
@@ -67,21 +67,20 @@ function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string;
 export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
   const { state: n, can, send } = useMachine(runtime);
   const page = runtime.runSync(Effect.service(WifiPage));
-  const offers = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+  const { nearby: offers, connected: identified } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
   if (!n) return null;
   const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
   const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
-  const name = offers.find((offer) => offer.network.id === n.selected.id)?.name ?? "";
+  const name = ssidOf(n);
   if (n.phase === "PrivateEntry") return <PrivateEntry key={n.version} n={n} name={name} person={person} join={(password) => run(page.join(password))} />;
 
-  const current = online ? offers.find((offer) => offer.network.remembered) : undefined;
-  const connected = current ? row(current) : online ? unnamed : undefined;
+  const connected = online ? identified ?? unnamed : undefined;
   const action = listAction(n.discovery);
   const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
   const said = notice(n, name);
   return (
     <>
-      <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => offer !== current).map(row)}
+      <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => offer.name !== connected?.name).map(row)}
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
         connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? name : undefined}
         failed={n.phase === "JoinFailed" ? name : undefined} onRetry={() => run(page.retry())}
