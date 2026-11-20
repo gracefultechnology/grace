@@ -15,7 +15,7 @@ import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
-import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment, reminderToast } from "./Calendar.tsx";
+import { Calendar, calendarKeys, homeCalendar, nextAppointment, reminderNotice, useCalendarActions } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { NoticeBanner, Notices } from "./Notices.tsx";
@@ -85,6 +85,7 @@ function Screen() {
   const cards = useHomeCards();
   const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
+  const calendarActions = useCalendarActions();
   const website = useWebsiteRequests();
   const { accounts } = useAccounts();
   const read = useMailContent();
@@ -119,7 +120,8 @@ function Screen() {
   const surface = device.surface;
   const fire = (event: WorkspaceEvent) => ({ disabled: !can(event), onClick: () => void send(event) });
   const visit = (destination: Surface) => fire({ type: "visit", destination });
-  const toCalendar = () => { const event = { type: "visit", destination: "Calendar" } as const; if (can(event)) void send(event); };
+  const reminders = (calendars: Parameters<typeof reminderNotice>[1]) =>
+    accounts && !useManaged ? reminderNotice(accounts, calendars, now.getTime(), calendarActions, surface === "Calendar" || !visit("Calendar").disabled) : undefined;
   const toggle = (popover: Popover) => ({
     selected: device.railPopover === popover,
     ...fire({ type: "togglePopover", popover }),
@@ -165,8 +167,8 @@ function Screen() {
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-            <HomeScreen className="inset-0" banner={<><NoticeBanner />{!useManaged && accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}</>} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+            <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
                 weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
@@ -187,9 +189,6 @@ function Screen() {
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
-      {!useManaged && accounts && surface !== "Home" && surface !== "Calendar" && device.readiness !== "Sleeping" && (
-        <WithCalendars keys={calendarKeys(accounts)}>{(calendars) => reminderToast(accounts, calendars, now.getTime(), bottom)}</WithCalendars>
-      )}
       {surface === "Email" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {surface === "Passwords" && (
@@ -228,7 +227,7 @@ function Screen() {
           )}
         </OverPage>
       )}
-      {!privateSurface && <Notices above={bottom - 6} />}
+      {!privateSurface && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => <Notices above={bottom - 6} reminders={reminders(calendars)} />}</WithCalendars>}
       {!privateSurface && <Grace onHeightChange={setGraceHeight} />}
       </div>
       {sleeping && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
