@@ -413,10 +413,17 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     if (agentHost.cloud.baseUrl !== selected.agentOrigin)
       throw new Error(`${name} has the wrong cloud origin for ${cloudProfile}`);
     const manifestXml = execFileSync(aapt, ["dump", "xmltree", file, "AndroidManifest.xml"], { encoding: "utf8" });
-    const hosts = Array.from(manifestXml.matchAll(/A: android:host\(\w+\)="([^"]+)"/g), ([, host]) => host);
-    const paths = Array.from(manifestXml.matchAll(/A: android:path\(\w+\)="([^"]+)"/g), ([, route]) => route);
-    if (!isDeepStrictEqual(hosts, [callbackHost]) || !isDeepStrictEqual(paths, [selected.callbackPath]))
-      throw new Error(`${name} does not declare exactly ${selected.webOrigin}${selected.callbackPath} for its account return`);
+    const links = Array.from(manifestXml.matchAll(/^( *)E: intent-filter[^\n]*\n((?:\1  [^\n]*\n)+)/gm), ([, , filter]) => filter)
+      .filter((filter) => filter.includes('"android.intent.category.BROWSABLE"'))
+      .map((filter) => {
+        const data = filter.split(/ E: data [^\n]*\n/);
+        if (data.length !== 2 || !filter.includes('"android.intent.action.VIEW"') || !filter.includes("android:autoVerify(0x010104ee)=(type 0x12)0xffffffff"))
+          throw new Error(`${name} has an unverified or ambiguous browser intent`);
+        return Object.fromEntries(Array.from(data[1].matchAll(/A: android:(\w+)\(\w+\)="([^"]+)"/g), ([, key, value]) => [key, value]));
+      });
+    const expectedLinks = [selected.callbackPath, "/android/files/import"].map((route) => ({ scheme: "https", host: callbackHost, path: route }));
+    if (links.length !== expectedLinks.length || !expectedLinks.every((expected) => links.some((link) => isDeepStrictEqual(link, expected))))
+      throw new Error(`${name} must declare the selected account return and Files import links for ${selected.webOrigin}`);
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
     const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
