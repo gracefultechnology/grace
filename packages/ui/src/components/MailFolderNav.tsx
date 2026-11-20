@@ -99,7 +99,7 @@ export function MailFolderNav({ folder, counts = {}, accounts = [], account, onA
                   icon={<MailAccountDot colour={row.colour} className="mx-1.5" />}
                   count={row.needsSignIn ? <TriangleAlert role="img" aria-label={l.needsSignIn} size={22} strokeWidth={2.2} /> : row.unread || undefined}
                   selected={one === row.id}
-                  className="pl-[30px] text-[20px]"
+                  className="pl-[30px] text-body"
                   onClick={() => onAccount?.(row.id)}
                 >
                   {row.name}

@@ -1,27 +1,22 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"
-import { Effect, ManagedRuntime } from "effect";
+import { Effect } from "effect";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, expect, inject, it } from "vitest";
+import { expect, inject, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
-import { allowedUse, chooseProvider, initial, sheetResult } from "../gen/app__accounts.ts";
+import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
+import { allowedUse } from "../gen/app__accounts.ts";
 import { type Ask, type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { proposalOf } from "../gen/app__proposal.ts";
 import { consent, type Request } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { App } from "../src/App.tsx";
-import { application } from "../src/app.vibe";
 import { day, dayOf, hour, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, outage, signIn } from "./cloud.vibe";
-import { actOnScreen } from "./screen.tsx";
+import { actOnScreen, mountGmail } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
 
-const running: (() => Promise<void>)[] = [];
-afterEach(async () => { await Promise.all(running.splice(0).map((stop) => stop())); });
 const journey = 240_000;
 const atCloud = { timeout: 20_000 };
 
@@ -38,12 +33,8 @@ async function company(key: string) {
   return boxes[0].calendar;
 }
 
+const selectedGmailCalendar = Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get());
 const held = async (key: string) => (await company(key)).filter((e) => e.title !== "Joan’s birthday").map((e) => ({ title: e.title, startAt: Date.parse(e.startAt) }));
-
-function kept(): Accounts {
-  const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
-  return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: gmail, granted: allowedUse }, "Gmail", "AccountConnector");
-}
 
 async function start(down = false) {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
@@ -52,18 +43,9 @@ async function start(down = false) {
   if (down) await reachable(false);
   const eyeAt = Date.parse(eye.startAt);
   const eyeDay = dayOf(eyeAt);
-  localStorage.clear();
-  localStorage.setItem("accounts", JSON.stringify(kept()));
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+  const runtime = await mountGmail(gmail, { url: cloud, key: secret });
   const run = <A,>(effect: Effect.Effect<A, unknown, Workspaces | AccountsMachine | Proposal | Instances>) => act(() => runtime.runPromise(effect));
   const card = page.getByRole("group", { name: "Calendar", exact: true });
-  running.push(async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    localStorage.clear();
-  });
   return {
     secret, eyeAt, eyeDay, card, run, reachable,
     agree: async (question: Ask, shows?: () => Promise<unknown>) => {
@@ -128,7 +110,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
   // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
   await toEyeWeek();
-  const gmailView = await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get()));
+  const gmailView = await run(selectedGmailCalendar);
   const startAt = midnight(eyeDay) + 15 * hour;
   const entry = {
     identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
@@ -248,7 +230,7 @@ it('Delete the first and then every appointment of a repeating email series (spe
   const { secret, eyeDay, toEyeWeek, run, agree } = await start();
   // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"
   await toEyeWeek();
-  const gmailView = await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get()));
+  const gmailView = await run(selectedGmailCalendar);
   const walkAt = midnight(eyeDay) + 10 * hour;
   const walk = {
     identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "walk", sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
@@ -260,7 +242,7 @@ it('Delete the first and then every appointment of a repeating email series (spe
   const walks = async () => (await held(secret)).filter((e) => e.title === "Walk with Joan");
   await agree({ tag: "AddAsk", target: 1, review: { entry: walk, calendarGeneration: gmailView.generation, displayTimezone: gmailView.timezone } });
   await expect.poll(walks, atCloud).toEqual([{ title: "Walk with Joan", startAt: walkAt }]);
-  await act(() => userEvent.click(row("Walk with Joan", "Gmail").first()));
+  await expect.element(dated(eyeDay)).toBeVisible();
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByText("Deleted Walk with Joan")).toBeVisible();

@@ -11,6 +11,11 @@ import { Rail, RailButton } from "./Rail.tsx";
 import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { Toast } from "./Toast.tsx";
 
+export const onMailScreen = (interact: (canvas: ReturnType<typeof within>) => Promise<void>) => async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await interact(within(canvasElement));
+  unfocus();
+};
+
 const railIcon = { size: 28, strokeWidth: 1.9 };
 
 export const mailScreen = (story: () => ReactNode) => (
@@ -128,16 +133,14 @@ export const meta: ComponentMeta<MailAppProps> = {
   },
   decorator: mailScreen,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
+    Default: onMailScreen(async (canvas) => {
       await userEvent.click(canvas.getByRole("button", { name: /Riverside Book Club/ }));
       await expect(open).toHaveBeenCalledWith("book");
       await userEvent.click(canvas.getByRole("button", { name: /Sent/ }));
       await expect(folder).toHaveBeenCalledWith("sent");
       await userEvent.click(canvas.getByRole("button", { name: "Write" }));
       await expect(write).toHaveBeenCalled();
-      unfocus();
-    },
+    }),
     "No account": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.queryByRole("button", { name: "Write" })).toBeNull();

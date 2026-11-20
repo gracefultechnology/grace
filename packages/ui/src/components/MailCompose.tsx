@@ -108,7 +108,7 @@ export function MailFromMenu({ accounts, selected, onSelect, open, onOpenChange,
         <MenuOption key={account.id} selected={account.id === selected} className="h-auto min-h-[76px] justify-start rounded-row py-2.5" onSelect={() => onSelect?.(account.id)}>
           <span className="flex min-w-0 flex-col items-start">
             <span className="truncate">{account.address}</span>
-            <span className="text-lg leading-6 font-medium text-muted-foreground">{account.name}</span>
+            <span className="text-label leading-6 font-medium text-muted-foreground">{account.name}</span>
           </span>
         </MenuOption>
       ))}

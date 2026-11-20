@@ -1138,3 +1138,177 @@ lemma lawChangeIsConsumedOnce_ensures(v: CalendarView, changeRequest: ConfirmedC
     assert hasEditing(after);
   }
 }
+
+lemma CalendarProviderReceipt(before: CalendarView, saved: CalendarView, localId: string, providerId: string)
+  requires inv(before) && inv(saved)
+  requires localId != "" && unusedProviderId(before, localId, providerId)
+  requires saved.deletion.NoDeletion? && saved.cancelledIds == before.cancelledIds
+  requires |before.entries| == |saved.entries|
+  requires forall i :: 0 <= i < |saved.entries| ==> saved.entries[i].identity == before.entries[i].identity
+  ensures inv(withProviderId(localId, saved, providerId))
+  ensures stepOccurrenceIdentityIsFixed(before, withProviderId(localId, saved, providerId))
+{
+  var after := withProviderId(localId, saved, providerId);
+  assert |after.entries| == |saved.entries|;
+  CalendarUniqueDistinct(saved);
+  forall i | 0 <= i < |saved.entries|
+    ensures validStored(after.entries[i])
+    ensures after.entries[i].identity.owner == saved.entries[i].identity.owner
+    ensures after.entries[i].identity.calendarId == saved.entries[i].identity.calendarId
+    ensures after.entries[i].identity.occurrenceId == (if saved.entries[i].identity.occurrenceId == localId then providerId else saved.entries[i].identity.occurrenceId)
+    ensures after.entries[i].phase == saved.entries[i].phase
+    ensures after.entries[i].committed == saved.entries[i].committed && after.entries[i].hasSaved == saved.entries[i].hasSaved
+    ensures after.entries[i].approvedRevision == saved.entries[i].approvedRevision && after.entries[i].storageError == saved.entries[i].storageError
+    ensures !(after.entries[i].identity.occurrenceId in after.cancelledIds)
+  {
+    var previous := saved.entries[i];
+    var id := after.entries[i].identity.occurrenceId;
+    assert validStored(previous);
+    if id in after.cancelledIds && !(id in saved.cancelledIds) {
+      assert id in ProofLib.Filter((set_x: string) => !((set_x in saved.cancelledIds)), [localId]);
+      ProofLib.FilterMember((set_x: string) => !((set_x in saved.cancelledIds)), [localId], id);
+    }
+  }
+  forall i, j | 0 <= i < |after.entries| && 0 <= j < |after.entries| && i != j
+    ensures (after.entries[i].identity.owner, after.entries[i].identity.calendarId, after.entries[i].identity.occurrenceId) !=
+      (after.entries[j].identity.owner, after.entries[j].identity.calendarId, after.entries[j].identity.occurrenceId)
+  {
+    if saved.entries[i].identity.occurrenceId == localId && saved.entries[j].identity.occurrenceId != localId {
+      assert before.entries[j].identity.occurrenceId != providerId;
+    }
+    if saved.entries[j].identity.occurrenceId == localId && saved.entries[i].identity.occurrenceId != localId {
+      assert before.entries[i].identity.occurrenceId != providerId;
+    }
+  }
+  CalendarDistinctUnique(after);
+  assert alwaysEntriesBelongToCalendar(after);
+  if saved.selectedId != "" {
+    var selected := selectedOccurrence(saved);
+    CalendarEntryMember(saved, saved.selectedId);
+    var i :| 0 <= i < |saved.entries| && saved.entries[i] == selected;
+    CalendarEntryFind(after, after.entries[i]);
+    assert after.selectedId == after.entries[i].identity.occurrenceId;
+  }
+  forall prior, laterEntry | prior in before.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
+    ensures prior.identity == laterEntry.identity
+  {
+    var i :| 0 <= i < |after.entries| && after.entries[i] == laterEntry;
+    if saved.entries[i].identity.occurrenceId == localId && localId != providerId {
+      assert prior.identity.occurrenceId != providerId;
+    } else {
+      assert before.entries[i].identity == laterEntry.identity;
+      CalendarSameKey(before, prior, before.entries[i]);
+    }
+  }
+}
+
+lemma CalendarConsumedCreation(v: CalendarView, localId: string)
+  requires forall c :: c in v.entries && c.identity.occurrenceId == localId && !c.phase.Deleted? ==> c.hasSaved
+  ensures entryAt(v, localId).phase.Empty? || entryAt(v, localId).hasSaved
+{
+  CalendarEntryAtView(v, localId);
+  var matches := ProofLib.Filter((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == localId)) && (!c.phase.Deleted?)), v.entries);
+  if |matches| == 1 {
+    var c := matches[0];
+    assert c in matches;
+    ProofLib.FilterMember((c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == localId)) && (!c.phase.Deleted?)), v.entries, c);
+  }
+}
+
+lemma storeCreated_ensures(v: CalendarView, created: CreatedReceipt, by_: ViewActor)
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysViewIdentity(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysViewWindow(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysEntriesBelongToCalendar(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysOccurrenceIsUnique(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysEditingIsSelected(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysCancelledIdsAreAbsent(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysSeriesDefinitions(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysEntriesUseSeries(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysSelectionIsCurrent(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysDeletionHasSelection(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysDeletedSeriesStayDeleted(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysDeletedSeriesIdsAreNonempty(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysSeriesDeletionIsRecurring(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> stepOccurrenceIdentityIsFixed(v, storeCreated(v, created, by_)))
+{
+  if inv(v) && canStoreCreated(v, created, by_) {
+    var command := EntryStored(created.revision, true);
+    var saved := changeOccurrence(v, created.localId, command, by_);
+    changeOccurrence_ensures(v, created.localId, command, by_);
+    CalendarEntryMember(v, created.localId);
+    var source := entryAt(v, created.localId);
+    CalendarOwned(v, source, command, by_);
+    assert ownedEntryResult(v, source, command).phase.Saved?;
+    forall i | 0 <= i < |v.entries|
+      ensures saved.entries[i].identity == v.entries[i].identity
+    {
+      if v.entries[i].identity.occurrenceId == created.localId { CalendarSameKey(v, source, v.entries[i]); }
+    }
+    CalendarProviderReceipt(v, saved, created.localId, created.providerId);
+  }
+}
+
+lemma storeCreatedSeries_ensures(v: CalendarView, receipt: SeriesReceipt, providerId: string, by_: ViewActor)
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysViewIdentity(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysViewWindow(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysEntriesBelongToCalendar(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysOccurrenceIsUnique(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysEditingIsSelected(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysCancelledIdsAreAbsent(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysSeriesDefinitions(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysEntriesUseSeries(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysSelectionIsCurrent(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysDeletionHasSelection(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysDeletedSeriesStayDeleted(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysDeletedSeriesIdsAreNonempty(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysSeriesDeletionIsRecurring(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> stepOccurrenceIdentityIsFixed(v, storeCreatedSeries(v, receipt, providerId, by_)))
+{
+  if inv(v) && canStoreCreatedSeries(v, receipt, providerId, by_) {
+    var saved := saveSeries(v, receipt, by_);
+    saveSeries_ensures(v, receipt, by_);
+    forall i | 0 <= i < |v.entries|
+      ensures saved.entries[i].identity == v.entries[i].identity
+    { SeriesMember(v, receipt, by_, v.entries[i]); }
+    CalendarProviderReceipt(v, saved, receipt.occurrenceId, providerId);
+  }
+}
+
+lemma lawCreatedReceiptIsSpent_ensures(v: CalendarView, created: CreatedReceipt)
+  ensures (lawCreatedReceiptIsSpent(v, created) == true)
+{
+  if canStoreCreated(v, created, ViewActor.ViewStore) {
+    var id := created.localId;
+    var saved := changeOccurrence(v, id, EntryStored(created.revision, true), ViewActor.ViewStore);
+    var after := storeCreated(v, created, ViewActor.ViewStore);
+    forall c | c in after.entries && c.identity.occurrenceId == id && !c.phase.Deleted?
+      ensures c.hasSaved
+    {
+      var i :| 0 <= i < |after.entries| && after.entries[i] == c;
+      assert saved.entries[i].identity.occurrenceId == id;
+      assert v.entries[i].identity.occurrenceId == id;
+    }
+    CalendarConsumedCreation(after, id);
+  }
+}
+
+lemma lawCreatedSeriesReceiptIsSpent_ensures(v: CalendarView, receipt: SeriesReceipt, providerId: string)
+  ensures (lawCreatedSeriesReceiptIsSpent(v, receipt, providerId) == true)
+{
+  if canStoreCreatedSeries(v, receipt, providerId, ViewActor.ViewStore) {
+    var id := receipt.occurrenceId;
+    var saved := saveSeries(v, receipt, ViewActor.ViewStore);
+    var after := storeCreatedSeries(v, receipt, providerId, ViewActor.ViewStore);
+    forall c | c in after.entries && c.identity.occurrenceId == id && !c.phase.Deleted?
+      ensures c.hasSaved
+    {
+      var i :| 0 <= i < |after.entries| && after.entries[i] == c;
+      var prior := v.entries[i];
+      assert saved.entries[i] == seriesMemberResult(v, prior, receipt);
+      assert saved.entries[i].identity == prior.identity;
+      assert prior.identity.occurrenceId == id;
+      assert seriesMemberAffected(v, prior);
+    }
+    CalendarConsumedCreation(after, id);
+  }
+}

@@ -260,6 +260,11 @@ save order, while repeated saves retain existing entries. The prototype's
 filename-only document deduplication is not carried forward. A collision between
 an ID and another source/content is refused. The store stages bytes and commits
 the complete batch atomically, or leaves the library unchanged and offers Retry.
+On an Android tablet, choosing Save to Grace Files from a hosted original photo
+or PDF opens private Files for confirmation. Cancel leaves the library unchanged.
+Grace fetches the original only after confirmation from the same signed-in device
+account. The handoff expires after five minutes, and Grace verifies the source
+and the content again before saving. Repeating a save keeps the same entry.
 
 ```quint
 pure def compatibleImport(f: Files, incoming: List[SavedFile]): bool =
