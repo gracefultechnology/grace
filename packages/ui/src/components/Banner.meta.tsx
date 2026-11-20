@@ -1,4 +1,4 @@
-import { AlarmClockPlus, CalendarDays, Wifi, X } from "lucide-react";
+import { CalendarDays, Wifi, X } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { BellIcon } from "../icons.tsx";
@@ -13,21 +13,6 @@ export const reminder: BannerProps = {
   actions: (
     <>
       <Button variant="prominent" size="compact">See details</Button>
-      <Button variant="plain" size="compact-icon" aria-label="Dismiss">
-        <X aria-hidden size={24} strokeWidth={1.75} />
-      </Button>
-    </>
-  ),
-};
-
-export const reminderSnooze: BannerProps = {
-  ...reminder,
-  actions: (
-    <>
-      <Button variant="prominent" size="compact">See details</Button>
-      <Button variant="capsule" size="compact-icon" aria-label="Snooze">
-        <AlarmClockPlus aria-hidden size={24} strokeWidth={2} />
-      </Button>
       <Button variant="plain" size="compact-icon" aria-label="Dismiss">
         <X aria-hidden size={24} strokeWidth={1.75} />
       </Button>
@@ -60,7 +45,7 @@ export const connectCalendar: BannerProps = {
 
 export const meta: ComponentMeta<BannerProps> = {
   args: reminder,
-  examples: { Snooze: reminderSnooze, Offline: offline, "Dark with Not now": connectCalendar },
+  examples: { Offline: offline, "Dark with Not now": connectCalendar },
   decorator: (story) => <div className="w-[682px] bg-gradient-frame-soft p-6">{story()}</div>,
   play: {
     "Dark with Not now": async ({ canvasElement }: { canvasElement: HTMLElement }) => {

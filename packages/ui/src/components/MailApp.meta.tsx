@@ -71,7 +71,6 @@ export const inbox: MailSummary[] = [
   { id: "book", from: people.book, subject: "Our book for December", time: "Yesterday" },
   { id: "scam", from: people.security, subject: "Urgent: confirm your password", time: "Yesterday" },
 ];
-const sent: MailSummary[] = [{ id: "s1", from: people.david, subject: "Re: Thanksgiving", time: "Monday" }];
 
 const open = fn();
 const folder = fn();
@@ -96,7 +95,6 @@ const tagged: MailSummary[] = [
 export const meta: ComponentMeta<MailAppProps> = {
   args: { folder: "inbox", counts: { inbox: 2 }, messages: inbox, onOpen: open, onSelectFolder: folder, onWrite: write, onClose: fn() },
   examples: {
-    Sent: { folder: "sent", messages: sent },
     "Grace points at what she found": { query: "book", messages: inbox.filter((m) => m.id === "book"), guide: { targetId: "book", kind: "instruction", title: "Tap Riverside Book Club", onClose: fn() } },
     "Nothing found": { query: "Thanksgiving", messages: [] },
     Trash: { folder: "trash", messages: [{ ...inbox[2], id: "book" }] },
@@ -104,6 +102,7 @@ export const meta: ComponentMeta<MailAppProps> = {
       counts: { inbox: 3 },
       accounts: mailAccounts,
       messages: tagged.slice(1),
+      banners: <MailSyncingRow name="Yahoo" />,
       toast: (
         <Toast placement="screen" onUndo={undo}>
           Moved to Trash
@@ -115,12 +114,7 @@ export const meta: ComponentMeta<MailAppProps> = {
       onFixWifi: fixWifi,
       accounts: [mailAccounts[0], { ...mailAccounts[1], needsSignIn: true }],
       messages: tagged,
-      banners: (
-        <>
-          <MailSignInBanner name="Outlook" others onSignIn={signIn} />
-          <MailSyncingRow name="Yahoo" />
-        </>
-      ),
+      banners: <MailSignInBanner name="Outlook" others onSignIn={signIn} />,
     },
     Outbox: { folder: "outbox", counts: { inbox: 2, outbox: 1 }, messages: [{ id: "o1", from: people.susan, subject: "Sunday", time: "Just now" }] },
     "No account": { noAccount: true, messages: [], onConnect: connect, onAskGrace: fn() },

@@ -204,7 +204,7 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     Month: { view: "month", nav: { period: "November 2026", ...step } },
     "Grace points at an appointment": {
       upcoming: taggedUpcoming,
-      guide: { targetId: doctor.id, kind: "instruction", title: "Tap Doctor’s appointment" },
+      guide: { targetId: doctor.id, kind: "instruction", title: "Tap Doctor’s appointment", onClose: fn() },
     },
     "With connect banner": { banner: connectBanner },
     "Detail, reminder showing": { view: "detail", event: { ...detail, onDismissReminder: fn(), onSnoozeReminder: snooze } },
