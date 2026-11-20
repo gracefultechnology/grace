@@ -18,7 +18,7 @@ import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
 import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { guidanceVisible, type Workspace } from "../gen/app__workspace.ts";
+import { enabled, guidanceVisible, type Workspace } from "../gen/app__workspace.ts";
 import { type GuidanceKind, guidanceInstruction } from "../gen/app__assistant.ts";
 import type { Guide, GuidePointing } from "@repo/ui";
 import type { Help } from "./context.vibe";
@@ -73,7 +73,7 @@ export function usePasswordGuide() {
 const pointings: Record<GuidanceKind, GuidePointing["kind"]> = { Look: "point", Tap: "instruction", Done: "confirm" };
 const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
 
-export function guideOn<Target extends string>(workspace: Workspace | undefined, idOf: (target: string) => Target | undefined, onClose?: () => void): Guide<Target> | undefined {
+function guideOn<Target extends string>(workspace: Workspace | undefined, idOf: (target: string) => Target | undefined, onClose?: () => void): Guide<Target> | undefined {
   if (workspace === undefined || !guidanceVisible(workspace)) return undefined;
   const { assistant } = workspace;
   const targetId = idOf(assistant.guidance.target);
@@ -85,11 +85,11 @@ export function useWorkspace() {
   const runtime = useRuntime();
   const { state: workspace, can, send } = useWorkspaceMachine(runtime);
   const offer = (event: Event) => can(event, "Person") ? () => void send(event, "Person") : undefined;
-  const opening = can({ type: "openGrace" }, "Person");
+  const current = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
   const help = async (need: Help) => {
     await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
-    if (opening) await send({ type: "openGrace" }, "Person");
-    await send(compact, "Person");
+    for (const event of [{ type: "openGrace" }, compact] as const)
+      if (enabled(current(), event, "Person")) await send(event, "Person");
   };
   return {
     workspace,
@@ -97,9 +97,9 @@ export function useWorkspace() {
     send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
     guide: <Target extends string>(idOf: (target: string) => Target | undefined) =>
       guideOn(workspace, idOf, workspace && offer({ type: "interact", input: { tag: "DismissGuidance", revision: workspace.assistant.guidance.revision } })),
-    askGrace: (need: Help) => opening || can(compact, "Person") ? () => void help(need) : undefined,
+    askGrace: (need: Help) => can({ type: "openGrace" }, "Person") || can(compact, "Person") ? () => void help(need) : undefined,
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
-    current: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())),
+    current,
     /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */
     say: (input: PersonTurn) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.say(input))),
     startReadReview: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.startReadReview(revision))),
