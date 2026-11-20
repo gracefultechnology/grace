@@ -1,6 +1,6 @@
 package technology.graceful.grace;
 
-import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
+import ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval;
 import ai.eliza.plugins.passwords.PasswordSurfaces;
 import ai.eliza.plugins.passwords.PasswordUnlock;
 import ai.eliza.plugins.passwords.PasswordVaultAccess;
@@ -30,10 +30,10 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  private volatile boolean destroyed;
 
  static final class Operation {
-  final CloudPasswordBackup.Purpose purpose;
+  final PasswordBackupApproval.Purpose purpose;
   volatile CompletableFuture<?> pending;
   volatile boolean waitingForBrowser = true;
-  Operation(CloudPasswordBackup.Purpose purpose) { this.purpose = purpose; }
+  Operation(PasswordBackupApproval.Purpose purpose) { this.purpose = purpose; }
  }
 
  GracePasswordRecovery(Activity activity, GraceAccount signIn) {
@@ -52,16 +52,16 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
    .setTitle("Backup and recovery")
    .setItems(new String[]{"Back up passwords", "Restore passwords", "Remove cloud backup", "Verify this tablet"},
     (dialog, choice) -> begin(switch (choice) {
-     case 0 -> CloudPasswordBackup.Purpose.SAVE;
-     case 1 -> CloudPasswordBackup.Purpose.READ;
-     case 2 -> CloudPasswordBackup.Purpose.DELETE;
-     default -> CloudPasswordBackup.Purpose.VERIFY;
+     case 0 -> PasswordBackupApproval.Purpose.SAVE;
+     case 1 -> PasswordBackupApproval.Purpose.READ;
+     case 2 -> PasswordBackupApproval.Purpose.DELETE;
+     default -> PasswordBackupApproval.Purpose.VERIFY;
     }))
    .setNegativeButton("Close", null), null);
   return true;
  }
 
- private void begin(CloudPasswordBackup.Purpose purpose) {
+ private void begin(PasswordBackupApproval.Purpose purpose) {
   Operation started = new Operation(purpose);
   operation = started;
   signIn.authorizePasswordBackup(this, started);
@@ -71,21 +71,21 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
 
  boolean isCurrent(Operation expected) { return !destroyed && operation == expected; }
 
- void run(Operation expected, CloudPasswordBackup.Approval approval) {
+ void run(Operation expected, PasswordBackupApproval approval) {
   expected.waitingForBrowser = false;
   Runnable account = () -> {
    if (!approval.current()) throw new IllegalStateException("Password backup approval expired");
   };
-  CloudPasswordBackup.Purpose purpose = expected.purpose;
+  PasswordBackupApproval.Purpose purpose = expected.purpose;
   byte[] recoveryKey = null;
   try {
    account.run();
-   if ((purpose == CloudPasswordBackup.Purpose.READ || purpose == CloudPasswordBackup.Purpose.DELETE) && !approval.present()) {
+   if ((purpose == PasswordBackupApproval.Purpose.READ || purpose == PasswordBackupApproval.Purpose.DELETE) && !approval.present()) {
     failed(expected, "There is no cloud backup for this account.");
     return;
    }
-   if (purpose == CloudPasswordBackup.Purpose.DELETE) {
-    CloudPasswordBackup.Response removed = approval.run(approval.revision(), null);
+   if (purpose == PasswordBackupApproval.Purpose.DELETE) {
+    PasswordBackupApproval.Response removed = approval.run(approval.revision(), null);
     account.run();
     failed(expected, removed.status() == 204 ? "Cloud backup removed. Your passwords are still on this tablet." : cloudMessage(removed.status()));
     return;
@@ -95,7 +95,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
     case READ -> askForRecoveryKey(expected);
     default -> null;
    };
-   if (recoveryKey == null && purpose != CloudPasswordBackup.Purpose.VERIFY) { failed(expected, null); return; }
+   if (recoveryKey == null && purpose != PasswordBackupApproval.Purpose.VERIFY) { failed(expected, null); return; }
    final byte[] key = recoveryKey;
    Long ticket = unlock(expected);
    if (ticket == null) { failed(expected, null); return; }
@@ -117,25 +117,25 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
      failed(expected, "These saved passwords belong to another Grace account.");
      return;
     }
-    if (purpose == CloudPasswordBackup.Purpose.VERIFY) {
+    if (purpose == PasswordBackupApproval.Purpose.VERIFY) {
      failed(expected, "This tablet’s passwords are ready to use.");
      return;
     }
-    if (purpose == CloudPasswordBackup.Purpose.SAVE) {
+    if (purpose == PasswordBackupApproval.Purpose.SAVE) {
      byte[] encrypted = vault.use(ticket, store -> {
       account.run();
       return store.encryptBackup(approval.scope(), key);
      });
      try {
       account.run();
-      CloudPasswordBackup.Response saved = approval.run(approval.revision(), encrypted);
+      PasswordBackupApproval.Response saved = approval.run(approval.revision(), encrypted);
       account.run();
       failed(expected, saved.status() == 204 ? "Backup saved. Keep your recovery key somewhere safe." : cloudMessage(saved.status()));
      } finally {
       Arrays.fill(encrypted, (byte) 0);
      }
     } else {
-     CloudPasswordBackup.Response backup = approval.run(null, null);
+     PasswordBackupApproval.Response backup = approval.run(null, null);
      if (backup.status() != 200) { failed(expected, cloudMessage(backup.status())); return; }
      byte[] encrypted = backup.ciphertext();
      try {
