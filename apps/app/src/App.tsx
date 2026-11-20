@@ -12,7 +12,8 @@ import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../
 import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
-import { ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
+import { dayOf, relative, timeLabel } from "./calendar.vibe";
+import { type HomeCards, ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
 import { Calendar, calendarKeys, homeCalendar, nextAppointment, reminderNotice, useCalendarActions } from "./Calendar.tsx";
@@ -46,6 +47,11 @@ const lifted = "absolute top-1.5 right-1.5 transition-[bottom] duration-window e
 const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
 const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
+const managedNext = (cards: HomeCards | undefined, now: Date) => {
+  const next = cards?.events[0];
+  return next && `${relative(dayOf(startOf(next).getTime()), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(startOf(next).getTime())}`;
+};
 
 function useHomeCards() {
   const runtime = useRuntime();
@@ -169,7 +175,7 @@ function Screen() {
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
-              const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
+              const when = startOf(event);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
                 weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
                 onClick: !cards || visit("Calendar").disabled ? undefined : () => void runtime.runPromise(Effect.flatMap(ManagedReads, (managed) =>
@@ -234,7 +240,7 @@ function Screen() {
         <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
         time={`${clock.hour}:${clock.minute}`}
         date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
-        next={accounts && nextAppointment(accounts, calendars, now.getTime())}
+        next={useManaged ? managedNext(cards, now) : accounts && nextAppointment(accounts, calendars, now.getTime())}
         hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
         }} />
