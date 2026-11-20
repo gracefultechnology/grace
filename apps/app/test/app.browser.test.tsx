@@ -901,7 +901,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open Passwords and read fixed instructions"] as const)(
+it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords and read fixed instructions"] as const)(
   '%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
@@ -913,6 +913,9 @@ it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open 
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
   let nextTranscript = voiceInput;
+  const replies: string[] = [];
+  let holdComplete = false;
+  let release = () => {};
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
@@ -995,7 +998,9 @@ it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open 
         output.set(id, 2);
         this.receive(output.buffer);
       } else if (command.t === "finish" && "id" in command && typeof command.id === "string") {
-        this.receive({ t: "complete", id: command.id });
+        const complete = { t: "complete", id: command.id };
+        release = () => this.receive(complete);
+        if (!holdComplete) release();
       } else if (command.t === "stop") {
         this.close();
       }
@@ -1015,7 +1020,7 @@ it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open 
     requestStream: ({ id, body }) => {
       turns.push(body);
       queueMicrotask(() => {
-        listeners.get("streamData")?.({ id, data: JSON.stringify({ type: "done", fullText: voiceOutput }) });
+        listeners.get("streamData")?.({ id, data: JSON.stringify({ type: "done", fullText: replies.shift() ?? voiceOutput }) });
         listeners.get("streamEnd")?.({ id, status: 200 });
       });
       return Promise.resolve({ id });
@@ -1038,7 +1043,7 @@ it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open 
     const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
       machine.send({ type: "chooseHomePage", page }, "Person")));
     const refresh = () => act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
-    if (journey === "Talk and hear a reply") {
+    if (journey === "Talk and hear a reply" || journey === "Answer a spoken question") {
       await press(page.getByRole("button", { name: "Settings", exact: true }));
       await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
       await expect.element(page.getByText(voiceDisclosure, { exact: true })).toBeVisible();
@@ -1066,16 +1071,75 @@ it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open 
       });
       await expect.poll(() => calls).toEqual(speechSession);
 
-      audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
-      await press(talkControl);
-      await expect.poll(() => audio.mock.calls.length).toBe(2);
-      await expect.element(notice).not.toBeInTheDocument();
-      accountId = firstAccount;
-      await refresh();
-      await press(talkControl);
-      await expect.element(notice).toBeVisible();
+      if (journey === "Talk and hear a reply") {
+        audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
+        await press(talkControl);
+        await expect.poll(() => audio.mock.calls.length).toBe(2);
+        await expect.element(notice).not.toBeInTheDocument();
+        accountId = firstAccount;
+        await refresh();
+        await press(talkControl);
+        await expect.element(notice).toBeVisible();
+        expect(audio).toHaveBeenCalledTimes(2);
+        await press(notice.getByRole("button", { name: "Cancel" }));
+        return;
+      }
+      const conversation = () => workspace().assistant.conversation;
+      const texts = () => conversation().messages.map((turn) => turn.text);
+      const tracks = () => captures.map((track) => track.readyState);
+      const question = "Shall I call Anne?";
+      const chips = ["Yes, call Anne now", "Not now"];
+      const asked = JSON.stringify({ text: question, isQuestion: true, answers: chips });
+      const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more"];
+      const done = "I’ll ring her now.";
+      const talk = () => act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+
+      replies.push(asked, done);
+      nextTranscript = said[0];
+      const before = conversation().generation;
+      await talk();
+      await expect.poll(() => [conversation().turn, conversation().voice, conversation().generation, texts().at(-1)]).toEqual(["Listening", true, before + 2, question]);
+      expect(tracks()).toEqual(["ended", "live"]);
       expect(audio).toHaveBeenCalledTimes(2);
-      await press(notice.getByRole("button", { name: "Cancel" }));
+      await expect.element(page.getByRole("button", { name: chips[0] })).toBeEnabled();
+      nextTranscript = said[1];
+      await expect.poll(() => texts()).toEqual([voiceInput, voiceOutput, said[0], question, said[1], done]);
+      await expect.poll(() => [conversation().turn, conversation().voice, tracks()]).toEqual(["Ready", false, ["ended", "ended"]]);
+      await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+
+      replies.push(asked);
+      nextTranscript = said[2];
+      await talk();
+      await expect.poll(() => [conversation().turn, texts().at(-1)]).toEqual(["Listening", question]);
+      await expect.poll(() => [conversation().turn, conversation().voice, tracks()], { timeout: 12_000 }).toEqual(["Ready", false, ["ended", "ended", "ended"]]);
+      expect([texts().slice(-2), conversation().question, conversation().answers]).toEqual([[said[2], question], true, chips]);
+      await expect.element(page.getByRole("button", { name: chips[1] })).toBeEnabled();
+
+      replies.push(asked);
+      holdComplete = true;
+      nextTranscript = said[3];
+      await talk();
+      await expect.poll(() => [conversation().turn, texts().at(-1)]).toEqual(["Speaking", question]);
+      await act(() => userEvent.click(page.getByRole("button", { name: "Pause Grace" })));
+      await expect.poll(() => [conversation().turn, conversation().voice, tracks()]).toEqual(["Paused", false, ["ended", "ended", "ended", "ended"]]);
+      await act(() => userEvent.click(page.getByRole("button", { name: "Resume Grace" })));
+      await expect.poll(() => [conversation().turn, conversation().voice]).toEqual(["Speaking", false]);
+      holdComplete = false;
+      release();
+      await expect.poll(() => [conversation().turn, conversation().voice]).toEqual(["Ready", false]);
+      expect(audio).toHaveBeenCalledTimes(4);
+      const sessions = [...speechSession, ...speechSession, ...speechSession, ...speechSession];
+      await expect.poll(() => calls).toEqual(sessions);
+      const transcript = texts();
+
+      nextTranscript = "Where can I find my saved passwords?";
+      await talk();
+      await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
+      await expect.poll(() => tracks()).toEqual(["ended", "ended", "ended", "ended", "ended"]);
+      await expect.poll(() => calls).toEqual([...sessions, ...speechSession]);
+      expect(texts()).toEqual(transcript);
+      expect(turns).toEqual([voiceInput, ...said].map((text) => ({ text })));
+      expect(phrases).toEqual([voiceOutput, question, done, question, question]);
       return;
     }
     if (journey === "Keep private card inputs out of chat") {
@@ -1770,6 +1834,45 @@ function approvedBackupReturn() {
   returned.searchParams.set("state", passwordBackupApproval.state);
   return returned;
 }
+
+it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+  const original = location.href;
+  const pending = sessionStorage.getItem("grace-device-sign-in");
+  const destination = new URL(original);
+  destination.searchParams.set("device_challenge", "a".repeat(43));
+  destination.searchParams.set("device_state", "b".repeat(43));
+  destination.hash = "account";
+  history.replaceState(null, "", destination);
+  const first = ManagedRuntime.make(application(undefined));
+  const reopened = ManagedRuntime.make(application(undefined));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  const network = window.fetch.bind(window);
+  const service = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    if (typeof input === "string" && new URL(input, location.href).pathname === "/api/auth/session") {
+      return Promise.resolve(Response.json({ account: { id: "tablet-owner", email: "tablet-owner@example.test" } }));
+    }
+    return network(input, init);
+  });
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await Promise.all([first.dispose(), reopened.dispose()]);
+    service.mockRestore();
+    host.remove();
+    history.replaceState(null, "", original);
+    if (pending === null) sessionStorage.removeItem("grace-device-sign-in");
+    else sessionStorage.setItem("grace-device-sign-in", pending);
+  });
+
+  await act(() => root.render(<App key="first" runtime={first} />));
+  const cancel = page.getByRole("button", { name: "Cancel tablet sign-in" });
+  await expect.element(cancel).toBeVisible();
+  await act(() => userEvent.click(cancel));
+  await expect.element(cancel).not.toBeInTheDocument();
+  await act(() => root.render(<App key="reopened" runtime={reopened} />));
+  await expect.element(page.getByText("tablet-owner@example.test", { exact: true })).toBeVisible();
+  await expect.element(cancel).not.toBeInTheDocument();
+});
 
 it('Approve the shown account before returning to the tablet (spec/app/setup.md, "Story: Approve a password backup in my browser")', async () => {
   const element = document.createElement("div");

@@ -1,4 +1,4 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
 import { Digest } from "effect/crypto"
@@ -7,6 +7,7 @@ import { Machine as Accounts, type Accounts as Registry } from "../gen/app__acco
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
 import { entryAt } from "../gen/app__calendarView.effect.vibe"
+import { sentHistory } from "../gen/app__conversation.effect.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
@@ -41,7 +42,6 @@ export service Conversation {
 
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
-const remembered = 12
 
 schema Delta { content?: string }
 schema Choice { delta: Delta }
@@ -238,9 +238,10 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const scene = try look()
     const w = scene.workspace
     if (privateSurfaceActive(w)) return
-    const { messages } = w.assistant.conversation
+    const { conversation } = w.assistant
+    const { messages } = conversation
     const latest = messages.length - 1
-    const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
+    const outgoing = try Effect.orDie(Effect.try(() => sentHistory(conversation).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
     if (outgoing.at(-1)?.content !== messages[latest]?.text) {
       workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
       return
