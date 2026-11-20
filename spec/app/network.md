@@ -174,7 +174,7 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
   }
 }
 pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
-  by == OperatingSystem and (n.discovery == NetworksFound or n.discovery == NoNetworks) and
+  by == OperatingSystem and (match n.discovery { | NetworksFound(_) => true | NoNetworks => true | _ => false }) and
   (n.phase == JoinFailed or n.phase == JoinUnconfirmed) and
   networkId != "" and networkId == n.selected.id and version == n.version
 pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
