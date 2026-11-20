@@ -891,6 +891,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   let holdComplete = false;
   let release = () => {};
   let disconnect = () => {};
+  let finishes = 0;
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
@@ -967,6 +968,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
         this.receive(output.buffer);
       } else if (command.t === "finish" && "id" in command && typeof command.id === "string") {
         const complete = { t: "complete", id: command.id };
+        finishes++;
         release = () => this.receive(complete);
         disconnect = () => this.close();
         if (!holdComplete) release();
@@ -1061,11 +1063,12 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       machine.send({ type: "changePreferences", settings: { ...workspace().preferences.session, muted } }, "Person"))).then(() => undefined));
     for (const cause of ["mute", "disconnect"] as const) {
       const index = cause === "mute" ? 4 : 5;
+      const priorFinishes = finishes;
       replies.push(asked);
       nextTranscript = said[index];
       holdComplete = true;
       await talk();
-      await expect.poll(() => [conversation().turn, texts().at(-1), phrases.length]).toEqual(["Speaking", question, index + 2]);
+      await expect.poll(() => [conversation().turn, texts().at(-1), finishes]).toEqual(["Speaking", question, priorFinishes + 1]);
       const delayedComplete = release;
       if (cause === "mute") await preference(true);
       else await act(() => Promise.resolve(disconnect()));

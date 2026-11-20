@@ -168,8 +168,9 @@ spoke or typed (prototype 1325); with voice output off it is only written.
 Speaking never turns the microphone on. When Grace asks a question aloud in a
 voice exchange, she keeps listening for the answer once her speech ends, under
 the same generation, so the person can simply answer; the microphone was
-already on so that she could be interrupted. A muted or interrupted question closes the microphone and keeps its written
-answer choices. Any other reply ends the voice exchange when it ends. A written-only reply, a reply to a typed message,
+already on so that she could be interrupted. A muted or interrupted question
+closes the microphone and keeps its written answer choices. Any other reply
+ends the voice exchange when it ends. A written-only reply, a reply to a typed message,
 Repeat and a paused reply never keep listening; there she answers by Talk, an
 answer chip or typing. Grace's single request to say an unusable utterance
 again is such a question.
