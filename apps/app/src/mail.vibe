@@ -1,9 +1,9 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
 import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
-import { contactAccounts, moveDraft as movedDraft, startFrom, told, undoable } from "../gen/app__mailboxes.effect.vibe"
+import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
@@ -35,6 +35,8 @@ export service Mail {
 const address = /^[^@\s,;]+@[^@\s,;]+$/
 export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 export const recipientsValid = (c: DraftContent) => c.to !== "" && [...recipientsOf(c.to), ...c.cc, ...c.bcc].every((a) => address.test(a))
+export const sendsWith = (m: Mailbox, file: SavedFile) =>
+  file.origin === m.provider && file.account === m.account && m.draftAttachments.every((a) => a.container === file.container)
 const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts" }
 export const answerable = (m: Mailbox) => replyable(m) && m.folder !== "DraftsFolder"
 export const headerFor = (board: Board, held: Held | undefined, id: number, m: Mailbox): ReplyHeader | undefined => {
@@ -342,7 +344,7 @@ export const mailing = Layer.effect(Mail, effect {
     if (!owned) return false
     const { box, m } = owned
     const event: MailEvent = { type: "attachAsset", owner: m.owner, asset, draftRevision: m.revision, selected: true }
-    if (!enabled(m, event, "MailHost")) return false
+    if (!sendsWith(m, asset) || !enabled(m, event, "MailHost")) return false
     return (box.send(event, "MailHost") catch () => undefined) !== undefined
   }
 
@@ -353,10 +355,11 @@ export const mailing = Layer.effect(Mail, effect {
       return box === undefined ? [] : [{ account: account.id, mailbox: try box.get() }]
     })
     if (sources.flat().some((source) => source.mailbox.composeVisible)) return false
-    const id = startFrom(a, sources.flat(), "")
+    const from = sources.flat().find((source) => sendsWith({ ...source.mailbox, draftAttachments: [] }, photo))
+    if (from === undefined || !enabled(from.mailbox, { type: "startDraft", reply: false }, "MailUser")) return false
+    const id = from.account
     const box = shelf.mail(id) catch () => undefined
-    const m = box === undefined ? undefined : try box.get()
-    if (box === undefined || m === undefined || !enabled(m, { type: "startDraft", reply: false }, "MailUser")) return false
+    if (box === undefined) return false
     const placed = place(box, { ...emptyContent, subject: "A photo" }, [photo]) catch () => false
     if (placed) post({ sharing: id })
     else {
@@ -373,14 +376,15 @@ export const mailing = Layer.effect(Mail, effect {
     const chosen = m.assets.filter((a) => refs.includes(a.sourceRef))
     if (!mayExportAttachments(m, [...refs])) return
     const mail = connectionOf(account)
-    const version = shelf.content(id, m.messageRef)?.version ?? ""
+    const held = shelf.content(id, m.messageRef)
+    const version = held?.version ?? ""
     const ids = chosen.map((f) => f.id)
     post({ unsaved: new Set([...board.unsaved].filter((f) => !ids.includes(f))) })
     const feedback = try library.save(chosen, effect (file) => {
       const current = try box.get()
       if (current.messageRef !== m.messageRef || !mayExportAttachments(current, [...refs]) || shelf.content(id, current.messageRef)?.version !== version) throw new AttachmentChanged()
       return try fetched(shelf, mail, id, file, version)
-    }, `${account.provider}:${account.address}/${m.messageRef}`, version, shelf.content(id, m.messageRef)?.from ?? "")
+    }, `${account.provider}:${account.address}/${m.messageRef}`, version, { from: held?.from ?? "", subject: held?.subject ?? "" })
     if (feedback === "FilesSaved") try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
     if (feedback === "WriteFailed" || feedback === "CatalogFailed") post({ unsaved: new Set([...board.unsaved, ...ids]) })
   }

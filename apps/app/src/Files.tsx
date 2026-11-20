@@ -3,10 +3,10 @@ import { AppWindow, Button, EmptyState, FilePhotoViewer, FilesApp, type FilesPho
 import { Effect, Stream } from "effect";
 import { Folder } from "lucide-react";
 import { type ComponentProps, useCallback, useState, useSyncExternalStore, useTransition } from "react";
-import { enabled, type Event, fileAt, type Files as Library, highlightedFile, type SavedFile } from "../gen/app__files.ts";
+import { deviceOrigin, enabled, type Event, fileAt, type Files as Library, highlightedFile, type SavedFile } from "../gen/app__files.ts";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { FileLibrary } from "./fileLibrary.vibe";
-import { filesAccount } from "./files.vibe";
+import { canImport, FileLibrary } from "./fileLibrary.vibe";
+import { filesAccount, type Origin } from "./files.vibe";
 import { useRuntime } from "./useApp.ts";
 
 const changes = Stream.unwrap(Effect.map(FileLibrary, (files) => files.changes));
@@ -30,21 +30,23 @@ const day = 86_400_000;
 function savedWhen(savedAt: number, now: Date) {
   const saved = new Date(savedAt);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (savedAt >= today) return { group: "This week", detail: "Saved today" };
-  if (savedAt >= today - 6 * day) return { group: "This week", detail: "Saved this week" };
   const name = (saved.getFullYear() === now.getFullYear() ? month : monthYear).format(saved);
-  return { group: name, detail: `Saved in ${name}` };
+  return { group: savedAt >= today - 6 * day ? "This week" : name, detail: savedAt >= today ? "Saved today" : `Saved in ${name}` };
 }
 
-function photoGroups(photos: readonly SavedFile[], thumbs: Readonly<Record<string, string>>, senders: Readonly<Record<string, string>>, now: Date) {
-  return photos.reduce<FilesPhotoGroup[]>((groups, entry) => {
+const fromLine = ({ from, subject }: Partial<Origin>) => (from ? [`From ${from}`, subject].filter(Boolean).join(" · ") : undefined);
+
+function photoGroups(photos: readonly SavedFile[], thumbs: Readonly<Record<string, string>>, origins: Readonly<Record<string, Partial<Origin>>>, now: Date) {
+  const grouped = new Map<string, SavedFile[]>();
+  for (const entry of [...photos].sort((a, b) => b.savedAt - a.savedAt)) {
     const title = savedWhen(entry.savedAt, now).group;
-    const photo = { id: entry.id, src: thumbs[entry.id], label: entry.name };
-    const last = groups.at(-1);
-    if (last?.title === title) return [...groups.slice(0, -1), { ...last, photos: [...last.photos, photo] }];
-    const from = senders[entry.id];
-    return [...groups, { title, ...(from ? { from: `From ${from}` } : {}), photos: [photo] }];
-  }, []);
+    grouped.set(title, [...grouped.get(title) ?? [], entry]);
+  }
+  return [...grouped].map(([title, entries]): FilesPhotoGroup => {
+    const lines = new Set(entries.map((entry) => fromLine(origins[entry.id] ?? {})));
+    const [from] = lines;
+    return { title, ...(lines.size === 1 && from ? { from } : {}), photos: entries.map((entry) => ({ id: entry.id, src: thumbs[entry.id], label: entry.name })) };
+  });
 }
 
 const offered = (model: Library, event: Event, act: () => void) => (enabled(model, event, "FileUser") ? act : undefined);
@@ -98,7 +100,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
       const target = { id: selected.id, lease: snapshot.lease, generation: model.generation };
       const idle = (event: Event, act: () => void) => (waiting ? undefined : offered(model, event, act));
       const remove = idle({ type: "deletePhoto", ...target }, () => run({ kind: "deletePhoto", ...target }));
-      const share = idle({ type: "sharePhoto", ...target }, () => run({ kind: "sharePhoto", ...target }));
+      const share = selected.origin === deviceOrigin ? undefined : idle({ type: "sharePhoto", ...target }, () => run({ kind: "sharePhoto", ...target }));
       const deleteFailed = model.feedback === "WriteFailed";
       return <FilePhotoViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} src={snapshot.image} alt={selected.name}
         first={!enabled(model, { type: "movePhoto", direction: -1 }, "FileUser")}
@@ -128,9 +130,9 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const sought = query.trim();
   const idle = (event: Event, act: () => void) => (waiting ? undefined : offered(model, event, act));
   const find = idle({ type: "findFiles", owner: snapshot.lease, query: sought }, () => run({ kind: "search", query }));
-  const browsing = !waiting && model.pending === "NoFileOperation" && enabled(model, { type: "chooseTab", tab: model.tab }, "FileUser");
-  const pick = snapshot.canImport && browsing ? () => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" }) : undefined;
-  const capture = snapshot.canImport && browsing && model.tab === "Photos" ? () => run({ kind: "capture" }) : undefined;
+  const importing = !waiting && canImport(snapshot);
+  const pick = importing ? () => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" }) : undefined;
+  const capture = importing && model.tab === "Photos" ? () => run({ kind: "capture" }) : undefined;
   const tab = (next: "Photos" | "Documents") => idle({ type: "chooseTab", tab: next }, () => run({ kind: "tab", tab: next }));
   const browse = model.loaded && (
     <div className="flex flex-wrap items-end gap-3">
@@ -138,10 +140,10 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
         <label>Find a file<Input value={query} maxLength={120} onChange={(event) => setQuery(event.currentTarget.value)} /></label>
         <Button type="submit" variant="capsule" size="pill" disabled={!find}>Find</Button>
       </form>
-      {snapshot.canImport && <Button variant="capsule" size="pill" disabled={!pick} onClick={pick}>
+      {snapshot.importer && <Button variant="capsule" size="pill" disabled={!pick} onClick={pick}>
         {model.tab === "Photos" ? "Import photo" : "Import PDF"}
       </Button>}
-      {snapshot.canImport && model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={!capture} onClick={capture}>Take photo</Button>}
+      {snapshot.importer && model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={!capture} onClick={capture}>Take photo</Button>}
       {(failed || model.feedback === "WriteFailed") && <PageText role="status">The file wasn’t saved or opened.</PageText>}
     </div>
   );
@@ -150,9 +152,9 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
     matches={model.matches.map((id) => ({ id, label: fileAt(model, id).name }))} onPickMatch={open}
     noMatch={model.feedback === "NothingFound" ? model.query : undefined}
     onTabChange={tab(model.tab) && ((next) => tab(next === "photos" ? "Photos" : "Documents")?.())}
-    photoGroups={photoGroups(photos, snapshot.thumbs, snapshot.senders, now)}
+    photoGroups={photoGroups(photos, snapshot.thumbs, snapshot.origins, now)}
     documents={documents.map((entry) => {
-      const from = snapshot.senders[entry.id];
+      const { from } = snapshot.origins[entry.id] ?? {};
       const { detail } = savedWhen(entry.savedAt, now);
       return { id: entry.id, name: entry.name, detail: from ? `From ${from} · ${detail}` : detail };
     })}

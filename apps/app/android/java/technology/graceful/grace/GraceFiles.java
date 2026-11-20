@@ -68,7 +68,7 @@ public final class GraceFiles extends Plugin {
    return new Source(text(value, "origin"), text(value, "account"), text(value, "container"), text(value, "sourceRef"), text(value, "contentRef"));
   }
  }
- private record Attachment(JSONObject source, Source key, String version, String from, String name, byte[] bytes) {}
+ private record Attachment(JSONObject source, Source key, String version, String from, String subject, String name, byte[] bytes) {}
  private static final String SOURCE = ".mail-source.json";
  private record Stage(Lease lease, String id, File temporary, JSObject entry) {}
  private interface Work { void run() throws Exception; }
@@ -174,6 +174,7 @@ public final class GraceFiles extends Plugin {
    JSONObject metadata = metadata(file.getParentFile());
    if (metadata != null) entry.put("source", metadata.getJSONObject("source")).put("version", metadata.getString("version"));
    if (metadata != null && !metadata.optString("from").isEmpty()) entry.put("from", metadata.getString("from"));
+   if (metadata != null && !metadata.optString("subject").isEmpty()) entry.put("subject", metadata.getString("subject"));
   } catch (JSONException invalid) { throw new IOException("Invalid attachment metadata", invalid); }
   return entry;
  }
@@ -461,7 +462,7 @@ public final class GraceFiles extends Plugin {
   source.put("group", group).put("savedAt", savedAt).put("pages", pages);
   String encoded = text(input, "data");
   if (encoded.length() > 4 * ((MAX_BYTES + 2) / 3)) throw new IOException("File too large");
-  return new Attachment(source, Source.from(source), text(input, "version"), input.optString("from"), name, Base64.decode(encoded, Base64.DEFAULT));
+  return new Attachment(source, Source.from(source), text(input, "version"), input.optString("from"), input.optString("subject"), name, Base64.decode(encoded, Base64.DEFAULT));
  }
 
  @PluginMethod public void saveAttachments(PluginCall call) {
@@ -499,6 +500,7 @@ public final class GraceFiles extends Plugin {
       file = staged.temporary();
       JSONObject metadata = new JSONObject().put("source", a.source()).put("version", a.version());
       if (!a.from().isEmpty()) metadata.put("from", a.from());
+      if (!a.subject().isEmpty()) metadata.put("subject", a.subject());
       try (FileOutputStream out = new FileOutputStream(new File(file.getParentFile(), SOURCE))) {
        out.write(metadata.toString().getBytes(StandardCharsets.UTF_8));
        out.getFD().sync();

@@ -3,16 +3,17 @@ import { type Files, type FileActor, type Event, enabled, fileAt, initial, step 
 import { enabled as deskEnabled, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Mail } from "./mail.vibe"
-import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes, Preview, savedFile } from "./files.vibe"
+import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes, Preview, savedFile, type Origin } from "./files.vibe"
 
 schema Completion { id: fileId }
 
 type Closed = { kind: "out" | "signedOut" | "opening" | "unavailable" | "unsupported" }
 type Ready = {
-  kind: "ready"; owner: string; canImport: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>
-  senders: Readonly<Record<string, string>>; listedAt: number; image?: string; busy: boolean; issue: boolean
+  kind: "ready"; owner: string; importer: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>
+  origins: Readonly<Record<string, Partial<Origin>>>; listedAt: number; image?: string; busy: boolean; issue: boolean
 }
 export type FileSnapshot = Closed | Ready
+export const canImport = (ready: Ready) => ready.importer && !ready.busy && ready.model.loaded && ready.model.pending === "NoFileOperation" && ready.model.selected === ""
 export type FileHome = { photos: { src: string; alt: string }[]; document?: { name: string } }
 type Command =
   | { kind: "open"; id: string }
@@ -89,8 +90,8 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const catalog = Schema.decodeUnknownEffect(Catalog)(try tryPromise(() => port.list({ lease: ready.lease }))) catch () => undefined
     const listed = catalog?.entries.slice(0, 250) ?? []
     const entries = listed.map((entry) => savedFile(entry, ready.owner, ready.lease))
-    const senders = Object.fromEntries(listed.flatMap((entry) => entry.from ? [[entry.id, entry.from]] : []))
-    const { ready: loaded } = try advance({ ...loading, senders, listedAt: Date.now() }, { type: "loadCatalog", catalogReport: {
+    const origins = Object.fromEntries(listed.map(({ id, from, subject }) => [id, { from, subject }]))
+    const { ready: loaded } = try advance({ ...loading, origins, listedAt: Date.now() }, { type: "loadCatalog", catalogReport: {
       owner: ready.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
     } }, "FileStore")
     if (loaded.model.loaded) try exposeCatalog(loaded)
@@ -109,7 +110,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
       tryPromise(() => port.close(opened)) catch () => undefined
       return
     }
-    const ready: Ready = { kind: "ready", owner, canImport: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, senders: {}, listedAt: 0, busy: false, issue: false }
+    const ready: Ready = { kind: "ready", owner, importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, origins: {}, listedAt: 0, busy: false, issue: false }
     try SubscriptionRef.set(latest, ready)
     load(ready) catch effect () => {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
@@ -131,7 +132,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
   }
 
   effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" }) {
-    if (!port?.pick || !port.capture || !port.commit || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || ready.model.selected !== "") return false
+    if (!port?.pick || !port.capture || !port.commit || !canImport(ready)) return false
     const { capture, pick, commit } = port
     const input = { lease: ready.lease }
     try keep({ ...ready, busy: true, issue: false })

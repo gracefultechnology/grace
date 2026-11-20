@@ -364,8 +364,8 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByRole("img", { name: "Piano.png" })).not.toBeInTheDocument();
   await changeSession(true);
   await expect.element(piano).toBeVisible();
-  // spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
-  await expect.element(page.getByText("From Ruth")).toBeVisible();
+  // spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await expect.element(page.getByText("From Ruth · Lunch on Sunday?")).toBeVisible();
   await click(page.getByRole("radio", { name: "Documents" }));
   await expect.element(page.getByText(/^From Main St Clinic · Saved /)).toBeVisible();
   await click(page.getByRole("radio", { name: "Photos" }));
