@@ -952,12 +952,12 @@ pure def prepare(w: Workspace, operationRequest: OperationRequest, by: Workspace
 
 ### A page on another origin, or a step that is the person's, blocks the task where she can see it
 
-An observation that arrives on every current version but reads a page on
-another origin than the task's is not dropped: the task is blocked with that
-reason and its checkpoint. When the step the task needs, at the current
+An observation of this task's page that arrives on every current version but
+reads another origin than the task's is not dropped: the task is blocked with
+that reason and its checkpoint. When the step the task needs, at the current
 observation, is one Grace may not take, because it is out of her reach or is
-the person's to tap, the task is blocked for the person with that step named,
-and an approved payment review on the old page is no longer current, also
+the person's to tap, the task is blocked for the person at its checkpoint
+with that step recorded as the one left to her, and an approved payment review on the old page is no longer current, also
 when the step left to the person is a payment's own pay button. Either
 way Grace's visible work waits for the person and fences older reports, so
 she continues only after the person chooses Continue and a fresh observation
@@ -1052,7 +1052,7 @@ pure def sometimesOperationDispatched(w: Workspace): bool = w.execution.phase ==
 pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X::Verified
 ```
 
-### An ordinary website goal finishes only with its own verified endpoint
+### An ordinary website goal finishes only on an observation quoting its fact
 
 The person's goal is not complete because a step was verified.
 The trusted domain integration separately reports that the requested goal
