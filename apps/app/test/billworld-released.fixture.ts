@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
 
-const revision = "f335b651f9820c3454f447e3d4722b78c5298a0b";
+const revision = "8320228bccf0759f375b9633592612e0e570a526";
 const releasedId = "task_md9";
 const Pair = Schema.Tuple([Schema.NonEmptyString, Schema.NonEmptyString]);
 const Catalog = Schema.Struct({ released: Schema.Record(Schema.String, Pair) });
