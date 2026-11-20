@@ -7,7 +7,7 @@ import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
-import { followAccounts, type Held, Instances } from "./instances.vibe"
+import { type Held, followAccounts, Instances } from "./instances.vibe"
 
 export type Note = { readonly id: number; readonly text: string }
 

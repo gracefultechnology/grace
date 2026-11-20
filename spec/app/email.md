@@ -284,7 +284,8 @@ this spec refuses her without it but cannot itself establish it.
   that is open, so the person sees what she is about to move.
 - She never approves, sends, deletes for good or opens a link: no arm of
   `assistMail` reaches those transitions, and `lawGraceNeverRaisesApproval`
-  checks every arm. Looking at mail during a send leaves the same operation in progress.
+  checks every arm. When the person is already sending an email, Grace can
+  look at or move an open message while the same send operation continues.
 
 This departs from the prototype on purpose in two places. The prototype's open
 and search drop an open composer (`prototype/Grace Prototype.html:2278–2279`);

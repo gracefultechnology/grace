@@ -261,7 +261,7 @@ effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope
   return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, ...window }
 }
 
-effect function watchHomeCards(native: boolean, pending: Ref.Ref<Intent | undefined>) {
+effect function watchHomeCards(native: boolean, pending: Ref.Ref<ReadIntent | undefined>) {
   const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
   const authorization = try AccountActions
   const setup = try Setup
@@ -293,7 +293,7 @@ effect function watchHomeCards(native: boolean, pending: Ref.Ref<Intent | undefi
   return cards
 }
 
-effect function saveIntent(pending: Ref.Ref<Intent | undefined>, intent: Intent | undefined) {
+effect function saveIntent(pending: Ref.Ref<ReadIntent | undefined>, intent: Intent | undefined) {
   try Ref.set(pending, intent)
   Effect.try(() => {
     if (intent === undefined) webView.window.sessionStorage.removeItem(retained)
