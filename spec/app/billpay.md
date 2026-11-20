@@ -59,8 +59,8 @@ pure val formReportValues = {
     .union(Set({ ...form, key: { ...form.key, origin: "https://credit.example" } }, { ...form, evidence: "" }, { ...form, proposal: T::NoTerms }))
     .union(T::bookValues.map(b => { ...form, proposal: T::BookTerms({ book: b }) }))
 }
-pure val termsValues = K::termsValues.union(Set(K::samplePayTerms,
-  T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } })))
+pure val termsValues = Set(K::samplePayTerms, T::NoTerms,
+  T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } }))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 2
@@ -175,10 +175,7 @@ pure def canDecideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): bo
   b.phase == PreparePayment and b.live and fillBy != NotAsked and by == T::Person
 pure def decideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): BillPreparation = { ...b, fillBy: fillBy }
 pure def graceMayFill(b: BillPreparation, fill: K::Fill): bool =
-  b.phase == PreparePayment and b.live and b.fillBy == GraceFills and (match fill {
-    | NoFill => false
-    | PayFill(x) => fill == K::fillOf(b.choice)
-  })
+  b.phase == PreparePayment and b.live and b.fillBy == GraceFills and fill != K::NoFill and fill == K::fillOf(b.choice)
 pure def alwaysFillAnswerBelongsToAChoice(b: BillPreparation): bool =
   b.fillBy != NotAsked implies (b.phase == PreparePayment or b.phase == ReadyForReview or b.phase == HandedOff)
 pure def stepGraceFillsOnlyAfterTheirYes(before: BillPreparation, via: str, after: BillPreparation): bool =
