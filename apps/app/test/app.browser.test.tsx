@@ -1612,7 +1612,11 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
         return Promise.resolve({ remove: () => { notify = () => undefined; return Promise.resolve(); } });
       },
       attachmentImport: () => Promise.resolve({ id: incoming }),
-      cancelAttachmentImport: (input) => { expect(input.request).toBe(incoming); incoming = undefined; return Promise.resolve(); },
+      cancelAttachmentImport: (input) => {
+        expect(input.request).toBe(incoming);
+        incoming = undefined;
+        return Promise.resolve();
+      },
       stageAttachmentImport: (input) => {
         expect(input).toEqual({ lease, request: incoming });
         transfers.push(input.request);
@@ -1655,16 +1659,16 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
 
   const handoff = () => act(() => { incoming = request; notify(); });
   await tap("Close Files");
-  await handoff();
+  handoff();
   await tap("Cancel");
   expect(transfers).toEqual([]);
-  await handoff();
+  handoff();
   await tap("Save attachment");
   await expect.element(page.getByRole("status").filter({ hasText: "The attachment couldn’t be saved." })).toBeVisible();
   expect(entries).toEqual([]);
   await tap("Save attachment");
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
-  await handoff();
+  handoff();
   await tap("Save attachment");
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
   expect(entries).toEqual([attachment]);
