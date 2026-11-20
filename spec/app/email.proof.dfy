@@ -451,6 +451,90 @@ lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor
 }
 
 
+lemma closeUndoToast_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysConnectedIdentity(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysAccountIdentityIsBound(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysGenerationAndRevision(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSelectedContent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysReadAccess(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysReadSelectionIsBound(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysFolderIsVisible(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSearchMatchesQuery(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysMessageRegistry(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysListedMessagesAreCurrent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSelectionUsesCanonicalMessage(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysBillProvenance(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysScamWarningIsCurrent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysLinkBelongsToSelection(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysFlaggedMessageIsNoBillSource(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysResultPersistenceHasTerminal(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysApprovalIsCurrent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSendHasRecipient(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSendEvidence(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysQueuedSendsAreIssued(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftHasAccount(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftStoreHasRevision(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysRetirementHasMailbox(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftVersions(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysEditableDraftIsNotRetired(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftAssetsAreValid(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysMessageAssetsAreBound(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepMessageRecordsAreRetained(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepOnlyThePersonApproves(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepSendingNeedsCurrentApproval(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepUnresolvedDraftIsFixed(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepQueueNeedsCurrentApproval(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepQueuedSendGoesOnce(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepWorthyComposerIsNotDropped(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepMailboxIdentityIsFixed(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepRetirementRequiresCompletion(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+{
+  if inv(m) && canCloseUndoToast(m, target, by_) {
+    var prior := messageRecord(m, target.ref);
+    var record := app__emailItem_closeUndo(prior, target.revision, app__emailItem_MessageActor.MessageUser);
+    var after := closeUndoToast(m, target, by_);
+    EmailLookupFacts(m, target.ref);
+    assert app__emailItem_inv(prior);
+    app__emailItem_closeUndo_ensures(prior, target.revision, app__emailItem_MessageActor.MessageUser);
+    EmailPutInto(m, record, after);
+    forall ref: string
+      ensures availableMessage(after, ref) == availableMessage(m, ref)
+    {
+      if ref != target.ref {
+        assert messageRecord(after, ref) == messageRecord(m, ref);
+      } else {
+        assert messageRecord(after, ref) == record;
+      }
+    }
+    assert selectedMessageIsCurrent(after) == selectedMessageIsCurrent(m);
+    assert messageRecord(after, m.messageRef).loaded == messageRecord(m, m.messageRef).loaded;
+    assert messageRecord(after, m.messageRef).folder == messageRecord(m, m.messageRef).folder;
+  }
+}
+
+lemma lawClosedToastCannotUndo_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
+  ensures (lawClosedToastCannotUndo(m, target, by_) == true)
+{
+  if canCloseUndoToast(m, target, by_) {
+    var prior := messageRecord(m, target.ref);
+    var record := app__emailItem_closeUndo(prior, target.revision, app__emailItem_MessageActor.MessageUser);
+    var after := closeUndoToast(m, target, by_);
+    EmailRegistryView(m, target.ref, record);
+    EmailRegistryView(after, target.ref, record);
+    var kept := ProofLib.Filter((old_: app__emailItem_MessageRecord) => (old_.identity.ref != record.identity.ref), m.messages);
+    forall item | item in kept
+      ensures item.identity.ref != target.ref
+    {
+      ProofLib.FilterMember((old_: app__emailItem_MessageRecord) => (old_.identity.ref != record.identity.ref), m.messages, item);
+    }
+    ProofLib.FilterNone((record: app__emailItem_MessageRecord) => (record.identity.ref == target.ref), kept);
+    ProofLib.FilterAppend((record: app__emailItem_MessageRecord) => (record.identity.ref == target.ref), kept, record);
+    assert messageRecord(after, target.ref) == record;
+    assert record.undoRevision == -1 && target.revision != -1;
+  }
+}
+
 lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_ChangeReceipt, by_: MailActor)
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysConnectedIdentity(completeMessageChange(m, messageReceipt, by_)))
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysAccountIdentityIsBound(completeMessageChange(m, messageReceipt, by_)))
