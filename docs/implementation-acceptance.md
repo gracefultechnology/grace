@@ -15,6 +15,24 @@ ids in more detail.
 
 ## Eliza integration inventory
 
+Grace release source `245a5a111aa2a18df0861a9a72658ead636859c4` pins
+Eliza Vibestack at `c1fd0627ab20611019ce2bdaffca58c20ea91cc8`. Its
+production dependency graph crosses into four Eliza packages.
+[Grace release pin](https://github.com/gracefultechnology/grace-new/pull/144)
+· [Eliza source](https://github.com/elizaOS/eliza/tree/c1fd0627ab20611019ce2bdaffca58c20ea91cc8)
+
+| Eliza package | Grace consumer |
+| --- | --- |
+| `@elizaos/cloud` | Grace Cloud wraps `/worker` and imports `/store` for migration. The tablet's browser guide uses `/clef-decisions`. Account enrollment, billing, managed Google data and attachment handoff use the scoped HTTPS routes. |
+| `@elizaos/os` | The app imports the public browser-address and bridge contracts and the pinned password client source. Android consumes the public host, runtime and APK tooling, and AOSP uses the launcher-overlay export. The host uses OS browser, passwords, Wi-Fi and reminders modules, with secure storage and the embedded-agent bridge. |
+| `@elizaos/agent` | The Android build compiles and stages the device bundle from the pinned checkout. Grace uses the authenticated local socket for status, turns, streaming and cancellation. |
+| `@elizaos/core` | The Android build compiles Core for the Agent bundle. Cloud and OS also depend on Core upstream. |
+
+The device Agent plugin load list is empty. Grace's native Capacitor bridge
+registrations are part of its Android host. Its React screens, components,
+and tokens are owned by `apps/app`, `@repo/ui`, and
+`@repo/design-system`, with no dependency on Eliza's SDK or UI packages.
+
 The previous Grace release pinned `grace/integration` at `9bd888f`.
 That commit included the embedded service, Google sign-in and speech changes
 from Eliza PRs #39795, #39789 and #39784. Eliza’s v4 branch changes package
@@ -50,7 +68,7 @@ review. Release evidence still comes from the Grace entry point.
 | --- | --- | --- |
 | Home, Settings and preferences | Core turns supply the model reply. OS owns the device surfaces. | Grace owns the launcher, Settings, and exact-turn action controls. Tapped text-size, in-app dimming, and voice changes reuse the workspace preferences. A Chromium journey observed a failed native-record write, a successful retry and the saved text size after recreating the workspace. Device-wide brightness and signed-tablet persistence still need device evidence. |
 | Browser navigation and pointing | `plugin-browser` and `plugin-computeruse` can directly operate pages or the desktop. | Grace owns the browser and its controls. Eliza Cloud selects among bounded candidates for the current account. The Grace browser checks the target against the current document before highlighting it. The person taps the link. Chromium exercised the visible ring and tap. Signed-tablet evidence is tracked below. |
-| Gmail | `plugin-inbox` and `plugin-google-workspace` reach provider data. | Grace Cloud owns Gmail grants and provider operations. Hosted Grace supports Inbox previews, reviewed drafts and threaded replies, and Trash with Undo. Search from a model reply resolves a unique result on the currently loaded Inbox page. Full folder search, attachments, forwarding and permanent deletion remain open. |
+| Gmail | `plugin-inbox` and `plugin-google-workspace` reach provider data. | Grace Cloud owns Gmail grants and provider operations. Hosted Grace supports Inbox previews, reviewed drafts and threaded replies, and Trash with Undo. Search from a model reply resolves a unique result on the currently loaded Inbox page. The release can preview a supported selected attachment and use an account-bound handoff to save its original to Android Files. Live Google consent and the signed-tablet handoff still need acceptance evidence. Folder-wide search, forwarding and permanent deletion remain open. |
 | Calendar and reminders | `plugin-calendar` and `plugin-personal-assistant` provide calendar and reminder tools. | Hosted Grace supports reviewed creation of one-time, weekly and monthly appointments and confirmed owned occurrence or whole-series edits and removals. The owner can select a reminder one hour or one day before a timed appointment. The device reconciles reminders for its enrolled account. Live Google consent and completing a review from Home remain open. |
 | Files | `plugin-files` provides managed files, revision-bound selections and durable receipts. | Grace owns a device library partitioned by the signed-in account. Its Android picker, camera, catalog and bounded previews feed the Files screen. The Files viewer confirms deletion of the selected photo and retries a failed write. Chromium checked both paths against the device-library boundary. Device acceptance, sharing and printing remain open. |
 | Bill payment, booking and fill | `plugin-form`, `plugin-browser` and `plugin-computeruse` provide general form and website tools. | Grace has workspace rules for observed contexts and explicit payment approval. Live task review, verified form fill, bill submission and appointment booking are not mounted in the launcher. These need Grace-owned actuation and provider evidence. |
