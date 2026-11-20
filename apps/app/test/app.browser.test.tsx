@@ -679,12 +679,17 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter: (fi
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
   });
+  const back = page.getByRole("button", { name: "Back", exact: true });
+  const waitForBack = (enabled: boolean) => expect.poll(async () => {
+    await native.route();
+    return back.query()?.matches(":enabled");
+  }).toBe(enabled);
   await native.report("tab-2", "https://utility.example", 100, { canGoBack: true, canGoForward: false });
-  await expect.element(page.getByRole("button", { name: "Back", exact: true })).toBeEnabled();
+  await waitForBack(true);
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("goBack").at(-1)?.id).toBe("tab-2");
   await native.report("tab-2", "https://utility.example", 100, { canGoBack: false, canGoForward: true });
-  await expect.element(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
+  await waitForBack(false);
   await act(() => userEvent.click(page.getByRole("button", { name: "Forward", exact: true })));
   await expect.poll(() => native.calls("goForward").at(-1)?.id).toBe("tab-2");
   await native.report("tab-2", "https://utility.example/account?ref=one-time", 100, { canGoBack: true, canGoForward: false });
