@@ -32,7 +32,9 @@ this model.
 Nearby networks remain available beyond the first visible rows through Show
 more and Show fewer. The adapter sorts remembered networks first, then signal
 strength, and supplies stable network identities; display names alone cannot
-identify a security context. The displayed four-row preview is not a limit
+identify a security context. Android lets no app read its saved networks, so
+on Android the adapter reports as remembered only the network the tablet is
+on once Android has validated it. The displayed four-row preview is not a limit
 on discovery or supported networks. A network can be chosen only from a
 list the OS reported. A remembered or open network joins at once, a
 password network asks for its password, and a network that asks for an
@@ -237,8 +239,8 @@ location, and Location is on; the plugin says which is missing. Wi-Fi off
 and Location off offer Android's internet panel, because an app can switch
 neither on. No networks nearby offers a fresh search. Each report of the
 OS replaces the reason, except while the person reads why location is
-needed. When Android can no longer list networks, Grace clears the previous
-list and closes any password entry. An Android reply for the old selection
+needed. When a scan lists no networks, Grace clears the previous list and
+closes any password entry. An Android reply for the old selection
 cannot restore it. A join already under way, and its result, are kept.
 
 ```quint

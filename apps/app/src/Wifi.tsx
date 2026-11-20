@@ -37,7 +37,7 @@ export function Wifi() {
   return <WifiNetworks runtime={device} online={online} onFix={() => { if (can(fix)) void send(fix); }} />;
 }
 
-const row = (offer: Offer): WifiNetwork => ({ name: offer.name, signal: offer.signal, locked: offer.network.authentication !== "OpenNetwork" });
+const row = (offer: Offer): WifiNetwork => ({ id: offer.network.id, name: offer.name, signal: offer.signal, locked: offer.network.authentication !== "OpenNetwork" });
 
 function notice(n: NetworkJoin, name: string) {
   if (n.phase === "JoinFailed") return n.selected.authentication === "SharedPassword"
@@ -83,11 +83,11 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
     <>
       <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => offer !== current).map(row)}
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
-        connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? name : undefined}
-        failed={n.phase === "JoinFailed" ? name : undefined} onRetry={() => run(page.retry())}
+        connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? n.selected.id : undefined}
+        failed={n.phase === "JoinFailed" ? n.selected.id : undefined} onRetry={() => run(page.retry())}
         onTurnOn={() => run(page.openPanel())} onFix={onFix}
         onSelect={(picked) => {
-          const offer = offers.find((candidate) => candidate.name === picked);
+          const offer = offers.find((candidate) => candidate.network.id === picked);
           if (offer && can({ type: "choose", network: offer.network }, "Person")) run(page.choose(offer));
         }}
         noneLabel={reasons[n.discovery]}

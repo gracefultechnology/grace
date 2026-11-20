@@ -76,12 +76,9 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
       network: { id: found.security + ":" + found.ssid, authentication: authentication[found.security], remembered: found.ssid === active?.ssid && active.validated && !active.captivePortal },
       name: found.ssid, signal: bars(found.rssi), security: found.security,
     }))
-    const strongest = new Map<string, Offer>()
-    for (const offer of offers) if ((strongest.get(offer.name)?.signal ?? -1) < offer.signal) strongest.set(offer.name, offer)
-    const named = [...strongest.values()]
-    try report(named.length === 0 ? "NoneNearby" : "Found",
-      [...named.filter((offer) => offer.network.remembered), ...named.filter((offer) => !offer.network.remembered)])
-    const connected = named.find((offer) => offer.network.remembered)
+    try report(offers.length === 0 ? "NoneNearby" : "Found",
+      [...offers.filter((offer) => offer.network.remembered), ...offers.filter((offer) => !offer.network.remembered)])
+    const connected = offers.find((offer) => offer.network.remembered)
     if (connected && connected.network.id === attempt.selected.id) {
       networks.send({ type: "confirmConnection", networkId: connected.network.id, version: attempt.version }, "OperatingSystem") catch () => undefined
     }

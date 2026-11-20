@@ -24,7 +24,7 @@ function android() {
     getWifiState: () => Promise.resolve({ enabled: true, connected: tablet.ssid !== null, rssi: null }),
     getConnectedNetwork: () => Promise.resolve({ network: tablet.ssid === null ? null : nearby(tablet.ssid, -50, "wpa2") }),
     listAvailableNetworks: () => tablet.location === "granted"
-      ? Promise.resolve({ networks: [nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap"), nearby("NETGEAR-4F2", -80, "open")] })
+      ? Promise.resolve({ networks: [nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] })
       : Promise.reject(Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" })),
     connectToNetwork: () => Promise.resolve({ success: false }),
     disconnectFromNetwork: () => Promise.resolve({ success: true }),
