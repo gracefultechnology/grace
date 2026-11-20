@@ -1,5 +1,5 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"
-import { sendsHerVoice } from "../gen/app__conversation.effect.vibe"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"; spec/app/conversation.md, "Listening waits eight seconds for her first word"
+import { firstWordLimitMs, sendsHerVoice } from "../gen/app__conversation.effect.vibe"
 import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
@@ -100,7 +100,7 @@ function phrases(text: string) {
   return chunks
 }
 
-effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>) {
+effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>, heardIn: Ref.Ref<number | null>) {
   const passwords = try Passwords
   const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
   const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
@@ -227,6 +227,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     const recognized = Schema.decodeUnknownOption(Input)(payload)
     if (Option.isNone(recognized) || !conversation.voice || !mayOfferTalk(state)) return
     const event = recognized.value.event
+    if (event.type === "start-of-turn") try Ref.set(heardIn, token)
     if (event.type === "start-of-turn" && conversation.turn === "Speaking") {
       try stopPlayback()
       workspace.send({ type: "interact", input: { tag: "BargeIn", token, spoken: 0, owner: "HumanAudio" } }, "Host") catch () => undefined
@@ -248,6 +249,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
 export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effect {
   const workspace = try Workspaces
   const mic = try Ref.make<Microphone | null>(null)
+  const heardIn = try Ref.make<number | null>(null)
   const opening = try Semaphore.make(1)
   effect function closeMic() {
     const current = try Ref.getAndSet(mic, null)
@@ -264,13 +266,19 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
   try fork.scoped Stream.runDrain(Stream.switchMap(changed, (wanted) => wanted ? Stream.fromEffect(effect {
     const captureReady = opening.withPermits(1)(Effect.void)
     try captureReady
-    scoped(runSpeech(native, workspace, mic)) catch effect () => {
+    scoped(runSpeech(native, workspace, mic, heardIn)) catch effect () => {
       const { assistant } = try workspace.get()
       const token = assistant.conversation.generation
       workspace.send({ type: "interact", input: { tag: "FinishSpeech", token } }, "Host") catch () => undefined
       try reportMic(false)
     }
   }) : Stream.empty))
+  const listening = Stream.changes(Stream.map(workspace.changes, ({ assistant: { conversation } }) =>
+    conversation.voice && conversation.turn === "Listening" ? conversation.generation : null))
+  try fork.scoped Stream.runDrain(Stream.switchMap(listening, (token) => token === null ? Stream.empty : Stream.fromEffect(effect {
+    try Effect.sleep(firstWordLimitMs)
+    if ((try Ref.get(heardIn)) !== token) workspace.send({ type: "interact", input: { tag: "Silence", token } }, "Host") catch () => undefined
+  })))
   try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
     if (!state.assistant.conversation.voice) try closeMic()
     else if (!mayOfferTalk(state)) {
