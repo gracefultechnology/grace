@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
+import { Button } from "./Button.tsx";
 import type { WifiNetwork, WifiNetworkListProps } from "./WifiNetworkList.tsx";
 
 export const current: WifiNetwork = { name: "Home Network", signal: 3, locked: true };
@@ -28,6 +29,7 @@ export const meta: ComponentMeta<WifiNetworkListProps> = {
     Connecting: { connecting: "NETGEAR-4F2" },
     Offline: { current: undefined, onFix: fix },
     "Join failed": { failed: "NETGEAR-4F2", onRetry: retry },
+    "Nothing nearby": { status: "none", current: undefined, networks: [], action: <Button variant="prominent" size="pill">Look again</Button> },
   },
   decorator: settingsPage,
   play: {
