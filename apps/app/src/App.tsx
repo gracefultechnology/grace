@@ -15,7 +15,6 @@ import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
-import { mailAccounts } from "../gen/app__accounts.ts";
 import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment, reminderToast } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
@@ -175,9 +174,9 @@ function Screen() {
                   managed.send({ kind: "homeOccurrence", row: { accountId: cards.accountId, grant: cards.grant, id: event.externalId, version: event.etag ?? null } }))) };
             }) }, ...visit("Calendar") }}
               email={{
-                messages: useManaged ? (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
-              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })) : accounts ? homeMail(accounts, boxes, read) : [], notConnected: !useManaged && accounts !== undefined && mailAccounts(accounts).length === 0,
-                ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." }, ...visit("Email"),
+                ...!useManaged && accounts ? homeMail(accounts, boxes, read, online) : { messages: (useManaged ? cards?.mail ?? [] : []).slice(0, 2).map((message) => ({ id: message.externalId,
+              name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })),
+                ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." } }, ...visit("Email"),
               }}
               internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
               page={device.homePage}
