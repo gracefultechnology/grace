@@ -897,7 +897,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
 });
 
 it.each(["Talk and hear a reply", "Keep private card inputs out of chat", "Open Passwords and read fixed instructions"] as const)(
-  '%s through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
+  '%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
