@@ -980,7 +980,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   await requireNoScreenLock();
   const fixture: unknown = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
   if (!isEpisodeHost(fixture)) throw new Error("BillWorld password fixture is unavailable");
-  const cleanup: Array<() => Promise<unknown>> = [];
+  const cleanup: Array<() => void | Promise<unknown>> = [];
   let buildFailure: Error | undefined;
   const screenFile = `/data/local/tmp/grace-billworld-ui-${randomUUID()}.xml`;
   const screen = async () => {
@@ -1090,7 +1090,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         if (await installedApk(editorFixturePackage) !== editorDigest) throw new Error("Android did not install the native editor test package");
         step = "start the owned native editor instrumentation";
         const editor = runPasswordEditorFixture(serial, signal);
-        cleanup.push(async () => { editor.stop(); });
+        cleanup.push(editor.stop);
         await editor.wait("ready", 480);
         step = "start the Grace tablet app";
         const started = await shell(serial, `am start -n ${activity}`, 120);
@@ -1163,8 +1163,10 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     journeyFailure = buildFailure ?? new Error(`BillWorld password journey stopped at: ${step}`);
   }
   let clean = true;
-  for (const release of cleanup.reverse()) await release().catch(() => { clean = false; });
-  await requireNoScreenLock().catch(() => { clean = false; });
+  for (const release of cleanup.reverse()) {
+    try { await release(); } catch { clean = false; }
+  }
+  try { await requireNoScreenLock(); } catch { clean = false; }
   try { await episode?.close(); } catch { clean = false; }
   if (!clean) throw new Error("BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use.", { cause: journeyFailure });
   if (journeyFailure) throw journeyFailure;

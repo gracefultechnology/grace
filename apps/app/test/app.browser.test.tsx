@@ -23,7 +23,6 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, otherPassword, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
-import statementPdf from "./site/statement.pdf?raw";
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Call = { method: string; options: Record<string, unknown>; graceShown: boolean };
@@ -1174,7 +1173,7 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
       await expect.poll(() => calls).toEqual([...sessions, ...speechSession]);
       expect(texts()).toEqual(transcript);
       expect(turns).toEqual([voiceInput, ...said].map((text) => ({ text })));
-      expect(phrases).toEqual([voiceOutput, question, done, ...Array(5).fill(question)]);
+      expect(phrases).toEqual([voiceOutput, question, done, ...Array.from({ length: 5 }, () => question)]);
       return;
     }
     if (journey === "Keep private card inputs out of chat") {
@@ -1275,7 +1274,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   const attachment = { partId: "1", name: "Receipt.txt", mimeType: "text/plain", size: originalText.length, supported: true };
   const archive = { partId: "2", name: "Extras.zip", mimeType: "application/zip", size: 100, supported: false };
-  const pdfBytes = statementPdf;
+  const pdfBytes = await window.fetch(new URL("./site/statement.pdf", import.meta.url)).then((response) => response.text());
   const pdf = { partId: "3", name: "Original receipt.pdf", mimeType: "application/pdf", size: pdfBytes.length, supported: true };
   const pdfHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pdfBytes))),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1365,7 +1364,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
-      case "/api/v1/eliza/google/gmail/attachment":
+      case "/api/v1/eliza/google/gmail/attachment": {
         attachmentReads++;
         const photo = photoParts.find(({ part }) => part.partId === api.searchParams.get("partId"));
         if (photo) return reply({ ...photo.part, version: 1, accountId: attachmentOwner, organizationId: "grace-org", grantId: grant, messageId: mail.externalId,
@@ -1378,6 +1377,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant, historyId: "8", partId: attachment.partId });
         return reply({ ...attachment, version: 1, accountId: attachmentOwner, messageId: mail.externalId, historyId: "8",
           dataBase64: btoa(originalText), sha256: originalHash });
+      }
       case "/api/v1/eliza/google/gmail/send": {
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test" });
@@ -1873,6 +1873,7 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
+  await expect.element(filesPage).toBeVisible();
   const swipe = (direction: "left" | "right") => act(async () => {
     const session = cdp();
     const cards = filesPage.element().parentElement!.getBoundingClientRect();
@@ -1940,7 +1941,7 @@ it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story:
     return network(input, init);
   });
   onTestFinished(async () => {
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     await Promise.all([first.dispose(), reopened.dispose()]);
     service.mockRestore();
     host.remove();
@@ -1949,12 +1950,12 @@ it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story:
     else sessionStorage.setItem("grace-device-sign-in", pending);
   });
 
-  await act(() => root.render(<App key="first" runtime={first} />));
+  await act(() => Promise.resolve(root.render(<App key="first" runtime={first} />)));
   const cancel = page.getByRole("button", { name: "Cancel tablet sign-in" });
   await expect.element(cancel).toBeVisible();
   await act(() => userEvent.click(cancel));
   await expect.element(cancel).not.toBeInTheDocument();
-  await act(() => root.render(<App key="reopened" runtime={reopened} />));
+  await act(() => Promise.resolve(root.render(<App key="reopened" runtime={reopened} />)));
   await expect.element(page.getByText("tablet-owner@example.test", { exact: true })).toBeVisible();
   await expect.element(cancel).not.toBeInTheDocument();
 });
