@@ -488,7 +488,7 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 pure def alwaysConversationRules(a: Assistant): bool =
   C::alwaysListeningHasAnActiveExchange(a.conversation) and C::alwaysRecognitionRetriesAreBounded(a.conversation) and
   C::alwaysReadingPositionExists(a.conversation) and C::alwaysGenerationsAreNonnegative(a.conversation) and
-  C::alwaysMessagesHaveContent(a.conversation)
+  C::alwaysMessagesHaveContent(a.conversation) and C::alwaysPausedMicrophoneIsOff(a.conversation)
 pure def alwaysHiddenIsQuiet(a: Assistant): bool =
   a.presentation == Closed implies not(a.conversation.voice) and a.conversation.turn == C::Ready and
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)
