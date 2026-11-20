@@ -12,6 +12,9 @@ import { Instances, tablet, watchEach } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import { Machine as Notices } from "../gen/app__notices.effect.vibe"
 import { NoticeHost } from "./notices.vibe"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { usesManagedSurfaces } from "./managedReads.vibe"
+import { webView } from "./surfacePlugin.ts"
 
 export const day = 24 * 60 * 60 * 1000
 export const hour = 60 * 60 * 1000
@@ -375,6 +378,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const workspace = try Workspaces
   const host = try NoticeHost
   const notices = try Notices
+  const setup = try Setup
   const hub = try PubSub.unbounded<CalendarReport>()
   const publish = (report: CalendarReport) => Effect.asVoid(PubSub.publish(hub, report))
   const lead = try Effect.orDie(shelf.calendar(tablet))
@@ -457,7 +461,8 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       const box = try boxOf(key)
       if (box !== undefined) sources.push({ key, view: try box.get() })
     }
-    const due = shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt)
+    const managed = usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
+    const due = managed ? [] : shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt)
     const same = (r: CalRow, at: Reminded) => r.key === at.key && r.identity.occurrenceId === at.id
     for (const [subject, at] of [...known]) {
       if (due.some((r) => same(r, at))) continue
@@ -481,7 +486,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     return try fork.scoped Stream.runForEach(box.changes, () => noticeReminders)
   }
   try fork.scoped watchEach(registry.changes, (a) => a.accounts, (id) => shelf.calendar(id), follow)
-  try fork.scoped Stream.runForEach(Stream.merge(registry.changes, lead.changes), () => noticeReminders)
+  try fork.scoped Stream.runForEach(Stream.merge(Stream.merge(registry.changes, lead.changes), setup.changes), () => noticeReminders)
 
   const arrival = { type: "visit", destination: "Calendar" } as const
 
