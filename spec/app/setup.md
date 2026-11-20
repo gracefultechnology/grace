@@ -903,10 +903,15 @@ pure def validPasswordBackupBinding(binding: PasswordBackupBinding): bool =
   binding.issuer == passwordCloudIssuer(binding.profile) and
   binding.registrationId != "" and binding.accountId != "" and binding.organizationId != "" and
   binding.generationId != "" and binding.requestId != ""
+pure def samePasswordBackupBinding(a: PasswordBackupBinding, b: PasswordBackupBinding): bool =
+  a.profile == b.profile and a.issuer == b.issuer and a.registrationId == b.registrationId and
+  a.accountId == b.accountId and a.organizationId == b.organizationId and
+  a.generationId == b.generationId and a.requestId == b.requestId and a.purpose == b.purpose
 pure def passwordBackupApprovalMatches(approval: PasswordBackupApproval, binding: PasswordBackupBinding): bool =
-  validPasswordBackupBinding(binding) and
-  (if (binding.profile == StandaloneGraceProduction) approval == StandaloneBrowserPasswordApproval({ binding: binding })
-   else approval == SharedNativePasswordApproval({ binding: binding }))
+  validPasswordBackupBinding(binding) and (match approval {
+    | StandaloneBrowserPasswordApproval(grant) => binding.profile == StandaloneGraceProduction and samePasswordBackupBinding(grant.binding, binding)
+    | SharedNativePasswordApproval(grant) => binding.profile != StandaloneGraceProduction and samePasswordBackupBinding(grant.binding, binding)
+  })
 pure def lawSharedCloudNeedsFreshNativeSignIn(sameAccount: bool, confirmed: bool): bool =
   not(mayApproveSharedPasswordBackup(false, sameAccount, confirmed))
 pure def lawSharedConsentCannotApproveStandalone(binding: PasswordBackupBinding): bool =
