@@ -117,6 +117,8 @@ export const detail: CalendarEventDetailProps & { title: string } = {
   reminder: "Reminder day before",
   repeat: "Doesn’t repeat",
   note: "From the clinic’s email · Visit form attached",
+  onEdit: fn(),
+  onDelete: fn(),
 };
 
 const times = Array.from({ length: 25 }, (_, i) => {
@@ -177,12 +179,15 @@ export const form: CalendarEventFormProps & { heading: string } = {
 const openEvent = fn();
 const onMode = fn();
 const save = fn();
+const previous = fn();
+const snooze = fn();
+const step = { onModeChange: onMode, onPrevious: previous, onNext: fn() };
 const lunch = { ...form, title: "Lunch", time: { ...form.time, value: "12 pm to 1 pm", selected: "720" }, remind: { ...form.remind, value: "No" } };
 
 export const meta: ComponentMeta<CalendarAppProps> = {
   args: {
     view: "week",
-    nav: { period: "November 9 – 15", onModeChange: onMode },
+    nav: { period: "November 9 – 15", ...step },
     week,
     month: { weekdays, days: monthDays },
     dayHeading: "Today",
@@ -196,10 +201,13 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     onClose: fn(),
   },
   examples: {
-    Month: { view: "month", nav: { period: "November 2026" } },
-    Tagged: { upcoming: taggedUpcoming },
+    Month: { view: "month", nav: { period: "November 2026", ...step } },
+    "Grace points at an appointment": {
+      upcoming: taggedUpcoming,
+      guide: { targetId: doctor.id, kind: "instruction", title: "Tap Doctor’s appointment" },
+    },
     "With connect banner": { banner: connectBanner },
-    Detail: { view: "detail" },
+    "Detail, reminder showing": { view: "detail", event: { ...detail, onDismissReminder: fn(), onSnoozeReminder: snooze } },
     Form: { view: "form" },
     "Form, picking a time": {
       view: "form",
@@ -216,7 +224,13 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       dayEvents: [bridgeDraft],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
     },
-    "Today and Add refused": { onToday: undefined, onAdd: undefined },
+    "Opening refused": {
+      nav: { period: "November 9 – 15" },
+      onSelectDay: undefined,
+      onOpenEvent: undefined,
+      onToday: undefined,
+      onAdd: undefined,
+    },
     "Added By Margaret": {
       dayEvents: [{ ...bridgeDraft, draft: false }],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
@@ -229,13 +243,32 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       const canvas = within(canvasElement);
       await userEvent.click(canvas.getByRole("button", { name: /Doctor’s appointment/ }));
       await expect(openEvent).toHaveBeenCalledWith("1");
+      await userEvent.click(canvas.getByRole("button", { name: "Previous week" }));
+      await expect(previous).toHaveBeenCalled();
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
     },
-    "Today and Add refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    "Opening refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
+      for (const { title } of upcoming) await expect(canvas.getByRole("button", { name: new RegExp(title) })).toHaveAttribute("aria-disabled", "true");
+      await expect(canvas.queryByRole("button", { name: /^Sat\s*14/ })).toBeNull();
+      await expect(canvas.queryByRole("button", { name: "Previous week" })).toBeNull();
+      await expect(canvas.queryByRole("button", { name: "Next week" })).toBeNull();
+      await expect(canvas.queryByRole("radio", { name: "Month" })).toBeNull();
       await expect(canvas.queryByRole("button", { name: "Today" })).toBeNull();
       await expect(canvas.getByRole("button", { name: "Add" })).toBeDisabled();
+    },
+    "Grace points at an appointment": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText("Tap Doctor’s appointment")).toBeVisible();
+      await expect(canvas.getByRole("button", { name: /Doctor’s appointment/ })).toHaveTextContent("Gmail");
+    },
+    "Detail, reminder showing": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Snooze" }));
+      await expect(snooze).toHaveBeenCalled();
+      await expect(canvas.getByRole("button", { name: "Dismiss" })).toBeEnabled();
+      await expect(canvas.getByRole("button", { name: "Edit" })).toBeEnabled();
     },
     "With connect banner": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
