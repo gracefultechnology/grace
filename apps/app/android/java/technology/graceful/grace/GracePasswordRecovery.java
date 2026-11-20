@@ -8,7 +8,12 @@ import ai.eliza.plugins.securestore.nativeonly.PasswordVaultStore;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Application;
+import android.app.KeyguardManager;
+import android.hardware.biometrics.BiometricManager;
+import android.hardware.biometrics.BiometricPrompt;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.CancellationSignal;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.view.View;
@@ -16,6 +21,10 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.TextView;
+import androidx.activity.ComponentActivity;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
@@ -23,11 +32,25 @@ import java.util.concurrent.TimeUnit;
 import javax.crypto.AEADBadTagException;
 
 final class GracePasswordRecovery implements Application.ActivityLifecycleCallbacks {
- private final Activity activity;
+ private final ComponentActivity activity;
  private final GraceAccount signIn;
  private AlertDialog active;
  private volatile Operation operation;
  private volatile boolean destroyed;
+ private volatile long foregroundVisit;
+
+ interface SnapshotTransfer {
+  PasswordBackupApproval.Response run(String revision, byte[] ciphertext) throws Exception;
+ }
+
+ record Approval(String scope, String ownerId, String revision, boolean present,
+                 java.util.function.BooleanSupplier active, SnapshotTransfer transfer) {
+  boolean current() { return active.getAsBoolean(); }
+  PasswordBackupApproval.Response run(String expectedRevision, byte[] ciphertext) throws Exception {
+   if (!current()) throw new IllegalStateException("Account verification changed");
+   return transfer.run(expectedRevision, ciphertext);
+  }
+ }
 
  static final class Operation {
   final PasswordBackupApproval.Purpose purpose;
@@ -36,14 +59,14 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   Operation(PasswordBackupApproval.Purpose purpose) { this.purpose = purpose; }
  }
 
- GracePasswordRecovery(Activity activity, GraceAccount signIn) {
+ GracePasswordRecovery(ComponentActivity activity, GraceAccount signIn) {
   this.activity = activity;
   this.signIn = signIn;
   activity.getApplication().registerActivityLifecycleCallbacks(this);
  }
 
  boolean open() {
-  if (destroyed || active != null) return false;
+  if (destroyed || active != null || !deviceReady()) return false;
   if (operation != null) {
    if (!operation.waitingForBrowser) return false;
    accountChanged();
@@ -71,10 +94,10 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
 
  boolean isCurrent(Operation expected) { return !destroyed && operation == expected; }
 
- void run(Operation expected, PasswordBackupApproval approval) {
+ void run(Operation expected, Approval approval) {
   expected.waitingForBrowser = false;
   Runnable account = () -> {
-   if (!approval.current()) throw new IllegalStateException("Password backup approval expired");
+   if (!isCurrent(expected) || !approval.current()) throw new IllegalStateException("Password backup approval expired");
   };
   PasswordBackupApproval.Purpose purpose = expected.purpose;
   byte[] recoveryKey = null;
@@ -97,26 +120,23 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
    };
    if (recoveryKey == null && purpose != PasswordBackupApproval.Purpose.VERIFY) { failed(expected, null); return; }
    final byte[] key = recoveryKey;
+   Long visit = confirmDevice(expected);
+   if (visit == null) { failed(expected, null); return; }
+   account.run();
+   PasswordVaultAccess vault = PasswordVaultAccess.get(activity);
+   boolean linkExisting = !GracePasswordsOwner.admitted(activity) && vault.exists();
+   if (linkExisting && !confirmLinkExisting(expected)) { failed(expected, null); return; }
+   if (visit != foregroundVisit || !deviceReady()) { failed(expected, null); return; }
+   account.run();
+   GracePasswordsOwner.bindVerified(activity, approval, linkExisting);
+   if (!GracePasswordsOwner.admitted(activity)) {
+    failed(expected, "These saved passwords belong to another Grace account.");
+    return;
+   }
    Long ticket = unlock(expected);
    if (ticket == null) { failed(expected, null); return; }
-   PasswordVaultAccess vault = PasswordVaultAccess.get(activity);
    try {
     account.run();
-    boolean linkExisting = false;
-    if (!GracePasswordsOwner.admitted(activity) && vault.exists()) {
-     linkExisting = confirmLinkExisting(expected);
-     if (!linkExisting) { failed(expected, null); return; }
-    }
-    if (!vault.unlocked(ticket)) {
-     failed(expected, "Your unlock ended. Open Backup and recovery to try again.");
-     return;
-    }
-    account.run();
-    GracePasswordsOwner.bindVerified(activity, approval, linkExisting);
-    if (!GracePasswordsOwner.admitted(activity)) {
-     failed(expected, "These saved passwords belong to another Grace account.");
-     return;
-    }
     if (purpose == PasswordBackupApproval.Purpose.VERIFY) {
      failed(expected, "This tablet’s passwords are ready to use.");
      return;
@@ -252,6 +272,45 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   return await(expected, answer);
  }
 
+ boolean deviceReady() {
+  KeyguardManager lock = activity.getSystemService(KeyguardManager.class);
+  return lock != null && lock.isDeviceSecure() && !lock.isDeviceLocked();
+ }
+
+ private Long confirmDevice(Operation expected) throws Exception {
+  CompletableFuture<Long> answer = new CompletableFuture<>();
+  CancellationSignal cancellation = new CancellationSignal();
+  class Confirmation extends BiometricPrompt.AuthenticationCallback implements DefaultLifecycleObserver {
+   boolean approved;
+   @Override public void onResume(LifecycleOwner owner) {
+    if (approved) answer.complete(isCurrent(expected) && deviceReady() ? foregroundVisit : null);
+   }
+   @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+    approved = true;
+    if (activity.getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) onResume(activity);
+   }
+   @Override public void onAuthenticationError(int code, CharSequence message) { answer.complete(null); }
+  }
+  Confirmation confirmation = new Confirmation();
+  activity.runOnUiThread(() -> {
+   if (!isCurrent(expected) || answer.isDone() || !deviceReady()) { answer.complete(null); return; }
+   try {
+    activity.getLifecycle().addObserver(confirmation);
+    BiometricPrompt.Builder prompt = new BiometricPrompt.Builder(activity).setTitle("Confirm backup and recovery");
+    if (Build.VERSION.SDK_INT >= 30) prompt.setAllowedAuthenticators(BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+    else prompt.setDeviceCredentialAllowed(true);
+    prompt.build().authenticate(cancellation, activity.getMainExecutor(), confirmation);
+   } catch (RuntimeException unavailable) { answer.complete(null); }
+  });
+  try { return await(expected, answer); }
+  finally {
+   activity.runOnUiThread(() -> {
+    activity.getLifecycle().removeObserver(confirmation);
+    cancellation.cancel();
+   });
+  }
+ }
+
  private Long unlock(Operation expected) throws Exception {
   CompletableFuture<Long> ticket = new CompletableFuture<>();
   activity.runOnUiThread(() -> {
@@ -330,7 +389,12 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  }
 
  private void dismiss() { if (active != null) active.dismiss(); }
- @Override public void onActivityPaused(Activity owner) { if (owner == activity) dismiss(); }
+ @Override public void onActivityPaused(Activity owner) {
+  if (owner == activity) {
+   foregroundVisit++;
+   dismiss();
+  }
+ }
  @Override public void onActivityDestroyed(Activity owner) {
   if (owner != activity) return;
   destroyed = true;
