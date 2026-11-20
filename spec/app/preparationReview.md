@@ -116,10 +116,10 @@ pure def lawCurrentPreparationConverts(
 
 ### Finite examples cover a current handoff and retired source or destination versions
 
-The accepted example reaches preparation version 4 and payment revision 0 through
-the existing owners' operations. Other examples retain that transfer while its
-preparation pauses, its workspace changes, or a payload field or captured token
-is stale. The examples are simulation inputs and do not restrict runtime values.
+Each workspace example has one accepted transfer: preparation version 4, reached
+through the existing owners' operations, with the payment revision and attempt
+that workspace holds. Other examples retain those transfers while their
+preparation pauses, or with a payload field or captured token that is stale. The examples are simulation inputs and do not restrict runtime values.
 
 ```quint
 pure val preparationValues = {
