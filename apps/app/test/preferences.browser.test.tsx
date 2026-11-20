@@ -16,9 +16,9 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     display: {
-      getDevice: async () => ({ volume: { ...audio }, brightness: { percent: brightness, night: 30 } }),
-      setBrightness: async ({ percent }) => { brightness = percent; },
-      setVolume: async ({ step, muted }) => { Object.assign(audio, { step, muted }); },
+      getDevice: () => Promise.resolve({ volume: { ...audio }, brightness: { percent: brightness, night: 30 } }),
+      setBrightness: ({ percent }) => { brightness = percent; return Promise.resolve(); },
+      setVolume: ({ step, muted }) => { Object.assign(audio, { step, muted }); return Promise.resolve(); },
     },
   }));
   await mount(runtime);
