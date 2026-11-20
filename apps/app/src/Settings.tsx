@@ -13,6 +13,8 @@ const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 const pages = Object.values(names);
+const navTargets = new Map((Object.keys(names) as SettingsPage[]).map((p) => [`nav-${p}`, names[p]]));
+
 const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 
@@ -37,8 +39,10 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
-  const nav = guide((target) => target.startsWith("nav-") && Object.hasOwn(names, target.slice(4)) ? names[target.slice(4) as SettingsPage] : undefined);
-  const frame = { pages, page: names[page], onPageChange: choose, guide: nav, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  const frame = {
+    pages, page: names[page], onPageChange: choose, guide: guide((target) => navTargets.get(target)),
+    onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
+  };
   if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
 
   return (

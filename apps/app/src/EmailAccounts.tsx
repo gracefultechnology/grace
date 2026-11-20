@@ -7,7 +7,6 @@ import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
-import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
 import { type MailInstance, useAccounts, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
@@ -15,6 +14,8 @@ type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "on
 
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
+const tiles = new Map((Object.keys(providers) as Provider[]).map((p) => [`prov-${p}`, providers[p]]));
+const anyDomain = "example.com";
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
 const home = "Email & calendar";
 const add = "Add an email";
@@ -54,7 +55,7 @@ export function EmailAccounts(frame: Frame) {
 
 function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
   const { can, send } = useAccounts();
-  const { askGrace, guide } = useWorkspace();
+  const { guide, askGrace } = useWorkspace();
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -62,12 +63,13 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const colour = (a: Account) => colours[a.colour] ?? colours[0];
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
+  const sheet = signIn.stage === "ProviderPage";
+  const pointAt = <Target extends string>(idOf: (target: string) => Target | undefined) => sheet ? undefined : guide(idOf);
 
-  const tile = guide((target) => target.startsWith("prov-") && Object.hasOwn(providers, target.slice(5)) ? providers[target.slice(5) as Provider] : undefined);
-  const adding = guide((target) => target === "acadd" ? "add" : undefined);
-  const row = guide((target) => target.startsWith("acc-") ? target.slice(4) : undefined);
-  const rowGuide = (id: number) => row?.targetId === String(id) ? { kind: row.kind, title: row.title, onClose: row.onClose } : undefined;
-  const choose = (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.();
+  const choosing = Object.values(chosen).some((provider) => can({ type: "chooseProvider", provider }));
+  const choose = choosing ? (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.() : undefined;
+  const tileGuide = pointAt((target) => tiles.get(target));
+  const rowGuide = pointAt((target) => registry.accounts.some((a) => target === `acc-${a.id}`) ? target : undefined);
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;
 
@@ -77,25 +79,25 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return registry.accounts.length === 0 ? (
           <EmailAccountList empty>
             {alert}
-            <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} guide={tile} />
+            <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} guide={tileGuide} />
           </EmailAccountList>
         ) : (
-          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={adding}>
+          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={pointAt((target) => target === "acadd" ? "add" : undefined)}>
             {registry.accounts.map((a) => (
               <EmailAccountRow key={a.id} address={a.address} provider={providers[a.provider]} uses={a.use} status={status(a.id)} colour={colour(a)}
-                onOpen={offer({ type: "openAccount", id: a.id })} guide={rowGuide(a.id)} />
+                onOpen={offer({ type: "openAccount", id: a.id })} guide={rowGuide?.targetId === `acc-${a.id}` ? { kind: rowGuide.kind, title: rowGuide.title, onClose: rowGuide.onClose } : undefined} />
             ))}
           </EmailAccountList>
         );
       case "AddAccount":
-        return <>{alert}<ProviderGrid bare onChoose={choose} guide={tile} /></>;
+        return <>{alert}<ProviderGrid bare onChoose={choose} guide={tileGuide} /></>;
       case "OtherEmailPage": {
         const renewing = registry.accounts.find((a) => a.id === signIn.renewing)?.address ?? "";
         return (
           <>
             {problem === "SignInUnfinished" && alert}
             <OtherEmailForm key={renewing} defaultAddress={renewing} problem={otherProblem(registry)} checking={signIn.stage === "CheckingOther"}
-              onNext={({ address, password }) => { if (can({ type: "submitOther", domain: domainOf(address) })) void flows.other({ address, password: secretPassword(password) }); }}
+              onNext={can({ type: "submitOther", domain: anyDomain }) ? ({ address, password }) => void flows.other({ address, password: secretPassword(password) }) : undefined}
               onCancel={offer({ type: "goBack" })} />
           </>
         );
@@ -103,7 +105,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
       case "MailServersPage":
         return (
           <MailServersForm key={signIn.domain} domain={signIn.domain} connecting={signIn.stage === "CheckingServers"} refused={problem === "ServersRefused"}
-            onConnect={(servers) => { if (can({ type: "submitServers" })) void flows.servers(servers); }}
+            onConnect={can({ type: "submitServers" }) ? (servers) => void flows.servers(servers) : undefined}
             onCancel={offer({ type: "goBack" })} onAskGrace={askGrace("mailServers")} />
         );
       case "AccountDetail": {
@@ -113,7 +115,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
           <>
             {alert}
             <EmailAccountPage address={shown.address} provider={providers[shown.provider]} status={status(shown.id)} uses={shown.use} colour={colour(shown)}
-              onUseChange={(use, on) => offer({ type: "setUse", id: shown.id, use: { ...shown.use, [use]: on } })?.()}
+              onUseChange={can({ type: "setUse", id: shown.id, use: shown.use }) ? (use, on) => offer({ type: "setUse", id: shown.id, use: { ...shown.use, [use]: on } })?.() : undefined}
               onSignInAgain={offer({ type: "signInAgain", id: shown.id })} onRemove={offer({ type: "requestRemoval", id: shown.id })} />
             <RemoveAccountDialog open={registry.removing === shown.id} name={shown.name} keeper={shown.provider === "OtherEmail" ? shown.name : emailProviders[providers[shown.provider]].name}
               waiting={waiting} onRemove={offer({ type: "removeAccount", id: shown.id, waiting })} onKeep={offer({ type: "keepAccount" })}
@@ -129,11 +131,11 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   };
 
   const company = emailProviders[providers[signIn.provider]].name;
-  const provider = signIn.stage === "ProviderPage" ? flows.page : undefined;
+  const provider = sheet ? flows.page : undefined;
   return (
-    <SettingsApp {...frame} {...header(page, registry, shown)} onBack={offer({ type: "goBack" })}>
+    <SettingsApp {...frame} {...header(page, registry, shown)} guide={sheet ? undefined : frame.guide} onBack={offer({ type: "goBack" })}>
       {content()}
-      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
+      <SignInSheet open={sheet} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
         {provider?.inSheet ? (
           <iframe src={provider.url} title={`${company}’s own sign-in page`} sandbox="allow-forms allow-scripts" referrerPolicy="no-referrer" className="block size-full border-0" />
         ) : (
