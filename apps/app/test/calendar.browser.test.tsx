@@ -1,7 +1,7 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"
 import { Effect } from "effect";
 import { act } from "react";
-import { expect, inject, it } from "vitest";
+import { expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { allowedUse } from "../gen/app__accounts.ts";
@@ -321,7 +321,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   const { card } = await start();
   const network = { online: true };
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
-  running.push(async () => { Reflect.deleteProperty(navigator, "onLine"); });
+  onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
   const reach = (online: boolean) => act(() => {
     network.online = online;
     window.dispatchEvent(new Event(online ? "online" : "offline"));
