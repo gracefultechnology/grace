@@ -57,7 +57,7 @@ export function SettingsBrightness({
   nightDim,
   onNightDimChange,
   title = "Brightness",
-  description = "How bright the screen is. Lower it in the evening if the screen feels glaring.",
+  description = "How bright the tablet’s screen is. Lower it in the evening if the screen feels glaring.",
   brightnessLabel = "Screen brightness",
   decreaseLabel = "Dimmer",
   increaseLabel = "Brighter",

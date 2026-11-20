@@ -31,7 +31,9 @@ Discovered by the proof: every retained plan step has a named subject and
 nonempty outcome, so the next instruction still exists after a receipt.
 The workspace also retains the component rules for a loaded page's security,
 the assistant's visible work, guidance and conversation offers, and the
-execution's verified observation context.
+execution's verified observation context, including its quoted page facts
+and that a queued step is one Grace may take herself. The workspace keeps every
+always rule of the execution it holds.
 
 ```quint
 import shell as S from "./shell"
@@ -200,7 +202,8 @@ pure def alwaysBrowserRules(w: Workspace): bool =
 pure def alwaysAssistantRules(w: Workspace): bool = I::validAssistant(w.assistant)
 pure def alwaysExecutionRules(w: Workspace): bool =
   X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysObservedContextExists(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
+  X::alwaysFactsAreQuoted(w.execution) and X::alwaysObservedContextExists(w.execution) and
+  X::alwaysQueuedStepIsGraces(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
   X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
   X::alwaysNoExhaustedApproachQueued(w.execution)
 pure def alwaysCommitmentRules(w: Workspace): bool =
@@ -916,14 +919,15 @@ task generation and current controller generation. The trusted host checks
 the actual origin, account and redaction before it supplies this evidence.
 
 ```quint
-pure def canObserve(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
+pure def observationArrives(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
   by == Host and mayAssist(w) and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   currentObservation.deviceVersion == w.device.contextVersion and
   B::observationMatches(w.browser, w.browser.selected, currentObservation.browserRevision) and
   currentObservation.taskVersion == w.assistant.workVersion and currentObservation.checkpoint != "" and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking or
-    (w.assistant.activity == A::WebsiteWait and w.commitment.stage == CM::Checking and w.commitment.dispatched)) and
-  X::canObserve(w.execution, currentObservation.website, X::BrowserBridge)
+    (w.assistant.activity == A::WebsiteWait and w.commitment.stage == CM::Checking and w.commitment.dispatched))
+pure def canObserve(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
+  observationArrives(w, currentObservation, by) and X::canObserve(w.execution, currentObservation.website, X::BrowserBridge)
 pure def observe(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace =
   val observedWorkspace = {
     ...w, execution: X::observe(w.execution, currentObservation.website, X::BrowserBridge),
@@ -944,6 +948,46 @@ pure def prepare(w: Workspace, operationRequest: OperationRequest, by: Workspace
   execution: X::prepare(w.execution, operationRequest.target, operationRequest.valueRef, operationRequest.kind, operationRequest.observation, X::BrowserBridge),
   commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment
 }
+```
+
+### A page on another origin, or a step that is the person's, blocks the task where she can see it
+
+An observation that arrives on every current version but reads a page on
+another origin than the task's is not dropped: the task is blocked with that
+reason and its checkpoint. When the step the task needs, at the current
+observation, is one Grace may not take, because it is out of her reach or is
+the person's to tap, the task is blocked for the person with that step named,
+and an approved payment review on the old page is no longer current, also
+when the step left to the person is a payment's own pay button. Either
+way Grace's visible work waits for the person and fences older reports, so
+she continues only after the person chooses Continue and a fresh observation
+on the task's own origin arrives. Neither changes the conversation.
+
+```quint
+pure def canRefuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
+  observationArrives(w, currentObservation, by) and X::canRefuseOrigin(w.execution, currentObservation.website, X::BrowserBridge)
+pure def waitForPerson(a: A::Assistant, checkpoint: str): A::Assistant =
+  { ...a, activity: A::UserWait, checkpoint: checkpoint, operation: "", workVersion: a.workVersion + 1 }
+pure def refuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace = {
+  ...w, execution: X::refuseOrigin(w.execution, currentObservation.website, X::BrowserBridge),
+  assistant: waitForPerson(w.assistant, currentObservation.checkpoint),
+  observedDevice: currentObservation.deviceVersion, observedBrowser: currentObservation.browserRevision
+}
+pure def canLeaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): bool =
+  by == Host and mayAssist(w) and observationIsCurrent(w) and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
+  operationRequest.deviceVersion == w.device.contextVersion and operationRequest.browserRevision == w.browser.revision and
+  operationRequest.generation == w.execution.generation and operationRequest.observation == w.execution.observation and
+  operationRequest.taskVersion == w.assistant.workVersion and w.assistant.activity == A::ReadyForStep and
+  X::canLeaveToPerson(w.execution, operationRequest.target, X::BrowserBridge)
+pure def leaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): Workspace = {
+  ...w, execution: X::leaveToPerson(w.execution, operationRequest.target, X::BrowserBridge),
+  assistant: waitForPerson(w.assistant, w.assistant.checkpoint),
+  commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment
+}
+pure def sometimesOtherOriginBlocksTask(w: Workspace): bool =
+  w.assistant.activity == A::UserWait and X::sometimesOtherOriginRefused(w.execution)
+pure def sometimesStepLeftToPerson(w: Workspace): bool =
+  w.assistant.activity == A::UserWait and X::sometimesOutOfReachStepIsThePersons(w.execution)
 ```
 
 ### Dispatch checks the context again and readback establishes the result
@@ -1010,10 +1054,14 @@ pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X
 
 ### An ordinary website goal finishes only with its own verified endpoint
 
-A successfully verified step does not itself complete the person's goal.
+The person's goal is not complete because a step was verified.
 The trusted domain integration separately reports that the requested goal
 has been fulfilled, with nonempty endpoint evidence and the same owner,
-task, goal, page, device and operation versions. That report retires the
+task, goal, page, device and operation versions. The report counts only
+when the current observation of the page carries the goal's own fact with
+its quote; a report from the host with no quoted fact establishes nothing.
+No step is required first: a goal that only reads the page finishes on the
+observation that quotes it. That report retires the
 ordinary controller and permits a later task without labelling this one
 abandoned. An attached payment must use its durable payment-result path;
 an ordinary completion report cannot bypass its unresolved ledger.
@@ -1022,7 +1070,7 @@ an ordinary completion report cannot bypass its unresolved ledger.
 pure def canCompleteOrdinary(w: Workspace, completion: GoalCompletion, by: WorkspaceActor): bool =
   by == Host and mayAssist(w) and observationIsCurrent(w) and w.commitmentTask == "" and
   w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
-  w.execution.phase == X::Verified and w.assistant.activity == A::ReadyForStep and w.assistant.replacementId == "" and
+  X::goalObserved(w.execution, completion.goal) and w.assistant.activity == A::ReadyForStep and w.assistant.replacementId == "" and
   completion.owner == w.execution.owner and completion.task == w.assistant.taskId and completion.goal == w.assistant.goal and
   completion.deviceVersion == w.device.contextVersion and
   B::observationMatches(w.browser, w.browser.selected, completion.browserRevision) and
@@ -1095,9 +1143,15 @@ pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
   | _ => true
 }
+pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
+  | ReadBrowser => true
+  | ReadChangedBrowser => true
+  | ReadStatement => true
+  | ReachNamedPage(_) => true
+  | _ => false
+}
 pure def mayGuideReadLink(w: Workspace): bool =
-  val read = nextOutcome(w.plan)
-  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser or read == ReadStatement or isNamedDestination(read)) and
+  hasNext(w.plan) and isLinkGuidanceStep(nextOutcome(w.plan)) and
   w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
   w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
@@ -1154,6 +1208,10 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
 ```quint
+pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
+  | SaveMailAppointment => true
+  | _ => false
+}
 pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   by == Host and not(privateSurfaceActive(w)) and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
   A::isVisible(w.assistant) and w.device.readiness == S::Ready and
@@ -1164,7 +1222,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   report.step == nextOutcome(w.plan) and guidedDetails(report.step).surface == w.device.surface and
   (guidedDetails(report.step).surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
   report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
-  (report.step == SaveMailAppointment implies
+  (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
@@ -1226,14 +1284,19 @@ wrong source, or unsaved appointment cannot count as a save.
 
 ```quint
 pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
-  mailCheck.report.step == ReadMail and canConfirmGuided(w, mailCheck.report, by) and
+  val reportedStep = mailCheck.report.step
+  val opensMail = match reportedStep {
+    | ReadMail => true
+    | _ => false
+  }
+  opensMail and canConfirmGuided(w, mailCheck.report, by) and
   mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
   mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0
 pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
   val after = confirmGuided(w, mailCheck.report, by)
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
 pure def guidedSavePending(w: Workspace): bool =
-  hasNext(w.plan) and nextOutcome(w.plan) == SaveMailAppointment and
+  hasNext(w.plan) and isAppointmentSave(nextOutcome(w.plan)) and
   w.execution.phase == X::Idle and w.commitmentTask == ""
 pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
@@ -1255,7 +1318,7 @@ pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCal
   (approval.sourceRef != w.plan.mail.ref or approval.account != w.plan.mail.account) implies
     not(canExpectGuidedCalendar(w, approval, by))
 pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  (report.step == SaveMailAppointment and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
+  (isAppointmentSave(report.step) and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
 pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
   sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })
@@ -1499,8 +1562,9 @@ different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
 Walks include an ordinary task and payments at two different origins. Preparing
 an ordinary step has the weight of the other website callbacks: ordinary
-completion needs one exact eleven-event path, which a rarer preparation
-almost never completes within a sampled walk. Navigation
+completion needs browser observation permission, a compact chat and a fresh
+observation that quotes its goal, and the steps toward that goal come from
+preparation, which a rarer preparation almost never reaches within a sampled walk. Navigation
 uses its default weight, giving current callbacks a chance to arrive before
 a later visit advances the context. Walks also go offline, lose the
 microphone, sleep, wake, restart, fail to start and retry, and open every
@@ -1560,74 +1624,79 @@ pure val unexpectedValues = Set(
   { id: 1, revision: 0, loadVersion: 0, destination: "https://utility.example/updated" })
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded }, { id: 1, version: 1, result: B::LoadFailed },
-  { id: 1, version: 3, result: B::Loaded })
+  { id: 1, version: 2, result: B::Loaded }, { id: 1, version: 3, result: B::Loaded })
 pure val observed: CurrentObservation = {
-  deviceVersion: 6, browserRevision: 2, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
+  deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
 pure val currentObservationValues = Set(observed,
   { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } },
-  { ...observed, browserRevision: 3, website: { ...X::goodObservation, generation: 2 } },
-  { ...observed, browserRevision: 3, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
-  { ...observed, browserRevision: 4, taskVersion: 3,
+  { ...observed, browserRevision: 4, website: { ...X::goodObservation, generation: 2 } },
+  { ...observed, browserRevision: 4, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
+  { ...observed, browserRevision: 5, taskVersion: 3,
     website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } },
-  { ...observed, browserRevision: 4, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
-  { ...observed, browserRevision: 4, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
+  { ...observed, taskVersion: 3, checkpoint: "Back on the account page", website: { ...X::goodObservation, generation: 3 } },
+  { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } },
+  { ...observed, taskVersion: 2, checkpoint: "Account read",
+    website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } },
+  { ...observed, browserRevision: 5, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
+  { ...observed, browserRevision: 5, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
 pure val operation: OperationRequest = {
-  deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  deviceVersion: 7, browserRevision: 3, taskVersion: 1,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage
 }
-pure val operationRequestValues = Set(operation, { ...operation, deviceVersion: 0 }, { ...operation, kind: X::FinalSubmit })
+pure val operationRequestValues = Set(operation, { ...operation, deviceVersion: 0 }, { ...operation, kind: X::FinalSubmit },
+  { ...operation, target: "booking-frame", kind: X::Choose })
 pure val tokensValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 },
-  { deviceVersion: 0, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 })
-pure val currentVerificationValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 },
+  { deviceVersion: 0, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 })
+pure val currentVerificationValues = Set({ deviceVersion: 7, browserRevision: 3, taskVersion: 1,
   website: X::goodVerification, checkpoint: "Current account read", needsUser: false },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Current account read", needsUser: false },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: X::goodVerification, checkpoint: "Please check the account details", needsUser: true },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Please check the account details", needsUser: true })
 pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
-  deviceVersion: 6, browserRevision: 2, taskVersion: 2, generation: 1, observation: 1
+  deviceVersion: 7, browserRevision: 3, taskVersion: 2, generation: 1, observation: 2
 }
 pure val completionValues = Set(completedGoal,
   { ...completedGoal, task: "other", goal: "Read another account" },
   { ...completedGoal, evidence: "" },
   { ...completedGoal, taskVersion: 1 }, { ...completedGoal, goal: "Another goal" })
 pure val commitmentTokensValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 0 },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, revision: 1, attempt: 1 },
-  { deviceVersion: 0, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 })
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, revision: 1, attempt: 1 },
+  { deviceVersion: 0, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 })
 pure val currentReviewValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, review: CM::exampleReview },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     review: { ...CM::exampleReview, key: { ...CM::exampleKey, origin: "https://credit.example" } } })
-pure val currentOutcomeValues = Set({ deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: CM::exampleOutcome },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: CM::exampleOutcome },
-  { deviceVersion: 6, browserRevision: 3, taskVersion: 1, report: { ...CM::exampleOutcome, revision: 3 } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...CM::exampleOutcome, result: CM::Pending, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::VerifiedFailure, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::Returned, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 2,
+pure val currentOutcomeValues = Set({ deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: CM::exampleOutcome },
+  { deviceVersion: 7, browserRevision: 4, taskVersion: 1, report: { ...CM::exampleOutcome, revision: 3 } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::exampleOutcome, result: CM::Pending, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::VerifiedFailure, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: { ...CM::exampleOutcome, result: CM::Returned, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 2,
     report: { ...CM::exampleOutcome, key: { ...CM::exampleKey, origin: "https://credit.example" } } })
 pure val currentPriorValues = Set(
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: CM::examplePrior },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...CM::examplePrior, result: CM::VerifiedFailure, reference: "" } },
-  { deviceVersion: 6, browserRevision: 2, taskVersion: 1, report: { ...CM::examplePrior, result: CM::Returned, reference: "" } })
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::examplePrior },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::examplePrior, result: CM::VerifiedFailure, reference: "" } },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::examplePrior, result: CM::Returned, reference: "" } })
 pure val saveReportValues = Set(
   { key: CM::exampleKey, revision: 3, succeeded: true },
   { key: CM::exampleKey, revision: 4, succeeded: true },
   { key: CM::exampleKey, revision: 3, succeeded: false },
   { key: { ...CM::exampleKey, origin: "https://credit.example" }, revision: 3, succeeded: true })
 pure val progressValues = Set(
-  { owner: "owner", task: "other", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { owner: "owner", task: "other", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
-  { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { owner: "owner", task: "task", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: OrdinaryProgress, destination: "" },
-  { owner: "owner", task: "task", deviceVersion: 6, browserRevision: 2, taskVersion: 1,
+  { owner: "owner", task: "task", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: CommitmentProgress, destination: "" })
 pure val weight_changeLifecycle = 4
 pure val weight_setAvailability = 4
@@ -1647,6 +1716,8 @@ pure val weight_approveSpokenCommitment = 24
 pure val weight_submitCommitment = 24
 pure val weight_recordCommitment = 24
 pure val weight_completeOrdinary = 24
+pure val weight_refuseOrigin = 8
+pure val weight_leaveToPerson = 8
 pure val weight_saveCommitment = 24
 pure val weight_interact = 8
 pure val weight_detectWake = 8

@@ -61,6 +61,18 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const retry = () => run({ kind: "retry" });
   const previewStatus = snapshot.image ? "ready" : snapshot.issue || model.feedback === "ContentFailed" ? "failed" : "loading";
 
+  const request = snapshot.attachmentImport;
+  if (request && model.loaded) {
+    return <AppWindow {...cover} title="Save attachment to Files?" icon={<Folder aria-hidden />}>
+      <div className="flex flex-wrap gap-3">
+        <Button variant="prominent" size="pill" disabled={waiting} onClick={() => run({ kind: "confirmAttachment", request })}>Save attachment</Button>
+        <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "cancelAttachment", request })}>Cancel</Button>
+      </div>
+      {waiting && <PageText role="status">Saving attachment…</PageText>}
+      {failed && <PageText role="status">The attachment couldn’t be saved.</PageText>}
+    </AppWindow>;
+  }
+
   if (selected.id !== "") {
     if (selected.kind === "Photo") {
       if (!snapshot.image) return <AppWindow {...cover} onClose={back} closeLabel="Back to Files" title={selected.name}>
@@ -111,7 +123,8 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
         {model.tab === "Photos" ? "Import photo" : "Import PDF"}
       </Button>
       {model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "capture" })}>Take photo</Button>}
-      {(failed || model.feedback === "WriteFailed") && <PageText role="status">The file wasn’t saved or opened.</PageText>}
+      {failed || model.feedback === "WriteFailed" ? <PageText role="status">The file wasn’t saved or opened.</PageText> :
+        model.feedback === "FilesSaved" && <PageText role="status">Saved in Files.</PageText>}
     </div>
   );
   return <FilesApp {...window} actions={browse} status={model.loaded ? "ready" : model.feedback === "CatalogFailed" ? "failed" : "loading"}
