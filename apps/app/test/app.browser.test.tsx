@@ -2367,7 +2367,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     await expect.poll(receipts).toEqual([mailReceipt, mailReceipt]);
     await tap(button("Close Email"));
-    await tap(button(/^Calendar/));
+    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
     await tap(button(/Managed calendar appointment/));
     await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
 
