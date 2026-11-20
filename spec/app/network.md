@@ -131,6 +131,8 @@ its terms. While Android's panel is open, the result Android reports when
 Grace is shown again completes, fails or keeps waiting on the join.
 If Android later validates the selected network after an unavailable or
 unverified result, Grace clears that result and shows the connected network.
+Android may name its current connection even when it has no nearby scan
+results. Grace shows that name and shows signal strength only when measured.
 An observation belongs to the selection and attempt in progress when the
 read started. An undisclosed name, a different network, a cancelled attempt
 or loss of permission cannot complete it.
@@ -164,7 +166,7 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
   }
 }
 pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
-  by == OperatingSystem and n.discovery == NetworksFound and
+  by == OperatingSystem and (n.discovery == NetworksFound or n.discovery == NoNetworks) and
   (n.phase == JoinFailed or n.phase == JoinUnconfirmed) and
   networkId != "" and networkId == n.selected.id and version == n.version
 pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
@@ -239,9 +241,11 @@ location, and Location is on; the plugin says which is missing. Wi-Fi off
 and Location off offer Android's internet panel, because an app can switch
 neither on. No networks nearby offers a fresh search. Each report of the
 OS replaces the reason, except while the person reads why location is
-needed. When a scan lists no networks, Grace clears the previous list and
-closes any password entry. An Android reply for the old selection
-cannot restore it. A join already under way, and its result, are kept.
+needed. When a scan lists no networks, Grace clears the previous list.
+Turning off the radio or losing location access retires the selection, any
+join under way and its result. An empty scan closes only a password entry
+and keeps a join already under way and its result. An Android reply for the
+old selection cannot restore it.
 
 ```quint
 type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found
@@ -260,7 +264,9 @@ pure def canReportScan(n: NetworkJoin, by: NetworkActor): bool =
   by == OperatingSystem and n.discovery != ExplainingLocation
 pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): NetworkJoin = {
   val refused = if (n.locationAsked) LocationRefused else LocationAccessNeeded
-  val selection = if (found != Found and n.phase == PrivateEntry) cleared(n.version + 1, n) else n
+  val retired = found == RadioOff or found == NoLocationAccess or found == LocationDisabled or
+    (found == NoneNearby and n.phase == PrivateEntry)
+  val selection = if (retired and n.phase != Selecting) cleared(n.version + 1, n) else n
   { ...selection, discovery: match found {
     | RadioOff => WifiOff
     | NoLocationAccess => refused
