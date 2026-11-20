@@ -234,7 +234,6 @@ function Screen() {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
         }} />
       )}</WithCalendars>}
-      {volume.brightness < 100 && <div aria-hidden className="pointer-events-none fixed inset-0 z-50 bg-foreground" style={{ opacity: (100 - volume.brightness) / 100 }} />}
     </div></TextScale>
   );
 }
