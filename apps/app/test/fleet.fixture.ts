@@ -9,7 +9,7 @@ import type { Page } from "playwright";
 import { selfSigned } from "./tls.ts";
 import { hasHostedNavigation } from "./browser-receipt.ts";
 
-const revision = "f335b651f9820c3454f447e3d4722b78c5298a0b";
+const revision = "8320228bccf0759f375b9633592612e0e570a526";
 const Biller = Schema.Struct({ id: Schema.NonEmptyString, template: Schema.NonEmptyString, signal: Schema.String, brand: Schema.Struct({ shortName: Schema.NonEmptyString }) });
 const Case = Schema.Struct({
   taskId: Schema.NonEmptyString, template: Schema.NonEmptyString, evidence: Schema.String,
