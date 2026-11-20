@@ -1,5 +1,5 @@
-// spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
-import { Button, CalendarEventRow, EmptyState, Input, MailMessageRow, PageHeading, PageText, RetryNotice, SegmentedControl, Textarea } from "@repo/ui";
+// spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
+import { Button, CalendarEventRow, EmptyState, Input, MailAttachment, MailMessageRow, PageHeading, PageText, RetryNotice, SegmentedControl, Textarea } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
@@ -283,6 +283,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
       <section data-sensitive="true" className="flex flex-col items-start gap-4">
         {back}
         {showNotice}
+        {problem}
         {canTrash && selected.message.metadata?.historyId && <Button variant="warn" size="pill" loading={pending} onClick={() => {
           const version = selected.message.metadata?.historyId;
           if (version) write({ kind: "trash", id: selected.message.externalId, version });
@@ -291,6 +292,38 @@ export function ManagedRead({ view }: { view: ReadView }) {
         <PageText>{selected.message.from || "Unknown sender"}</PageText>
         <PageText tone="secondary">{day(selected.message.receivedAt)}</PageText>
         <PageText className="w-full whitespace-pre-wrap">{selected.bodyTextAvailable ? selected.bodyText : "This email has no plain-text preview."}</PageText>
+        {selected.attachments.length > 0 && <section aria-label="Attachments" aria-busy={pending || undefined} className="flex w-full flex-col gap-3">
+          {selected.attachments.map((part, index) => (
+            <MailAttachment key={part.partId + ":" + index} name={part.name}
+              kind={part.mimeType === "application/pdf" ? "PDF" : part.mimeType.startsWith("image/") ? "Image" : "File"}
+              detail={part.supported && selected.historyId ? undefined : "Preview and download unavailable"}
+              openDisabled={pending || !part.supported || !selected.historyId}
+              openLabel="Open original" onOpen={() => run({ kind: "openAttachment", partId: part.partId })} />
+          ))}
+          {snapshot.attachment && <section aria-label="Original attachment" className="flex flex-col items-start gap-3">
+            <PageHeading>{snapshot.attachment.name}</PageHeading>
+            {snapshot.attachment.mimeType.startsWith("image/") &&
+              <img src={snapshot.attachment.url} alt={snapshot.attachment.name} className="max-w-full rounded-lg" />}
+            {snapshot.attachment.preview && <>
+              <PageText className="whitespace-pre-wrap break-words">{snapshot.attachment.preview.text}</PageText>
+              {snapshot.attachment.preview.truncated && <PageText tone="secondary">Download the original for the full text.</PageText>}
+            </>}
+            <div className="flex flex-wrap gap-3">
+              {snapshot.attachment.mimeType === "application/pdf" &&
+                <Button asChild variant="capsule" size="pill">
+                  <a href={snapshot.attachment.url} target="_blank" rel="noopener noreferrer">Open PDF</a>
+                </Button>}
+              <Button asChild variant="prominent" size="pill">
+                <a href={snapshot.attachment.url} download={snapshot.attachment.name}>Download original</a>
+              </Button>
+              {snapshot.attachment.deviceTransfer && /Android/i.test(navigator.userAgent) &&
+                <Button variant="capsule" size="pill" asChild>
+                  <a href={`https://app.graceforseniors.com/android/files/import#${snapshot.attachment.deviceTransfer}`} referrerPolicy="no-referrer">Save to Grace Files</a>
+                </Button>}
+              <Button variant="capsule" size="pill" onClick={() => run({ kind: "closeAttachment" })}>Close attachment</Button>
+            </div>
+          </section>}
+        </section>}
         {selected.reply && signedIn && link?.tag === "GoogleLinkConnected" && maySendManagedMail(signedIn, link, snapshot.accountId, grant) && (
           <MailDraft key={JSON.stringify([accountId, grant, selected.message.externalId, draft?.number])} open={draft !== undefined} accountId={accountId} email={link.email}
             grant={grant} reply={{ ...selected.reply, source: selected.message.externalId }} />
