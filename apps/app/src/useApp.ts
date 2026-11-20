@@ -8,6 +8,7 @@ import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts"
 import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
+import type { SavedFile } from "../gen/app__files.effect.vibe";
 import { Library } from "./files.vibe";
 
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
@@ -236,6 +237,7 @@ export function useMail() {
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
     discarded: () => runtime.runPromise(mail.discarded()),
     save: (id: number, refs: readonly string[]) => runtime.runPromise(mail.save(id, refs)),
+    attach: (id: number, asset: SavedFile) => runtime.runPromise(mail.attach(id, asset)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);

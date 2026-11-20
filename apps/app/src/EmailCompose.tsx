@@ -1,13 +1,16 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "The visible Send button approves exactly the composer the user sees"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "From offers each account that has Email on and can send"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
-import { type MailComposeTarget, type MailContact, MailCompose, type MailPhoto, type MailRecipientField, MailRecipientPicker, type MailSendStatus } from "@repo/ui";
-import { Exit } from "effect";
-import { use, useState } from "react";
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "The visible Send button approves exactly the composer the user sees"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "From offers each account that has Email on and can send"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
+import {
+  type MailComposeTarget, type MailContact, MailCompose, type MailPhoto, MailPhotoChooser, type MailPhotoChooserProps, type MailRecipientField, MailRecipientPicker, type MailSendStatus,
+} from "@repo/ui";
+import { Effect, Exit } from "effect";
+import { Suspense, use, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import { type DraftContent, emptyContent, enabled, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
 import { canMoveDraft, contactAccounts, fromChoices, type MailSource, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
-import { recipientsOf, recipientsValid } from "./mail.vibe";
-import { type MailInstance, type MailWriter, useWorkspace } from "./useApp.ts";
+import { Library, type SavedPhoto } from "./files.vibe";
+import { recipientsOf, recipientsValid, sendsWith } from "./mail.vibe";
+import { type MailInstance, type MailWriter, useRuntime, useWorkspace } from "./useApp.ts";
 
 export type Picking = { readonly field: MailRecipientField; readonly query: string };
 type Field = "subject" | "body";
@@ -72,10 +75,22 @@ export type EmailComposeProps = {
   frame: Frame;
 };
 
+type Choosing = { readonly found: Promise<readonly SavedPhoto[] | undefined>; readonly refused: boolean };
+
+function PhotoChoice({ found, onChoose, ...props }: Omit<MailPhotoChooserProps, "onChoose"> & { found: Choosing["found"]; onChoose: (photo: SavedPhoto) => void }) {
+  const photos = use(found);
+  return <MailPhotoChooser open {...props} failed={photos === undefined}
+    photos={photos?.map((photo) => ({ id: photo.file.id, src: photo.src, label: photo.file.name }))}
+    onChoose={(id) => { const photo = photos?.find((p) => p.file.id === id); if (photo) onChoose(photo); }} />;
+}
+
 /** @model spec/app/email.md */
-export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, sender, frame }: EmailComposeProps) {
+export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking, mail, sender, frame }: EmailComposeProps) {
+  const runtime = useRuntime();
   const people = use(mail.contacts(contactAccounts(registry).join(",")));
   const { guide } = useWorkspace();
+  const [choosing, setChoosing] = useState<Choosing>();
+  const picking: Picking | null = chosen ?? (box && mail.sharing === box.id && box.state.draft.to === "" ? { field: "to", query: "" } : null);
   const [typed, setTyped] = useState<Partial<Record<Field, string>>>({});
   const [ccOpen, setCcOpen] = useState(false);
   const sources: MailSource[] = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -108,11 +123,11 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
         onQueryChange={(query) => onPicking({ ...picking, query })}
         onPick={(person) => { const chosen = shown[tiles.indexOf(person)]; if (chosen) pick(picking.field, chosen.address); }}
         backLabel={first ? "Inbox" : box.state.replyTo === "" ? "New email" : "Reply"}
-        onBack={() => {
-          onPicking(null);
-          if (!box) void mail.discarded();
-          else if (picking.field === "to" && box.state.draft.to === "") void discard(box);
-        }} {...frame} />
+        onBack={!box ? () => { onPicking(null); void mail.discarded(); }
+          : !first ? () => onPicking(null)
+          : box.can({ type: "discardDraft", confirmed: true }) ? () => { onPicking(null); void discard(box); } : undefined}
+        {...frame}
+        onClose={frame.onClose && (() => { onPicking(null); if (box) void leave(box, mail.hush); frame.onClose?.(); })} />
     );
   }
   if (!box) return null;
@@ -129,8 +144,15 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
   const settling = Object.values(typed).some((t) => t !== undefined);
   const sendable = !settling && recipientsValid(m.draft) && box.can({ type: "confirmVisibleSend", revision: m.revision });
   const retry = undeleted ? throwAway : keep;
+  const choosePhoto = () => setChoosing({ refused: false, found: runtime.runPromise(Effect.flatMap(Library, (files) => files.photos((file) => sendsWith(box.state, file)))) });
+  const choose = async (photo: SavedPhoto) => {
+    const attached = await mail.attach(box.id, photo.file);
+    setChoosing((current) => (attached ? undefined : current && { ...current, refused: true }));
+  };
+  const chooser = { onCancel: () => setChoosing(undefined), onRetry: choosePhoto, onOpenChange: (open: boolean) => { if (!open) setChoosing(undefined); } };
 
   return (
+    <>
     <MailCompose guide={guide((target) => composeTargets.find((t) => t === target))} title={m.replyTo === "" ? "New email" : "Reply"} backLabel={m.replyTo === "" ? "Inbox" : `${sender(box)}’s email`}
       from={{ accounts: choices.map((a) => ({ id: a.id, address: a.address, name: a.name })), selected: box.id, onSelect: (id) => { if (id !== box.id) void mail.moveDraft(box.id, id); } }}
       to={recipientsOf(m.draft.to).map(contactOf)} cc={m.draft.cc.map(contactOf)} bcc={m.draft.bcc.map(contactOf)}
@@ -147,7 +169,14 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
       draftError={m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
       onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
+      onAttach={editable ? { photos: choosePhoto } : undefined}
       {...frame}
       onClose={frame.onClose && (() => { void leave(box, mail.hush); frame.onClose?.(); })} />
+    {choosing && (
+      <Suspense fallback={<MailPhotoChooser open {...chooser} />}>
+        <PhotoChoice found={choosing.found} refused={choosing.refused} onChoose={(photo) => void choose(photo)} {...chooser} />
+      </Suspense>
+    )}
+    </>
   );
 }

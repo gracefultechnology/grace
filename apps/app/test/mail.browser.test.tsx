@@ -361,7 +361,28 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByRole("img", { name: "Piano.png" })).not.toBeInTheDocument();
   await changeSession(true);
   await expect.element(piano).toBeVisible();
-
+  // spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await expect.element(page.getByText("From Ruth · Lunch on Sunday?")).toBeVisible();
+  await click(page.getByRole("radio", { name: "Documents" }));
+  await expect.element(page.getByText(/^From Main St Clinic · Saved /)).toBeVisible();
+  await click(page.getByRole("radio", { name: "Photos" }));
+  await click(piano);
+  await click(page.getByRole("button", { name: "Share" }));
+  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Susan" }));
+  await expect.element(subject()).toHaveValue("A photo");
+  await expect.element(page.getByRole("img", { name: "Piano.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Attach" }));
+  await click(page.getByRole("menuitem", { name: "Choose from Photos" }));
+  await click(page.getByRole("dialog", { name: "Choose from Photos" }).getByRole("button", { name: "Bow.png" }));
+  await expect.element(page.getByRole("img", { name: "Bow.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Add", exact: true }));
+  await click(page.getByRole("button", { name: "Add to Cc" }));
+  await expect.element(page.getByRole("heading", { name: "Who should get a copy?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await click(row("Drafts"));
+  await expect.element(email(/A photo/)).toBeVisible();
 }, 300_000);
 
 async function replyToClinic() {

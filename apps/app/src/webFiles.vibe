@@ -5,7 +5,10 @@ import { HeldFile } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 error BrowserFilesUnavailable
-schema MailFile { id: Schema.NonEmptyString; name: Schema.NonEmptyString; kind: "photo" | "pdf"; savedAt: Schema.Int; pages: Schema.Int; source: HeldFile; version: Schema.NonEmptyString }
+schema MailFile {
+  id: Schema.NonEmptyString; name: Schema.NonEmptyString; kind: "photo" | "pdf"; savedAt: Schema.Int; pages: Schema.Int; source: HeldFile; version: Schema.NonEmptyString
+  from?: Schema.NonEmptyString; subject?: Schema.NonEmptyString
+}
 schema StoredFile { entry: MailFile; data: string }
 type Access = { owner: string; session: string }
 const storedFiles = Schema.decodeUnknownSync(Schema.Array(StoredFile))
@@ -69,7 +72,7 @@ export function browserFiles(): FilesPort {
     if (attachments.length === 0 || attachments.length > 250) return undefined
     const known = new Map(rows.map((row) => [sourceIdentity(row.entry.source), row]))
     const entries: MailFile[] = []
-    for (const { file, data, version } of attachments) {
+    for (const { file, data, version, from, subject } of attachments) {
       const key = sourceIdentity(file)
       const prior = known.get(key)
       if (prior) {
@@ -79,7 +82,7 @@ export function browserFiles(): FilesPort {
       }
       if (!version || !data || data.length > 6_990_508 || known.size >= 250) return undefined
       const entry: MailFile = { id: webView.window.crypto.randomUUID(), name: file.name, kind: file.kind === "Pdf" ? "pdf" : "photo",
-        savedAt: Date.now(), pages: file.pages, source: file, version }
+        savedAt: Date.now(), pages: file.pages, source: file, version, ...from ? { from } : {}, ...subject ? { subject } : {} }
       const row = { entry, data }
       store.add(row)
       known.set(key, row)

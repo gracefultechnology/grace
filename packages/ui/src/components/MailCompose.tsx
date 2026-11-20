@@ -193,8 +193,8 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
   onRemoveAttachment?: (index: number) => void;
   /** Sends it; without it Send is shown but cannot be pressed. */
   onSend?: () => void;
-  /** Called with where to attach from: the camera, Photos or a file. */
-  onAttach?: (source: MailAttachSource) => void;
+  /** One handler for each place Attach can take from: the camera, Photos or a file; a missing one is not offered. */
+  onAttach?: Partial<Record<MailAttachSource, () => void>>;
   /** Whether Attach's menu is open, when the app controls it. */
   attachOpen?: boolean;
   onAttachOpenChange?: (open: boolean) => void;
@@ -365,7 +365,7 @@ export function MailCompose({
             </Button>,
             { radius: 999 },
           )}
-          {onAttach && (
+          {onAttach && Object.values(onAttach).some(Boolean) && (
             <Menu
               open={attachOpen}
               onOpenChange={onAttachOpenChange}
@@ -379,9 +379,9 @@ export function MailCompose({
               sideOffset={12}
               surface="page"
             >
-              <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach("camera")}>{l.camera}</MenuOption>
-              <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach("photos")}>{l.photos}</MenuOption>
-              <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} onSelect={() => onAttach("file")}>{l.file}</MenuOption>
+              {onAttach.camera && <MenuOption icon={<mailIcons.camera size={24} strokeWidth={2.2} aria-hidden />} onSelect={onAttach.camera}>{l.camera}</MenuOption>}
+              {onAttach.photos && <MenuOption icon={<Image size={24} strokeWidth={2.2} aria-hidden />} onSelect={onAttach.photos}>{l.photos}</MenuOption>}
+              {onAttach.file && <MenuOption icon={<mailIcons.file size={24} strokeWidth={2.2} aria-hidden />} onSelect={onAttach.file}>{l.file}</MenuOption>}
             </Menu>
           )}
         </div>

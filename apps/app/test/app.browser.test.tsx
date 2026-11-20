@@ -1517,13 +1517,9 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   await tap("Files");
   await tap("Garden.jpg");
   await tap("Delete");
-  await tap("Cancel");
-  expect(removals).toEqual([]);
-  await tap("Delete");
-  await tap("Delete photo");
+  await expect.element(page.getByText("This photo wasn’t deleted.")).toBeVisible();
   await expect.element(page.getByRole("img", { name: photo.name })).toBeVisible();
   await tap("Try again");
-  await tap("Delete photo");
   await expect.poll(() => removals).toEqual([photo.id, photo.id]);
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
   expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
