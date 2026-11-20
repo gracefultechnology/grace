@@ -324,7 +324,10 @@ type StatementEpisode = {
   finish(text: string): Promise<Record<string, unknown>>;
   close(): Promise<unknown>;
 };
-const statementRuns = new WeakMap<Page, { episode: StatementEpisode; site: Site }>();
+type StatementRun =
+  | { readonly attempt: string; readonly state: "Preparing" }
+  | { readonly attempt: string; readonly state: "Ready"; readonly episode: StatementEpisode; readonly site: Site };
+const statementRuns = new WeakMap<Page, StatementRun>();
 const releasedDirectory = process.env.GRACE_BILLWORLD_RELEASED_DIR;
 
 async function startReleasedStatement(fixture: string, directory: string): Promise<StatementEpisode> {
@@ -353,40 +356,48 @@ async function startReleasedStatement(fixture: string, directory: string): Promi
   };
 }
 
-async function releasedStatement(context: BrowserCommandContext, action: StatementAction) {
+async function releasedStatement(context: BrowserCommandContext, attempt: string, action: StatementAction) {
   const existing = statementRuns.get(context.page);
+  if (action.kind === "close") {
+    if (existing?.attempt !== attempt) return {};
+    statementRuns.delete(context.page);
+    if (existing.state === "Ready") {
+      try { await existing.site.browser.close(); }
+      finally { await existing.episode.close(); }
+    }
+    return {};
+  }
   if (action.kind === "prepare") {
     if (!releasedDirectory || existing) throw new Error("The BillWorld statement test needs one pinned episode");
-    const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
-    mkdirSync(results, { recursive: true });
-    const directory = mkdtempSync(join(results, action.billerId === undefined ? "released-statement-" : "fleet-view-bill-"));
-    const episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
-      : await fleetStatement(releasedDirectory, action.billerId, directory);
-    const browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
-    if (!browser) {
-      await episode.close();
-      throw new Error("The statement trial needs an isolated Chromium context");
-    }
+    const reservation = { attempt, state: "Preparing" } satisfies StatementRun;
+    statementRuns.set(context.page, reservation);
+    let episode: StatementEpisode | undefined;
+    let browser: BrowserContext | undefined;
     try {
+      const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
+      mkdirSync(results, { recursive: true });
+      const directory = mkdtempSync(join(results, action.billerId === undefined ? "released-statement-" : "fleet-view-bill-"));
+      episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
+        : await fleetStatement(releasedDirectory, action.billerId, directory);
+      if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
+      browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
+      if (!browser) throw new Error("The statement trial needs an isolated Chromium context");
       const page = await browser.newPage();
       await episode.prepareStatement(page);
       const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await browser.newCDPSession(page) };
-      statementRuns.set(context.page, { episode, site });
+      if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
       await context.page.bringToFront();
+      if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
+      statementRuns.set(context.page, { attempt, state: "Ready", episode, site });
       return { taskId: episode.taskId, url: page.url(), question: episode.question };
     } catch (error) {
-      await browser.close();
-      await episode.close();
+      if (statementRuns.get(context.page) === reservation) statementRuns.delete(context.page);
+      try { await browser?.close(); }
+      finally { await episode?.close(); }
       throw error;
     }
   }
-  if (!existing) throw new Error("No BillWorld statement is attached to this test");
-  if (action.kind === "close") {
-    statementRuns.delete(context.page);
-    try { await existing.site.browser.close(); }
-    finally { await existing.episode.close(); }
-    return {};
-  }
+  if (existing?.attempt !== attempt || existing.state !== "Ready") throw new Error("No BillWorld statement is attached to this attempt");
   if (action.kind === "evidence") {
     if (!existing.episode.taskId.endsWith(":view-bill")) throw new Error("Only Fleet statements run markup controls");
     await existing.site.page.evaluate((value) => {
@@ -439,7 +450,7 @@ declare module "vitest/browser" {
   interface BrowserCommands {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
-    releasedStatement: (action: StatementAction) => Promise<Record<string, unknown>>;
+    releasedStatement: (attempt: string, action: StatementAction) => Promise<Record<string, unknown>>;
   }
 }
 declare module "vitest" {
