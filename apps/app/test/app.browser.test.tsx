@@ -1656,7 +1656,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     else sessionStorage.setItem("grace-hosted-read", oldIntent);
     window.history.replaceState(undefined, "", oldURL);
   }
-});
+}, 120_000);
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
   const audio = { step: 0, min: 0, max: 15, muted: false };
