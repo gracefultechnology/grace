@@ -256,7 +256,9 @@ effect function step(native: NativePage.Shape, page: Page, tab: Tab, close: (tab
   command catch effect (cause) => { try warn("follow", id, cause); try close(tab.id) }
 }
 
-export const pageHost = (openEmail: (() => Promise<void>) | undefined) => Layer.effect(PageHost, effect {
+export const pageHost = (openEmail: (() => Promise<void>) | undefined) => Layer.effect(PageHost, makePageHost(openEmail))
+
+effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
   const workspace = try Workspaces
   const layer = try PageLayers
   const native = try NativePage
@@ -272,6 +274,7 @@ export const pageHost = (openEmail: (() => Promise<void>) | undefined) => Layer.
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
   let presented: PageId | null | undefined = null
   const privacy = privateViewPlugin
+  const openMailbox = openEmail ?? (privacy && (() => privacy.openEmail()))
   let privateWindow = false
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
@@ -535,9 +538,8 @@ export const pageHost = (openEmail: (() => Promise<void>) | undefined) => Layer.
       const w = try workspace.get()
       if (w.device.surface !== "Browser" || !canCheckPrivateEmail(w.browser, tab, revision, "BrowserControlUser") ||
           presented !== pageOf(tab) || (try sync(() => webView.hidden()))) return false
-      if (openEmail !== undefined) return Effect.as(tryPromise(openEmail), true) catch () => false
-      if (privacy === undefined) return false
-      return Effect.as(tryPromise(() => privacy.openEmail()), true) catch () => false
+      if (openMailbox === undefined) return false
+      return Effect.as(tryPromise(() => openMailbox()), true) catch () => false
     },
     effect website(event: WebsiteEvent) {
       try Queue.offer(signals, Signal.Person({ event }))
@@ -551,4 +553,4 @@ export const pageHost = (openEmail: (() => Promise<void>) | undefined) => Layer.
     watch: measurer.watch,
     unwatch: measurer.unwatch
   }
-})
+}

@@ -704,7 +704,7 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>, openPrivat
   return browserState;
 };
 
-it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab")', async () => {
+it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
   const native = fakePlugin(undefined, true);
   const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
   const browserState = await signInPrivately(native, openEmail);
