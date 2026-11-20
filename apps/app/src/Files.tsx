@@ -61,6 +61,18 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const retry = () => run({ kind: "retry" });
   const previewStatus = snapshot.image ? "ready" : snapshot.issue || model.feedback === "ContentFailed" ? "failed" : "loading";
 
+  const request = snapshot.attachmentImport;
+  if (request && model.loaded) {
+    return <AppWindow {...window} title="Save attachment to Files?" icon={<Folder aria-hidden />}>
+      <div className="flex flex-wrap gap-3">
+        <Button variant="prominent" size="pill" disabled={waiting} onClick={() => run({ kind: "confirmAttachment", request })}>Save attachment</Button>
+        <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "cancelAttachment", request })}>Cancel</Button>
+      </div>
+      {waiting && <PageText role="status">Saving attachment…</PageText>}
+      {failed && <PageText role="status">The attachment couldn’t be saved.</PageText>}
+    </AppWindow>;
+  }
+
   if (selected.id !== "") {
     if (selected.kind === "Photo") {
       if (!snapshot.image) return <AppWindow {...cover} onClose={back} closeLabel="Back to Files" title={selected.name}>

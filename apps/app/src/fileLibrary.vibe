@@ -9,13 +9,15 @@ const displayName = Schema.NonEmptyString.check(Schema.isMaxLength(180))
 const timestamp = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(8640000000000000))
 const picture = Schema.String.check(Schema.isMaxLength(1_000_035), Schema.isPattern(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/))
 schema Lease { lease: idFormat }
-schema Entry { id: idFormat; name: displayName; kind: "photo" | "pdf"; savedAt: timestamp; pages: Schema.Int }
+const sourceDigest = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))
+schema Entry { attachmentSource?: sourceDigest; attachmentSha256?: sourceDigest; id: idFormat; name: displayName; kind: "photo" | "pdf"; savedAt: timestamp; pages: Schema.Int }
 schema Catalog { entries: Entry[] }
 schema Preview { id: idFormat; page: Schema.Int; image: picture }
 schema Completion { id: idFormat }
+schema AttachmentImport { id?: idFormat }
 
 type Closed = { kind: "out" | "signedOut" | "opening" | "unavailable" | "unsupported" }
-type Ready = { kind: "ready"; lease: string; model: Files; thumbs: Readonly<Record<string, string>>; image?: string; busy: boolean; issue: boolean }
+type Ready = { kind: "ready"; lease: string; model: Files; thumbs: Readonly<Record<string, string>>; attachmentImport?: string; image?: string; busy: boolean; issue: boolean }
 export type FileSnapshot = Closed | Ready
 export type FileHome = { photos: { src: string; alt: string }[]; document?: { name: string } }
 type Command =
@@ -26,6 +28,7 @@ type Command =
   | { kind: "search"; query: string }
   | { kind: "pick"; file: "photo" | "pdf" }
   | { kind: "retry" | "back" | "capture" | "account" }
+  | { kind: "confirmAttachment" | "cancelAttachment"; request: string }
 
 export service FileLibrary {
   readonly changes: Stream.Stream<FileSnapshot>
@@ -38,8 +41,10 @@ export service FileLibrary {
 error FilesRejected
 
 function localFile(entry: Entry, lease: string): SavedFile {
-  return captureFile({ owner: lease, session: lease, captureId: entry.id, contentRef: entry.id,
+  const file = captureFile({ owner: lease, session: lease, captureId: entry.id, contentRef: entry.id,
     name: entry.name, kind: entry.kind === "pdf" ? "Pdf" : "Photo", takenAt: entry.savedAt, pages: entry.pages })
+  return entry.attachmentSource && entry.attachmentSha256 ? { ...file, origin: "gmail", container: entry.attachmentSource,
+    sourceRef: entry.attachmentSource, contentRef: entry.attachmentSha256 } : file
 }
 
 export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLibrary, effect {
@@ -100,6 +105,11 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     if (loaded.model.loaded) try exposeCatalog(loaded)
   }
 
+  effect function readAttachmentImport() {
+    const request = Schema.decodeUnknownEffect(AttachmentImport)(try tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({}))) catch () => undefined
+    return request?.id
+  }
+
   effect function openLibrary() {
     if (!port || !(try admitted())) return
     try SubscriptionRef.set(latest, { kind: "opening" })
@@ -112,7 +122,8 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
       tryPromise(() => port.close(opened)) catch () => undefined
       return
     }
-    const ready: Ready = { kind: "ready", lease: opened.lease, model: initial, thumbs: {}, busy: false, issue: false }
+    const attachmentImport = try readAttachmentImport()
+    const ready: Ready = { kind: "ready", lease: opened.lease, model: initial, thumbs: {}, attachmentImport, busy: false, issue: false }
     try SubscriptionRef.set(latest, ready)
     load(ready) catch effect () => {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
@@ -133,14 +144,16 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     return result !== undefined
   }
 
-  effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" }) {
-    if (!port || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || ready.model.selected !== "") return false
+  effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" } | { kind: "confirmAttachment"; request: string }) {
+    if (!port || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || (ready.model.selected !== "" && command.kind !== "confirmAttachment")) return false
+    if (command.kind === "confirmAttachment" && command.request !== ready.attachmentImport) return false
     const input = { lease: ready.lease }
     try keep({ ...ready, busy: true, issue: false })
     const entry = Schema.decodeUnknownEffect(Entry)(try tryPromise(() =>
-      command.kind === "capture" ? port.capture(input) : port.pick({ ...input, kind: command.file }))) catch () => undefined
+      command.kind === "capture" ? port.capture(input) : command.kind === "pick" ? port.pick({ ...input, kind: command.file })
+        : port.stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))) catch () => undefined
     if (!entry) {
-      try keep({ ...ready, busy: false })
+      try keep({ ...ready, attachmentImport: command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport, busy: false })
       return false
     }
     const file = localFile(entry, ready.lease)
@@ -149,7 +162,8 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     } }, "FileHost")
     const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => port.commit({ ...input, id: entry.id }))) catch () => undefined
     const success = stored?.id === entry.id
-    const { ready: after } = try advance(storing, { type: "writeResult", fileReceipt: {
+    const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
+    const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {
       owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
     } }, "FileStore")
     if (success) try exposeCatalog(after)
@@ -193,6 +207,12 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
         try load(current)
         return true
       case "deletePhoto": return try deletePhoto(current, command)
+      case "confirmAttachment": return try importOwner(current, { kind: "confirmAttachment", request: command.request })
+      case "cancelAttachment":
+        if (command.request !== current.attachmentImport || !port?.cancelAttachmentImport) return false
+        try tryPromise(() => port.cancelAttachmentImport?.({ request: command.request }) ?? Promise.resolve())
+        try keep({ ...current, attachmentImport: undefined })
+        return true
       case "capture": return try importOwner(current, { kind: "capture" })
       case "pick": return try importOwner(current, command)
       case "tab":
@@ -223,6 +243,24 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
       }
     }
     return false
+  }
+
+  if (port?.addListener) {
+    const links = Stream.callback<void>((events) => acquireRelease(
+      Effect.option(tryPromise(() => port.addListener?.("attachmentImportChanged", () => { Queue.offerUnsafe(events, undefined) }) ?? Promise.reject())),
+      (listener) => Option.isSome(listener) ? Effect.ignore(tryPromise(() => listener.value.remove())) : Effect.void,
+    ))
+    try fork.scoped Stream.runForEach(links, () => Effect.ignore(effect {
+      const requested = try readAttachmentImport()
+      if (!requested) return
+      const work = try Stream.runHead(Stream.filter(desk.changes, (state) => state.device.readiness === "Ready"))
+      if (Option.isNone(work) || (try setup.get()).graceAccount.tag !== "GraceDeviceSignedIn") return
+      if (work.value.device.surface !== "Files") try desk.send({ type: "visit", destination: "Files" }, "Person")
+      else try serial.withPermit(effect {
+        const current = try SubscriptionRef.get(latest)
+        if (current.kind === "ready") try keep({ ...current, attachmentImport: try readAttachmentImport() })
+      })
+    }))
   }
 
   const contexts = Stream.changes(Stream.map(Stream.zipLatest(desk.changes, setup.changes), ([w, account]) =>

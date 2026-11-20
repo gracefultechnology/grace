@@ -316,6 +316,10 @@ export function ManagedRead({ view }: { view: ReadView }) {
               <Button asChild variant="prominent" size="pill">
                 <a href={snapshot.attachment.url} download={snapshot.attachment.name}>Download original</a>
               </Button>
+              {snapshot.attachment.deviceTransfer && /Android/i.test(navigator.userAgent) &&
+                <Button variant="capsule" size="pill" asChild>
+                  <a href={`https://app.graceforseniors.com/android/files/import#${snapshot.attachment.deviceTransfer}`} referrerPolicy="no-referrer">Save to Grace Files</a>
+                </Button>}
               <Button variant="capsule" size="pill" onClick={() => run({ kind: "closeAttachment" })}>Close attachment</Button>
             </div>
           </section>}

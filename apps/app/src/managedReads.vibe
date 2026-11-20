@@ -29,11 +29,12 @@ const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/
 schema AttachmentDescriptor { partId: string; name: attachmentName; mimeType: idField; size: Schema.Int; supported: boolean }
 const MailBody = Schema.Struct({ accountId: idField, message: MailRow, historyId: Schema.NullOr(historyField),
   attachments: Schema.Array(AttachmentDescriptor), reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
+const transferTicket = Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,4096}$/))
 const AttachmentReceipt = Schema.Struct({ version: Schema.Literal(1), accountId: idField, messageId: idField, historyId: historyField,
   partId: partIdField, name: attachmentName, mimeType: supportedMedia, size: Schema.Int, supported: Schema.Literal(true),
-  dataBase64: Schema.String.check(Schema.isMaxLength(encodedAttachmentLimit), Schema.isPattern(/^[A-Za-z0-9+/]*={0,2}$/)),
+  grantId: Schema.optional(idField), organizationId: Schema.optional(idField), deviceTransfer: Schema.optional(transferTicket), dataBase64: Schema.String.check(Schema.isMaxLength(encodedAttachmentLimit), Schema.isPattern(/^[A-Za-z0-9+/]*={0,2}$/)),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) })
-type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; url: string; preview?: { text: string; truncated: boolean } }
+type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; url: string; deviceTransfer?: string; preview?: { text: string; truncated: boolean } }
 
 export schema LocalMailDraft { recipient: string; subject: string; text: string; operationId?: string; grant?: string }
 schema SentMail { accountId: idField; operationId: idField; messageId: idField }
@@ -248,7 +249,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (!selected?.historyId || !attachment || attachment.size < 0 || attachment.size > attachmentLimit) return false
     const messageId = selected.message.externalId
     const original = try query("gmail/attachment", { grantId: scope.grant, messageId, historyId: selected.historyId, partId }, AttachmentReceipt, authorization)
-    if (original.accountId !== scope.accountId || original.historyId !== selected.historyId || original.messageId !== messageId ||
+    if (original.accountId !== scope.accountId || (original.grantId !== undefined && original.grantId !== scope.grant) || original.historyId !== selected.historyId || original.messageId !== messageId ||
         original.partId !== partId || original.name !== attachment.name || original.mimeType !== attachment.mimeType || original.size !== attachment.size) return false
     if (original.dataBase64.length % 4 !== 0) return false
     const decoded = try Effect.try(() => webView.window.atob(original.dataBase64))
@@ -261,7 +262,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const preview = original.mimeType === "text/plain"
       ? { text: new TextDecoder().decode(bytes.subarray(0, textPreviewLimit)), truncated: bytes.length > textPreviewLimit }
       : undefined
-    try publish({ ...shown, attachment: { name: original.name, mimeType: original.mimeType, url, preview } })
+    try publish({ ...shown, attachment: { name: original.name, mimeType: original.mimeType, url, preview, deviceTransfer: original.mimeType !== "text/plain" && original.grantId === scope.grant && original.organizationId ? original.deviceTransfer : undefined } })
     return true
   }
 
