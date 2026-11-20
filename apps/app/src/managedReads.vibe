@@ -472,7 +472,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       const { row } = command
       const home = try SubscriptionRef.get(cards)
       const before = try Ref.get(pending)
-      const scope = try scopeOf("Calendar", try setup.get(), before)
+      const scope = try scopeOf(native, "Calendar", try setup.get(), before)
       if ((try desk.get()).device.surface !== "Home" || scope.kind !== "ready" ||
         scope.accountId !== row.accountId || scope.grant !== row.grant ||
         home?.accountId !== row.accountId || home.grant !== row.grant ||
