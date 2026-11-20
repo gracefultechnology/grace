@@ -10,7 +10,7 @@ import { Spinner } from "./Spinner.tsx";
 import { WifiNetworkRow } from "./WifiNetworkRow.tsx";
 
 export interface WifiNetwork {
-  /** Tells apart networks that share a name, such as an open look-alike of a locked one; the name when absent. */
+  /** The network's identity, its name when absent. */
   id?: string;
   name: string;
   signal?: number;
