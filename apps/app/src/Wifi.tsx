@@ -43,7 +43,7 @@ function notice(n: NetworkJoin, name: string) {
   if (n.phase === "JoinFailed") return n.selected.authentication === "SharedPassword"
     ? `${n.explanation} ${fixSteps}`
     : `${n.explanation} Move closer and try again. If it still won’t connect, ask whoever looks after this network.`;
-  if (n.phase === "JoinUnconfirmed") return "The tablet is online, but Android didn’t say on which network.";
+  if (n.phase === "JoinUnconfirmed") return `Android hasn’t confirmed the connection to ${name}.`;
   if (n.phase === "PortalEntry") return `${name} has a sign-in page. Sign in there to finish joining.`;
   return undefined;
 }
