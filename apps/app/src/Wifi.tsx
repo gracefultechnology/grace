@@ -80,7 +80,7 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
   const said = notice(n, name);
   return (
     <>
-      <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => offer.name !== connected?.name).map(row)}
+      <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => !online || offer.network.id !== identified?.id).map(row)}
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
         connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? n.selected.id : undefined}
         failed={n.phase === "JoinFailed" ? n.selected.id : undefined} onRetry={() => run(page.retry())}
