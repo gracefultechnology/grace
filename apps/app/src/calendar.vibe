@@ -324,11 +324,8 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     return { succeeded: receipt.succeeded, evidence: receipt.succeeded ? `moved:${plan.entry.identity.occurrenceId}` : "" }
   }
   effect function erased(v: CalendarView) {
-    try Console.log(`DEBUGERASE ${key} ${v.selectedId} ${removal(v).tag} ${v.scope}`)
     const result = try removedBy(v, removal(v))
-    try Console.log(`DEBUGERASED ${result.succeeded} ${result.evidence}`)
     const answered = Effect.as(box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore"), true) catch () => false
-    try Console.log(`DEBUGANSWERED ${answered}`)
     if (answered && result.succeeded) try deleted(entryAt(v, v.selectedId).committed.title)
   }
   try Stream.runForEach(box.changes, effect (v) => {
