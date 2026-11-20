@@ -13,7 +13,6 @@ import { RuntimeContext } from "../src/useApp.ts";
 import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
-import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
 import { mount, actOnScreen } from "./screen.tsx";
 import "../src/main.css";
@@ -80,12 +79,11 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
     await allowOutlook(secret);
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
-  const network = { online: true };
-  const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
-  const runtime = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
-  const connectivity = () => runtime.runPromise(Effect.map(Effect.flatMap(Effect.service(Workspaces), (w) => w.get()), (w) => w.device.connectivity));
+  const connectivity = vi.spyOn(window.navigator, "onLine", "get");
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
   const view = await mount(runtime);
   onTestFinished(async () => {
+    connectivity.mockRestore();
     browserSession.mockRestore();
     await forgotten(scope.owner);
     localStorage.clear();
@@ -104,11 +102,13 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       signedIn = active;
       await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
     }),
-    host: async (availability: "Online" | "Offline") => {
-      network.online = availability === "Online";
-      await act(() => Promise.resolve(window.dispatchEvent(new Event(availability === "Online" ? "online" : "offline"))));
-      await expect.poll(connectivity).toBe(availability);
-    },
+    host: (availability: "Online" | "Offline") => act(async () => {
+      const online = availability === "Online";
+      connectivity.mockReturnValue(online);
+      window.dispatchEvent(new Event(online ? "online" : "offline"));
+      await expect.poll(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
+        Effect.map(workspace.get(), ({ device }) => device.connectivity)))).toBe(availability);
+    }),
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
     company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } })).json()),
   };
@@ -168,18 +168,17 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   const { secret, company, appointments } = await start(false, tablet);
   const headers = { authorization: `Bearer ${secret}` };
   const grants = async () => Schema.decodeUnknownSync(GoogleGrants)(await (await fetch(`${cloud}/api/v1/eliza/google/accounts?side=owner`, { headers })).json());
-  const windows = vi.spyOn(window, "open");
-  onTestFinished(() => { windows.mockRestore(); });
-  const providerPages = () => windows.mock.calls.map(([url]) => String(url));
+  const openedProvider = vi.spyOn(window, "open");
+  onTestFinished(() => { openedProvider.mockRestore(); });
 
   await click(page.getByRole("button", { name: "Settings", exact: true }));
   await click(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" }));
   await click(page.getByRole("button", { name: /^Gmail/ }));
   const pending = page.getByRole("dialog", { name: "Gmail sign-in page" });
   await expect.element(pending).toBeVisible();
-  await expect.poll(() => providerPages().length).toBe(1);
+  await expect.poll(() => openedProvider.mock.calls.length).toBe(1);
   expect(await grants()).toEqual([]);
-  const provider = new URL(providerPages()[0]);
+  const provider = new URL(String(openedProvider.mock.calls[0][0]));
   expect(provider.origin).toBe(new URL(cloud).origin);
   expect(provider.pathname).toBe("/o/oauth2/v2/auth");
   expect(provider.searchParams.get("response_type")).toBe("code");
