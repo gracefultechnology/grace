@@ -84,6 +84,8 @@ export const mailAccounts: MailAccountRow[] = [
   { id: 2, name: "Outlook", colour: 1, unread: 1, needsSignIn: false },
 ];
 const signIn = fn();
+const fixWifi = fn();
+const undo = fn();
 
 const tagged: MailSummary[] = [
   ...inbox.slice(0, 2).map((m) => ({ ...m, account: "Gmail" })),
@@ -98,8 +100,19 @@ export const meta: ComponentMeta<MailAppProps> = {
     "Grace points at what she found": { query: "book", messages: inbox.filter((m) => m.id === "book"), guide: { targetId: "book", kind: "instruction", title: "Tap Riverside Book Club", onClose: fn() } },
     "Nothing found": { query: "Thanksgiving", messages: [] },
     Trash: { folder: "trash", messages: [{ ...inbox[2], id: "book" }] },
-    "Two accounts": { counts: { inbox: 3 }, accounts: mailAccounts, messages: tagged },
-    "With banners": {
+    "Two accounts, moved to Trash": {
+      counts: { inbox: 3 },
+      accounts: mailAccounts,
+      messages: tagged.slice(1),
+      toast: (
+        <Toast placement="screen" onUndo={undo}>
+          Moved to Trash
+        </Toast>
+      ),
+    },
+    "Offline, with banners": {
+      status: "offline",
+      onFixWifi: fixWifi,
       accounts: [mailAccounts[0], { ...mailAccounts[1], needsSignIn: true }],
       messages: tagged,
       banners: (
@@ -121,15 +134,6 @@ export const meta: ComponentMeta<MailAppProps> = {
       banners: <MailSignInBanner name="Outlook" others />,
     },
     "Load failed": { status: "failed", onRetry: retry },
-    Offline: { status: "offline", onFixWifi: fn() },
-    "Moved to Trash": {
-      messages: inbox.slice(0, 3),
-      toast: (
-        <Toast placement="screen" onUndo={fn()}>
-          Moved to Trash
-        </Toast>
-      ),
-    },
   },
   decorator: mailScreen,
   play: {
@@ -161,11 +165,16 @@ export const meta: ComponentMeta<MailAppProps> = {
       await expect(canvas.queryByRole("button", { name: "Fix Wi-Fi" })).toBeNull();
       await expect(canvas.queryByRole("button", { name: "Sign in again" })).toBeNull();
     },
-    "With banners": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign in again" }));
+    "Offline, with banners": onMailScreen(async (canvas) => {
+      await userEvent.click(canvas.getByRole("button", { name: "Sign in again" }));
       await expect(signIn).toHaveBeenCalled();
-      unfocus();
-    },
+      await userEvent.click(canvas.getByRole("button", { name: "Fix Wi-Fi" }));
+      await expect(fixWifi).toHaveBeenCalled();
+    }),
+    "Two accounts, moved to Trash": onMailScreen(async (canvas) => {
+      await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
+      await expect(undo).toHaveBeenCalled();
+    }),
     "Load failed": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.getByRole("button", { name: /Riverside Book Club/ })).toBeTruthy();
