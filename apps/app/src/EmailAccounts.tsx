@@ -3,23 +3,19 @@ import {
   type AccountColour, Alert, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm,
   OtherEmailForm, type OtherEmailProblem, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
-import { Effect } from "effect";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
 import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
-import type { Help } from "./context.vibe";
-import { Conversation } from "./conversation.vibe";
-import { type MailInstance, useAccounts, useRuntime, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
+import { type MailInstance, useAccounts, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack">;
 
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
-const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
 const home = "Email & calendar";
 const add = "Add an email";
 const other = "Other email";
@@ -58,8 +54,7 @@ export function EmailAccounts(frame: Frame) {
 
 function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
   const { can, send } = useAccounts();
-  const runtime = useRuntime();
-  const workspace = useWorkspace();
+  const { askGrace, guide } = useWorkspace();
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -68,13 +63,10 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
 
-  const opening = workspace.can({ type: "openGrace" });
-  const help = async (need: Help) => {
-    await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
-    if (opening) await workspace.send({ type: "openGrace" });
-    await workspace.send(compact);
-  };
-  const askGrace = (need: Help) => opening || workspace.can(compact) ? () => void help(need) : undefined;
+  const tile = guide((target) => target.startsWith("prov-") && Object.hasOwn(providers, target.slice(5)) ? providers[target.slice(5) as Provider] : undefined);
+  const adding = guide((target) => target === "acadd" ? "add" : undefined);
+  const row = guide((target) => target.startsWith("acc-") ? target.slice(4) : undefined);
+  const rowGuide = (id: number) => row?.targetId === String(id) ? { kind: row.kind, title: row.title, onClose: row.onClose } : undefined;
   const choose = (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.();
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;
@@ -85,18 +77,18 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return registry.accounts.length === 0 ? (
           <EmailAccountList empty>
             {alert}
-            <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} />
+            <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} guide={tile} />
           </EmailAccountList>
         ) : (
-          <EmailAccountList onAdd={offer({ type: "addAccount" })}>
+          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={adding}>
             {registry.accounts.map((a) => (
               <EmailAccountRow key={a.id} address={a.address} provider={providers[a.provider]} uses={a.use} status={status(a.id)} colour={colour(a)}
-                onOpen={offer({ type: "openAccount", id: a.id })} />
+                onOpen={offer({ type: "openAccount", id: a.id })} guide={rowGuide(a.id)} />
             ))}
           </EmailAccountList>
         );
       case "AddAccount":
-        return <>{alert}<ProviderGrid bare onChoose={choose} /></>;
+        return <>{alert}<ProviderGrid bare onChoose={choose} guide={tile} /></>;
       case "OtherEmailPage": {
         const renewing = registry.accounts.find((a) => a.id === signIn.renewing)?.address ?? "";
         return (

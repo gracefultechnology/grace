@@ -13,7 +13,8 @@ while coordinating browser observations, payment and wake timers.
 ### Each interaction uses the existing guarded assistant operation
 
 User controls and trusted service results have distinct variants and retain
-their original actor checks. Trusted service results come from Grace's cloud
+their original actor checks; a turn the host starts, such as an Ask Grace
+button's, is a trusted service variant. Trusted service results come from Grace's cloud
 agent and her cloud speech service; nothing is recognised or spoken by a model
 on the tablet. Runtime text is never a user choice. A complete
 human utterance keeps its audio provenance and current generation. Open,
@@ -37,6 +38,7 @@ type Interaction = TypeIntoChat | StopVoice | ReadLatest | ShowChat | DismissKey
   | ServiceFailure({ token: int, text: str }) | Silence({ token: int })
   | UnusableSpeech({ token: int, owner: C::AudioOwner })
   | DismissGuidance({ revision: int }) | ShowGuidance({ revision: int })
+  | HostTurn({ turnOrigin: C::TurnOrigin })
 
 pure def canInteract(a: A::Assistant, input: Interaction, by: C::ConversationActor): bool = match input {
   | DismissGuidance(data) => A::canDismissGuidance(a, data.revision, by)
@@ -62,6 +64,7 @@ pure def canInteract(a: A::Assistant, input: Interaction, by: C::ConversationAct
   | ServiceFailure(data) => A::canServiceFailure(a, data.token, data.text, by)
   | Silence(data) => A::canSilence(a, data.token, by)
   | UnusableSpeech(data) => A::canUnusableSpeech(a, data.token, data.owner, by)
+  | HostTurn(data) => A::canHostTurn(a, data.turnOrigin, by)
 }
 pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor): A::Assistant = match input {
   | DismissGuidance(data) => A::dismissGuidance(a, data.revision, by)
@@ -87,6 +90,7 @@ pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor)
   | ServiceFailure(data) => A::serviceFailure(a, data.token, data.text, by)
   | Silence(data) => A::silence(a, data.token, by)
   | UnusableSpeech(data) => A::unusableSpeech(a, data.token, data.owner, by)
+  | HostTurn(data) => A::hostTurn(a, data.turnOrigin, by)
 }
 pure def validAssistant(a: A::Assistant): bool =
   A::alwaysGraceWorksOnlyOnTheVisiblePage(a) and A::alwaysGuidanceIsNotAhead(a) and
@@ -102,7 +106,8 @@ pure def lawInteractionPreservesAssistant(a: A::Assistant, input: Interaction, b
 
 Submitting human content supersedes prior conversational intent. Layout and
 keyboard ownership alter the observed browser geometry. Draft editing and
-reading alone do not submit a new request. Type must preserve an already
+reading alone do not submit a new request. A turn the host starts submits
+nothing but, like a request, needs Grace's reasoning. Type must preserve an already
 submitted response while muting it; stopping voice is distinct from stopping
 the entire website task. Whether a reply is spoken follows the person's voice
 output setting, never the host's word: `withAudible` puts that setting into a
@@ -134,6 +139,7 @@ pure def needsReasoning(input: Interaction): bool = match input {
   | ChooseAnswer(data) => true
   | Hear(data) => true
   | Respond(data) => true
+  | HostTurn(data) => true
   | _ => false
 }
 pure def targetsWebsite(input: Interaction): bool = match input {
@@ -166,5 +172,6 @@ pure val inputValues = Set(DismissGuidance({ revision: 1 }), ShowGuidance({ revi
   BargeIn({ token: 1, spoken: 2, owner: C::HumanAudio }),
   FinishSpeech({ token: 1 }), FinishSpeech({ token: 2 }),
   ServiceFailure({ token: 1, text: "Voice is unavailable." }), Silence({ token: 1 }),
-  UnusableSpeech({ token: 1, owner: C::HumanAudio }), UnusableSpeech({ token: 2, owner: C::HumanAudio }))
+  UnusableSpeech({ token: 1, owner: C::HumanAudio }), UnusableSpeech({ token: 2, owner: C::HumanAudio }),
+  HostTurn({ turnOrigin: C::PageEvent }), HostTurn({ turnOrigin: C::HerRequest }))
 ```

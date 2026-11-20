@@ -4,8 +4,8 @@ import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { calendarContext, type CalendarSource, type CalendarTold, dayRows, lead, openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
 import type { EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { entryAt } from "../gen/app__calendarView.effect.vibe"
-import { messageRecord, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
-import type { Folder } from "../gen/app__emailItem.effect.vibe"
+import { messageRecord, photoAssets, photoPosition, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
+import type { Folder, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { folderRows, fromChoices, mailContext, type MailTold, needsSignIn, openSource, outboxCount, showsMail, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { type Ask, Machine as Proposal, type Pending } from "../gen/app__proposal.effect.vibe"
 import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
@@ -131,6 +131,17 @@ function sender(s: Scene, account: number, ref: string) {
   return c === undefined ? "an email" : `${cleaned(c.from)}’s email ${quoted(cleaned(c.subject))}`
 }
 
+function flags(s: Scene, account: number, record: MessageRecord): string {
+  const ref = record.identity.ref
+  const box = s.mail.find((m) => m.account === account)?.mailbox
+  const said = [
+    record.unread && "unread",
+    s.content(account, ref)?.attachment === true && "with attachments",
+    box !== undefined && box.warning.evidence !== "" && box.warning.ref === ref && "the tablet found it looks like a scam when it was opened"
+  ].filter((f) => f !== false)
+  return said.length === 0 ? "" : ` (${said.join(", ")})`
+}
+
 function always(s: Scene, now: number): readonly string[] {
   const { registry, mail, calendars, pending } = s
   const rows = calendarContext(registry, calendars, now, now + 14 * 24 * 60 * 60 * 1000).sort((a, b) => a.details.startAt - b.details.startAt)
@@ -144,7 +155,7 @@ function always(s: Scene, now: number): readonly string[] {
       const uses = [a.use.mail && "email", a.use.calendar && "calendar", a.use.contacts && "contacts"].filter((u) => u !== false)
       return `${a.name} (${a.address}${box !== undefined && needsSignIn(box.mailbox) ? ", needs her to sign in again" : ""}; ${uses.length === 0 ? "nothing turned on" : `${uses.join(", ")} on`})`
     }).join("; ")}.`,
-    ...mailAccounts(registry).length === 0 ? [] : [`Email inbox: ${inbox.length === 0 ? "empty" : inbox.map((r) => `${sender(s, r.account, r.record.identity.ref)}${r.record.unread ? " (unread)" : ""} [${mailTarget(r.account, r.record.identity.ref)}]`).join("; ")}.`],
+    ...mailAccounts(registry).length === 0 ? [] : [`Email inbox: ${inbox.length === 0 ? "empty" : inbox.map((r) => `${sender(s, r.account, r.record.identity.ref)}${flags(s, r.account, r.record)} [${mailTarget(r.account, r.record.identity.ref)}]`).join("; ")}.`],
     ...waiting === 0 ? [] : [`${waiting === 1 ? "One email waits" : `${waiting} emails wait`} in Outbox and will go by itself when the tablet is back online.`]
   ]
 }
@@ -166,6 +177,12 @@ function reading(s: Scene, account: number, m: Mailbox): Part {
   }
 }
 
+function viewing(s: Scene, account: number, m: Mailbox): Part {
+  const file = m.assets.find((a) => a.sourceRef === m.attachmentRef)
+  const what = file === undefined ? "an attachment" : file.kind === "Photo" ? `photo ${photoPosition(m) + 1} of ${photoAssets(m).length}` : `the PDF ${quoted(cleaned(file.name))}`
+  return { lines: [`Email is showing ${what} from ${sender(s, account, m.messageRef)}; Back returns to the email.`], targets: [] }
+}
+
 function composing(s: Scene, account: number, m: Mailbox): Part {
   const from = s.registry.accounts.find((a) => a.id === account)?.address ?? ""
   const several = fromChoices(s.registry, s.mail).length > 1
@@ -185,7 +202,8 @@ function emailScreen(s: Scene): Part {
   const writing = shown.find((m) => m.mailbox.composeVisible)
   if (writing !== undefined) return composing(s, writing.account, writing.mailbox)
   const open = shown.find((m) => m.account === openSource(registry, mail))
-  if (open !== undefined && open.mailbox.view !== "Inbox") return reading(s, open.account, open.mailbox)
+  if (open !== undefined && open.mailbox.view === "Attachment") return viewing(s, open.account, open.mailbox)
+  if (open !== undefined && open.mailbox.view === "Message") return reading(s, open.account, open.mailbox)
   const folder = shown[0]?.mailbox.folder ?? "InboxFolder"
   const query = shown[0]?.mailbox.query ?? ""
   const only = registry.accounts.find((a) => a.id === registry.inboxFilter)
