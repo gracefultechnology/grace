@@ -1,12 +1,12 @@
-// spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
-import { type Guide, type GuidePointing, type HomeMail, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
+// spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"; spec/app/mailboxes.md, "With no account’s Email on, Email offers only Connect your email and Ask Grace"; spec/app/mailboxes.md, "The Home Email card says Not connected, Waiting for the internet, or how many are new"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
+import { type Guide, type GuidePointing, type HomeEmailCardProps, type HomeMail, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
-import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
+import type { Accounts } from "../gen/app__accounts.ts";
 import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
 import { type Files, hasFile, type SavedFile } from "../gen/app__files.ts";
-import { type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, fromChoices, mailContext, openSource, outboxCount, outboxRows, showsMail, undoable, unreadIn } from "../gen/app__mailboxes.ts";
+import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
 import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
@@ -24,7 +24,7 @@ const folderOf = (folder: Folder) => (Object.keys(folders) as (keyof typeof fold
 const sourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
 const close = "Close Email";
-const links = /https?:\/\/\S+/;
+const links = /https?:\/\/\S*[^\s.,;:!?)\]'"]/;
 const unlinked = (body: string) => body.replace(new RegExp(links.source, "g"), "(link removed)");
 const tones = [1, 2, 3, 4, 5, 6] as const;
 const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
@@ -74,14 +74,26 @@ function named(text: string, nameOf: (address: string) => string) {
 const newest = (read: Read) => (a: Row, b: Row) =>
   (read(b.account, b.record.identity.ref)?.receivedAt ?? 0) - (read(a.account, a.record.identity.ref)?.receivedAt ?? 0);
 
-export function homeMail(registry: Accounts, boxes: readonly MailInstance[], read: Read): HomeMail[] {
-  return mailContext(registry, sourcesOf(boxes))
-    .filter((r) => r.record.folder === "InboxFolder")
-    .sort((a, b) => Number(b.record.unread) - Number(a.record.unread) || newest(read)(a, b))
-    .map((r) => {
-      const c = read(r.account, r.record.identity.ref);
-      return { id: `${r.account}/${r.record.identity.ref}`, ...contact(c?.from ?? "", c?.fromAddress ?? ""), subject: c?.subject ?? "", unread: r.record.unread };
-    });
+const homeStatuses = (status: HomeMailStatus): Pick<HomeEmailCardProps, "status" | "waiting" | "notConnected"> => {
+  switch (status.tag) {
+    case "NotConnected": return { notConnected: true };
+    case "WaitingForInternet": return { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." };
+    case "NewCount": return { status: `${status.count} new` };
+    case "NoNew": return { status: "No new email" };
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+};
+
+export function homeMail(registry: Accounts, boxes: readonly MailInstance[], read: Read, online: boolean): Pick<HomeEmailCardProps, "messages" | "status" | "waiting" | "notConnected"> {
+  const sources = sourcesOf(boxes);
+  const messages: HomeMail[] = homeRows(registry, sources).toSorted(newest(read)).slice(0, 2).map((r) => {
+    const c = read(r.account, r.record.identity.ref);
+    return { id: `${r.account}/${r.record.identity.ref}`, ...contact(c?.from ?? "", c?.fromAddress ?? ""), subject: c?.subject ?? "", unread: r.record.unread };
+  });
+  return { messages, ...homeStatuses(homeStatus(registry, sources, online)) };
 }
 
 type Ringed = MailMessageTarget | "link";
@@ -119,7 +131,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const home: WorkspaceEvent = { type: "visit", destination: "Home" };
   const frame = { onClose: fire(home), closeLabel: close, ...props };
   const accountSettings: WorkspaceEvent = { type: "chooseSettingsPage", page: "EmailCalendarSettings" };
-  if (mailAccounts(registry).length === 0)
+  if (showsConnect(registry))
     return <MailApp noAccount folder="inbox" messages={[]} onConnect={fire(accountSettings)} onAskGrace={askGrace("connectEmail")} {...frame} />;
 
   const shown = boxes.filter((b) => showsMail(registry, b.id));
@@ -191,7 +203,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const rows = accountRows(registry, sources);
   const waitingCount = outboxCount(registry, sources);
   const drafts = shown.reduce((n, b) => n + b.state.messages.filter((r) => r.folder === "DraftsFolder").length, 0);
-  const outbox = outboxChosen && waitingCount > 0;
+  const outbox = showsOutbox(registry, sources, outboxChosen);
   const untitled = (subject: string | undefined) => subject === "" ? "(no subject)" : subject ?? "";
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => {
     const at = queuedAt(r.queued.operationId);
@@ -206,7 +218,8 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     if (!theirs) return contact(c?.from ?? "", c?.fromAddress ?? "");
     const to = c?.to[0] ? named(c.to[0], mail?.nameOf ?? ((a) => a)) : "";
     const address = c?.to[0] ? addressOf(c.to[0]) : "";
-    return contact(folder === "SentFolder" ? to : to ? `To ${to}` : "No one yet", address || to);
+    if (folder === "SentFolder" || !to) return contact(folder === "SentFolder" ? to : "No one yet", address || to);
+    return { ...contact(`To ${to}`, address || to), mark: [...to][0]?.toUpperCase() };
   };
   const listed: MailSummary[] = folderRows(registry, sources, folder).sort(newest(read)).map((r) => {
     const c = read(r.account, r.record.identity.ref);
