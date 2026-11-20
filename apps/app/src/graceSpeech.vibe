@@ -178,8 +178,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   let sending = false
 
   effect function stopPlayback() {
-    if (speaking === null) return
-    wire(socket, { t: "cancel", id: String(speaking.token) }) catch () => undefined
+    const current = speaking
+    if (current === null) return
+    wire(socket, { t: "cancel", id: String(current.token) }) catch () => undefined
     speaking = null
     try Effect.try(() => speaker.cancel())
   }
