@@ -158,7 +158,7 @@ export function Calendar({ now, ...props }: Covered & { now: number }) {
 }
 
 function Shown({ registry, pending, views, now, ...props }: Covered & { registry: Accounts; pending: Pending; views: readonly CalendarInstance[]; now: number }) {
-  const { can, send } = useWorkspace();
+  const { can, send, guide } = useWorkspace();
   const accounts = useAccounts();
   const note = useCalendarNote();
   const lead = views.find((v) => v.key === tabletKey);
@@ -234,7 +234,7 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
     },
     onClose: fire({ type: "visit", destination: "Home" }),
     closeLabel: "Close Calendar",
-    guide: note?.row ? { kind: "confirm", targetId: note.row } : undefined,
+    guide: guide((target) => target.startsWith("event:") ? target.slice(6).replace(":", "/") : undefined) ?? (note?.row ? { kind: "confirm", targetId: note.row } : undefined),
     ...props,
   };
 

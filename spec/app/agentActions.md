@@ -47,6 +47,7 @@ import calendarView as V from "./calendarView"
 import proposal as P from "./proposal"
 import calendars as K from "./calendars"
 import shell as S from "./shell"
+import assistant as G from "./assistant"
 
 type AgentAction =
   Mail({ account: int, assist: E::MailAssist })
@@ -59,7 +60,7 @@ type AgentAction =
   | ConfirmProposal
   | CancelProposal
   | ShowSetting({ page: S::SettingsPage })
-  | Guide({ target: str })
+  | Guide({ target: str, kind: G::GuidanceKind, title: str })
 type Refusal = NotHerTurn | NotShown | OwnerRefused | AlreadyInCalendar | NothingAsked | NotOnScreen
 type Route =
   ToMail({ account: int, assist: E::MailAssist })
@@ -69,7 +70,7 @@ type Route =
   | ToAnswer({ consent: R::Consent })
   | ToWithdraw
   | ToSetting({ page: S::SettingsPage })
-  | ToGuide({ target: str })
+  | ToGuide({ target: str, kind: G::GuidanceKind, title: str })
   | Refused({ why: Refusal })
 type World = {
   now: R::Moment, stamp: int, timezone: str, accounts: A::Accounts, mail: List[M::MailSource],
@@ -94,7 +95,9 @@ pure def route(w: World, request: R::Request, command: AgentAction): Route =
     | CancelProposal =>
         if (P::canWithdraw(w.pending, R::Cancellation, P::Grace)) ToWithdraw else Refused({ why: NothingAsked })
     | ShowSetting(x) => ToSetting({ page: x.page })
-    | Guide(x) => if (w.targets.contains(x.target)) ToGuide({ target: x.target }) else Refused({ why: NotOnScreen })
+    | Guide(x) =>
+        if (w.targets.contains(x.target)) ToGuide({ target: x.target, kind: x.kind, title: x.title })
+        else Refused({ why: NotOnScreen })
   }
 
 pure def refusedFor(routed: Route, why: Refusal): bool = match routed {
@@ -175,8 +178,8 @@ pure def lawGraceNavigatesOnlyToWhatShows(w: World, request: R::Request, command
 ### Grace opens a setting, and points only at what is on the screen
 
 Grace may open any Settings page, Email & calendar included, as Margaret's
-tap on it would. She may point at a target the screen offers now, and at
-nothing else: an unknown or stale target is refused, so she never guides
+tap on it would. She may point at a target the screen offers now, as a ring
+to look at, a labelled ring to tap or a done check, and at nothing else: an unknown or stale target is refused, so she never guides
 Margaret to something that is not there. A provider's own sign-in page
 offers no targets.
 
@@ -370,5 +373,5 @@ pure val commandValues = Set(
   ProposeChange({ key: 1, id: "garden", details: K::movedGarden }), ProposeChange({ key: 0, id: "lunch", details: K::movedGarden }),
   ProposeDeletion({ key: 1, id: "garden", scope: V::ThisOccurrence }), ProposeDeletion({ key: 1, id: "garden", scope: V::EntireSeries }),
   ConfirmProposal, CancelProposal, ShowSetting({ page: S::EmailCalendarSettings }),
-  Guide({ target: "mbody" }), Guide({ target: "send" }))
+  Guide({ target: "mbody", kind: G::Look, title: "" }), Guide({ target: "send", kind: G::Tap, title: "Tap Send" }))
 ```

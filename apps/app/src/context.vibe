@@ -137,7 +137,7 @@ function flags(s: Scene, account: number, record: MessageRecord): string {
   const said = [
     record.unread && "unread",
     s.content(account, ref)?.attachment === true && "with attachments",
-    box !== undefined && showsScamWarning(box) && box.messageRef === ref && "the tablet warns it looks like a scam"
+    box !== undefined && box.warning.evidence !== "" && box.warning.ref === ref && "the tablet found it looks like a scam when it was opened"
   ].filter((f) => f !== false)
   return said.length === 0 ? "" : ` (${said.join(", ")})`
 }

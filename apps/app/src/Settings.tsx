@@ -19,7 +19,7 @@ const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
 export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
-  const { workspace, can, send } = useWorkspace();
+  const { workspace, can, send, guide } = useWorkspace();
   const website = useWebsiteRequests();
   const runtime = useRuntime();
   const page = workspace!.device.settingsPage;
@@ -37,7 +37,8 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
-  const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  const nav = guide((target) => target.startsWith("nav-") && Object.hasOwn(names, target.slice(4)) ? names[target.slice(4) as SettingsPage] : undefined);
+  const frame = { pages, page: names[page], onPageChange: choose, guide: nav, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
   if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
 
   return (

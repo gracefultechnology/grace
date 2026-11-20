@@ -1,5 +1,5 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "The visible Send button approves exactly the composer the user sees"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "From offers each account that has Email on and can send"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
-import { type MailContact, MailCompose, type MailPhoto, type MailRecipientField, MailRecipientPicker, type MailSendStatus } from "@repo/ui";
+import { type MailComposeTarget, type MailContact, MailCompose, type MailPhoto, type MailRecipientField, MailRecipientPicker, type MailSendStatus } from "@repo/ui";
 import { Exit } from "effect";
 import { use, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
@@ -7,12 +7,13 @@ import { type DraftContent, emptyContent, enabled, type Event as MailEvent, type
 import { canMoveDraft, contactAccounts, fromChoices, type MailSource, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
 import { recipientsOf, recipientsValid } from "./mail.vibe";
-import type { MailInstance, MailWriter } from "./useApp.ts";
+import { type MailInstance, type MailWriter, useWorkspace } from "./useApp.ts";
 
 export type Picking = { readonly field: MailRecipientField; readonly query: string };
 type Field = "subject" | "body";
 type Frame = { onClose?: () => void; closeLabel: string; inert?: boolean; "aria-hidden"?: boolean };
 
+const composeTargets: readonly MailComposeTarget[] = ["from", "body", "send"];
 const questions: Record<MailRecipientField, string> = { to: "Who is it to?", cc: "Who should get a copy?", bcc: "Who should get a hidden copy?" };
 const sending: Record<SendStatus, MailSendStatus> = {
   NoDraft: "idle", Composing: "idle", Reviewing: "idle", Sending: "sending", Sent: "idle", SendFailed: "failed", SendUnknown: "unknown",
@@ -74,6 +75,7 @@ export type EmailComposeProps = {
 /** @model spec/app/email.md */
 export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, sender, frame }: EmailComposeProps) {
   const people = use(mail.contacts(contactAccounts(registry).join(",")));
+  const { guide } = useWorkspace();
   const [typed, setTyped] = useState<Partial<Record<Field, string>>>({});
   const [ccOpen, setCcOpen] = useState(false);
   const sources: MailSource[] = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -129,7 +131,7 @@ export function EmailCompose({ registry, boxes, box, picking, onPicking, mail, s
   const retry = undeleted ? throwAway : keep;
 
   return (
-    <MailCompose title={m.replyTo === "" ? "New email" : "Reply"} backLabel={m.replyTo === "" ? "Inbox" : `${sender(box)}’s email`}
+    <MailCompose guide={guide((target) => composeTargets.find((t) => t === target))} title={m.replyTo === "" ? "New email" : "Reply"} backLabel={m.replyTo === "" ? "Inbox" : `${sender(box)}’s email`}
       from={{ accounts: choices.map((a) => ({ id: a.id, address: a.address, name: a.name })), selected: box.id, onSelect: (id) => { if (id !== box.id) void mail.moveDraft(box.id, id); } }}
       to={recipientsOf(m.draft.to).map(contactOf)} cc={m.draft.cc.map(contactOf)} bcc={m.draft.bcc.map(contactOf)}
       ccOpen={ccOpen} onOpenCc={editable ? () => setCcOpen(true) : undefined}

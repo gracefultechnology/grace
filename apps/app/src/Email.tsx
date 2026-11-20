@@ -1,5 +1,5 @@
 // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"
-import { type HomeMail, MailApp, type MailFolder, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
+import { type HomeMail, MailApp, type MailFolder, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
 import { type Accounts, mailAccounts } from "../gen/app__accounts.ts";
@@ -24,6 +24,7 @@ const folderOf = (folder: Folder) => (Object.keys(folders) as (keyof typeof fold
 const sourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
 const close = "Close Email";
+const messageTargets: readonly MailMessageTarget[] = ["caution", "mbody", "saveall", "file"];
 const unlinked = (body: string) => body.replace(/https?:\/\/\S+/g, "(link removed)");
 const unshown = "This attachment couldn’t be shown";
 const unrendered = "This PDF can’t be shown on this tablet.";
@@ -80,7 +81,7 @@ export function Email(props: Covered) {
 }
 
 function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; boxes: readonly MailInstance[] }) {
-  const { workspace, can, send } = useWorkspace();
+  const { workspace, can, send, askGrace, guide } = useWorkspace();
   const account = useAccounts();
   const read = useMailContent();
   const kept = useMailHeld();
@@ -97,7 +98,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const frame = { onClose: fire(home), closeLabel: close, ...props };
   const accountSettings: WorkspaceEvent = { type: "chooseSettingsPage", page: "EmailCalendarSettings" };
   if (mailAccounts(registry).length === 0)
-    return <MailApp noAccount folder="inbox" messages={[]} onConnect={fire(accountSettings)} onAskGrace={fire({ type: "openGrace" })} {...frame} />;
+    return <MailApp noAccount folder="inbox" messages={[]} onConnect={fire(accountSettings)} onAskGrace={askGrace("connectEmail")} {...frame} />;
 
   const sources = sourcesOf(boxes);
   const shown = boxes.filter((b) => showsMail(registry, b.id));
@@ -152,7 +153,8 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         onReply={replying ? () => void mail.reply(opening.id) : undefined}
         onForward={m.folder !== "DraftsFolder" && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
-        backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
+        backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame}
+        guide={guide((target) => messageTargets.find((t) => t === target))} />
       {toast}
       </>
     );
@@ -219,6 +221,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
 
   return (
     <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), drafts, outbox: waitingCount }}
+      guide={guide((target) => target.startsWith("mail:") ? target.slice(5).replace(":", "/") : undefined)}
       accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
       onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
