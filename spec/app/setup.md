@@ -477,37 +477,37 @@ Settings opens Account even without a network connection. The device uses
 the Grace service's authenticated account and subscription response. An
 account from another service, a checkout return, or a browser tab's sign-in
 does not establish a Grace session or an active subscription. If the check
-fails, offer to check again. Account details are private to the device UI. A current subscription never
+fails, or the web account's plan could not be read, offer to check again.
+Account details are private to the device UI. A current subscription never
 offers checkout. A previously registered customer may both manage their
 account and subscribe again when the service reports checkout is available.
-The web page shows the sign-in methods Grace offers. The Android app checks
-its own session and opens Grace's web account to manage the subscription.
-A web session authorizes a tablet only after the person confirms the tablet
+The web page shows the sign-in methods that the Grace service's signed-out
+report lists, which only that service reports. The Android app checks its
+own session and opens Grace's web account to manage the subscription. A web
+session authorizes a tablet only after the person confirms the tablet
 sign-in in the browser.
 
-Each report names where it came from. The tablet's own Grace session reports
-only whether this tablet is signed in, and the Grace service's authenticated
-response only the web account, its plan and its Google connection; either may
-report that the account could not be checked. Only a signed-in web account
-carries any Google link state. Every change to the account shown comes from one
-of these two reports, each carrying only what its source may report. Another
-service, a checkout return and a browser tab's sign-in have no way to change
-the account, so none of them establishes a session, and with it a plan; this
-is the step rule's promise, not a separate law. A tablet
-asking to sign in is confirmed only by the person's own choice, while a web
-account is signed in, and the confirmation holds only while the reports name
-that signed-in account: any other report, even one that the account could
-not be checked, asks her again.
+Each source reports through its own event. The tablet's own Grace session
+reports only whether this tablet is signed in, and the Grace service's
+authenticated response only the web account, its plan and its Google
+connection; either may report that the account could not be checked. Only a
+signed-in web account carries any Google link state. Every change to the
+account shown comes from one of these two reports, each carrying only what
+its source may report. Another service, a checkout return and a browser
+tab's sign-in have no way to change the account, so none of them establishes
+a session, and with it a plan; this is the step rule's promise, not a
+separate law. A tablet asking to sign in is confirmed only by the person's
+own choice, while a web account is signed in, and the confirmation holds
+only while the reports name that signed-in account: any other report, even
+one that the account could not be checked, asks her again.
 
-A check that fails, or a web account whose plan could not be read, offers to
-check again. The sign-in methods the web page shows are the ones the Grace
-service's signed-out report lists, which only that service reports. A tablet
-signed in with its own session never offers checkout or the payment provider:
-it opens Grace's web account to manage the subscription. That Settings opens
-Account without a network connection is [the device shell](./shell.md)'s
-"Settings and rail popovers preserve the surface underneath": no connectivity
-check gates opening Settings. Keeping account details out of captures is the
-Settings account page's sensitive marking, which no rule checks yet.
+A tablet signed in with its own session never offers checkout or the payment
+provider: it opens Grace's web account to manage the subscription. That
+Settings opens Account without a network connection is [the device
+shell](./shell.md)'s "Settings and rail popovers preserve the surface
+underneath": no connectivity check gates opening Settings. Keeping account
+details out of captures is the Settings account page's sensitive marking,
+which no rule checks yet.
 
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
@@ -799,6 +799,10 @@ pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAcco
   mayOfferBackupApproval(registered, recentSignIn, sameAccount) and confirmed
 pure def lawStaleSignInCannotApprovePasswordBackup(registered: bool, sameAccount: bool, confirmed: bool): bool =
   not(mayApprovePasswordBackup(registered, false, sameAccount, confirmed))
+pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
+  not(mayApprovePasswordBackup(false, recentSignIn, sameAccount, confirmed)) and
+  not(mayApprovePasswordBackup(registered, recentSignIn, sameAccount, false)) and
+  not(mayApprovePasswordBackup(registered, recentSignIn, false, confirmed))
 ```
 
 ## Story: Keep my passwords private when the tablet account changes

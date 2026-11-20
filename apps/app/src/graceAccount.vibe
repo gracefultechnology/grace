@@ -206,8 +206,8 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
     const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
       (googleLink(webTransport, account.accountId) catch () => ({ tag: "GoogleLinkUnknown" } as const))
-    setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
-    return account
+    const held = setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
+    return held?.state.graceAccount ?? ({ tag: "AccountUnavailable" } as const)
   }
 
   effect function readDevice(): GraceAccount!unknown {
