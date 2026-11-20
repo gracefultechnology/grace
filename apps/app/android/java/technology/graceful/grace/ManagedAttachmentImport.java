@@ -17,8 +17,8 @@ import org.json.JSONObject;
 
 final class ManagedAttachmentImport {
  static final String PATH = "/android/files/import";
- private static final String HOST = "app.graceforseniors.com";
- private static final String ENDPOINT = "https://api.graceforseniors.com/api/v1/google-attachments/device";
+ private static final String HOST = URI.create(BuildConfig.CLOUD_WEB_ORIGIN).getRawAuthority();
+ private static final String ENDPOINT = BuildConfig.CLOUD_API_ORIGIN + "/api/v1/google-attachments/device";
  private static final int MAX_BYTES = 8 * 1024 * 1024;
  private static final int ENCODED_MAX = 4 * ((MAX_BYTES + 2) / 3);
  private static final Pattern TICKET = Pattern.compile("[0-9a-f]{2,8192}");
