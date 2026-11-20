@@ -237,3 +237,44 @@ lemma lawOnlyTheStoreIsNews_ensures(key: int, view: app__calendarView_CalendarVi
     ToldQuiet(key, view, app__calendarView_publishOccurrence(view, published, view.generation, true, app__calendarView_ViewActor.ViewStore));
   }
 }
+
+lemma lawRingMarksAJustSavedAppointment_ensures(key: int, before: app__calendarView_CalendarView, after: app__calendarView_CalendarView)
+  ensures (lawRingMarksAJustSavedAppointment(key, before, after) == true)
+{
+  lawToldNamesWhatChanged_ensures(key, before, after);
+}
+
+lemma SourceAtIsASource(calendars: seq<CalendarSource>, key: int)
+  ensures sourceAt(calendars, key) == noCalendar || sourceAt(calendars, key) in calendars
+{
+  var found := ProofLib.Filter((s: CalendarSource) => (s.key == key), calendars);
+  if |found| > 0 {
+    assert found[0] in found;
+    ProofLib.FilterMember((s: CalendarSource) => (s.key == key), calendars, found[0]);
+  }
+}
+
+lemma lawCalendarTakesTheDayShown_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, earlier: app__proposal_Pending, pending: app__proposal_Pending, news: CalendarTold, report: app__calendarView_NavigationReport)
+  ensures (lawCalendarTakesTheDayShown(registry, calendars, earlier, pending, news, report) == true)
+{
+  if showsDay(report, askedDay(registry, calendars, earlier, pending)) || showsDay(report, savedDay(registry, calendars, news)) {
+    assert calendarFree(calendars);
+    SourceAtIsASource(calendars, tabletKey);
+    assert lead(calendars) in calendars;
+    assert !app__calendarView_hasEditing(lead(calendars).view);
+  }
+}
+
+lemma lawSavedDayIsTheRingedAppointment_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, news: CalendarTold)
+  ensures (lawSavedDayIsTheRingedAppointment(registry, calendars, news) == true)
+{
+  var v := sourceAt(calendars, news.key).view;
+  var saved := app__calendarView_entryAt(v, news.id);
+  if savedDay(registry, calendars, news).show {
+    var p := (c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == news.id)) && (!c.phase.Deleted?));
+    var matches := ProofLib.Filter(p, v.entries);
+    assert |matches| == 1 && saved == matches[0];
+    assert saved in matches;
+    ProofLib.FilterMember(p, v.entries, saved);
+  }
+}
