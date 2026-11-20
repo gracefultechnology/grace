@@ -4,7 +4,7 @@ import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { calendarContext, type CalendarSource, type CalendarTold, dayRows, lead, openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
 import type { EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { entryAt } from "../gen/app__calendarView.effect.vibe"
-import { messageRecord, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
+import { messageRecord, photoAssets, photoPosition, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
 import type { Folder, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { folderRows, fromChoices, mailContext, type MailTold, needsSignIn, openSource, outboxCount, showsMail, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { type Ask, Machine as Proposal, type Pending } from "../gen/app__proposal.effect.vibe"
@@ -137,7 +137,7 @@ function flags(s: Scene, account: number, record: MessageRecord): string {
   const said = [
     record.unread && "unread",
     s.content(account, ref)?.attachment === true && "with attachments",
-    box !== undefined && box.warning.evidence !== "" && box.warning.ref === ref && "the tablet warns it looks like a scam"
+    box !== undefined && showsScamWarning(box) && box.messageRef === ref && "the tablet warns it looks like a scam"
   ].filter((f) => f !== false)
   return said.length === 0 ? "" : ` (${said.join(", ")})`
 }
@@ -178,9 +178,8 @@ function reading(s: Scene, account: number, m: Mailbox): Part {
 }
 
 function viewing(s: Scene, account: number, m: Mailbox): Part {
-  const photos = m.assets.filter((a) => a.kind === "Photo")
   const file = m.assets.find((a) => a.sourceRef === m.attachmentRef)
-  const what = file === undefined ? "an attachment" : file.kind === "Photo" ? `photo ${photos.indexOf(file) + 1} of ${photos.length}` : `the PDF ${quoted(cleaned(file.name))}`
+  const what = file === undefined ? "an attachment" : file.kind === "Photo" ? `photo ${photoPosition(m) + 1} of ${photoAssets(m).length}` : `the PDF ${quoted(cleaned(file.name))}`
   return { lines: [`Email is showing ${what} from ${sender(s, account, m.messageRef)}; Back returns to the email.`], targets: [] }
 }
 

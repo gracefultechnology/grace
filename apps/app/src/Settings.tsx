@@ -13,13 +13,15 @@ const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 const pages = Object.values(names);
+const navTargets = new Map((Object.keys(names) as SettingsPage[]).map((p) => [`nav-${p}`, names[p]]));
+
 const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
 export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
-  const { workspace, can, send } = useWorkspace();
+  const { workspace, can, send, guide } = useWorkspace();
   const website = useWebsiteRequests();
   const runtime = useRuntime();
   const page = workspace!.device.settingsPage;
@@ -37,7 +39,10 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
-  const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  const frame = {
+    pages, page: names[page], onPageChange: choose, guide: guide((target) => navTargets.get(target)),
+    onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
+  };
   if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
 
   return (

@@ -372,7 +372,7 @@ revision, occupied ID or repeated receipt cannot replace an entry.
 
 ```quint
 type CreatedReceipt = { owner: str, calendarId: str, localId: str, providerId: str, revision: int }
-pure def withProviderId(saved: CalendarView, localId: str, providerId: str): CalendarView =
+pure def withProviderId(localId: str, saved: CalendarView, providerId: str): CalendarView =
   { ...saved,
     entries: saved.entries.listMap(c => if (c.identity.occurrenceId == localId)
       { ...c, identity: { ...c.identity, occurrenceId: providerId } } else c),
@@ -389,7 +389,7 @@ pure def canStoreCreated(v: CalendarView, created: CreatedReceipt, by: ViewActor
   unusedProviderId(v, created.localId, created.providerId)
 pure def storeCreated(v: CalendarView, created: CreatedReceipt, by: ViewActor): CalendarView =
   val saved = changeOccurrence(v, created.localId, EntryStored({ revision: created.revision, succeeded: true }), by)
-  withProviderId(saved, created.localId, created.providerId)
+  withProviderId(created.localId, saved, created.providerId)
 pure def lawCreatedReceiptIsSpent(v: CalendarView, created: CreatedReceipt): bool =
   canStoreCreated(v, created, ViewStore) implies not(canStoreCreated(storeCreated(v, created, ViewStore), created, ViewStore))
 pure val createdValues = Set(
@@ -664,7 +664,7 @@ pure def canStoreCreatedSeries(v: CalendarView, receipt: SeriesReceipt, provider
   receipt.persisted and canSaveSeries(v, receipt, by) and not(selectedOccurrence(v).hasSaved) and
   selectedOccurrence(v).identity.kind == C::Appointment and unusedProviderId(v, receipt.occurrenceId, providerId)
 pure def storeCreatedSeries(v: CalendarView, receipt: SeriesReceipt, providerId: str, by: ViewActor): CalendarView =
-  withProviderId(saveSeries(v, receipt, by), receipt.occurrenceId, providerId)
+  withProviderId(receipt.occurrenceId, saveSeries(v, receipt, by), providerId)
 pure def lawCreatedSeriesReceiptIsSpent(v: CalendarView, receipt: SeriesReceipt, providerId: str): bool =
   canStoreCreatedSeries(v, receipt, providerId, ViewStore) implies
     not(canStoreCreatedSeries(storeCreatedSeries(v, receipt, providerId, ViewStore), receipt, providerId, ViewStore))
