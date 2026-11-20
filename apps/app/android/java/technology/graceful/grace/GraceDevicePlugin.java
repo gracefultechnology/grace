@@ -7,6 +7,7 @@ import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.Window;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
@@ -91,7 +92,9 @@ public class GraceDevicePlugin extends Plugin {
 
  private JSObject brightness() {
   float level = getActivity().getWindow().getAttributes().screenBrightness;
-  return level < 0 ? new JSObject() : new JSObject().put("percent", Math.round(level * 100));
+  int system = Settings.System.getInt(getContext().getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, -1);
+  JSObject facts = system < 0 ? new JSObject() : new JSObject().put("night", Math.round(system * 100 / 255f));
+  return level < 0 ? facts : facts.put("percent", Math.round(level * 100));
  }
 
  private JSObject battery() {
