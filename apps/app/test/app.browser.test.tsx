@@ -141,6 +141,12 @@ async function pressBack() {
   return event.defaultPrevented;
 }
 
+async function backToHomeThenLeaveToAndroid() {
+  expect(await pressBack()).toBe(true);
+  await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
+  expect(await pressBack()).toBe(false);
+}
+
 actOnScreen();
 
 it("Use the website under Grace's controls", async () => {
@@ -347,9 +353,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("goBack")).toHaveLength(4);
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("destroySurface")).toMatchObject([{ id: "tab-1" }]);
-  expect(await pressBack()).toBe(true);
-  await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
-  expect(await pressBack()).toBe(false);
+  await backToHomeThenLeaveToAndroid();
 
   // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": what covers a
@@ -729,9 +733,7 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await native.report("tab-4", "https://utility.example", 100);
   await expect.element(unavailable).not.toBeInTheDocument();
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
-  expect(await pressBack()).toBe(true);
-  await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
-  expect(await pressBack()).toBe(false);
+  await backToHomeThenLeaveToAndroid();
 });
 
 it('Use the current typed Passwords command when cloud speech is unavailable (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
