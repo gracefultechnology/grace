@@ -39,6 +39,12 @@ function outputVolume(prefs: Workspace["preferences"]["session"]) {
   return prefs.voiceOutput && !prefs.muted ? prefs.volume / 100 : 0
 }
 
+function microphoneGeneration(state: Workspace) {
+  const { conversation } = state.assistant
+  return sendsHerVoice(conversation) && mayOfferTalk(state) && (conversation.turn !== "Speaking" || outputVolume(state.preferences.session) > 0)
+    ? conversation.generation : null
+}
+
 effect function cloudPost(path: string, body: object) {
   const response = try timeout(tryPromise((signal) => webView.window.fetch(apiOrigin + path, {
     method: "POST", credentials: "include", cache: "no-store",
@@ -173,7 +179,8 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   let ready = false
   let speaking: { token: number; receivedAudio: boolean } | null = null
   let paused = false
-  let sending = false
+  let sendingGeneration: number | null = null
+  try addFinalizer(() => Effect.sync(() => { sendingGeneration = null }))
 
   effect function stopPlayback() {
     const current = speaking
@@ -189,12 +196,13 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     const prefs = state.preferences.session
     const volume = outputVolume(prefs)
     try Effect.try(() => speaker.volume(volume))
-    sending = sendsHerVoice(conversation) && mayOfferTalk(state) && (conversation.turn !== "Speaking" || volume > 0)
-    if (sending) {
+    sendingGeneration = microphoneGeneration(state)
+    if (sendingGeneration !== null) {
       const device = try Ref.get(mic)
       if (device) try Effect.try(() => device.microphone.attach((pcm) => {
         const now = Effect.runSync(workspace.get())
-        if (sending && sameCard(now) && sendsHerVoice(now.assistant.conversation) && now.assistant.conversation.generation === conversation.generation && !webView.hidden() && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
+        if (sendingGeneration !== null && microphoneGeneration(now) === sendingGeneration && sameCard(now) &&
+          Effect.runSync(Ref.get(mic)) === device && !webView.hidden() && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
       }))
     }
     if (card) return
