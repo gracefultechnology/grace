@@ -138,7 +138,8 @@ pure def closeBrowser(b: Browser): Browser = {
 
 > On a secure website, I can open a separate private sign-in tab and fill a
 > saved password through Android. I choose the login and press the site's
-> sign-in button myself.
+> sign-in button myself. If the site asks for a code by email, I open my
+> mail app and return to this private tab to enter the code myself.
 
 ### A private sign-in tab keeps its purpose until it closes
 

@@ -650,8 +650,8 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   expect(locked).toBe(true);
 });
 
-const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
-  const runtime = ManagedRuntime.make(application(native.plugin));
+const signInPrivately = async (native: ReturnType<typeof fakePlugin>, openPrivateEmail?: () => Promise<void>) => {
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, { native: false, openPrivateEmail }));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
@@ -660,6 +660,8 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
+  const checkEmail = page.getByRole("button", { name: "Check email" });
+  await expect.element(checkEmail).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
   await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
@@ -677,6 +679,17 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   const state = JSON.stringify(browserState());
   expect(state).not.toContain("one-time");
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  if (openPrivateEmail) {
+    const visit = () => ({ selected: browserState().selected, navigations: native.calls("navigate"), surfaces: native.calls("createSurface") });
+    const before = visit();
+    await act(() => userEvent.click(checkEmail));
+    await expect.element(page.getByRole("status").filter({ hasText: "return here" })).toBeVisible();
+    expect(visit()).toEqual(before);
+    await act(() => userEvent.click(checkEmail));
+    await expect.element(page.getByRole("status").filter({ hasText: "another device" })).toBeVisible();
+    await expect.element(address).toBeVisible();
+    expect(visit()).toEqual(before);
+  }
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
@@ -691,9 +704,11 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   return browserState;
 };
 
-it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
+it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab")', async () => {
   const native = fakePlugin(undefined, true);
-  const browserState = await signInPrivately(native);
+  const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
+  const browserState = await signInPrivately(native, openEmail);
+  expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
   await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
@@ -854,6 +869,10 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     expect(page.getByRole("button", { name: "Open Email" }).query()).toBeNull();
     await offer("Check my managed email and calendar.", [{ kind: "proposeReadPlan", steps: ["ReadMail", "ReadCalendar"] }]);
     await expect.poll(() => refusal.elements().length).toBe(2);
+    expect(review.query()).toBeNull();
+
+    await offer("Check the website help page.", [namedPage]);
+    await expect.poll(() => refusal.elements().length).toBe(3);
     expect(review.query()).toBeNull();
 
     await offer(askForPage, [namedPage]);
@@ -1907,7 +1926,14 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const target = "Help center";
   const ask = 'Help me reach the help page named "Help center", then read my two appointment emails and saved appointment. Leave everything unchanged.';
+  const invalidAsk = "Help me find the website help page.";
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: invalidAsk,
+    answer: JSON.stringify({
+      text: "Review and start the read plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: "Account history" }] }],
+    }),
+  }, {
     said: ask,
     answer: JSON.stringify({
       text: "Review and start the read plan.", isQuestion: false, answers: [],
@@ -1933,6 +1959,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let domRevision = 1;
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
+  let addChallengeDuringRead = false;
+  let challengeShown = false;
+  let signInWidget: "hidden" | "idle" | "active" = "hidden";
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
@@ -1940,10 +1969,18 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
+          ...(signInWidget === "hidden" ? [] : [
+            { id: "username", tag: "input", type: "text", fieldName: "username", label: "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
+            { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
+            { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
+            { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
+          ]),
+          { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search", href: null, inViewport: true },
+          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
           { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
           { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: -2, width: 100, height: 32 } },
-          { id: "help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
+          { id: "help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: 80, width: 100, height: 32 } },
         ],
       } };
@@ -1951,6 +1988,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     return { result: { accepted: true } };
   }, false, () => {
     if (reviseDuringRead) domRevision++;
+    if (addChallengeDuringRead) challengeShown = true;
     if (replaceDocumentDuringRead) {
       currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
       replaceDocumentDuringRead = false;
@@ -1971,6 +2009,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
       case "/api/v1/decisions":
         guideCalls++;
+        expect(init?.body).not.toContain("Private sign-in link");
+        expect(init?.body).not.toContain("Private username");
+        expect(init?.body).not.toContain("Credential URL");
         expect(init?.credentials).toBe("include");
         const headers = new Headers(init?.headers);
         expect(headers.has("Authorization")).toBe(false);
@@ -1994,6 +2035,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Ask Grace" }));
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
+    await act(() => field.fill(invalidAsk));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByText("I could not prepare that read plan.", { exact: true }));
+    expect(page.getByRole("button", { name: "Start read plan" }).query()).toBeNull();
     await act(() => field.fill(ask));
     await act(() => userEvent.keyboard("{Enter}"));
     await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
@@ -2038,6 +2083,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
+    challengeShown = true;
+    await tap(showLink);
+    await routeTo(page.getByText(/Finish the form yourself in this tab/));
+    expect(guideCalls).toBe(0);
+    challengeShown = false;
+    signInWidget = "active";
+    await tap(showLink);
+    await routeTo(page.getByText(/Finish the form yourself in this tab/));
+    expect(guideCalls).toBe(0);
+    signInWidget = "idle";
     await tap(showLink);
     await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
     expect(native.calls("controlPage")).not.toContainEqual(expect.objectContaining({
@@ -2051,16 +2106,29 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     } });
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
+    signInWidget = "hidden";
     currentPage = help;
     await native.report("tab-1", origin + help.path, 100);
     await native.route();
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
+    signInWidget = "idle";
+    await tap(check);
+    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    signInWidget = "hidden";
     replaceDocumentDuringRead = true;
     await tap(check);
     await expect.poll(() => result.query()?.textContent).toContain(target);
     await expect.element(pending).toHaveAttribute("aria-current", "step");
+    addChallengeDuringRead = true;
+    await tap(check);
+    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    expect(plan.getByText(/^Open page:/).query()).toBeNull();
+    addChallengeDuringRead = false;
+    challengeShown = false;
     reviseDuringRead = true;
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
@@ -2080,6 +2148,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.element(checkedMail).toBeVisible();
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
     await tap(checkEmail);
+    const retry = page.getByRole("status", { name: "Task check result" });
+    await routeTo(retry);
+    await expect.element(checkEmail).toBeEnabled();
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
     await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
     await tap(page.getByRole("button", { name: "Back to Inbox" }));
@@ -2090,6 +2161,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(resume);
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
+    expect(retry.query()).toBeNull();
 
     await tap(page.getByRole("button", { name: "Home", exact: true }));
     const appointment = page.getByRole("group", { name: "Calendar", exact: true }).getByText("Eye check with Dr. Patel");
@@ -2383,7 +2455,9 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   ]), client));
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(account));
-  const native = fakePlugin();
+  const native = fakePlugin(() => ({ documentId: "example-main", frameScope: "main", result: {
+    snapshotId: "example-snapshot", url: "https://example.org/", complete: true, readyState: "complete", blockers: [], elements: [],
+  } }));
   const { routeTo, tap, browse, stop } = await openRouted(native, { url: cloud, key: secret });
   const button = (name: string | RegExp) => page.getByRole("button", { name });
   const say = async (text: string) => {
