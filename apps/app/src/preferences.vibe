@@ -72,12 +72,11 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   const notices = try NoticeHost
   const ready = Stream.filter(workspace.changes, ({ device }) => device.readiness === "Ready")
   const choices = Stream.changesWith(Stream.map(ready, ({ preferences }) => preferences.session), sameChoice)
-  let previous: DeviceChoice | undefined
+  let confirmed: DeviceChoice | undefined
   try fork.scoped Stream.runForEach(choices, effect (choice) => {
-    const watchBrightness = previous === undefined || previous.brightness !== choice.brightness
-    const watchVolume = previous === undefined || previous.volume !== choice.volume || previous.muted !== choice.muted
+    const watchBrightness = confirmed === undefined || confirmed.brightness !== choice.brightness
+    const watchVolume = confirmed === undefined || confirmed.volume !== choice.volume || confirmed.muted !== choice.muted
     if ((try workspace.get()).device.readiness !== "Ready") return
-    previous = choice
     if (!watchBrightness && !watchVolume) return
     const applied = effect {
       const before = try deviceSettings(port)
@@ -94,6 +93,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
       return (!watchBrightness || reported.brightness.percent === choice.brightness) &&
         (!watchVolume || (reported.volume.muted === choice.muted && (choice.muted || reported.volume.step === step)))
     } catch () => false
+    confirmed = applied ? choice : undefined
     if (!applied && sameChoice((try workspace.get()).preferences.session, choice)) {
       notices.raise({ source: "Settings", offer: "NoOffer", subject: "The tablet couldn’t apply that setting." }) catch () => undefined
     }

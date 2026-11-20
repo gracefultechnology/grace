@@ -1543,6 +1543,12 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
   await tap("Dimmer");
   await expect.element(page.getByText("The tablet couldn’t apply that setting.")).toBeVisible();
   expect(brightness).toBe(applied);
+  denyBrightness = false;
+  await tap("Close Settings");
+  await tap("Volume");
+  await tap("Mute");
+  await expect.poll(() => readback.at(-1)?.muted).toBe(true);
+  expect(brightness).toBeLessThan(applied);
 });
 
 it('Restore saved text size (spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements")', async () => {
