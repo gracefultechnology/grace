@@ -9,6 +9,7 @@ import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { retryPreferences } from "./preferences.vibe";
 import { useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
+import { Wifi } from "./Wifi.tsx";
 
 const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
@@ -70,7 +71,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
             if (value === "Slower" || value === "Normal" || value === "Faster") preview({ ...preferences, pace: value });
           }} speaks={preferences.voiceOutput} onSpeaksChange={(value) => preview({ ...preferences, voiceOutput: value })} wake="unavailable" />
       ) : page === "NetworkSettings" ? (
-        <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{workspace?.device.connectivity === "Online" ? "Connected" : "No internet connection"}</PageText></>
+        <Wifi />
       ) : page === "AboutSettings" ? (
         <>
           <PageHeading>About this tablet</PageHeading>

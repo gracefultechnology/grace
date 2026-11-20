@@ -1,0 +1,11 @@
+[
+  { "tap": "Wi-Fi" },
+  { "tap": "Wi-Fi settings" },
+  { "tap": "Look for networks" },
+  { "expect": "The tablet uses its location only to find Wi-Fi networks nearby." },
+  { "grant": "android.permission.ACCESS_FINE_LOCATION" },
+  { "tap": "Allow" },
+  { "expect": "AndroidWifi" },
+  { "expect": "Connected" },
+  { "call": "ElizaWiFi.getConnectivity", "returns": { "online": true } }
+]
