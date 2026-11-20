@@ -211,6 +211,8 @@ it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars
   // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"
   await tap("Yes, add it", { text: "I added it to your calendar.", actions: [{ kind: "confirmProposal" }] });
   await expect.poll(async () => (await company(secret)).boxes[0].calendar.map((e) => e.title)).toContain("Doctor’s appointment");
+  await expect.element(page.getByText("From Main St Clinic’s email · Visit form attached")).toBeVisible();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Back to Calendar" })));
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
   const added = (await calendar(1)).entries.filter((c) => c.identity.sourceRef === "clinic" && c.phase !== "Deleted");
   expect(added.map((c) => c.committed.notes)).toEqual(["From Main St Clinic’s email · Visit form attached"]);

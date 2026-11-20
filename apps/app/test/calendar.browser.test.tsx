@@ -166,10 +166,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
     });
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
-  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
-  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
+  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
 }, journey);
 
 const edit = async (title: string, repeats: string) => {
