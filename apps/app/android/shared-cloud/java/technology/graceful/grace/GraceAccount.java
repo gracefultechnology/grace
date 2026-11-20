@@ -317,7 +317,7 @@ public final class GraceAccount extends CloudSignInPlugin {
        grant.revision(), grant.present(), grant::current,
        (revision, ciphertext) -> {
         var result = grant.run(revision, ciphertext);
-        return new ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup.Response(
+        return new ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval.Response(
          result.status(), result.revision(), result.ciphertext());
        }));
      }
