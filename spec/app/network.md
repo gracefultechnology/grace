@@ -127,6 +127,11 @@ join says the tablet is online but could not confirm which network. A
 sign-in page opens in Android's panel; Grace never fills it in or accepts
 its terms. While Android's panel is open, the result Android reports when
 Grace is shown again completes, fails or keeps waiting on the join.
+If Android later validates the selected network after an unavailable or
+unverified result, Grace clears that result and shows the connected network.
+An observation belongs to the selection and attempt in progress when the
+read started. An undisclosed name, a different network, a cancelled attempt
+or loss of permission cannot complete it.
 
 ```quint
 pure def answers(phase: JoinPhase, result: JoinResult): bool =
@@ -156,6 +161,14 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
   explanation: report.explanation, entryReady: false, privateVisible: false
   }
 }
+pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
+  by == OperatingSystem and n.discovery == NetworksFound and
+  (n.phase == JoinFailed or n.phase == JoinUnconfirmed) and
+  networkId != "" and networkId == n.selected.id and version == n.version
+pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
+  { ...n, phase: JoinComplete, explanation: "" }
+pure def lawOnlyCurrentObservedNetworkConfirms(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
+  canConfirmConnection(n, networkId, version, by) implies (version == n.version and networkId == n.selected.id and by == OperatingSystem)
 pure def helpOffered(n: NetworkJoin): bool = n.errors >= 2 or n.phase == JoinFailed or n.phase == CertificateDecision
 pure def alwaysCertificateIsScoped(n: NetworkJoin): bool =
   (n.phase == CertificateDecision iff n.certificate != "")
@@ -196,6 +209,7 @@ pure val networkValues = Set(
   { id: "network", authentication: SharedPassword, remembered: false },
   { id: "network", authentication: AccountPassword, remembered: false },
   { id: "network", authentication: OpenNetwork, remembered: false })
+pure val networkIdValues = Set("network", "other", "")
 pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val weight_reportEntry = 4
 pure val weight_join = 4

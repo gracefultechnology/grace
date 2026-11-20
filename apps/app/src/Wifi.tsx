@@ -40,7 +40,9 @@ export function Wifi() {
 const row = (offer: Offer): WifiNetwork => ({ name: offer.name, signal: offer.signal, locked: offer.network.authentication !== "OpenNetwork" });
 
 function notice(n: NetworkJoin, name: string) {
-  if (n.phase === "JoinFailed") return `${n.explanation} ${fixSteps}`;
+  if (n.phase === "JoinFailed") return n.selected.authentication === "SharedPassword"
+    ? `${n.explanation} ${fixSteps}`
+    : `${n.explanation} Move closer and try again. If it still won’t connect, ask whoever looks after this network.`;
   if (n.phase === "JoinUnconfirmed") return "The tablet is online, but Android didn’t say on which network.";
   if (n.phase === "PortalEntry") return `${name} has a sign-in page. Sign in there to finish joining.`;
   return undefined;
