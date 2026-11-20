@@ -133,6 +133,10 @@ If Android later validates the selected network after an unavailable or
 unverified result, Grace clears that result and shows the connected network.
 Android may name its current connection even when it has no nearby scan
 results. Grace shows that name and shows signal strength only when measured.
+To confirm the choice, Grace matches Android's current access point and its
+security to the scan. If the scan is empty, the access point observed when the
+person chose the network can still identify it. A shared name or a hidden
+access-point address alone cannot confirm the selected network.
 An observation belongs to the selection and attempt in progress when the
 read started. An undisclosed name, a different network, a cancelled attempt
 or loss of permission cannot complete it.
