@@ -429,6 +429,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(subject()).toHaveValue("Fwd: Reminder: your appointment tomorrow at 10 am");
   await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).toBeVisible();
   await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("Sent to David", { exact: true })).toBeVisible();
   await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[{ filename: "Visit form.pdf" }]]);
 
   // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
