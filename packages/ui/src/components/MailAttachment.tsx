@@ -33,7 +33,7 @@ export type MailAttachmentProps = ComponentProps<"div"> & {
 export function MailAttachment({ name, detail, kind = "PDF", onOpen, openLabel = "Open", openDisabled, saveStatus, onRetry, statusLabels, className, ...props }: MailAttachmentProps) {
   return (
     <div className={cn("flex max-w-[760px] items-center gap-4 rounded-row bg-panel px-4 py-3.5 font-sans", className)} {...props}>
-      <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-[13px] leading-none font-bold text-destructive shadow-tile">
+      <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-caption leading-none font-bold text-destructive shadow-tile">
         <mailIcons.file size={26} strokeWidth={2} />
         {kind}
       </span>
