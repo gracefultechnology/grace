@@ -108,6 +108,9 @@ lemma VisitTransitionFacts(w: Workspace, destination: app__shell_Surface, by_: W
 }
 
 lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRegistryIsCanonical(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentAssociation(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedCommitmentCannotSubmit(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOneTask(visit(w, destination, by_)))
@@ -121,9 +124,6 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysDeviceRules(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysBrowserRules(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysAssistantRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRules(visit(w, destination, by_)))
-  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRegistryIsCanonical(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentUsesCanonicalIdentity(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCurrentBeforeAction(visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentReviewUsesCurrentContext(visit(w, destination, by_)))
@@ -142,6 +142,7 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
 }
 
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysExecutionRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentRegistryIsCanonical(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentAssociation(openGrace(w, by_)))
@@ -157,7 +158,6 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysDeviceRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysBrowserRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysAssistantRules(openGrace(w, by_)))
-  ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysExecutionRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCurrentBeforeAction(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(openGrace(w, by_)))
@@ -175,6 +175,7 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysExecutionRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentRegistryIsCanonical(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentAssociation(closeGrace(w, by_)))
@@ -190,7 +191,6 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysDeviceRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysBrowserRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysAssistantRules(closeGrace(w, by_)))
-  ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysExecutionRules(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCurrentBeforeAction(closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(closeGrace(w, by_)))
@@ -209,6 +209,7 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysExecutionRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentRegistryIsCanonical(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentAssociation(talk(w, by_)))
@@ -224,7 +225,6 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysDeviceRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysBrowserRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysAssistantRules(talk(w, by_)))
-  ensures (inv(w) ==> canTalk(w, by_) ==> alwaysExecutionRules(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCurrentBeforeAction(talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(talk(w, by_)))
@@ -242,6 +242,7 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDraft: bool, by_: WorkspaceActor)
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysExecutionRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentRegistryIsCanonical(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentAssociation(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
@@ -257,7 +258,6 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysDeviceRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysBrowserRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysAssistantRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
-  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysExecutionRules(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentUsesCanonicalIdentity(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCurrentBeforeAction(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> alwaysCommitmentReviewUsesCurrentContext(purgePrivate(w, token, messageIndex, purgeDraft, by_)))
@@ -276,6 +276,7 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
 }
 
 lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysExecutionRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentRegistryIsCanonical(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentAssociation(cancelWake(w, by_)))
@@ -291,7 +292,6 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysDeviceRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysBrowserRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysAssistantRules(cancelWake(w, by_)))
-  ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysExecutionRules(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCurrentBeforeAction(cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(cancelWake(w, by_)))
@@ -308,6 +308,7 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma changePreferences_ensures(w: Workspace, settings: app__preferences_DisplayPreferences, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysExecutionRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentRegistryIsCanonical(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentAssociation(changePreferences(w, settings, by_)))
@@ -323,7 +324,6 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysDeviceRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysBrowserRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysAssistantRules(changePreferences(w, settings, by_)))
-  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysExecutionRules(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentUsesCanonicalIdentity(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCurrentBeforeAction(changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> alwaysCommitmentReviewUsesCurrentContext(changePreferences(w, settings, by_)))
@@ -341,6 +341,7 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
 }
 
 lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysExecutionRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentRegistryIsCanonical(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentAssociation(savePreferences(w, by_)))
@@ -356,7 +357,6 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysDeviceRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysBrowserRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysAssistantRules(savePreferences(w, by_)))
-  ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysExecutionRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCurrentBeforeAction(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(savePreferences(w, by_)))
@@ -373,6 +373,7 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by_: WorkspaceActor)
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysExecutionRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentRegistryIsCanonical(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentAssociation(preferencesSaved(w, saveToken, succeeded, by_)))
@@ -388,7 +389,6 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysDeviceRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysBrowserRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysAssistantRules(preferencesSaved(w, saveToken, succeeded, by_)))
-  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysExecutionRules(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentUsesCanonicalIdentity(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCurrentBeforeAction(preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> alwaysCommitmentReviewUsesCurrentContext(preferencesSaved(w, saveToken, succeeded, by_)))
@@ -406,6 +406,7 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
 }
 
 lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: WorkspaceActor)
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysExecutionRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentRegistryIsCanonical(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentAssociation(wakeNoSpeech(w, timer, by_).state))
@@ -421,7 +422,6 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysDeviceRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysBrowserRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysAssistantRules(wakeNoSpeech(w, timer, by_).state))
-  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysExecutionRules(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentUsesCanonicalIdentity(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> alwaysCommitmentReviewUsesCurrentContext(wakeNoSpeech(w, timer, by_).state))
@@ -439,6 +439,7 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
 }
 
 lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: WorkspaceActor)
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysExecutionRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentRegistryIsCanonical(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentAssociation(wakeReturn(w, timer, by_)))
@@ -454,7 +455,6 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysDeviceRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysBrowserRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysAssistantRules(wakeReturn(w, timer, by_)))
-  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysExecutionRules(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentUsesCanonicalIdentity(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCurrentBeforeAction(wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> alwaysCommitmentReviewUsesCurrentContext(wakeReturn(w, timer, by_)))
@@ -477,6 +477,7 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
 }
 
 lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canStop(w, by_) ==> alwaysExecutionRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentRegistryIsCanonical(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentAssociation(stop(w, by_)))
@@ -492,7 +493,6 @@ lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysDeviceRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysBrowserRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysAssistantRules(stop(w, by_)))
-  ensures (inv(w) ==> canStop(w, by_) ==> alwaysExecutionRules(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCurrentBeforeAction(stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(stop(w, by_)))
@@ -713,6 +713,7 @@ lemma RegistryRestart(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
 }
 
 lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysExecutionRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentRegistryIsCanonical(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentAssociation(newConversation(w, by_)))
@@ -728,7 +729,6 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysDeviceRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysBrowserRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysAssistantRules(newConversation(w, by_)))
-  ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysExecutionRules(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCurrentBeforeAction(newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(newConversation(w, by_)))
@@ -746,6 +746,7 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedGoal: string, by_: WorkspaceActor)
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysExecutionRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentRegistryIsCanonical(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentAssociation(requestReplacement(w, requestedTask, requestedGoal, by_)))
@@ -761,7 +762,6 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysDeviceRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysBrowserRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysAssistantRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
-  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysExecutionRules(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentUsesCanonicalIdentity(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCurrentBeforeAction(requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> alwaysCommitmentReviewUsesCurrentContext(requestReplacement(w, requestedTask, requestedGoal, by_)))
@@ -780,6 +780,7 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
 }
 
 lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysExecutionRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentRegistryIsCanonical(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentAssociation(keepTask(w, by_)))
@@ -795,7 +796,6 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysDeviceRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysBrowserRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysAssistantRules(keepTask(w, by_)))
-  ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysExecutionRules(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCurrentBeforeAction(keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(keepTask(w, by_)))
@@ -813,6 +813,7 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysExecutionRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentRegistryIsCanonical(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentAssociation(continueTask(w, by_)))
@@ -828,7 +829,6 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysDeviceRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysBrowserRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysAssistantRules(continueTask(w, by_)))
-  ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysExecutionRules(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCurrentBeforeAction(continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(continueTask(w, by_)))
@@ -850,6 +850,7 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysExecutionRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentRegistryIsCanonical(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentAssociation(completeOrdinary(w, completion, by_)))
@@ -865,7 +866,6 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysDeviceRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysBrowserRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysAssistantRules(completeOrdinary(w, completion, by_)))
-  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysExecutionRules(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentUsesCanonicalIdentity(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCurrentBeforeAction(completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> alwaysCommitmentReviewUsesCurrentContext(completeOrdinary(w, completion, by_)))
@@ -883,6 +883,7 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
 }
 
 lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by_: WorkspaceActor)
+  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysExecutionRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentRegistryIsCanonical(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentAssociation(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
@@ -898,7 +899,6 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysDeviceRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysBrowserRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysAssistantRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
-  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysExecutionRules(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentUsesCanonicalIdentity(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCurrentBeforeAction(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> alwaysCommitmentReviewUsesCurrentContext(approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
@@ -917,6 +917,7 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
 }
 
 lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: WorkspaceActor)
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysExecutionRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentRegistryIsCanonical(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentAssociation(interact(w, input, by_)))
@@ -932,7 +933,6 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysDeviceRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysBrowserRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysAssistantRules(interact(w, input, by_)))
-  ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysExecutionRules(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentUsesCanonicalIdentity(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCurrentBeforeAction(interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> alwaysCommitmentReviewUsesCurrentContext(interact(w, input, by_)))
@@ -951,6 +951,7 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
 }
 
 lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysExecutionRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentRegistryIsCanonical(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentAssociation(bindCommitment(w, key, by_)))
@@ -966,7 +967,6 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysDeviceRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysBrowserRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysAssistantRules(bindCommitment(w, key, by_)))
-  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysExecutionRules(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentUsesCanonicalIdentity(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCurrentBeforeAction(bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> alwaysCommitmentReviewUsesCurrentContext(bindCommitment(w, key, by_)))
@@ -983,6 +983,7 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
 }
 
 lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysExecutionRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentRegistryIsCanonical(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentAssociation(saveCommitment(w, saveReport, by_)))
@@ -998,7 +999,6 @@ lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: Workspac
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysDeviceRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysBrowserRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysAssistantRules(saveCommitment(w, saveReport, by_)))
-  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysExecutionRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentUsesCanonicalIdentity(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCurrentBeforeAction(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentReviewUsesCurrentContext(saveCommitment(w, saveReport, by_)))
@@ -1064,6 +1064,7 @@ lemma InteractionFrame(a: app__assistant_Assistant, input: app__interaction_Inte
 }
 
 lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysExecutionRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentRegistryIsCanonical(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentAssociation(begin(w, taskRequest, by_)))
@@ -1079,7 +1080,6 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysDeviceRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysBrowserRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysAssistantRules(begin(w, taskRequest, by_)))
-  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysExecutionRules(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentUsesCanonicalIdentity(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> alwaysCommitmentReviewUsesCurrentContext(begin(w, taskRequest, by_)))
@@ -1100,6 +1100,7 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
 }
 
 lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysExecutionRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentRegistryIsCanonical(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentAssociation(replaceTask(w, taskRequest, by_)))
@@ -1115,7 +1116,6 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysDeviceRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysBrowserRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysAssistantRules(replaceTask(w, taskRequest, by_)))
-  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysExecutionRules(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentUsesCanonicalIdentity(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCurrentBeforeAction(replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> alwaysCommitmentReviewUsesCurrentContext(replaceTask(w, taskRequest, by_)))
@@ -1142,6 +1142,7 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
 }
 
 lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysExecutionRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentRegistryIsCanonical(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentAssociation(closeBrowser(w, by_)))
@@ -1157,7 +1158,6 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysDeviceRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysBrowserRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysAssistantRules(closeBrowser(w, by_)))
-  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysExecutionRules(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCurrentBeforeAction(closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(closeBrowser(w, by_)))
@@ -1176,6 +1176,7 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
 }
 
 lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysExecutionRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentRegistryIsCanonical(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentAssociation(unexpectedPage(w, unexpected, by_)))
@@ -1191,7 +1192,6 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysDeviceRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysBrowserRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysAssistantRules(unexpectedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysExecutionRules(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentUsesCanonicalIdentity(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> alwaysCommitmentReviewUsesCurrentContext(unexpectedPage(w, unexpected, by_)))
@@ -1209,6 +1209,7 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
 }
 
 lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysExecutionRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentRegistryIsCanonical(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentAssociation(unwatchedPage(w, unexpected, by_)))
@@ -1224,7 +1225,6 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysDeviceRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysBrowserRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysAssistantRules(unwatchedPage(w, unexpected, by_)))
-  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysExecutionRules(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentUsesCanonicalIdentity(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCurrentBeforeAction(unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> alwaysCommitmentReviewUsesCurrentContext(unwatchedPage(w, unexpected, by_)))
@@ -1242,6 +1242,7 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
 }
 
 lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysExecutionRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentRegistryIsCanonical(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentAssociation(receiveLoad(w, loadReport, by_)))
@@ -1257,7 +1258,6 @@ lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceAc
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysDeviceRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysBrowserRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysAssistantRules(receiveLoad(w, loadReport, by_)))
-  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysExecutionRules(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentUsesCanonicalIdentity(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCurrentBeforeAction(receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> alwaysCommitmentReviewUsesCurrentContext(receiveLoad(w, loadReport, by_)))
@@ -1280,6 +1280,7 @@ if inv(w) && canReceiveLoad(w, loadReport, by_) {
 }
 
 lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: WorkspaceActor)
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysExecutionRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentRegistryIsCanonical(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentAssociation(receiveProgress(w, progress, by_)))
@@ -1295,7 +1296,6 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysDeviceRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysBrowserRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysAssistantRules(receiveProgress(w, progress, by_)))
-  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysExecutionRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentUsesCanonicalIdentity(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCurrentBeforeAction(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysCommitmentReviewUsesCurrentContext(receiveProgress(w, progress, by_)))
@@ -1323,6 +1323,7 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
 }
 
 lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysExecutionRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentRegistryIsCanonical(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentAssociation(changePage(w, browserInput, by_)))
@@ -1338,7 +1339,6 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysDeviceRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysBrowserRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysAssistantRules(changePage(w, browserInput, by_)))
-  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysExecutionRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentUsesCanonicalIdentity(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCurrentBeforeAction(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentReviewUsesCurrentContext(changePage(w, browserInput, by_)))
@@ -1464,6 +1464,7 @@ lemma lawRestartKeepsCommitmentRecords_ensures(w: Workspace, by_: WorkspaceActor
 }
 
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysExecutionRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentRegistryIsCanonical(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentAssociation(changeLifecycle(w, lifecycle, by_)))
@@ -1479,7 +1480,6 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysDeviceRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysBrowserRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysAssistantRules(changeLifecycle(w, lifecycle, by_)))
-  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysExecutionRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentUsesCanonicalIdentity(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCurrentBeforeAction(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentReviewUsesCurrentContext(changeLifecycle(w, lifecycle, by_)))
@@ -1538,6 +1538,7 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
 }
 
 lemma beginGuided_ensures(w: Workspace, request: GuidedRequest, by_: WorkspaceActor)
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysExecutionRules(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentRules(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentRegistryIsCanonical(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentAssociation(beginGuided(w, request, by_)))
@@ -1553,7 +1554,6 @@ lemma beginGuided_ensures(w: Workspace, request: GuidedRequest, by_: WorkspaceAc
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysDeviceRules(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysBrowserRules(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysAssistantRules(beginGuided(w, request, by_)))
-  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysExecutionRules(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentUsesCanonicalIdentity(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCurrentBeforeAction(beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> alwaysCommitmentReviewUsesCurrentContext(beginGuided(w, request, by_)))
@@ -1611,6 +1611,7 @@ lemma GuidedReceiptPreserves(w: Workspace, report: GuidedObservation, by_: Works
 }
 
 lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysExecutionRules(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentRules(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentAssociation(confirmGuided(w, report, by_)))
@@ -1626,7 +1627,6 @@ lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: Worksp
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysDeviceRules(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysBrowserRules(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysAssistantRules(confirmGuided(w, report, by_)))
-  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysExecutionRules(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCurrentBeforeAction(confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuided(w, report, by_)))
@@ -1640,6 +1640,7 @@ lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: Worksp
 }
 
 lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysExecutionRules(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCommitmentRules(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCommitmentAssociation(confirmGuidedNamedPage(w, pageCheck, by_)))
@@ -1655,7 +1656,6 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysDeviceRules(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysBrowserRules(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysAssistantRules(confirmGuidedNamedPage(w, pageCheck, by_)))
-  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysExecutionRules(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCurrentBeforeAction(confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuidedNamedPage(w, pageCheck, by_)))
@@ -1669,6 +1669,7 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
 }
 
 lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
+  ensures (inv(w) ==> canResume(w, by_) ==> alwaysExecutionRules(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentRules(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentRegistryIsCanonical(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentAssociation(resume(w, by_)))
@@ -1684,7 +1685,6 @@ lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysDeviceRules(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysBrowserRules(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysAssistantRules(resume(w, by_)))
-  ensures (inv(w) ==> canResume(w, by_) ==> alwaysExecutionRules(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentUsesCanonicalIdentity(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysCurrentBeforeAction(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysCommitmentReviewUsesCurrentContext(resume(w, by_)))
