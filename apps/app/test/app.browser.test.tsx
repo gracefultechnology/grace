@@ -926,6 +926,12 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
   const turns: unknown[] = [];
   const phrases: string[] = [];
   const microphones: AudioContext[] = [];
+  vi.stubGlobal("AudioContext", class extends AudioContext {
+    constructor(options?: AudioContextOptions) {
+      const silentOutput = { ...options, sinkId: { type: "none" } };
+      super(silentOutput);
+    }
+  });
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
     const microphone = new AudioContext({ sampleRate: 16_000 });
     microphones.push(microphone);
