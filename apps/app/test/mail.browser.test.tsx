@@ -14,7 +14,7 @@ import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { mount, actOnScreen } from "./screen.tsx";
+import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -62,10 +62,9 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
   const browserSession = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
     if (url.origin !== location.origin) return fetchOriginal(input, init);
-    if (url.pathname === "/api/auth/session") return Promise.resolve(Response.json({ account: signedIn ? { id: credentialId, email: null } : null }));
+    const account = browserAccountResponse(url, signedIn ? credentialId : undefined);
+    if (account) return Promise.resolve(account);
     if (url.pathname === "/api/product/files/scope") return Promise.resolve(Response.json(signedIn ? scope : {}, { status: signedIn ? 200 : 401 }));
-    if (url.pathname === "/api/auth/providers") return Promise.resolve(Response.json({ google: true, email: true, sms: false }));
-    if (url.pathname === "/api/auth/refresh") return Promise.resolve(new Response(null, { status: 401 }));
     if (url.pathname === "/api/v1/billing/subscription" || url.pathname === "/api/v1/eliza/google/status") return Promise.resolve(new Response(null, { status: 404 }));
     return fetchOriginal(input, init);
   });

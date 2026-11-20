@@ -12,6 +12,13 @@ import type { Runtime } from "../src/useApp.ts";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
+export function browserAccountResponse(url: URL, accountId?: string) {
+  if (url.origin !== location.origin) return;
+  if (url.pathname === "/api/auth/session") return Response.json({ account: accountId ? { id: accountId, email: null } : null });
+  if (url.pathname === "/api/auth/providers") return Response.json({ google: true, email: true, sms: false });
+  if (url.pathname === "/api/auth/refresh") return new Response(null, { status: 401 });
+}
+
 export async function mountGmail(address: string, cloud: CloudLink) {
   const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
   const connected = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, "Gmail", "AccountConnector");

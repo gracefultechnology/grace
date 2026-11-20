@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } f
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import { client, expire, otherPassword, reply, signIn } from "./cloud.vibe";
-import { mount, actOnScreen } from "./screen.tsx";
+import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -35,6 +35,8 @@ let secret = "";
 beforeAll(() => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href));
+    if (account) return Promise.resolve(account);
     if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
     if (url.includes("/connections/other")) otherChecks.push(url);
     return fetched(input, init);
