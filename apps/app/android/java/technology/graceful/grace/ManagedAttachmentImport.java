@@ -97,7 +97,7 @@ final class ManagedAttachmentImport {
   String lower = name.toLowerCase(Locale.ROOT);
   if (!lower.endsWith(extension) && !(".jpg".equals(extension) && lower.endsWith(".jpeg"))) name += extension;
   String identity = new JSONArray().put("gmail-original").put(owner.accountId()).put(owner.organizationId()).put(grant)
-    .put(message).put(history).put(part).toString();
+    .put(message).put(part).toString();
   return new Receipt(name, hash(identity.getBytes(StandardCharsets.UTF_8)), expected, bytes);
  }
 

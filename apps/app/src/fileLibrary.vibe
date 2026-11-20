@@ -149,9 +149,12 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     if (command.kind === "confirmAttachment" && command.request !== ready.attachmentImport) return false
     const input = { lease: ready.lease }
     try keep({ ...ready, busy: true, issue: false })
-    const entry = Schema.decodeUnknownEffect(Entry)(try tryPromise(() =>
-      command.kind === "capture" ? port.capture(input) : command.kind === "pick" ? port.pick({ ...input, kind: command.file })
-        : port.stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))) catch () => undefined
+    const entry = effect {
+      const result = try tryPromise(() => command.kind === "capture" ? port.capture(input)
+        : command.kind === "pick" ? port.pick({ ...input, kind: command.file })
+        : port.stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))
+      return try Schema.decodeUnknownEffect(Entry)(result)
+    } catch () => undefined
     if (!entry) {
       try keep({ ...ready, attachmentImport: command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport, busy: false })
       return false
@@ -160,7 +163,10 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
       owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
     } }, "FileHost")
-    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => port.commit({ ...input, id: entry.id }))) catch () => undefined
+    const stored = effect {
+      const receipt = try tryPromise(() => port.commit({ ...input, id: entry.id }))
+      return try Schema.decodeUnknownEffect(Completion)(receipt)
+    } catch () => undefined
     const success = stored?.id === entry.id
     const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
     const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {
@@ -253,9 +259,10 @@ export const fileLibrary = (port: FilesPort | undefined) => Layer.effect(FileLib
     try fork.scoped Stream.runForEach(links, () => Effect.ignore(effect {
       const requested = try readAttachmentImport()
       if (!requested) return
-      const work = try Stream.runHead(Stream.filter(desk.changes, (state) => state.device.readiness === "Ready"))
-      if (Option.isNone(work) || (try setup.get()).graceAccount.tag !== "GraceDeviceSignedIn") return
-      if (work.value.device.surface !== "Files") try desk.send({ type: "visit", destination: "Files" }, "Person")
+      const work = try Stream.runHead(Stream.filter(Stream.zipLatest(desk.changes, setup.changes), ([state, account]) =>
+        state.device.readiness === "Ready" && account.graceAccount.tag === "GraceDeviceSignedIn"))
+      if (Option.isNone(work) || !(try readAttachmentImport())) return
+      if (work.value[0].device.surface !== "Files") try desk.send({ type: "visit", destination: "Files" }, "Person")
       else try serial.withPermit(effect {
         const current = try SubscriptionRef.get(latest)
         if (current.kind === "ready") try keep({ ...current, attachmentImport: try readAttachmentImport() })

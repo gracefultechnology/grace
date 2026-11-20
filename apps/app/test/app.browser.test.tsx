@@ -1519,6 +1519,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
 
   const handoff = () => act(() => { incoming = request; notify(); });
+  await tap("Close Files");
   await handoff();
   await tap("Cancel");
   expect(transfers).toEqual([]);

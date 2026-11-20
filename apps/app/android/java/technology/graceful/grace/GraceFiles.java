@@ -320,7 +320,7 @@ public final class GraceFiles extends Plugin {
     output.getFD().sync();
    }
    if ("photo".equals(kind(name))) {
-    Bitmap check = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file), (decoder, info, source) -> decoder.setTargetSize(1, 1));
+    Bitmap check = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file), (decoder, info, imageSource) -> decoder.setTargetSize(1, 1));
     check.recycle();
    }
    if (source != null) {

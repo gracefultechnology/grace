@@ -63,7 +63,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
 
   const request = snapshot.attachmentImport;
   if (request && model.loaded) {
-    return <AppWindow {...window} title="Save attachment to Files?" icon={<Folder aria-hidden />}>
+    return <AppWindow {...cover} title="Save attachment to Files?" icon={<Folder aria-hidden />}>
       <div className="flex flex-wrap gap-3">
         <Button variant="prominent" size="pill" disabled={waiting} onClick={() => run({ kind: "confirmAttachment", request })}>Save attachment</Button>
         <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "cancelAttachment", request })}>Cancel</Button>
@@ -123,7 +123,8 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
         {model.tab === "Photos" ? "Import photo" : "Import PDF"}
       </Button>
       {model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "capture" })}>Take photo</Button>}
-      {(failed || model.feedback === "WriteFailed") && <PageText role="status">The file wasn’t saved or opened.</PageText>}
+      {failed || model.feedback === "WriteFailed" ? <PageText role="status">The file wasn’t saved or opened.</PageText> :
+        model.feedback === "FilesSaved" && <PageText role="status">Saved in Files.</PageText>}
     </div>
   );
   return <FilesApp {...window} actions={browse} status={model.loaded ? "ready" : model.feedback === "CatalogFailed" ? "failed" : "loading"}
