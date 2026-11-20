@@ -27,6 +27,7 @@ type Mail = {
   metadata: { historyId: string; sizeEstimate: number | null; dateHeader: string | null; messageIdHeader: string; referencesHeader: string | null; listId: string | null; precedence: string | null; autoSubmitted: string | null }
   attachments: Attachment[]
   bodyText: string
+  suspicion?: string
 }
 
 type Appointment = {
@@ -312,7 +313,10 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
       }),
       letter("clinic", address, at, "Main St Clinic", "frontdesk@mainst-clinic.test", "Reminder: your appointment tomorrow at 10 am",
         "Dear Margaret, this is a reminder of your appointment with Dr. Patel tomorrow at 10:00 am. Please fill in the attached form and bring it with you.",
-        { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] })
+        { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] }),
+      letter("scam", address, at, "Account Security", "security-alert@acc0unt-help.co", "Urgent: confirm your password",
+        `Your account will be closed today. To keep it open, confirm your password here: ${site}/${visit}/confirm-password/`,
+        { isUnread: false, labels: ["INBOX"], triageScore: 0, triageReason: "", suspicion: "Asks for your password urgently from an address that imitates a real company" })
     ];
     when "outlook": one("St. Mark’s Church Office", "office@stmarks.test", "Thanksgiving dinner sign-up", "Dear Margaret, our Thanksgiving dinner is on Thursday the 26th at 5 pm in the hall. Reply to let us know if you’ll come.");
     when "yahoo": one("Garden Club", "club@garden.test", "Bulb swap on Saturday", "Bring your spare bulbs to the library steps on Saturday at 10. Coffee provided!");
@@ -390,7 +394,7 @@ const sizeOf = (base64: string) => atob(base64).length
 const servable: Record<string, RegExp> = { "text/plain": /\.txt$/i, "application/pdf": /\.pdf$/i, "image/png": /\.png$/i, "image/jpeg": /\.jpe?g$/i, "image/webp": /\.webp$/i }
 const draftIdOf = (externalId: string) => `r-${externalId}`
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
-const listedMessage = ({ bodyText: _, attachments, bcc: _bcc, ...message }: Mail) => ({ ...message, hasAttachments: attachments.length > 0 })
+const listedMessage = ({ bodyText: _, attachments, bcc: _bcc, suspicion: _suspicion, ...message }: Mail) => ({ ...message, hasAttachments: attachments.length > 0 })
 const wired = (files: readonly Carried[]): Attachment[] => files.map((f, i) => ({
   partId: String(i + 1), attachmentId: f.contentRef, filename: f.name, mimeType: Object.keys(servable).find((type) => servable[type].test(f.name)) ?? "application/octet-stream", size: 0, ...f.kind === "Pdf" ? { pages: f.pages } : {}
 }))
@@ -615,7 +619,7 @@ effect function store(site: string) {
     const wire = token === undefined ? undefined : try Schema.decodeUnknownEffect(GmailMessage)(try googleRequest("GET", `${googleGmail}/${encodeURIComponent(found.externalId)}?format=full`, token))
     const bodyText = wire === undefined ? found.bodyText : try Effect.fromResult(Base64Url.decodeString(wire.payload.body.data))
     return try HttpServerResponse.json({
-      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments
+      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments, suspicion: found.suspicion ?? null
     })
   }
 
