@@ -62,7 +62,7 @@
           "open",
           "showSetting"
         ],
-        "becomes": "spec/app/workspace.md visit and chooseSettingsPage"
+        "becomes": "spec/app/workspace.md visit; showSetting, Settings › Email & calendar included, through spec/app/agentActions.md route to spec/app/workspace.md chooseSettingsPage"
       },
       "GRACE_SETTINGS": {
         "returns": [
@@ -87,28 +87,37 @@
         "returns": [
           "guide"
         ],
-        "becomes": "spec/app/workspace.md publishGuidance"
+        "becomes": "spec/app/agentActions.md route, only to a target the screen offers now (never inside a provider's sign-in page), then spec/app/workspace.md publishGuidance"
       },
       "GRACE_CALENDAR": {
         "returns": [
           "proposeAppointment",
-          "confirmAppointment",
-          "cancelAppointment",
-          "deleteAppointment",
-          "dismissReminder"
+          "proposeFromMessage",
+          "proposeChange",
+          "proposeDeletion",
+          "confirmProposal",
+          "cancelProposal"
         ],
-        "becomes": "spec/app/calendarView.md createOccurrence or changeOccurrence, confirmAppointment after her yes, changeOccurrence CancelEditing after her no, requestDeletion and approveDeletion with her scope after her yes, and changeOccurrence DismissReminder"
+        "becomes": "spec/app/agentActions.md route to spec/app/proposal.md propose (Grace), agree (her own yes, from her current turn) or withdraw; the host then applies spec/app/calendarView.md confirmAppointment, confirmChange or confirmDeletion with ViewConsent after her yes. Grace never writes a calendar herself"
       },
       "GRACE_EMAIL": {
         "returns": [
           "searchMail",
           "openMessage",
+          "showInbox",
           "chooseFolder",
+          "newEmail",
+          "addressEmail",
           "draftReply",
-          "draftMessage",
-          "trashMessage"
+          "fillDraft",
+          "forwardMessage",
+          "saveDraft",
+          "trashMessage",
+          "restoreMessage",
+          "undoTrash",
+          "markUnread"
         ],
-        "becomes": "spec/app/email.md readMail, chooseFolder, startDraft and editDraft, and changeSelectedMessage; sending stays hers"
+        "becomes": "spec/app/agentActions.md route to spec/app/email.md assistMail (MailAssistant) on that account's mailbox, or chooseFolder and spec/app/accounts.md filterInbox as her own navigation; sending, Delete forever and links stay hers"
       },
       "GRACE_FILES": {
         "returns": [
@@ -158,8 +167,8 @@
         "COMPUTER_USE_AGENT": "Registered only by @elizaos/plugin-computeruse, which this file refuses.",
         "CONFLICT_DETECT": "Registered by @elizaos/plugin-calendar and @elizaos/plugin-personal-assistant, which this file refuses.",
         "CONNECTOR": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
-        "CONNECT_ACCOUNT": "Accounts are connected by the person through Grace's Google sign-in, never by the agent.",
-        "CONTACT": "Contacts are not part of Grace.",
+        "CONNECT_ACCOUNT": "Email accounts are connected by the person in Settings › Email & calendar, on the email company's own sign-in page, never by the agent.",
+        "CONTACT": "Grace never manages contacts; a person she names in an email is looked up through the tablet's email connection.",
         "CREATIVE_DRAFT": "Registered only by @elizaos/plugin-personal-assistant, which this file refuses.",
         "CREDENTIALS": "Registered only by @elizaos/plugin-calendar and @elizaos/plugin-inbox and @elizaos/plugin-personal-assistant, which this file refuses.",
         "CROSS_CHAIN_TRANSFER": "Grace never moves money from the agent; registered only by @elizaos/plugin-wallet, which this file refuses.",

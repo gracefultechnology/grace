@@ -284,7 +284,8 @@ this spec refuses her without it but cannot itself establish it.
   that is open, so the person sees what she is about to move.
 - She never approves, sends, deletes for good or opens a link: no arm of
   `assistMail` reaches those transitions, and `lawGraceNeverRaisesApproval`
-  checks every arm. Looking at mail during a send leaves the same operation in progress.
+  checks every arm. When the person is already sending an email, Grace can
+  look at or move an open message while the same send operation continues.
 
 This departs from the prototype on purpose in two places. The prototype's open
 and search drop an open composer (`prototype/Grace Prototype.html:2278–2279`);
@@ -478,7 +479,9 @@ pure def stepMessageRecordsAreRetained(before: Mailbox, after: Mailbox): bool =
   before.messages.every(prior => after.messages.some(record => record.identity == prior.identity and
     record.revision >= prior.revision and (prior.folder == I::PurgedFolder implies record.folder == I::PurgedFolder)))
 pure def lawMovedSelectionCannotReply(m: Mailbox, target: MessageTarget, change: I::MessageChange, header: ReplyHeader, by: MailActor): bool =
-  canChangeSelectedMessage(m, target, change, by) implies not(canReplyToMessage(changeSelectedMessage(m, target, change, by), header, MailConnector))
+  canChangeSelectedMessage(m, target, change, by) implies
+    (not(canReplyToMessage(changeSelectedMessage(m, target, change, by), header, MailConnector)) and
+      not(canReplyToMessage(changeSelectedMessage(m, target, change, by), header, MailHost)))
 pure def lawStaleMessageReceiptIsRejected(m: Mailbox, messageReceipt: I::ChangeReceipt, by: MailActor): bool =
   messageReceipt.revision != messageRecord(m, messageReceipt.identity.ref).revision implies
     not(canCompleteMessageChange(m, messageReceipt, by))
@@ -1204,42 +1207,43 @@ pure def validMailbox(m: Mailbox): bool =
 These are samples only, never limits on account names, message counts, provider
 support or content length. The real registry supplies any valid identity.
 The random walks use one coherent mailbox and current callback combinations
-to reach complete read, mutation, send and recovery paths. Listing and read
-callbacks cover generations up to 12, so walks keep reading after repeated
-reads and reconnects, and a Drafts row separate from the inbox message lets a
-saved draft be reopened. Grace's actions cover each kind with current and
-stale targets, and queued sends reach Outbox, dispatch and every result. The universal rules
-cover arbitrary identities and collections; separate guarded witness checks
-exercise competing accounts, stale callbacks, rejection and multiple messages.
+to reach complete read, mutation, send and recovery paths. The simulator tries
+every sample of an event before it gives the event up, and an event it cannot
+take costs it a try of each, so each set holds the callbacks a walk can meet
+and few others. Listing callbacks cover the read generations of the first
+listings of each folder, read results cover generations up to 10 with a
+message of photos and a document and one of photos only, and the
+person's taps carry their own choice (`approved`, `confirmed`, `selected`),
+the host's verified facts and the connector's grants, as the host supplies
+them; the rules refusing their absence are proved for every value. Grace's
+actions cover each kind once, with a recipient the connector did not resolve,
+and the message moves with every current revision. Queued sends reach Outbox,
+dispatch and every result. The universal rules cover arbitrary identities and
+collections; separate guarded witness checks exercise competing accounts,
+stale callbacks, rejection and multiple messages.
 
 ```quint
 pure val ownerValues = Set("ownerA")
 pure val providerValues = Set("providerA")
 pure val accountValues = Set("accountA")
-pure val refValues = Set("messageA", "attachmentA", "draftA")
-pure val sampleGenerations = Set(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
-pure val listingValues = Set(
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: true, answered: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::DraftsFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::TrashFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false, answered: false }, revision: 0, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: I::InboxFolder, unread: false, answered: true }, revision: 0, evidence: "providerMetadata" },
-  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "draftA" }, folder: I::DraftsFolder, unread: false, answered: false }, revision: -1, evidence: "providerMetadata" })
-pure val targetValues = Set({ ref: "messageA", revision: 0 }, { ref: "messageA", revision: 1 },
-  { ref: "messageA", revision: 2 }, { ref: "messageA", revision: 3 }, { ref: "missing", revision: 0 })
-pure val messageReceiptValues = I::receiptValues
+pure val refValues = Set("messageA", "attachmentA")
+pure val folderValues = Set(I::InboxFolder, I::DraftsFolder, I::TrashFolder, I::PurgedFolder)
+pure val changeValues = Set(I::UnreadMessage, I::TrashMessage, I::RestoreMessage, I::PurgeMessage)
+pure val sampleGenerations = Set(2, 3, 4, 5, 6, 7, 8, 9, 10)
+pure def sampleListing(folder: I::Folder, unread: bool, revision: int): I::MetadataReceipt =
+  { seed: { identity: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" }, folder: folder, unread: unread, answered: false },
+    revision: revision, evidence: "providerMetadata" }
+pure val listingValues = Set(sampleListing(I::InboxFolder, true, -1), sampleListing(I::InboxFolder, false, 0),
+  sampleListing(I::DraftsFolder, false, -1), sampleListing(I::TrashFolder, false, -1))
+pure val targetValues = Set(0, 1, 2).map(r => { ref: "messageA", revision: r }).union(Set({ ref: "missing", revision: 0 }))
+pure val messageReceiptValues = Set(1, 2, 3).map(r => { identity: I::messageIdentity, revision: r, result: I::ChangeIdle, evidence: "providerReceipt" })
+  .union(Set(1, 2, 3).map(r => { identity: I::messageIdentity, revision: r, result: I::ChangeUnknown, evidence: "" }))
+  .union(Set({ identity: I::messageIdentity, revision: 1, result: I::ChangeFailed, evidence: "providerReceipt" },
+    { identity: I::noIdentity, revision: 0, result: I::ChangeIdle, evidence: "" }))
 pure val sampleScope: ListingScope = { owner: "ownerA", provider: "providerA", account: "accountA", folder: I::InboxFolder, query: "", generation: 2 }
-pure val scopeValues = Set({ ...sampleScope, query: "messageA" }, { ...sampleScope, query: "attachmentA" },
-  { ...sampleScope, folder: I::DraftsFolder }, { ...sampleScope, folder: I::TrashFolder },
-  { ...sampleScope, folder: I::DraftsFolder, generation: 3 }, { ...sampleScope, folder: I::DraftsFolder, generation: 4 },
-  { ...sampleScope, folder: I::DraftsFolder, generation: 5 },
-  { ...sampleScope, folder: I::DraftsFolder, query: "messageA", generation: 4 },
-  { ...sampleScope, folder: I::DraftsFolder, query: "messageA", generation: 5 },
-  { ...sampleScope, folder: I::TrashFolder, generation: 3 }, { ...sampleScope, folder: I::TrashFolder, generation: 4 },
-  { ...sampleScope, query: "messageA", generation: 3 })
-  .union(sampleGenerations.map(g => { ...sampleScope, query: "messageA", generation: g }))
-  .union(sampleGenerations.map(g => { ...sampleScope, folder: I::DraftsFolder, generation: g }))
+pure val scopeValues = Set(2, 3, 4, 5, 6, 7).map(g => { ...sampleScope, query: "messageA", generation: g })
+  .union(Set(2, 3, 4, 5).map(g => { ...sampleScope, folder: I::DraftsFolder, generation: g }))
+  .union(Set(2, 3, 4, 5).map(g => { ...sampleScope, folder: I::TrashFolder, generation: g }))
 pure val mailContent: DraftContent = { to: "recipient@example.test", cc: Set("copy@example.test"), bcc: Set(), subject: "Subject", body: "Message" }
 pure val contentValues = Set(mailContent, { ...mailContent, bcc: Set("hidden@example.test"), body: "" })
 pure val operationIdValues = Set("sendA", "sendB")
@@ -1248,45 +1252,40 @@ pure val selectedBill: BillSelection = {
   source: { owner: "ownerA", provider: "providerA", account: "accountA", ref: "messageA" },
   generation: 3, billRef: "billA", origin: "https://biller.example", account: "billerAccount"
 }
-pure val selectionValues = Set(selectedBill,
-  { ...selectedBill, generation: 4 }, { ...selectedBill, generation: 5 },
-  { ...selectedBill, generation: 2 }, { ...selectedBill, billRef: "otherInvoice" },
-  { ...selectedBill, source: { ...selectedBill.source, ref: "otherMessage" } },
-  { ...selectedBill, account: "otherBillerAccount" })
+pure val selectionValues = Set(3, 4, 5).map(g => { ...selectedBill, generation: g })
+  .union(Set({ ...selectedBill, billRef: "otherInvoice" }, { ...selectedBill, source: { ...selectedBill.source, ref: "otherMessage" } },
+    { ...selectedBill, account: "otherBillerAccount" }))
 pure val billRefValues = Set("billA")
 pure val originValues = Set("https://biller.example")
 pure val billAccountValues = Set("billerAccount")
-pure val draftIdValues = Set("draftA", "messageA")
-pure val generationValues = Set(1).union(sampleGenerations.exclude(Set(2)))
+pure val draftIdValues = Set("draftA")
+pure val generationValues = Set(1, 3, 4, 5)
 pure val revisionValues = Set(1, 2, 3)
 pure val requestValues = Set(1, 2)
 pure val draftRevisionValues = Set(1, 2, 3)
+pure val verifiedValues = Set(true)
+pure val readGrantedValues = Set(true)
+pure val recipientValidValues = Set(true)
+pure val approvedValues = Set(true)
+pure val confirmedValues = Set(true)
+pure val selectedValues = Set(true)
 pure val assetIdValues = Set("photo", "missing")
 pure val mailAsset: F::SavedFile = { ...F::samplePhoto, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentA" }
 pure val assetValues = Set(mailAsset, F::samplePdf)
 pure val readReceiptValues = {
-  val completeManifest = List(mailAsset, { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" })
-  Set(
-    { generation: 2, succeeded: true, assets: List(), suspicion: "" },
-    { generation: 2, succeeded: false, assets: List(), suspicion: "" },
-    { generation: 3, succeeded: true, assets: completeManifest, suspicion: "" },
-    { generation: 4, succeeded: true, assets: completeManifest, suspicion: "" },
-    { generation: 5, succeeded: true, assets: completeManifest, suspicion: "" },
-    { generation: 3, succeeded: true, assets: List(), suspicion: "" },
-    { generation: 3, succeeded: false, assets: List(), suspicion: "" },
-    { generation: 4, succeeded: true, assets: List(), suspicion: "" },
-    { generation: 5, succeeded: true, assets: List(), suspicion: "" },
-    { generation: 6, succeeded: true, assets: List(), suspicion: "" })
-    .union(sampleGenerations.map(g => { generation: g, succeeded: true, assets: List(), suspicion: "" }))
-    .union(sampleGenerations.exclude(Set(2)).map(g => { generation: g, succeeded: true, assets: completeManifest, suspicion: "" }))
-    .union(sampleGenerations.exclude(Set(2)).map(g => { generation: g, succeeded: true, assets: List(), suspicion: "classifierScam" }))
+  val secondPhoto = { ...mailAsset, id: "photoB", sourceRef: "attachmentB", contentRef: "photo-content-b" }
+  val completeManifest = List(mailAsset, secondPhoto, { ...F::samplePdf, origin: "providerA", account: "accountA", container: "messageA", sourceRef: "attachmentPdf" })
+  sampleGenerations.map(g => { generation: g, succeeded: true, assets: List(), suspicion: "" })
+    .union(Set(3, 4, 5, 6, 7, 8).map(g => { generation: g, succeeded: true, assets: completeManifest, suspicion: "" }))
+    .union(Set(3, 4, 5, 6, 7, 8).map(g => { generation: g, succeeded: true, assets: List(mailAsset, secondPhoto), suspicion: "" }))
+    .union(Set(3, 5, 7).map(g => { generation: g, succeeded: true, assets: List(), suspicion: "classifierScam" }))
+    .union(Set(2, 5).map(g => { generation: g, succeeded: false, assets: List(), suspicion: "" }))
 }
 pure val snapshotValues = Set(
-  { id: "draftA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
-  { id: "draftA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" },
-  { id: "messageA", version: 3, content: mailContent, attachments: List(), replyTo: "" })
-pure val directionValues = Set(-1, 0, 1)
-pure val headerValues = sampleGenerations.map(g => { ref: "messageA", generation: g, address: "sender@example.test", subject: "Re: Subject", verified: true })
+  { id: "messageA", version: 1, content: mailContent, attachments: List(), replyTo: "" },
+  { id: "messageA", version: 2, content: mailContent, attachments: List(mailAsset), replyTo: "" })
+pure val directionValues = Set(-1, 1)
+pure val headerValues = Set(3, 4, 5, 6).map(g => { ref: "messageA", generation: g, address: "sender@example.test", subject: "Re: Subject", verified: true })
   .union(Set({ ref: "messageA", generation: 3, address: "", subject: "Re: Subject", verified: true },
     { ref: "messageA", generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: false },
     { ref: "missing", generation: 3, address: "sender@example.test", subject: "Re: Subject", verified: true }))
@@ -1294,41 +1293,54 @@ pure val linkValues = Set("https://acc0unt-help.example/confirm")
 pure val refsValues = Set(Set("attachmentA"), Set("attachmentPdf"), Set("attachmentA", "attachmentPdf"), Set("missing"), Set())
 pure val resolvedRecipient: Recipient = { address: "recipient@example.test", verified: true }
 pure val assistValues = Set(
-  AssistSearch({ query: "" }), AssistSearch({ query: "messageA" }), AssistOpen({ ref: "messageA" }), AssistOpen({ ref: "missing" }),
+  AssistSearch({ query: "messageA" }), AssistOpen({ ref: "messageA" }),
   AssistList, AssistNewEmail({ recipient: resolvedRecipient, subject: "Subject", body: "Message" }),
   AssistNewEmail({ recipient: { ...resolvedRecipient, verified: false }, subject: "Subject", body: "Message" }),
-  AssistAddress({ recipient: resolvedRecipient }), AssistFill({ body: "Thank you, I will be there." }), AssistFill({ body: "" }),
+  AssistAddress({ recipient: resolvedRecipient }), AssistFill({ body: "Thank you, I will be there." }),
   AssistForward({ content: { ...emptyContent, subject: "Fwd: Subject", body: "Message" } }), AssistSaveDraft({ draftId: "draftA" }))
-  .union(targetValues.map(t => AssistTrash({ target: t })))
-  .union(targetValues.map(t => AssistRestore({ target: t })))
-  .union(targetValues.map(t => AssistUndoTrash({ target: t })))
-  .union(targetValues.map(t => AssistMarkUnread({ target: t })))
-pure val weight_connect = 20
-pure val weight_completeMessageChange = 30
+  .union(targetValues.filter(t => t.ref != "missing").map(t => AssistTrash({ target: t })))
+  .union(targetValues.filter(t => t.ref != "missing").map(t => AssistRestore({ target: t })))
+  .union(targetValues.filter(t => t.ref != "missing").map(t => AssistUndoTrash({ target: t })))
+  .union(targetValues.filter(t => t.ref != "missing").map(t => AssistMarkUnread({ target: t })))
+pure val weight_connect = 50
+pure val weight_authorize = 50
+pure val weight_readMail = 30
+pure val weight_readResult = 40
+pure val weight_receiveMessage = 60
+pure val weight_chooseFolder = 4
 pure val weight_changeSelectedMessage = 30
-pure val weight_readMail = 12
-pure val weight_chooseFolder = 3
-pure val weight_movePhoto = 20
-pure val weight_backToMessage = 20
-pure val weight_forwardAttachment = 10
-pure val weight_preserveDraft = 3
-pure val weight_draftStoreResult = 8
-pure val weight_attachAsset = 2
-pure val weight_confirmVisibleSend = 20
-pure val weight_authorize = 20
-pure val weight_readResult = 30
-pure val weight_receiveMessage = 30
-pure val weight_receiveBill = 6
-pure val weight_confirmBill = 6
-pure val weight_editDraft = 8
-pure val weight_reviewDraft = 3
-pure val weight_approveDraft = 3
-pure val weight_sendDraft = 30
-pure val weight_sendResult = 30
-pure val weight_startDraft = 6
-pure val weight_assistMail = 20
-pure val weight_queueSend = 30
-pure val weight_dispatchQueued = 30
-pure val weight_queuedResult = 30
-pure val weight_reopenQueued = 10
+pure val weight_completeMessageChange = 30
+pure val weight_undoMessageTrash = 80
+pure val weight_closeUndoToast = 80
+pure val weight_receiveBill = 15
+pure val weight_confirmBill = 80
+pure val weight_openLink = 15
+pure val weight_confirmLink = 100
+pure val weight_cancelLink = 60
+pure val weight_linkOpened = 60
+pure val weight_replyToMessage = 15
+pure val weight_forwardMessage = 10
+pure val weight_restoreDraft = 100
+pure val weight_movePhoto = 100
+pure val weight_backToMessage = 100
+pure val weight_forwardAttachment = 100
+pure val weight_startDraft = 3
+pure val weight_assistMail = 4
+pure val weight_editDraft = 20
+pure val weight_reviewDraft = 4
+pure val weight_approveDraft = 20
+pure val weight_confirmVisibleSend = 30
+pure val weight_sendDraft = 40
+pure val weight_sendResult = 20
+pure val weight_persistSendResult = 60
+pure val weight_queueSend = 40
+pure val weight_dispatchQueued = 40
+pure val weight_queuedResult = 20
+pure val weight_reopenQueued = 100
+pure val weight_preserveDraft = 20
+pure val weight_draftStoreResult = 20
+pure val weight_discardDraft = 3
+pure val weight_closeEmptyComposer = 6
+pure val weight_attachAsset = 4
+pure val weight_removeAsset = 10
 ```

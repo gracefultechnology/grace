@@ -1,8 +1,8 @@
-import type { ComponentProps } from "react";
+import { Fragment, type ComponentProps } from "react";
 import { Mail } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
+import { guided, type Guide } from "./GuideAnchor.tsx";
 import { ListRow } from "./ListRow.tsx";
 import { PageHeading } from "./PageHeading.tsx";
 import { Panel } from "./Panel.tsx";
@@ -45,10 +45,10 @@ export type ProviderGridProps = Omit<ComponentProps<"div">, "children"> & {
   onChoose?: (provider: EmailProvider) => void;
   /** Only the tiles, without the question above them or the help below (prototype Add an email). */
   bare?: boolean;
-  /** Called by Ask Grace in "Not sure which?". */
+  /** Called by Ask Grace in "Not sure which?"; without it Ask Grace is not offered. */
   onAskGrace?: () => void;
-  /** Grace pointing at one company's tile. */
-  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel"> & { targetId: EmailProvider };
+  /** Grace pointing at one company's tile (prototype `prov-<Name>`). */
+  guide?: Guide<EmailProvider>;
   labels?: Partial<typeof defaultLabels>;
 };
 
@@ -59,15 +59,14 @@ export type ProviderGridProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function ProviderGrid({ providers = allProviders, onChoose, bare = false, onAskGrace, guide, labels, className, ...props }: ProviderGridProps) {
   const words = { ...defaultLabels, ...labels };
-  const { targetId, ...pointing } = guide ?? {};
   return (
     <div className={cn("font-sans", className)} {...props}>
       {!bare && <PageHeading level="section" className="mt-[22px]">{words.heading}</PageHeading>}
       <div className={cn("grid grid-cols-2 gap-3", bare ? "mt-4" : "mt-3")}>
         {providers.map((provider) => {
           const { name, subtitle } = emailProviders[provider];
-          const row = <ListRow key={provider} className="min-h-[84px]" leading={<ProviderTile provider={provider} />} title={name} subtitle={subtitle} onClick={() => onChoose?.(provider)} />;
-          return provider === targetId ? <GuideAnchor key={provider} radius={22} className="flex [&>div]:flex-1" {...pointing}>{row}</GuideAnchor> : row;
+          const row = <ListRow className="min-h-[84px]" leading={<ProviderTile provider={provider} />} title={name} subtitle={subtitle} onClick={() => onChoose?.(provider)} />;
+          return <Fragment key={provider}>{guided(guide, provider, row, { radius: 22, placement: "below", className: "flex [&>div]:flex-1" })}</Fragment>;
         })}
       </div>
       {!bare && (
@@ -76,7 +75,7 @@ export function ProviderGrid({ providers = allProviders, onChoose, bare = false,
             <p className="m-0 text-body leading-[30px] font-bold text-chrome">{words.helpTitle}</p>
             <p className="m-0 text-body leading-[26px] font-medium text-muted-foreground">{words.helpText}</p>
           </div>
-          <Button variant="capsule" size="pill" onClick={onAskGrace}>{words.askGrace}</Button>
+          {onAskGrace && <Button variant="capsule" size="pill" onClick={onAskGrace}>{words.askGrace}</Button>}
         </Panel>
       )}
     </div>

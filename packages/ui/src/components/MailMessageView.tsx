@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Forward, Reply, Undo2 } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
-import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
+import { GuideAnchor, guided, type Guide, type GuidePointing } from "./GuideAnchor.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { BillOffer, type BillDetails, type BillOfferLabels } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
@@ -15,11 +15,15 @@ import { Skeleton } from "./Skeleton.tsx";
 
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
-export type MailLinkProps = ComponentProps<"a">;
+export type MailLinkProps = ComponentProps<"a"> & {
+  /** Grace pointing at the link (prototype `link`). */
+  guide?: GuidePointing;
+};
 
 /** A link in an email's words: blue, underlined and bold (prototype `.a-link`). */
-export function MailLink({ className, ...props }: MailLinkProps) {
-  return <a className={cn(focusRing, "rounded-sm font-semibold text-link underline", className)} {...props} />;
+export function MailLink({ guide, className, ...props }: MailLinkProps) {
+  const link = <a className={cn(focusRing, "rounded-sm font-semibold text-link underline", className)} {...props} />;
+  return guide ? <GuideAnchor radius={4} {...guide}>{link}</GuideAnchor> : link;
 }
 
 export type MailPhoto = {
@@ -30,25 +34,30 @@ export type MailPhoto = {
 export type MailPhotoGridProps = Omit<ComponentProps<"ul">, "onSelect"> & {
   /** The photos, three to a row. */
   photos: MailPhoto[];
-  /** Called with the index of the photo tapped, to open it large. */
+  /** Called with the index of the photo tapped, to open it large; without it the photos are only shown. */
   onSelect?: (index: number) => void;
 };
+
+const tile = "block h-[190px] w-full overflow-hidden rounded-photo shadow-photo-tile";
 
 /** An email's photos, three to a row, each opening the viewer (prototype `.a-photos`; a `.a-photo` has no press scale). */
 export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPhotoGridProps) {
   return (
     <ul className={cn("m-0 grid list-none grid-cols-3 gap-4 p-0", className)} {...props}>
-      {photos.map((photo, i) => (
-        <li key={photo.src}>
-          <button
-            type="button"
-            onClick={() => onSelect?.(i)}
-            className={cn(focusRing, "block h-[190px] w-full cursor-pointer overflow-hidden rounded-photo shadow-photo-tile")}
-          >
-            <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
-          </button>
-        </li>
-      ))}
+      {photos.map((photo, i) => {
+        const image = <img src={photo.src} alt={photo.alt} className="size-full object-cover" />;
+        return (
+          <li key={photo.src}>
+            {onSelect ? (
+              <button type="button" onClick={() => onSelect(i)} className={cn(focusRing, tile, "cursor-pointer")}>
+                {image}
+              </button>
+            ) : (
+              <span className={tile}>{image}</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -59,6 +68,9 @@ export type MailFile = {
 };
 
 export type MailReadStatus = "loading" | "failed" | "ready";
+
+/** What Grace can point at in an open email (prototype `data-t`): her scam warning, the words, Save all and the first file. A link in the words takes its own `guide`. */
+export type MailMessageTarget = "caution" | "mbody" | "saveall" | "file";
 
 export type MailMessageViewLabels = {
   title: string;
@@ -118,15 +130,15 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   /** Takes it out of Trash. */
   onRestore?: () => void;
   onDeleteForever?: () => void;
-  /** Called with the index of the photo tapped. */
+  /** Called with the index of the photo tapped; without it the photos are only shown. */
   onOpenPhoto?: (index: number) => void;
-  /** Saves every photo to Files. */
+  /** Saves every photo to Files; without it Save all to Files is not offered. */
   onSaveAll?: () => void;
-  /** Called with the index of the file to open. */
+  /** Called with the index of the file to open; without it the files offer no Open. */
   onOpenFile?: (index: number) => void;
   /** `loading` shows placeholder words and holds Reply and Forward until every attachment is known; `failed` says so with Try again. */
   status?: MailReadStatus;
-  /** Opens it again after it failed. */
+  /** Opens it again after it failed; without it the failure offers no Try again. */
   onRetry?: () => void;
   /** What a failure says, in place of "This message couldn’t be opened. Try again.". */
   errorLabel?: ReactNode;
@@ -146,8 +158,8 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   billLabels?: Partial<BillOfferLabels>;
   /** The view's words, for another language. */
   labels?: Partial<MailMessageViewLabels>;
-  /** Grace pointing inside the email; the target `scam` is her warning above a scam. */
-  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel"> & { targetId: "scam" };
+  /** Grace pointing inside the email. */
+  guide?: Guide<MailMessageTarget>;
 };
 
 /**
@@ -190,7 +202,6 @@ export function MailMessageView({
   guide,
   ...props
 }: MailMessageViewProps) {
-  const { targetId, ...pointing } = guide ?? {};
   const l = { ...viewLabels, ...labels };
   const held = status !== "ready";
   const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (onClick || disabled) && (
@@ -220,14 +231,7 @@ export function MailMessageView({
       {...props}
     >
       <article className="font-sans" aria-busy={status === "loading" || undefined}>
-        {scam &&
-          (targetId === "scam" ? (
-            <GuideAnchor radius={22} className="mb-5 flex" {...pointing}>
-              <Alert variant="caution" className="flex-1">{l.scam}</Alert>
-            </GuideAnchor>
-          ) : (
-            <Alert variant="caution" className="mb-5">{l.scam}</Alert>
-          ))}
+        {scam && <div className="mb-5 flex">{guided(guide, "caution", <Alert variant="caution" className="flex-1">{l.scam}</Alert>, { radius: 22, placement: "below", className: "flex flex-1" })}</div>}
         <div className="flex items-center gap-[18px]">
           <MailContactAvatar contact={from} aria-hidden />
           <div className="min-w-0">
@@ -245,11 +249,11 @@ export function MailMessageView({
             ))}
           </div>
         ) : status === "failed" ? (
-          <MailNotice actionLabel={l.retry} onAction={onRetry} className="max-w-[880px]">
+          <MailNotice actionLabel={onRetry && l.retry} onAction={onRetry} className="max-w-[880px]">
             {errorLabel ?? l.failed}
           </MailNotice>
         ) : (
-          <PageText className="max-w-[880px]">{body}</PageText>
+          guided(guide, "mbody", <PageText asChild className="max-w-[880px]"><div>{body}</div></PageText>, { radius: 12, placement: "below", className: "flex max-w-[880px]" })
         )}
         {bill && !held && <BillOffer {...bill} onConfirm={onConfirmBill} onDismiss={onDismissBill} onOpen={onOpenBill} labels={billLabels} className="mt-[22px]" />}
         {!held && photos?.length ? (
@@ -258,24 +262,29 @@ export function MailMessageView({
               <mailIcons.clip size={24} strokeWidth={2.2} aria-hidden />
               <span className="flex-1 text-body-lg leading-[30px] font-bold text-chrome">{l.photos(photos.length)}</span>
               {saveAllStatus && <MailActionStatus status={saveAllStatus} onRetry={onRetrySaveAll} />}
-              <Button variant="capsule" size="pill" className={appButton} aria-busy={saveAllStatus === "saving" || undefined} disabled={saveAllStatus === "saving"} onClick={onSaveAll}>
-                {pendingMark(saveAllStatus === "saving", <mailIcons.down {...pill} />)}
-                {l.saveAll}
-              </Button>
+              {onSaveAll &&
+                guided(
+                  guide,
+                  "saveall",
+                  <Button variant="capsule" size="pill" className={appButton} aria-busy={saveAllStatus === "saving" || undefined} disabled={saveAllStatus === "saving"} onClick={onSaveAll}>
+                    {pendingMark(saveAllStatus === "saving", <mailIcons.down {...pill} />)}
+                    {l.saveAll}
+                  </Button>,
+                  { radius: 999 },
+                )}
             </div>
             <MailPhotoGrid photos={photos} onSelect={onOpenPhoto} />
           </>
         ) : null}
         {!held &&
-          files?.map((file, i) => (
-            <MailAttachment
-              key={file.name}
-              name={file.name}
-              detail={file.detail}
-              className="mt-[22px]"
-              onOpen={() => onOpenFile?.(i)}
-            />
-          ))}
+          files?.map((file, i) => {
+            const attachment = <MailAttachment name={file.name} detail={file.detail} className="flex-1" onOpen={onOpenFile && (() => onOpenFile(i))} />;
+            return (
+              <div key={file.name} className="mt-[22px] flex max-w-[760px]">
+                {i === 0 ? guided(guide, "file", attachment, { radius: 22, placement: "below", className: "flex flex-1" }) : attachment}
+              </div>
+            );
+          })}
       </article>
     </AppWindow>
   );
