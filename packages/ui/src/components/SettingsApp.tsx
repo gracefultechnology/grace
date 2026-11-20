@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { CircleUserRound, Info, Mail, Shield, Wifi } from "lucide-react";
 import { GearIcon, SpeakerIcon } from "../icons.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
+import { guided, type Guide } from "./GuideAnchor.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
 import { SunIcon } from "./SettingsBrightness.tsx";
 import { SideNav, SideNavItem } from "./SplitView.tsx";
@@ -57,6 +58,8 @@ export type SettingsAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "
   pageTitle?: string;
   /** The side list's words, by page. */
   labels?: Partial<Record<SettingsPage, string>>;
+  /** Grace pointing at a page in the side list (prototype `nav-<page>`). */
+  guide?: Guide<SettingsPage>;
   /** The open page: `SettingsTextSize`, `SettingsBrightness`, `SettingsVoice`, `WifiNetworkList` or `WifiJoinForm`, `EmailAccountList`, `EmailAccountPage`, `OtherEmailForm` or `MailServersForm`, `AccountOverview`, `SettingsPrivacy`, `SettingsAbout`. */
   children: ReactNode;
 };
@@ -77,6 +80,7 @@ export function SettingsApp({
   title = "Settings",
   pageTitle,
   labels,
+  guide,
   children,
   ...props
 }: SettingsAppProps) {
@@ -89,9 +93,16 @@ export function SettingsApp({
       nav={
         <SideNav aria-label={title}>
           {pages.map((item) => (
-            <SideNavItem key={item} icon={icons[item]} selected={item === page} onClick={() => onPageChange?.(item)}>
-              {words[item]}
-            </SideNavItem>
+            <Fragment key={item}>
+              {guided(
+                guide,
+                item,
+                <SideNavItem icon={icons[item]} selected={item === page} onClick={() => onPageChange?.(item)}>
+                  {words[item]}
+                </SideNavItem>,
+                { radius: 22, className: "flex" },
+              )}
+            </Fragment>
           ))}
         </SideNav>
       }

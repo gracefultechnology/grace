@@ -1,4 +1,4 @@
-import { fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { tapCalls } from "./Button.meta.tsx";
 import { flowersPhoto, mailScreen, programPhoto, stagePhoto, retriesUnshown } from "./MailApp.meta.tsx";
@@ -16,10 +16,16 @@ export const meta: ComponentMeta<PhotoViewerProps> = {
     "Couldn’t show": { status: "failed", onRetry: retry },
     Saved: { saveStatus: "saved" },
     "Save failed": { saveStatus: "failed", onRetrySave: fn() },
+    "Save and Forward refused": { onSave: undefined, onForward: undefined },
   },
   decorator: mailScreen,
   play: {
     Default: tapCalls("Next photo", next, { rest: true }),
     "Couldn’t show": retriesUnshown("Save to Files", retry),
+    "Save and Forward refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByRole("button", { name: "Save to Files" })).toBeDisabled();
+      await expect(canvas.queryByRole("button", { name: "Forward" })).toBeNull();
+    },
   },
 };

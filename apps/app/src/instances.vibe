@@ -3,22 +3,19 @@ import { Machine as Accounts, type Account, type Accounts as Registry } from "..
 import { Machine as CalendarMachine, stored as storedCalendar } from "../gen/app__calendarView.effect.vibe"
 import { type Event as MailEvent, hasMessage, listingScope, Machine as MailMachine, messageRecord, retainedOnly, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt } from "../gen/app__emailItem.effect.vibe"
+import type { SavedFile } from "../gen/app__files.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
-import { Connector, type MailConnection, type MailContent, NeedsSignIn } from "./connector.vibe"
+import { type Attached, Connector, type MailConnection, MailContent, NeedsSignIn } from "./connector.vibe"
 
 export error NotAnAccount { id: number }
 
-schema HeldFile {
+export schema HeldFile {
   readonly id: string; readonly kind: "Photo" | "Pdf"; readonly name: string; readonly origin: string; readonly account: string
   readonly container: string; readonly sourceRef: string; readonly contentRef: string; readonly group: string
   readonly savedAt: number; readonly pages: number
 }
-schema HeldContent {
-  readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
-  readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
-  readonly to: readonly string[]
-}
-schema Held { readonly content: HeldContent; readonly assets?: readonly HeldFile[] }
+schema HeldReply { readonly address: string; readonly subject: string; readonly verified: boolean }
+export schema Held { readonly content: MailContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
 
 export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
 export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>
@@ -33,6 +30,8 @@ export service Instances {
   readonly content: (id: number, ref: string) => MailContent | undefined
   readonly held: (id: number, ref: string) => Held | undefined
   readonly remember: (id: number, held: Held) => void
+  readonly file: (id: number, asset: SavedFile) => Attached | undefined
+  readonly hold: (id: number, asset: SavedFile, file: Attached) => void
 }
 
 export const tablet = 0
@@ -73,6 +72,7 @@ export const instances = Layer.effect(Instances, effect {
   const mailRuntimes = new Map<number, MailRuntime>()
   const calendarRuntimes = new Map<number, CalendarRuntime>()
   const contents = new Map<string, Held>()
+  const files = new Map<string, Attached>()
   try Effect.addFinalizer(() => effect {
     for (const scope of (try SynchronizedRef.get(attached)).values()) try Scope.close(scope, Exit.void)
     for (const runtime of [...mailRuntimes.values(), ...calendarRuntimes.values()]) try runtime.disposeEffect
@@ -113,6 +113,7 @@ export const instances = Layer.effect(Instances, effect {
       calendarRuntimes.delete(id)
       for (const runtime of runtimes) if (runtime !== undefined) try runtime.disposeEffect
       for (const [key] of heldOf(id)) contents.delete(key)
+      for (const key of [...files.keys()].filter((k) => k.startsWith(contentKey(id, "")))) files.delete(key)
       for (const key of [mailKey(id), calendarKey(id), heldKey(id)]) try Effect.orDie(store.remove(key))
       return new Map([...all].filter(([k]) => k !== id))
     })
@@ -163,6 +164,7 @@ export const instances = Layer.effect(Instances, effect {
     },
     keep: effect (id, refs) => {
       for (const [key, held] of heldOf(id)) if (!refs.has(held.content.ref)) contents.delete(key)
+      for (const key of [...files.keys()].filter((k) => k.startsWith(contentKey(id, "")) && !refs.has(k.slice(contentKey(id, "").length).split("/")[0]))) files.delete(key)
       try Effect.orDie(store.set(heldKey(id), JSON.stringify(heldOf(id).map(([, held]) => held))))
     },
     mailRuntime: (id) => cached(mailRuntimes, id, () => ManagedRuntime.make(Layer.effect(MailMachine, mail(id)))),
@@ -172,10 +174,13 @@ export const instances = Layer.effect(Instances, effect {
     remember: (id, held) => {
       const known = contents.get(contentKey(id, held.content.ref))
       contents.set(contentKey(id, held.content.ref), {
-        content: held.content.body === "" && known !== undefined ? { ...held.content, body: known.content.body } : held.content,
-        assets: held.assets ?? known?.assets
+        content: known === undefined ? held.content : { ...held.content, body: held.content.body || known.content.body, replied: held.content.replied || known.content.replied },
+        assets: held.assets ?? known?.assets,
+        reply: held.reply ?? known?.reply
       })
-    }
+    },
+    file: (id, asset) => files.get(contentKey(id, asset.sourceRef)),
+    hold: (id, asset, file) => { files.set(contentKey(id, asset.sourceRef), file) }
   }
 })
 
@@ -224,7 +229,10 @@ export const reading = Layer.effectDiscard(effect {
         const assets = shelf.held(id, m.requestedRef)?.assets
         return assets === undefined ? unread(m.generation) : read(m.generation, [...assets])
       };
-      when "OpenAttachment": Effect.succeed(unread(m.generation));
+      when "OpenAttachment": effect {
+        const file = m.assets.find((a) => a.sourceRef === m.requestedRef)
+        return file === undefined || shelf.file(id, file) === undefined ? unread(m.generation) : read(m.generation)
+      };
     }
     return try answered
   }
@@ -243,9 +251,19 @@ export const reading = Layer.effectDiscard(effect {
       when "OpenMessage": effect {
         const opened = try mail.read(m.requestedRef, m.generation)
         shelf.remember(id, { content: opened.content, assets: opened.receipt.succeeded ? opened.receipt.assets : undefined })
+        const missing = opened.receipt.assets.filter((file) => file.kind === "Photo" && shelf.file(id, file) === undefined)
+        try Effect.forEach(missing, effect (file) => {
+          const got = mail.attachment(file, opened.content.version) catch () => undefined
+          if (got !== undefined) shelf.hold(id, file, got)
+        }, { concurrency: "unbounded", discard: true })
         return opened.receipt
       };
-      when "OpenAttachment": Effect.succeed(unread(m.generation));
+      when "OpenAttachment": effect {
+        const file = m.assets.find((a) => a.sourceRef === m.requestedRef)
+        if (file === undefined) return unread(m.generation)
+        if (shelf.file(id, file) === undefined) shelf.hold(id, file, try mail.attachment(file, shelf.content(id, m.messageRef)?.version ?? ""))
+        return read(m.generation)
+      };
     }
     const receipt: ReadReceipt | undefined = answered catch (e) => match (e) {
       when NeedsSignIn: undefined;
@@ -257,7 +275,8 @@ export const reading = Layer.effectDiscard(effect {
   effect function answer(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
     const receipt = retainedOnly(m) ? try fromTablet(id, box, m) : try fromProvider(id, mail, box, m)
     if (receipt === undefined) return try signedOut(box, m)
-    box.send({ type: "readResult", readReceipt: receipt }, "MailConnector") catch () => undefined
+    const taken = Effect.as(box.send({ type: "readResult", readReceipt: receipt }, "MailConnector"), true) catch () => false
+    if (!taken && receipt.succeeded) box.send({ type: "readResult", readReceipt: unread(receipt.generation) }, "MailConnector") catch () => undefined
     try shelf.keep(id, new Set((try box.get()).messages.map((r) => r.identity.ref)))
   }
 

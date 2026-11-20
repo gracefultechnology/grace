@@ -40,7 +40,7 @@ export function FilesCard({ title = "Files", photos, document, compact = false, 
       </span>
       {document && (
         <Panel variant="white" className="mt-auto flex flex-none items-center gap-4 px-3.5 py-2.5">
-          <span className="flex h-[52px] w-11 flex-none flex-col items-center justify-center gap-0.5 rounded-md bg-card text-[11px] leading-none font-extrabold text-destructive shadow-badge">
+          <span className="flex h-[52px] w-11 flex-none flex-col items-center justify-center gap-0.5 rounded-md bg-card text-mark leading-none font-extrabold text-destructive shadow-badge">
             <FileIcon strokeWidth={2} className="size-5.5" />
             {document.kind ?? "PDF"}
           </span>

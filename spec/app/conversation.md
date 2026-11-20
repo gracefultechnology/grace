@@ -31,8 +31,9 @@ Grace did. `streamed` counts the parts of the current reply that have arrived,
 and `origin` says who started the current turn: the person, or the host for a
 page event, a report of what was done elsewhere or Grace's opening line.
 
-The Mic switch starts off and each exchange ends after one statement. This is
-the owner's choice for the MVP and differs from the prototype, whose switch
+The Mic switch starts off. An exchange ends when Grace's spoken reply is not a
+question, when no word is heard for eight seconds, or when the person taps
+Stop listening, Type or Pause. This is the owner's choice for the MVP and differs from the prototype, whose switch
 stays on: with recognition in the cloud, an open microphone would send the
 room's sound to the service for as long as Grace's window is open.
 
@@ -148,6 +149,7 @@ pure def hear(c: Conversation, token: int, text: str, owner: AudioOwner, by: Con
 An answer belongs to the current visible question and current generation, and
 sends exactly the words of one chip Grace offered with it (prototype 1302–1303).
 The transcript remains authoritative after its transient answer chips vanish.
+A chip can be tapped while Grace listens for the answer.
 
 ```quint
 pure def canChooseAnswer(c: Conversation, token: int, text: str, by: ConversationActor): bool =
@@ -163,12 +165,14 @@ of unanswered questions. The language service must make `isQuestion` truthful
 and ask only that decision. Every reply is written in the transcript. It is
 also spoken when the person's voice output is on (`audible`), whether they
 spoke or typed (prototype 1325); with voice output off it is only written.
-Speaking never turns the microphone on, and a reply ends the voice exchange:
-when Grace asks a question, the person answers by tapping Talk.
-The microphone stays on while Grace speaks only so that she can be
-interrupted, and closes when that reply ends. The one exception is Grace's
-single request to say an unusable utterance again, which listens once more
-because no statement has been heard yet.
+Speaking never turns the microphone on. When Grace asks a question aloud in a
+voice exchange, she keeps listening for the answer once her speech ends, under
+the same generation, so the person can simply answer; the microphone was
+already on so that she could be interrupted. Any other reply ends the voice
+exchange when it ends. A written-only reply, a reply to a typed message,
+Repeat and a paused reply never keep listening; there she answers by Talk, an
+answer chip or typing. Grace's single request to say an unusable utterance
+again is such a question.
 
 ```quint
 pure def canRespond(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], by: ConversationActor): bool =
@@ -182,15 +186,18 @@ pure def stepSpeakingNeverOpensTheMicrophone(before: Conversation, via: str, aft
 
 pure def canFinishSpeech(c: Conversation, token: int, by: ConversationActor): bool =
   by == ConversationRuntime and c.turn == Speaking and token == c.generation
-pure def awaitsAStatement(c: Conversation): bool = c.voice and c.unusable > 0
+pure def awaitsAnAnswer(c: Conversation): bool = c.voice and c.question
 pure def finishSpeech(c: Conversation, token: int, by: ConversationActor): Conversation =
-  { ...c, turn: if (awaitsAStatement(c)) Listening else Ready, voice: awaitsAStatement(c) }
-pure def lawTheMicrophoneClosesAfterOneStatement(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: ConversationActor): bool =
+  { ...c, turn: if (awaitsAnAnswer(c)) Listening else Ready, voice: awaitsAnAnswer(c) }
+pure def lawOnlyASpokenQuestionKeepsTheMicrophoneOpen(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: ConversationActor): bool =
   val replied = respond(c, token, text, isQuestion, answers, audible, by)
   val finished = finishSpeech(c, token, by)
   (canRespond(c, token, text, isQuestion, answers, by) implies
     replied.turn != Listening and (replied.voice implies replied.turn == Speaking)) and
-  ((canFinishSpeech(c, token, by) and c.unusable == 0) implies not(finished.voice) and finished.turn == Ready)
+  (canFinishSpeech(c, token, by) implies
+    finished.voice == (c.voice and c.question) and
+    finished.turn == (if (c.voice and c.question) Listening else Ready) and
+    finished.generation == c.generation and finished.question == c.question and finished.answers == c.answers)
 ```
 
 ### Answer chips come only with a closed question, two or three at a time
@@ -210,7 +217,8 @@ pure def alwaysAnswersBelongToTheQuestion(c: Conversation): bool =
 ### Repeat reads the latest Grace response without turning on a muted microphone
 
 An explicit Repeat speaks while voice output is on, even with capture off. It
-ends any voice exchange, so it never opens listening at its end. It is offered
+ends any voice exchange, so it never listens at its end, even when the reply it
+repeats is a question. It is offered
 while Grace is ready or already speaking, never while she is listening or a
 submitted message still awaits its reply, so it cannot fence that reply out.
 The written response remains in the same transcript rather than becoming a new
@@ -234,17 +242,22 @@ carries on from the same word (prototype 1213–1215, 1741–1744; PRD VOICE 02,
 which keeps touch Pause available while muted). Both keep the generation, so
 the paused reply stays current and no callback is fenced out. Pausing speech
 does not stop or pause the website task; the workspace's Stop does that.
+Pause also ends the voice exchange and closes the microphone. Resume finishes
+the reply with the microphone off, so a resumed question is answered by Talk,
+a chip or typing.
 
 ```quint
 pure def canPauseSpeech(c: Conversation, by: ConversationActor): bool =
   by == ConversationUser and c.turn == Speaking
-pure def pauseSpeech(c: Conversation, by: ConversationActor): Conversation = { ...c, turn: Paused }
+pure def pauseSpeech(c: Conversation, by: ConversationActor): Conversation = { ...c, turn: Paused, voice: false }
 pure def canResumeSpeech(c: Conversation, by: ConversationActor): bool =
   by == ConversationUser and c.turn == Paused
 pure def resumeSpeech(c: Conversation, by: ConversationActor): Conversation = { ...c, turn: Speaking }
 pure def stepPauseKeepsTheReply(before: Conversation, via: str, after: Conversation): bool =
   (via == "pauseSpeech" or via == "resumeSpeech") implies
-    after.generation == before.generation and after.messages == before.messages and after.voice == before.voice
+    after.generation == before.generation and after.messages == before.messages and
+    (if (via == "pauseSpeech") not(after.voice) else after.voice == before.voice)
+pure def alwaysPausedMicrophoneIsOff(c: Conversation): bool = c.turn == Paused implies not(c.voice)
 pure def sometimesSpeechPaused(c: Conversation): bool = c.turn == Paused
 ```
 
@@ -287,6 +300,8 @@ pure def serviceFailure(c: Conversation, token: int, text: str, by: Conversation
 
 The current question and transcript remain available for a deliberate Talk,
 Type or tapped response. A timeout is not consent and does not complete work.
+Grace does not ask again: the microphone closes quietly, and the question and
+its answer chips stay on screen.
 
 ```quint
 pure def canSilence(c: Conversation, token: int, by: ConversationActor): bool =
@@ -316,7 +331,8 @@ pure def wakeSilence(c: Conversation, token: int, by: ConversationActor): Conver
 
 Silence, understandable ambiguity and recognition failure are distinct. The
 first unusable utterance asks once; the second turns capture off and offers
-the existing Talk and Type controls. No guessed request is emitted.
+the existing Talk and Type controls. No guessed request is emitted. The repeat
+request is a question, so Grace listens for its answer as for any question.
 
 ```quint
 pure def canUnusableSpeech(c: Conversation, token: int, owner: AudioOwner, by: ConversationActor): bool =
@@ -426,6 +442,8 @@ pure def newConversation(c: Conversation, by: ConversationActor): Conversation =
 
 ```quint
 pure def sometimesListening(c: Conversation): bool = c.turn == Listening
+pure def sometimesListeningForAnAnswer(c: Conversation): bool =
+  c.voice and c.turn == Listening and c.question and c.unusable == 0
 pure def sometimesSpeaking(c: Conversation): bool = c.turn == Speaking
 pure def sometimesTypedQuestion(c: Conversation): bool = not(c.voice) and c.question
 pure def sometimesUnusableFallback(c: Conversation): bool = c.unusable == 2
@@ -458,9 +476,10 @@ pure val voiceDisclosure = "When you talk to Grace, your voice goes to Grace's c
 ### Only Talk opens the microphone, so her voice is sent only in an exchange she started
 
 Talk opens one cloud speech session for its exchange, and the session closes
-when the turn returns to Ready. Her audio is sent only while that exchange is
-open: while Grace listens, and while Grace speaks with the microphone on so
-that she can be interrupted. No reply, finished speech, failure or turn the
+when the exchange ends. Her audio is sent only while that exchange is open:
+while Grace listens, while Grace speaks with the microphone on so that she can
+be interrupted, and while Grace waits for the answer to a question she asked
+aloud in it. No reply, finished speech, failure or turn the
 host starts turns the microphone on.
 
 ```quint
@@ -472,7 +491,8 @@ pure def stepOnlyTalkOpensTheMicrophone(before: Conversation, via: str, after: C
 ### Listening waits eight seconds for her first word
 
 The host reports Silence once no word has been heard for eight seconds after
-listening began. The cloud service decides when a statement has ended; a
+listening began, whether Talk began it or the end of Grace's spoken question
+did. The cloud service decides when a statement has ended; a
 statement that continues is not cut off by this limit.
 
 ```quint
