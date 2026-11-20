@@ -952,16 +952,16 @@ pure def prepare(w: Workspace, operationRequest: OperationRequest, by: Workspace
 
 ### A page on another origin, or a step that is the person's, blocks the task where she can see it
 
-An observation that arrives on every current version but reads a page on
-another origin than the task's is not dropped: the task is blocked with that
-reason and its checkpoint. When the step the task needs, at the current
-observation, is one Grace may not take, because it is out of her reach or is
-the person's to tap, the task is blocked for the person with that step named,
-and an approved payment review on the old page is no longer current, also
-when the step left to the person is a payment's own pay button. Either
-way Grace's visible work waits for the person and fences older reports, so
-she continues only after the person chooses Continue and a fresh observation
-on the task's own origin arrives. Neither changes the conversation.
+A current observation for the same owner and task can report a page on a
+different origin. In that case Grace blocks the task, records the reason
+and shows the checkpoint from the observation.
+
+When the next step is out of Grace’s reach or belongs to the person, Grace
+keeps the existing checkpoint visible and records which step the person must
+take. This handoff invalidates an approved payment review, including when
+the step is the payment’s own Pay button. In either case Grace waits for the
+person to choose Continue and for a fresh observation on the task’s own
+origin. Both paths preserve the conversation.
 
 ```quint
 pure def canRefuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
@@ -1052,7 +1052,7 @@ pure def sometimesOperationDispatched(w: Workspace): bool = w.execution.phase ==
 pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X::Verified
 ```
 
-### An ordinary website goal finishes only with its own verified endpoint
+### An ordinary website goal finishes only on an observation quoting its fact
 
 The person's goal is not complete because a step was verified.
 The trusted domain integration separately reports that the requested goal
