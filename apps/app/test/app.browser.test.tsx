@@ -42,7 +42,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
   const android = { allows: true };
   const privateSignIn = { allows: true };
   const held = { starts: false };
-  const starts: (() => Promise<void>)[] = [];
+  const starts: (() => void)[] = [];
   const unanswered: (() => void)[] = [];
   const purges: ((clean: boolean) => void)[] = [];
   const listeners = new Map<string, (event: unknown) => void>();
@@ -65,25 +65,25 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "purgeProfiles") return new Promise((resolve) => purges.push((clean) => resolve({ purged: 1, clean })));
       // Grace's own navigation ends what the page holds, then starts its next page (definitions.ts, pageStarted).
       if (hostNavigation.includes(method)) {
-        const start = () => emit("pageStarted", { id: options.id, url: options.url ?? "" });
+        const start = () => publish("pageStarted", { id: options.id, url: options.url ?? "" });
         return Promise.resolve().then(() => held.starts ? void starts.push(start) : start());
       }
       return method === "setOcclusionRects" && !autoRoute ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
     },
   }) as SurfacePlugin;
   /** A plugin event of this renderer's surfaces. */
-  const emit = (event: string, fields: Record<string, unknown>) => act(() => {
+  const publish = (event: string, fields: Record<string, unknown>) => {
     const { owner, session, epoch } = calls.find((c) => c.method === "createSurface")!.options;
     listeners.get(event)!({ owner, session, epoch, ...fields });
-    return Promise.resolve();
-  });
+  };
+  const emit = (event: string, fields: Record<string, unknown>) => act(() => Promise.resolve(publish(event, fields)));
   return {
     plugin,
     android,
     privateSignIn,
     held,
     /** The page starts what Grace asked last: a command superseded before it started never starts. */
-    start: () => starts.splice(0).at(-1)?.(),
+    start: () => act(() => Promise.resolve(starts.splice(0).at(-1)?.())),
     calls: (method: string): Sent[] => calls.filter((c) => c.method === method).map((c) => ({ ...c.options, graceShown: c.graceShown })),
     /** Every call so far, in order, as its method and surface. */
     log: () => calls.map((c) => [c.method, c.options.id]),
