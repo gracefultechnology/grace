@@ -175,7 +175,10 @@ pure def canDecideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): bo
   b.phase == PreparePayment and b.live and fillBy != NotAsked and by == T::Person
 pure def decideFill(b: BillPreparation, fillBy: FillBy, by: T::TaskActor): BillPreparation = { ...b, fillBy: fillBy }
 pure def graceMayFill(b: BillPreparation, fill: K::Fill): bool =
-  b.phase == PreparePayment and b.live and b.fillBy == GraceFills and fill != K::NoFill and fill == K::fillOf(b.choice)
+  b.phase == PreparePayment and b.live and b.fillBy == GraceFills and (match fill {
+    | NoFill => false
+    | _ => fill == K::fillOf(b.choice)
+  })
 pure def alwaysFillAnswerBelongsToAChoice(b: BillPreparation): bool =
   b.fillBy != NotAsked implies (b.phase == PreparePayment or b.phase == ReadyForReview or b.phase == HandedOff)
 pure def stepGraceFillsOnlyAfterTheirYes(before: BillPreparation, via: str, after: BillPreparation): bool =
