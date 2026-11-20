@@ -6,7 +6,7 @@ import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease,
 
 const picture = Schema.String.check(Schema.isMaxLength(6_990_560), Schema.isPattern(/^data:(?:image\/(?:jpeg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/]+=*$/))
 schema Preview { id: fileId; page: Schema.Int; image: picture }
-schema Completion { id: fileId }
+const completion = Schema.decodeUnknownEffect(Schema.Struct({ id: fileId }))
 
 schema AttachmentImport { id?: fileId }
 
@@ -161,7 +161,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
       owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
     } }, "FileHost")
-    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => commit({ ...input, id: entry.id }))) catch () => undefined
+    const stored = completion(try tryPromise(() => commit({ ...input, id: entry.id }))) catch () => undefined
     const success = stored?.id === entry.id
     const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
     const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {
