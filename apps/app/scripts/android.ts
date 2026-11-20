@@ -81,13 +81,15 @@ const Step = Schema.Union([
   Schema.Struct({ evaluate: Schema.NonEmptyString, returns: Schema.Unknown }),
   Schema.Struct({ evaluate: Schema.NonEmptyString, rejects: Schema.NonEmptyString }),
   Schema.Struct({ grant: Schema.String.check(Schema.isPattern(/^android\.permission\.[A-Z_]+$/)) }),
+  Schema.Struct({ forget: Schema.NonEmptyString }),
+  Schema.Struct({ approve: Schema.NonEmptyString }),
   Schema.Struct({ notification: Schema.String.check(Schema.isPattern(/^[\w ,.-]+$/)) }),
   Schema.Struct({ restart: Schema.Literal("force-stop") }),
 ]);
 type Step = typeof Step.Type;
-type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string } | { grant: string } | { notification: string }>;
+type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string } | { grant: string } | { forget: string } | { approve: string } | { notification: string }>;
 type InSession = Exclude<Step, { restart: string }>;
-const isOnDevice = (step: InSession): step is OnDevice => "service" in step || "leaveFor" in step || "key" in step || "grant" in step || "notification" in step;
+const isOnDevice = (step: InSession): step is OnDevice => "service" in step || "leaveFor" in step || "key" in step || "grant" in step || "forget" in step || "approve" in step || "notification" in step;
 const Benchmark = Schema.Struct({
   taskId: Schema.NonEmptyString,
   intent: Schema.NonEmptyString,
@@ -727,6 +729,27 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
   if ("grant" in step) {
     await shell(serial, `pm grant ${identity.appId} ${step.grant}`);
     return;
+  }
+  if ("forget" in step) {
+    const saved = (await shell(serial, "cmd wifi list-networks")).split("\n").map((line) => /^(\d+)\s+(.+?)\s+\S+$/.exec(line.trim()));
+    const id = saved.find((network) => network?.[2] === step.forget)?.[1];
+    if (id === undefined) throw new Error(`${serial} has no saved Wi-Fi network named ${step.forget}`);
+    await shell(serial, `cmd wifi forget-network ${id}`);
+    return;
+  }
+  if ("approve" in step) {
+    const screen = "/data/local/tmp/grace-approve.xml";
+    const until = Date.now() + 180_000;
+    while (Date.now() < until) {
+      const nodes = deviceNodes(await shell(serial, `uiautomator dump ${screen} >/dev/null && cat ${screen}; rm -f ${screen}`, 75).catch(() => ""));
+      const button = nodes.find((node) => node.label === step.approve && node.clickable && node.enabled && node.packageName !== identity.appId);
+      if (button) {
+        await shell(serial, `input tap ${button.x} ${button.y}`);
+        return;
+      }
+      await delay(1000);
+    }
+    throw new Error(`Android showed no ${step.approve} button on ${serial}`);
   }
   if ("notification" in step) {
     await shell(serial, "am start -W -a android.settings.SETTINGS", 120);

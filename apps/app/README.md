@@ -224,17 +224,20 @@ another cause; the state is one of upstream's `unavailable`, `stopped`, `startin
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
 background processes (`am kill`), fails unless her process is the same one, and opens her again.
-Five steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
+Seven steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
 expression in Grace's page and fails unless its value is that JSON, and `{ "evaluate": "<expression>",
 "rejects": "<code>" }` unless it rejects with that code; `{ "grant": "android.permission.<NAME>" }`
-grants Grace that permission, as the person's Allow would; `{ "notification": "<title>" }` opens
+grants Grace that permission, as the person's Allow would; `{ "forget": "<SSID>" }` forgets that
+saved Wi-Fi network (`cmd wifi forget-network`); `{ "approve": "<label>" }` waits up to three
+minutes for a button with that label outside Grace, such as Save in Android's "Save this network?"
+dialog, and taps it, as the person would; `{ "notification": "<title>" }` opens
 Android's settings over Grace, waits up to five minutes for a notification of hers with that title, and
 opens her again; `{ "restart": "force-stop" }` force-stops Grace, opens Home and walks on in her new
 process. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, and `records.json` the record store, reminders and signed-out Files refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens it after a process restart, renders its page and removes the file by its returned ID.
+`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, `wifi.json` the Wi-Fi page joining an open and a WPA2 network, and `records.json` the record store, reminders and signed-out Files refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens it after a process restart, renders its page and removes the file by its returned ID.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
