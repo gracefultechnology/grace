@@ -81,7 +81,8 @@ const wifiWords: Record<Connectivity, string> = {
 };
 
 function Screen() {
-  const account = useSetup(useRuntime()).state?.graceAccount;
+  const runtime = useRuntime();
+  const account = useSetup(runtime).state?.graceAccount;
   const cards = useHomeCards();
   const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
@@ -169,7 +170,9 @@ function Screen() {
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
-                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0 };
+                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
+                onClick: !cards || visit("Calendar").disabled ? undefined : () => void runtime.runPromise(Effect.flatMap(ManagedReads, (managed) =>
+                  managed.send({ kind: "homeOccurrence", row: { accountId: cards.accountId, grant: cards.grant, id: event.externalId, version: event.etag ?? null } }))) };
             }) }, ...visit("Calendar") }}
               email={{
                 messages: useManaged ? (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
@@ -238,7 +241,6 @@ function Screen() {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
         }} />
       )}</WithCalendars>}
-      {volume.brightness < 100 && <div aria-hidden className="pointer-events-none fixed inset-0 z-50 bg-foreground" style={{ opacity: (100 - volume.brightness) / 100 }} />}
     </div></TextScale>
   );
 }

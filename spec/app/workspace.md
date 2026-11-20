@@ -1095,9 +1095,15 @@ pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
   | _ => true
 }
+pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
+  | ReadBrowser => true
+  | ReadChangedBrowser => true
+  | ReadStatement => true
+  | ReachNamedPage(_) => true
+  | _ => false
+}
 pure def mayGuideReadLink(w: Workspace): bool =
-  val read = nextOutcome(w.plan)
-  hasNext(w.plan) and (read == ReadBrowser or read == ReadChangedBrowser or read == ReadStatement or isNamedDestination(read)) and
+  hasNext(w.plan) and isLinkGuidanceStep(nextOutcome(w.plan)) and
   w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
   w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
@@ -1154,6 +1160,10 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
 ```quint
+pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
+  | SaveMailAppointment => true
+  | _ => false
+}
 pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   by == Host and not(privateSurfaceActive(w)) and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
   A::isVisible(w.assistant) and w.device.readiness == S::Ready and
@@ -1164,7 +1174,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   report.step == nextOutcome(w.plan) and guidedDetails(report.step).surface == w.device.surface and
   (guidedDetails(report.step).surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
   report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
-  (report.step == SaveMailAppointment implies
+  (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
@@ -1226,14 +1236,19 @@ wrong source, or unsaved appointment cannot count as a save.
 
 ```quint
 pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
-  mailCheck.report.step == ReadMail and canConfirmGuided(w, mailCheck.report, by) and
+  val reportedStep = mailCheck.report.step
+  val opensMail = match reportedStep {
+    | ReadMail => true
+    | _ => false
+  }
+  opensMail and canConfirmGuided(w, mailCheck.report, by) and
   mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
   mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0
 pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
   val after = confirmGuided(w, mailCheck.report, by)
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
 pure def guidedSavePending(w: Workspace): bool =
-  hasNext(w.plan) and nextOutcome(w.plan) == SaveMailAppointment and
+  hasNext(w.plan) and isAppointmentSave(nextOutcome(w.plan)) and
   w.execution.phase == X::Idle and w.commitmentTask == ""
 pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
@@ -1255,7 +1270,7 @@ pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCal
   (approval.sourceRef != w.plan.mail.ref or approval.account != w.plan.mail.account) implies
     not(canExpectGuidedCalendar(w, approval, by))
 pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  (report.step == SaveMailAppointment and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
+  (isAppointmentSave(report.step) and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
 pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
   sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })

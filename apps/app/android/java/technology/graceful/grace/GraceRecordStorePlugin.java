@@ -75,9 +75,9 @@ public class GraceRecordStorePlugin extends Plugin {
  }
 
  @PluginMethod public void write(PluginCall call) {
-  Long revision = call.getLong("revision");
+  long revision = call.getLong("revision", call.getInt("revision", -1).longValue());
   String value = call.getString("value");
-  if (revision == null || revision < 0 || value == null) { call.reject("A write needs the revision it read and a value", "invalid"); return; }
+  if (revision < 0 || value == null) { call.reject("A write needs the revision it read and a value", "invalid"); return; }
   try {
    call.resolve(new JSObject().put("revision", commit(record(call), revision, value)));
   } catch (Stale stale) {
