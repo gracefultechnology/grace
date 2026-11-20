@@ -1093,6 +1093,8 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           process.stdout.write("The Passwords card is ready on the third Grace Home page.\n");
           step = "open Passwords from the third Grace Home page";
           await page.tapAt(passwords, AbortSignal.timeout(120_000));
+          step = "check that cloud recovery requires a device credential";
+          await page.step({ call: "GraceAccount.showPasswordRecovery", refuses: "Password recovery is unavailable" });
           step = "open the native password editor without a screen lock";
           await page.step({ tap: "Add password" });
           step = "save through the focused native editor";

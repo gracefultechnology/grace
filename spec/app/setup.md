@@ -718,7 +718,8 @@ Production is available in every build. Staging is available only in a
 debug build. A credential change closes the recovery screen and ends its
 pending operation. Each operation needs the same signed-in account
 and a new native account confirmation. Verifying ownership, saving and
-restoring require a fresh tablet unlock. A tablet with saved passwords asks
+restoring require a fresh Android unlock confirmation for that operation,
+even when the foreground Passwords screen is already open. A tablet with saved passwords asks
 the owner before linking those passwords to the account. The recovery key stays in a protected native screen,
 and Grace sends only the encrypted snapshot. Restore fills an empty vault
 in one step. Removing a cloud copy leaves local passwords available.
