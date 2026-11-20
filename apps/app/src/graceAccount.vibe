@@ -6,6 +6,7 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { webView } from "./surfacePlugin.ts"
 
+const filesScope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schema.NonEmptyString, email: Schema.NullOr(Schema.String) })) })
 schema Providers { google: boolean; email: boolean; sms: boolean }
 schema Subscription { status: "inactive" | "active"; canManage: boolean; canCheckout: boolean }
@@ -33,14 +34,18 @@ const deviceState = /^[A-Za-z0-9_-]{43,128}$/
 effect function pendingDevice() {
   const candidate = Effect.try(() => {
     const storage = webView.window.sessionStorage
-    const params = new URLSearchParams(webView.window.location.search)
+    const url = new URL(webView.window.location.href)
+    const params = url.searchParams
     if (!params.has("device_challenge") && !params.has("device_state")) {
       const saved = storage.getItem(deviceAttemptKey)
       return saved === null ? undefined : JSON.parse(saved)
     }
     const pending = { challenge: params.get("device_challenge"), state: params.get("device_state") }
     storage.removeItem(deviceAttemptKey)
-    webView.window.history.replaceState(undefined, "", "#account")
+    params.delete("device_challenge")
+    params.delete("device_state")
+    url.hash = "account"
+    webView.window.history.replaceState(undefined, "", url)
     return pending
   }) catch () => undefined
   const parsed = Schema.decodeUnknownEffect(DeviceAttempt)(candidate) catch () => undefined
@@ -59,7 +64,7 @@ export type Operation =
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
-type RequestPath = `/api/auth/${CodeProvider}/${"send" | "verify"}` | "/api/auth/providers" | "/api/auth/device/authorize" | "/api/auth/session" | "/api/auth/refresh" | "/api/auth/logout" | "/api/v1/billing/subscription" | "/api/v1/billing/checkout" | "/api/v1/billing/portal" | `/api/v1/eliza/google/${"status" | "connect/initiate" | "disconnect"}`
+type RequestPath = "/api/product/files/scope" | `/api/auth/${CodeProvider}/${"send" | "verify"}` | "/api/auth/providers" | "/api/auth/device/authorize" | "/api/auth/session" | "/api/auth/refresh" | "/api/auth/logout" | "/api/v1/billing/subscription" | "/api/v1/billing/checkout" | "/api/v1/billing/portal" | `/api/v1/eliza/google/${"status" | "connect/initiate" | "disconnect"}`
 type Transport = {
   request(path: RequestPath, method: "GET" | "POST", body?: Record<string, string | boolean>): Response!unknown
   begin(): void!unknown
@@ -135,6 +140,10 @@ effect function session(transport: Transport) {
   })))
 }
 
+export effect function browserFilesAccess() {
+  return try decode(try accepted(webTransport, "/api/product/files/scope", "GET"), Schema.Struct({ owner: filesScope, session: filesScope }))
+}
+
 export effect function browserAccountId() {
   return (try session(webTransport)).account?.id
 }
@@ -205,8 +214,8 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
     const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
       (googleLink(webTransport, account.accountId) catch () => ({ tag: "GoogleLinkUnknown" } as const))
-    setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
-    return account
+    const held = setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
+    return held?.state.graceAccount ?? ({ tag: "AccountUnavailable" } as const)
   }
 
   effect function readDevice(): GraceAccount!unknown {
@@ -240,9 +249,8 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     if (operation.kind === "authorizeDevice") {
       const device = try Ref.get(attempt)
       if (device === undefined || webAccountId((try setup.get()).graceAccount) !== operation.expectedAccountId) return false
-      setup.send({ type: "confirmTabletSignIn" }) catch () => undefined
-      try refresh()
-      if (!tabletSignInConfirmed(try setup.get())) return false
+      const confirmed = setup.send({ type: "confirmTabletSignIn" }) catch () => undefined
+      if (confirmed === undefined || webAccountId(try refresh()) !== operation.expectedAccountId || !tabletSignInConfirmed(try setup.get())) return false
       const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", { ...device, expectedAccountId: operation.expectedAccountId }), DeviceApproval)
       const destination = try Effect.try(() => new URL(redirectUrl))
       if (destination.origin !== "https://app.graceforseniors.com" || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||

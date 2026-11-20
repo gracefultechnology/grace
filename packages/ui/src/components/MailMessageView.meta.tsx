@@ -67,7 +67,16 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
   },
   examples: {
     Scam: scam,
-    "Grace Points At The Warning": { ...scam, guide: { targetId: "scam", kind: "point" } },
+    "Grace Points At The Warning": { ...scam, guide: { targetId: "caution", kind: "point" } },
+    "Grace points at the link": {
+      ...scam,
+      body: (
+        <>
+          Your account will be closed today. To keep it open, <MailLink href="#scam" guide={{ kind: "point" }}>confirm your password here</MailLink>.
+        </>
+      ),
+    },
+    "Attachments refused": { files: clinic.files, onOpenPhoto: undefined, onSaveAll: undefined, onOpenFile: undefined },
     Attachment: clinic,
     "In Trash": { ...clinic, backLabel: "Trash", inTrash: true, onRestore: fn(), onDeleteForever: fn() },
     Loading: { status: "loading" },
@@ -99,6 +108,12 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Yes" }));
       await expect(confirmBill).toHaveBeenCalled();
       unfocus();
+    },
+    "Attachments refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByRole("img", { name: "Daisies" })).toBeTruthy();
+      await expect(canvas.getByText("Visit form.pdf")).toBeTruthy();
+      await expect(["Daisies", "Save all to Files", "Open"].map((name) => canvas.queryByRole("button", { name }))).toEqual([null, null, null]);
     },
     Scam: ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("alert").textContent).toContain("scam"),
   },

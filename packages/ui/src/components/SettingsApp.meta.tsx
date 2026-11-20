@@ -101,6 +101,7 @@ export const meta: ComponentMeta<SettingsAppProps> = {
         <SettingsTextSize sizes={textSizes} value="Normal" {...textSizePreview} guide={{ targetId: "Largest", kind: "instruction", title: "Tap Largest", onClose: fn() }} />
       ),
     },
+    "Grace points at Email & calendar": { guide: { targetId: "email-calendar", kind: "instruction", title: "Tap Email & calendar", onClose: fn() } },
     "Not saved": { saveError: "Your choices aren’t saved yet. They’re still in use on this tablet.", onRetrySave: retrySave },
     "Brightness not changed": {
       page: "brightness",

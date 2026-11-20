@@ -1,5 +1,5 @@
-import type { ComponentProps } from "react";
-import { Undo2 } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { Undo2, X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 
 export type ToastProps = ComponentProps<"div"> & {
@@ -9,6 +9,10 @@ export type ToastProps = ComponentProps<"div"> & {
   onUndo?: () => void;
   /** The Undo button's words. */
   undoLabel?: string;
+  /** Offers to put away what it tells, such as a due reminder, with a Dismiss button. */
+  onDismiss?: () => void;
+  /** The Dismiss button's words. */
+  dismissLabel?: string;
   /** `screen` centers it 24px above the bottom of a `TabletScreen`, over the windows; `inline` leaves it in the flow. */
   placement?: "inline" | "screen";
   /** Compact Grace's window height while she is open: the toast rises to sit 24px above it instead of the screen's bottom. */
@@ -16,11 +20,12 @@ export type ToastProps = ComponentProps<"div"> & {
 };
 
 /**
- * A short dark note of what just happened, centered 24px above the bottom of the screen (prototype `.axtoast`).
+ * A short dark note of what just happened, or of a reminder that is due, centered 24px above the bottom of the screen,
+ * with Undo or Dismiss when offered (prototype `.axtoast`).
  * @model spec/app/surface.md
  * @design packages/design-system/design.md#windows
  */
-export function Toast({ open = true, onUndo, undoLabel = "Undo", placement = "inline", above, className, style, children, ...props }: ToastProps) {
+export function Toast({ open = true, onUndo, undoLabel = "Undo", onDismiss, dismissLabel = "Dismiss", placement = "inline", above, className, style, children, ...props }: ToastProps) {
   return (
     <div
       role="status"
@@ -34,12 +39,17 @@ export function Toast({ open = true, onUndo, undoLabel = "Undo", placement = "in
       {...props}
     >
       {children}
-      {onUndo && (
-        <button type="button" onClick={onUndo} className={cn(focusRing, "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-glass/14 px-3.5 text-body font-bold text-frame-lilac")}>
-          <Undo2 aria-hidden size={20} strokeWidth={2.4} />
-          {undoLabel}
-        </button>
-      )}
+      {onUndo && <ToastAction onClick={onUndo} icon={<Undo2 aria-hidden size={20} strokeWidth={2.4} />} label={undoLabel} />}
+      {onDismiss && <ToastAction onClick={onDismiss} icon={<X aria-hidden size={20} strokeWidth={2.4} />} label={dismissLabel} />}
     </div>
+  );
+}
+
+function ToastAction({ onClick, icon, label }: { onClick: () => void; icon: ReactNode; label: string }) {
+  return (
+    <button type="button" onClick={onClick} className={cn(focusRing, "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-glass/14 px-3.5 text-body font-bold text-frame-lilac")}>
+      {icon}
+      {label}
+    </button>
   );
 }
