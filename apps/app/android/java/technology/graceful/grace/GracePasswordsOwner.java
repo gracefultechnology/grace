@@ -68,8 +68,16 @@ final class GracePasswordsOwner {
   return BuildConfig.CLOUD_PROFILE + "\u0000" + session.organizationId() + "\u0000" + session.accountId();
  }
 
- private static boolean ownsProfile(JSONObject owner) {
-  return BuildConfig.CLOUD_PROFILE.equals(owner.optString("profile", "standalone-production"));
+ private static boolean sameOwner(JSONObject owner, CloudDeviceAccount.Session session) throws Exception {
+  String profile = owner.optString("profile", "standalone-production");
+  String originalIssuer = switch (profile) {
+   case "standalone-production" -> "https://api.graceforseniors.com";
+   case "shared-staging" -> "https://cloud-staging.eliza.app";
+   case "shared-production" -> "https://cloud.eliza.app";
+   default -> "";
+  };
+  return BuildConfig.CLOUD_PROFILE.equals(profile) && BuildConfig.CLOUD_API_ORIGIN.equals(owner.optString("issuer", originalIssuer))
+   && session.accountId().equals(owner.getString("accountId")) && session.organizationId().equals(owner.getString("organizationId"));
  }
 
  private static String credentialId(CloudDeviceAccount.Session session) throws NoSuchAlgorithmException {
@@ -78,7 +86,7 @@ final class GracePasswordsOwner {
  }
 
  private static JSONObject ownerRecord(CloudDeviceAccount.Session current) throws Exception {
-  return new JSONObject().put("profile", BuildConfig.CLOUD_PROFILE).put("accountId", current.accountId())
+  return new JSONObject().put("profile", BuildConfig.CLOUD_PROFILE).put("issuer", BuildConfig.CLOUD_API_ORIGIN).put("accountId", current.accountId())
     .put("organizationId", current.organizationId()).put("credentialId", credentialId(current));
  }
 
@@ -93,8 +101,7 @@ final class GracePasswordsOwner {
    String stored = custody(context).read(OWNER);
    if (stored == null) return current == null && GraceAccount.deviceOnly(context) && !changingAccount;
    var owner = new JSONObject(stored);
-   return current != null && ownsProfile(owner) && current.accountId().equals(owner.getString("accountId"))
-    && current.organizationId().equals(owner.getString("organizationId"))
+   return current != null && sameOwner(owner, current)
     && credentialId(current).equals(owner.optString("credentialId")) && !changingAccount;
   } catch (Exception unavailable) {
    return false;
@@ -109,8 +116,7 @@ final class GracePasswordsOwner {
   String existing = store.read(OWNER);
   if (existing != null) {
    var owner = new JSONObject(existing);
-   if (!ownsProfile(owner) || !current.accountId().equals(owner.getString("accountId"))
-       || !current.organizationId().equals(owner.getString("organizationId"))
+   if (!sameOwner(owner, current)
        || (owner.has("scope") && !approval.scope().equals(owner.getString("scope")))) {
     throw new IllegalStateException("This vault belongs to another account");
    }
@@ -130,16 +136,22 @@ final class GracePasswordsOwner {
   changingAccount = false;
  }
 
- static void confirmVerifiedAccount(Context context) {
-  try { bindVerifiedAccount(context); }
+ static void confirmVerifiedAccount(Context context, CloudDeviceAccount.Session verified) {
+  try { bindVerifiedAccount(context, verified); }
   catch (Exception unavailable) { }
  }
 
- private static synchronized void bindVerifiedAccount(Context context) throws Exception {
-  if (!hasNoPriorOwner(context)) return;
-  var current = GraceAccount.session(context);
-  if (current == null || PasswordVaultAccess.get(context).exists()) return;
+ private static synchronized void bindVerifiedAccount(Context context, CloudDeviceAccount.Session verified) throws Exception {
+  if (verified == null || !hasNoPriorOwner(context) || !verified.equals(GraceAccount.session(context))) return;
   var store = custody(context);
-  if (store.read(OWNER) == null) store.write(OWNER, ownerRecord(current).toString());
+  String stored = store.read(OWNER);
+  if (stored == null) {
+   if (!PasswordVaultAccess.get(context).exists()) store.write(OWNER, ownerRecord(verified).toString());
+   return;
+  }
+  var owner = new JSONObject(stored);
+  if (sameOwner(owner, verified)) {
+   store.write(OWNER, owner.put("credentialId", credentialId(verified)).put("issuer", BuildConfig.CLOUD_API_ORIGIN).toString());
+  }
  }
 }

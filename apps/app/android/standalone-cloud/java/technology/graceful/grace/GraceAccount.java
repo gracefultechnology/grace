@@ -122,7 +122,6 @@ public final class GraceAccount extends Plugin {
     CloudDeviceAccount account = account(getContext());
     if (finishAcknowledgment(account)) didSignIn();
     boolean signedIn = GracePasswordsOwner.stableSession(getContext()) != null;
-    if (signedIn) GracePasswordsOwner.confirmVerifiedAccount(getContext());
     call.resolve(projection(signedIn));
    }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
@@ -191,7 +190,7 @@ public final class GraceAccount extends Plugin {
     String idToken = GoogleIdTokenCredential.createFrom(custom.getData()).getIdToken();
     changeAccount(() -> {
      if (!account.finishNativeGoogle(pending.attempt(), idToken)) throw new IllegalStateException("Google sign-in expired");
-     GracePasswordsOwner.confirmVerifiedAccount(getContext());
+     GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
      return null;
     });
     didSignIn();
@@ -273,7 +272,7 @@ public final class GraceAccount extends Plugin {
     if (!account.handles(data)) return;
     if (changeAccount(() -> {
      if (!account.exchange(data)) return false;
-     GracePasswordsOwner.confirmVerifiedAccount(getContext());
+     GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
      return true;
     })) didSignIn();
    } catch (Exception unavailable) { }
@@ -284,7 +283,7 @@ public final class GraceAccount extends Plugin {
   if (!account.awaitingAcknowledgment()) return false;
   return changeAccount(() -> {
    if (!account.finishAcknowledgment()) return false;
-   GracePasswordsOwner.confirmVerifiedAccount(getContext());
+   GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
    return true;
   });
  }

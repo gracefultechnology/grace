@@ -128,7 +128,7 @@ public final class GraceAccount extends CloudSignInPlugin {
    if (GracePasswordsOwner.accountChanging()) throw pending;
    var verified = account.verifyOwner();
    if (verified != null) {
-    GracePasswordsOwner.confirmVerifiedAccount(getContext());
+    GracePasswordsOwner.confirmVerifiedAccount(getContext(), verified);
     GraceAgentService.resume(getContext());
     ManagedCalendarReminders.reconcile(getContext());
    }

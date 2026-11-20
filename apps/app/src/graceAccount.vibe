@@ -1,6 +1,6 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout
+  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed, webAccountId
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -54,7 +54,8 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 
 export type CodeProvider = "email" | "sms"
 export type Operation =
-  | { kind: "refresh" | "signOut" | "checkout" | "portal" | "manageAccount" | "authorizeDevice" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signOut" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
@@ -205,7 +206,7 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
     const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
       (googleLink(webTransport, account.accountId) catch () => ({ tag: "GoogleLinkUnknown" } as const))
-    setup.send({ type: "reportGraceAccount", report: account, link }) catch () => undefined
+    setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
     return account
   }
 
@@ -239,10 +240,11 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     }
     if (operation.kind === "authorizeDevice") {
       const device = try Ref.get(attempt)
-      const original = (try setup.get()).graceAccount
-      const current = try refresh()
-      if (device === undefined || original.tag !== "GraceSignedIn" || current.tag !== "GraceSignedIn" || original.accountId !== current.accountId) return false
-      const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", device), DeviceApproval)
+      if (device === undefined || webAccountId((try setup.get()).graceAccount) !== operation.expectedAccountId) return false
+      setup.send({ type: "confirmTabletSignIn" }) catch () => undefined
+      try refresh()
+      if (!tabletSignInConfirmed(try setup.get())) return false
+      const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", { ...device, expectedAccountId: operation.expectedAccountId }), DeviceApproval)
       const destination = try Effect.try(() => new URL(redirectUrl))
       if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||
         destination.searchParams.get("state") !== device.state || !destination.searchParams.get("code")) return false
