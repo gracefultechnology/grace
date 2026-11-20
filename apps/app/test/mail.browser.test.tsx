@@ -384,6 +384,14 @@ async function replyToClinic() {
   await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
 }
 
+async function replyToClinic() {
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(row("All inboxes 5")).toBeVisible();
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
+}
+
 it("Write or reply and confirm before sending", async () => {
   const { secret, host, company } = await start();
   const sent = async (title: string) => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === title && m.labels.includes("SENT")).map((m) => ({ ...m, from: b.address })));
