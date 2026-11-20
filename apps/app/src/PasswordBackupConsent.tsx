@@ -44,7 +44,7 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
     status?.kind === "unavailable" ? "Grace couldn’t finish. Please try again." :
     status?.kind === "accountChanged" ? "Your signed-in account changed. Sign in to continue." :
     status?.kind === "returning" ? "Return to the Grace app to finish." :
-    !offersApproval || !account ? "Sign in with the Grace account you use on this tablet." : account.email ?? "Your signed-in Grace account";
+    offersApproval && account ? account.email ?? "Your signed-in Grace account" : "Sign in with the Grace account you use on this tablet.";
   return (
     <main className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <section className="w-full max-w-lg flex flex-col items-start gap-5" aria-busy={pending || undefined}>
