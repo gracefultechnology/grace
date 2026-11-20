@@ -26,7 +26,8 @@ const GoogleStatus = Schema.Struct({
 })
 schema GoogleAuthorization { authorizeUrl: string }
 
-export const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
+export const apiOrigin = import.meta.env.VITE_GRACE_CLOUD_API_ORIGIN || (import.meta.env.DEV ? "" : "https://api.graceforseniors.com")
+export const webOrigin = import.meta.env.VITE_GRACE_CLOUD_WEB_ORIGIN || "https://app.graceforseniors.com"
 const deviceAttemptKey = "grace-device-sign-in"
 const deviceChallenge = /^[A-Za-z0-9_-]{43}$/
 const deviceState = /^[A-Za-z0-9_-]{43,128}$/
@@ -253,7 +254,7 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       if (confirmed === undefined || webAccountId(try refresh()) !== operation.expectedAccountId || !tabletSignInConfirmed(try setup.get())) return false
       const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", { ...device, expectedAccountId: operation.expectedAccountId }), DeviceApproval)
       const destination = try Effect.try(() => new URL(redirectUrl))
-      if (destination.origin !== "https://app.graceforseniors.com" || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||
+      if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||
         destination.searchParams.get("state") !== device.state || !destination.searchParams.get("code")) return false
       try dismissDevice()
       try Effect.try(() => webView.window.location.assign(destination))

@@ -15,7 +15,7 @@ import { buildAndroidConsumer } from "@elizaos/os/android/build-consumer.mjs";
 import { generateAndroidConsumerHost } from "@elizaos/os/android/consumer-host.mjs";
 import { readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
 import { resolveAndroidSdkRoot, resolveJavaHome } from "@elizaos/os/android/toolchain.ts";
-import config from "../capacitor.config.ts";
+import config, { androidPaths } from "../capacitor.config.ts";
 
 const app = path.resolve(import.meta.dirname, "..");
 const upstream = path.resolve(app, "../../vendor/eliza");
@@ -25,7 +25,27 @@ export const identity = Schema.decodeUnknownSync(
   Schema.Struct({ appId: Schema.String, appName: Schema.String, android: Schema.Struct({ path: Schema.String }) }),
 )(config);
 const activity = `${identity.appId}/.MainActivity`;
-const project = identity.android.path;
+const standaloneProfile = "standalone-production";
+const CloudProfile = Schema.Literals([standaloneProfile, "shared-production", "shared-staging"]);
+type CloudProfile = typeof CloudProfile.Type;
+const cloudProfiles = {
+  "standalone-production": {
+    apiOrigin: "https://api.graceforseniors.com", webOrigin: "https://app.graceforseniors.com",
+    agentOrigin: "https://api.graceforseniors.com",
+    callbackPath: "/android/auth/callback", environment: "production", sources: "standalone-cloud",
+  },
+  "shared-production": {
+    apiOrigin: "https://cloud.eliza.app", webOrigin: "https://cloud.eliza.app",
+    agentOrigin: "https://api.eliza.app",
+    callbackPath: "/auth/grace/callback", environment: "production", sources: "shared-cloud",
+  },
+  "shared-staging": {
+    apiOrigin: "https://cloud-staging.eliza.app", webOrigin: "https://cloud-staging.eliza.app",
+    agentOrigin: "https://api-staging.eliza.app",
+    callbackPath: "/auth/grace/callback", environment: "staging", sources: "shared-cloud",
+  },
+} as const satisfies Record<CloudProfile, object>;
+const apkOutput = (cloudProfile: CloudProfile) => cloudProfile === standaloneProfile ? "artifacts" : `artifacts/cloud-profiles/${cloudProfile}`;
 const forbiddenEntry = new RegExp([
   String.raw`\.(gguf|onnx|ort|tflite|safetensors|pte|task)$`,
   String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
@@ -38,8 +58,20 @@ const writeJson = (file: string, value: unknown) => {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 };
-const profile = readJson(path.join(app, "android/host.json"));
-const { signing } = Schema.decodeUnknownSync(Schema.Struct({ signing: Schema.Record(Schema.String, Schema.String) }))(profile);
+const SourceReference = Schema.Struct({ root: Schema.String, path: Schema.String });
+const NativeHost = Schema.Struct({
+  signing: Schema.Record(Schema.String, Schema.String),
+  modules: Schema.Array(Schema.Struct({
+    name: Schema.String, source: SourceReference,
+    appDependency: Schema.optional(Schema.Boolean), relocateBuild: Schema.optional(Schema.Boolean),
+  })),
+  embeddedAgent: Schema.Struct({ host: SourceReference, character: SourceReference, policy: SourceReference }),
+  sourceSets: Schema.Struct({ main: Schema.Struct({ java: Schema.Array(SourceReference), res: Schema.Array(SourceReference) }) }),
+});
+const profile = Schema.decodeUnknownSync(Schema.StructWithRest(NativeHost, [Schema.Record(Schema.String, Schema.Unknown)]))(
+  readJson(path.join(app, "android/host.json")),
+);
+const { signing } = profile;
 const keystore = signing.storeFile;
 
 const Reasons = Schema.Record(Schema.String, Schema.String);
@@ -96,6 +128,7 @@ const Benchmark = Schema.Struct({
 type Benchmark = typeof Benchmark.Type;
 type BenchmarkRun = { input: Benchmark; receipt: string };
 const Arguments = Schema.Struct({
+  "cloud-profile": Schema.optional(CloudProfile),
   release: Schema.optional(Schema.Boolean),
   verify: Schema.optional(Schema.Boolean),
   abi: Schema.optional(Abi),
@@ -239,55 +272,81 @@ function agentRuntime(abi: Abi) {
   return output;
 }
 
-function writeAgentData() {
+function writeAgentData(directory: string, agentOrigin: string) {
   const host = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(readJson(path.join(app, "android/agent.json")));
-  const { cloud } = Schema.decodeUnknownSync(Schema.Struct({ cloud: Schema.Struct({ baseUrl: Schema.String }) }))(host);
-  writeJson(path.join(artifacts, "agent/host.json"), { ...host, cloud: { ...cloud, smallModel: policy.model, largeModel: policy.model } });
-  writeJson(path.join(artifacts, "agent/policy.json"), {
+  writeJson(path.join(directory, "host.json"), { ...host, cloud: { baseUrl: agentOrigin, smallModel: policy.model, largeModel: policy.model } });
+  writeJson(path.join(directory, "policy.json"), {
     schema: 1,
     actions: { allowed: policy.actions.upstream.allow, refused: policy.actions.upstream.refuse },
     plugins: { load: pluginLoad },
   });
 }
 
-function buildAndroid({ release = false, abi, fixture }: { release?: boolean; abi: Abi; fixture?: { output: string; resources: string } }) {
+function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, fixture }: {
+  release?: boolean; abi: Abi; cloudProfile?: CloudProfile; fixture?: { output: string; resources: string };
+}) {
+  const selected = cloudProfiles[cloudProfile];
+  const output = fixture?.output ?? apkOutput(cloudProfile);
+  const project = cloudProfile === standaloneProfile ? androidPaths.project : `${output}/gradle`;
+  const webDir = cloudProfile === standaloneProfile ? androidPaths.web : `${output}/web`;
+  const agentDirectory = `${output}/agent`;
   const { version } = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.String }))(readJson(path.join(app, "package.json")));
-  writeAgentData();
-  const authored = Schema.decodeUnknownSync(Schema.Struct({ sourceSets: Schema.Record(Schema.String, Schema.Unknown) }))(profile);
-  const hostProfile = fixture ? {
-    ...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(profile),
-    sourceSets: { ...authored.sourceSets, debug: { res: [{ root: "consumer", path: fixture.resources }] } },
-  } : profile;
+  writeAgentData(path.join(app, agentDirectory), selected.agentOrigin);
   generateAndroidConsumerHost({
     consumerRoot: app,
     upstreamRoot: upstream,
     dependencyRoot: realpathSync(path.dirname(createRequire(import.meta.url).resolve("@capacitor/android/package.json"))),
     output: path.join(app, project),
     identity: { appId: identity.appId, appName: identity.appName, version, versionCode: versionCode(version) },
-    profile: hostProfile,
+    profile: {
+      ...profile,
+      modules: selected.sources === "shared-cloud"
+        ? [...profile.modules, { name: "eliza-cloud-auth", source: { root: "upstream", path: "packages/auth/android" } }]
+        : profile.modules,
+      embeddedAgent: {
+        ...profile.embeddedAgent,
+        host: { root: "consumer", path: `${agentDirectory}/host.json` },
+        policy: { root: "consumer", path: `${agentDirectory}/policy.json` },
+      },
+      manifestPlaceholders: { graceCloudCallbackHost: new URL(selected.webOrigin).hostname, graceCloudCallbackPath: selected.callbackPath },
+      buildConfigFields: Object.entries({
+        CLOUD_PROFILE: cloudProfile, CLOUD_API_ORIGIN: selected.apiOrigin,
+        CLOUD_WEB_ORIGIN: selected.webOrigin, CLOUD_CALLBACK_PATH: selected.callbackPath,
+      }).map(([name, value]) => ({ name, type: "String", value })),
+      sourceSets: {
+        ...profile.sourceSets,
+        main: { ...profile.sourceSets.main, java: [...profile.sourceSets.main.java, { root: "consumer", path: `android/${selected.sources}/java` }] },
+        ...(fixture ? { debug: { res: [{ root: "consumer", path: fixture.resources }] } } : {}),
+      },
+    },
     runtimeDirectory: agentRuntime(abi),
   });
   const userHome = path.join(app, project, "android-user");
   mkdirSync(userHome, { recursive: true });
   copyFileSync(path.join(app, "android/debug.keystore"), path.join(userHome, "debug.keystore"));
   if (!release && fixture === undefined) for (const flavor of flavors) for (const suffix of ["", "-unsigned"])
-    rmSync(path.join(artifacts, `${flavor}-release${suffix}.apk`), { force: true });
+    rmSync(path.join(app, output, `${flavor}-release${suffix}.apk`), { force: true });
   buildAndroidConsumer({
     root: app,
-    environment: { ...environment(), ANDROID_USER_HOME: userHome },
+    environment: {
+      ...environment(), ANDROID_USER_HOME: userHome,
+      GRACE_ANDROID_CAPACITOR_PROJECT: project, GRACE_ANDROID_CAPACITOR_WEB_DIR: webDir,
+      VITE_GRACE_CLOUD_PROFILE: cloudProfile, VITE_GRACE_CLOUD_API_ORIGIN: selected.apiOrigin, VITE_GRACE_CLOUD_WEB_ORIGIN: selected.webOrigin,
+    },
     variants: fixture ? ["standalone"] : flavors,
     release,
     lint: false,
     androidTest: false,
     daemon: true,
     project,
-    output: fixture?.output ?? "artifacts",
+    output,
     signing: { environment: Object.values(signing) },
     prepare: [
-      { command: "pnpm", args: ["run", "build"] },
+      { command: "pnpm", args: ["run", "build", "--outDir", webDir] },
       { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
     ],
-    verify: { command: process.execPath, args: [import.meta.filename, ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
+    verify: { command: process.execPath, args: [import.meta.filename, "--cloud-profile", cloudProfile,
+      ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
   });
 }
 
@@ -334,17 +393,37 @@ function checkPolicy(bundle: string) {
   return declared.size;
 }
 
-function writeApkManifest(directory = artifacts, episodeCertificate = false) {
+function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app, apkOutput(cloudProfile)), episodeCertificate = false) {
   const apksigner = buildTool("apksigner");
+  const aapt = buildTool("aapt");
+  const selected = cloudProfiles[cloudProfile];
+  const callbackHost = new URL(selected.webOrigin).hostname;
   const apks = readdirSync(directory).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
   if (!apks.length) throw new Error("No Grace APK was produced for verification");
   const manifest = apks.map((name) => {
     const file = path.join(directory, name);
     const contents = readFileSync(file);
-    const entries = execFileSync(buildTool("aapt"), ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
+    const entries = execFileSync(aapt, ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
     if (entries.includes("res/raw/billworld_episode_ca.pem") !== episodeCertificate) {
       throw new Error(`${name} has the wrong certificate resources for this build`);
     }
+    const agentHost = Schema.decodeUnknownSync(Schema.Struct({ cloud: Schema.Struct({ baseUrl: Schema.String }) }))(
+      JSON.parse(execFileSync("unzip", ["-p", file, "assets/eliza-agent.json"], { encoding: "utf8" })),
+    );
+    if (agentHost.cloud.baseUrl !== selected.agentOrigin)
+      throw new Error(`${name} has the wrong cloud origin for ${cloudProfile}`);
+    const manifestXml = execFileSync(aapt, ["dump", "xmltree", file, "AndroidManifest.xml"], { encoding: "utf8" });
+    const links = Array.from(manifestXml.matchAll(/^( *)E: intent-filter[^\n]*\n((?:\1  [^\n]*\n)+)/gm), ([, , filter]) => filter)
+      .filter((filter) => filter.includes('"android.intent.category.BROWSABLE"'))
+      .map((filter) => {
+        const data = filter.split(/ E: data [^\n]*\n/);
+        if (data.length !== 2 || !filter.includes('"android.intent.action.VIEW"') || !filter.includes("android:autoVerify(0x010104ee)=(type 0x12)0xffffffff"))
+          throw new Error(`${name} has an unverified or ambiguous browser intent`);
+        return Object.fromEntries(Array.from(data[1].matchAll(/A: android:(\w+)\(\w+\)="([^"]+)"/g), ([, key, value]) => [key, value]));
+      });
+    const expectedLinks = [selected.callbackPath, "/android/files/import"].map((route) => ({ scheme: "https", host: callbackHost, path: route }));
+    if (links.length !== expectedLinks.length || !expectedLinks.every((expected) => links.some((link) => isDeepStrictEqual(link, expected))))
+      throw new Error(`${name} must declare the selected account return and Files import links for ${selected.webOrigin}`);
     const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
     if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
     const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
@@ -377,10 +456,11 @@ function writeApkManifest(directory = artifacts, episodeCertificate = false) {
     if (inference.length) throw new Error(`${name} carries local inference or voice model classes: ${inference.join(", ")}`);
     if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the cloud speech bridge`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent.mjs"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
-    const debuggable = execFileSync(buildTool("aapt"), ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
+    const debuggable = execFileSync(aapt, ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
+    if (cloudProfile === "shared-staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
     process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the cloud speech bridge and no inference class; its ${actions} actions declared by name are each allowed or refused\n`);
-    return { name, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
+    return { name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
   writeFileSync(path.join(directory, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
@@ -447,7 +527,7 @@ const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Sc
 const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
 const GraceReadback = Schema.Struct({ address: Schema.NullOr(Schema.String), visible: Schema.NullOr(Schema.String) });
 
-async function devTools(url: string, signal: AbortSignal) {
+async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudProfile = standaloneProfile) {
   const socket = new WebSocket(url);
   await new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve);
@@ -579,7 +659,12 @@ async function devTools(url: string, signal: AbortSignal) {
         return;
       }
       if ("signIn" in step) {
-        const expression = `(async () => { const status = await Capacitor.Plugins.GraceAccount.status(); const endpoint = new URL("https://api.graceforseniors.com/api/v1/app-auth/mobile/config"); endpoint.search = new URLSearchParams({clientId: "technology.graceful.grace", environment: "production", redirectUri: "https://app.graceforseniors.com/android/auth/callback"}); const res = await fetch(endpoint); if (!res.ok) throw new Error("Google configuration unavailable"); const config = await res.json(); return JSON.stringify({ status, google: config.google?.nativeSignIn === true }); })()`;
+        const selected = cloudProfiles[cloudProfile];
+        const endpoint = new URL("/api/v1/app-auth/mobile/config", selected.apiOrigin);
+        endpoint.search = new URLSearchParams({
+          clientId: identity.appId, environment: selected.environment, redirectUri: selected.webOrigin + selected.callbackPath,
+        }).toString();
+        const expression = `(async () => { const status = await Capacitor.Plugins.GraceAccount.status(); const res = await fetch(${JSON.stringify(endpoint.href)}); if (!res.ok) throw new Error("Google configuration unavailable"); const config = await res.json(); return JSON.stringify({ status, google: config.google?.nativeSignIn === true }); })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
         const reply = String(result.value);
         if (/eliza_mobile_/.test(reply)) throw new Error("A sign-in result carries an Eliza Cloud key");
@@ -751,8 +836,8 @@ async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
   });
 }
 
-async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, release: boolean, benchmark?: BenchmarkRun) {
-  await installGrace(serial, path.join(artifacts, release ? "launcher-release.apk" : "launcher-debug.apk"));
+async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, release: boolean, cloudProfile: CloudProfile, benchmark?: BenchmarkRun) {
+  await installGrace(serial, path.join(app, apkOutput(cloudProfile), release ? "launcher-release.apk" : "launcher-debug.apk"));
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
@@ -770,11 +855,11 @@ async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<
       await shell(serial, `am force-stop ${identity.appId}`);
       process.stdout.write(`${JSON.stringify({ restart: "force-stop" })} ok\n`);
     }
-    await visit(serial, steps, release, benchmark);
+    await visit(serial, steps, release, cloudProfile, benchmark);
   }
 }
 
-async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<InSession>, release: boolean, benchmark?: BenchmarkRun) {
+async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<InSession>, release: boolean, cloudProfile: CloudProfile, benchmark?: BenchmarkRun) {
   const started = await shell(serial, "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME", 120);
   if (!started.includes(`Activity: ${activity}`)) throw new Error(`Grace is not Home on ${serial}:\n${started}`);
   if (release) {
@@ -794,10 +879,10 @@ async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray
       process.stdout.write(`${description} ok\n`);
     }
     if (benchmark) await runBenchmark(benchmark, page, listTargets);
-  });
+  }, 180, cloudProfile);
 }
 
-async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string, listTargets: () => Promise<typeof Targets.Type>) => Promise<void>, socketTimeoutSeconds = 180) {
+async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: string, run: (page: Awaited<ReturnType<typeof devTools>>, pid: string, listTargets: () => Promise<typeof Targets.Type>) => Promise<void>, socketTimeoutSeconds = 180, cloudProfile: CloudProfile = standaloneProfile) {
   const pid = (await shell(serial, waitForPid, socketTimeoutSeconds)).trim();
   if (!/^\d+$/.test(pid)) throw new Error(`Expected one process of Grace with a debuggable WebView on ${serial}, found "${pid}"`);
   const port = (await adb(["-s", serial, "forward", "tcp:0", `localabstract:webview_devtools_remote_${pid}`])).trim();
@@ -812,7 +897,7 @@ async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: str
       if (!host) await delay(250);
     }
     if (!host) throw new Error(`Grace's WebView is not debuggable on ${serial}`);
-    const page = await devTools(host, AbortSignal.timeout(120_000)).catch(failing("Opening Grace's WebView debugging socket"));
+    const page = await devTools(host, AbortSignal.timeout(120_000), cloudProfile).catch(failing("Opening Grace's WebView debugging socket"));
     try {
       await run(page, pid, listTargets);
     } finally {
@@ -823,7 +908,7 @@ async function withGracePage(serial: typeof EmulatorSerial.Type, waitForPid: str
   }
 }
 
-async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>, release: boolean, benchmark?: BenchmarkRun) {
+async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>, release: boolean, cloudProfile: CloudProfile, benchmark?: BenchmarkRun) {
   const booted = 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done';
   await Promise.race([adb(["-s", serial, "wait-for-device", "shell", booted], 900), exited]).catch(failing("Waiting for the emulator to boot"));
   const installing = (await shell(serial, "date +%s")).trim();
@@ -834,7 +919,7 @@ async function deliver({ serial, exited }: Target, exercise: ReadonlyArray<Step>
     if (graces.length) throw new Error(`Grace was not responding on ${serial}:\n${graces.join("\n")}`, { cause });
     return events.length;
   };
-  await walk(serial, exercise, release, benchmark).catch(async (error: unknown) => {
+  await walk(serial, exercise, release, cloudProfile, benchmark).catch(async (error: unknown) => {
     responding(await anrs().catch(() => { throw error; }), error);
     throw error;
   });
@@ -874,9 +959,6 @@ function deviceNodes(xml: string) {
 }
 
 type DeviceNode = ReturnType<typeof deviceNodes>[number];
-const legacyCredential = (node: DeviceNode) =>
-  node.id === "lockPassword" && (node.packageName === "com.android.settings" || node.packageName === "com.android.systemui");
-
 const editorFixturePackage = "technology.graceful.fixture";
 const editorFixtureRunner = `${editorFixturePackage}/.BillWorldPasswordEditor`;
 
@@ -942,23 +1024,6 @@ function fullscreenTip(nodes: DeviceNode[]) {
   return buttons.length === 1 ? buttons[0] : undefined;
 }
 
-function systemPinPad(nodes: DeviceNode[]) {
-  const system = nodes.filter((node) => node.packageName === "com.android.systemui");
-  if (!system.some((node) => node.id === "compose_credential_view" && node.className === "androidx.compose.ui.platform.ComposeView") ||
-      !system.some((node) => node.id === "cred_pin_pad")) return undefined;
-  const buttons = system.filter((node) => node.enabled && node.clickable);
-  const enter = buttons.find((node) => node.id === "key_enter" && node.className === "android.widget.Button");
-  if (!enter) return undefined;
-  const digits = new Map<string, DeviceNode>();
-  for (const button of buttons) {
-    const digit = [button.label, button.description].find((value) => /^[0-9]$/.test(value));
-    if (digit === undefined) continue;
-    if (digits.has(digit)) return undefined;
-    digits.set(digit, button);
-  }
-  return digits.size === 10 ? { digits, enter } : undefined;
-}
-
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi, signal: AbortSignal) {
   const installedApk = async (packageName = identity.appId) => {
     const packages = (await shell(serial, `cmd package list packages -f ${packageName}`)).trim();
@@ -975,12 +1040,18 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       await installedApk() !== undefined || await installedApk(editorFixturePackage) !== undefined) {
     throw new Error("BillWorld requires an emulator with no existing Grace installation");
   }
+  const requireNoScreenLock = async () => {
+    const result = (await shell(serial, "locksettings verify", 180)).trim();
+    if (!/^(?:lock )?credential verified successfully\.?$|^no (?:lock )?credential (?:is )?set\.?$/i.test(result)) {
+      throw new Error("BillWorld requires a disposable emulator with no Android screen lock");
+    }
+  };
+  await requireNoScreenLock();
   const fixture: unknown = await import(pathToFileURL(path.resolve(checkout, "billworld/integration/https-episode-host.mjs")).href);
   if (!isEpisodeHost(fixture)) throw new Error("BillWorld password fixture is unavailable");
   const cleanup: Array<() => Promise<unknown>> = [];
   let buildFailure: Error | undefined;
   const screenFile = `/data/local/tmp/grace-billworld-ui-${randomUUID()}.xml`;
-  const pin = "7539";
   const screen = async () => {
     signal.throwIfAborted();
     const redact = String.raw`s/(<node[^>]*[[:space:]]text=")[^"]*("[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*>)/\1\2/g; s/(<node[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*[[:space:]]text=")[^"]*("[^>]*>)/\1\3/g`;
@@ -1010,30 +1081,6 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const waitForNode = (matches: (node: DeviceNode) => boolean, label: string) => waitForUi((nodes) => nodes.find(matches), label);
   const tapNode = ({ x, y }: DeviceNode) => shell(serial, `input tap ${x} ${y}`);
   const tap = async (matches: (node: DeviceNode) => boolean, label: string) => tapNode(await waitForNode(matches, label));
-  const text = (value: string) => shell(serial, `input text '${value.replaceAll(" ", "%s").replaceAll("'", "'\\''")}'`)
-    .catch(() => { throw new Error("Android did not accept a fixture field"); });
-  const submitPin = async (purpose: "Passwords" | "Autofill") => {
-    step = `find Android’s credential prompt for ${purpose}`;
-    const credential = await waitForUi((nodes) => nodes.find(legacyCredential) ?? systemPinPad(nodes), "the system screen lock");
-    if ("digits" in credential) {
-      step = `enter the disposable PIN for ${purpose}`;
-      for (const digit of pin) {
-        const key = credential.digits.get(digit);
-        if (!key) throw new Error("The Android PIN pad changed");
-        await tapNode(key);
-      }
-      step = `confirm Android’s credential prompt for ${purpose}`;
-      await tapNode(await waitForUi((nodes) => systemPinPad(nodes)?.enter, "the system PIN confirmation"));
-      return;
-    }
-    await tapNode(credential);
-    step = `focus Android’s credential field for ${purpose}`;
-    await waitForNode((node) => legacyCredential(node) && node.focused, "the focused system screen lock");
-    step = `enter the disposable PIN for ${purpose}`;
-    await text(pin);
-    step = `confirm Android’s credential prompt for ${purpose}`;
-    await shell(serial, "input keyevent KEYCODE_ENTER");
-  };
   let episode: typeof Episode.Type | undefined;
   let step = "open fixture";
   let journeyFailure: Error | undefined;
@@ -1085,18 +1132,6 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         });
         await shell(serial, `pm install -t ${remote}`, 300).catch(() => undefined);
         if (await installedApk() !== digest) throw new Error("Android did not install the episode APK");
-        step = "configure the disposable screen lock";
-        const verified = /credential verified successfully|no credential (?:is )?set/i;
-        if (!verified.test(await shell(serial, "locksettings verify", 180))) throw new Error("The fixture requires an empty screen lock");
-        cleanup.push(async () => {
-          await shell(serial, `locksettings clear --old ${pin}`, 180).catch(() => undefined);
-          if (!verified.test(await shell(serial, "locksettings verify", 180))) throw new Error("Android still reports a screen lock after fixture cleanup");
-        });
-        step = "set the disposable PIN";
-        const set = await shell(serial, `locksettings set-pin ${pin}`, 180);
-        if (!/pin set to/i.test(set)) throw new Error("Android did not set the fixture lock");
-        step = "confirm the disposable PIN was set";
-        if (!verified.test(await shell(serial, `locksettings verify --old ${pin}`, 180))) throw new Error("Android did not confirm the fixture lock");
         cleanup.push(() => shell(serial, `rm -f ${screenFile}`));
         step = "select Grace as the disposable autofill provider";
         const autofill = `${identity.appId}/ai.eliza.plugins.passwords.ElizaPasswordAutofillService`;
@@ -1145,10 +1180,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           process.stdout.write("The Passwords card is ready on the third Grace Home page.\n");
           step = "open Passwords from the third Grace Home page";
           await page.tapAt(passwords, AbortSignal.timeout(120_000));
-          step = "request Passwords unlock";
-          await page.step({ tap: "Unlock Passwords" });
-          await submitPin("Passwords");
-          step = "open the protected password editor";
+          step = "check that cloud recovery requires a device credential";
+          await page.step({ call: "GraceAccount.showPasswordRecovery", refuses: "Password recovery is unavailable" });
+          step = "open the native password editor without a screen lock";
           await page.step({ tap: "Add password" });
           step = "save through the focused native editor";
           await editor.wait("save-dispatched", 90);
@@ -1171,13 +1205,14 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "request Android autofill and choose the matching entry";
         await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
         await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
-        await submitPin("Autofill");
         await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
       },
     });
     if (!isEpisode(started)) throw new Error("The fixture did not start");
     episode = started;
     const readGrade = async () => Schema.decodeUnknownSync(Grade)(await started.grade());
+    step = "verify Android still has no screen lock";
+    await requireNoScreenLock();
     step = "grade the autofilled form";
     const before = await readGrade();
     if (before.grade.success || before.paymentCount !== 0) throw new GradeFailure("Autofill must not submit or pay");
@@ -1197,6 +1232,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   }
   const failures: unknown[] = [];
   for (const release of cleanup.reverse()) await release().catch((error: unknown) => { failures.push(error); });
+  await requireNoScreenLock().catch((error: unknown) => { failures.push(error); });
   const unclean = failures.length > 0;
   try { await episode?.close(); } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, unclean ? "BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use." : "The BillWorld episode did not close. The emulator's cleanup was verified.", { cause: journeyFailure });
@@ -1204,8 +1240,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
 }
 
 if (import.meta.main) {
-  const options = parseArgs({ options: { release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" }, benchmark: { type: "string" }, receipt: { type: "string" } } }).values;
-  const { verify, release = false, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun, benchmark, receipt } = Schema.decodeUnknownSync(Arguments)(options);
+  const options = parseArgs({ options: { "cloud-profile": { type: "string" }, release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" }, benchmark: { type: "string" }, receipt: { type: "string" } } }).values;
+  const { "cloud-profile": cloudProfile = standaloneProfile, verify, release = false, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun, benchmark, receipt } = Schema.decodeUnknownSync(Arguments)(options);
+  if (cloudProfile === "shared-staging" && release) throw new Error("Shared Eliza Cloud staging is only available in debug APKs");
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if ((benchmark || receipt) && (!benchmark || !receipt || (!install && !emulator) || exercise || verify || release))
@@ -1222,8 +1259,8 @@ if (import.meta.main) {
     if (existsSync(trial.receipt)) throw new Error("Benchmark receipt already exists");
   }
   if (billworld !== undefined) {
-    if (verify || release || install || exercise || benchmark || receipt || fixtureRun || !emulator?.startsWith("grace-billworld-")) {
-      throw new Error("Use --billworld-passwords CHECKOUT with --emulator grace-billworld-… on a disposable AVD");
+    if (verify || release || install || exercise || benchmark || receipt || fixtureRun || cloudProfile !== standaloneProfile || !emulator?.startsWith("grace-billworld-")) {
+      throw new Error("Use --billworld-passwords CHECKOUT with --emulator grace-billworld-… on a disposable standalone-production AVD");
     }
     mkdirSync(artifacts, { recursive: true });
     const target = await emulatorTarget(emulator);
@@ -1236,21 +1273,21 @@ if (import.meta.main) {
       interrupt.signal.throwIfAborted();
       await billworldPasswords(target.serial, billworld, abi, interrupt.signal);
       interrupt.signal.throwIfAborted();
-      process.stdout.write("BillWorld sign-in passed through installed Android Autofill. No payment was made.\n");
+      process.stdout.write("BillWorld sign-in passed through installed Android Autofill without a screen lock. No payment was made.\n");
     } finally {
       process.off("SIGINT", cancel);
       process.off("SIGTERM", cancel);
       target.stop();
     }
-  } else if (fixtureRun) writeApkManifest(path.join(artifacts, "billworld-passwords", fixtureRun), true);
-  else if (verify) writeApkManifest();
+  } else if (fixtureRun) writeApkManifest(cloudProfile, path.join(artifacts, "billworld-passwords", fixtureRun), true);
+  else if (verify) writeApkManifest(cloudProfile);
   else {
-    buildAndroid({ release, abi });
+    buildAndroid({ release, abi, cloudProfile });
     const target = install ? attached(install) : emulator && await emulatorTarget(emulator);
     if (target) {
       process.once("exit", (code) => { stopping.abort(); if (code) target.stop(); });
       for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) process.once(signal, () => process.exit(code));
-      await deliver(target, steps, release, trial);
+      await deliver(target, steps, release, cloudProfile, trial);
     }
   }
 }
