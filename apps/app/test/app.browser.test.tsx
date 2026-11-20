@@ -1026,7 +1026,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 });
 
 
-it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment")', async () => {
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
@@ -1037,6 +1037,18 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let changed: string[] = [];
   const reminders: number[] = [];
   const literalText = "<strong>This stays plain text.</strong>";
+  const originalText = "<script>Original attachment</script>";
+  const originalHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(originalText))),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const attachment = { partId: "1", name: "Receipt.txt", mimeType: "text/plain", size: originalText.length, supported: true };
+  const archive = { partId: "2", name: "Extras.zip", mimeType: "application/zip", size: 100, supported: false };
+  const pdfBytes = "%PDF-1.7\nOriginal purchase receipt";
+  const pdf = { partId: "3", name: "Original receipt.pdf", mimeType: "application/pdf", size: pdfBytes.length, supported: true };
+  const pdfHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pdfBytes))),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const ticket = "12ab34cd";
+  let attachmentOwner = "different-owner";
+  let attachmentReads = 0;
   const oldURL = window.location.href;
   const oldIntent = sessionStorage.getItem("grace-hosted-read");
   const oldAccounts = localStorage.getItem("accounts");
@@ -1108,10 +1120,20 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/gmail/read":
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
-          accountId: replyFromOwner ? person.id : "different-owner", message: mail, bodyTextAvailable: true,
+          accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive, pdf], bodyTextAvailable: true,
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
+      case "/api/v1/eliza/google/gmail/attachment":
+        attachmentReads++;
+        if (api.searchParams.get("partId") === pdf.partId) {
+          expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant, historyId: "8", partId: pdf.partId });
+          return reply({ ...pdf, version: 1, accountId: attachmentOwner, organizationId: "grace-org", grantId: grant, messageId: mail.externalId,
+            historyId: "8", dataBase64: btoa(pdfBytes), sha256: pdfHash, deviceTransfer: ticket });
+        }
+        expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant, historyId: "8", partId: attachment.partId });
+        return reply({ ...attachment, version: 1, accountId: attachmentOwner, messageId: mail.externalId, historyId: "8",
+          dataBase64: btoa(originalText), sha256: originalHash });
       case "/api/v1/eliza/google/gmail/send": {
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test" });
@@ -1224,6 +1246,32 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     replyFromOwner = true;
     await tap(/Your receipt/);
     await expect.element(page.getByText(literalText, { exact: true })).toBeVisible();
+    const openOriginal = page.getByRole("button", { name: "Open original", exact: true });
+    await expect.element(openOriginal.nth(1)).toBeDisabled();
+    expect(attachmentReads).toBe(0);
+    await act(() => openOriginal.nth(0).click());
+    const original = page.getByRole("region", { name: "Original attachment" });
+    await expect.element(page.getByText("Grace couldn’t open that. Try again.", { exact: true })).toBeVisible();
+    expect(original.query()).toBeNull();
+    attachmentOwner = person.id;
+    await act(() => openOriginal.nth(0).click());
+    await expect.element(original.getByText(originalText, { exact: true })).toBeVisible();
+    const download = original.getByRole("link", { name: "Download original" });
+    await expect.element(download).toHaveAttribute("download", attachment.name);
+    const originalUrl = download.element().getAttribute("href") ?? "";
+    expect(await fetch(originalUrl).then((response) => response.text())).toBe(originalText);
+    await act(() => original.getByRole("button", { name: "Close attachment" }).click());
+    expect(original.query()).toBeNull();
+    await expect(fetch(originalUrl)).rejects.toThrow();
+    expect(attachmentReads).toBe(2);
+    const android = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android");
+    try {
+      await act(() => openOriginal.nth(2).click());
+      await expect.element(original.getByRole("link", { name: "Save to Grace Files" })).toHaveAttribute("href", `https://app.graceforseniors.com/android/files/import#${ticket}`);
+      const pdfUrl = original.getByRole("link", { name: "Open PDF" }).element().getAttribute("href") ?? "";
+      expect(await fetch(pdfUrl).then((response) => response.text())).toBe(pdfBytes);
+      await act(() => original.getByRole("button", { name: "Close attachment" }).click());
+    } finally { android.mockRestore(); }
     expect(Array.from(document.querySelectorAll("strong")).some((node) => node.textContent === "This stays plain text.")).toBe(false);
 
     await tap("Reply");
@@ -1408,7 +1456,13 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
 it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and remove the chosen file")', async () => {
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
-  let entries = [photo];
+  const attachment = { id: "85b46188-fb54-4a7e-a7b8-1f706e7a3b86", kind: "pdf", name: "Original.pdf", savedAt: 4, pages: 2,
+    attachmentSource: "a".repeat(64), attachmentSha256: "b".repeat(64) };
+  const request = "1be3319a-dcea-4235-8c56-69632ebc222d";
+  let incoming: string | undefined;
+  let notify: () => void = () => undefined;
+  let entries: (typeof photo | typeof attachment)[] = [photo];
+  const transfers: string[] = [];
   const removals: string[] = [];
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
@@ -1419,7 +1473,24 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
       preview: async ({ id, page }) => ({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
       pick: async () => undefined,
       capture: async () => undefined,
-      commit: async () => undefined,
+      addListener: async (_event, listener) => {
+        notify = listener;
+        return { remove: async () => { notify = () => undefined; } };
+      },
+      attachmentImport: async () => ({ id: incoming }),
+      cancelAttachmentImport: async (input) => { expect(input.request).toBe(incoming); incoming = undefined; },
+      stageAttachmentImport: async (input) => {
+        expect(input).toEqual({ lease, request: incoming });
+        transfers.push(input.request);
+        return attachment;
+      },
+      commit: async (input) => {
+        expect(input).toEqual({ lease, id: attachment.id });
+        if (transfers.length === 1) throw new Error("Device storage unavailable");
+        if (!entries.includes(attachment)) entries.unshift(attachment);
+        incoming = undefined;
+        return { id: attachment.id };
+      },
       remove: async (request) => {
         expect(request).toEqual({ lease, id: photo.id });
         removals.push(request.id);
@@ -1446,6 +1517,23 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   await expect.poll(() => removals).toEqual([photo.id, photo.id]);
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
   expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
+
+  const handoff = () => act(() => { incoming = request; notify(); });
+  await tap("Close Files");
+  await handoff();
+  await tap("Cancel");
+  expect(transfers).toEqual([]);
+  await handoff();
+  await tap("Save attachment");
+  await expect.element(page.getByRole("status").filter({ hasText: "The attachment couldn’t be saved." })).toBeVisible();
+  expect(entries).toEqual([]);
+  await tap("Save attachment");
+  await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
+  await handoff();
+  await tap("Save attachment");
+  await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
+  expect(entries).toEqual([attachment]);
+  expect(transfers).toEqual([request, request, request]);
 });
 
 it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
@@ -1908,7 +1996,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/v1/eliza/google/gmail/read": {
         expect(url.searchParams.get("grantId")).toBe(grant);
         const row = url.searchParams.get("messageId") === second.externalId ? second : selected;
-        return respond({ accountId: person.id, message: { ...row, metadata: { historyId } },
+        return respond({ accountId: person.id, message: { ...row, metadata: { historyId } }, historyId: null, attachments: [],
           bodyText: row.from + " message body", bodyTextAvailable: true });
       }
       case "/api/v1/eliza/google/calendar/feed":
