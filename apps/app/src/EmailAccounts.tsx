@@ -63,11 +63,13 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const colour = (a: Account) => colours[a.colour] ?? colours[0];
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
+  const sheet = signIn.stage === "ProviderPage";
+  const pointAt = <Target extends string>(idOf: (target: string) => Target | undefined) => sheet ? undefined : guide(idOf);
 
   const choosing = Object.values(chosen).some((provider) => can({ type: "chooseProvider", provider }));
   const choose = choosing ? (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.() : undefined;
-  const tileGuide = guide((target) => tiles.get(target));
-  const rowGuide = guide((target) => registry.accounts.some((a) => target === `acc-${a.id}`) ? target : undefined);
+  const tileGuide = pointAt((target) => tiles.get(target));
+  const rowGuide = pointAt((target) => registry.accounts.some((a) => target === `acc-${a.id}`) ? target : undefined);
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;
 
@@ -80,7 +82,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
             <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} guide={tileGuide} />
           </EmailAccountList>
         ) : (
-          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={guide((target) => target === "acadd" ? "add" : undefined)}>
+          <EmailAccountList onAdd={offer({ type: "addAccount" })} guide={pointAt((target) => target === "acadd" ? "add" : undefined)}>
             {registry.accounts.map((a) => (
               <EmailAccountRow key={a.id} address={a.address} provider={providers[a.provider]} uses={a.use} status={status(a.id)} colour={colour(a)}
                 onOpen={offer({ type: "openAccount", id: a.id })} guide={rowGuide?.targetId === `acc-${a.id}` ? { kind: rowGuide.kind, title: rowGuide.title, onClose: rowGuide.onClose } : undefined} />
@@ -129,11 +131,11 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   };
 
   const company = emailProviders[providers[signIn.provider]].name;
-  const provider = signIn.stage === "ProviderPage" ? flows.page : undefined;
+  const provider = sheet ? flows.page : undefined;
   return (
-    <SettingsApp {...frame} {...header(page, registry, shown)} onBack={offer({ type: "goBack" })}>
+    <SettingsApp {...frame} {...header(page, registry, shown)} guide={sheet ? undefined : frame.guide} onBack={offer({ type: "goBack" })}>
       {content()}
-      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
+      <SignInSheet open={sheet} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
         {provider?.inSheet ? (
           <iframe src={provider.url} title={`${company}’s own sign-in page`} sandbox="allow-forms allow-scripts" referrerPolicy="no-referrer" className="block size-full border-0" />
         ) : (
