@@ -45,7 +45,7 @@ function idleAccountForm(elements: readonly PageElement[], index: number): boole
   return fields.length === 1 && identifier?.fieldName === "username" &&
     /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(identifier.label?.trim() ?? "") &&
     group.some((element) => /\b(?:sign[ -]?in|log[ -]?in)\b/iu.test(element.form?.name ?? "") ||
-      (element.submits === true && /^(?:sign in|log in|login)$/iu.test(element.label?.trim() ?? "")))
+      (element.submits === true && /^(?:sign in|log in|login|continue)$/iu.test(element.label?.trim().replace(/[\s\p{P}\p{S}]+$/gu, "") ?? "")))
 }
 
 export function guidedPageState(observation: LinkObservation | undefined, url: string, linksOnly = false): "Ordinary" | "PublicLinks" | "PrivateForm" | "Unavailable" {

@@ -1961,7 +1961,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
   let challengeShown = false;
-  let signInWidget: "hidden" | "idle" | "active" = "hidden";
+  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
@@ -1970,8 +1970,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
-            { id: "username", tag: "input", type: "text", fieldName: "username", label: "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
-            { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
+            { id: "username", tag: "input", type: "text", fieldName: "username", label: signInWidget === "accountOnly" ? "Username" : "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
+            signInWidget === "accountOnly"
+              ? { id: "continue", tag: "button", label: "Continue ›", submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
+              : { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
@@ -2099,6 +2101,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       command: expect.objectContaining({ subaction: "guide", guidance: expect.objectContaining({ kind: "show" }) }),
     }));
     guideOwner = "guide-owner";
+    signInWidget = "accountOnly";
     await tap(showLink);
     await routeTo(page.getByText("Look for “Help center” on example.org."));
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
