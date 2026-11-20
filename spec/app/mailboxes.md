@@ -75,37 +75,37 @@ When no email on the tablet has its Email switched on, because none was
 added yet, each was removed, or each one’s Email switch is off, Email shows
 "Get your email on this tablet" with two choices only: Connect your email,
 which opens Settings › Email & calendar, and Ask Grace to help. It has no
-Write, no folders, no search and no banners
+Write, no search and no folders
 (`prototype/Grace Prototype.html:2122–2123`). Switching off the Email of the
 last account that had it on brings this screen, and as soon as one account
 has Email on, Email shows its folders and Write again.
 
 ```quint
 type MailScreen = ConnectEmail | MailFolders
-type MailChoice = ConnectChoice | AskGraceChoice | WriteChoice | FolderChoice
+type MailChoice = ConnectChoice | AskGraceChoice | WriteChoice | SearchChoice | FolderChoice
 pure def showsConnect(registry: A::Accounts): bool = A::mailAccounts(registry).length() == 0
 pure def mailScreen(registry: A::Accounts): MailScreen = if (showsConnect(registry)) ConnectEmail else MailFolders
 pure def mailChoices(registry: A::Accounts): List[MailChoice] =
-  if (showsConnect(registry)) List(ConnectChoice, AskGraceChoice) else List(WriteChoice, FolderChoice)
+  if (showsConnect(registry)) List(ConnectChoice, AskGraceChoice) else List(WriteChoice, SearchChoice, FolderChoice)
 pure def lawConnectShowsExactlyWithoutEmail(registry: A::Accounts): bool =
   (mailScreen(registry) == ConnectEmail iff registry.accounts.every(x => not(x.use.mail))) and
-  (mailScreen(registry) == ConnectEmail iff mailChoices(registry).every(c => c != WriteChoice and c != FolderChoice))
+  (mailScreen(registry) == ConnectEmail iff mailChoices(registry).every(c => c != WriteChoice and c != SearchChoice and c != FolderChoice))
 pure def lawLastEmailOffShowsConnect(registry: A::Accounts, account: int, use: A::Use): bool =
   (A::canSetUse(registry, account, use, A::AccountPerson) and not(use.mail) and
     A::mailAccounts(registry).every(x => x.id == account)) implies
     mailScreen(A::setUse(registry, account, use, A::AccountPerson)) == ConnectEmail
 ```
 
-### The Home Email card says Not connected, Waiting for the internet, or how many are new
+### The Home Email card says Waiting for the internet, Not connected, or how many are new
 
-With no account’s Email on, the Home Email card says "Connect your email to
-see it here." and "Not connected". Otherwise, while the tablet is offline, it
-says "New email will arrive when you’re back online." and "Waiting for the
-internet". Otherwise it shows "N new", the unread count of the shown
-accounts’ inboxes, or "No new email". Its rows come from what Grace is shown
-of the inboxes: the unread ones when there are any, else every inbox row; the
-shell shows the latest two by the provider’s date
-(`prototype/Grace Prototype.html:1940–1944`). A hidden account’s unread email
+While the tablet is offline, the Home Email card says "New email will arrive
+when you’re back online." and "Waiting for the internet", whether or not an
+account has Email on. Otherwise, with no account’s Email on, it says "Connect
+your email to see it here." and "Not connected". Otherwise it shows "N new",
+the unread count of the shown accounts’ inboxes, or "No new email". Its rows
+come from what Grace is shown of the inboxes: the unread ones when there are
+any, else every inbox row; the shell shows the first two in the list’s
+newest-first order (`prototype/Grace Prototype.html:1940–1944`). A hidden account’s unread email
 is never counted and never shown. Tapping the card while offline is the
 notices’ concern, not this card’s.
 
@@ -113,17 +113,21 @@ notices’ concern, not this card’s.
 type HomeMailStatus = NotConnected | WaitingForInternet | NewCount({ count: int }) | NoNew
 pure def homeStatus(registry: A::Accounts, sources: List[MailSource], online: bool): HomeMailStatus =
   val count = unreadIn(registry, shown(registry, sources), 0)
-  if (showsConnect(registry)) NotConnected
-  else if (not(online)) WaitingForInternet
+  if (not(online)) WaitingForInternet
+  else if (showsConnect(registry)) NotConnected
   else if (count > 0) NewCount({ count: count })
   else NoNew
 pure def notConnected(status: HomeMailStatus): bool = match status { | NotConnected => true | _ => false }
+pure def waitingForInternet(status: HomeMailStatus): bool = match status { | WaitingForInternet => true | _ => false }
 pure def homeRows(registry: A::Accounts, sources: List[MailSource]): List[Row] =
   val inbox = mailContext(registry, sources).select(r => r.record.folder == I::InboxFolder)
   val unread = inbox.select(r => r.record.unread)
   if (unread.length() > 0) unread else inbox
-pure def lawHomeNotConnectedOnlyWithoutEmail(registry: A::Accounts, sources: List[MailSource], online: bool): bool =
-  notConnected(homeStatus(registry, sources, online)) iff A::mailAccounts(registry).length() == 0
+pure def lawHomeAgreesWithEmail(registry: A::Accounts, sources: List[MailSource], online: bool): bool =
+  val status = homeStatus(registry, sources, online)
+  (not(online) implies waitingForInternet(status)) and
+  (notConnected(status) implies mailScreen(registry) == ConnectEmail) and
+  ((online and mailScreen(registry) == ConnectEmail) implies notConnected(status))
 pure def lawHomeCountsOnlyShownMail(registry: A::Accounts, sources: List[MailSource], online: bool): bool =
   homeStatus(registry, sources, online) == homeStatus(registry, shown(registry, sources), online) and
   homeRows(registry, sources).every(r => showsMail(registry, r.account) and r.record.folder == I::InboxFolder)
@@ -217,16 +221,21 @@ pure def lawWaitingEmailIsCounted(sources: List[MailSource], account: int): bool
 ### Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder
 
 Outbox is not a provider’s folder: choosing it shows the Outbox rows instead
-of a folder’s. Once the last waiting email has gone, the list shows the
-folder the mailboxes have chosen again and the Outbox row disappears. That
+of a folder’s. Once the provider confirms the last waiting email was sent,
+the list shows the folder the mailboxes have chosen again and the Outbox row
+disappears (the prototype leaves an empty Outbox list on screen instead). That
 she chose Outbox is the screen’s own choice, like which tab is open; what it
 shows is decided here.
 
 ```quint
 pure def showsOutbox(registry: A::Accounts, sources: List[MailSource], outboxChosen: bool): bool =
   outboxChosen and outboxCount(registry, sources) > 0
-pure def lawEmptyOutboxShowsTheFolder(registry: A::Accounts, sources: List[MailSource], outboxChosen: bool): bool =
-  (showsOutbox(registry, sources, outboxChosen) iff (outboxChosen and outboxRows(registry, sources).length() > 0))
+pure def sentEverywhere(sources: List[MailSource], account: int, operationId: str): List[MailSource] =
+  sources.listMap(s => if (s.account == account)
+    { ...s, mailbox: E::queuedResult(s.mailbox, operationId, E::Sent, "provider", true, E::MailConnector) } else s)
+pure def lawLastSentEmailLeavesOutbox(registry: A::Accounts, sources: List[MailSource], account: int, operationId: str): bool =
+  outboxRows(registry, sources).every(r => r.account == account and r.queued.operationId == operationId) implies
+    not(showsOutbox(registry, sentEverywhere(sources, account, operationId), true))
 ```
 
 ### Each account’s banner shows its own state, and offline is not a broken account
@@ -376,23 +385,22 @@ pure def lawStartFromIsAChoice(registry: A::Accounts, sources: List[MailSource],
 
 ### Writing starts at Who is it to?, and Cc and Bcc show once opened or used
 
-Write and Forward open the recipient picker for To before the composer
-(`prototype/Grace Prototype.html:2009–2011`). While the draft has no
-recipient yet, that first picker’s Back reads "Inbox" and discards the new
-email; picking for Cc or Bcc, or for a To that is already chosen, goes back
-to the composer and keeps it. Cc and Bcc rows show once she taps Add next to
+Write, Forward and Share from Files open the recipient picker for To before
+the composer (`prototype/Grace Prototype.html:2009–2011`). That first
+picker’s Back reads "Inbox" and discards the new email. A picker opened from
+the composer, with + next to To, Cc or Bcc, reads "New email" and goes back
+to the composer keeping the whole draft, even after she removed its To. Cc and Bcc rows show once she taps Add next to
 "Cc/Bcc" or the draft already has a copy or a hidden copy. Whether the picker
 is open, which row it fills, the words typed in its search and whether she
 tapped Add are the screen’s own choices; the draft they change is the
 mailbox’s.
 
 ```quint
-type PickFor = PickTo | PickCc | PickBcc
-pure def firstPick(mailbox: E::Mailbox, pickingFor: PickFor): bool = pickingFor == PickTo and mailbox.draft.to == ""
+type PickFor = PickNewEmail | PickTo | PickCc | PickBcc
+type PickerBack = DiscardToInbox | BackToComposer
+pure def pickerBack(pickingFor: PickFor): PickerBack = if (pickingFor == PickNewEmail) DiscardToInbox else BackToComposer
 pure def showsCopies(mailbox: E::Mailbox, opened: bool): bool =
   opened or mailbox.draft.cc.size() > 0 or mailbox.draft.bcc.size() > 0
-pure def lawCopiesStayShown(mailbox: E::Mailbox, opened: bool): bool =
-  (mailbox.draft.cc.size() > 0 or mailbox.draft.bcc.size() > 0) implies showsCopies(mailbox, opened)
 ```
 
 ### Changing From moves a draft never saved, whole and unapproved, and a saved draft stays
@@ -518,4 +526,5 @@ pure val recordValues = Set(gmailListed.messages.nthOr(0, I::initial), outlookLi
   gmailTrashed.messages.nthOr(0, I::initial), I::initial)
 pure val accountValues = Set(0, 1, 2, 3)
 pure val atValues = Set(-1, 0, 1, 2)
+pure val operationIdValues = Set("send1", "send2")
 ```

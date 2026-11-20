@@ -312,7 +312,7 @@ lemma lawConnectShowsExactlyWithoutEmail_ensures(registry: app__accounts_Account
   var choices := mailChoices(registry);
   if showsConnect(registry) {
     assert choices == [MailChoice.ConnectChoice, MailChoice.AskGraceChoice];
-    forall c | c in choices ensures !c.WriteChoice? && !c.FolderChoice? {
+    forall c | c in choices ensures !c.WriteChoice? && !c.SearchChoice? && !c.FolderChoice? {
       assert c == choices[0] || c == choices[1];
     }
   } else {
@@ -353,4 +353,30 @@ lemma lawDraftsCountOnlyShownMail_ensures(registry: app__accounts_Accounts, sour
   ensures (lawDraftsCountOnlyShownMail(registry, sources) == true)
 {
   ShownTwice(registry, sources);
+}
+
+lemma lawLastSentEmailLeavesOutbox_ensures(registry: app__accounts_Accounts, sources: seq<MailSource>, account: int, operationId: string)
+  ensures (lawLastSentEmailLeavesOutbox(registry, sources, account, operationId) == true)
+{
+  if forall r :: r in outboxRows(registry, sources) ==> r.account == account && r.queued.operationId == operationId {
+    var after := sentEverywhere(sources, account, operationId);
+    forall i | 0 <= i < |after| ensures |sourceOutbox(registry, after[i])| == 0 {
+      var s := sources[i];
+      if showsMail(registry, s.account) && |after[i].mailbox.outbox| > 0 {
+        var w := after[i].mailbox.outbox[0];
+        if s.account == account {
+          assert after[i].mailbox.outbox == ProofLib.Filter((q: app__email_QueuedSend) => (q.operationId != operationId), s.mailbox.outbox);
+          ProofLib.FilterMember((q: app__email_QueuedSend) => (q.operationId != operationId), s.mailbox.outbox, w);
+          var j :| 0 <= j < |s.mailbox.outbox| && s.mailbox.outbox[j] == w;
+          assert sourceOutbox(registry, s)[j] == OutboxRow(s.account, w);
+          ProofLib.FoldLeftConcatMember((rows: seq<OutboxRow>, s: MailSource) => (rows + sourceOutbox(registry, s)), (s: MailSource) => sourceOutbox(registry, s), [], sources, OutboxRow(s.account, w));
+        } else {
+          assert after[i] == s;
+          assert sourceOutbox(registry, s)[0] == OutboxRow(s.account, w);
+          ProofLib.FoldLeftConcatMember((rows: seq<OutboxRow>, s: MailSource) => (rows + sourceOutbox(registry, s)), (s: MailSource) => sourceOutbox(registry, s), [], sources, OutboxRow(s.account, w));
+        }
+      }
+    }
+    ProofLib.FoldLeftConcatEmpty((rows: seq<OutboxRow>, s: MailSource) => (rows + sourceOutbox(registry, s)), (s: MailSource) => sourceOutbox(registry, s), [], after);
+  }
 }
