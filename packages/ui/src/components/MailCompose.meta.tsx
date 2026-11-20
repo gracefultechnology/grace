@@ -1,6 +1,6 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { flowersPhoto, mailScreen, people, unfocus } from "./MailApp.meta.tsx";
+import { flowersPhoto, mailScreen, onMailScreen, people, unfocus } from "./MailApp.meta.tsx";
 import type { MailComposeProps } from "./MailCompose.tsx";
 
 const send = fn();
@@ -60,14 +60,12 @@ export const meta: ComponentMeta<MailComposeProps> = {
   },
   decorator: mailScreen,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
+    Default: onMailScreen(async (canvas) => {
       await userEvent.click(canvas.getByRole("button", { name: "Add to To" }));
       await expect(add).toHaveBeenCalledWith("to");
       await userEvent.click(canvas.getByRole("button", { name: "Send" }));
       await expect(send).toHaveBeenCalled();
-      unfocus();
-    },
+    }),
     From: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: /margaret\.ellis@gmail\.com/ }));
       await userEvent.click(await within(document.body).findByRole("menuitemradio", { name: /margaret@outlook\.com/ }));

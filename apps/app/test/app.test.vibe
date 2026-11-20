@@ -255,7 +255,7 @@ it.live("Read an email and its original attachment, and find and open the email 
         found: ["Reminder: your appointment tomorrow at 10 am"],
         header: { ref: "clinic", generation: 4, address: "frontdesk@mainst-clinic.test", subject: "Re: Reminder: your appointment tomorrow at 10 am", verified: true },
         receipt: { generation: 4, succeeded: true, suspicion: "", assets: [{
-          id: "clinic/2", kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
+          id: JSON.stringify(["Gmail", gmail.address, "clinic", "2"]), kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
           sourceRef: "clinic/2", contentRef: "2", group: "clinic", savedAt: opened.content.receivedAt, pages: 2
         }] },
         attached: true, form: ["application/pdf", true],
@@ -341,9 +341,9 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
         restored: [true, content, [["Visit form.pdf", "draft-sunday/1"]], 2],
         sends: [["Sent", true], ["Sent", true]], same: true,
         sent: ["Re: Lunch on Sunday?"], answered: [["family", "Yes please.", true]],
-        looked: ["Sent", "SendFailed"], never: { resultStatus: "SendFailed", evidence: "not-sent" },
-        offline: { resultStatus: "SendUnknown", evidence: "" },
-        later: ["SendFailed", "Sent", "Sent"], again: true,
+        looked: ["Sent", "SendUnknown"], never: { resultStatus: "SendUnknown", evidence: "" },
+        offline: { resultStatus: "SendFailed", evidence: "preflight-unreachable" },
+        later: ["SendUnknown", "Sent", "Sent"], again: true,
         copied: "Sent",
         unsendable: { resultStatus: "SendFailed", evidence: "refused:422" },
         carried: [["Re: Lunch on Sunday?", [], []], ["Sunday", [], ["Visit form.pdf"]], ["Re: Lunch on Sunday?", ["david@family.test"], []]]
@@ -407,7 +407,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         removed, gone
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
-        added: { revision: 1, succeeded: true, published: [] },
+        added: { revision: 1, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
         settled: [[false, "Saved", "Dr. Patel", "clinic", true], [true, "Deleted", "Dr. Patel", "clinic", true]],
         visit: ["clinic", "Dr. Patel", true, day],
         unchanged: ["birthday"],

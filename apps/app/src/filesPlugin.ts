@@ -1,5 +1,5 @@
 // spec/app/files.md, "Story: Find and open something I saved"
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
 import type { SavedFile } from "../gen/app__files.ts";
 
@@ -19,6 +19,10 @@ export interface FilesPort {
   saveAttachments(input: { lease: string; attachments: readonly FileAttachment[] }): Promise<unknown>;
   remove(input: { lease: string; id: string }): Promise<void>;
   commit?(input: { lease: string; id: string }): Promise<unknown>;
+  addListener?(event: "attachmentImportChanged", listener: () => void): Promise<PluginListenerHandle>;
+  attachmentImport?(): Promise<unknown>;
+  cancelAttachmentImport?(input: { request: string }): Promise<void>;
+  stageAttachmentImport?(input: { lease: string; request: string }): Promise<unknown>;
 }
 
 export const filesPlugin = Capacitor.isPluginAvailable("GraceFiles") ? registerPlugin<FilesPort>("GraceFiles") : undefined;
