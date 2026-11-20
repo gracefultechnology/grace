@@ -1683,6 +1683,45 @@ const returned = new URL(approval.redirectUri);
 returned.searchParams.set("code", "pbackup_" + "k".repeat(43));
 returned.searchParams.set("state", approval.state);
 
+it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+  const original = location.href;
+  const pending = sessionStorage.getItem("grace-device-sign-in");
+  const destination = new URL(original);
+  destination.searchParams.set("device_challenge", "a".repeat(43));
+  destination.searchParams.set("device_state", "b".repeat(43));
+  destination.hash = "account";
+  history.replaceState(null, "", destination);
+  const first = ManagedRuntime.make(application(undefined));
+  const reopened = ManagedRuntime.make(application(undefined));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  const network = window.fetch.bind(window);
+  const service = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    if (typeof input === "string" && new URL(input, location.href).pathname === "/api/auth/session") {
+      return Promise.resolve(Response.json({ account: { id: "tablet-owner", email: "tablet-owner@example.test" } }));
+    }
+    return network(input, init);
+  });
+  onTestFinished(async () => {
+    await act(() => root.unmount());
+    await Promise.all([first.dispose(), reopened.dispose()]);
+    service.mockRestore();
+    host.remove();
+    history.replaceState(null, "", original);
+    if (pending === null) sessionStorage.removeItem("grace-device-sign-in");
+    else sessionStorage.setItem("grace-device-sign-in", pending);
+  });
+
+  await act(() => root.render(<App key="first" runtime={first} />));
+  const cancel = page.getByRole("button", { name: "Cancel tablet sign-in" });
+  await expect.element(cancel).toBeVisible();
+  await act(() => userEvent.click(cancel));
+  await expect.element(cancel).not.toBeInTheDocument();
+  await act(() => root.render(<App key="reopened" runtime={reopened} />));
+  await expect.element(page.getByText("tablet-owner@example.test", { exact: true })).toBeVisible();
+  await expect.element(cancel).not.toBeInTheDocument();
+});
+
 it('Approve the shown account before returning to the tablet (spec/app/setup.md, "Story: Approve a password backup in my browser")', async () => {
   const element = document.createElement("div");
   document.body.append(element);
