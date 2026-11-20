@@ -294,8 +294,8 @@ export function ManagedRead({ view }: { view: ReadView }) {
         <PageText tone="secondary">{day(selected.message.receivedAt)}</PageText>
         <PageText className="w-full whitespace-pre-wrap">{selected.bodyTextAvailable ? selected.bodyText : "This email has no plain-text preview."}</PageText>
         {selected.attachments.length > 0 && <section aria-label="Attachments" aria-busy={pending || undefined} className="flex w-full flex-col gap-3">
-          {selected.attachments.map((part, index) => (
-            <MailAttachment key={part.partId + ":" + index} name={part.name}
+          {Array.from(new Map(selected.attachments.map((part) => [JSON.stringify([part.partId, part.name, part.mimeType, part.size]), part]))).map(([key, part]) => (
+            <MailAttachment key={key} name={part.name}
               kind={part.mimeType === "application/pdf" ? "PDF" : part.mimeType.startsWith("image/") ? "Image" : "File"}
               detail={part.supported && selected.historyId ? undefined : "Preview and download unavailable"}
               openDisabled={pending || !part.supported || !selected.historyId}
