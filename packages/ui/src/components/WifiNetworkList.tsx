@@ -41,7 +41,7 @@ export type WifiNetworkListProps = Omit<ComponentProps<"section">, "onSelect"> &
   /** Called by Turn on while Wi-Fi is off. */
   onTurnOn?: () => void;
   /** Called with the id of the network a person taps. */
-  onSelect?: (name: string) => void;
+  onSelect?: (id: string) => void;
   /** Called by Fix Wi-Fi, offline: Grace helps reconnect. */
   onFix?: () => void;
   /** The one control under an empty list, such as Look again. */
