@@ -33,7 +33,6 @@ export const months = contract({
   input: days,
   run: ({ n, month }: Days) => shown(month ? "MonthView" : "WeekView", n),
   invariant: ({ n, month }, { first, until }) => {
-    const covered = Array.from({ length: until - first }, (_, i) => utc(first + i));
     const inMonth = (d: Date) => d.getUTCMonth() === utc(n).getUTCMonth() && d.getUTCFullYear() === utc(n).getUTCFullYear();
     return utc(first).getUTCDay() === 1 && (until - first) % 7 === 0 && first <= n && n < until
       && (!month || (inMonth(utc(first + 6)) && inMonth(utc(until - 7)) && !inMonth(utc(first - 1)) && !inMonth(utc(until))));

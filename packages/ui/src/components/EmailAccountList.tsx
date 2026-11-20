@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
+import { guided, type Guide } from "./GuideAnchor.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 import { SettingsPageHeading } from "./SettingsPageHeading.tsx";
 
@@ -18,10 +18,10 @@ export type EmailAccountListProps = Omit<ComponentProps<"section">, "title"> & {
   empty?: boolean;
   /** The emails on the tablet, as `EmailAccountRow`s, or a `ProviderGrid` while `empty`. */
   children: ReactNode;
-  /** Called by Add another email. */
+  /** Called by Add another email; without it Add another email is shown but cannot be pressed. */
   onAdd?: () => void;
-  /** Grace pointing at Add another email. */
-  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel">;
+  /** Grace pointing at Add another email (prototype `acadd`); each email's row takes its own `guide`. */
+  guide?: Guide<"add">;
   labels?: Partial<typeof defaultLabels>;
 };
 
@@ -34,7 +34,7 @@ export type EmailAccountListProps = Omit<ComponentProps<"section">, "title"> & {
 export function EmailAccountList({ empty = false, children, onAdd, guide, labels, className, ...props }: EmailAccountListProps) {
   const words = { ...defaultLabels, ...labels };
   const add = (
-    <Button variant="capsule" size="pill" onClick={onAdd}>
+    <Button variant="capsule" size="pill" disabled={!onAdd} onClick={onAdd}>
       <Plus size={22} strokeWidth={2.4} aria-hidden />
       {words.add}
     </Button>
@@ -51,7 +51,7 @@ export function EmailAccountList({ empty = false, children, onAdd, guide, labels
         <>
           <PageHeading level="section" className="mt-[18px]">{words.heading}</PageHeading>
           <div className="mt-2.5 flex flex-col gap-2.5">{children}</div>
-          <div className="mt-3.5 flex">{guide ? <GuideAnchor radius={999} {...guide}>{add}</GuideAnchor> : add}</div>
+          <div className="mt-3.5 flex">{guided(guide, "add", add, { radius: 999 })}</div>
         </>
       )}
     </section>

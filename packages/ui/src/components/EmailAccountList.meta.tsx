@@ -19,7 +19,8 @@ export const meta: ComponentMeta<EmailAccountListProps> = {
   args: { children: twoAccounts, onAdd: add },
   examples: {
     "No email yet": { empty: true, children: <ProviderGrid onChoose={fn()} onAskGrace={fn()} /> },
-    "Grace points at Add": { guide: { kind: "instruction", title: "Tap Add another email", onClose: fn() } },
+    "Grace points at Add": { guide: { targetId: "add", kind: "instruction", title: "Tap Add another email", onClose: fn() } },
+    "Add refused": { onAdd: undefined },
   },
   decorator: settingsPage,
   play: {
@@ -28,6 +29,7 @@ export const meta: ComponentMeta<EmailAccountListProps> = {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Add another email" }));
       await expect(add).toHaveBeenCalled();
     },
+    "Add refused": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("button", { name: "Add another email" })).toBeDisabled(),
     "No email yet": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).queryByRole("button", { name: "Add another email" })).toBeNull(),
   },
 };

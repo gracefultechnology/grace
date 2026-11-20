@@ -189,16 +189,16 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     dayEvents: [],
     upcoming,
     onOpenEvent: openEvent,
+    onToday: fn(),
+    onAdd: fn(),
     event: detail,
     form,
     onClose: fn(),
   },
   examples: {
-    Week: {},
     Month: { view: "month", nav: { period: "November 2026" } },
     Tagged: { upcoming: taggedUpcoming },
     "With connect banner": { banner: connectBanner },
-    "Month with connect banner": { view: "month", nav: { period: "November 2026" }, banner: connectBanner },
     Detail: { view: "detail" },
     Form: { view: "form" },
     "Form, picking a time": {
@@ -216,6 +216,7 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       dayEvents: [bridgeDraft],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
     },
+    "Today and Add refused": { onToday: undefined, onAdd: undefined },
     "Added By Margaret": {
       dayEvents: [{ ...bridgeDraft, draft: false }],
       week: week.map((d) => (d.today ? { ...d, busy: true } : d)),
@@ -230,6 +231,11 @@ export const meta: ComponentMeta<CalendarAppProps> = {
       await expect(openEvent).toHaveBeenCalledWith("1");
       await userEvent.click(canvas.getByRole("radio", { name: "Month" }));
       await expect(onMode).toHaveBeenCalledWith("month");
+    },
+    "Today and Add refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.queryByRole("button", { name: "Today" })).toBeNull();
+      await expect(canvas.getByRole("button", { name: "Add" })).toBeDisabled();
     },
     "With connect banner": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);

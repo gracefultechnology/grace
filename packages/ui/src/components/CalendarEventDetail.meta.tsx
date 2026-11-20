@@ -6,10 +6,13 @@ import { waterBill } from "./BillOffer.meta.tsx";
 import { PaymentStatusBadge } from "./PaymentStatusBadge.tsx";
 
 const { title: _title, ...doctor } = detail;
+const dismissReminder = fn();
+const snoozeReminder = fn();
 
 export const meta: ComponentMeta<CalendarEventDetailProps> = {
   args: { ...doctor, onEdit: fn(), onDelete: fn() },
   examples: {
+    "Reminder showing": { ...doctor, onDismissReminder: dismissReminder, onSnoozeReminder: snoozeReminder },
     "Without a note": {
       ...doctor,
       who: undefined,
@@ -33,6 +36,13 @@ export const meta: ComponentMeta<CalendarEventDetailProps> = {
     Default: async ({ args, canvasElement }: { args: CalendarEventDetailProps; canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete" }));
       await expect(args.onDelete).toHaveBeenCalled();
+    },
+    "Reminder showing": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await userEvent.click(canvas.getByRole("button", { name: "Snooze" }));
+      await expect(snoozeReminder).toHaveBeenCalled();
+      await userEvent.click(canvas.getByRole("button", { name: "Dismiss" }));
+      await expect(dismissReminder).toHaveBeenCalled();
     },
   },
 };

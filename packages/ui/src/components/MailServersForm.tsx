@@ -18,10 +18,11 @@ export type MailServersFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   connecting?: boolean;
   /** The last Connect did not work with these servers. */
   refused?: boolean;
-  /** Called by Connect once both servers are typed. */
+  /** Called by Connect once both servers are typed; without it Connect is shown but cannot be pressed. */
   onConnect?: (servers: MailServers) => void;
+  /** Leaves the page; without it Cancel is not offered. */
   onCancel?: () => void;
-  /** Called by Ask Grace. */
+  /** Called by Ask Grace; without it Ask Grace is not offered. */
   onAskGrace?: () => void;
 };
 
@@ -72,11 +73,11 @@ export function MailServersForm({
       {field("incoming", "Incoming mail server")}
       {field("outgoing", "Outgoing mail server")}
       <div className="mt-5 flex flex-wrap gap-3">
-        <Button type="submit" variant="prominent" size="pill" loading={connecting} disabled={!ready}>
+        <Button type="submit" variant="prominent" size="pill" loading={connecting} disabled={!ready || !onConnect}>
           {connecting ? "Connecting…" : "Connect"}
         </Button>
-        <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button>
-        <Button variant="capsule" size="pill" onClick={onAskGrace}>Ask Grace</Button>
+        {onCancel && <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button>}
+        {onAskGrace && <Button variant="capsule" size="pill" onClick={onAskGrace}>Ask Grace</Button>}
       </div>
     </form>
   );
