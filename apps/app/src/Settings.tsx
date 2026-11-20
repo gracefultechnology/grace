@@ -3,6 +3,7 @@ import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow,
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
@@ -22,6 +23,7 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
   const { workspace, can, send } = useWorkspace();
   const website = useWebsiteRequests();
   const runtime = useRuntime();
+  const setup = useSetup(runtime).state;
   const page = workspace!.device.settingsPage;
   const preferences = workspace!.preferences.session;
   const preview = (settings: DisplayPreferences) => {
@@ -38,7 +40,15 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
   };
 
   const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
-  if (page === "EmailCalendarSettings") return <EmailAccounts {...frame} />;
+  if (page === "EmailCalendarSettings") {
+    const account = setup?.graceAccount;
+    if (account?.tag === "GraceSignedOut" || account?.tag === "GraceDeviceSignedOut") return <EmailAccounts {...frame} />;
+    return <SettingsApp {...frame}>
+      <PageHeading>Email &amp; calendar</PageHeading>
+      {account?.tag === "GraceSignedIn" && setup?.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
+      <Button variant="prominent" size="pill" onClick={() => choose("account")}>Manage connections in Grace account</Button>
+    </SettingsApp>;
+  }
 
   return (
     <SettingsApp {...frame}>

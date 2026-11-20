@@ -10,7 +10,7 @@ export interface FileAttachment {
 }
 
 export interface FilesPort {
-  open(): Promise<unknown>;
+  open(input?: { owner: string }): Promise<unknown>;
   close(input: { lease: string }): Promise<void>;
   list(input: { lease: string }): Promise<unknown>;
   preview(input: { lease: string; id: string; page: number; small?: boolean }): Promise<unknown>;

@@ -34,7 +34,7 @@ export const fileStorage = (native: boolean, port: FilesPort | undefined) => Lay
 export service Library {
   readonly changes: Stream.Stream<FileState>
   get(): FileState!!
-  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string): (FileFeedback | undefined)!!
+  save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, expectedOwner?: string): (FileFeedback | undefined)!!
 }
 export const library = Layer.effect(Library, effect {
   const { port } = try FileStorage
@@ -44,14 +44,14 @@ export const library = Layer.effect(Library, effect {
   try fork.scoped Stream.runForEach(Stream.merge(Stream.map(owners, () => undefined), Stream.map(accountRefreshes(), () => undefined)), () => SubscriptionRef.set(status, initial))
   const serial = try Semaphore.make(1)
 
-  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string) {
+  effect function save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, expectedOwner?: string) {
     if (!port || !version || chosen.length === 0) return "WriteFailed" as const
     const owner = filesAccount((try setup.get()).graceAccount)
     if (!owner) return "WriteFailed" as const
     const files = try Effect.provide(Files, machine())
     const actual = port
     const { lease } = try acquireRelease(
-      tryPromise(() => actual.open()) |> Effect.flatMap(%, Schema.decodeUnknownEffect(FileLease)),
+      tryPromise(() => actual.open(expectedOwner ? { owner: expectedOwner } : undefined)) |> Effect.flatMap(%, Schema.decodeUnknownEffect(FileLease)),
       (opened) => Effect.ignore(tryPromise(() => actual.close(opened))))
     if (!canLoadForSave(try files.get(), lease, "FileHost")) return "WriteFailed" as const
     try files.send({ type: "loadForSave", owner: lease }, "FileHost")
@@ -81,6 +81,6 @@ export const library = Layer.effect(Library, effect {
   }
 
   return { changes: SubscriptionRef.changes(status), get: () => SubscriptionRef.get(status),
-    save: effect (chosen, content, authorization, version) => serial.withPermit(scoped(save(chosen, content, authorization, version))) catch () => "WriteFailed" as const }
+    save: effect (chosen, content, authorization, version, expectedOwner) => serial.withPermit(scoped(save(chosen, content, authorization, version, expectedOwner))) catch () => "WriteFailed" as const }
 
 })

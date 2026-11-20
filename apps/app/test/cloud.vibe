@@ -380,7 +380,7 @@ function seed(n: number, grantId: string | null, at: number, site: string): Acco
   }
 }
 
-const photos: Record<string, string> = {
+export const photos: Record<string, string> = {
   "Bow.png": "iVBORw0KGgoAAAANSUhEUgAAAB4AAAAUCAIAAAAVyRqTAAAAH0lEQVR42mO4cXIxjRDDqNGjRo8aPWr0qNGjRg9FowHFw0+sWsyX4QAAAABJRU5ErkJggg==",
   "Piano.png": "iVBORw0KGgoAAAANSUhEUgAAAB4AAAAUCAIAAAAVyRqTAAAAH0lEQVR42mNYse8ajRDDqNGjRo8aPWr0qNGjRg9FowEzTjzsFrZJQAAAAABJRU5ErkJggg==",
   "Flowers.png": "iVBORw0KGgoAAAANSUhEUgAAAB4AAAAUCAIAAAAVyRqTAAAAH0lEQVR42mO4t2ofjRDDqNGjRo8aPWr0qNGjRg9FowE/KlRciebSOwAAAABJRU5ErkJggg=="

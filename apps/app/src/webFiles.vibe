@@ -9,7 +9,7 @@ schema MailFile { id: Schema.NonEmptyString; name: Schema.NonEmptyString; kind: 
 schema StoredFile { entry: MailFile; data: string }
 type Access = { owner: string; session: string }
 const storedFiles = Schema.decodeUnknownSync(Schema.Array(StoredFile))
-const sourceIdentity = (file: HeldFile) => JSON.stringify([file.origin, file.account, file.container, file.sourceRef, file.contentRef])
+const sourceIdentity = (file: HeldFile) => JSON.stringify([file.origin, file.account, file.container, file.sourceRef])
 
 function contentType(name: string) {
   const ext = name.toLowerCase().split(".").at(-1)
@@ -73,7 +73,7 @@ export function browserFiles(): FilesPort {
       const key = sourceIdentity(file)
       const prior = known.get(key)
       if (prior) {
-        if (prior.data !== data || prior.entry.kind !== (file.kind === "Pdf" ? "pdf" : "photo")) return undefined
+        if (prior.entry.source.contentRef !== file.contentRef || prior.data !== data || prior.entry.kind !== (file.kind === "Pdf" ? "pdf" : "photo")) return undefined
         entries.push(prior.entry)
         continue
       }
@@ -89,8 +89,9 @@ export function browserFiles(): FilesPort {
   }
 
   return {
-    open: () => runPromise(effect {
+    open: (expected) => runPromise(effect {
       const access = try browserFilesAccess()
+      if (expected && access.owner !== expected.owner) throw new BrowserFilesUnavailable()
       const lease = try Effect.try(() => webView.window.crypto.randomUUID())
       leases.clear()
       leases.set(lease, access)

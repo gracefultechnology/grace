@@ -15,13 +15,15 @@ import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
+import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, otherPassword, reply, script, signIn, turns } from "./cloud.vibe";
+import { client, otherPassword, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { actOnScreen, mount, signInToGrace } from "./screen.tsx";
 import "../src/main.css";
+import statementPdf from "./site/statement.pdf?raw";
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Call = { method: string; options: Record<string, unknown>; graceShown: boolean };
@@ -1032,6 +1034,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
   const mail = { externalId: "inbox-1", from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true, metadata: { historyId: "8" } };
   const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
+  const filesOwner = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(["grace/files/owner", person.id, "grace-org"])))),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+  let filesScope = filesOwner;
   let trashed = false;
   const sent: string[] = [];
   let changed: string[] = [];
@@ -1042,11 +1047,18 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   const attachment = { partId: "1", name: "Receipt.txt", mimeType: "text/plain", size: originalText.length, supported: true };
   const archive = { partId: "2", name: "Extras.zip", mimeType: "application/zip", size: 100, supported: false };
-  const pdfBytes = "%PDF-1.7\nOriginal purchase receipt";
+  const pdfBytes = statementPdf;
   const pdf = { partId: "3", name: "Original receipt.pdf", mimeType: "application/pdf", size: pdfBytes.length, supported: true };
   const pdfHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pdfBytes))),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   const ticket = "12ab34cd";
+  const photoParts = await Promise.all(Object.entries(photos).map(async ([name, dataBase64], index) => {
+    const bytes = Uint8Array.from(atob(dataBase64), (character) => character.charCodeAt(0));
+    const hash = await crypto.subtle.digest("SHA-256", bytes);
+    const part = { partId: String(index + 4), name, mimeType: "image/png", size: bytes.length, supported: true };
+    return { part, dataBase64, sha256: Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("") };
+  }));
+  let badPhoto = true;
   let attachmentOwner = "different-owner";
   let attachmentReads = 0;
   const oldURL = window.location.href;
@@ -1097,6 +1109,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
+      case "/api/product/files/scope": return signedIn ? reply({ owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
       case "/api/auth/refresh": return reply({}, 401);
       case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
       case "/api/auth/email/send":
@@ -1120,12 +1133,15 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/gmail/read":
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
-          accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive, pdf], bodyTextAvailable: true,
+          accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive, pdf, ...photoParts.map(({ part }) => part)], bodyTextAvailable: true,
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
       case "/api/v1/eliza/google/gmail/attachment":
         attachmentReads++;
+        const photo = photoParts.find(({ part }) => part.partId === api.searchParams.get("partId"));
+        if (photo) return reply({ ...photo.part, version: 1, accountId: attachmentOwner, organizationId: "grace-org", grantId: grant, messageId: mail.externalId,
+          historyId: "8", dataBase64: photo.dataBase64, sha256: badPhoto && photo.part.name === "Piano.png" ? "0".repeat(64) : photo.sha256 });
         if (api.searchParams.get("partId") === pdf.partId) {
           expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant, historyId: "8", partId: pdf.partId });
           return reply({ ...pdf, version: 1, accountId: attachmentOwner, organizationId: "grace-org", grantId: grant, messageId: mail.externalId,
@@ -1272,6 +1288,27 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       expect(await fetch(pdfUrl).then((response) => response.text())).toBe(pdfBytes);
       await act(() => original.getByRole("button", { name: "Close attachment" }).click());
     } finally { android.mockRestore(); }
+    await act(() => openOriginal.nth(2).click());
+    filesScope = "8".repeat(64);
+    await tap("Save to Files");
+    const failedSave = page.getByText("Grace couldn’t save that to Files. Try again.", { exact: true });
+    await expect.element(failedSave).toBeVisible();
+    filesScope = filesOwner;
+    await tap("Save to Files");
+    await expect.element(original.getByRole("status")).toHaveTextContent("Saved to Files");
+    await tap("Close attachment");
+    await tap("Save all photos to Files");
+    await expect.element(failedSave).toBeVisible();
+    const storage = await runtime.runPromise(Effect.map(FileStorage, (files) => files.port));
+    if (!storage) throw new Error("Browser Files is unavailable");
+    const lease = Schema.decodeUnknownSync(FileLease)(await storage.open({ owner: filesOwner }));
+    try {
+      const catalog = Schema.decodeUnknownSync(FileCatalog)(await storage.list(lease));
+      expect(catalog.entries.map((entry) => entry.name)).toEqual([pdf.name]);
+    } finally { await storage.close(lease); }
+    badPhoto = false;
+    await tap("Save all photos to Files");
+    await expect.element(page.getByText("3 photos saved to Files", { exact: true })).toBeVisible();
     expect(Array.from(document.querySelectorAll("strong")).some((node) => node.textContent === "This stays plain text.")).toBe(false);
 
     await tap("Reply");
@@ -1344,6 +1381,21 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Close Calendar");
     await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
     await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
+    await tap("Settings");
+    await act(() => page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" }).click());
+    await expect.element(page.getByText(person.email, { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Manage connections in Grace account" })).toBeVisible();
+    await expect.element(page.getByText("previous@example.test", { exact: true })).not.toBeInTheDocument();
+    await tap("Close Settings");
+    await tap("Page 2");
+    await tap(/^Files/);
+    await tap("Piano.png");
+    await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", "data:image/png;base64," + photos["Piano.png"]);
+    await tap("Back to Files");
+    await act(() => page.getByRole("radio", { name: "Documents" }).click());
+    await tap("Open " + pdf.name);
+    await expect.poll(() => document.querySelector("object[type='application/pdf']")?.getAttribute("data"))
+      .toBe("data:application/pdf;base64," + btoa(pdfBytes) + "#page=1");
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
     const reminderUrl = new URL(oldURL);

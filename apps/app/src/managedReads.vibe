@@ -2,6 +2,8 @@
 import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
+import type { SavedFile } from "../gen/app__files.effect.vibe"
+import { Library } from "./files.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin } from "./graceAccount.vibe"
 import { webView } from "./surfacePlugin.ts"
@@ -34,7 +36,7 @@ const AttachmentReceipt = Schema.Struct({ version: Schema.Literal(1), accountId:
   partId: partIdField, name: attachmentName, mimeType: supportedMedia, size: Schema.Int, supported: Schema.Literal(true),
   grantId: Schema.optional(idField), organizationId: Schema.optional(idField), deviceTransfer: Schema.optional(transferTicket), dataBase64: Schema.String.check(Schema.isMaxLength(encodedAttachmentLimit), Schema.isPattern(/^[A-Za-z0-9+/]*={0,2}$/)),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) })
-type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; url: string; deviceTransfer?: string; preview?: { text: string; truncated: boolean } }
+type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; url: string; file?: { part: string; digest: string; organization: string; saved: boolean }; deviceTransfer?: string; preview?: { text: string; truncated: boolean } }
 
 export schema LocalMailDraft { recipient: string; subject: string; text: string; operationId?: string; grant?: string }
 schema SentMail { accountId: idField; operationId: idField; messageId: idField }
@@ -79,7 +81,7 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; attachment?: OriginalAttachment }
+type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
 type Calendar = { proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
@@ -91,7 +93,7 @@ export type ManagedSnapshot =
 
 type HomeOccurrence = { accountId: string; grant: string; id: string; version: string | null }
 type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
-type Command = { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" }
+type Command = { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
@@ -229,6 +231,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   const desk = try Workspaces
   const setup = try Setup
   const authorization = try AccountActions
+  const files = try Library
   const pending = try Ref.make<ReadIntent | undefined>(native ? undefined : (try intentOfPage()))
   const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
   const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
@@ -244,27 +247,83 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
 
   try addFinalizer(() => publish({ kind: "closed" }))
 
-  effect function openAttachment(scope: ReadyScope, shown: Mail, partId: string) {
+  effect function verifiedAttachment(scope: ReadyScope, shown: Mail, partId: string) {
     const selected = shown.selected
     const matches = selected?.attachments.filter((entry) => entry.partId === partId)
     const attachment = matches?.length === 1 && matches[0]?.supported ? matches[0] : undefined
-    if (!selected?.historyId || !attachment || attachment.size < 0 || attachment.size > attachmentLimit) return false
+    if (!selected?.historyId || !attachment || attachment.size < 0 || attachment.size > attachmentLimit) return undefined
     const messageId = selected.message.externalId
     const original = try query("gmail/attachment", { grantId: scope.grant, messageId, historyId: selected.historyId, partId }, AttachmentReceipt, authorization)
     if (original.accountId !== scope.accountId || (original.grantId !== undefined && original.grantId !== scope.grant) || original.historyId !== selected.historyId || original.messageId !== messageId ||
-        original.partId !== partId || original.name !== attachment.name || original.mimeType !== attachment.mimeType || original.size !== attachment.size) return false
-    if (original.dataBase64.length % 4 !== 0) return false
+        original.partId !== partId || original.name !== attachment.name || original.mimeType !== attachment.mimeType || original.size !== attachment.size) return undefined
+    if (original.dataBase64.length % 4 !== 0) return undefined
     const decoded = try Effect.try(() => webView.window.atob(original.dataBase64))
-    if (decoded.length !== attachment.size) return false
+    if (decoded.length !== attachment.size) return undefined
     const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
     const hash = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", bytes))
     if (Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("") !== original.sha256 ||
-        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return undefined
+    return { original, bytes }
+  }
+
+  effect function openAttachment(scope: ReadyScope, shown: Mail, partId: string) {
+    const receipt = try verifiedAttachment(scope, shown, partId)
+    if (!receipt) return false
+    const { original, bytes } = receipt
     const url = webView.window.URL.createObjectURL(new webView.window.Blob([bytes], { type: original.mimeType }))
     const preview = original.mimeType === "text/plain"
       ? { text: new TextDecoder().decode(bytes.subarray(0, textPreviewLimit)), truncated: bytes.length > textPreviewLimit }
       : undefined
-    try publish({ ...shown, attachment: { name: original.name, mimeType: original.mimeType, url, preview, deviceTransfer: original.mimeType !== "text/plain" && original.grantId === scope.grant && original.organizationId ? original.deviceTransfer : undefined } })
+    const organization = original.mimeType !== "text/plain" && original.grantId === scope.grant ? original.organizationId : undefined
+    const file = organization && original.size > 0 && original.size <= 5 * 1024 * 1024
+      ? { part: partId, digest: original.sha256, organization, saved: false } : undefined
+    try publish({ ...shown, attachment: { name: original.name, mimeType: original.mimeType, url, preview, file, deviceTransfer: organization ? original.deviceTransfer : undefined } })
+    return true
+  }
+
+  effect function importablePart(scope: ReadyScope, shown: Mail, part: string) {
+    const receipt = try verifiedAttachment(scope, shown, part)
+    if (!receipt || !shown.selected || receipt.original.grantId !== scope.grant || !receipt.original.organizationId) throw new ManagedReadFailed()
+    const { original, bytes } = receipt
+    const extensions = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf" }
+    if (original.size < 1 || original.size > 5 * 1024 * 1024 || original.mimeType === "text/plain") throw new ManagedReadFailed()
+    const extension = extensions[original.mimeType]
+    const lowerName = original.name.toLowerCase()
+    const name = lowerName.endsWith(extension) || (extension === ".jpg" && lowerName.endsWith(".jpeg")) ? original.name : original.name + extension
+    const pdf = original.mimeType === "application/pdf"
+    const pages = pdf ? (try tryPromise(async () => (await (await import("pdf-lib")).PDFDocument.load(bytes)).getPageCount())) : 0
+    if (pdf && (pages < 1 || pages > 1000)) throw new ManagedReadFailed()
+    if (!pdf) {
+      const bitmap = try tryPromise(() => webView.window.createImageBitmap(new webView.window.Blob([bytes], { type: original.mimeType })))
+      try Effect.try(() => bitmap.close())
+    }
+    const id = try ownerHash(JSON.stringify(["gmail-original", scope.accountId, original.organizationId, scope.grant, original.messageId, part]))
+    const file: SavedFile = { id, kind: pdf ? "Pdf" : "Photo", name, origin: "gmail", account: scope.accountId,
+      container: scope.grant, sourceRef: id, contentRef: original.sha256, group: original.messageId, savedAt: Date.parse(shown.selected.message.receivedAt), pages }
+    return { file, organization: original.organizationId, data: original.dataBase64, mimeType: original.mimeType }
+  }
+
+  effect function saveAttachment(scope: ReadyScope, shown: Mail, allPhotos: boolean) {
+    const selected = shown.selected
+    if (!selected?.historyId) return false
+    const reference = shown.attachment?.file
+    const parts = allPhotos ? selected.attachments.filter((part) => part.mimeType.startsWith("image/")).map((part) => part.partId)
+      : reference ? [reference.part] : []
+    if (!parts.length) return false
+    const available = try Effect.forEach(parts, (part) => importablePart(scope, shown, part))
+    const first = available[0]
+    if (!first || available.some((part) => part.organization !== first.organization) ||
+        (!allPhotos && (reference?.organization !== first.organization || reference?.digest !== first.file.contentRef))) return false
+    const owner = try ownerHash(JSON.stringify(["grace/files/owner", scope.accountId, first.organization]))
+    const content = new Map(available.map((part) => [part.file.id, part]))
+    const outcome = try files.save(available.map((part) => part.file), effect (file) => {
+      const part = content.get(file.id)
+      if (!part || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) throw new ManagedReadFailed()
+      return { data: part.data, mimeType: part.mimeType }
+    }, JSON.stringify(parts), selected.historyId, owner)
+    if (outcome !== "FilesSaved" || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+    if (allPhotos) try publish({ ...shown, photosSaved: available.length })
+    else if (shown.attachment && reference) try publish({ ...shown, attachment: { ...shown.attachment, file: { ...reference, saved: true } } })
     return true
   }
 
@@ -422,6 +481,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
       (shown.kind === "mail") !== (scope.view === "Email")) return false
     if (command.kind === "openAttachment") return shown.kind === "mail" && (try openAttachment(scope, shown, command.partId))
+    if (command.kind === "saveAttachment" || command.kind === "savePhotos") return shown.kind === "mail" && (try saveAttachment(scope, shown, command.kind === "savePhotos"))
     if (command.kind === "closeAttachment") {
       if (shown.kind !== "mail") return false
       try publish({ ...shown, attachment: undefined })
@@ -462,7 +522,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
     if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) ||
         !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
-    try publish({ ...shown, selected: preview, attachment: undefined, proposed: undefined })
+    try publish({ ...shown, selected: preview, photosSaved: undefined, attachment: undefined, proposed: undefined })
     return true
   }
 

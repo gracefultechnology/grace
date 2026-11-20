@@ -6,6 +6,9 @@ import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { App } from "../src/App.tsx";
+import { Email } from "../src/Email.tsx";
+import { RuntimeContext } from "../src/useApp.ts";
 import { application } from "../src/app.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
@@ -49,11 +52,11 @@ function kept(): Accounts {
   return connected(addAccount(goBack(connected(initial, "Gmail", gmail, "Gmail"), "AccountPerson"), "AccountPerson"), "Outlook", outlook, "Outlook");
 }
 
-async function start(withAccounts = true, withFilesSession = false) {
+async function start(withAccounts = true) {
   const { secret, credentialId } = await Effect.runPromise(Effect.provide(signIn(cloud, withAccounts), client));
   const digest = async (purpose: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(purpose + credentialId))), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const scope = { owner: await digest("files/owner"), session: await digest("files/session") };
-  let signedIn = withFilesSession;
+  let signedIn = false;
   const fetchOriginal = window.fetch.bind(window);
   const browserSession = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
@@ -74,7 +77,7 @@ async function start(withAccounts = true, withFilesSession = false) {
   const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
   const runtime = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
   const connectivity = () => runtime.runPromise(Effect.map(Effect.flatMap(Effect.service(Workspaces), (w) => w.get()), (w) => w.device.connectivity));
-  await mount(runtime);
+  const root = await mount(runtime);
   onTestFinished(async () => {
     browserSession.mockRestore();
     await forgotten(scope.owner);
@@ -83,6 +86,8 @@ async function start(withAccounts = true, withFilesSession = false) {
   return {
     secret,
     libraryOwner: scope.owner,
+    providerComponent: () => act(() => root.render(<RuntimeContext value={runtime}><div className="fixed inset-0"><Email /></div></RuntimeContext>)),
+    applicationScreen: () => act(() => root.render(<App runtime={runtime} />)),
     changeSession: (active: boolean) => act(async () => {
       signedIn = active;
       await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
@@ -218,7 +223,7 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
 });
 
 it("See all my email in one place", async () => {
-  const { secret, host, person, company, libraryOwner, changeSession } = await start(true, true);
+  const { secret, host, person, company, libraryOwner, changeSession, providerComponent, applicationScreen } = await start();
 
   // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"
   const card = page.getByRole("button", { name: /^Email/ });
@@ -231,6 +236,9 @@ it("See all my email in one place", async () => {
 
   await click(card);
   await expect.element(row("All inboxes 5")).toBeVisible();
+  await changeSession(true);
+  await expect.element(row("Outlook")).not.toBeInTheDocument();
+  await providerComponent();
   await expect.element(row("Gmail 4")).toBeVisible();
   await expect.element(row("Outlook 1")).toBeVisible();
   const clinic = email(/Main St Clinic/);
@@ -334,6 +342,8 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByRole("searchbox", { name: "Search email" })).toHaveValue("");
   await expect.element(clinic).toBeVisible();
   // spec/app/accounts.md, "Signing in again renews the same account"
+  await changeSession(false);
+  await applicationScreen();
   await click(page.getByRole("button", { name: "Sign in again" }));
   const sheet = page.getByRole("dialog", { name: "Outlook sign-in page" });
   await expect.element(sheet).toBeVisible();
@@ -352,6 +362,8 @@ it("See all my email in one place", async () => {
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
   await click(page.getByRole("button", { name: "Page 2", exact: true }));
   await click(page.getByRole("button", { name: /^Files/ }));
+  await expect.element(page.getByText("Sign in to see your files")).toBeVisible();
+  await changeSession(true);
   const piano = page.getByRole("button", { name: "Piano.png", exact: true });
   await expect.element(piano).toBeVisible();
   await click(piano);

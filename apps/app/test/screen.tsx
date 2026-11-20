@@ -37,6 +37,7 @@ export async function mount(runtime: Runtime) {
     await runtime.dispose();
   });
   await act(() => root.render(<App runtime={runtime} />));
+  return root;
 }
 
 export async function signInToGrace(runtime: Runtime) {
