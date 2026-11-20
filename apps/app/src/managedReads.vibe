@@ -1,4 +1,4 @@
-// spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
+// spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
 import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
@@ -19,7 +19,22 @@ export schema EventRow { etag?: nullableText; editable?: boolean; seriesId?: nul
 const MailPage = Schema.Struct({ accountId: idField, messages: Schema.Array(MailRow), nextPageToken: Schema.NullOr(Schema.String) })
 const CalendarPage = Schema.Struct({ accountId: idField, events: Schema.Array(EventRow), nextPageToken: Schema.NullOr(Schema.String) })
 export schema MailReply { recipient: string; subject: string }
-const MailBody = Schema.Struct({ accountId: idField, message: MailRow, reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
+const attachmentLimit = 8 * 1024 * 1024
+const textPreviewLimit = 65_536
+const encodedAttachmentLimit = 4 * Math.ceil(attachmentLimit / 3)
+const attachmentName = Schema.NonEmptyString.check(Schema.isMaxLength(120), Schema.makeFilter((name) => name.trim() !== "" && name !== "." && name !== ".." && !/[/\\\x00-\x1f\x7f]/.test(name)))
+const partIdField = Schema.String.check(Schema.isPattern(/^[0-9.]{1,32}$/))
+const historyField = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
+const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp"])
+schema AttachmentDescriptor { partId: string; name: attachmentName; mimeType: idField; size: Schema.Int; supported: boolean }
+const MailBody = Schema.Struct({ accountId: idField, message: MailRow, historyId: Schema.NullOr(historyField),
+  attachments: Schema.Array(AttachmentDescriptor), reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
+const transferTicket = Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,4096}$/))
+const AttachmentReceipt = Schema.Struct({ version: Schema.Literal(1), accountId: idField, messageId: idField, historyId: historyField,
+  partId: partIdField, name: attachmentName, mimeType: supportedMedia, size: Schema.Int, supported: Schema.Literal(true),
+  grantId: Schema.optional(idField), organizationId: Schema.optional(idField), deviceTransfer: Schema.optional(transferTicket), dataBase64: Schema.String.check(Schema.isMaxLength(encodedAttachmentLimit), Schema.isPattern(/^[A-Za-z0-9+/]*={0,2}$/)),
+  sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) })
+type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; url: string; deviceTransfer?: string; preview?: { text: string; truncated: boolean } }
 
 export schema LocalMailDraft { recipient: string; subject: string; text: string; operationId?: string; grant?: string }
 schema SentMail { accountId: idField; operationId: idField; messageId: idField }
@@ -64,7 +79,7 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type }
+type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; attachment?: OriginalAttachment }
 type Calendar = { proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
@@ -74,7 +89,7 @@ export type ManagedSnapshot =
   | Mail
   | Calendar
 
-type Command = { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string }
+type Command = { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
@@ -158,7 +173,7 @@ effect function ownerHash(owner: string) {
 }
 
 const google = apiOrigin + "/api/v1/eliza/google/"
-type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/send/status" | "calendar/feed" | "calendar/series" | "calendar/reminder/event"
+type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/attachment" | "gmail/send/status" | "calendar/feed" | "calendar/series" | "calendar/reminder/event"
 type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change" | "calendar/reminder"
 
 effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
@@ -169,7 +184,28 @@ effect function query<A>(route: GoogleRead, search: Record<string, string | unde
   const first = try get()
   const response = first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try get()) : first
   if (!response.ok) throw new ManagedReadFailed()
-  const input: unknown = try tryPromise(() => response.json())
+  const input: unknown = route === "gmail/attachment" ? (try timeout(tryPromise(async (signal) => {
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error("Missing attachment response")
+    const decoder = new TextDecoder()
+    let length = 0
+    let contents = ""
+    const stop = () => { void reader.cancel().catch(() => undefined) }
+    signal.addEventListener("abort", stop, { once: true })
+    try {
+      for (;;) {
+        const next = await reader.read()
+        if (next.done) break
+        length += next.value.byteLength
+        if (length > encodedAttachmentLimit + 16_384) throw new Error("Attachment response is too large")
+        contents += decoder.decode(next.value, { stream: true })
+      }
+      return JSON.parse(contents + decoder.decode())
+    } finally {
+      signal.removeEventListener("abort", stop)
+      stop()
+    }
+  }), "12 seconds")) : (try tryPromise(() => response.json()))
   return try Schema.decodeUnknownEffect(schema)(input)
 }
 
@@ -271,6 +307,39 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   const gate = try Semaphore.make(1)
   const proposedNumber = try Ref.make(0)
 
+  effect function publish(snapshot: ManagedSnapshot) {
+    const previous = try SubscriptionRef.get(latest)
+    const url = previous.kind === "mail" ? previous.attachment?.url : undefined
+    if (url && (snapshot.kind !== "mail" || snapshot.attachment?.url !== url)) webView.window.URL.revokeObjectURL(url)
+    try SubscriptionRef.set(latest, snapshot)
+  }
+
+  try addFinalizer(() => publish({ kind: "closed" }))
+
+  effect function openAttachment(scope: ReadyScope, shown: Mail, partId: string) {
+    const selected = shown.selected
+    const matches = selected?.attachments.filter((entry) => entry.partId === partId)
+    const attachment = matches?.length === 1 && matches[0]?.supported ? matches[0] : undefined
+    if (!selected?.historyId || !attachment || attachment.size < 0 || attachment.size > attachmentLimit) return false
+    const messageId = selected.message.externalId
+    const original = try query("gmail/attachment", { grantId: scope.grant, messageId, historyId: selected.historyId, partId }, AttachmentReceipt, authorization)
+    if (original.accountId !== scope.accountId || (original.grantId !== undefined && original.grantId !== scope.grant) || original.historyId !== selected.historyId || original.messageId !== messageId ||
+        original.partId !== partId || original.name !== attachment.name || original.mimeType !== attachment.mimeType || original.size !== attachment.size) return false
+    if (original.dataBase64.length % 4 !== 0) return false
+    const decoded = try Effect.try(() => webView.window.atob(original.dataBase64))
+    if (decoded.length !== attachment.size) return false
+    const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
+    const hash = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", bytes))
+    if (Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("") !== original.sha256 ||
+        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+    const url = webView.window.URL.createObjectURL(new webView.window.Blob([bytes], { type: original.mimeType }))
+    const preview = original.mimeType === "text/plain"
+      ? { text: new TextDecoder().decode(bytes.subarray(0, textPreviewLimit)), truncated: bytes.length > textPreviewLimit }
+      : undefined
+    try publish({ ...shown, attachment: { name: original.name, mimeType: original.mimeType, url, preview, deviceTransfer: original.mimeType !== "text/plain" && original.grantId === scope.grant && original.organizationId ? original.deviceTransfer : undefined } })
+    return true
+  }
+
   effect function activeScope(): Scope!! {
     const surface = (try desk.get()).device.surface
     if (surface !== "Email" && surface !== "Calendar") return { kind: "closed" }
@@ -311,8 +380,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   }
 
   effect function refresh(scope: Scope) {
-    if (scope.kind !== "ready") return try SubscriptionRef.set(latest, scope)
-    try SubscriptionRef.set(latest, { kind: "loading", view: scope.view, accountId: scope.accountId })
+    if (scope.kind !== "ready") return try publish(scope)
+    try publish({ kind: "loading", view: scope.view, accountId: scope.accountId })
     const result = fetchPage(authorization, scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
     const intent = try Ref.get(pending)
     if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
@@ -322,10 +391,10 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       if (try still(scope)) {
         try saveIntent(pending, { ...intent, occurrence: undefined })
         if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
-          return try SubscriptionRef.set(latest, { ...result, selected: selected.event })
+          return try publish({ ...result, selected: selected.event })
       }
     }
-    if (try still(scope)) try SubscriptionRef.set(latest, result)
+    if (try still(scope)) try publish(result)
   }
 
   effect function send(command: Command) {
@@ -359,6 +428,12 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
       (shown.kind === "mail") !== (scope.view === "Email")) return false
+    if (command.kind === "openAttachment") return shown.kind === "mail" && (try openAttachment(scope, shown, command.partId))
+    if (command.kind === "closeAttachment") {
+      if (shown.kind !== "mail") return false
+      try publish({ ...shown, attachment: undefined })
+      return true
+    }
     if (command.kind === "reminder") {
       if (shown.kind !== "calendar" || shown.selected?.externalId !== command.id ||
           shown.selected.etag !== command.version || shown.selected.isAllDay || !shown.selected.editable) return false
@@ -372,28 +447,29 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
           receipt.minutes === command.minutes && receipt.fireAt === Date.parse(shown.selected.startAt) - command.minutes * 60_000)
     }
     if (command.kind === "dismissProposal") {
-      try SubscriptionRef.set(latest, { ...shown, proposed: undefined })
+      try publish({ ...shown, proposed: undefined })
       return true
     }
     if (command.kind === "back") {
-      try SubscriptionRef.set(latest, shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, proposed: undefined })
+      try publish(shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, attachment: undefined, proposed: undefined })
       return true
     }
     if (command.kind === "more") {
       if (shown.next === null) return false
       const page = try fetchPage(authorization, scope, shown, shown.next)
       if (!(try still(scope))) return false
-      try SubscriptionRef.set(latest, page)
+      try publish(page)
       return true
     }
     if (command.kind !== "open" || !shown.rows.some((row) => row.externalId === command.id)) return false
     if (shown.kind === "calendar") {
-      try SubscriptionRef.set(latest, { ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
+      try publish({ ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
       return true
     }
     const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
-    if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) || !(try still(scope))) return false
-    try SubscriptionRef.set(latest, { ...shown, selected: preview, proposed: undefined })
+    if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) ||
+        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+    try publish({ ...shown, selected: preview, attachment: undefined, proposed: undefined })
     return true
   }
 
@@ -428,7 +504,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const current = try SubscriptionRef.get(latest)
     if (!(try still(scope)) || (current.kind !== "mail" && current.kind !== "calendar")) return false
     const number = try Ref.updateAndGet(proposedNumber, (prior) => prior + 1)
-    try SubscriptionRef.set(latest, { ...current, proposed: { number, proposal } })
+    try publish({ ...current, proposed: { number, proposal } })
     return true
   }
 
@@ -442,7 +518,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const found = try query("calendar/series", { grantId: grant, occurrenceId }, Series, authorization)
     if (!managedReadMatches(accountId, found.accountId, occurrenceId, found.occurrenceId) ||
       found.event.externalId !== shown.selected.seriesId || !(try still(scope))) return undefined
-    try SubscriptionRef.set(latest, { ...shown, series: found.event })
+    try publish({ ...shown, series: found.event })
     return found.event
   }
 
@@ -474,7 +550,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (!managedReadMatches(accountId, receipt.accountId, expected, receipt.itemId) || receipt.operationId !== operationId ||
       !(try still(scope))) return undefined
     if (action.kind === "trash" && shown.kind === "mail") {
-      try SubscriptionRef.set(latest, { ...shown, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, proposed: undefined })
+      try publish({ ...shown, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined })
     }
     if (action.kind === "undo" || action.kind === "appointment") try refresh(scope)
     return receipt

@@ -26,8 +26,11 @@ public class MainActivity extends ElizaBridgeActivity {
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
  @Override public void onCreate(Bundle state) {
-  Uri accountCallback = accountCallback(getIntent());
-  if (accountCallback != null) setIntent(new Intent(getIntent()).setData(null));
+  Intent launch = getIntent();
+  Uri accountCallback = accountCallback(launch);
+  String attachmentTicket = ManagedAttachmentImport.ticket(launch);
+  if (ManagedAttachmentImport.targets(launch)) setIntent(new Intent(Intent.ACTION_MAIN));
+  else if (accountCallback != null) setIntent(new Intent(launch).setData(null));
   registerPlugin(EmbeddedAgentPlugin.class);
   registerPlugin(GraceAccount.class);
   registerPlugin(GraceFiles.class);
@@ -59,6 +62,7 @@ public class MainActivity extends ElizaBridgeActivity {
    }
   });
   acceptAccountCallback(accountCallback);
+  acceptAttachmentImport(attachmentTicket);
  }
 
  @Override public void onStart() {
@@ -116,7 +120,18 @@ public class MainActivity extends ElizaBridgeActivity {
   if (handle != null && handle.getInstance() instanceof GraceAccount account) account.acceptCallback(data);
  }
 
+ private void acceptAttachmentImport(String ticket) {
+  if (ticket == null || getBridge() == null) return;
+  var handle = getBridge().getPlugin("GraceFiles");
+  if (handle != null && handle.getInstance() instanceof GraceFiles files) files.offerManagedImport(ticket);
+ }
+
  @Override public void onNewIntent(Intent intent) {
+  if (ManagedAttachmentImport.targets(intent)) {
+   super.onNewIntent(new Intent(Intent.ACTION_MAIN));
+   acceptAttachmentImport(ManagedAttachmentImport.ticket(intent));
+   return;
+  }
   Uri accountCallback = accountCallback(intent);
   super.onNewIntent(accountCallback == null ? intent : new Intent(intent).setData(null));
   acceptAccountCallback(accountCallback);

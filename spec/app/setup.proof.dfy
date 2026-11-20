@@ -8,6 +8,8 @@ lemma skip_ensures(s: Setup, st: SetupStage)
   ensures (inv(s) ==> canSkip(s, st) ==> alwaysEndingIsAtTheHandOver(skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> alwaysTheHandOverIsNotAQuestion(skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> alwaysEndTokensCount(skip(s, st)))
+  ensures (inv(s) ==> canSkip(s, st) ==> alwaysOnlyAWebAccountCarriesAGoogleConnection(skip(s, st)))
+  ensures (inv(s) ==> canSkip(s, st) ==> alwaysATabletSignInIsConfirmedForTheSignedInAccount(skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> stepRestartKeepsTheStep(s, "skip", skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> stepOnlyItsAnswerASkipOrItsOutcomeAdvances(s, "skip", skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> stepNeverGoesBack(s, skip(s, st)))
@@ -16,6 +18,8 @@ lemma skip_ensures(s: Setup, st: SetupStage)
   ensures (inv(s) ==> canSkip(s, st) ==> stepTalkIsTriedOnlyWhileGraceSpeaks(s, "skip", skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> stepEachRunEndsOnce(s, skip(s, st), []))
   ensures (inv(s) ==> canSkip(s, st) ==> stepOnlyTheAcknowledgementEnds(s, "skip", skip(s, st)))
+  ensures (inv(s) ==> canSkip(s, st) ==> stepTheAccountComesOnlyFromItsOwnSource(s, "skip", skip(s, st)))
+  ensures (inv(s) ==> canSkip(s, st) ==> stepOnlyThePersonConfirmsATabletSignIn(s, "skip", skip(s, st)))
 {
   if inv(s) && canSkip(s, st) {
     assert st == s.progress.step;
