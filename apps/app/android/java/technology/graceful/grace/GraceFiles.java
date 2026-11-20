@@ -183,7 +183,7 @@ public final class GraceFiles extends Plugin {
   } catch (JSONException invalid) { throw new IOException("Invalid attachment metadata", invalid); }
   File binding = new File(file.getParentFile(), SOURCE_FILE);
   if (binding.isFile()) {
-   String[] parts = Files.readString(binding.toPath(), StandardCharsets.UTF_8).split("\n", -1);
+   String[] parts = new String(Files.readAllBytes(binding.toPath()), StandardCharsets.UTF_8).split("\n", -1);
    if (parts.length != 2 || !parts[0].matches("[0-9a-f]{64}") || !parts[1].matches("[0-9a-f]{64}")) throw new IOException("Attachment identity unavailable");
    entry.put("attachmentSource", parts[0]).put("attachmentSha256", parts[1]);
   }
