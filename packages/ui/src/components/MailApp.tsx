@@ -3,6 +3,7 @@ import { TriangleAlert, WifiOff } from "lucide-react";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Banner, BannerButton, type BannerProps } from "./Banner.tsx";
 import { Button } from "./Button.tsx";
+import { guided, type Guide } from "./GuideAnchor.tsx";
 import { appButton } from "./MailActionStatus.tsx";
 import { MailFolderNav, type MailAccountRow, type MailFolder } from "./MailFolderNav.tsx";
 import { MailMessageRow, mailIcons, type MailContact } from "./MailMessageRow.tsx";
@@ -77,9 +78,9 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
   onAccount?: (id: number) => void;
   /** No email account shows mail: in place of the folders, a way to connect one. */
   noAccount?: boolean;
-  /** Opens Settings › Email & calendar to connect an email. */
+  /** Opens Settings › Email & calendar to connect an email; without it Connect your email is shown but cannot be pressed. */
   onConnect?: () => void;
-  /** Asks Grace to help connect an email. */
+  /** Asks Grace to help connect an email; without it Ask Grace to help is not offered. */
   onAskGrace?: () => void;
   /** What needs her above the search: a `MailSignInBanner` for each account whose sign-in ended, a `MailSyncingRow` while one is first fetched. */
   banners?: ReactNode;
@@ -93,18 +94,20 @@ export type MailAppProps = Omit<AppWindowProps, "title" | "icon" | "nav" | "acti
   onSelectFolder?: (folder: MailFolder) => void;
   /** Called with the id of the email tapped. */
   onOpen?: (id: string) => void;
-  /** Starts a new email. */
+  /** Starts a new email; without it Write is shown but cannot be pressed. */
   onWrite?: () => void;
   /** `loading` shows placeholder rows; `failed` says so above the emails already shown, with Try again; `offline` keeps them readable under a banner with Fix Wi-Fi. */
   status?: MailListStatus;
-  /** Loads the list or search again after it failed. */
+  /** Loads the list or search again after it failed; without it the failure offers no Try again. */
   onRetry?: () => void;
-  /** Opens Wi-Fi to get back online. */
+  /** Helps get back online; without it the offline banner offers no Fix Wi-Fi. */
   onFixWifi?: () => void;
   /** A note of what just happened, a `Toast` placed on the `screen` (with Undo after a delete). */
   toast?: ReactNode;
   /** The list's words, for another language. */
   labels?: Partial<MailAppLabels>;
+  /** Grace pointing at an email in the list, by its id (prototype `m-<id>`). */
+  guide?: Guide<string>;
 };
 
 /**
@@ -135,6 +138,7 @@ export function MailApp({
   onFixWifi,
   toast,
   labels,
+  guide,
   ...props
 }: MailAppProps) {
   const l = { ...mailAppLabels, ...labels };
@@ -150,13 +154,15 @@ export function MailApp({
             <PageHeading className="mt-[26px] text-display-sm leading-10">{l.connectTitle}</PageHeading>
             <PageText tone="secondary" className="mt-2.5 leading-[30px]">{l.connectLine}</PageText>
             <div className="mt-7 flex justify-center gap-3">
-              <Button variant="prominent" size="pill" onClick={onConnect}>
+              <Button variant="prominent" size="pill" disabled={!onConnect} onClick={onConnect}>
                 <mailIcons.mail size={22} strokeWidth={2.2} aria-hidden />
                 {l.connect}
               </Button>
-              <Button variant="capsule" size="pill" className={appButton} onClick={onAskGrace}>
-                {l.askGrace}
-              </Button>
+              {onAskGrace && (
+                <Button variant="capsule" size="pill" className={appButton} onClick={onAskGrace}>
+                  {l.askGrace}
+                </Button>
+              )}
             </div>
           </div>
         </AppWindow>
@@ -172,7 +178,7 @@ export function MailApp({
         icon={icon}
         nav={<MailFolderNav folder={folder} counts={counts} accounts={accounts} account={account} onAccount={onAccount} onSelect={onSelectFolder} />}
         actions={
-          <Button variant="prominent" size="compact" onClick={onWrite}>
+          <Button variant="prominent" size="compact" disabled={!onWrite} onClick={onWrite}>
             <mailIcons.pencil size={22} strokeWidth={2.2} aria-hidden />
             {l.write}
           </Button>
@@ -181,14 +187,14 @@ export function MailApp({
       >
         {status === "offline" || banners ? (
           <div className="mb-4 flex flex-col gap-4">
-            {status === "offline" && <Banner tone="dark" icon={<WifiOff size={28} strokeWidth={2} />} title={l.offline} line={l.offlineLine} actions={<BannerButton onClick={onFixWifi}>{l.fixWifi}</BannerButton>} />}
+            {status === "offline" && <Banner tone="dark" icon={<WifiOff size={28} strokeWidth={2} />} title={l.offline} line={l.offlineLine} actions={onFixWifi && <BannerButton onClick={onFixWifi}>{l.fixWifi}</BannerButton>} />}
             {banners}
           </div>
         ) : null}
         <SearchField label={l.search} value={query} onChange={(event) => onQueryChange?.(event.target.value)} />
         <div className="mt-[18px]" aria-busy={loading || undefined}>
           {status === "failed" && (
-            <MailNotice actionLabel={l.retry} onAction={onRetry} className="mb-[18px]">
+            <MailNotice actionLabel={onRetry && l.retry} onAction={onRetry} className="mb-[18px]">
               {l.failed}
             </MailNotice>
           )}
@@ -205,7 +211,7 @@ export function MailApp({
             <ul className="m-0 flex list-none flex-col gap-3 p-0">
               {messages.map(({ id, ...message }) => (
                 <li key={id}>
-                  <MailMessageRow {...message} onOpen={() => onOpen?.(id)} />
+                  {guided(guide, id, <MailMessageRow {...message} onOpen={onOpen && (() => onOpen(id))} />, { radius: 22, placement: "below", className: "flex [&>div]:flex-1" })}
                 </li>
               ))}
             </ul>
@@ -233,7 +239,7 @@ export type MailSignInBannerProps = Omit<BannerProps, "icon" | "title" | "line" 
   name: string;
   /** Other email accounts show mail, and they are fine. */
   others?: boolean;
-  /** Opens that account's sign-in again. */
+  /** Opens that account's sign-in again; without it the banner offers no Sign in again. */
   onSignIn?: () => void;
   /** Its words, for another language. */
   labels?: Partial<MailSignInBannerLabels>;
@@ -248,7 +254,7 @@ export function MailSignInBanner({ name, others = false, onSignIn, labels, ...pr
       icon={<TriangleAlert size={26} strokeWidth={2.2} />}
       title={l.title(name)}
       line={l.line(name) + (others ? l.others : "")}
-      actions={<BannerButton onClick={onSignIn}>{l.signIn}</BannerButton>}
+      actions={onSignIn && <BannerButton onClick={onSignIn}>{l.signIn}</BannerButton>}
       {...props}
     />
   );

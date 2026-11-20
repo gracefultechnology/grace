@@ -1,6 +1,6 @@
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { flowersPhoto, mailScreen, people, unfocus } from "./MailApp.meta.tsx";
+import { flowersPhoto, mailScreen, onMailScreen, people, unfocus } from "./MailApp.meta.tsx";
 import type { MailComposeProps } from "./MailCompose.tsx";
 
 const send = fn();
@@ -49,18 +49,23 @@ export const meta: ComponentMeta<MailComposeProps> = {
     "Draft not saved": { draftError: "Your draft couldn’t be saved. Try again.", onRetryDraft: fn() },
     From: { from },
     "From menu open": { from: { ...from, open: true } },
-    Reply: { title: "Reply", backLabel: "Susan’s email", subject: "Re: Photos from Lily’s recital", body: "", attachments: [] },
+    "Reply, Grace points at Send": {
+      title: "Reply",
+      backLabel: "Susan’s email",
+      subject: "Re: Photos from Lily’s recital",
+      body: "They’re lovely, thank you! See you on Sunday.",
+      attachments: [],
+      guide: { targetId: "send", kind: "instruction", title: "Tap Send", onClose: fn() },
+    },
   },
   decorator: mailScreen,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
+    Default: onMailScreen(async (canvas) => {
       await userEvent.click(canvas.getByRole("button", { name: "Add to To" }));
       await expect(add).toHaveBeenCalledWith("to");
       await userEvent.click(canvas.getByRole("button", { name: "Send" }));
       await expect(send).toHaveBeenCalled();
-      unfocus();
-    },
+    }),
     From: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: /margaret\.ellis@gmail\.com/ }));
       await userEvent.click(await within(document.body).findByRole("menuitemradio", { name: /margaret@outlook\.com/ }));

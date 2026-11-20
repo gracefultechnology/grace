@@ -218,9 +218,8 @@ pure def authorizedFill(f: M::PersonalFact): M::MemoryStep = {
   M::dispatchFill(queued, { version: f.revision, task: "task", destination: CM::exampleKey.origin }, M::MemoryRuntime)
 }
 pure def savedWorkspace(w: WS::Workspace): WS::WorkspaceResult = {
-  val queued = WS::prepare(w, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1,
-    target: "name-field", valueRef: "memory-name-revision-2", kind: X::FillOrdinary }, WS::Host)
-  WS::dispatch(queued, { deviceVersion: 6, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 }, WS::Actuator)
+  val queued = WS::prepare(w, AC::sampleOperationRequest(w, "name-field", "memory-name-revision-2", X::FillOrdinary), WS::Host)
+  WS::dispatch(queued, AC::sampleOperationTokens(queued), WS::Actuator)
 }
 pure val correction: M::FactProposal = { factKey: "name", kind: M::Name, scope: "", value: "Grace", source: M::FreshUserChoice, version: 2 }
 pure val wValues = Set(WS::initial, AC::observedSample(WS::initial), savedWorkspace(AC::observedSample(WS::initial)).state,
