@@ -12,6 +12,8 @@ import android.graphics.ImageDecoder;
 import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
+import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.util.Base64;
@@ -61,6 +63,8 @@ public final class GraceFiles extends Plugin {
  private static final Pattern ID = Pattern.compile("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}");
  private static final ExecutorService disk = Executors.newSingleThreadExecutor();
  private volatile Lease active;
+ private static final String SOURCE_FILE = ".attachment-source";
+ private static final long IMPORT_TTL = 5 * 60_000L;
  private Stage staged;
  private record Lease(String token, String owner, CloudDeviceAccount.Session session) {}
  private record Source(String origin, String account, String container, String reference, String content) {
@@ -70,7 +74,10 @@ public final class GraceFiles extends Plugin {
  }
  private record Attachment(JSONObject source, Source key, String version, String name, byte[] bytes) {}
  private static final String SOURCE = ".mail-source.json";
- private record Stage(Lease lease, String id, File temporary, JSObject entry) {}
+ private PendingImport pendingImport;
+ private record PendingImport(String id, String ticket, CloudDeviceAccount.Session owner, long deadline) {}
+ private record AttachmentSource(String identity, String sha, PendingImport request) {}
+ private record Stage(Lease lease, String id, File temporary, JSObject entry, AttachmentSource source) {}
  private interface Work { void run() throws Exception; }
 
  private void perform(PluginCall call, Work work) {
@@ -174,6 +181,12 @@ public final class GraceFiles extends Plugin {
    JSONObject metadata = metadata(file.getParentFile());
    if (metadata != null) entry.put("source", metadata.getJSONObject("source")).put("version", metadata.getString("version"));
   } catch (JSONException invalid) { throw new IOException("Invalid attachment metadata", invalid); }
+  File binding = new File(file.getParentFile(), SOURCE_FILE);
+  if (binding.isFile()) {
+   String[] parts = Files.readString(binding.toPath(), StandardCharsets.UTF_8).split("\n", -1);
+   if (parts.length != 2 || !parts[0].matches("[0-9a-f]{64}") || !parts[1].matches("[0-9a-f]{64}")) throw new IOException("Attachment identity unavailable");
+   entry.put("attachmentSource", parts[0]).put("attachmentSha256", parts[1]);
+  }
   return entry;
  }
 
@@ -184,9 +197,16 @@ public final class GraceFiles extends Plugin {
 
  private void discard() {
   if (staged == null) return;
-  staged.temporary().delete();
-  staged.temporary().getParentFile().delete();
+  discard(staged);
   staged = null;
+ }
+
+ private static void discard(Stage stage) {
+  if (stage.temporary() == null) return;
+  File folder = stage.temporary().getParentFile();
+  new File(folder, SOURCE_FILE).delete();
+  stage.temporary().delete();
+  folder.delete();
  }
 
  @PluginMethod public void open(PluginCall call) {
@@ -340,15 +360,18 @@ public final class GraceFiles extends Plugin {
  }
 
  private Stage stage(PluginCall call, String name, InputStream content) throws Exception {
+  return stage(call, name, content, UUID.randomUUID().toString(), null);
+ }
+
+ private Stage stage(PluginCall call, String name, InputStream content, String id, AttachmentSource source) throws Exception {
   Lease lease = current(call);
   if (content == null) throw new IOException("File unavailable");
   File owned = library(lease);
   if (catalog(lease).size() >= MAX_FILES) throw new IOException("Library is full");
-  String id = UUID.randomUUID().toString();
-  return stage(call, lease, new File(owned, "." + id), id, name, content);
+  return stage(call, lease, new File(owned, ".stage-" + UUID.randomUUID()), id, name, content, source);
  }
 
- private Stage stage(PluginCall call, Lease lease, File folder, String id, String name, InputStream content) throws Exception {
+ private Stage stage(PluginCall call, Lease lease, File folder, String id, String name, InputStream content, AttachmentSource source) throws Exception {
   if (!folder.mkdir()) throw new IOException("Cannot stage");
   File file = new File(folder, name);
   try {
@@ -365,15 +388,20 @@ public final class GraceFiles extends Plugin {
     output.getFD().sync();
    }
    if ("photo".equals(kind(name))) {
-    Bitmap check = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file), (decoder, info, source) -> decoder.setTargetSize(1, 1));
+    Bitmap check = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file), (decoder, info, imageSource) -> decoder.setTargetSize(1, 1));
     check.recycle();
+   }
+   if (source != null) {
+    try (var output = new FileOutputStream(new File(folder, SOURCE_FILE))) {
+     output.write((source.identity() + "\n" + source.sha()).getBytes(StandardCharsets.UTF_8));
+     output.getFD().sync();
+    }
    }
    JSObject ready = entry(id, file);
    current(call);
-   return new Stage(lease, id, file, ready);
+   return new Stage(lease, id, file, ready, source);
   } catch (Exception failed) {
-   file.delete();
-   folder.delete();
+   discard(new Stage(lease, id, file, null, source));
    throw failed;
   }
  }
@@ -388,13 +416,78 @@ public final class GraceFiles extends Plugin {
    try (InputStream content = new ByteArrayInputStream(Base64.decode(data, Base64.DEFAULT))) {
     Stage attachment = stage(call, displayName(name, type), content);
     try { publish(call, attachment); }
-    finally {
-     attachment.temporary().delete();
-     attachment.temporary().getParentFile().delete();
-    }
+    finally { discard(attachment); }
     call.resolve(attachment.entry());
    }
   });
+ }
+
+ void offerManagedImport(String ticket) {
+  disk.execute(() -> {
+   pendingImport = null;
+   try {
+    var owner = GracePasswordsOwner.stableSession(getContext());
+    if (owner != null) pendingImport = new PendingImport(UUID.randomUUID().toString(), ticket, owner, SystemClock.elapsedRealtime() + IMPORT_TTL);
+   } catch (Exception unavailable) { }
+   notifyListeners("attachmentImportChanged", new JSObject(), true);
+  });
+ }
+
+ private void requireImportOwner(CloudDeviceAccount.Session owner) throws Exception {
+  if (!owner.equals(GracePasswordsOwner.stableSession(getContext()))) throw new SecurityException();
+ }
+
+ private PendingImport currentImport() {
+  var request = pendingImport;
+  if (request != null) {
+   try {
+    requireImportOwner(request.owner());
+    if (SystemClock.elapsedRealtime() < request.deadline()) return request;
+   } catch (Exception unavailable) { }
+   pendingImport = null;
+  }
+  return null;
+ }
+
+ @PluginMethod public void attachmentImport(PluginCall call) {
+  perform(call, () -> {
+   var request = currentImport();
+   call.resolve(request == null ? new JSObject() : new JSObject().put("id", request.id()));
+  });
+ }
+
+ @PluginMethod public void cancelAttachmentImport(PluginCall call) {
+  perform(call, () -> {
+   var request = currentImport();
+   if (request != null && request.id().equals(call.getString("request"))) pendingImport = null;
+   call.resolve();
+  });
+ }
+
+ @PluginMethod public void stageAttachmentImport(PluginCall call) {
+  perform(call, () -> {
+   Lease lease = current(call);
+   var request = currentImport();
+   if (request == null || !request.id().equals(call.getString("request"))) throw new SecurityException();
+   var receipt = ManagedAttachmentImport.fetch(request.ticket(), request.owner());
+   if (currentImport() != request || !lease.equals(current(call))) throw new SecurityException();
+   var source = new AttachmentSource(receipt.source(), receipt.sha(), request);
+   String raw = receipt.source();
+   String id = raw.substring(0, 8) + "-" + raw.substring(8, 12) + "-" + raw.substring(12, 16) + "-" + raw.substring(16, 20) + "-" + raw.substring(20, 32);
+   File destination = new File(library(lease), id);
+   var candidate = destination.exists()
+    ? new Stage(lease, id, null, existingImport(destination, id, source), source)
+    : stage(call, displayName(receipt.name(), kind(receipt.name())), new ByteArrayInputStream(receipt.bytes()), id, source);
+   offer(call, candidate);
+  });
+ }
+
+ private static JSObject existingImport(File destination, String id, AttachmentSource source) throws Exception {
+  File saved = item(destination);
+  JSObject entry = entry(id, saved);
+  if (!source.identity().equals(entry.getString("attachmentSource")) || !source.sha().equals(entry.getString("attachmentSha256")) ||
+      saved.length() > MAX_BYTES || !source.sha().equals(ManagedAttachmentImport.hash(Files.readAllBytes(saved.toPath())))) throw new IOException("Attachment collision");
+  return entry;
  }
 
  @PluginMethod public void remove(PluginCall call) {
@@ -429,8 +522,19 @@ public final class GraceFiles extends Plugin {
   Lease lease = current(call);
   if (!candidate.lease().equals(lease)) throw new SecurityException();
   File destination = new File(library(lease), candidate.id());
-  if (destination.exists()) throw new IOException("Already saved");
-  moveCurrent(call, lease, candidate.temporary().getParentFile(), destination);
+  synchronized (GracePasswordsOwner.class) {
+   if (!lease.equals(current(call))) throw new SecurityException();
+   if (candidate.source() != null && currentImport() != candidate.source().request()) throw new SecurityException();
+   if (destination.exists()) {
+    if (candidate.source() == null) throw new IOException("Already saved");
+    existingImport(destination, candidate.id(), candidate.source());
+   } else {
+    if (candidate.temporary() == null) throw new IOException("Attachment no longer saved");
+    Files.move(candidate.temporary().getParentFile().toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE);
+   }
+  }
+  if (candidate.source() != null) pendingImport = null;
+  discard(candidate);
  }
  private void moveCurrent(PluginCall call, Lease lease, File from, File to) throws Exception {
   synchronized (GracePasswordsOwner.class) {
@@ -493,7 +597,7 @@ public final class GraceFiles extends Plugin {
      } else {
       if (++count > MAX_FILES) throw new IOException("Library is full");
       String id = UUID.randomUUID().toString();
-      Stage staged = stage(call, lease, new File(pending, id), id, a.name(), new ByteArrayInputStream(a.bytes()));
+      Stage staged = stage(call, lease, new File(pending, id), id, a.name(), new ByteArrayInputStream(a.bytes()), null);
       if (staged.entry().getInt("pages") != a.source().getInt("pages")) throw new IOException("Document page count changed");
       file = staged.temporary();
       JSONObject metadata = new JSONObject().put("source", a.source()).put("version", a.version());
