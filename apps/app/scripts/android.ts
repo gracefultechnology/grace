@@ -995,8 +995,6 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       signal.throwIfAborted();
       const nodes = await screen().catch(() => []);
       signal.throwIfAborted();
-      const found = select(nodes);
-      if (found !== undefined) return found;
       const fullscreen = fullscreenTip(nodes);
       const androidWait = nodes.find((node) => node.id === "aerr_wait" && node.label === "Wait" &&
         (node.packageName === "android" || node.packageName === "com.android.systemui"));
@@ -1004,6 +1002,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       if (systemAction) {
         await shell(serial, `input tap ${systemAction.x} ${systemAction.y}`);
         process.stdout.write(fullscreen ? "Acknowledged Android’s first-use fullscreen tutorial.\n" : "Android requested more time during the fixture.\n");
+      } else {
+        const found = select(nodes);
+        if (found !== undefined) return found;
       }
       await delay(1000);
     }
@@ -1101,6 +1102,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           signal.throwIfAborted();
           step = "wait for interactive Grace Home";
           await page.until(selectedHome, AbortSignal.any([signal, AbortSignal.timeout(420_000)]));
+          await waitForNode((node) => node.packageName === identity.appId, "the foreground Grace app");
           process.stdout.write("The installed Grace Home is ready.\n");
           step = "wait for the Page 3 control on Grace Home";
           const page3 = await page.waitForHomeControl({ label: "Page 3" }, AbortSignal.timeout(120_000));
