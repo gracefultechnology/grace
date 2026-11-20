@@ -1033,15 +1033,14 @@ lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: Workspac
   }
 }
 
-lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
+lemma AfterInteractionComponents(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
   requires inv(w)
   requires app__assistant_inv(changed)
-  requires changed.taskId == w.assistant.taskId
-  requires app__assistant_unfinished(changed) == app__assistant_unfinished(w.assistant)
-  requires changed.activity.Paused? == w.assistant.activity.Paused?
-  requires !(geometry || content) ==> changed.activity.DoingWork? == w.assistant.activity.DoingWork?
-  requires changed.conversation.voice ==> w.device.readiness.Ready? && w.device.microphoneAllowed && app__shell_mayRequestReasoning(w.device) && app__assistant_isVisible(changed)
-  ensures inv(afterInteraction(changed, geometry, content, w))
+  ensures alwaysBrowserRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysExecutionRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysCommitmentRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysWakeRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysAssistantRules(afterInteraction(changed, geometry, content, w))
 {
   assert app__browser_inv(w.browser);
   assert app__execution_inv(w.execution);
@@ -1063,6 +1062,19 @@ lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: boo
   app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
   var after := afterInteraction(changed, geometry, content, w);
   assert app__assistant_inv(after.assistant);
+}
+
+lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
+  requires inv(w)
+  requires app__assistant_inv(changed)
+  requires changed.taskId == w.assistant.taskId
+  requires app__assistant_unfinished(changed) == app__assistant_unfinished(w.assistant)
+  requires changed.activity.Paused? == w.assistant.activity.Paused?
+  requires !(geometry || content) ==> changed.activity.DoingWork? == w.assistant.activity.DoingWork?
+  requires changed.conversation.voice ==> w.device.readiness.Ready? && w.device.microphoneAllowed && app__shell_mayRequestReasoning(w.device) && app__assistant_isVisible(changed)
+  ensures inv(afterInteraction(changed, geometry, content, w))
+{
+  AfterInteractionComponents(changed, geometry, content, w);
 }
 
 lemma InteractionFrame(a: app__assistant_Assistant, input: app__interaction_Interaction, by_: app__conversation_ConversationActor)
