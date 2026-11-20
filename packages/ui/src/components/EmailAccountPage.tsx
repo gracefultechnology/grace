@@ -24,11 +24,11 @@ export type EmailAccountPageProps = Omit<ComponentProps<"section">, "title"> & {
   /** What it brings to the tablet, one switch each. */
   uses: AccountUses;
   colour: AccountColour;
-  /** Called with a switch she flips and its new value. */
+  /** Called with a switch she flips and its new value; without it the switches are shown disabled. */
   onUseChange?: (use: keyof AccountUses, on: boolean) => void;
-  /** Called by Sign in again, shown while it needs her to. */
+  /** Called by Sign in again, shown while it needs her to; without it Sign in again is not offered. */
   onSignInAgain?: () => void;
-  /** Called by Remove from this tablet: the app asks first, with `RemoveAccountDialog`. */
+  /** Called by Remove from this tablet: the app asks first, with `RemoveAccountDialog`. Without it Remove is not offered. */
   onRemove?: () => void;
 };
 
@@ -52,7 +52,7 @@ export function EmailAccountPage({ address, provider, status, uses, colour, onUs
             {company} · {connected ? "Connected" : "Needs you to sign in again"}
           </span>
         }
-        trailing={connected ? undefined : <Button variant="capsule" size="pill" onClick={onSignInAgain}>Sign in again</Button>}
+        trailing={!connected && onSignInAgain && <Button variant="capsule" size="pill" onClick={onSignInAgain}>Sign in again</Button>}
       />
       <PageHeading level="section" className="mt-6">Use on this tablet</PageHeading>
       <div className="mt-2.5 flex flex-col gap-2.5">
@@ -64,14 +64,17 @@ export function EmailAccountPage({ address, provider, status, uses, colour, onUs
             title={title}
             subtitle={subtitle}
             checked={uses[use]}
-            onCheckedChange={(on) => onUseChange?.(use, on)}
+            disabled={!onUseChange}
+            onCheckedChange={onUseChange && ((on) => onUseChange(use, on))}
           />
         ))}
       </div>
-      <Button variant="warn" size="pill" className="mt-[22px] self-start" onClick={onRemove}>
-        <Trash2 size={22} strokeWidth={2.2} aria-hidden />
-        Remove from this tablet
-      </Button>
+      {onRemove && (
+        <Button variant="warn" size="pill" className="mt-[22px] self-start" onClick={onRemove}>
+          <Trash2 size={22} strokeWidth={2.2} aria-hidden />
+          Remove from this tablet
+        </Button>
+      )}
     </section>
   );
 }

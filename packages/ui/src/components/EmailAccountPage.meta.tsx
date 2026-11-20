@@ -13,6 +13,7 @@ export const meta: ComponentMeta<EmailAccountPageProps> = {
   examples: {
     "Needs sign in": { address: "margaret@outlook.com", provider: "outlook", colour: 2, status: "needsSignIn" },
     "Calendar off": { uses: { ...allUses, calendar: false } },
+    Refused: { address: "margaret@outlook.com", provider: "outlook", colour: 2, status: "needsSignIn", onUseChange: undefined, onSignInAgain: undefined, onRemove: undefined },
   },
   decorator: settingsPage,
   play: {
@@ -27,6 +28,12 @@ export const meta: ComponentMeta<EmailAccountPageProps> = {
     "Needs sign in": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign in again" }));
       await expect(signIn).toHaveBeenCalled();
+    },
+    Refused: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText(/Needs you to sign in again/)).toBeTruthy();
+      await expect(["Email", "Calendar", "Contacts"].map((name) => canvas.getByRole<HTMLButtonElement>("switch", { name }).disabled)).toEqual([true, true, true]);
+      await expect(["Sign in again", "Remove from this tablet"].map((name) => canvas.queryByRole("button", { name }))).toEqual([null, null]);
     },
     "Calendar off": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       use.mockClear();

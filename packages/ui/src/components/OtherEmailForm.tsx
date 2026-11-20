@@ -19,7 +19,7 @@ const problemText = (problem: OtherEmailProblem) => {
   switch (problem.kind) {
     case "listedProvider": {
       const company = emailProviders[problem.provider].name;
-      return `This is a ${company} address. Go back and choose ${company}, so you can sign in on ${company}’s own page.`;
+      return `This is ${/^[aeiou]/i.test(company) ? "an" : "a"} ${company} address. Go back and choose ${company}, so you can sign in on ${company}’s own page.`;
     }
     case "passwordRefused":
       return "That password didn’t work. Check it and try again. Some email companies give you a special password for apps; Grace can explain.";
@@ -39,7 +39,7 @@ export type OtherEmailFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   problem?: OtherEmailProblem;
   /** The email company is checking what she typed: Next waits. */
   checking?: boolean;
-  /** Called by Next once a name, a whole address and a password are typed; the password field empties at once. */
+  /** Called by Next once a name, a whole address and a password are typed; the password field empties at once. Without it Next stays disabled. */
   onNext?: (details: OtherEmailDetails) => void;
   onCancel?: () => void;
 };
@@ -55,7 +55,7 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
   const [address, setAddress] = useState(defaultAddress);
   const [filled, setFilled] = useState(false);
   const secretRef = useRef<SecretFieldHandle>(null);
-  const ready = name.trim() !== "" && /@.+\./.test(address) && filled && !checking;
+  const ready = name.trim() !== "" && /@.+\./.test(address) && filled && !checking && onNext !== undefined;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (ready) secretRef.current?.submit();
@@ -96,7 +96,7 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
         <Button type="submit" variant="prominent" size="pill" loading={checking} disabled={!ready}>
           {checking ? "Checking…" : "Next"}
         </Button>
-        <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button>
+        {onCancel && <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button>}
       </div>
     </form>
   );
