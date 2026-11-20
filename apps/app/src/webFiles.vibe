@@ -5,9 +5,8 @@ import { HeldFile } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 error BrowserFilesUnavailable
-const MailFile = Schema.Struct({ id: Schema.NonEmptyString, name: Schema.NonEmptyString, kind: Schema.Literals(["photo", "pdf"]),
-  savedAt: Schema.Int, pages: Schema.Int, source: HeldFile, version: Schema.NonEmptyString })
-type MailFile = typeof MailFile.Type
+const attachmentSource = HeldFile
+schema MailFile { id: Schema.NonEmptyString; name: Schema.NonEmptyString; kind: "photo" | "pdf"; savedAt: Schema.Int; pages: Schema.Int; source: attachmentSource; version: Schema.NonEmptyString }
 schema StoredFile { entry: MailFile; data: string }
 type Access = { owner: string; session: string }
 const storedFiles = Schema.decodeUnknownSync(Schema.Array(StoredFile))
