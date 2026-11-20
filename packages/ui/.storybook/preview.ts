@@ -1,4 +1,4 @@
-import "../src/fonts.ts";
+import "../src/fonts.css";
 import "@repo/design-system/theme.css";
 
 export default {

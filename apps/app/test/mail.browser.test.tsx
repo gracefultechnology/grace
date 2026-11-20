@@ -1,26 +1,24 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
+import { actOnScreen, mount } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
-afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
+actOnScreen();
 
 const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";
 const outlook = "margaret@outlook.com";
 
 const Kept = Schema.Struct({
+  sendLookups: Schema.Array(Schema.String),
   googleRequests: Schema.Array(Schema.String),
   boxes: Schema.Array(Schema.Struct({
     address: Schema.String,
@@ -56,18 +54,22 @@ async function start(withAccounts = true) {
     await allowOutlook(secret);
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
+  const connectivity = vi.spyOn(window.navigator, "onLine", "get");
   const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  onTestFinished(async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
+  onTestFinished(() => {
+    connectivity.mockRestore();
     localStorage.clear();
   });
+  await mount(runtime);
   return {
     secret,
-    host: (availability: "Online" | "Offline") => act(() => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.flatMap(w.get(), ({ device }) =>
-      w.send({ type: "setAvailability", availability: { connection: availability, reasoning: device.reasoningAvailable, microphone: device.microphoneAllowed, observation: device.observationAllowed } }, "Host"))))),
+    host: (availability: "Online" | "Offline") => act(async () => {
+      const online = availability === "Online";
+      connectivity.mockReturnValue(online);
+      window.dispatchEvent(new Event(online ? "online" : "offline"));
+      await expect.poll(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
+        Effect.map(workspace.get(), ({ device }) => device.connectivity)))).toBe(availability);
+    }),
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
     company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } })).json()),
   };
@@ -353,11 +355,49 @@ it("Write or reply and confirm before sending", async () => {
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
 });
 
+it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
+  const { secret, host, company } = await start();
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(row("All inboxes 5")).toBeVisible();
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
+  await act(() => userEvent.fill(words(), "Please call me tomorrow."));
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  const operations = async () => (await company()).changes.filter((c) => c.receipt.kind === "send");
+  const previous = (await operations()).length;
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
+  await click(send);
+  await expect.element(page.getByText(/The email wasn’t sent/)).toBeVisible();
+  expect(await operations()).toHaveLength(previous);
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "dispatch"), client));
+  await act(() => userEvent.fill(words(), "Please call me this afternoon."));
+  await click(send);
+  await expect.element(page.getByText(/I’m not sure this email was sent/)).toBeVisible();
+  await expect.element(send).toBeDisabled();
+  expect((await operations()).slice(previous).map((c) => c.receipt.state)).toEqual(["prepared"]);
+  await expect.poll(async () => (await company()).sendLookups.includes("prepared")).toBe(true);
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "lookupMissing"), client));
+  await host("Offline");
+  await host("Online");
+  await expect.poll(async () => (await company()).sendLookups.includes("missing")).toBe(true);
+  await expect.element(send).toBeDisabled();
+  expect((await company()).boxes.flatMap((box) => box.mail).filter((message) => message.subject === "Re: Reminder: your appointment tomorrow at 10 am" && message.labels.includes("SENT"))).toHaveLength(0);
+  expect(await operations()).toHaveLength(previous + 1);
+});
+
 it("Delete a message and recover it safely", async () => {
   const { company } = await start();
   const prize = email(/Prize Desk/);
   const undo = page.getByRole("button", { name: "Undo" });
   const labels = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction").map((m) => m.labels.filter((l) => l !== "UNREAD")));
+  const openInTrash = async () => {
+    await opened(/Prize Desk/, "A message for Grace");
+    await click(page.getByRole("button", { name: "Delete" }));
+    await expect.element(undo).toBeVisible();
+    await click(row("Trash"));
+    await opened(/Prize Desk/, "A message for Grace");
+  };
   await click(page.getByRole("button", { name: /^Email/ }));
   await expect.element(prize).toBeVisible();
 
@@ -369,20 +409,12 @@ it("Delete a message and recover it safely", async () => {
   await expect.poll(labels).toEqual([["INBOX"]]);
   await expect.element(prize).toBeVisible();
 
-  await opened(/Prize Desk/, "A message for Grace");
-  await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(undo).toBeVisible();
-  await click(row("Trash"));
-  await opened(/Prize Desk/, "A message for Grace");
+  await openInTrash();
   await click(page.getByRole("button", { name: "Restore" }));
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(labels).toEqual([["INBOX"]]);
   await click(row("All inboxes"));
-  await opened(/Prize Desk/, "A message for Grace");
-  await click(page.getByRole("button", { name: "Delete" }));
-  await expect.element(undo).toBeVisible();
-  await click(row("Trash"));
-  await opened(/Prize Desk/, "A message for Grace");
+  await openInTrash();
   await click(page.getByRole("button", { name: "Delete forever" }));
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction"))).toEqual([]);

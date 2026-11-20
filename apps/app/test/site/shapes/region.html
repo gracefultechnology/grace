@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Power</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+  main { padding: 12px 24px; }
+  .region { position: fixed; inset: 0; display: grid; place-items: center; background: #000a; }
+  .region > div { background: #fff; padding: 24px; max-width: 420px; }
+</style>
+<main>
+  <h1>Riverside Power</h1>
+  <p><a href="topic.html?pay">Pay bill</a></p>
+  <p><a href="topic.html?outages">Outages</a></p>
+  <p>Serving homes and businesses across both service areas. Choose your area to see the prices, programs and payment options that apply where you live.</p>
+</main>
+<div class="region" role="dialog" aria-modal="true" aria-labelledby="region-title">
+  <div>
+    <h2 id="region-title">Which area are you in?</h2>
+    <p>Prices and programs differ between our two service areas.</p>
+    <p><a href="topic.html?valley">River valley (most customers)</a></p>
+    <p><a href="topic.html?coast">Northern coast</a></p>
+  </div>
+</div>

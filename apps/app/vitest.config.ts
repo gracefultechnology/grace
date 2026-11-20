@@ -11,7 +11,7 @@ import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { hasHostedNavigation } from "./test/browser-receipt.ts";
-import { fleetFixture } from "./test/fleet.fixture.ts";
+import { fleetFixture, fleetStatement, fleetStatementCases } from "./test/fleet.fixture.ts";
 import { webArena } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -309,66 +309,116 @@ async function observeSite(existing: Site, action: SiteObservation) {
 }
 
 type StatementAction =
-  | { kind: "prepare" }
+  | { kind: "prepare"; billerId?: string }
+  | { kind: "evidence"; value: "past" | "ambiguous" | "restored" }
   | { kind: "observe"; request: Command }
   | { kind: "answer"; text: string }
   | { kind: "close" };
 
-type ReleasedEpisode = Awaited<ReturnType<Awaited<ReturnType<typeof releasedBillworld>>["start"]>>;
-const statementRuns = new WeakMap<Page, { episode: ReleasedEpisode; site: Site; directory: string }>();
+type StatementEpisode = {
+  taskId: string;
+  question: string;
+  startUrl: string;
+  prepareStatement(page: Page): Promise<void>;
+  beforeObservation?: () => Promise<void>;
+  finish(text: string): Promise<Record<string, unknown>>;
+  close(): Promise<unknown>;
+};
+type StatementRun =
+  | { readonly attempt: string; readonly state: "Preparing" }
+  | { readonly attempt: string; readonly state: "Ready"; readonly episode: StatementEpisode; readonly site: Site };
+const statementRuns = new WeakMap<Page, StatementRun>();
 const releasedDirectory = process.env.GRACE_BILLWORLD_RELEASED_DIR;
 
-async function releasedStatement(context: BrowserCommandContext, action: StatementAction) {
+async function startReleasedStatement(fixture: string, directory: string): Promise<StatementEpisode> {
+  const released = await releasedBillworld(fixture);
+  const negative = await released.start("grader_validation");
+  try {
+    const grade = await negative.finish("", join(directory, "no-action.json"));
+    const checks = grade.checks;
+    if (grade.success || grade.actionsUsed !== 0 ||
+        checks.statement_viewed_after_login !== false || checks.due_date_reported !== false || checks.amount_reported !== false)
+      throw new Error("The no-action control did not independently reject the statement and its answer");
+  } finally { await negative.close(); }
+  const episode = await released.start("reference_script");
+  const question = episode.task.prompt.match(/Report [^.]+\. Make no changes\.$/u)?.[0];
+  if (!question) {
+    await episode.close();
+    throw new Error("The pinned task no longer supplies its released read-only question");
+  }
+  return {
+    ...episode, question,
+    beforeObservation: () => episode.action("grace.observe_statement"),
+    async finish(text) {
+      await episode.action("grace.submit_visible_answer");
+      return episode.finish(text, join(directory, "grace-answer.json"));
+    },
+  };
+}
+
+async function releasedStatement(context: BrowserCommandContext, attempt: string, action: StatementAction) {
   const existing = statementRuns.get(context.page);
-  if (action.kind === "prepare") {
-    if (!releasedDirectory || existing) throw new Error("The released BillWorld test needs one pinned episode");
-    const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
-    mkdirSync(results, { recursive: true });
-    const directory = mkdtempSync(join(results, "released-statement-"));
-    const released = await releasedBillworld(releasedDirectory);
-    const negative = await released.start("grader_validation");
-    try {
-      const grade = await negative.finish("", join(directory, "no-action.json"));
-      const checks = grade.checks;
-      if (grade.success || grade.actionsUsed !== 0 ||
-          checks.statement_viewed_after_login !== false || checks.due_date_reported !== false || checks.amount_reported !== false)
-        throw new Error("The no-action control did not independently reject the statement and its answer");
-    } finally { await negative.close(); }
-    const episode = await released.start("reference_script");
-    const browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
-    if (!browser) {
-      await episode.close();
-      throw new Error("The released trial needs an isolated Chromium context");
+  if (action.kind === "close") {
+    if (existing?.attempt !== attempt) return {};
+    statementRuns.delete(context.page);
+    if (existing.state === "Ready") {
+      try { await existing.site.browser.close(); }
+      finally { await existing.episode.close(); }
     }
+    return {};
+  }
+  if (action.kind === "prepare") {
+    if (!releasedDirectory || existing) throw new Error("The BillWorld statement test needs one pinned episode");
+    const reservation = { attempt, state: "Preparing" } satisfies StatementRun;
+    statementRuns.set(context.page, reservation);
+    let episode: StatementEpisode | undefined;
+    let browser: BrowserContext | undefined;
     try {
-      const question = episode.task.prompt.match(/Report [^.]+\. Make no changes\.$/u)?.[0];
-      if (!question) throw new Error("The pinned task no longer supplies its released read-only question");
+      const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
+      mkdirSync(results, { recursive: true });
+      const directory = mkdtempSync(join(results, action.billerId === undefined ? "released-statement-" : "fleet-view-bill-"));
+      episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
+        : await fleetStatement(releasedDirectory, action.billerId, directory);
+      if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
+      browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
+      if (!browser) throw new Error("The statement trial needs an isolated Chromium context");
       const page = await browser.newPage();
       await episode.prepareStatement(page);
       const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await browser.newCDPSession(page) };
-      statementRuns.set(context.page, { episode, site, directory });
+      if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
       await context.page.bringToFront();
-      return { taskId: episode.taskId, url: page.url(), question };
+      if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
+      statementRuns.set(context.page, { attempt, state: "Ready", episode, site });
+      return { taskId: episode.taskId, url: page.url(), question: episode.question };
     } catch (error) {
-      await browser.close();
-      await episode.close();
+      if (statementRuns.get(context.page) === reservation) statementRuns.delete(context.page);
+      try { await browser?.close(); }
+      finally { await episode?.close(); }
       throw error;
     }
   }
-  if (!existing) throw new Error("No released statement is attached to this test");
-  if (action.kind === "close") {
-    statementRuns.delete(context.page);
-    try { await existing.site.browser.close(); }
-    finally { await existing.episode.close(); }
+  if (existing?.attempt !== attempt || existing.state !== "Ready") throw new Error("No BillWorld statement is attached to this attempt");
+  if (action.kind === "evidence") {
+    if (!existing.episode.taskId.endsWith(":view-bill")) throw new Error("Only Fleet statements run markup controls");
+    await existing.site.page.evaluate((value) => {
+      const title = document.querySelector("title");
+      if (!title) throw new Error("The Fleet statement has no title");
+      const original = title.getAttribute("data-original-title") ?? title.text;
+      title.setAttribute("data-original-title", original);
+      title.text = value === "past" ? "Past statement" : original;
+      document.querySelector("[data-evidence-control]")?.remove();
+      if (value === "ambiguous") {
+        const extraDueDate = document.createElement("p");
+        extraDueDate.dataset.evidenceControl = "true";
+        extraDueDate.textContent = "Due date: January 1, 2001";
+        (document.querySelector("main") ?? document.body).prepend(extraDueDate);
+      }
+    }, action.value);
     return {};
   }
-  if (action.kind === "answer") {
-    await existing.episode.action("grace.submit_visible_answer");
-    const grade = await existing.episode.finish(action.text, join(existing.directory, "grace-answer.json"));
-    return grade;
-  }
+  if (action.kind === "answer") return existing.episode.finish(action.text);
   if (action.request.command.subaction !== "snapshot") throw new Error("The statement trial only permits native observation");
-  await existing.episode.action("grace.observe_statement");
+  await existing.episode.beforeObservation?.();
   return observeSite(existing.site, { kind: "control", request: action.request });
 }
 
@@ -400,13 +450,13 @@ declare module "vitest/browser" {
   interface BrowserCommands {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
-    releasedStatement: (action: StatementAction) => Promise<Record<string, unknown>>;
+    releasedStatement: (attempt: string, action: StatementAction) => Promise<Record<string, unknown>>;
   }
 }
 declare module "vitest" {
   interface ProvidedContext {
     browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
-    releasedBillworldEnabled: boolean;
+    billworldStatements: readonly { label: string; billerId?: string }[];
   }
 }
 
@@ -421,6 +471,10 @@ export default defineConfig(async (env) => {
         }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep }) => ({ taskId, intent, startUrl, requiredStep, gradeWholeCohort: Boolean(fleet) }));
+  const billworldStatements = releasedDirectory === undefined ? [] : [
+    { label: "released" },
+    ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
+  ];
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
-  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, releasedBillworldEnabled: releasedDirectory !== undefined }, globalSetup: ["test/setup.vibe"] } };
+  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements }, globalSetup: ["test/setup.vibe"] } };
 });

@@ -233,7 +233,8 @@ otherwise.
 7. Tablet and sign-in route: the launcher APK on the stock Android of the
    Lenovo TB336FU, with Google Play services and Chrome. Sign-in is the native
    Google account picker plus one permission sheet; the browser route is the
-   fallback. The AOSP image is staged, not built.
+   fallback. The AOSP proof is one recorded Cuttlefish build and boot of the
+   image; no image goes on the Lenovo tablet for the MVP.
 8. The permission sheet: Gmail (read, send, move to Trash) and Google Calendar
    (read and change events). The calendar is her Google Calendar, cached on
    the tablet.
@@ -300,6 +301,33 @@ otherwise.
     keys are made by the owner or an operator from the app's README checklist.
 32. Each feature keeps its journey in its own test file until the last wave
     moves them into one file per runner.
+33. Grace's own wallpaper may keep a clear area where the website shows. It
+    is not a cut in either WebView, `surface.md` records it, and it is
+    derived from the same measurement that places the page, in the same
+    frame.
+34. The hosted web app shows websites as an iframe under Grace's UI, the same
+    model as the tablet. The build that draws websites above the UI with holes
+    is not deployed.
+35. Upstream draws the link guide inside the page, so it stays put when the
+    page scrolls, with Grace's lilac ring and label as its options.
+    `surface.md` says so, and Grace's unused guide components are deleted.
+36. A website's fullscreen video may cover Grace. Back leaves fullscreen, and
+    Grace speaking or a tap on Ask Grace ends it first.
+37. No kiosk: the tablet is not locked to Grace. Home always brings her back
+    and the stock launcher stays as a way to recover (decision 27);
+    `deviceKeys.md` says so.
+38. The launcher APK is the only Android build; the standalone APK flavor
+    and its build flag are dropped. Standalone Grace, the dedicated Grace
+    Cloud deployment and account, stays.
+39. Hosted CI: GitHub billing is restored and every job runs on
+    `ubuntu-24.04`. Until then decision 30 applies.
+40. The benchmark harness (BillWorld, WebArena, their variables, Python and
+    hosted key) moves out of the app into its own package that imports Grace.
+41. Sign-in on debug builds: one shared debug signing key is registered as a
+    development sign-in client, so emulator walks can sign in. The image
+    stays signed out until it is signed by a release signer.
+42. The microphone is asked for at first use, matching decision 11. The
+    image grants nothing at first boot.
 
 ### Gates that follow this delivery
 
@@ -439,7 +467,7 @@ biller in user QA.
 | JOURNEY 06 | Explain the bill | `billpay.md` "Understand the bill before deciding how to pay" | "Current bill facts distinguish payment choices, no payment due and an existing payment" | `task` | `bill` | open (task-bill-kind, task-shell-bill) |
 | JOURNEY 07 | Resolve the payment choice with one question | `billpay.md` "Understand the bill before deciding how to pay" | "Choosing an amount, date and funding method is separate from approving submission" | `task` | `bill` | open (task-shell-bill) |
 | JOURNEY 08 | Fill and check one step at a time; accept a correction | `billpay.md` "Correct the website form and review consequences" | "The final form must match every chosen value before consequential review" | `task` | `bill` | open (task-retire-fill-gate, task-shell-bill) |
-| JOURNEY 09 | Review the consequences; nothing submitted yet | `preparationReview.md` "Review the payment I actually chose" | `commitment.md` "Current amount, date, funding method and fees are presented before voice approval" | `task` | `bill` | open (task-shell-bill) |
+| JOURNEY 09 | Review the consequences; nothing submitted yet | `preparationReview.md` "Review the payment I actually chose" | `commitment.md` "The current terms are presented before voice approval" | `task` | `bill` | open (task-shell-bill) |
 | JOURNEY 10 | Submission by her tap or her explicit yes | `commitment.md` "Review and authorize the exact payment" | "An observed website tap starts outcome checking without an agent submission"; `workspace.md` "Final submission checks the current workspace and consumes one payment authorization" | `task` | `bill` | open (task-shell-bill); real biller: user QA |
 | JOURNEY 11 | Verify and explain the actual result | `handoffs.md` "Return to the bill and see its actual result" | `workspace.md` "Verified provider outcomes finish the task while storage retains the payment record" | `task` | `bill` | open (task-shell-bill); real biller: user QA |
 
@@ -535,7 +563,7 @@ no rule states it.
 | U02 | Login failure, expired session or code | `billpay.md` "Understand the bill before deciding how to pay" | "Opening a selected bill requests private sign-in without assuming account access" | `task` | `bill` | open (task-shell-bill) |
 | U03 | Misheard or outdated information | `memory.md` "Choose what Grace remembers and correct or forget it" | "A fresh user choice proposes a fact without silently saving it"; `billpay.md` "The final form must match every chosen value before consequential review" | `task`, `memory` | `bill` | open (task-shell-bill, memory-shell) |
 | U04 | Pause, explanation or changed choice | `workspace.md` "Resume against the current website" | `assistant.md` "Resume first reconciles current evidence and never replays an old queue" | `task` | `bill` | open (task-shell-bill) |
-| U05 | Already paid or scheduled | `commitment.md` "Stop, resume and investigate without paying twice" | "A payment made outside Grace is reconciled before new payment guidance" | `task` | `bill` | open (task-shell-bill) |
+| U05 | Already paid or scheduled | `commitment.md` "Stop, resume and investigate without paying twice" | "An attempt made outside Grace is reconciled before new guidance" | `task` | `bill` | open (task-shell-bill) |
 | U06 | Changed amount, fee or date | `billpay.md` "Correct the website form and review consequences" | "Pausing or changed context discards a prepared form but keeps the selected bill" | `task` | `bill` | open (task-shell-bill) |
 | U07 | Invalid field or changed page | `execution.md` "Interrupt or navigate without stale actions" | "Actual readback establishes completion and a mismatch establishes a visible block" | `task` | `bill` | open (task-shell-bill) |
 | U08 | Missing method or decline | `billpay.md` "Understand the bill before deciding how to pay" | "Current bill facts distinguish payment choices, no payment due and an existing payment" | `task` | `bill` | open (task-shell-bill) |
@@ -573,7 +601,7 @@ no rule states it.
 
 | ID | Requirement | Story | Rule | Journey | Exercise | Status |
 |---|---|---|---|---|---|---|
-| ENG 01 | AOSP fork, launcher and custom Chromium | n/a | n/a | n/a | `agent` | superseded by decisions 3 and 7: the launcher APK on stock Android with the embedded Eliza runtime; the AOSP image is staged, not built (android-release-and-image) |
+| ENG 01 | AOSP fork, launcher and custom Chromium | n/a | n/a | n/a | `agent` | superseded by decisions 3 and 7: the launcher APK on stock Android with the embedded Eliza runtime; the AOSP proof is one recorded Cuttlefish build and boot, and no image goes on the Lenovo tablet for the MVP (android-release-and-image) |
 | ENG 02 | The shell works without inference | `shell.md` "Keep control through interruptions" | "Network and service failures remain distinct from a failed device shell" | `home`, `chat` | `wifi` | open (ws-device-availability, availability-and-failures-shell); offline: decision 6 |
 | ENG 03 | Staff-provisioned services without customer accounts | n/a | n/a | n/a | n/a | superseded by DIR 04 and decision 9: she signs in to her own Grace account and can subscribe through account settings. External pilot funding is also supported. Provider registrations are in decision 31 |
 | ENG 04 | Policy enforced outside the model | planned `agentActions.md` | `execution.md` "The effect boundary checks both generations and dispatches a prepared operation once" | `actions` | `actions` | open (agent-actions-spec, agent-actions-shell); typed actions only (decision 29) |

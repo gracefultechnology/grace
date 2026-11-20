@@ -1,7 +1,9 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"
+import { sendsHerVoice } from "../gen/app__conversation.effect.vibe"
 import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
+import { Passwords } from "./passwords.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const route = "/api/v1/voice/speech"
@@ -99,6 +101,7 @@ function phrases(text: string) {
 }
 
 effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<Microphone | null>) {
+  const passwords = try Passwords
   const lease = try acquireRelease(checkedLease(native), (leased) => revoke(native, leased))
   const socket = try acquireRelease(Effect.try(() => openSpeechSocket(lease.wsUrl)),
     (connected) => Effect.ignore(timeout(tryPromise((signal) => releaseSpeechSocket(connected, signal)), "2 seconds")))
@@ -130,6 +133,7 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
   let ready = false
   let speaking: number | null = null
   let paused = false
+  let sending = false
 
   effect function stopPlayback() {
     if (speaking === null) return
@@ -143,10 +147,11 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     const { conversation } = state.assistant
     const prefs = state.preferences.session
     try Effect.try(() => speaker.volume(prefs.muted || !prefs.voiceOutput ? 0 : prefs.volume / 100))
-    if (conversation.voice && mayOfferTalk(state)) {
+    sending = sendsHerVoice(conversation) && mayOfferTalk(state)
+    if (sending) {
       const device = try Ref.get(mic)
       if (device) try Effect.try(() => device.attach((pcm) => {
-        if (socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
+        if (sending && socket.readyState === 1 && socket.bufferedAmount < 128_000) socket.send(pcm)
       }))
     }
     if (!prefs.voiceOutput || prefs.muted || prefs.volume === 0) {
@@ -230,7 +235,9 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
       const text = event.transcript?.trim().slice(0, 8_192) ?? ""
       if (text) {
         try stopPlayback()
-        workspace.send({ type: "interact", input: { tag: "Hear", token, text, owner: "HumanAudio" } }, "Host") catch () => undefined
+        const input = { tag: "Hear", token, text, owner: "HumanAudio" } as const
+        if (try Effect.uninterruptible(passwords.guideSpeech({ ...input, complete: true }))) return
+        workspace.send({ type: "interact", input }, "Host") catch () => undefined
       } else {
         workspace.send({ type: "interact", input: { tag: "UnusableSpeech", token, owner: "HumanAudio" } }, "Host") catch () => undefined
       }
