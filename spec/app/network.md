@@ -239,7 +239,7 @@ neither on. No networks nearby offers a fresh search. Each report of the
 OS replaces the reason, except while the person reads why location is
 needed. When Android can no longer list networks, Grace clears the previous
 list and closes any password entry. An Android reply for the old selection
-cannot restore it.
+cannot restore it. A join already under way, and its result, are kept.
 
 ```quint
 type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found
@@ -258,7 +258,7 @@ pure def canReportScan(n: NetworkJoin, by: NetworkActor): bool =
   by == OperatingSystem and n.discovery != ExplainingLocation
 pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): NetworkJoin = {
   val refused = if (n.locationAsked) LocationRefused else LocationAccessNeeded
-  val selection = if (found != Found and n.phase != Selecting) cleared(n.version + 1, n) else n
+  val selection = if (found != Found and n.phase == PrivateEntry) cleared(n.version + 1, n) else n
   { ...selection, discovery: match found {
     | RadioOff => WifiOff
     | NoLocationAccess => refused
