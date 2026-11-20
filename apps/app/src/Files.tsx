@@ -6,6 +6,7 @@ import { type ComponentProps, useCallback, useState, useSyncExternalStore, useTr
 import { enabled, fileAt, highlightedFile } from "../gen/app__files.ts";
 import { useMachine } from "../gen/app__setup.react.ts";
 import { FileLibrary } from "./fileLibrary.vibe";
+import { filesAccount } from "./files.vibe";
 import { useRuntime } from "./useApp.ts";
 
 const changes = Stream.unwrap(Effect.map(FileLibrary, (files) => files.changes));
@@ -13,12 +14,12 @@ const home = Stream.unwrap(Effect.map(FileLibrary, (files) => files.home));
 
 export function useFilesHome() {
   const runtime = useRuntime();
-  const account = useMachine(runtime).state?.graceAccount.tag;
+  const account = filesAccount(useMachine(runtime).state?.graceAccount);
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(home, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
   }, [runtime]);
-  return useSyncExternalStore(subscribe, () => account === "GraceDeviceSignedIn"
+  return useSyncExternalStore(subscribe, () => account !== undefined
     ? runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.getHome())) : undefined);
 }
 
@@ -26,7 +27,7 @@ const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert" | "aria-hidden"> & { onClose: () => void }) {
   const runtime = useRuntime();
-  const account = useMachine(runtime).state?.graceAccount.tag;
+  const account = filesAccount(useMachine(runtime).state?.graceAccount);
   const [query, setQuery] = useState("");
   const [confirmation, setConfirmation] = useState<{ id: string; lease: string; generation: number }>();
   const [failed, setFailed] = useState(false);
@@ -42,7 +43,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
     if (!accepted) setFailed(true);
   });
   const window = { ...cover, onClose };
-  if (snapshot.kind !== "ready" || account !== "GraceDeviceSignedIn") {
+  if (snapshot.kind !== "ready" || snapshot.owner !== account) {
     return <AppWindow {...window} title="Files" icon={<Folder aria-hidden />}>
       {snapshot.kind === "unsupported" ? <EmptyState title="Open Files on your Grace tablet" /> :
         snapshot.kind === "unavailable" ? <RetryNotice onRetry={() => run({ kind: "retry" })}>Grace couldn’t read your files.</RetryNotice> :
@@ -107,7 +108,9 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
           <Button variant="capsule" size="pill" disabled={waiting || model.page <= 1} onClick={() => run({ kind: "page", direction: -1 })}>Previous page</Button>
           <Button variant="capsule" size="pill" disabled={waiting || model.page >= selected.pages} onClick={() => run({ kind: "page", direction: 1 })}>Next page</Button>
         </div>
-        {snapshot.image && <img src={snapshot.image} alt={`Page ${model.page} of ${selected.name}`} className="h-auto max-w-full" />}
+        {snapshot.image?.startsWith("data:application/pdf;") ?
+          <object data={`${snapshot.image}#page=${model.page}`} type="application/pdf" aria-label={selected.name} className="h-[640px] w-full" /> :
+          snapshot.image && <img src={snapshot.image} alt={`Page ${model.page} of ${selected.name}`} className="h-auto max-w-full" />}
       </div>
     </PdfViewer>;
   }
@@ -119,10 +122,10 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
         <label>Find a file<Input value={query} maxLength={120} onChange={(event) => setQuery(event.currentTarget.value)} /></label>
         <Button type="submit" variant="capsule" size="pill" disabled={waiting || !query.trim()}>Find</Button>
       </form>
-      <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" })}>
+      {snapshot.canImport && <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" })}>
         {model.tab === "Photos" ? "Import photo" : "Import PDF"}
-      </Button>
-      {model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "capture" })}>Take photo</Button>}
+      </Button>}
+      {snapshot.canImport && model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={waiting} onClick={() => run({ kind: "capture" })}>Take photo</Button>}
       {failed || model.feedback === "WriteFailed" ? <PageText role="status">The file wasn’t saved or opened.</PageText> :
         model.feedback === "FilesSaved" && <PageText role="status">Saved in Files.</PageText>}
     </div>

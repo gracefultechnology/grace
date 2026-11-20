@@ -46,13 +46,13 @@ export type PhotoViewerProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
   onPrevious?: () => void;
   /** Shows the photo after. */
   onNext?: () => void;
-  /** Saves it to Files, the one next step. */
+  /** Saves it to Files, the one next step; without it Save to Files is shown but cannot be pressed. */
   onSave?: () => void;
-  /** Forwards it in a new email. */
+  /** Forwards it in a new email; without it Forward is not offered. */
   onForward?: () => void;
   /** `loading` a placeholder in the photo's place; `failed` says so with Try again. Save and Forward wait for the photo. */
   status?: MailReadStatus;
-  /** Opens it again after it failed. */
+  /** Opens it again after it failed; without it the failure offers no Try again. */
   onRetry?: () => void;
   /** What a failure says, in place of "This attachment couldn’t be shown. Try again.". */
   errorLabel?: ReactNode;
@@ -80,14 +80,16 @@ export function PhotoViewer({ src, alt, first = false, last = false, onPrevious,
     <AppWindow
       actions={
         <>
-          <Button variant="prominent" size="compact" aria-busy={saveStatus === "saving" || undefined} disabled={held || saveStatus === "saving"} onClick={onSave}>
+          <Button variant="prominent" size="compact" aria-busy={saveStatus === "saving" || undefined} disabled={!onSave || held || saveStatus === "saving"} onClick={onSave}>
             {pendingMark(saveStatus === "saving", <mailIcons.down {...pill} />)}
             {l.save}
           </Button>
-          <Button variant="plain" size="compact" className="text-grace-ink" disabled={held} onClick={onForward}>
-            <Forward {...pill} />
-            {l.forward}
-          </Button>
+          {onForward && (
+            <Button variant="plain" size="compact" className="text-grace-ink" disabled={held} onClick={onForward}>
+              <Forward {...pill} />
+              {l.forward}
+            </Button>
+          )}
         </>
       }
       {...props}
@@ -104,7 +106,7 @@ export function PhotoViewer({ src, alt, first = false, last = false, onPrevious,
           {status === "loading" ? (
             <Skeleton role="status" aria-hidden={false} aria-label={l.loading} className="h-[520px] w-[780px] rounded-day" />
           ) : (
-            <MailNotice actionLabel={l.retry} onAction={onRetry} className="w-[780px]">
+            <MailNotice actionLabel={onRetry && l.retry} onAction={onRetry} className="w-[780px]">
               {errorLabel ?? l.failed}
             </MailNotice>
           )}

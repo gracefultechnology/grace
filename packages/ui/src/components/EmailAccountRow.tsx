@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import { CircleAlert } from "lucide-react";
 import { Avatar, type AvatarProps } from "./Avatar.tsx";
-import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
+import { GuideAnchor, type GuidePointing } from "./GuideAnchor.tsx";
 import { ListRow } from "./ListRow.tsx";
 import { emailProviders, type EmailProvider } from "./ProviderGrid.tsx";
 
@@ -33,8 +33,8 @@ export type EmailAccountRowProps = Omit<ComponentProps<"div">, "children" | "tit
   colour: AccountColour;
   /** Opens the email's own page. */
   onOpen?: () => void;
-  /** Grace pointing at this email. */
-  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel">;
+  /** Grace pointing at this email (prototype `acc-<id>`). */
+  guide?: GuidePointing;
 };
 
 /**
@@ -57,5 +57,5 @@ export function EmailAccountRow({ address, provider, uses, status, colour, onOpe
       {...props}
     />
   );
-  return guide ? <GuideAnchor radius={22} className="flex [&>div]:flex-1" {...guide}>{row}</GuideAnchor> : row;
+  return guide ? <GuideAnchor radius={22} placement="below" className="flex [&>div]:flex-1" {...guide}>{row}</GuideAnchor> : row;
 }

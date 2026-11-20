@@ -25,6 +25,7 @@ import { agent } from "./actions.vibe"
 import { browserGuide, type GuideDecision } from "./browserGuide.vibe"
 import { connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
+import { fileStorage, library } from "./files.vibe"
 import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
@@ -108,13 +109,14 @@ type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPor
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin, speech?: GuideSpeechPlugin) {
   const platform = "native" in host ? host : { native: false }
   const cloud = "url" in host ? host : undefined
+  const storage = fileStorage(platform.native, platform.files ?? filesPlugin)
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
-  const machines = Layer.mergeAll(preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews())
+  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews()))
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup, platform.guideSpeech ?? speech))
   const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), voice), machines)
-  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary(platform.native ? platform.files ?? filesPlugin : undefined)), shell)
+  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)
 }

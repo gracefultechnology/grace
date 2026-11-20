@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 import { cn } from "../lib/cn.ts";
 
@@ -35,14 +36,16 @@ export function PageHeading({ level = "page", className, children, ...props }: P
 }
 
 export type PageTextProps = ComponentProps<"p"> & {
+  asChild?: boolean;
   /** `body` reading text (prototype `.a-b`); `secondary` what matters less (prototype `.a-s`). */
   tone?: "body" | "secondary";
 };
 
 /** Text in an app window's page: body copy or a secondary line. */
-export function PageText({ tone = "body", className, ...props }: PageTextProps) {
+export function PageText({ tone = "body", asChild = false, className, ...props }: PageTextProps) {
+  const Tag = asChild ? Slot : "p";
   return (
-    <p
+    <Tag
       className={cn(
         "m-0 font-sans",
         tone === "body" ? "text-body-lg leading-[30px] font-normal text-foreground" : "text-body leading-[26px] font-medium text-muted-foreground",

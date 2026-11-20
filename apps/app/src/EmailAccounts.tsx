@@ -3,19 +3,23 @@ import {
   type AccountColour, Alert, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm,
   OtherEmailForm, type OtherEmailProblem, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
+import { Effect } from "effect";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
 import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
-import { type MailInstance, useAccounts, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
+import type { Help } from "./context.vibe";
+import { Conversation } from "./conversation.vibe";
+import { type MailInstance, useAccounts, useRuntime, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack">;
 
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
+const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
 const home = "Email & calendar";
 const add = "Add an email";
 const other = "Other email";
@@ -54,6 +58,7 @@ export function EmailAccounts(frame: Frame) {
 
 function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
   const { can, send } = useAccounts();
+  const runtime = useRuntime();
   const workspace = useWorkspace();
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
@@ -63,7 +68,13 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const shown = registry.accounts.find((a) => a.id === registry.shown);
   const { signIn, page, problem } = registry;
 
-  const askGrace = () => { if (workspace.can({ type: "openGrace" })) void workspace.send({ type: "openGrace" }); };
+  const opening = workspace.can({ type: "openGrace" });
+  const help = async (need: Help) => {
+    await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
+    if (opening) await workspace.send({ type: "openGrace" });
+    await workspace.send(compact);
+  };
+  const askGrace = (need: Help) => opening || workspace.can(compact) ? () => void help(need) : undefined;
   const choose = (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.();
   const notice = notices[problem];
   const alert = notice && <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-4 max-w-[620px]">{notice}</Alert>;
@@ -74,7 +85,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return registry.accounts.length === 0 ? (
           <EmailAccountList empty>
             {alert}
-            <ProviderGrid onChoose={choose} onAskGrace={askGrace} />
+            <ProviderGrid onChoose={choose} onAskGrace={askGrace("connectEmail")} />
           </EmailAccountList>
         ) : (
           <EmailAccountList onAdd={offer({ type: "addAccount" })}>
@@ -101,7 +112,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return (
           <MailServersForm key={signIn.domain} domain={signIn.domain} connecting={signIn.stage === "CheckingServers"} refused={problem === "ServersRefused"}
             onConnect={(servers) => { if (can({ type: "submitServers" })) void flows.servers(servers); }}
-            onCancel={offer({ type: "goBack" })} onAskGrace={askGrace} />
+            onCancel={offer({ type: "goBack" })} onAskGrace={askGrace("mailServers")} />
         );
       case "AccountDetail": {
         if (!shown) return null;
@@ -126,14 +137,19 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   };
 
   const company = emailProviders[providers[signIn.provider]].name;
+  const provider = signIn.stage === "ProviderPage" ? flows.page : undefined;
   return (
     <SettingsApp {...frame} {...header(page, registry, shown)} onBack={offer({ type: "goBack" })}>
       {content()}
-      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} onCancel={offer({ type: "cancelSignIn" })}>
-        <div className="m-auto flex max-w-[460px] flex-col items-center gap-6 p-8 text-center text-body">
-          <Spinner />
-          <p>Sign in on {company}’s own page. The tablet waits here until you finish.</p>
-        </div>
+      <SignInSheet open={signIn.stage === "ProviderPage"} owner={company} host={provider?.host || undefined} onCancel={offer({ type: "cancelSignIn" })}>
+        {provider?.inSheet ? (
+          <iframe src={provider.url} title={`${company}’s own sign-in page`} sandbox="allow-forms allow-scripts" referrerPolicy="no-referrer" className="block size-full border-0" />
+        ) : (
+          <div className="m-auto flex max-w-[460px] flex-col items-center gap-6 p-8 text-center text-body">
+            <Spinner />
+            <p>Sign in on {company}’s own page. The tablet waits here until you finish.</p>
+          </div>
+        )}
       </SignInSheet>
       {flows.note && <Toast key={flows.note.id} placement="screen">{flows.note.text}</Toast>}
     </SettingsApp>

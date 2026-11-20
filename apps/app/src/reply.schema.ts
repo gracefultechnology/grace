@@ -10,11 +10,11 @@ import type { GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { FileTab } from "../gen/app__files.effect.vibe"
 
 const Words = Schema.Trimmed.check(Schema.isMinLength(1))
-const Day = Schema.String.check(
+const Day = Schema.String.annotate({ description: "a date written YYYY-MM-DD" }).check(
   Schema.isPattern(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/),
-  Schema.makeFilter((day: string) => String(new Date(`${day}T00:00:00Z`).toJSON()).startsWith(day)),
+  Schema.makeFilter((day: string) => Number(day.slice(0, 4)) >= 1970 && String(new Date(`${day}T00:00:00Z`).toJSON()).startsWith(day)),
 )
-const Clock = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
+const Clock = Schema.String.annotate({ description: "a time written HH:MM on a 24-hour clock" }).check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
 const of = <T extends string>() => <const L extends readonly [T, ...T[]]>(literals: L) => Schema.Literals(literals)
 const Repeat = of<Recurrence>()(["Once", "Weekly", "Monthly"])
 export const Remind = Schema.Literals(["NoReminder", "HourBefore", "DayBefore"])
@@ -42,7 +42,7 @@ export const Action = Schema.Union([
   action("showInbox", { account: Schema.optionalKey(Words) }),
   action("chooseFolder", { folder: of<Folder>()(["InboxFolder", "SentFolder", "DraftsFolder", "TrashFolder"]) }),
   action("draftMessage", { to: Words, subject: Schema.optionalKey(Words), body: Words }),
-  action("newEmail", { to: Words, subject: Schema.optionalKey(Words), body: Words }),
+  action("newEmail", { to: Words, subject: Schema.optionalKey(Words), body: Schema.optionalKey(Words) }),
   action("addressEmail", { to: Words }),
   action("draftReply", { body: Words }),
   action("fillDraft", { body: Words }),
@@ -131,6 +131,11 @@ const read = (raw: string) => {
     ? { ...reply, isQuestion: true as const, answers: answers.length >= fewest ? answers : [] }
     : { ...reply, isQuestion: false as const, answers: [] as const }
 }
+
+export const unreadable = (raw: string): readonly string[] =>
+  list(fields(raw).actions)
+    .filter((each) => Option.isNone(decodeAction(present(each))))
+    .map((each) => isFields(each) && typeof each.kind === "string" && /^\w{1,40}$/.test(each.kind) ? each.kind : "an action")
 
 export const Reply = Schema.String.pipe(Schema.decodeTo(Schema.Union([Statement, Question]), {
   decode: SchemaGetter.transform(read),
