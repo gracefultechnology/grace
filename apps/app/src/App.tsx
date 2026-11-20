@@ -87,7 +87,7 @@ const wifiWords: Record<Connectivity, string> = {
 
 function Screen() {
   const runtime = useRuntime();
-  const account = useSetup(runtime).state?.graceAccount;
+  const setup = useSetup(runtime).state;
   const cards = useHomeCards();
   const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
@@ -137,7 +137,7 @@ function Screen() {
       void send({ type: "togglePopover", popover });
     },
   });
-  const useManaged = usesManagedSurfaces(account, window.location.hash);
+  const useManaged = usesManagedSurfaces(setup, window.location.hash);
   const online = device.connectivity === "Online";
   const volume = preferences.session;
   // spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone": zero volume is muted, and Unmute at zero chooses 50.

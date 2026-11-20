@@ -461,7 +461,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       const box = try boxOf(key)
       if (box !== undefined) sources.push({ key, view: try box.get() })
     }
-    const managed = usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
+    const managed = usesManagedSurfaces(try setup.get(), webView.window.location.hash)
     const due = managed ? [] : shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt)
     const same = (r: CalRow, at: Reminded) => r.key === at.key && r.identity.occurrenceId === at.id
     for (const [subject, at] of [...known]) {

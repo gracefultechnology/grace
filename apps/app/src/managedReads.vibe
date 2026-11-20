@@ -98,8 +98,9 @@ export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" 
   ({ kind: "mail"; subject: string } | { kind: "calendar"; title: string; startAt: string })
 )
 
-export function usesManagedSurfaces(account: SetupState["graceAccount"] | undefined, hash: string): boolean {
-  return account?.tag === "GraceSignedIn" || account?.tag === "GraceDeviceSignedIn" || viewOf(hash) !== undefined
+export function usesManagedSurfaces(setup: Pick<SetupState, "graceAccount" | "googleLink"> | undefined, hash: string): boolean {
+  return viewOf(hash) !== undefined || setup !== undefined &&
+    (mayReadManaged(setup.graceAccount, setup.googleLink, "ManagedEmail") || mayReadManaged(setup.graceAccount, setup.googleLink, "ManagedCalendar"))
 }
 
 export type GuidedAuthority = { device: string; connected: string | undefined }
@@ -108,7 +109,7 @@ export function guidedAuthority(setup: SetupState | undefined, hash: string): Gu
   const account = setup?.graceAccount
   const link = setup?.googleLink
   const device = account?.tag === "GraceSignedIn" ? JSON.stringify(["grace", account.accountId]) : "tablet"
-  const connected = !usesManagedSurfaces(account, hash) ? "tablet" :
+  const connected = !usesManagedSurfaces(setup, hash) ? "tablet" :
     account?.tag === "GraceSignedIn" && link?.tag === "GoogleLinkConnected" && link.email.trim() !== ""
       ? JSON.stringify(["google", account.accountId, link.email.trim().toLowerCase()]) : undefined
   return { device, connected }
@@ -305,12 +306,12 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   }
 
   effect function ownsSurfaces(): boolean!! {
-    return usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
+    return usesManagedSurfaces(try setup.get(), webView.window.location.hash)
   }
 
   effect function guidedSelection(): GuidedManagedSelection!! {
     const account = try setup.get()
-    if (!usesManagedSurfaces(account.graceAccount, webView.window.location.hash)) return { kind: "legacy" }
+    if (!usesManagedSurfaces(account, webView.window.location.hash)) return { kind: "legacy" }
     const scope = try activeScope()
     const shown = try SubscriptionRef.get(latest)
     if (scope.kind !== "ready" || account.graceAccount.tag !== "GraceSignedIn" ||
