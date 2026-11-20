@@ -7,7 +7,6 @@ import ai.eliza.auth.cloud.CloudSignInEnvironment;
 import ai.eliza.auth.cloud.CloudSignInFlow;
 import ai.eliza.auth.cloud.CloudSignInPlugin;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
-import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -267,7 +266,7 @@ public final class GraceAccount extends CloudSignInPlugin {
  }
 
  private boolean passwordRecoveryReady() {
-  try { return secureUnlocked() && hasGooglePlayServices() && session(getContext()) != null
+  try { return recovery.deviceReady() && hasGooglePlayServices() && session(getContext()) != null
    && CloudPasswordBackup.available(REGISTRATION, ENVIRONMENT); }
   catch (Exception unavailable) { return false; }
  }
@@ -276,7 +275,7 @@ public final class GraceAccount extends CloudSignInPlugin {
   ACCOUNT.execute(() -> {
    if (!passwordRecoveryReady()) { call.reject("Password recovery is unavailable"); return; }
    getActivity().runOnUiThread(() -> {
-    if (GracePasswordsOwner.accountChanging() || !secureUnlocked() || getActivity().isFinishing()
+    if (GracePasswordsOwner.accountChanging() || !recovery.deviceReady() || getActivity().isFinishing()
      || getActivity().isDestroyed() || !recovery.open()) call.reject("Password recovery is unavailable");
     else call.resolve();
    });
@@ -298,7 +297,7 @@ public final class GraceAccount extends CloudSignInPlugin {
     BooleanSupplier current = () -> {
      try {
       owner.requireGeneration().run();
-      return controller.isCurrent(request) && secureUnlocked() && owner.session() != null
+      return controller.isCurrent(request) && recovery.deviceReady() && owner.session() != null
        && owner.session().equals(session(getContext()));
      } catch (Exception changed) { return false; }
     };
@@ -330,11 +329,6 @@ public final class GraceAccount extends CloudSignInPlugin {
     if (!started) controller.failed(request, "Grace could not start password backup.");
    } catch (Exception unavailable) { controller.failed(request, "Sign in to Grace to use cloud backup."); }
   });
- }
-
- private boolean secureUnlocked() {
-  KeyguardManager lock = getContext().getSystemService(KeyguardManager.class);
-  return lock != null && lock.isDeviceSecure() && !lock.isDeviceLocked();
  }
 
  private boolean hasGooglePlayServices() {
