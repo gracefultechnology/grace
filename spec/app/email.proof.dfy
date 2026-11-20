@@ -355,13 +355,15 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
 
   if inv(m) && canChangeSelectedMessage(m, target, change, by_) {
     var after := changeSelectedMessage(m, target, change, by_);
-    if true {
+    if !change.UnreadMessage? {
       assert after.messageRefs == ProofLib.Filter((set_x: string) => !((set_x in [target.ref])), m.messageRefs);
+    } else {
+      assert after.messageRefs == m.messageRefs;
     }
     forall ref | ref in after.messageRefs
       ensures availableMessage(after, ref)
     {
-      if true {
+      if !change.UnreadMessage? {
         ProofLib.FilterMember((set_x: string) => !((set_x in [target.ref])), m.messageRefs, ref);
         assert ref != target.ref;
       }
@@ -369,6 +371,11 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
         assert ref in m.messageRefs;
         assert availableMessage(m, ref);
         assert messageRecord(after, ref) == messageRecord(m, ref);
+      } else {
+        assert change.UnreadMessage?;
+        assert availableMessage(m, ref);
+        assert messageRecord(after, ref) == app__emailItem_changeMessage(messageRecord(m, ref), change, app__emailItem_MessageActor.MessageUser);
+        assert !changingFolder(messageRecord(after, ref));
       }
     }
   }
@@ -1397,5 +1404,78 @@ lemma reopenQueued_ensures(m: Mailbox, operationId: string, by_: MailActor)
     var record :| record in m.outbox && record.operationId == operationId;
     OutboxEntry(m, record);
     OutboxRemoved(m, reopenQueued(m, operationId, by_), operationId);
+  }
+}
+
+lemma assistMail_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailActor)
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysConnectedIdentity(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysAccountIdentityIsBound(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysGenerationAndRevision(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysSelectedContent(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysReadAccess(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysReadSelectionIsBound(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysFolderIsVisible(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysSearchMatchesQuery(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysMessageRegistry(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysListedMessagesAreCurrent(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysSelectionUsesCanonicalMessage(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysBillProvenance(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysScamWarningIsCurrent(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysLinkBelongsToSelection(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysFlaggedMessageIsNoBillSource(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysResultPersistenceHasTerminal(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysApprovalIsCurrent(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysSendHasRecipient(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysSendEvidence(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysQueuedSendsAreIssued(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysDraftHasAccount(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysDraftStoreHasRevision(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysRetirementHasMailbox(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysDraftVersions(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysEditableDraftIsNotRetired(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysDraftAssetsAreValid(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> alwaysMessageAssetsAreBound(assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepMessageRecordsAreRetained(m, assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepOnlyThePersonApproves(m, "assistMail", assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepSendingNeedsCurrentApproval(m, "assistMail", assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepUnresolvedDraftIsFixed(m, assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepQueueNeedsCurrentApproval(m, "assistMail", assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepQueuedSendGoesOnce(m, assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepWorthyComposerIsNotDropped(m, "assistMail", assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepMailboxIdentityIsFixed(m, assistMail(m, assist, asked, by_)))
+  ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepRetirementRequiresCompletion(m, "assistMail", assistMail(m, assist, asked, by_)))
+{
+  if inv(m) && canAssistMail(m, assist, asked, by_) {
+    match assist
+    case AssistSearch(query) =>
+      var inbox := assistedView(ReadKind.Search, m);
+      assert inv(inbox);
+      readMail_ensures(inbox, ReadKind.Search, query, true, MailActor.MailUser);
+    case AssistOpen(ref) =>
+      readMail_ensures(m, ReadKind.OpenMessage, ref, true, MailActor.MailUser);
+    case AssistList =>
+      showInbox_ensures(m, MailActor.MailUser);
+    case AssistNewEmail(recipient, subject, body) =>
+      startDraft_ensures(m, false, MailActor.MailUser);
+      var composer := startDraft(m, false, MailActor.MailUser);
+      assert inv(composer);
+      editDraft_ensures(composer, emptyContent.(to := recipient.address, subject := subject, body := body), MailActor.MailUser);
+    case AssistAddress(recipient) =>
+      editDraft_ensures(m, m.draft.(to := recipient.address), MailActor.MailUser);
+    case AssistFill(body) =>
+      editDraft_ensures(m, m.draft.(body := body), MailActor.MailUser);
+    case AssistForward(content) =>
+      forwardMessage_ensures(m, content, MailActor.MailUser);
+    case AssistSaveDraft(draftId) =>
+      preserveDraft_ensures(m, draftId, MailActor.MailUser);
+    case AssistTrash(target) =>
+      changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.TrashMessage, MailActor.MailUser);
+    case AssistRestore(target) =>
+      changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.RestoreMessage, MailActor.MailUser);
+    case AssistUndoTrash(target) =>
+      undoMessageTrash_ensures(m, target, MailActor.MailUser);
+    case AssistMarkUnread(target) =>
+      changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.UnreadMessage, MailActor.MailUser);
   }
 }
