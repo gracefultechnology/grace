@@ -26,7 +26,7 @@ const GoogleStatus = Schema.Struct({
 schema GoogleAuthorization { authorizeUrl: string }
 
 export const apiOrigin = import.meta.env.VITE_GRACE_CLOUD_API_ORIGIN || (import.meta.env.DEV ? "" : "https://api.graceforseniors.com")
-const webOrigin = import.meta.env.VITE_GRACE_CLOUD_WEB_ORIGIN || "https://app.graceforseniors.com"
+export const webOrigin = import.meta.env.VITE_GRACE_CLOUD_WEB_ORIGIN || "https://app.graceforseniors.com"
 const deviceAttemptKey = "grace-device-sign-in"
 const deviceChallenge = /^[A-Za-z0-9_-]{43}$/
 const deviceState = /^[A-Za-z0-9_-]{43,128}$/
