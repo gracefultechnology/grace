@@ -731,10 +731,13 @@ pure def lawAmbiguousAccountCannotOpenPasswordRecovery(debugBuild: bool, staging
   not(passwordRecoveryOffered(2, debugBuild, staging, true, true))
 pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
   not(passwordRecoveryOffered(1, false, true, screenSecure, serviceReady))
-pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
-  ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
-pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
-  not(passwordRestoreAdmitted(ownerMatches, freshUnlock, recoveryKeyMatches, false))
+type RecoveryPresence = ForegroundVaultAccess | ConfirmedRecoveryUnlock | EndedRecoveryUnlock
+pure def passwordRestoreAdmitted(ownerMatches: bool, presence: RecoveryPresence, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  ownerMatches and presence == ConfirmedRecoveryUnlock and recoveryKeyMatches and vaultEmpty
+pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, presence: RecoveryPresence, recoveryKeyMatches: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, presence, recoveryKeyMatches, false))
 pure def lawStaleUnlockCannotRestorePasswords(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
-  not(passwordRestoreAdmitted(ownerMatches, false, recoveryKeyMatches, vaultEmpty))
+  not(passwordRestoreAdmitted(ownerMatches, EndedRecoveryUnlock, recoveryKeyMatches, vaultEmpty))
+pure def lawForegroundVaultCannotAuthorizeRestore(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, ForegroundVaultAccess, recoveryKeyMatches, vaultEmpty))
 ```
