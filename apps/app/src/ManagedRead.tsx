@@ -178,7 +178,7 @@ function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending,
 export function ManagedRead({ view }: { view: ReadView }) {
   const runtime = useRuntime();
   const account = useMachine(runtime).state;
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string>();
   const [pending, startTransition] = useTransition();
   const [editor, setEditor] = useState<{ key: string; event?: EventRow; seriesFor?: string }>();
   const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; receipt?: WriteReceipt }>();
@@ -188,13 +188,14 @@ export function ManagedRead({ view }: { view: ReadView }) {
   }, [runtime]);
   const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (reads) => reads.get())));
   const run = (command: Parameters<ManagedReads.Shape["send"]>[0]) => startTransition(async () => {
-    setFailed(false);
+    setFailed(undefined);
     if (command.kind === "refresh") setWriteNotice(undefined);
     const result = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.send(command)));
     if (command.kind === "reminder") setWriteNotice({ key: projection, text: Exit.isSuccess(result) && result.value
       ? command.minutes === 0 ? "Reminder removed from your Grace account." : "Reminder choice saved. Your tablet schedules it when it reconnects."
       : "Grace couldn’t save that reminder choice." });
-    else if (!Exit.isSuccess(result) || !result.value) setFailed(true);
+    else if (!Exit.isSuccess(result) || !result.value) setFailed(command.kind === "saveAttachment" || command.kind === "savePhotos"
+      ? "Grace couldn’t save that to Files. Try again." : "Grace couldn’t open that. Try again.");
   });
   const signedIn = account?.graceAccount.tag === "GraceSignedIn" ? account.graceAccount : undefined;
   const authorized = signedIn !== undefined && account !== undefined &&
@@ -273,12 +274,13 @@ export function ManagedRead({ view }: { view: ReadView }) {
   const back = <Button variant="capsule" size="pill" onClick={() => run({ kind: "back" })}>{view === "Email" ? "Back to Inbox" : "Back to calendar"}</Button>;
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
-  const problem = failed && <RetryNotice role="alert">Grace couldn’t open that. Try again.</RetryNotice>;
+  const problem = failed && <RetryNotice role="alert">{failed}</RetryNotice>;
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;
     const suggested = snapshot.proposed?.proposal;
     const draft = suggested?.kind === "draft" ? snapshot.proposed : undefined;
+    const photos = selected?.attachments.filter((part) => part.mimeType.startsWith("image/")) ?? [];
     const trash = suggested?.kind === "trash" && suggested.id === selected?.message.externalId;
     return selected ? (
       <section data-sensitive="true" className="flex flex-col items-start gap-4">
@@ -301,6 +303,10 @@ export function ManagedRead({ view }: { view: ReadView }) {
               openDisabled={pending || !part.supported || !selected.historyId}
               openLabel="Open original" onOpen={() => run({ kind: "openAttachment", partId: part.partId })} />
           ))}
+          {photos.length > 1 && selected.historyId && !/Android/i.test(navigator.userAgent) && (snapshot.photosSaved
+            ? <PageText role="status">{snapshot.photosSaved} photos saved to Files</PageText>
+            : <Button variant="capsule" size="pill" disabled={pending || photos.some((part) => !part.supported || part.size > 5 * 1024 * 1024)}
+                onClick={() => run({ kind: "savePhotos" })}>Save all photos to Files</Button>)}
           {snapshot.attachment && <section aria-label="Original attachment" className="flex flex-col items-start gap-3">
             <PageHeading>{snapshot.attachment.name}</PageHeading>
             {snapshot.attachment.mimeType.startsWith("image/") &&
@@ -317,6 +323,9 @@ export function ManagedRead({ view }: { view: ReadView }) {
               <Button asChild variant="prominent" size="pill">
                 <a href={snapshot.attachment.url} download={snapshot.attachment.name}>Download original</a>
               </Button>
+              {snapshot.attachment.file && !/Android/i.test(navigator.userAgent) && (snapshot.attachment.file.saved
+                ? <PageText role="status">Saved to Files</PageText>
+                : <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "saveAttachment" })}>Save to Files</Button>)}
               {snapshot.attachment.deviceTransfer && /Android/i.test(navigator.userAgent) &&
                 <Button variant="capsule" size="pill" asChild>
                   <a href={`${webOrigin}/android/files/import#${snapshot.attachment.deviceTransfer}`} referrerPolicy="no-referrer">Save to Grace Files</a>

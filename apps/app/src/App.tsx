@@ -16,7 +16,7 @@ import { ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
 import { mailAccounts } from "../gen/app__accounts.ts";
-import { Calendar, calendarKeys, homeCalendar, nextAppointment } from "./Calendar.tsx";
+import { Calendar, calendarKeys, homeCalendar, homeReminder, nextAppointment, reminderToast } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { NoticeBanner, Notices } from "./Notices.tsx";
@@ -81,7 +81,8 @@ const wifiWords: Record<Connectivity, string> = {
 };
 
 function Screen() {
-  const account = useSetup(useRuntime()).state?.graceAccount;
+  const runtime = useRuntime();
+  const account = useSetup(runtime).state?.graceAccount;
   const cards = useHomeCards();
   const files = useFilesHome();
   const { workspace, can, send, current } = useWorkspace();
@@ -119,6 +120,7 @@ function Screen() {
   const surface = device.surface;
   const fire = (event: WorkspaceEvent) => ({ disabled: !can(event), onClick: () => void send(event) });
   const visit = (destination: Surface) => fire({ type: "visit", destination });
+  const toCalendar = () => { const event = { type: "visit", destination: "Calendar" } as const; if (can(event)) void send(event); };
   const toggle = (popover: Popover) => ({
     selected: device.railPopover === popover,
     ...fire({ type: "togglePopover", popover }),
@@ -164,11 +166,13 @@ function Screen() {
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-            <HomeScreen className="inset-0" banner={<NoticeBanner />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : visit("Calendar").onClick) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+            <HomeScreen className="inset-0" banner={<><NoticeBanner />{!useManaged && accounts && !covered ? homeReminder(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : undefined}</>} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : toCalendar) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
-                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0 };
+                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
+                onClick: !cards || visit("Calendar").disabled ? undefined : () => void runtime.runPromise(Effect.flatMap(ManagedReads, (managed) =>
+                  managed.send({ kind: "homeOccurrence", row: { accountId: cards.accountId, grant: cards.grant, id: event.externalId, version: event.etag ?? null } }))) };
             }) }, ...visit("Calendar") }}
               email={{
                 messages: useManaged ? (cards?.mail ?? []).slice(0, 2).map((message) => ({ id: message.externalId,
@@ -184,6 +188,9 @@ function Screen() {
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
+      {!useManaged && accounts && surface !== "Home" && surface !== "Calendar" && device.readiness !== "Sleeping" && (
+        <WithCalendars keys={calendarKeys(accounts)}>{(calendars) => reminderToast(accounts, calendars, now.getTime(), bottom)}</WithCalendars>
+      )}
       {surface === "Email" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {surface === "Passwords" && (

@@ -5,7 +5,7 @@ import { webView } from "./surfacePlugin.ts"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import { type AgentAction, type Route, route, type World } from "../gen/app__agentActions.effect.vibe"
 import { withhold } from "./private.ts"
-import type { EntryDetails, Recurrence } from "../gen/app__calendar.effect.vibe"
+import { type EntryDetails, type Recurrence, withStart } from "../gen/app__calendar.effect.vibe"
 import { entryAt, type EntrySeed } from "../gen/app__calendarView.effect.vibe"
 import { calendarContext, sourceAt, targetCalendar } from "../gen/app__calendars.effect.vibe"
 import { emptyContent, type Mailbox, messageRecord, type Recipient } from "../gen/app__email.effect.vibe"
@@ -16,13 +16,15 @@ import { Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.ef
 import { Agent, type Applied, type GraceAction, type Outcome, type Step, settingSteps, visitSteps, workspaceSteps } from "./agent.vibe"
 import type { Contact } from "./connector.vibe"
 import { looker, type Scene, screen } from "./context.vibe"
-import { hour, day as dayLength } from "./calendar.vibe"
+import { dayOf, hour, day as dayLength, instant } from "./calendar.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { Mail } from "./mail.vibe"
 import type { Remind } from "./reply.schema.ts"
+import { dayNumber } from "./schedule.ts"
 
 type Planned = { readonly commands: readonly AgentAction[]; readonly showsEmail: boolean }
 type Plan = Planned | "NotFound" | "NotYetAvailable" | undefined
+type Done = { readonly outcome: Outcome; readonly showsEmail: boolean }
 type Appointment = { readonly title: string; readonly day: string; readonly time: string; readonly until?: string; readonly place?: string; readonly who?: string; readonly remind?: typeof Remind.Type }
 
 const leads: Record<typeof Remind.Type, number> = { NoReminder: 0, HourBefore: hour, DayBefore: dayLength }
@@ -37,15 +39,24 @@ const selected = (m: Mailbox) => ({ ref: m.messageRef, revision: messageRecord(m
 const mail = (account: number, assist: Extract<AgentAction, { tag: "Mail" }>["assist"]): AgentAction => ({ tag: "Mail", account, assist })
 const plain = (commands: readonly AgentAction[], showsEmail = false): Planned => ({ commands, showsEmail })
 
-function at(day: string, time: string) {
-  const [y, m, d] = day.split("-").map(Number)
-  const [h, min] = time.split(":").map(Number)
-  return new Date(y, m - 1, d, h, min).getTime()
+function civil(day: string) {
+  const [year, month, date] = day.split("-").map(Number)
+  return dayNumber(year, month - 1, date)
+}
+
+function minutes(time: string) {
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + m
+}
+
+function clock(at: number) {
+  const d = new Date(at)
+  return d.getHours() * 60 + d.getMinutes()
 }
 
 function details(a: Appointment, recurrence: Recurrence, seriesId: string, timezone: string, notes: string): EntryDetails {
-  const startAt = at(a.day, a.time)
-  const until = a.until === undefined ? startAt + hour : at(a.day, a.until)
+  const startAt = instant(civil(a.day), minutes(a.time))
+  const until = a.until === undefined ? startAt : instant(civil(a.day), minutes(a.until))
   const lead = leads[a.remind ?? "HourBefore"]
   return {
     title: a.title, location: a.place ?? "", participant: a.who ?? "", notes, startAt, endAt: until > startAt ? until : startAt + hour, timezone,
@@ -68,10 +79,9 @@ function message(s: Scene, words: string): { readonly account: number; readonly 
   return found === undefined ? undefined : { account: found.account, ref: found.record.identity.ref }
 }
 
-function appointmentNamed(s: Scene, words: string): { readonly key: number; readonly id: string } | undefined {
+function appointmentNamed(s: Scene, words: string, now: number): { readonly key: number; readonly id: string } | undefined {
   const named = /^event:(\d+):(.+)$/.exec(words.trim())
   if (named !== null) return { key: Number(named[1]), id: named[2] }
-  const now = Date.now()
   const found = calendarContext(s.registry, s.calendars, now - dayLength, now + 400 * dayLength)
     .sort((a, b) => a.details.startAt - b.details.startAt)
     .find((r) => lower(r.details.title).includes(lower(words)))
@@ -90,6 +100,13 @@ function inboxNamed(s: Scene, words: string | undefined) {
   return s.registry.accounts.find((a) => [a.name, a.address, a.provider].some((field) => lower(field) === asked))?.id
 }
 
+function listing(source: MailSource, query: string | undefined): AgentAction[] {
+  return [
+    ...source.mailbox.view === "Inbox" ? [] : [mail(source.account, { tag: "AssistList" })],
+    ...query === undefined ? [] : [mail(source.account, { tag: "AssistSearch", query })]
+  ]
+}
+
 function fromMessage(s: Scene, a: Appointment, fresh: string): Planned {
   const open = openOf(s)
   const id = `grace-${fresh}`
@@ -97,30 +114,29 @@ function fromMessage(s: Scene, a: Appointment, fresh: string): Planned {
   const key = targetCalendar(s.registry, open.account)
   const c = s.content(open.account, open.mailbox.messageRef)
   const files = open.mailbox.assets.filter((f) => f.kind === "Pdf").map((f) => f.name.replace(/\.pdf$/i, ""))
-  const note = `From ${c?.from ?? "an"}’s email${files.length === 0 ? "" : ` · ${files.join(", ")} attached`}`
+  const note = `From ${c === undefined ? "an email" : `${c.from}’s email`}${files.length === 0 ? "" : ` · ${files.join(", ")} attached`}`
   const timezone = sourceAt(s.calendars, key).view.timezone || zone()
   return plain([{ tag: "ProposeFromMessage", account: open.account, seed: seed(s, key, id, open.mailbox.messageRef, details(a, "Once", "", timezone, note)) }])
 }
 
-function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" }>): Plan {
-  const found = appointmentNamed(s, action.entry)
+function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" }>, now: number): Plan {
+  const found = appointmentNamed(s, action.entry, now)
   if (found === undefined) return "NotFound"
   const was = entryAt(sourceAt(s.calendars, found.key).view, found.id).committed
-  const dayOf = (at: number) => new Date(at).toLocaleDateString("en-CA")
-  const startAt = action.day === undefined && action.time === undefined ? was.startAt
-    : at(action.day ?? dayOf(was.startAt), action.time ?? new Date(was.startAt).toTimeString().slice(0, 5))
-  const endAt = action.until === undefined ? startAt + was.endAt - was.startAt : at(dayOf(startAt), action.until)
+  const day = action.day === undefined ? dayOf(was.startAt) : civil(action.day)
+  const moved = action.day === undefined && action.time === undefined ? was : withStart(was, instant(day, action.time === undefined ? clock(was.startAt) : minutes(action.time)))
+  const until = action.until === undefined ? moved.endAt : instant(day, minutes(action.until))
   const recurrence = action.repeat ?? was.recurrence
   const lead = action.remind === undefined ? undefined : leads[action.remind]
   return plain([{ tag: "ProposeChange", key: found.key, id: found.id, details: {
-    ...was, title: action.title ?? was.title, location: action.place ?? was.location, startAt, endAt: endAt > startAt ? endAt : startAt + hour, recurrence,
+    ...moved, title: action.title ?? was.title, location: action.place ?? was.location, endAt: until > moved.startAt ? until : moved.endAt, recurrence,
     seriesId: was.seriesId !== "" || recurrence === "Once" ? was.seriesId : found.id,
     reminderEnabled: lead === undefined ? was.reminderEnabled : lead > 0, leadTime: lead ?? was.leadTime
   } }])
 }
 
-/** The AgentActions a reply's action asks for, on the tablet as `s` shows it; undefined for an action of the workspace alone. */
-effect function plan(action: GraceAction, s: Scene, request: Request, fresh: string, helper: Option.Option<Mail.Shape>): Plan!! {
+effect function plan(action: GraceAction, s: Scene, request: Request, stamp: number, helper: Option.Option<Mail.Shape>): Plan!! {
+  const fresh = `${stamp.toString(36)}-${(try Random.nextInt).toString(36)}`
   const shown = shownOf(s)
   const open = openOf(s)
   const writing = writingOf(s)
@@ -128,7 +144,7 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
     return person(Option.isSome(helper) ? try helper.value.contacts() : [], words)
   }
   switch (action.kind) {
-    case "searchMail": return plain(shown.map((m) => mail(m.account, { tag: "AssistSearch", query: action.query })), true)
+    case "searchMail": return plain(shown.flatMap((m) => listing(m, action.query)), true)
     case "openMessage": {
       const found = message(s, action.message)
       return found === undefined ? "NotFound" : plain([mail(found.account, { tag: "AssistOpen", ref: found.ref })], true)
@@ -137,14 +153,13 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
       const id = inboxNamed(s, action.account)
       return id === undefined ? "NotFound" : plain([
         { tag: "FilterInbox", account: id },
-        ...shown.filter((m) => m.mailbox.view !== "Inbox").map((m) => mail(m.account, { tag: "AssistList" })),
-        ...shown.some((m) => m.mailbox.folder !== "InboxFolder") ? [{ tag: "ChooseFolder", folder: "InboxFolder" } satisfies AgentAction] : []
+        ...shown.flatMap((m) => m.mailbox.query === "" && m.mailbox.folder === "InboxFolder" ? listing(m, undefined) : listing(m, ""))
       ], true)
     }
     case "chooseFolder": return plain([{ tag: "ChooseFolder", folder: action.folder }], true)
     case "newEmail": {
       const to = try recipient(action.to)
-      return to === undefined ? "NotFound" : plain([mail(startFrom(s.registry, s.mail, to.address), { tag: "AssistNewEmail", recipient: to, subject: action.subject ?? "", body: action.body })], true)
+      return to === undefined ? "NotFound" : plain([mail(startFrom(s.registry, s.mail, to.address), { tag: "AssistNewEmail", recipient: to, subject: action.subject ?? "", body: action.body ?? "" })], true)
     }
     case "addressEmail": {
       const to = try recipient(action.to)
@@ -173,9 +188,9 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
       return plain([{ tag: "ProposeAppointment", key: tablet, seed: seed(s, tablet, id, "", details(action, action.repeat, action.repeat === "Once" ? "" : id, timezone, "")) }])
     }
     case "proposeFromMessage": return fromMessage(s, action, fresh)
-    case "proposeChange": return changed(s, action)
+    case "proposeChange": return changed(s, action, stamp)
     case "proposeDeletion": {
-      const found = appointmentNamed(s, action.entry)
+      const found = appointmentNamed(s, action.entry, stamp)
       return found === undefined ? "NotFound" : plain([{ tag: "ProposeDeletion", key: found.key, id: found.id, scope: action.scope }])
     }
     case "confirmProposal": return plain([{ tag: "ConfirmProposal" }])
@@ -186,7 +201,6 @@ effect function plan(action: GraceAction, s: Scene, request: Request, fresh: str
   }
 }
 
-/** Grace's reply actions, each as the one event its route gives, on the machines that own them; what no route allows is reported with its reason. */
 export const agent = Layer.effect(Agent, effect {
   const workspace = try Workspaces
   const setup = try Setup
@@ -233,7 +247,21 @@ export const agent = Layer.effect(Agent, effect {
     }
   }
 
+  effect function settled(account: number) {
+    const box = shelf.mail(account) catch () => undefined
+    if (box !== undefined) try Effect.ignore(Effect.timeout(Stream.runHead(Stream.filter(box.changes, (m) => m.readStatus !== "Reading" && !m.messages.some((r) => r.status === "ChangePending"))), "10 seconds"))
+  }
+
+  effect function listed(account: number, ref: string, request: Request) {
+    const source = shownOf(try look()).find((m) => m.account === account)
+    if (source === undefined || source.mailbox.messageRefs.includes(ref)) return
+    for (const command of listing(source, "")) try routed(command, request)
+    try settled(account)
+  }
+
   effect function routed(command: AgentAction, request: Request): Outcome!! {
+    if (command.tag === "Mail") try settled(command.account)
+    if (command.tag === "Mail" && command.assist.tag === "AssistOpen") try listed(command.account, command.assist.ref, request)
     const s = try look()
     const world: World = {
       now: momentOf(s), stamp: try Clock.currentTimeMillis, timezone: zone(), accounts: s.registry, mail: s.mail, calendars: s.calendars,
@@ -244,43 +272,45 @@ export const agent = Layer.effect(Agent, effect {
     return outcome
   }
 
-  effect function perform(action: GraceAction, request: Request & { authority?: GuidedAuthority }): Outcome!! {
+  effect function readPlan(action: Extract<GraceAction, { kind: "proposeReadPlan" }>, s: Scene, request: Request & { authority?: GuidedAuthority }, fresh: string): Outcome!! {
+    if (!mayAct(request, momentOf(s))) return "NotHerTurn"
+    const saveAt = action.steps.indexOf("SaveMailAppointment")
+    if (saveAt >= 0 && (action.steps.lastIndexOf("SaveMailAppointment") !== saveAt ||
+        !action.steps.slice(0, saveAt).includes("ReadMail"))) return "OwnerRefused"
+    const words = s.workspace.assistant.conversation.messages.findLast((message) => message.author === "HumanMessage")?.text
+    if (words === undefined) return "NotHerTurn"
+    const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
+    if (!eligible) return "OwnerRefused"
+    if (action.steps.some((step) => typeof step !== "string" && !words.includes(step.target))) return "OwnerRefused"
+    const steps = action.steps.map((step): GuidedStep => typeof step === "string" ? { tag: step } : { tag: "ReachNamedPage", subject: step.target })
+    const owner = request.authority === undefined ? undefined : guidedOwner(request.authority, steps)
+    if (owner === undefined || owner !== guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), steps)) return "OwnerRefused"
+    const offer = { owner, task: fresh, generation: request.generation, workVersion: request.workVersion, steps }
+    return try sent(workspace.send({ type: "offerReadReview", offer }, "Host"))
+  }
+
+  effect function perform(action: GraceAction, request: Request & { authority?: GuidedAuthority }): Done!! {
+    try Effect.forEach(shownOf(try look()), (source) => settled(source.account), { concurrency: "unbounded", discard: true })
     const s = try look()
-    const fresh = `${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
-    if (action.kind === "proposeReadPlan") {
-      if (!mayAct(request, momentOf(s))) return "NotHerTurn"
-      const saveAt = action.steps.indexOf("SaveMailAppointment")
-      if (saveAt >= 0 && (action.steps.lastIndexOf("SaveMailAppointment") !== saveAt ||
-          !action.steps.slice(0, saveAt).includes("ReadMail"))) return "OwnerRefused"
-      const words = s.workspace.assistant.conversation.messages.findLast((message) => message.author === "HumanMessage")?.text
-      if (words === undefined) return "NotHerTurn"
-      const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
-      if (!eligible) return "OwnerRefused"
-      if (action.steps.some((step) => typeof step !== "string" && !words.includes(step.target))) return "OwnerRefused"
-      const steps = action.steps.map((step): GuidedStep => typeof step === "string" ? { tag: step } : { tag: "ReachNamedPage", subject: step.target })
-      const owner = request.authority === undefined ? undefined : guidedOwner(request.authority, steps)
-      if (owner === undefined || owner !== guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), steps)) return "OwnerRefused"
-      const offer = { owner, task: fresh, generation: request.generation, workVersion: request.workVersion, steps }
-      return try sent(workspace.send({ type: "offerReadReview", offer }, "Host"))
-    }
-    const planned = try plan(action, s, request, fresh, helper)
-    if (planned === "NotFound" || planned === "NotYetAvailable") return planned
+    const stamp = try Clock.currentTimeMillis
+    if (action.kind === "proposeReadPlan") return { outcome: try readPlan(action, s, request, `${stamp.toString(36)}-${(try Random.nextInt).toString(36)}`), showsEmail: false }
+    const planned = try plan(action, s, request, stamp, helper)
+    if (planned === "NotFound" || planned === "NotYetAvailable") return { outcome: planned, showsEmail: false }
     if (planned === undefined) {
       const steps = workspaceSteps(action, s.workspace)
-      return !mayAct(request, momentOf(s)) ? "NotHerTurn" : steps === undefined ? "NotYetAvailable" : try run(steps)
+      return { outcome: !mayAct(request, momentOf(s)) ? "NotHerTurn" : steps === undefined ? "NotYetAvailable" : try run(steps), showsEmail: false }
     }
-    if (planned.commands.length === 0) return mayAct(request, momentOf(s)) ? "OwnerRefused" : "NotHerTurn"
+    if (planned.commands.length === 0) return { outcome: mayAct(request, momentOf(s)) ? "OwnerRefused" : "NotHerTurn", showsEmail: false }
     const outcomes: Outcome[] = []
     for (const command of planned.commands) outcomes.push(try routed(command, request))
     const outcome = outcomes.includes("Applied") ? "Applied" : outcomes[0]
-    if (outcome === "Applied" && planned.showsEmail) try run(visitSteps("Email", (try look()).workspace))
-    return outcome
+    return { outcome, showsEmail: outcome === "Applied" && planned.showsEmail }
   }
 
   effect function voidStaleAsk(actions: readonly GraceAction[], request: Request) {
     const s = try look()
     const p = s.pending
-    const answered = actions.some((a) => a.kind === "confirmProposal")
+    const answered = actions.some((a) => a.kind === "confirmProposal" || a.kind === "cancelProposal")
     if (!answered && mayAct(request, momentOf(s)) && asking(p) && p.agreed === 0 && p.generation < request.generation)
       proposals.send({ type: "withdraw", interruption: "Correction" }, "Host") catch () => undefined
   }
@@ -290,11 +320,14 @@ export const agent = Layer.effect(Agent, effect {
       try voidStaleAsk(actions, request)
       const applied: Applied[] = []
       const mixedReadPlan = actions.length > 1 && actions.some((action) => action.kind === "proposeReadPlan")
+      let showsEmail = false
       for (const action of actions) {
-        const outcome = mixedReadPlan ? "OwnerRefused" : try perform(action, request)
-        try logInfo("Grace's action", { kind: action.kind, outcome })
-        applied.push({ action, outcome })
+        const done: Done = mixedReadPlan ? { outcome: "OwnerRefused", showsEmail: false } : try perform(action, request)
+        try logInfo("Grace's action", { kind: action.kind, outcome: done.outcome })
+        applied.push({ action, outcome: done.outcome })
+        showsEmail = showsEmail || done.showsEmail
       }
+      if (showsEmail) try run(visitSteps("Email", (try look()).workspace))
       return applied
     }
   }

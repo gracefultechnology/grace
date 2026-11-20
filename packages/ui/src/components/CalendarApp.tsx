@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Check, Plus, TriangleAlert } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
@@ -11,7 +11,7 @@ import { CalendarEventRow, type CalendarEventRowProps } from "./CalendarEventRow
 import { CalendarMonth, type CalendarMonthProps } from "./CalendarMonth.tsx";
 import { CalendarNav, type CalendarMode, type CalendarNavProps } from "./CalendarNav.tsx";
 import { CalendarWeekStrip, type CalendarWeekStripProps } from "./CalendarWeekStrip.tsx";
-import { GuideAnchor, type GuideAnchorProps } from "./GuideAnchor.tsx";
+import { guided, type Guide } from "./GuideAnchor.tsx";
 import { PageHeading, PageText } from "./PageHeading.tsx";
 
 export type CalendarEventItem = Omit<CalendarEventRowProps, "onClick"> & {
@@ -44,9 +44,9 @@ export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions"
   upcomingHeading?: string;
   /** Called with the id of the event a person opens. */
   onOpenEvent?: (id: string) => void;
-  /** Goes back to today. */
+  /** Goes back to today; without it Today is not offered. */
   onToday?: () => void;
-  /** Opens the form for a new event. */
+  /** Opens the form for a new event; without it Add is shown but cannot be pressed. */
   onAdd?: () => void;
   /** The open event, in the detail view: its title and details. */
   event?: CalendarEventDetailProps & { title: string };
@@ -64,8 +64,8 @@ export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions"
   onBack?: () => void;
   /** The words of the header's buttons. */
   labels?: { today: string; add: string; save: string };
-  /** Grace pointing at an event of the day or of what is coming up, by its id: `confirm` once she has added it. */
-  guide?: Pick<GuideAnchorProps, "kind" | "title" | "onClose" | "closeLabel"> & { targetId: string };
+  /** Grace pointing at an event of the day or of what is coming up, by its id (prototype `ev<id>`): `confirm` once she has added it. */
+  guide?: Guide<string>;
 };
 
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
@@ -105,14 +105,12 @@ export function CalendarApp({
   guide,
   ...props
 }: CalendarAppProps) {
-  const { targetId, ...pointing } = guide ?? {};
   const rows = (items: CalendarEventItem[]) =>
     items.length > 0 && (
       <div className="flex flex-col gap-3">
-        {items.map(({ id, ...item }) => {
-          const row = <CalendarEventRow key={id} {...item} onClick={() => onOpenEvent?.(id)} />;
-          return id === targetId ? <GuideAnchor key={id} radius={22} className="flex" {...pointing}>{row}</GuideAnchor> : row;
-        })}
+        {items.map(({ id, ...item }) => (
+          <Fragment key={id}>{guided(guide, id, <CalendarEventRow {...item} onClick={() => onOpenEvent?.(id)} />, { radius: 22, placement: "below", className: "flex" })}</Fragment>
+        ))}
       </div>
     );
 
@@ -156,10 +154,12 @@ export function CalendarApp({
       icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />}
       actions={
         <>
-          <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")} onClick={onToday}>
-            {labels.today}
-          </Button>
-          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary" onClick={onAdd}>
+          {onToday && (
+            <Button variant="plain" size="compact" className={cn(press, "text-grace-ink active:scale-97 active:bg-transparent")} onClick={onToday}>
+              {labels.today}
+            </Button>
+          )}
+          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary" disabled={!onAdd} onClick={onAdd}>
             <Plus {...pill} />
             {labels.add}
           </Button>
