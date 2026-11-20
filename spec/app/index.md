@@ -95,8 +95,14 @@ pure def canReportUnavailable(v: PasswordView, generation: int, by: VaultActor):
   by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault))
 pure def reportUnavailable(v: PasswordView, generation: int, reason: VaultIssue, by: VaultActor): PasswordView =
   { ...v, vault: UnavailableVault({ reason: reason }), notice: QuietVault }
+pure def needsLegacyAuthorization(reason: VaultIssue): bool =
+  match reason { | LegacyAuthorization => true | _ => false }
 pure def canUnlockPasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsPerson and v.vault == UnavailableVault({ reason: LegacyAuthorization })
+  val vault = v.vault
+  by == PasswordsPerson and (match vault {
+    | UnavailableVault(unavailable) => needsLegacyAuthorization(unavailable.reason)
+    | _ => false
+  })
 pure def unlockPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
 pure def validSelection(entries: List[LoginSummary], selected: str): bool =
