@@ -118,15 +118,15 @@ pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAdd
 
 ## Story: Ask Grace to start a private sign-in for my bill
 
-> When I ask Grace to sign me in on the bill website I have open, she can bring up private sign-in. I unlock the tablet, choose the login and decide whether to submit the form.
+> When I ask Grace to sign me in on the bill website I have open, she can bring up private sign-in. I choose the matching login in Android and decide whether to submit the form.
 
 ### A direct request uses the selected page and revision
 
-The tablet receives a current request from the person and derives the HTTPS origin from the selected page; the browser host cannot start private sign-in. The browser refuses stale requests. For an active task the origin must match the task destination. Help questions show the relevant control. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
+The tablet receives a current request from the person and derives the HTTPS origin from the selected page; the browser host cannot start private sign-in. The browser refuses stale requests. For an active task the origin must match the task destination. A help question or a request away from a secure website shows how to ask again from the browser. Opening private sign-in gives no permission to read credentials, submit the login form or make a payment.
 
 ```quint
 pure def directSignInRequest(words: str): bool =
-  words == "fill my password" or words == "use my saved password" or
+  words == "fill my password" or words == "use my saved password" or words == "use a saved password" or
   words == "sign me in to pay my bill" or words == "sign in to pay my bill"
 pure def requestMatchesTask(browserInput: BrowserInput, task: str, origin: str): bool = match browserInput {
   | RequestPrivateSignIn(request) => task == "" or request.origin == origin

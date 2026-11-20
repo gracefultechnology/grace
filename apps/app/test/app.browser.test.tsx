@@ -7,7 +7,6 @@ import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
-import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -115,10 +114,10 @@ const shown = (locator: Locator) => locator.query()?.checkVisibility({ visibilit
 
 actOnScreen();
 
-const vaultStatus = (locked: boolean): ReturnType<PasswordVault["status"]> => Promise.resolve({
-  available: true, locked, unlockRemainingMs: locked ? 0 : 60_000, unlockSeconds: 60, biometric: false,
+const foregroundVault = {
+  available: true, locked: false, unlockRemainingMs: null, unlockSeconds: 0, biometric: false, custody: "device-unlocked",
   autofill: { supported: true, selected: "this-app" },
-});
+} satisfies Awaited<ReturnType<PasswordVault["status"]>>;
 
 function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
@@ -161,9 +160,6 @@ const askForPasswords = async () => {
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
-  const unlock = page.getByRole("button", { name: "Unlock Passwords" });
-  await expect.element(unlock).toBeEnabled();
-  return unlock;
 };
 
 const showThenEdit = async (revealed: () => boolean) => {
@@ -526,7 +522,7 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
 });
 
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  let locked = true;
+  let lockRequests = 0;
   let edited = false;
   let shown = false;
   let copied = false;
@@ -534,14 +530,13 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   let recoveryOpened = false;
   let ownerAvailable = true;
   let ownerChanged: (() => void) | undefined;
+  const unlock = vi.fn(() => Promise.reject(new Error("The foreground vault must open directly")));
   const vault: PasswordVault = {
-    status: () => vaultStatus(locked),
-    lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => {
-      if (!ownerAvailable) return Promise.reject(new PasswordsClientError("not-admitted", "The account changed"));
-      locked = false;
-      return Promise.resolve({ unlockRemainingMs: 60_000 });
-    },
+    status: () => Promise.resolve(ownerAvailable
+      ? foregroundVault
+      : { ...foregroundVault, available: false, locked: true, reason: "unsupported" }),
+    lock: () => { lockRequests += 1; return Promise.resolve(); },
+    unlock,
     list: () => Promise.resolve([
       { id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] },
       ...(phoneRevision === undefined ? [] : [{ id: "phone", revision: phoneRevision, updatedAt: 2, label: "Phone account", username: phoneRevision === 1 ? "Original" : "Updated on Android", bindings: [] }]),
@@ -582,16 +577,12 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     openBackupRecovery: () => { recoveryOpened = true; return Promise.resolve({ status: "opened" }); },
   }));
   await mount(runtime);
-  const unlock = await askForPasswords();
-  const guide = () => runtime.runSync(Effect.flatMap(Effect.service(PasswordViews), (machine) => machine.get())).guide;
-  expect(guide()).toBe("ShowPasswordGuide");
+  await askForPasswords();
+  const guide = page.getByText("Choose a sign-in first.");
+  await expect.element(guide).toBeVisible();
   await act(() => { ownerChanged?.(); return Promise.resolve(); });
-  await expect.poll(guide).toBe("NoPasswordGuide");
-  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
-  await expect.poll(() => recoveryOpened).toBe(true);
-  expect(locked).toBe(true);
-  await act(() => userEvent.click(unlock));
+  await expect.element(guide).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   const search = page.getByRole("searchbox", { name: "Find a saved password" });
   const login = page.getByRole("button", { name: /Utility account/ });
   await act(() => search.fill("missing"));
@@ -625,14 +616,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(phone).not.toBeInTheDocument();
   await expect.element(page.getByText("Password deleted.")).toBeVisible();
   await act(() => userEvent.click(login));
-  await act(() => { ownerChanged?.(); return Promise.resolve(); });
-  await expect.element(unlock).toBeEnabled();
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
-  await expect.poll(() => locked).toBe(true);
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
   ownerAvailable = false;
-  recoveryOpened = false;
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  const locksBeforeClose = lockRequests;
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
+  await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   const nextPage = page.getByRole("button", { name: "More apps" });
   await act(() => userEvent.click(nextPage));
   const passwordsCard = page.getByRole("button", { name: "Passwords", exact: true });
@@ -642,25 +633,38 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(passwordsCard).not.toBeInTheDocument();
   await act(() => userEvent.click(nextPage));
   await act(() => userEvent.click(passwordsCard));
-  await act(() => userEvent.click(unlock));
-  await expect.element(unlock).not.toBeInTheDocument();
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  const backup = page.getByRole("button", { name: "Backup and recovery" });
+  await expect.element(backup).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(backup));
   await expect.poll(() => recoveryOpened).toBe(true);
-  expect(locked).toBe(true);
+  expect(unlock).not.toHaveBeenCalled();
 });
+
+const askForPrivateSignIn = async (native: ReturnType<typeof fakePlugin>, request: string) => {
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
+  await act(() => userEvent.type(message, request));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+};
 
 const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   const runtime = ManagedRuntime.make(application(native.plugin));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  await askForPrivateSignIn(native, "use a saved password");
+  await expect.element(page.getByText("Open a secure website first.")).toBeVisible();
+  expect(native.calls("createSurface")).toEqual([]);
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal{Enter}"));
   await expect.poll(() => native.calls("createSurface").length).toBe(1);
   await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await expect.element(page.getByRole("button", { name: "Private sign-in", exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Ask Grace to use a saved password.")).toBeVisible();
+  await askForPrivateSignIn(native, "fill my password");
   await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -679,11 +683,7 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  const message = page.getByRole("textbox", { name: "Message to Grace" });
-  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
-  await act(() => userEvent.type(message, "sign me in to pay my bill"));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  await askForPrivateSignIn(native, "sign me in to pay my bill");
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -696,7 +696,7 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const browserState = await signInPrivately(native);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await askForPrivateSignIn(native, "use a saved password");
   const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
   await expect.element(unavailable).toBeVisible();
   await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");
@@ -1684,13 +1684,20 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
 });
 
 it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  let locked = true;
+  let lockRequests = 0;
+  let needsMigration = true;
   let saved = { id: "first-login", revision: 4, updatedAt: 1, label: "Utility account", username: "Pat", bindings: [] };
   let shown = false;
   const vault: PasswordVault = {
-    status: () => vaultStatus(locked),
-    lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => { locked = false; return Promise.resolve({ unlockRemainingMs: 60_000 }); },
+    status: () => Promise.resolve(needsMigration
+      ? { ...foregroundVault, locked: true, reason: "legacy-authorization-required" }
+      : foregroundVault),
+    lock: () => { lockRequests += 1; return Promise.resolve(); },
+    unlock: async () => {
+      if (!needsMigration) throw new Error("The existing sign-in was already migrated");
+      needsMigration = false;
+      return { unlockRemainingMs: null };
+    },
     list: () => Promise.resolve([saved]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
@@ -1716,16 +1723,19 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
     },
   }));
   await mount(runtime);
-  const unlock = await askForPasswords();
-  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(unlock));
+  await askForPasswords();
+  const migrate = page.getByRole("button", { name: "Open saved passwords" });
+  await expect.element(migrate).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: /Utility account/ })).not.toBeInTheDocument();
+  await act(() => userEvent.click(migrate));
   await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
   await showThenEdit(() => shown);
   saved = { ...saved, username: "Updated on this tablet", revision: 6 };
   await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).toBeVisible();
+  const locksBeforeClose = lockRequests;
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
-  await expect.poll(() => locked).toBe(true);
+  await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
   const swipe = (direction: "left" | "right") => act(async () => {
@@ -1745,13 +1755,13 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
-  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
   await expect.poll(() => typeof finishSpeech).toBe("function");
   await act(async () => { finishSpeech?.({ status: "complete", text: "Open passwords" }); });
-  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
 });
 
 it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
