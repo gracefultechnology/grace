@@ -1039,6 +1039,26 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
   }
 }
 
+lemma SaveCommitmentInvariant(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
+  requires inv(w)
+  requires canSaveCommitment(w, saveReport, by_)
+  ensures inv(saveCommitment(w, saveReport, by_))
+{
+  ComponentInvariants(w);
+  RegistrySave(w, saveReport, by_);
+  if !w.commitment.stage.Empty? && saveReport.key == w.commitment.key {
+    var saved := app__commitment_saveOutcome(w.commitment, saveReport.revision, saveReport.succeeded, app__task_TaskActor.Store);
+    app__commitment_saveOutcome_ensures(w.commitment, saveReport.revision, saveReport.succeeded, app__task_TaskActor.Store);
+    if terminalCommitment(saved.result) && !app__commitment_outcomeNeedsSave(saved) &&
+        w.commitmentTask == w.assistant.taskId && app__assistant_unfinished(w.assistant) && !w.assistant.activity.Paused? {
+      app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+      app__assistant_finishTask_ensures(w.assistant, w.assistant.taskId, w.assistant.workVersion,
+        if app__commitment_positiveOutcome(saved.result) then app__assistant_TaskOutcome.Completed else app__assistant_TaskOutcome.VerifiedFailure,
+        saved.evidence, app__conversation_ConversationActor.ConversationRuntime);
+    }
+  }
+}
+
 lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysExecutionRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentRules(saveCommitment(w, saveReport, by_)))
@@ -1066,8 +1086,7 @@ lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: Workspac
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepCommitmentSwitchRetainsRecords(w, "saveCommitment", saveCommitment(w, saveReport, by_)))
 {
   if inv(w) && canSaveCommitment(w, saveReport, by_) {
-    ComponentInvariants(w);
-    RegistrySave(w, saveReport, by_);
+    SaveCommitmentInvariant(w, saveReport, by_);
   }
 }
 
