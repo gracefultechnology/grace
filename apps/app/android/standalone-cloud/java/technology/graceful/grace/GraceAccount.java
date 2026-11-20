@@ -93,7 +93,7 @@ public final class GraceAccount extends Plugin {
  }
 
  private boolean recoveryAccountReady() {
-  try { return GracePasswordsOwner.stableSession(getContext()) != null; }
+  try { return recovery.deviceReady() && GracePasswordsOwner.stableSession(getContext()) != null; }
   catch (Exception unavailable) { return false; }
  }
 

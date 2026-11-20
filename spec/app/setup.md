@@ -842,7 +842,8 @@ pure def lawCancelledPasswordBackupRequestCannotBeApproved(pending: PasswordBack
 
 ### Restore fills an empty vault after a fresh unlock
 
-Verifying ownership, saving and restoring require a fresh tablet unlock.
+Verifying ownership, saving and restoring require a fresh Android unlock
+confirmation for that operation, even when the foreground Passwords screen is already open.
 A tablet with saved passwords asks the owner before linking those
 passwords to the account. Passwords and the recovery key stay in the
 protected native flow and are kept out of the agent. The cloud receives
