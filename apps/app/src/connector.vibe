@@ -273,21 +273,8 @@ function sendOutcome(r: Receipt): SendOutcome {
   }
 }
 
-export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+effect function connectorTransport(link: CloudLink) {
   const http = try HttpClient.HttpClient
-  const page = try SignInPage
-  const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
-  const showing = (url: string, inSheet: boolean) => SubscriptionRef.set(shown, { url, host: URL.parse(url)?.host ?? "", inSheet })
-  const inSheet: SignInPage.Shape = { open: (url) => showing(url, true), close: () => SubscriptionRef.set(shown, undefined) }
-  const handedOff: SignInPage.Shape = {
-    open: (url) => Effect.andThen(showing(url, false), page.open(url)),
-    close: (url) => ensuring(page.close(url), SubscriptionRef.set(shown, undefined))
-  }
-  const framable = (url: string) => {
-    const at = URL.parse(url)
-    return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
-  }
-  const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
   effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
     if (!sent.url.includes("/inbox-v1/")) return true
@@ -313,6 +300,24 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   const get = (url: string, params: Record<string, string>) => Effect.succeed(HttpClientRequest.setUrlParams(HttpClientRequest.get(`${link.url}${url}`), params))
   const post = (url: string, body: object) => Effect.succeed(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}${url}`), body))
+  return { call, fetched, get, post }
+}
+
+export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+  const { call, fetched, get, post } = try connectorTransport(link)
+  const page = try SignInPage
+  const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
+  const showing = (url: string, inSheet: boolean) => SubscriptionRef.set(shown, { url, host: URL.parse(url)?.host ?? "", inSheet })
+  const inSheet: SignInPage.Shape = { open: (url) => showing(url, true), close: () => SubscriptionRef.set(shown, undefined) }
+  const handedOff: SignInPage.Shape = {
+    open: (url) => Effect.andThen(showing(url, false), page.open(url)),
+    close: (url) => ensuring(page.close(url), SubscriptionRef.set(shown, undefined))
+  }
+  const framable = (url: string) => {
+    const at = URL.parse(url)
+    return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
+  }
+  const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
   effect function grantOf(account: AccountRef) {
     const address = account.address.toLowerCase()

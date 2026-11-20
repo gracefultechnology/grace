@@ -15,7 +15,8 @@ export schema HeldFile {
   readonly savedAt: number; readonly pages: number
 }
 schema HeldReply { readonly address: string; readonly subject: string; readonly verified: boolean }
-export schema Held { readonly content: MailContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
+export const Held = Schema.Struct({ content: MailContent, assets: Schema.optional(Schema.Array(HeldFile)), reply: Schema.optional(HeldReply) })
+export type Held = typeof Held.Type
 
 export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
 export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>

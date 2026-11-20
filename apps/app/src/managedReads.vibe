@@ -24,7 +24,11 @@ export schema MailReply { recipient: string; subject: string }
 const attachmentLimit = 8 * 1024 * 1024
 const textPreviewLimit = 65_536
 const encodedAttachmentLimit = 4 * Math.ceil(attachmentLimit / 3)
-const attachmentName = Schema.NonEmptyString.check(Schema.isMaxLength(120), Schema.makeFilter((name) => name.trim() !== "" && name !== "." && name !== ".." && !/[/\\\x00-\x1f\x7f]/.test(name)))
+const attachmentName = Schema.NonEmptyString.check(Schema.isMaxLength(120), Schema.makeFilter((name) =>
+  name.trim() !== "" && name !== "." && name !== ".." && Array.from(name).every((character) => {
+    const code = character.charCodeAt(0)
+    return character !== "/" && character !== "\\" && code >= 32 && code !== 127
+  })))
 const partIdField = Schema.String.check(Schema.isPattern(/^[0-9.]{1,32}$/))
 const historyField = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
 const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp"])
@@ -301,26 +305,8 @@ effect function saveIntent(pending: Ref.Ref<ReadIntent | undefined>, intent: Int
   }) catch () => undefined
 }
 
-export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effect {
-  const desk = try Workspaces
-  const setup = try Setup
-  const authorization = try AccountActions
-  const files = try Library
-  const pending = try Ref.make<ReadIntent | undefined>(native ? undefined : (try intentOfPage()))
-  const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
-  const cards = try watchHomeCards(native, pending)
-  const gate = try Semaphore.make(1)
-  const proposedNumber = try Ref.make(0)
-
-  effect function publish(snapshot: ManagedSnapshot) {
-    const previous = try SubscriptionRef.get(latest)
-    const url = previous.kind === "mail" ? previous.attachment?.url : undefined
-    if (url && (snapshot.kind !== "mail" || snapshot.attachment?.url !== url)) webView.window.URL.revokeObjectURL(url)
-    try SubscriptionRef.set(latest, snapshot)
-  }
-
-  try addFinalizer(() => publish({ kind: "closed" }))
-
+function mailAttachments(authorization: AccountActions.Shape, files: Library.Shape,
+  isCurrent: (scope: ReadyScope, shown: Mail) => boolean!!, publish: (snapshot: ManagedSnapshot) => void!!) {
   effect function verifiedAttachment(scope: ReadyScope, shown: Mail, partId: string) {
     const selected = shown.selected
     const matches = selected?.attachments.filter((entry) => entry.partId === partId)
@@ -336,7 +322,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
     const hash = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", bytes))
     if (Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("") !== original.sha256 ||
-        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return undefined
+        !(try isCurrent(scope, shown))) return undefined
     return { original, bytes }
   }
 
@@ -392,171 +378,24 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const content = new Map(available.map((part) => [part.file.id, part]))
     const outcome = try files.save(available.map((part) => part.file), effect (file) => {
       const part = content.get(file.id)
-      if (!part || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) throw new ManagedReadFailed()
+      if (!part || !(try isCurrent(scope, shown))) throw new ManagedReadFailed()
       return { data: part.data, mimeType: part.mimeType }
     }, JSON.stringify(parts), selected.historyId, owner)
-    if (outcome !== "FilesSaved" || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+    if (outcome !== "FilesSaved" || !(try isCurrent(scope, shown))) return false
     if (allPhotos) try publish({ ...shown, photosSaved: available.length })
     else if (shown.attachment && reference) try publish({ ...shown, attachment: { ...shown.attachment, file: { ...reference, saved: true } } })
     return true
   }
 
-  effect function activeScope(): Scope!! {
-    const surface = (try desk.get()).device.surface
-    if (surface !== "Email" && surface !== "Calendar") return { kind: "closed" }
-    return try scopeOf(native, surface, try setup.get(), try Ref.get(pending))
-  }
+  return { openAttachment, saveAttachment }
+}
 
-  effect function still(scope: ReadyScope): boolean!! {
-    const current = try activeScope()
-    return current.kind === "ready" && current.view === scope.view && current.accountId === scope.accountId && current.grant === scope.grant
-  }
-
-  effect function ownsSurfaces(): boolean!! {
-    return usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
-  }
-
-  effect function guidedSelection(): GuidedManagedSelection!! {
-    const account = try setup.get()
-    if (!usesManagedSurfaces(account.graceAccount, webView.window.location.hash)) return { kind: "legacy" }
-    const scope = try activeScope()
-    const shown = try SubscriptionRef.get(latest)
-    if (scope.kind !== "ready" || account.graceAccount.tag !== "GraceSignedIn" ||
-        account.googleLink.tag !== "GoogleLinkConnected" || account.graceAccount.accountId !== scope.accountId ||
-        account.googleLink.grant !== scope.grant ||
-        (shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
-        (shown.kind === "mail") !== (scope.view === "Email")) return { kind: "unavailable" }
-    const googleEmail = account.googleLink.email.trim().toLowerCase()
-    if (googleEmail === "" || scope.grant === "") return { kind: "unavailable" }
-    const ownership = { accountId: scope.accountId, grant: scope.grant, googleEmail }
-    if (shown.kind === "mail") {
-      const selected = shown.selected
-      const version = selected?.message.metadata?.historyId
-      if (!selected || !version || selected.accountId !== scope.accountId) return { kind: "unavailable" }
-      return { ...ownership, kind: "mail", id: selected.message.externalId, version, subject: selected.message.subject }
-    }
-    const selected = shown.selected
-    if (!selected?.etag) return { kind: "unavailable" }
-    return { ...ownership, kind: "calendar", id: selected.externalId, version: selected.etag, title: selected.title, startAt: selected.startAt }
-  }
-
-  effect function refresh(scope: Scope) {
-    const home = try Ref.modify(pending, (intent) => {
-      if (!intent?.homeOccurrence) return [undefined, intent] as const
-      const { homeOccurrence, ...next } = intent
-      return [homeOccurrence, next] as const
-    })
-    if (scope.kind !== "ready") return try publish(scope)
-    try publish({ kind: "loading", view: scope.view, accountId: scope.accountId })
-    const result = fetchPage(authorization, scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
-    if (home && result.kind === "calendar" && scope.accountId === home.accountId && scope.grant === home.grant && (try still(scope))) {
-      const selected = result.rows.find((row) => row.externalId === home.id && (row.etag ?? null) === home.version)
-      return try publish({ ...result, selected })
-    }
-    const intent = try Ref.get(pending)
-    if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
-      const occurrence = intent.occurrence
-      const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
-        Schema.Struct({ accountId: idField, event: EventRow }), authorization) catch () => undefined
-      if (try still(scope)) {
-        try saveIntent(pending, { ...intent, occurrence: undefined })
-        if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
-          return try publish({ ...result, selected: selected.event })
-      }
-    }
-    if (try still(scope)) try publish(result)
-  }
-
-  effect function send(command: Command) {
-    if (command.kind === "homeOccurrence") {
-      const { row } = command
-      const home = try SubscriptionRef.get(cards)
-      const before = try Ref.get(pending)
-      const scope = try scopeOf(native, "Calendar", try setup.get(), before)
-      if ((try desk.get()).device.surface !== "Home" || scope.kind !== "ready" ||
-        scope.accountId !== row.accountId || scope.grant !== row.grant ||
-        home?.accountId !== row.accountId || home.grant !== row.grant ||
-        !home.events.some((event) => event.externalId === row.id && (event.etag ?? null) === row.version)) return false
-      try Ref.set(pending, { ...before, view: "Calendar", returning: false, occurrence: undefined, homeOccurrence: row })
-      const visited = desk.send({ type: "visit", destination: "Calendar" }, "Person") catch () => undefined
-      if (visited === undefined) try Ref.set(pending, before)
-      return visited !== undefined
-    }
-    const scope = try activeScope()
-    if (scope.kind === "closed") return false
-    if (command.kind === "enableReminders") {
-      const host = reminderPlugin
-      if (!native || scope.view !== "Calendar" || host === undefined) return false
-      try tryPromise(() => host.enableManagedReminders())
-      return true
-    }
-    if (command.kind === "openHosted") {
-      const host = accountPlugin
-      if (!native || host === undefined) return false
-      try tryPromise(() => host.openHostedView({ view: fragments[scope.view] }))
-      return true
-    }
-    if (command.kind === "account") {
-      if (scope.kind !== "waiting" || !["signedOut", "connect", "mismatch"].includes(scope.reason)) return false
-      const kept = try Ref.get(pending)
-      try saveIntent(pending, { view: scope.view, owner: kept?.owner, occurrence: kept?.occurrence, returning: true })
-      try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
-      return true
-    }
-    if (command.kind === "refresh") {
-      try authorization.run({ kind: "refresh" })
-      try refresh(try activeScope())
-      return true
-    }
-    if (scope.kind !== "ready") return false
-    const shown = try SubscriptionRef.get(latest)
-    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
-      (shown.kind === "mail") !== (scope.view === "Email")) return false
-    if (command.kind === "openAttachment") return shown.kind === "mail" && (try openAttachment(scope, shown, command.partId))
-    if (command.kind === "saveAttachment" || command.kind === "savePhotos") return shown.kind === "mail" && (try saveAttachment(scope, shown, command.kind === "savePhotos"))
-    if (command.kind === "closeAttachment") {
-      if (shown.kind !== "mail") return false
-      try publish({ ...shown, attachment: undefined })
-      return true
-    }
-    if (command.kind === "reminder") {
-      if (shown.kind !== "calendar" || shown.selected?.externalId !== command.id ||
-          shown.selected.etag !== command.version || shown.selected.isAllDay || !shown.selected.editable) return false
-      const receipt = try postChange("calendar/reminder", { accountId: scope.accountId, grantId: scope.grant,
-        occurrenceId: command.id, version: command.version, minutes: command.minutes },
-        Schema.Struct({ accountId: idField, grantId: idField, occurrenceId: idField, version: idField,
-          status: Schema.Literals(["saved", "cancelled"]), minutes: Schema.optional(Schema.Int), fireAt: Schema.optional(Schema.Int) }), authorization)
-      return (try still(scope)) && receipt.accountId === scope.accountId && receipt.grantId === scope.grant &&
-        receipt.occurrenceId === command.id && receipt.version === command.version &&
-        (command.minutes === 0 ? receipt.status === "cancelled" : receipt.status === "saved" &&
-          receipt.minutes === command.minutes && receipt.fireAt === Date.parse(shown.selected.startAt) - command.minutes * 60_000)
-    }
-    if (command.kind === "dismissProposal") {
-      try publish({ ...shown, proposed: undefined })
-      return true
-    }
-    if (command.kind === "back") {
-      try publish(shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, attachment: undefined, proposed: undefined })
-      return true
-    }
-    if (command.kind === "more") {
-      if (shown.next === null) return false
-      const page = try fetchPage(authorization, scope, shown, shown.next)
-      if (!(try still(scope))) return false
-      try publish(page)
-      return true
-    }
-    if (command.kind !== "open" || !shown.rows.some((row) => row.externalId === command.id)) return false
-    if (shown.kind === "calendar") {
-      try publish({ ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
-      return true
-    }
-    const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
-    if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) ||
-        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
-    try publish({ ...shown, selected: preview, photosSaved: undefined, attachment: undefined, proposed: undefined })
-    return true
-  }
+effect function managedWrites({ setup, authorization, latest, activeScope, still, publish, refresh }: {
+  setup: Setup.Shape; authorization: AccountActions.Shape; latest: SubscriptionRef.SubscriptionRef<ManagedSnapshot>
+  activeScope: () => Scope!!; still: (scope: ReadyScope) => boolean!!
+  publish: (snapshot: ManagedSnapshot) => void!!; refresh: (scope: Scope) => void!!
+}) {
+  const proposedNumber = try Ref.make(0)
 
   effect function stage(proposal: ProposedWork) {
     const scope = try activeScope()
@@ -662,6 +501,189 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     if (!managedReadMatches(accountId, receipt.accountId, operationId, receipt.operationId)) return false
     try keepMailDraft(accountId, email, null, replyTo)
     return try still(scope)
+  }
+
+  return { stage, series, change, sendMail }
+}
+
+export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effect {
+  const desk = try Workspaces
+  const setup = try Setup
+  const authorization = try AccountActions
+  const files = try Library
+  const pending = try Ref.make<ReadIntent | undefined>(native ? undefined : (try intentOfPage()))
+  const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
+  const cards = try watchHomeCards(native, pending)
+  const gate = try Semaphore.make(1)
+
+  effect function publish(snapshot: ManagedSnapshot) {
+    const previous = try SubscriptionRef.get(latest)
+    const url = previous.kind === "mail" ? previous.attachment?.url : undefined
+    if (url && (snapshot.kind !== "mail" || snapshot.attachment?.url !== url)) webView.window.URL.revokeObjectURL(url)
+    try SubscriptionRef.set(latest, snapshot)
+  }
+
+  try addFinalizer(() => publish({ kind: "closed" }))
+
+  effect function activeScope(): Scope!! {
+    const surface = (try desk.get()).device.surface
+    if (surface !== "Email" && surface !== "Calendar") return { kind: "closed" }
+    return try scopeOf(native, surface, try setup.get(), try Ref.get(pending))
+  }
+
+  effect function still(scope: ReadyScope): boolean!! {
+    const current = try activeScope()
+    return current.kind === "ready" && current.view === scope.view && current.accountId === scope.accountId && current.grant === scope.grant
+  }
+
+  effect function ownsSurfaces(): boolean!! {
+    return usesManagedSurfaces((try setup.get()).graceAccount, webView.window.location.hash)
+  }
+
+  effect function guidedSelection(): GuidedManagedSelection!! {
+    const account = try setup.get()
+    if (!usesManagedSurfaces(account.graceAccount, webView.window.location.hash)) return { kind: "legacy" }
+    const scope = try activeScope()
+    const shown = try SubscriptionRef.get(latest)
+    if (scope.kind !== "ready" || account.graceAccount.tag !== "GraceSignedIn" ||
+        account.googleLink.tag !== "GoogleLinkConnected" || account.graceAccount.accountId !== scope.accountId ||
+        account.googleLink.grant !== scope.grant ||
+        (shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
+        (shown.kind === "mail") !== (scope.view === "Email")) return { kind: "unavailable" }
+    const googleEmail = account.googleLink.email.trim().toLowerCase()
+    if (googleEmail === "" || scope.grant === "") return { kind: "unavailable" }
+    const ownership = { accountId: scope.accountId, grant: scope.grant, googleEmail }
+    if (shown.kind === "mail") {
+      const selected = shown.selected
+      const version = selected?.message.metadata?.historyId
+      if (!selected || !version || selected.accountId !== scope.accountId) return { kind: "unavailable" }
+      return { ...ownership, kind: "mail", id: selected.message.externalId, version, subject: selected.message.subject }
+    }
+    const selected = shown.selected
+    if (!selected?.etag) return { kind: "unavailable" }
+    return { ...ownership, kind: "calendar", id: selected.externalId, version: selected.etag, title: selected.title, startAt: selected.startAt }
+  }
+
+  effect function refresh(scope: Scope) {
+    const home = try Ref.modify(pending, (intent) => {
+      if (!intent?.homeOccurrence) return [undefined, intent] as const
+      const { homeOccurrence, ...next } = intent
+      return [homeOccurrence, next] as const
+    })
+    if (scope.kind !== "ready") return try publish(scope)
+    try publish({ kind: "loading", view: scope.view, accountId: scope.accountId })
+    const result = fetchPage(authorization, scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
+    if (home && result.kind === "calendar" && scope.accountId === home.accountId && scope.grant === home.grant && (try still(scope))) {
+      const selected = result.rows.find((row) => row.externalId === home.id && (row.etag ?? null) === home.version)
+      return try publish({ ...result, selected })
+    }
+    const intent = try Ref.get(pending)
+    if (result.kind === "calendar" && intent?.occurrence !== undefined && intent.owner !== undefined) {
+      const occurrence = intent.occurrence
+      const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
+        Schema.Struct({ accountId: idField, event: EventRow }), authorization) catch () => undefined
+      if (try still(scope)) {
+        try saveIntent(pending, { ...intent, occurrence: undefined })
+        if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
+          return try publish({ ...result, selected: selected.event })
+      }
+    }
+    if (try still(scope)) try publish(result)
+  }
+
+  const { openAttachment, saveAttachment } = mailAttachments(authorization, files,
+    effect (scope, shown) => (try still(scope)) && (try SubscriptionRef.get(latest)) === shown, publish)
+  const { stage, series, change, sendMail } = try managedWrites({ setup, authorization, latest, activeScope, still, publish, refresh })
+
+  effect function send(command: Command) {
+    if (command.kind === "homeOccurrence") {
+      const { row } = command
+      const home = try SubscriptionRef.get(cards)
+      const before = try Ref.get(pending)
+      const scope = try scopeOf(native, "Calendar", try setup.get(), before)
+      if ((try desk.get()).device.surface !== "Home" || scope.kind !== "ready" ||
+        scope.accountId !== row.accountId || scope.grant !== row.grant ||
+        home?.accountId !== row.accountId || home.grant !== row.grant ||
+        !home.events.some((event) => event.externalId === row.id && (event.etag ?? null) === row.version)) return false
+      try Ref.set(pending, { ...before, view: "Calendar", returning: false, occurrence: undefined, homeOccurrence: row })
+      const visited = desk.send({ type: "visit", destination: "Calendar" }, "Person") catch () => undefined
+      if (visited === undefined) try Ref.set(pending, before)
+      return visited !== undefined
+    }
+    const scope = try activeScope()
+    if (scope.kind === "closed") return false
+    if (command.kind === "enableReminders") {
+      const host = reminderPlugin
+      if (!native || scope.view !== "Calendar" || host === undefined) return false
+      try tryPromise(() => host.enableManagedReminders())
+      return true
+    }
+    if (command.kind === "openHosted") {
+      const host = accountPlugin
+      if (!native || host === undefined) return false
+      try tryPromise(() => host.openHostedView({ view: fragments[scope.view] }))
+      return true
+    }
+    if (command.kind === "account") {
+      if (scope.kind !== "waiting" || !["signedOut", "connect", "mismatch"].includes(scope.reason)) return false
+      const kept = try Ref.get(pending)
+      try saveIntent(pending, { view: scope.view, owner: kept?.owner, occurrence: kept?.occurrence, returning: true })
+      try desk.send({ type: "chooseSettingsPage", page: "AccountSettings" }, "Person")
+      return true
+    }
+    if (command.kind === "refresh") {
+      try authorization.run({ kind: "refresh" })
+      try refresh(try activeScope())
+      return true
+    }
+    if (scope.kind !== "ready") return false
+    const shown = try SubscriptionRef.get(latest)
+    if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
+      (shown.kind === "mail") !== (scope.view === "Email")) return false
+    if (command.kind === "openAttachment") return shown.kind === "mail" && (try openAttachment(scope, shown, command.partId))
+    if (command.kind === "saveAttachment" || command.kind === "savePhotos") return shown.kind === "mail" && (try saveAttachment(scope, shown, command.kind === "savePhotos"))
+    if (command.kind === "closeAttachment") {
+      if (shown.kind !== "mail") return false
+      try publish({ ...shown, attachment: undefined })
+      return true
+    }
+    if (command.kind === "reminder") {
+      if (shown.kind !== "calendar" || shown.selected?.externalId !== command.id ||
+          shown.selected.etag !== command.version || shown.selected.isAllDay || !shown.selected.editable) return false
+      const receipt = try postChange("calendar/reminder", { accountId: scope.accountId, grantId: scope.grant,
+        occurrenceId: command.id, version: command.version, minutes: command.minutes },
+        Schema.Struct({ accountId: idField, grantId: idField, occurrenceId: idField, version: idField,
+          status: Schema.Literals(["saved", "cancelled"]), minutes: Schema.optional(Schema.Int), fireAt: Schema.optional(Schema.Int) }), authorization)
+      return (try still(scope)) && receipt.accountId === scope.accountId && receipt.grantId === scope.grant &&
+        receipt.occurrenceId === command.id && receipt.version === command.version &&
+        (command.minutes === 0 ? receipt.status === "cancelled" : receipt.status === "saved" &&
+          receipt.minutes === command.minutes && receipt.fireAt === Date.parse(shown.selected.startAt) - command.minutes * 60_000)
+    }
+    if (command.kind === "dismissProposal") {
+      try publish({ ...shown, proposed: undefined })
+      return true
+    }
+    if (command.kind === "back") {
+      try publish(shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, attachment: undefined, proposed: undefined })
+      return true
+    }
+    if (command.kind === "more") {
+      if (shown.next === null) return false
+      const page = try fetchPage(authorization, scope, shown, shown.next)
+      if (!(try still(scope))) return false
+      try publish(page)
+      return true
+    }
+    if (command.kind !== "open" || !shown.rows.some((row) => row.externalId === command.id)) return false
+    if (shown.kind === "calendar") {
+      try publish({ ...shown, selected: shown.rows.find((row) => row.externalId === command.id), series: undefined, proposed: undefined })
+      return true
+    }
+    const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
+    if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) ||
+        !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+    try publish({ ...shown, selected: preview, photosSaved: undefined, attachment: undefined, proposed: undefined })
+    return true
   }
 
   if (!native) {
