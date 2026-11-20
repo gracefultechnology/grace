@@ -168,8 +168,9 @@ spoke or typed (prototype 1325); with voice output off it is only written.
 Speaking never turns the microphone on. When Grace asks a question aloud in a
 voice exchange, she keeps listening for the answer once her speech ends, under
 the same generation, so the person can simply answer; the microphone was
-already on so that she could be interrupted. Any other reply ends the voice
-exchange when it ends. A written-only reply, a reply to a typed message,
+already on so that she could be interrupted. A muted or interrupted question
+closes the microphone and keeps its written answer choices. Any other reply
+ends the voice exchange when it ends. A written-only reply, a reply to a typed message,
 Repeat and a paused reply never keep listening; there she answers by Talk, an
 answer chip or typing. Grace's single request to say an unusable utterance
 again is such a question.
@@ -184,19 +185,19 @@ pure def respond(c: Conversation, token: int, text: str, isQuestion: bool, answe
 pure def stepSpeakingNeverOpensTheMicrophone(before: Conversation, via: str, after: Conversation): bool =
   (via == "respond" or via == "repeatReply" or via == "resumeSpeech") implies (after.voice implies before.voice)
 
-pure def canFinishSpeech(c: Conversation, token: int, by: ConversationActor): bool =
+pure def canFinishSpeech(c: Conversation, token: int, played: bool, by: ConversationActor): bool =
   by == ConversationRuntime and c.turn == Speaking and token == c.generation
-pure def awaitsAnAnswer(c: Conversation): bool = c.voice and c.question
-pure def finishSpeech(c: Conversation, token: int, by: ConversationActor): Conversation =
-  { ...c, turn: if (awaitsAnAnswer(c)) Listening else Ready, voice: awaitsAnAnswer(c) }
-pure def lawOnlyASpokenQuestionKeepsTheMicrophoneOpen(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: ConversationActor): bool =
+pure def awaitsAnAnswer(c: Conversation, played: bool): bool = played and c.voice and c.question
+pure def finishSpeech(c: Conversation, token: int, played: bool, by: ConversationActor): Conversation =
+  { ...c, turn: if (awaitsAnAnswer(c, played)) Listening else Ready, voice: awaitsAnAnswer(c, played) }
+pure def lawOnlyASpokenQuestionKeepsTheMicrophoneOpen(c: Conversation, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, played: bool, by: ConversationActor): bool =
   val replied = respond(c, token, text, isQuestion, answers, audible, by)
-  val finished = finishSpeech(c, token, by)
+  val finished = finishSpeech(c, token, played, by)
   (canRespond(c, token, text, isQuestion, answers, by) implies
     replied.turn != Listening and (replied.voice implies replied.turn == Speaking)) and
-  (canFinishSpeech(c, token, by) implies
-    finished.voice == (c.voice and c.question) and
-    finished.turn == (if (c.voice and c.question) Listening else Ready) and
+  (canFinishSpeech(c, token, played, by) implies
+    finished.voice == (played and c.voice and c.question) and
+    finished.turn == (if (played and c.voice and c.question) Listening else Ready) and
     finished.generation == c.generation and finished.question == c.question and finished.answers == c.answers)
 ```
 
