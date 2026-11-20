@@ -536,7 +536,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         const revision = entry.revision
         return Effect.map(stored(entry), (saved): StoreReceipt => ({
           revision, succeeded: true, published: [],
-          providerId: !entry.hasSaved && entry.draft.recurrence === "Once" && entry.draft.seriesId === "" ? saved.externalId : undefined
+          ...entry.hasSaved ? {} : { providerId: saved.externalId }
         })) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           default: { revision, succeeded: false, published: [] };

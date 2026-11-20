@@ -365,25 +365,31 @@ pure def sometimesOwnedReminderDismissed(v: CalendarView): bool = v.entries.some
 The store binds the approved revision of one new appointment to the occurrence
 ID returned by that calendar’s create request. In one save the provider ID
 takes the place of the local draft ID, carrying its source and details. An
-open selection follows that same appointment. A different account, calendar,
+open selection follows that same appointment. For a repeating appointment,
+the returned ID identifies the provider’s first event and its series keeps
+the same ID for all subsequent occurrences. A different account, calendar,
 revision, occupied ID or repeated receipt cannot replace an entry.
 
 ```quint
 type CreatedReceipt = { owner: str, calendarId: str, localId: str, providerId: str, revision: int }
+pure def withProviderId(saved: CalendarView, localId: str, providerId: str): CalendarView =
+  { ...saved,
+    entries: saved.entries.listMap(c => if (c.identity.occurrenceId == localId)
+      { ...c, identity: { ...c.identity, occurrenceId: providerId } } else c),
+    selectedId: if (saved.selectedId == localId) providerId else saved.selectedId,
+    cancelledIds: if (providerId == localId) saved.cancelledIds else saved.cancelledIds.union(Set(localId)) }
+pure def unusedProviderId(v: CalendarView, localId: str, providerId: str): bool =
+  providerId != "" and not(v.cancelledIds.contains(providerId)) and
+  (providerId == localId or v.entries.every(e => e.identity.occurrenceId != providerId))
 pure def canStoreCreated(v: CalendarView, created: CreatedReceipt, by: ViewActor): bool =
   val c = entryAt(v, created.localId)
   canChangeOccurrence(v, created.localId, EntryStored({ revision: created.revision, succeeded: true }), by) and
   not(c.hasSaved) and c.identity.kind == C::Appointment and
-  created.owner == v.owner and created.calendarId == v.calendarId and created.providerId != "" and
-  not(v.cancelledIds.contains(created.providerId)) and
-  (created.providerId == created.localId or v.entries.every(e => e.identity.occurrenceId != created.providerId))
+  created.owner == v.owner and created.calendarId == v.calendarId and
+  unusedProviderId(v, created.localId, created.providerId)
 pure def storeCreated(v: CalendarView, created: CreatedReceipt, by: ViewActor): CalendarView =
   val saved = changeOccurrence(v, created.localId, EntryStored({ revision: created.revision, succeeded: true }), by)
-  { ...saved,
-    entries: saved.entries.listMap(c => if (c.identity.occurrenceId == created.localId)
-      { ...c, identity: { ...c.identity, occurrenceId: created.providerId } } else c),
-    selectedId: if (saved.selectedId == created.localId) created.providerId else saved.selectedId,
-    cancelledIds: if (created.providerId == created.localId) saved.cancelledIds else saved.cancelledIds.union(Set(created.localId)) }
+  withProviderId(saved, created.localId, created.providerId)
 pure def lawCreatedReceiptIsSpent(v: CalendarView, created: CreatedReceipt): bool =
   canStoreCreated(v, created, ViewStore) implies not(canStoreCreated(storeCreated(v, created, ViewStore), created, ViewStore))
 pure val createdValues = Set(
@@ -654,6 +660,15 @@ pure def saveSeries(v: CalendarView, receipt: SeriesReceipt, by: ViewActor): Cal
 pure def lawStaleSeriesReceiptCannotSave(v: CalendarView, receipt: SeriesReceipt, by: ViewActor): bool =
   (receipt.occurrenceId != v.selectedId or receipt.definitionVersion != seriesAt(v, seriesTarget(v)).version) implies
     not(canSaveSeries(v, receipt, by))
+pure def canStoreCreatedSeries(v: CalendarView, receipt: SeriesReceipt, providerId: str, by: ViewActor): bool =
+  receipt.persisted and canSaveSeries(v, receipt, by) and not(selectedOccurrence(v).hasSaved) and
+  selectedOccurrence(v).identity.kind == C::Appointment and unusedProviderId(v, receipt.occurrenceId, providerId)
+pure def storeCreatedSeries(v: CalendarView, receipt: SeriesReceipt, providerId: str, by: ViewActor): CalendarView =
+  withProviderId(saveSeries(v, receipt, by), receipt.occurrenceId, providerId)
+pure def lawCreatedSeriesReceiptIsSpent(v: CalendarView, receipt: SeriesReceipt, providerId: str): bool =
+  canStoreCreatedSeries(v, receipt, providerId, ViewStore) implies
+    not(canStoreCreatedSeries(storeCreatedSeries(v, receipt, providerId, ViewStore), receipt, providerId, ViewStore))
+pure val providerIdValues = Set("", "visitA", "periodA", "providerA")
 pure def lawPartialSeriesReceiptCannotSave(v: CalendarView, receipt: SeriesReceipt, by: ViewActor): bool =
   receipt.persisted and not(validSeriesSchedule(v, receipt)) implies not(canSaveSeries(v, receipt, by))
 pure def lawSeriesSaveKeepsOtherMarks(v: CalendarView, c: C::Calendar, receipt: SeriesReceipt): bool =

@@ -221,7 +221,9 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   effect function stored(c: Calendar) {
     const v = try box.get()
     const receipt = try store.write(written(v, c), v)
-    const event: CalendarEvent = receipt.providerId !== undefined
+    const event: CalendarEvent = receipt.providerId !== undefined && !single(c)
+      ? { type: "storeCreatedSeries", receipt: seriesReceipt(try box.get(), c, receipt), providerId: receipt.providerId }
+      : receipt.providerId !== undefined
       ? { type: "storeCreated", created: { owner: c.identity.owner, calendarId: c.identity.calendarId, localId: c.identity.occurrenceId, providerId: receipt.providerId, revision: receipt.revision } }
       : single(c) ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
       : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }

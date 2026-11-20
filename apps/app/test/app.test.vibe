@@ -407,7 +407,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         removed, gone
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
-        added: { revision: 1, succeeded: true, published: [] },
+        added: { revision: 1, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
         settled: [[false, "Saved", "Dr. Patel", "clinic", true], [true, "Deleted", "Dr. Patel", "clinic", true]],
         visit: ["clinic", "Dr. Patel", true, day],
         unchanged: ["birthday"],
