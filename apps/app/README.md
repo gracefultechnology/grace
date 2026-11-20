@@ -309,6 +309,12 @@ Shared Eliza Cloud uses the selected deployment's registered App Link at
 `/auth/grace/callback`. Password backup and recovery ask for fresh native Google
 verification through Steward and a separate native choice for the action.
 Each deployment accepts grants for its own acknowledged account and request.
+Shared profiles compile Eliza’s shared Android authentication client from
+`packages/auth/android`. It exchanges a fresh Steward session at
+`POST /api/v1/app-auth/mobile/password-backup` and checks the returned account
+and organization before recovery. The standalone profile uses Grace Cloud’s
+browser approval and the native secure-store client. Each APK registers one
+`GraceAccount` implementation.
 
 `android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent
