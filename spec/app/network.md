@@ -32,7 +32,9 @@ this model.
 Nearby networks remain available beyond the first visible rows through Show
 more and Show fewer. The adapter sorts remembered networks first, then signal
 strength, and supplies stable network identities; display names alone cannot
-identify a security context. The displayed four-row preview is not a limit
+identify a security context. Android lets no app read its saved networks, so
+on Android the adapter reports as remembered only the network the tablet is
+on once Android has validated it. The displayed four-row preview is not a limit
 on discovery or supported networks. A network can be chosen only from a
 list the OS reported. A remembered or open network joins at once, a
 password network asks for its password, and a network that asks for an
@@ -131,6 +133,17 @@ join says the tablet is online but could not confirm which network. A
 sign-in page opens in Android's panel; Grace never fills it in or accepts
 its terms. While Android's panel is open, the result Android reports when
 Grace is shown again completes, fails or keeps waiting on the join.
+If Android later validates the selected network after an unavailable or
+unverified result, Grace clears that result and shows the connected network.
+Android may name its current connection even when it has no nearby scan
+results. Grace shows that name and shows signal strength only when measured.
+To confirm the choice, Grace matches Android's current access point and its
+security to the scan. If the scan is empty, the access point observed when the
+person chose the network can still identify it. A shared name or a hidden
+access-point address alone cannot confirm the selected network.
+An observation belongs to the selection and attempt in progress when the
+read started. An undisclosed name, a different network, a cancelled attempt
+or loss of permission cannot complete it.
 
 ```quint
 pure def answers(phase: JoinPhase, result: JoinResult): bool =
@@ -160,6 +173,14 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
   explanation: report.explanation, entryReady: false, privateVisible: false
   }
 }
+pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
+  by == OperatingSystem and (n.discovery == NetworksFound or n.discovery == NoNetworks) and
+  (n.phase == JoinFailed or n.phase == JoinUnconfirmed) and
+  networkId != "" and networkId == n.selected.id and version == n.version
+pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
+  { ...n, phase: JoinComplete, explanation: "" }
+pure def lawOnlyCurrentObservedNetworkConfirms(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
+  canConfirmConnection(n, networkId, version, by) implies (version == n.version and networkId == n.selected.id and by == OperatingSystem)
 pure def helpOffered(n: NetworkJoin): bool = n.errors >= 2 or n.phase == JoinFailed or n.phase == CertificateDecision
 pure def alwaysCertificateIsScoped(n: NetworkJoin): bool =
   (n.phase == CertificateDecision iff n.certificate != "")
@@ -200,6 +221,7 @@ pure val networkValues = Set(
   { id: "network", authentication: SharedPassword, remembered: false },
   { id: "network", authentication: AccountPassword, remembered: false },
   { id: "network", authentication: OpenNetwork, remembered: false })
+pure val networkIdValues = Set("network", "other", "")
 pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val weight_reportEntry = 4
 pure val weight_join = 4
@@ -227,7 +249,11 @@ location, and Location is on; the plugin says which is missing. Wi-Fi off
 and Location off offer Android's internet panel, because an app can switch
 neither on. No networks nearby offers a fresh search. Each report of the
 OS replaces the reason, except while the person reads why location is
-needed.
+needed. When a scan lists no networks, Grace clears the previous list.
+Turning off the radio or losing location access retires the selection, any
+join under way and its result. An empty scan closes only a password entry
+and keeps a join already under way and its result. An Android reply for the
+old selection cannot restore it.
 
 ```quint
 type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found({ networks: List[Network] })
@@ -250,7 +276,10 @@ pure def canReportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): boo
   }
 pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): NetworkJoin = {
   val refused = if (n.locationAsked) LocationRefused else LocationAccessNeeded
-  { ...n, discovery: match found {
+  val retired = found == RadioOff or found == NoLocationAccess or found == LocationDisabled or
+    (found == NoneNearby and n.phase == PrivateEntry)
+  val selection = if (retired and n.phase != Selecting) cleared(n.version + 1, n) else n
+  { ...selection, discovery: match found {
     | RadioOff => WifiOff
     | NoLocationAccess => refused
     | LocationDisabled => LocationOff
