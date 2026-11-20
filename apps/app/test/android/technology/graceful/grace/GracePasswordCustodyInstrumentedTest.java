@@ -40,6 +40,8 @@ public final class GracePasswordCustodyInstrumentedTest {
   assertEquals(2, status.length());
   assertTrue(scope.matches("[0-9a-f]{64}"));
   GracePasswordsOwner.confirmVerifiedAccount(context);
+  assertFalse(GracePasswordsOwner.admitted(context));
+  completeVerifiedSignIn(context);
   assertTrue(GracePasswordsOwner.admitted(context));
 
   sessions.write("credential", credential.put("token", freshToken()).toString());
@@ -52,8 +54,22 @@ public final class GracePasswordCustodyInstrumentedTest {
   GracePasswordsOwner.confirmVerifiedAccount(context);
   assertFalse(GracePasswordsOwner.admitted(context));
 
+  completeVerifiedSignIn(context);
+  assertTrue(GracePasswordsOwner.admitted(context));
+
   sessions.write("credential", credential.put("organizationId", UUID.randomUUID().toString()).toString());
+  completeVerifiedSignIn(context);
+  assertFalse(GracePasswordsOwner.admitted(context));
   assertNotEquals(scope, GraceAccount.projection(GracePasswordsOwner.stableSession(context)).getString("voiceDisclosureScope"));
+ }
+
+ private static void completeVerifiedSignIn(Context context) throws Exception {
+  try {
+   GracePasswordsOwner.enteringAccountChange(context);
+   GracePasswordsOwner.confirmVerifiedAccount(context);
+  } finally {
+   GracePasswordsOwner.leavingAccountChange();
+  }
  }
 
  private static String freshToken() {
