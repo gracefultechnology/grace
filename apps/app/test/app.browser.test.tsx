@@ -898,6 +898,12 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
+  vi.stubGlobal("AudioContext", class extends AudioContext {
+    constructor(options?: AudioContextOptions) {
+      const silentOutput = { ...options, sinkId: { type: "none" } };
+      super(silentOutput);
+    }
+  });
   const microphone = new AudioContext({ sampleRate: 16_000 });
   const source = microphone.createOscillator();
   const inputMedia = microphone.createMediaStreamDestination();
