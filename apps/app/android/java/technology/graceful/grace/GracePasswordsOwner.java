@@ -2,7 +2,7 @@ package technology.graceful.grace;
 
 import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
-import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
+import ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
 import java.io.File;
@@ -68,7 +68,7 @@ final class GracePasswordsOwner {
   }
  }
 
- static synchronized void bindVerified(Context context, CloudPasswordBackup.Approval approval, boolean linkExisting) throws Exception {
+ static synchronized void bindVerified(Context context, PasswordBackupApproval approval, boolean linkExisting) throws Exception {
   if (changingAccount || !hasNoPriorOwner(context) || !approval.current()) throw new IllegalStateException("Account verification changed");
   var current = stableSession(context);
   if (current == null || !current.accountId().equals(approval.ownerId())) throw new IllegalStateException("Account verification changed");
