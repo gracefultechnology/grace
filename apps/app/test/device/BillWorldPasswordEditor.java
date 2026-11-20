@@ -62,7 +62,7 @@ public final class BillWorldPasswordEditor extends Instrumentation {
       String title = resource(host, "editor_title");
       String save = resource(host, "save");
       KeyguardManager keyguard = host.getSystemService(KeyguardManager.class);
-      if (keyguard == null || !keyguard.isDeviceSecure() || keyguard.isDeviceLocked()) throw new IllegalStateException();
+      if (keyguard == null || keyguard.isDeviceSecure() || keyguard.isDeviceLocked()) throw new IllegalStateException();
 
       stage("ready");
       AtomicReference<Point> savePoint = new AtomicReference<>();

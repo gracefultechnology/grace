@@ -49,28 +49,29 @@ The application in `apps/app` is a Capacitor Android application. The MVP ships 
 
 ## Story: Manage my saved passwords privately
 
-> I can open Passwords from its own Home page after Files and use my tablet screen
-> lock to see my saved sign-ins. I can add, edit, show, copy or delete a sign-in,
-> and use a matching saved sign-in on a website after Android asks me to
-> unlock and choose. I can type or speak a password question in Ask Grace
-> and get instructions without sharing credentials.
+> I can open Passwords from its own Home page after Files and immediately find,
+> add, change or delete a saved sign-in, even if my tablet has no screen lock.
+> I can tap to show or copy a password. When I ask Grace to sign in on a website,
+> Android lets me choose a matching account. Grace can point to these controls
+> without receiving a password.
 
 ### Passwords displays sign-in details only while the vault is available
 
-Android owns the encrypted vault, authentication, password editor, generator
-and the protected view for showing a password. Copy uses Android’s sensitive
-clipboard, with best-effort expiration. Grace displays a list of
-sign-in names and account names for the active unlocked view. Leaving
-Passwords, backgrounding Grace, or expiration drops those details. Web
-previews describe unavailability. The vault and its summaries are excluded
-from the transcript, memory, cloud and agent tools.
+Android keeps passwords encrypted and owns the editor, generator and protected
+view for showing a password. Copy uses Android’s sensitive clipboard with
+best-effort expiration. Opening Passwords in the foreground shows sign-in
+names for the admitted tablet owner. Leaving Passwords, backgrounding Grace
+or changing owners clears those details. An older vault encrypted with a
+credential-bound key requires its owner's authorization to migrate. Web
+previews describe unavailability. Vault summaries stay out of transcripts,
+agent tools and cloud requests.
 
 ~~~quint
 type VaultActor = PasswordsPerson | PasswordsHost
 type LoginBinding = { kind: str, facet: str, display: str }
 type LoginSummary = { id: str, label: str, username: str, bindings: List[LoginBinding], revision: int }
-type VaultIssue = NoDeviceLock | UnsupportedVault | LostVaultKey | VaultClosed
-type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | SpokenHelpUnavailable | SavedLogin | DeletedLogin | ChangedLogin | BackupUnavailable
+type VaultIssue = LegacyAuthorization | UnsupportedVault | LostVaultKey | VaultClosed
+type VaultNotice = QuietVault | CancelledVaultAction | FailedVaultAction | SavedLogin | DeletedLogin | ChangedLogin | BackupUnavailable
 type VaultMode = ClosedPasswords | CheckingVault | LockedVault | UnavailableVault({ reason: VaultIssue })
   | OpenVault({ entries: List[LoginSummary], selected: str })
 type PasswordGuide = NoPasswordGuide | OpenPasswordGuide | FindPasswordGuide | ShowPasswordGuide | CopyPasswordGuide | FillPasswordGuide
@@ -79,7 +80,7 @@ type PasswordView = { vault: VaultMode, generation: int, notice: VaultNotice, gu
 
 pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice: QuietVault, guide: NoPasswordGuide, backupReady: false, guideMic: GuideMicIdle, guideMicEpoch: 0 }
 pure def canOpenPasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsHost and isClosedVault(v.vault)
+  by == PasswordsHost and not(isCheckingVault(v.vault)) and not(isOpenVault(v.vault))
 pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
 pure def canClosePasswords(v: PasswordView, by: VaultActor): bool =
@@ -87,15 +88,21 @@ pure def canClosePasswords(v: PasswordView, by: VaultActor): bool =
 pure def closePasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: ClosedPasswords, generation: v.generation + 1, notice: QuietVault, guide: NoPasswordGuide, backupReady: false }
 pure def canLockPasswords(v: PasswordView, by: VaultActor): bool =
-  not(isClosedVault(v.vault)) and not(isLockedVault(v.vault))
+  by == PasswordsHost and not(isClosedVault(v.vault)) and not(isLockedVault(v.vault))
 pure def lockPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: LockedVault, generation: v.generation + 1, notice: QuietVault }
 pure def canReportUnavailable(v: PasswordView, generation: int, by: VaultActor): bool =
   by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault))
 pure def reportUnavailable(v: PasswordView, generation: int, reason: VaultIssue, by: VaultActor): PasswordView =
   { ...v, vault: UnavailableVault({ reason: reason }), notice: QuietVault }
+pure def needsLegacyAuthorization(reason: VaultIssue): bool =
+  match reason { | LegacyAuthorization => true | _ => false }
 pure def canUnlockPasswords(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsPerson and isLockedVault(v.vault)
+  val vault = v.vault
+  by == PasswordsPerson and (match vault {
+    | UnavailableVault(unavailable) => needsLegacyAuthorization(unavailable.reason)
+    | _ => false
+  })
 pure def unlockPasswords(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
 pure def validSelection(entries: List[LoginSummary], selected: str): bool =
@@ -139,6 +146,11 @@ pure def alwaysSelectionIsVisible(v: PasswordView): bool =
     | OpenVault(opened) => validSelection(opened.entries, opened.selected)
     | _ => true
   }
+pure def lawForegroundHostCanOpenPasswords(entries: List[LoginSummary]): bool = {
+  val checking = openPasswords(initial, PasswordsHost)
+  canOpenPasswords(initial, PasswordsHost) and canReportLogins(checking, checking.generation, PasswordsHost) and
+    isOpenVault(reportLogins(checking, checking.generation, entries, QuietVault, PasswordsHost).vault)
+}
 pure def sometimesPasswordsUnlock(v: PasswordView): bool = isOpenVault(v.vault)
 pure def sometimesSavedLoginIsSelected(v: PasswordView): bool = selectedLogin(v.vault) == "saved"
 pure val exampleLogin: LoginSummary = {
@@ -146,7 +158,7 @@ pure val exampleLogin: LoginSummary = {
   bindings: List({ kind: "web", facet: "https://utility.example", display: "utility.example" })
 }
 pure val entriesValues = Set(List(), List(exampleLogin))
-pure val reasonValues = Set(NoDeviceLock, UnsupportedVault, LostVaultKey, VaultClosed)
+pure val reasonValues = Set(LegacyAuthorization, UnsupportedVault, LostVaultKey, VaultClosed)
 pure val idValues = Set("", "saved", "unknown")
 ~~~
 
@@ -166,10 +178,8 @@ pure val latestValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
 
 ### Grace can describe private sign-in without operating the vault
 
-Help uses fixed instructions to open Passwords, follow Android's unlock
-prompt and choose a saved login. The same action can speak these instructions
-when voice is available. It receives no vault state, account text or website
-form values and has no authority over the editor or browser. Recognized
+Grace uses the request text to point to a control. Guidance receives no
+vault state, account text or website form values. Recognized
 requests from the current typed draft or a current complete human utterance
 work while Cloud reasoning is unavailable. They select only the general Passwords screen or Browser and a cue for the
 named control. Guidance never chooses or reveals an entry, copies a
@@ -190,10 +200,6 @@ as “Open Passwords,” “Where can I find my saved passwords?”, “Show my 
 saved sign-in and uses the highlighted control.
 
 ~~~quint
-pure def passwordsHelpText(guide: PasswordGuide): str = "On Home, go one page past Files and open Passwords to manage your saved sign-ins. Choose a sign-in to find Show password and Copy password. To fill one, open Private sign-in on a secure website and tap the password field. If Android offers Grace Passwords, unlock your tablet and choose the sign-in you want. Then use the website’s sign-in button."
-pure def lawHelpDoesNotReadTheVault(v: PasswordView, other: PasswordView): bool =
-  helpForPasswords(v) == helpForPasswords(other)
-pure def helpForPasswords(v: PasswordView): str = passwordsHelpText(v.guide)
 pure def passwordGuide(words: str): PasswordGuide =
   if (words == "open passwords" or words == "open saved passwords" or words == "can you open my passwords") OpenPasswordGuide
   else if (words == "find a password" or words == "find a saved password" or words == "where are my passwords" or words == "where can i find my saved passwords") FindPasswordGuide
@@ -205,6 +211,8 @@ pure def canSetPasswordGuide(v: PasswordView, guide: PasswordGuide, by: VaultAct
   by == PasswordsHost and guide != v.guide
 pure def setPasswordGuide(v: PasswordView, guide: PasswordGuide, by: VaultActor): PasswordView =
   { ...v, guide: guide }
+pure def lawGuidanceIsIndependentOfVault(v: PasswordView, other: PasswordView, guide: PasswordGuide): bool =
+  setPasswordGuide(v, guide, PasswordsHost).guide == setPasswordGuide(other, guide, PasswordsHost).guide
 pure def stepGuidanceNeverChangesVault(before: PasswordView, via: str, after: PasswordView): bool =
   via == "setPasswordGuide" implies before.vault == after.vault
 pure def sometimesPasswordsGuideToCopy(v: PasswordView): bool = v.guide == CopyPasswordGuide

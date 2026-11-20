@@ -2,7 +2,6 @@
   "schema": 1,
   "service": "technology.graceful.grace.GraceAgentService",
   "notification": { "channel": "Grace", "title": "Grace", "text": "Grace is here when you need her" },
-  "cloud": { "baseUrl": "https://api.graceforseniors.com" },
   "routes": [
     { "method": "GET", "path": "/api/status" },
     { "method": "POST", "path": "/api/conversations" },
