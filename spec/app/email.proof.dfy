@@ -628,6 +628,29 @@ lemma EmailRegistryView(m: Mailbox, ref: string, record: app__emailItem_MessageR
 {
 }
 
+lemma lawGraceNeverRaisesApproval_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailActor)
+  ensures (lawGraceNeverRaisesApproval(m, assist, asked, by_) == true)
+{
+  var after := assistMail(m, assist, asked, by_);
+  forall item | item in after.messages && item.pending.PurgeMessage?
+    ensures exists original :: original in m.messages && original.identity == item.identity && original.pending.PurgeMessage?
+  {
+    if assist.AssistTrash? || assist.AssistRestore? || assist.AssistUndoTrash? || assist.AssistMarkUnread? {
+      var change := if assist.AssistTrash? then app__emailItem_MessageChange.TrashMessage
+        else if assist.AssistMarkUnread? then app__emailItem_MessageChange.UnreadMessage
+        else app__emailItem_MessageChange.RestoreMessage;
+      var replacement := app__emailItem_changeMessage(messageRecord(m, assist.target.ref), change, app__emailItem_MessageActor.MessageUser);
+      assert after.messages == putMessage(m.messages, replacement);
+      EmailRegistryView(m, replacement.identity.ref, replacement);
+      ProofLib.FilterMember((old_: app__emailItem_MessageRecord) => (old_.identity.ref != replacement.identity.ref), m.messages, item);
+      assert item != replacement;
+    } else {
+      assert after.messages == m.messages;
+    }
+    assert item in m.messages;
+  }
+}
+
 lemma EmailRegistryDistinct(m: Mailbox)
   requires alwaysMessageRegistry(m)
   ensures ProofLib.DistinctBy(m.messages, (record: app__emailItem_MessageRecord) => record.identity.ref)
