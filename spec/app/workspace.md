@@ -31,9 +31,9 @@ Discovered by the proof: every retained plan step has a named subject and
 nonempty outcome, so the next instruction still exists after a receipt.
 The workspace also retains the component rules for a loaded page's security,
 the assistant's visible work, guidance and conversation offers, and the
-execution's verified observation context. Discovered by the proof: retained
-website facts have a source quotation, and a queued step must still be one
-Grace may take. The workspace keeps the same rules as the execution it holds.
+execution's verified observation context, including its quoted page facts
+and that a queued step is one Grace may take herself. The workspace keeps every
+always rule of the execution it holds.
 
 ```quint
 import shell as S from "./shell"
