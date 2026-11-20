@@ -106,7 +106,7 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     tablet.visible = false;
     tablet.currentPoint = nearby("NETGEAR-4F2", -40, "open", "02:11:22:33:44:99");
     await changed();
-    await expect.poll(async () => (await state()).discovery).toBe("NoNetworks");
+    await expect.poll(async () => (await state()).discovery.tag).toBe("NoNetworks");
     expect((await state()).phase).toBe("JoinFailed");
     tablet.currentPoint = nearby("NETGEAR-4F2", -40, "wpa2", "02:00:00:00:00:00");
     await changed();
