@@ -28,7 +28,7 @@ const actionLabels: Readonly<Record<ListAction, string>> = { NoAction: "", OpenP
 const fixSteps = "Check the password on the internet box; capitals count. If it still won’t join, ask whoever looks after this network.";
 const offlineSteps = "Check that the internet box is plugged in and its lights are on, then choose your network below. Its password is often on a sticker on the box.";
 const fix = { type: "openGrace" } as const;
-const unnamed: WifiNetwork = { name: "Your Wi-Fi network", signal: 3 };
+const unnamed: WifiNetwork = { name: "Internet connection" };
 
 export function Wifi() {
   const { workspace, can, send } = useWorkspace();

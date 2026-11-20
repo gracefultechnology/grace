@@ -63,7 +63,7 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     expect(fixes).toBe(1);
     await draw(true);
     await expect.element(button("Fix Wi-Fi")).not.toBeInTheDocument();
-    await joinedTo("Your Wi-Fi network");
+    await joinedTo("Internet connection");
 
     await tap("Look for networks");
     expect(tablet.location).toBe("prompt");
@@ -109,7 +109,7 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     await shown();
     await expect.element(page.getByLabelText("Password")).not.toBeInTheDocument();
     await expect.element(page.getByText("Sunrise Community Center")).not.toBeInTheDocument();
-    await joinedTo("Your Wi-Fi network");
+    await joinedTo("Internet connection");
     tablet.location = "granted";
     await shown();
     await tap("NETGEAR-4F2");

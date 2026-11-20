@@ -11,7 +11,7 @@ import { WifiNetworkRow } from "./WifiNetworkRow.tsx";
 
 export interface WifiNetwork {
   name: string;
-  signal: number;
+  signal?: number;
   locked?: boolean;
 }
 
