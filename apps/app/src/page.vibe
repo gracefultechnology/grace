@@ -293,6 +293,27 @@ function browserProtection() {
   }
 }
 
+function browserCommands(workspace: Workspaces.Shape, layer: PageLayers.Shape, native: NativePage.Shape,
+  pages: ReadonlyMap<PageId, Page>, signals: Queue.Queue<Signal>) {
+  return {
+    navigatePrivate: (tab: number, address: string) => navigatePrivate(workspace, native, pages, tab, address),
+    effect stepPrivate(tab: number, direction: HistoryDirection) {
+      const w = try workspace.get()
+      const history = historyFor(try layer.get(), tab)
+      if (!canStepPrivate(w.device, w.browser, history, direction) || (try sync(() => webView.hidden()))) return false
+      const id = pageOf(tab)
+      return Effect.as(direction === "HistoryBack" ? native.back(id) : native.forward(id), true) catch () => false
+    },
+    effect website(event: WebsiteEvent) {
+      try Queue.offer(signals, Signal.Person({ event }))
+    },
+    effect closeBrowser() {
+      try workspace.send({ type: "closeBrowser" }, "Person")
+      try Queue.offer(signals, Signal.ClosedBrowser())
+    },
+  }
+}
+
 export const pageHost = Layer.effect(PageHost, effect {
   const workspace = try Workspaces
   const layer = try PageLayers
@@ -549,21 +570,7 @@ export const pageHost = Layer.effect(PageHost, effect {
     }
   }
   return {
-    navigatePrivate: (tab, address) => navigatePrivate(workspace, native, pages, tab, address),
-    effect stepPrivate(tab: number, direction: HistoryDirection) {
-      const w = try workspace.get()
-      const history = historyFor(try layer.get(), tab)
-      if (!canStepPrivate(w.device, w.browser, history, direction) || (try sync(() => webView.hidden()))) return false
-      const id = pageOf(tab)
-      return Effect.as(direction === "HistoryBack" ? native.back(id) : native.forward(id), true) catch () => false
-    },
-    effect website(event: WebsiteEvent) {
-      try Queue.offer(signals, Signal.Person({ event }))
-    },
-    effect closeBrowser() {
-      try workspace.send({ type: "closeBrowser" }, "Person")
-      try Queue.offer(signals, Signal.ClosedBrowser())
-    },
+    ...browserCommands(workspace, layer, native, pages, signals),
     privateSignIn: native.privateSignIn,
     said,
     watch: measurer.watch,
