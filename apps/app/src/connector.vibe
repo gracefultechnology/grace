@@ -422,7 +422,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         }
         const next = preflight catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
-          when ProviderRefused: { kind: "receipt" as const, result: outcome("SendFailed", `preflight-refused:${e.status}`) };
+          when ProviderRefused: { kind: "receipt" as const, result: outcome("SendFailed", `refused:${e.status}`) };
           when Unreachable: { kind: "receipt" as const, result: outcome("SendFailed", "preflight-unreachable") };
         }
         if (next.kind === "receipt") return next.result
