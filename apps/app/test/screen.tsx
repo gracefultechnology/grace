@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
 import { page } from "vitest/browser";
-import { allowedUse, chooseProvider, initial, sheetResult } from "../gen/app__accounts.ts";
+import { type Accounts, allowedUse, chooseProvider, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { application } from "../src/app.vibe";
 import type { CloudLink } from "../src/conversation.vibe";
@@ -12,11 +12,16 @@ import type { Runtime } from "../src/useApp.ts";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
-export async function mountGmail(address: string, cloud: CloudLink) {
-  const chosen = chooseProvider(initial, "Gmail", "AccountPerson");
-  const connected = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, "Gmail", "AccountConnector");
+export function connected(accounts: Accounts, provider: Provider, address: string, name: string) {
+  const chosen = chooseProvider(accounts, provider, "AccountPerson");
+  return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, name, "AccountConnector");
+}
+
+export const mountGmail = (address: string, cloud: CloudLink) => mountAccounts(connected(initial, "Gmail", address, "Gmail"), cloud);
+
+export async function mountAccounts(accounts: Accounts, cloud: CloudLink) {
   localStorage.clear();
-  localStorage.setItem("accounts", JSON.stringify(connected));
+  localStorage.setItem("accounts", JSON.stringify(accounts));
   onTestFinished(() => localStorage.clear());
   const runtime = ManagedRuntime.make(application(undefined, undefined, cloud));
   await mount(runtime);
