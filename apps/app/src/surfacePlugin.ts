@@ -21,10 +21,7 @@ export const passwordClient = Capacitor.isPluginAvailable("ElizaPasswords")
 
 type PrivateViewPlugin = {
   protect(input: { view: "vault" | "browser"; active: boolean }): Promise<void>;
-  openLockSettings(): Promise<void>;
   openEmail(): Promise<void>;
-  readHelp(): Promise<void>;
-  stopHelp(): Promise<void>;
 };
 
 export const androidHost = Capacitor.isNativePlatform();

@@ -6,6 +6,7 @@ import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
 import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { webOrigin } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 
 const calendarDay = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -327,7 +328,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
                 : <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "saveAttachment" })}>Save to Files</Button>)}
               {snapshot.attachment.deviceTransfer && /Android/i.test(navigator.userAgent) &&
                 <Button variant="capsule" size="pill" asChild>
-                  <a href={`https://app.graceforseniors.com/android/files/import#${snapshot.attachment.deviceTransfer}`} referrerPolicy="no-referrer">Save to Grace Files</a>
+                  <a href={`${webOrigin}/android/files/import#${snapshot.attachment.deviceTransfer}`} referrerPolicy="no-referrer">Save to Grace Files</a>
                 </Button>}
               <Button variant="capsule" size="pill" onClick={() => run({ kind: "closeAttachment" })}>Close attachment</Button>
             </div>

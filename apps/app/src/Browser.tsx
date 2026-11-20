@@ -1,7 +1,7 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"
 // spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
-import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, GuideRing, NewTabPage } from "@repo/ui";
-import { LockKeyhole, Mail } from "lucide-react";
+import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, NewTabPage } from "@repo/ui";
+import { Mail } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 import { type BrowserInput, canCheckPrivateEmail } from "../gen/app__browserControls.ts";
 import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, tabUrl, visibleTabs } from "../gen/app__browser.ts";
@@ -104,8 +104,8 @@ function PrivateToolbar({ active, edit, offered, navigate, checkEmail }: Private
 /** @model spec/app/browserControls.md */
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
-  const { guide, finish } = usePasswordGuide();
-  const { workspace, can, send, closeBrowser, navigatePrivate, checkPrivateEmail, supportsPrivateSignIn } = useWorkspace();
+  const { guide } = usePasswordGuide();
+  const { workspace, can, send, closeBrowser, navigatePrivate, checkPrivateEmail } = useWorkspace();
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
   const [address, setAddress] = useDraft(browser?.editingAddress ? browser.addressDraft : active ? tabUrl(active) : "", browser?.editingAddress ?? false);
@@ -127,7 +127,9 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const failure = failures[active.load];
   const privateFailure = active.manualSignIn && active.load === "LoadFailed";
-  const privateInput = { tag: "OpenPrivateSignIn", url: secureOrigin(tabUrl(active)) } as const;
+  const fillNotice = guide === "FillPasswordGuide"
+    ? secureOrigin(tabUrl(active)) === "" ? "Open a secure website first." : "Ask Grace to use a saved password."
+    : undefined;
 
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
@@ -141,14 +143,8 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         checkEmail={canCheckPrivateEmail(browser, active.id, browser.revision, "BrowserControlUser") ? () => checkPrivateEmail(active.id, browser.revision) : undefined} /> : (
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
-          onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}
-          trailing={supportsPrivateSignIn() && offered(privateInput) ? (
-            <div className="relative">
-              {guide === "FillPasswordGuide" && <GuideRing motion="tap" tight />}
-              <Button variant="capsule" size="pill" onClick={() => { finish(); edit(privateInput); }}><LockKeyhole aria-hidden /> Private sign-in</Button>
-            </div>
-          ) : undefined}>
-          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : guide === "FillPasswordGuide" && !offered(privateInput) ? "Open a secure website first." : undefined}
+          onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
+          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>
