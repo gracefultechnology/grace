@@ -2119,6 +2119,11 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let addChallengeDuringRead = false;
   let challengeShown = false;
   let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
+  const blankNewsletterEmail = {
+    id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
+    sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
+  };
+  let newsletterEmail: typeof blankNewsletterEmail | null = null;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
@@ -2134,10 +2139,19 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
-          { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search", href: null, inViewport: true },
-          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
-          { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
-          { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
+          { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search",
+            form: { index: 1, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
+          ...(newsletterEmail === null ? [] : [
+            newsletterEmail,
+            { id: "subscribe", tag: "button", type: "submit", label: "Subscribe", sensitive: null,
+              form: newsletterEmail.form, focused: false, submits: true, href: null, inViewport: false },
+            { id: "form-help", tag: "a", label: "Help center inside a form", form: { index: 3, name: null },
+              href: "https://example.org/form-help", inViewport: true },
+          ]),
+          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code",
+            form: { index: 4, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true }] : []),
+          { id: "about", tag: "a", label: "About us", form: null, href: "https://example.org/about", inViewport: true },
+          { id: "clipped-help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: -2, width: 100, height: 32 } },
           { id: "help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: 80, width: 100, height: 32 } },
@@ -2171,6 +2185,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         expect(init?.body).not.toContain("Private sign-in link");
         expect(init?.body).not.toContain("Private username");
         expect(init?.body).not.toContain("Credential URL");
+        expect(init?.body).not.toContain("Help center inside a form");
+        expect(init?.body).not.toContain("Sign Up for Our Newsletter");
         expect(init?.credentials).toBe("include");
         const headers = new Headers(init?.headers);
         expect(headers.has("Authorization")).toBe(false);
@@ -2233,6 +2249,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     currentPage = about;
     await native.report("tab-1", origin + about.path, 100);
     await tap(resume);
+    newsletterEmail = blankNewsletterEmail;
     await tap(check);
     const result = page.getByRole("status", { name: "Page check result" });
     await expect.poll(() => result.query()?.textContent).toContain(target);
@@ -2240,6 +2257,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(plan.getByText(/^Open page:/).query()).toBeNull();
     expect(plan.getByText("Read checks complete").query()).toBeNull();
     await routeTo(check);
+    newsletterEmail = null;
 
     await tap(showLink);
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
@@ -2269,6 +2287,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     signInWidget = "hidden";
+    newsletterEmail = blankNewsletterEmail;
+    const beforeNewsletterGuide = guideCalls;
+    await tap(showLink);
+    await expect.poll(() => guideCalls).toBe(beforeNewsletterGuide + 1);
+    await routeTo(page.getByText("Look for “Help center” on example.org."));
+    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
+      documentId: about.id, command: { guidance: { nodeId: "help" } },
+    });
+
+    newsletterEmail = null;
     currentPage = help;
     await native.report("tab-1", origin + help.path, 100);
     await native.route();
@@ -2291,9 +2319,28 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(plan.getByText(/^Open page:/).query()).toBeNull();
     addChallengeDuringRead = false;
     challengeShown = false;
+    const blockedNewsletters = [
+      { edited: true },
+      { focused: true },
+      { hasInput: true },
+      { label: "Contact email" },
+    ];
+    const beforeNewsletterRead = native.calls("readPage").length;
+    for (const fields of blockedNewsletters) {
+      newsletterEmail = { ...blankNewsletterEmail, ...fields };
+      await tap(check);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    expect(native.calls("readPage")).toHaveLength(beforeNewsletterRead);
+
+    newsletterEmail = blankNewsletterEmail;
     reviseDuringRead = true;
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
+    const headingReads = native.calls("readPage").slice(beforeNewsletterRead);
+    expect(headingReads.length).toBeGreaterThan(0);
+    expect(headingReads.every(({ selector }) => typeof selector === "string" && selector.includes("h1"))).toBe(true);
     expect(result.query()).toBeNull();
     expect(check.query()).toBeNull();
 
