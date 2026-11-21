@@ -182,7 +182,7 @@ The regular Ask Grace field and microphone accept requests for password help.
 Grace uses the current typed request or a complete human utterance to point
 to a control. Guidance receives no vault state, account data or website form
 values.
-Typed commands work when Cloud speech is unavailable. Known commands select
+Typed commands work when Cloud speech or Cloud reasoning is unavailable. Known commands select
 the general Passwords screen or Browser and a cue for the named control.
 Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit

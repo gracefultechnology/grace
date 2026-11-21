@@ -211,9 +211,9 @@ function sameDetails(a: EntryDetails, b: EntryDetails) {
 
 const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "" ? 0 : Math.max(0, seriesAt(view, seriesId).version)
 
-function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails): Calendar | undefined {
+function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails, source: Calendar | undefined): Calendar | undefined {
   if (known === undefined) {
-    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: source?.identity.sourceRef ?? "", sourceAccount: source?.identity.sourceAccount ?? 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
   }
   if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined
@@ -226,18 +226,24 @@ const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(k
 function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[]): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
   const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
+  const unlisted = own.filter((c) => c.phase === "Saved" && c.identity.kind === "Appointment" && c.committed.seriesId === "" && !listed(c))
   const writing = own.filter((c) => c.phase === "Editing" && !c.hasSaved && c.approvedRevision === c.revision)
+  const taken = new Set<Calendar>()
+  const kept = new Set<Calendar>()
   const changed = events.flatMap((e) => {
     const known = own.find((c) => c.identity.occurrenceId === e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const copies = (d: EntryDetails) => d.title.trim() === e.title.trim() && d.startAt === startAt && d.endAt === endAt && d.allDay === e.isAllDay
     if (known === undefined && writing.some((c) => copies(c.draft))) return []
-    const entry = details(e, startAt, endAt, timezone, known?.committed)
-    const incoming = validDetails(entry) ? refreshed(known, view, e, entry) : undefined
+    const created = known !== undefined ? undefined : unlisted.find((c) => !taken.has(c) && copies(c.committed))
+    if (created !== undefined) taken.add(created)
+    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
+    const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
+    if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
   })
-  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c))
+  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c) && !kept.has(c))
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 

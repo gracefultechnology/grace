@@ -177,7 +177,6 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
             message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
-
           {currentOffer && currentOffer.labels.length > 0 && (
             <AnswerChips>{currentOffer.labels.map((label, index) =>
               <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>

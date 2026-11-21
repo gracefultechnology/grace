@@ -80,11 +80,11 @@ export function useWorkspace() {
     resumeReadPlan: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.resumeReadPlan())),
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
-    /** The person's Close browser, which the page host also tells what websites asked. */
     privateHistory: (tab: number) => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (layer) => Effect.map(layer.get(), (state) => historyFor(state, tab)))),
     stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     checkPrivateEmail: (tab: number, revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.checkPrivateEmail(tab, revision))),
+    /** The person's Close browser, which the page host also tells what websites asked. */
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
 }
