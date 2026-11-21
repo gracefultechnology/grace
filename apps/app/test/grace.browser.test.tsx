@@ -305,9 +305,6 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await expect.element(page.getByText(/^Tap your Gmail, not card [* ]+$/)).toBeVisible();
   expect(document.body.textContent).not.toContain("4111");
   await tap(page.getByRole("button", { name: "Close this tip" }));
-  await say("Add tea with Susan.", { text: "Tea with Susan, the day after tomorrow at 3 pm. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
-    actions: [{ kind: "proposeAppointment", title: "Tea with Susan", day: dateOf(dayOf(Date.now()) + 2), time: "15:00", repeat: "Once" }] });
-  await expect.poll(async () => (await asked()).ask.tag).toBe("AddAsk");
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(page.getByRole("button", { name: new RegExp(gmail) }));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
@@ -315,11 +312,15 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
 
   // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/conversation.md, "A turn may start without her words, marked with where it came from"; spec/app/request.md, "A request records its turn, the work it belongs to and where the turn came from"
-  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "EmailCalendarSettings" }, { kind: "confirmProposal" }] };
-  await Effect.runPromise(Effect.provide(script(cloud, secret, [{ answer: JSON.stringify(which) }]), client));
+  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "confirmProposal" }, { kind: "showSetting", page: "EmailCalendarSettings" }] };
   await tap(page.getByRole("button", { name: "Close Settings" }));
   await visit("Email");
   await expect.element(page.getByText("Not sure which?")).not.toBeInTheDocument();
+  await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
+  await say("Add tea with Susan.", { text: "Tea with Susan, the day after tomorrow at 3 pm. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
+    actions: [{ kind: "proposeAppointment", title: "Tea with Susan", day: dateOf(dayOf(Date.now()) + 2), time: "15:00", repeat: "Once" }] });
+  await expect.poll(async () => (await asked()).ask.tag).toBe("AddAsk");
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{ answer: JSON.stringify(which) }]), client));
   await tap(page.getByRole("button", { name: "Ask Grace to help" }));
   expect(await window()).toBe("Compact");
   await expect.element(page.getByText("I can help. Which email do you use?")).toBeVisible();
