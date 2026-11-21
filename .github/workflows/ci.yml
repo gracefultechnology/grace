@@ -549,9 +549,14 @@ jobs:
             ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-*/
             ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-qualification.json
           if-no-files-found: error
-  verify:
+  checks:
+    name: ${{ matrix.lane }}
     if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(inputs.cross_app_only && '["product"]' || '["product","selftest-a","selftest-b","selftest-rest"]') }}
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
@@ -563,13 +568,19 @@ jobs:
           submodules: true
       - id: setup
         uses: ./.github/actions/setup
+        with:
+          job: ${{ matrix.lane }}
       - name: Exercise Google consent and guided tasks across apps with local fixtures
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
-          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step'
-      - if: ${{ !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm verify --continue --summarize
+          -t "Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
+      - if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue --summarize
+      - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
+        env:
+          LANE: ${{ matrix.lane }}
+        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --continue --summarize
       - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:
@@ -585,7 +596,7 @@ jobs:
         with:
           path: .turbo/cache
           key: ${{ steps.setup.outputs.turbo-cache-key }}
-      - if: always() && !inputs.cross_app_only
+      - if: always() && !inputs.cross_app_only && matrix.lane == 'product'
         uses: actions/upload-artifact@v7
         with:
           name: proof
@@ -596,7 +607,7 @@ jobs:
       - if: failure() && !inputs.cross_app_only
         uses: actions/upload-artifact@v7
         with:
-          name: failures
+          name: ${{ matrix.lane == 'product' && 'failures' || format('failures-{0}', matrix.lane) }}
           path: |
             test/counterexamples/
             test/__traces__/
@@ -612,3 +623,12 @@ jobs:
             vibestack/examples/*/test/__traces__/
           if-no-files-found: ignore
           include-hidden-files: true
+  verify:
+    needs: checks
+    if: always() && needs.checks.result != 'skipped'
+    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
+    steps:
+      - name: Require every selected verification job to pass
+        env:
+          RESULT: ${{ needs.checks.result }}
+        run: test "$RESULT" = success
