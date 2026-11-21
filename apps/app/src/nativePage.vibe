@@ -101,6 +101,7 @@ export service NativePage {
   observeLinks(id: PageId): LinkObservation!PageFailed
   readPrimaryHeading(id: PageId): (typeof VisibleTextRead.Type)!PageFailed
   hasNavigationMenu(id: PageId, selector: string, url: string): boolean!!
+  visibleMenuChild(id: PageId, parent: string, child: string, url: string): boolean!!
   pointAt(id: PageId, documentId: string, guidance: LinkPointer): boolean!PageFailed
   clearGuide(id: PageId): void!PageFailed
   claim(): void!PageFailed
@@ -211,6 +212,12 @@ function devicePage(plugin: SurfacePlugin) {
     }))),
     hasNavigationMenu: (id, selector, url) => Effect.orElseSucceed(observe(id, () => Effect.map(ask(VisibleTextRead, (p) =>
       p.readPage({ ...own(id), selector: `:is(${selector}):is([aria-haspopup="true"],[aria-haspopup="menu"])` })), (reply) => reply.url === url)), () => false),
+    visibleMenuChild: (id, parent, child, url) => Effect.orElseSucceed(observe(id, () => {
+      const menu = ':is(ul,ol,[role="menu"],[role="group"])'
+      const item = ':is(li,[role="menuitem"],[role="none"],[role="presentation"])'
+      const selector = `${item}:has(> :is(${parent})) > ${menu} :is(${child}), :is(${parent}) + ${menu} :is(${child})`
+      return Effect.map(ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector })), (reply) => reply.url === url)
+    }), () => false),
     pointAt: (id, documentId, guidance) => observe(id, () => Effect.map(ask(PointResult, (p) =>
       p.controlPage({ ...own(id), documentId, command: { subaction: "guide", guidance } })), (reply) => reply.result.accepted === true)),
     clearGuide: effect (id) => {
