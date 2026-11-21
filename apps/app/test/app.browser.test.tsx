@@ -292,7 +292,10 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects")).toMatchObject([{ id: "tab-1", rects: [] }]);
   await native.route();
   await native.started("tab-1");
-  await native.report("tab-1", "https://example.com/", 100);
+  await native.ask("navigationChanged", { id: "tab-1", exists: true, currentUrl: "https://example.com/", pageError: null, securityBlocked: false });
+  expect(tab(1).load).toBe("Loading");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => [tab(1).load, tab(1).secure]).toEqual(["Loaded", true]);
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
   await expect.poll(() => native.calls("setBounds").at(-1)).toMatchObject({ id: "tab-1", ...rectOf(pageArea) });
