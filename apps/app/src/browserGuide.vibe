@@ -165,9 +165,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const start = (try currentContext())
       if (start === undefined) return changed
       const initial = page.observeLinks(start.id) catch () => undefined
-      const initialState = guidedPageState(initial, start.url.href, true)
+      const initialState = guidedPageState(initial, start.url.href, "GuidePublicLinks")
       if ((try currentContext())?.key !== start.key) return changed
-      if (initialState !== "Ordinary" && initialState !== "PublicLinks") return initialState === "PrivateForm" ? privateForm : unobservable
+      if (initialState !== "Ordinary" && initialState !== "PublicOnly") return initialState === "PrivateForm" ? privateForm : unobservable
       const account = decisionSession(native, fixture) catch () => null
       if (account === null) return unavailableBecause("I couldn’t reach Grace to verify your sign-in.")
       if (account === undefined) return unavailableBecause("Sign in to Grace to get help choosing a link.")
@@ -186,9 +186,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if ((try currentContext())?.key !== start.key) return changed
         const snapshot: LinkObservation | undefined = disclosed ?? (retries === 0 ? initial : (page.observeLinks(start.id) catch () => undefined))
         if (snapshot === undefined) return unobservable
-        const availability = guidedPageState(snapshot, start.url.href, true)
-        if (availability !== "Ordinary" && availability !== "PublicLinks") return availability === "PrivateForm" ? privateForm : unobservable
-        const observed = links(snapshot, start.url, target, availability === "PublicLinks")
+        const availability = guidedPageState(snapshot, start.url.href, "GuidePublicLinks")
+        if (availability !== "Ordinary" && availability !== "PublicOnly") return availability === "PrivateForm" ? privateForm : unobservable
+        const observed = links(snapshot, start.url, target, availability === "PublicOnly")
         const exact = observed.filter((link) => link.exact)
         if (disclosed !== undefined && exact.length === 0) return changed
         if (exact.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
@@ -207,9 +207,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
               const fresh = await runPromise(Effect.option(page.observeLinks(start.id)))
               if (Option.isNone(fresh) || fresh.value.documentId !== snapshot.documentId ||
                   (await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
-              const state = guidedPageState(fresh.value, start.url.href, true)
-              if (state !== "Ordinary" && state !== "PublicLinks") return { retry: false, stopped: state === "PrivateForm" ? privateForm : unobservable }
-              const currentLinks = links(fresh.value, start.url, target, state === "PublicLinks")
+              const state = guidedPageState(fresh.value, start.url.href, "GuidePublicLinks")
+              if (state !== "Ordinary" && state !== "PublicOnly") return { retry: false, stopped: state === "PrivateForm" ? privateForm : unobservable }
+              const currentLinks = links(fresh.value, start.url, target, state === "PublicOnly")
               if (!candidates.every(candidate => currentLinks.some(current =>
                 current.href === candidate.href && current.description === candidate.description &&
                 current.pointable === candidate.pointable && current.selector === candidate.selector)))
@@ -232,9 +232,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if (winner === undefined) return unavailable
         const current = page.observeLinks(start.id) catch () => undefined
         if (current === undefined || current.documentId !== snapshot.documentId) return changed
-        const state = guidedPageState(current, start.url.href, true)
-        if (state !== "Ordinary" && state !== "PublicLinks") return state === "PrivateForm" ? privateForm : unobservable
-        const matches = links(current, start.url, target, state === "PublicLinks").filter((link) =>
+        const state = guidedPageState(current, start.url.href, "GuidePublicLinks")
+        if (state !== "Ordinary" && state !== "PublicOnly") return state === "PrivateForm" ? privateForm : unobservable
+        const matches = links(current, start.url, target, state === "PublicOnly").filter((link) =>
           disclosed !== undefined ? link.exact && link.pointable : link.href === winner.href && link.selector === winner.selector)
         const node = matches.length === 1 ? matches[0] : undefined
         if (!node || node.href !== winner.href || (try currentContext())?.key !== start.key) return changed
@@ -248,9 +248,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         for (let attempt = 0; attempt < 2 && !pointed; attempt++) {
           const fresh = attempt === 0 ? current : (page.observeLinks(start.id) catch () => undefined)
           if (fresh === undefined || fresh.documentId !== snapshot.documentId || (try currentContext())?.key !== start.key) return changed
-          const freshState = guidedPageState(fresh, start.url.href, true)
-          if (freshState !== "Ordinary" && freshState !== "PublicLinks") return freshState === "PrivateForm" ? privateForm : unobservable
-          const shown = links(fresh, start.url, target, freshState === "PublicLinks").find((link) => link.href === node.href && link.selector === node.selector)
+          const freshState = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
+          if (freshState !== "Ordinary" && freshState !== "PublicOnly") return freshState === "PrivateForm" ? privateForm : unobservable
+          const shown = links(fresh, start.url, target, freshState === "PublicOnly").find((link) => link.href === node.href && link.selector === node.selector)
           if (shown === undefined) return changed
           pointed = page.pointAt(start.id, fresh.documentId, {
             kind: "show", id: fresh.result.snapshotId, snapshotId: fresh.result.snapshotId,
@@ -278,12 +278,12 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             if (!(try page.hasNavigationMenu(start.id, selector, start.url.href))) continue
             const opened = page.observeLinks(start.id) catch () => undefined
             if (!opened || opened.documentId !== snapshot.documentId) return changed
-            const state = guidedPageState(opened, start.url.href, true)
-            if (state !== "Ordinary" && state !== "PublicLinks") {
+            const state = guidedPageState(opened, start.url.href, "GuidePublicLinks")
+            if (state !== "Ordinary" && state !== "PublicOnly") {
               page.clearGuide(start.id) catch () => undefined
               return state === "PrivateForm" ? privateForm : unobservable
             }
-            const visible = links(opened, start.url, target, state === "PublicLinks").filter((link) => link.exact && link.pointable)
+            const visible = links(opened, start.url, target, state === "PublicOnly").filter((link) => link.exact && link.pointable)
             if (visible.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
             if (visible.length === 1) { disclosed = opened; break }
           }

@@ -12,7 +12,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import { browserAccountId, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
@@ -83,9 +83,9 @@ function itemAddress(address: string): string | undefined {
   return url.origin + url.pathname + url.search + routeOf(url)
 }
 
-function pageMiss(observation: LinkObservation | undefined, url: string): GuidedMiss | undefined {
-  const state = guidedPageState(observation, url)
-  if (state === "Ordinary") return undefined
+function pageMiss(observation: LinkObservation | undefined, url: string, use?: GuidedEvidenceUse): GuidedMiss | undefined {
+  const state = guidedPageState(observation, url, use)
+  if (state === "Ordinary" || state === "PublicOnly") return undefined
   if (state === "PrivateForm") return state
   return observation?.result.blockers.some((item) => item.covers !== "partial") ? "Covered" : "Changed"
 }
@@ -153,7 +153,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
       if (!before || address === undefined || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
-      const miss = pageMiss(before, url)
+      const miss = pageMiss(before, url, "CheckPublicDocument")
       if (miss !== undefined) return miss
       if (tab.loadVersion <= workspace.plan.openingBrowser) return undefined
       const primary = native.readPrimaryHeading(id) catch () => undefined
@@ -162,7 +162,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (observed === "" || comparableName(observed) !== comparableName(step.subject)) return undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId) return "Changed"
-      const afterMiss = pageMiss(after, url)
+      const afterMiss = pageMiss(after, url, "CheckPublicDocument")
       if (afterMiss !== undefined) return afterMiss
       return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
         [address], "Open page: " + observed)
@@ -176,7 +176,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const url = new URL(tabUrl(tab))
       if (url.protocol !== "https:" && url.protocol !== "http:") return undefined
       const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
-      const miss = pageMiss(snapshot, url.href)
+      const miss = pageMiss(snapshot, url.href, "CheckPublicDocument")
       if (miss !== undefined) return miss
       if (snapshot === undefined || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
       return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId },
