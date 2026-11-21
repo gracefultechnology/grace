@@ -16,7 +16,7 @@ export const WireMessage = Schema.Struct({
   metadata: Schema.Struct({ historyId: NullableText, messageIdHeader: optional(NullableText), referencesHeader: optional(NullableText) }),
 })
 export const Listing = Schema.Struct({ messages: Schema.Array(WireMessage) })
-export const ReadResponse = Schema.Struct({ message: WireMessage, bodyText: Text, attachments: optional(Schema.Array(WireAttachment)) })
+export const ReadResponse = Schema.Struct({ message: WireMessage, bodyText: Text, attachments: optional(Schema.Array(WireAttachment)), suspicion: optional(NullableText) })
 export const Grants = Schema.Array(Schema.Struct({
   connectionId: NullableText, connected: Flag, identity: Schema.NullOr(Schema.Struct({ email: optional(NullableText) })),
 }))

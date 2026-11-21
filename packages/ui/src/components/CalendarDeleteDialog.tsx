@@ -15,9 +15,9 @@ export type CalendarDeleteDialogProps = Omit<DialogProps, "children"> & {
   description: string;
   /** The event repeats: offer this one or every one, instead of just "Delete it". */
   repeating?: boolean;
-  /** Called with what a person chose to delete; this is their approval. */
+  /** Called with what a person chose to delete; this is their approval. Without it no Delete choice is offered. */
   onDelete?: (scope: CalendarDeleteScope) => void;
-  /** Called by Keep it. */
+  /** Called by Keep it; without it Keep it is not offered. */
   onKeep?: () => void;
   /** The deletion failed: what it says above the choices, which stay to choose again. */
   error?: ReactNode;
@@ -41,8 +41,8 @@ const defaultLabels = {
  * @design packages/design-system/design.md#windows
  */
 export function CalendarDeleteDialog({ title, description, repeating = false, onDelete, onKeep, error, pending = false, labels = defaultLabels, className, ...props }: CalendarDeleteDialogProps) {
-  const choice = (scope: CalendarDeleteScope, label: string) => (
-    <Button key={scope} variant="warn" size="pill" className="leading-none transition-none" loading={pending} onClick={() => onDelete?.(scope)}>
+  const choice = (remove: (scope: CalendarDeleteScope) => void, scope: CalendarDeleteScope, label: string) => (
+    <Button key={scope} variant="warn" size="pill" className="leading-none transition-none" loading={pending} onClick={() => remove(scope)}>
       {!pending && <CalendarGlyph name="trash" size={22} />}
       {label}
     </Button>
@@ -63,12 +63,16 @@ export function CalendarDeleteDialog({ title, description, repeating = false, on
             {error}
           </Alert>
         )}
-        <DialogActions>
-          {repeating ? [choice("occurrence", labels.occurrence), choice("series", labels.series)] : choice("occurrence", labels.one)}
-          <Button variant="capsule" size="pill" className="leading-none transition-none" disabled={pending} onClick={onKeep}>
-            {labels.keep}
-          </Button>
-        </DialogActions>
+        {(onDelete ?? onKeep) && (
+          <DialogActions>
+            {onDelete && (repeating ? [choice(onDelete, "occurrence", labels.occurrence), choice(onDelete, "series", labels.series)] : choice(onDelete, "occurrence", labels.one))}
+            {onKeep && (
+              <Button variant="capsule" size="pill" className="leading-none transition-none" disabled={pending} onClick={onKeep}>
+                {labels.keep}
+              </Button>
+            )}
+          </DialogActions>
+        )}
       </DialogContent>
     </Dialog>
   );

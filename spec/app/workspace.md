@@ -605,7 +605,8 @@ and guidance revisions. Dismiss and Show use the shared interaction route and
 never execute, pause or complete the task. Native app layout changes retire the
 target through `invalidateGuidance` before the changed controls can be shown.
 Page, keyboard, surface and task changes make old guidance unavailable immediately.
-The UI renders the ring and label only through `guidanceVisible`.
+Publication names the kind of ring, Look, Tap or Done, and the few words of
+its label. The UI renders the ring and label only through `guidanceVisible`.
 
 ```quint
 pure def guidanceIsCurrent(w: Workspace): bool =
@@ -613,12 +614,12 @@ pure def guidanceIsCurrent(w: Workspace): bool =
   w.assistant.guidance.deviceVersion == w.device.contextVersion and
   w.assistant.guidance.browserRevision == w.browser.revision
 pure def guidanceVisible(w: Workspace): bool = guidanceIsCurrent(w) and w.assistant.guidance.shown
-pure def canPublishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, by: WorkspaceActor): bool =
+pure def canPublishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, guidanceKind: A::GuidanceKind, guidanceTitle: str, by: WorkspaceActor): bool =
   by == Host and w.device.readiness == S::Ready and
   guidanceReport.deviceVersion == w.device.contextVersion and guidanceReport.browserRevision == w.browser.revision and
-  A::canPublishGuidance(w.assistant, guidanceReport, C::ConversationRuntime)
-pure def publishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::publishGuidance(w.assistant, guidanceReport, C::ConversationRuntime)
+  A::canPublishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime)
+pure def publishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, guidanceKind: A::GuidanceKind, guidanceTitle: str, by: WorkspaceActor): Workspace = {
+  ...w, assistant: A::publishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime)
 }
 pure def canInvalidateGuidance(w: Workspace, guidanceRevision: int, by: WorkspaceActor): bool =
   by == Host and A::canInvalidateGuidance(w.assistant, guidanceRevision, C::ConversationRuntime)
@@ -636,6 +637,7 @@ pure def lawGuidanceControlsKeepExecution(w: Workspace, input: I::Interaction, b
 pure def sometimesGuidanceShown(w: Workspace): bool = guidanceVisible(w)
 pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) and not(w.assistant.guidance.shown)
 pure val guidanceRevisionValues = Set(0, 1, 2)
+pure val guidanceTitleValues = Set("", "Tap Send")
 pure val guidanceReportValues = Set(
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 6, browserRevision: 2, verified: true },
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 6, browserRevision: 2, verified: true },

@@ -17,11 +17,17 @@ export const meta: ComponentMeta<CalendarDeleteDialogProps> = {
       repeating: true,
     },
     "Delete failed": { error: "This wasn’t deleted. Choose again, or keep it." },
+    Refused: { repeating: true, onDelete: undefined, onKeep: undefined },
   },
   play: {
     Repeating: async ({ args }: { args: CalendarDeleteDialogProps }) => {
       await userEvent.click(await screen.findByRole("button", { name: "Delete only this one" }));
       await expect(args.onDelete).toHaveBeenCalledWith("occurrence");
+    },
+    Refused: async () => {
+      await expect(await screen.findByRole("dialog", { name: "Delete Doctor’s appointment?" })).toBeVisible();
+      await expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull();
+      await expect(screen.queryByRole("button", { name: "Keep it" })).toBeNull();
     },
     "Delete failed": async ({ args }: { args: CalendarDeleteDialogProps }) => {
       await expect(await screen.findByRole("alert")).toHaveTextContent("This wasn’t deleted");

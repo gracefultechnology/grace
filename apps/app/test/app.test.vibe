@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
 import { assert, it } from "@effect/vitest"
 import { Digest } from "effect/crypto"
 import { ExperimentalNodeLocks } from "vibelang-runtime/experimental/platform-node"
@@ -240,7 +240,7 @@ it.live("Choose what each email brings and take it off the tablet: Cancel on the
   }
 })
 
-it.live("Read an email and its original attachment, and find and open the email I intend: listing, search, the message with its PDF, and the reply's header", () => effect {
+it.live("Read an email and its original attachment, and find and open the email I intend: listing, search, the message with its PDF, the reply's header, and a scam warning from the company's evidence", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
@@ -250,10 +250,13 @@ it.live("Read an email and its original attachment, and find and open the email 
       const opened = try mail.read("clinic", 4)
       const header = try mail.header("clinic", 4)
       const form = try mail.attachment(opened.receipt.assets[0], opened.content.version)
+      const scam = try mail.read("scam", 5)
       try Effect.try(() => assert.deepStrictEqual({
+        scam: [scam.receipt.succeeded, scam.receipt.suspicion !== "", scam.content.fromAddress],
         inbox, found, header, receipt: opened.receipt, attached: opened.content.attachment, form: [form.mimeType, form.data.startsWith("JVBERi")], from: [opened.content.from, opened.content.fromAddress], body: opened.content.body.startsWith("Dear Margaret")
       }, {
-        inbox: ["Your Riverside Power bill is ready", "A message for Grace", "Lunch on Sunday?", "Reminder: your appointment tomorrow at 10 am"],
+        scam: [true, true, "security-alert@acc0unt-help.co"],
+        inbox: ["Your Riverside Power bill is ready", "A message for Grace", "Lunch on Sunday?", "Reminder: your appointment tomorrow at 10 am", "Urgent: confirm your password"],
         found: ["Reminder: your appointment tomorrow at 10 am"],
         header: { ref: "clinic", generation: 4, address: "frontdesk@mainst-clinic.test", subject: "Re: Reminder: your appointment tomorrow at 10 am", verified: true },
         receipt: { generation: 4, succeeded: true, suspicion: "", assets: [{
@@ -295,7 +298,7 @@ it.live("Delete a message and recover it safely: Trash, Restore, unread and Dele
         read: ["ChangeIdle", true], unread: ["ChangeIdle", true],
         offline: { identity, revision: 3, result: "ChangeUnknown", evidence: "" },
         purged: ["ChangeIdle", true],
-        left: ["Your Riverside Power bill is ready", "A message for Grace", "Reminder: your appointment tomorrow at 10 am"]
+        left: ["Your Riverside Power bill is ready", "A message for Grace", "Reminder: your appointment tomorrow at 10 am", "Urgent: confirm your password"]
       }))
     }
   }

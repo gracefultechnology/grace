@@ -1,16 +1,16 @@
-// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"
-import { Banner, BannerButton, BellIcon, Button, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph, type HomeEvent, Toast } from "@repo/ui";
-import { Option } from "effect";
-import { X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendar.md, "Story: See a reminder and choose what to do"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/workspace.md, "Guidance is visible only on its current surface and target"
+import { Banner, BannerButton, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph, type HomeEvent } from "@repo/ui";
+import { Effect, Option } from "effect";
+import { useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type CalendarView, type Event as CalendarEvent, enabled, entryAt, selectedOccurrence } from "../gen/app__calendarView.ts";
+import { type Event as CalendarEvent, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
-import { anchorOf, dayOf, horizon, hour, instant, midnight, navigation, shownDays } from "./calendar.vibe";
-import { type CalendarInstance, useAccounts, useCalendarNote, useProposal, useWorkspace, WithCalendars } from "./useApp.ts";
+import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
+import type { ReminderNotice } from "./Notices.tsx";
+import { type CalendarInstance, useAccounts, useCalendarNote, useDraft, useProposal, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
@@ -19,25 +19,12 @@ const repeatLines: Record<Recurrence, string> = { Once: "Doesn’t repeat", Week
 const reminders = { No: 0, "Day before": 24 * hour, "1 hour before": hour } as const;
 type Reminder = keyof typeof reminders;
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const snoozeFor = 10 * 60 * 1000;
 
 export const calendarKeys = (registry: Accounts) => [tabletKey, ...registry.accounts.map((a) => a.id)];
 const sourcesOf = (views: readonly CalendarInstance[]): CalendarSource[] => views.map((v) => ({ key: v.key, view: v.state }));
 const byStart = (a: CalRow, b: CalRow) => a.details.startAt - b.details.startAt;
 const dateOf = (n: number) => new Date(midnight(n));
-const say = (n: number, options: Intl.DateTimeFormatOptions) => dateOf(n).toLocaleDateString("en-US", options);
-
-export function timeLabel(at: number) {
-  const t = new Date(at);
-  const h = t.getHours(), m = t.getMinutes();
-  return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "am" : "pm"}`;
-}
-
-function relative(n: number, today: number) {
-  const ahead = n - today;
-  return ahead === 0 ? "Today" : ahead === 1 ? "Tomorrow" : ahead > 1 && ahead < 7 ? say(n, { weekday: "long" }) : longDate(n);
-}
-
-const longDate = (n: number) => say(n, { weekday: "long", month: "long", day: "numeric" });
 
 const short = (n: number, today: number) => (n === today ? "Today" : weekdays[(dateOf(n).getDay() + 6) % 7]);
 const whoWhere = (d: EntryDetails) => (d.participant ? [d.participant, d.location.split(" · ")[0]].filter(Boolean).join(" · ") : d.location);
@@ -54,96 +41,65 @@ function period(mode: "WeekView" | "MonthView", anchor: number) {
     : `${say(days[0], { month: "short", day: "numeric" })} – ${say(days[6], { month: "short", day: "numeric" })}`;
 }
 
-const opening = (v: CalendarView): CalendarEvent => ({ type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone });
+export function useCalendarActions() {
+  const runtime = useRuntime();
+  const news = Option.getOrUndefined(runtime.runSync(Effect.serviceOption(CalendarNews)));
+  return news && {
+    open: (key: number, id: string, how: Opening) => void runtime.runPromise(news.open(key, id, how)),
+    edit: (key: number, id: string) => void runtime.runPromise(news.edit(key, id)),
+    add: (day: number) => void runtime.runPromise(news.add(day)),
+    reminderAt: news.reminderAt,
+  };
+}
 
-async function openFrom(views: readonly CalendarInstance[], r: CalRow, visit: () => void, opens: (v: CalendarView) => CalendarEvent) {
+export type CalendarActions = NonNullable<ReturnType<typeof useCalendarActions>>;
+
+const offer = (box: CalendarInstance, event: CalendarEvent) => (box.can(event) ? () => void box.send(event) : undefined);
+
+function opens(views: readonly CalendarInstance[], r: CalRow, how: Opening) {
   const lead = views.find((v) => v.key === tabletKey);
   const box = views.find((v) => v.key === r.key);
-  if (!lead || !box) return;
-  for (const b of new Set([lead, box])) {
-    const v = await b.current();
-    if (!v.opened && enabled(v, opening(v), "ViewUser")) await b.send(opening(v));
-  }
-  const day = { type: "navigate", report: navigation((await lead.current()).window, "SelectDay", dayOf(r.details.startAt)) } as const;
-  if (enabled(await lead.current(), day, "ViewUser")) await lead.send(day);
-  const open = opens(await box.current());
-  if (!enabled(await box.current(), open, "ViewUser")) return;
-  await box.send(open);
-  visit();
+  return !!lead && !!box && openingPlan(lead.state, box.state, lead === box, dayOf(r.details.startAt), how, r.identity.occurrenceId) !== undefined;
 }
 
-const occurrence = (id: string) => (): CalendarEvent => ({ type: "openOccurrence", id });
-const reminding = (id: string) => (v: CalendarView): CalendarEvent => ({ type: "openReminder", id, owner: v.owner, calendarId: v.calendarId, timezone: v.timezone });
-
-function dueReminder(registry: Accounts, views: readonly CalendarInstance[]) {
-  const [due] = shownReminders(registry, sourcesOf(views)).sort(byStart);
-  const box = due && views.find((v) => v.key === due.key);
-  if (!due || !box) return undefined;
-  const dismiss: CalendarEvent = { type: "changeOccurrence", id: due.identity.occurrenceId, command: { tag: "DismissReminder" } };
-  return { due, canDismiss: box.can(dismiss), onDismiss: () => { if (box.can(dismiss)) void box.send(dismiss); } };
-}
-
-export function reminderToast(registry: Accounts, views: readonly CalendarInstance[], now: number, above?: number): ReactNode {
-  const shown = dueReminder(registry, views);
-  if (!shown) return undefined;
-  const d = shown.due.details;
-  return (
-    <Toast key={`reminder/${shown.due.key}/${shown.due.identity.occurrenceId}`} placement="screen" above={above}>
-      <span>{`Reminder: ${d.title} ${relative(dayOf(d.startAt), dayOf(now)).toLowerCase()} at ${timeLabel(d.startAt)}`}</span>
-      <Button variant="plain" size="compact" className="bg-glass/14 font-bold text-frame-lilac active:bg-glass/24" disabled={!shown.canDismiss} onClick={shown.onDismiss}>Dismiss</Button>
-    </Toast>
-  );
-}
-
-async function editSeries(box: CalendarInstance, id: string) {
-  const v = await box.current();
-  const target = anchorOf(v, entryAt(v, id).committed.seriesId)?.identity.occurrenceId ?? id;
-  const open = { type: "openOccurrence", id: target } as const;
-  if (target !== id && enabled(v, open, "ViewUser")) await box.send(open);
-  const begin: CalendarEvent = { type: "changeOccurrence", id: target, command: { tag: "BeginEditing" } };
-  if (!enabled(await box.current(), begin, "ViewUser")) return;
-  await box.send(begin);
-  const { draft, committed } = entryAt(await box.current(), target);
-  if (draft.startAt === committed.startAt) return;
-  const own: CalendarEvent = { type: "changeOccurrence", id: target, command: { tag: "ChangeDetails", details: { ...draft, startAt: committed.startAt, endAt: committed.startAt + draft.endAt - draft.startAt } } };
-  if (enabled(await box.current(), own, "ViewUser")) await box.send(own);
-}
-
-export function homeCalendar(registry: Accounts, views: readonly CalendarInstance[], now: number, visit: (() => void) | undefined): { events: HomeEvent[]; status: string } {
+export function homeCalendar(registry: Accounts, views: readonly CalendarInstance[], now: number, actions: CalendarActions | undefined): { events: HomeEvent[]; status: string } {
   const today = dayOf(now);
   const sources = sourcesOf(views);
   const events = upcoming(registry, sources, now, now + horizon).sort(byStart).slice(0, 3).map((r) => ({
     id: `${r.key}/${r.identity.occurrenceId}`, weekday: short(dayOf(r.details.startAt), today).toUpperCase(), time: timeLabel(r.details.startAt),
     title: r.details.title, detail: whoWhere(r.details) || undefined, next: r.details.important,
-    onClick: visit && ((e: { stopPropagation: () => void }) => { e.stopPropagation(); void openFrom(views, r, visit, occurrence(r.identity.occurrenceId)); }),
+    onClick: actions && opens(views, r, "Occurrence") ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); actions.open(r.key, r.identity.occurrenceId, "Occurrence"); } : undefined,
   }));
   return { events, status: upcoming(registry, sources, midnight(today), midnight(today + 1)).length > 0 ? "Today" : "Nothing else today" };
 }
 
-export function homeReminder(registry: Accounts, views: readonly CalendarInstance[], now: number, visit: (() => void) | undefined): ReactNode {
-  const shown = dueReminder(registry, views);
-  if (!shown) return undefined;
-  const { due } = shown;
-  const d = due.details;
-  const when = `${relative(dayOf(d.startAt), dayOf(now))} at ${timeLabel(d.startAt)}`;
-  return (
-    <Banner icon={<span className="flex text-alert"><BellIcon className="size-7.5" /></span>} title={d.title}
-      line={[when, d.location.split(" · ")[0]].filter(Boolean).join(" · ")}
-      actions={
-        <>
-          {visit && <Button variant="prominent" size="compact" onClick={() => void openFrom(views, due, visit, reminding(due.identity.occurrenceId))}>See details</Button>}
-          <Button variant="plain" size="compact-icon" aria-label="Dismiss" disabled={!shown.canDismiss} onClick={shown.onDismiss}>
-            <X aria-hidden size={24} strokeWidth={1.75} />
-          </Button>
-        </>
-      } />
-  );
+export function reminderNotice(registry: Accounts, views: readonly CalendarInstance[], now: number, actions: CalendarActions | undefined, visiting: boolean) {
+  const due = shownReminders(registry, sourcesOf(views));
+  return (subject: string): ReminderNotice | undefined => {
+    const shown = actions?.reminderAt(subject);
+    const r = shown && due.find((c) => c.key === shown.key && c.identity.occurrenceId === shown.id);
+    const box = r && views.find((v) => v.key === r.key);
+    if (!r || !box) return undefined;
+    const d = r.details;
+    const day = relative(dayOf(d.startAt), dayOf(now));
+    const at = ` at ${timeLabel(d.startAt)}`;
+    return {
+      title: d.title, line: [day + at, d.location.split(" · ")[0]].filter(Boolean).join(" · "),
+      toast: `${d.title} ${day === "Today" || day === "Tomorrow" ? day.toLowerCase() : day}${at}`,
+      seeDetails: visiting && opens(views, r, "Reminder"), dismiss: box.can({ type: "changeOccurrence", id: r.identity.occurrenceId, command: { tag: "DismissReminder" } }),
+    };
+  };
 }
 
 export function nextAppointment(registry: Accounts, views: readonly CalendarInstance[], now: number): string | undefined {
   const [next] = upcoming(registry, sourcesOf(views), now, now + horizon).sort(byStart);
   return next && `${relative(dayOf(next.details.startAt), dayOf(now))}: ${next.details.title}, ${timeLabel(next.details.startAt)}`;
 }
+
+const eventRow = (target: string) => {
+  const named = /^event:(\d+):(.+)$/.exec(target);
+  return named ? `${named[1]}/${named[2]}` : undefined;
+};
 
 /** @model spec/app/calendars.md */
 export function Calendar({ now, ...props }: Covered & { now: number }) {
@@ -158,18 +114,17 @@ export function Calendar({ now, ...props }: Covered & { now: number }) {
 }
 
 function Shown({ registry, pending, views, now, ...props }: Covered & { registry: Accounts; pending: Pending; views: readonly CalendarInstance[]; now: number }) {
-  const { can, send } = useWorkspace();
+  const { can, send, guide: graceGuide } = useWorkspace();
   const accounts = useAccounts();
   const note = useCalendarNote();
+  const actions = useCalendarActions();
   const lead = views.find((v) => v.key === tabletKey);
   if (!lead) return null;
-  const toast = note ? <Toast key={note.id} placement="screen">{note.text}</Toast> : reminderToast(registry, views, now);
   const sources = sourcesOf(views);
   const today = dayOf(now);
   const w = lead.state.window;
-  const fire = (event: WorkspaceEvent) => () => { if (can(event)) void send(event); };
-  const act = (box: CalendarInstance, event: CalendarEvent) => () => { if (box.can(event)) void box.send(event); };
-  const go = (kind: Parameters<typeof navigation>[1], chosen = today) => act(lead, { type: "navigate", report: navigation(w, kind, chosen) });
+  const fire = (event: WorkspaceEvent) => (can(event) ? () => void send(event) : undefined);
+  const go = (kind: Parameters<typeof navigation>[1], chosen = today) => offer(lead, { type: "navigate", report: navigation(w, kind, chosen) });
   const name = (key: number) => (key === tabletKey ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "");
   const shownRows = dayRows(registry, sources, pending);
   const rows = (from: number, until: number) => shownRows.filter((r) => overlaps(r.details, midnight(from), midnight(until))).sort(byStart);
@@ -180,16 +135,21 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
     tag: rowTag(registry, r.key) === -1 ? undefined : name(r.key),
   });
   const selected = w.selectedDay;
+  const connect = fire({ type: "chooseSettingsPage", page: "EmailCalendarSettings" });
+  const switchMode = go("SwitchMode");
+  const addOn = Math.max(selected, today);
+  const guide = note?.row ? { kind: "confirm" as const, targetId: note.row } : graceGuide(eventRow);
   const browsing: CalendarAppProps = {
     view: w.mode === "MonthView" ? "month" : "week",
     banner: connectBanner(registry) ? (
       <Banner tone="dark" icon={<CalendarGlyph name="calendar" size={26} strokeWidth={2} />} title="Connect your email to keep your calendar up to date"
         line="Appointments from your email show up here automatically."
-        actions={<BannerButton onClick={fire({ type: "chooseSettingsPage", page: "EmailCalendarSettings" })}>Connect email</BannerButton>}
-        onDismiss={() => { if (accounts.can({ type: "dismissBanner" })) void accounts.send({ type: "dismissBanner" }); }} />
+        actions={connect && <BannerButton onClick={connect}>Connect email</BannerButton>}
+        onDismiss={accounts.can({ type: "dismissBanner" }) ? () => void accounts.send({ type: "dismissBanner" }) : undefined} />
     ) : undefined,
     nav: {
-      period: period(w.mode, w.anchorDay), onPrevious: go("Earlier"), onNext: go("Later"), onModeChange: (mode) => { if ((mode === "month") !== (w.mode === "MonthView")) go("SwitchMode")(); },
+      period: period(w.mode, w.anchorDay), onPrevious: go("Earlier"), onNext: go("Later"),
+      onModeChange: switchMode && ((mode) => { if ((mode === "month") !== (w.mode === "MonthView")) switchMode(); }),
       previousLabel: w.mode === "MonthView" ? "Previous month" : "Previous week", nextLabel: w.mode === "MonthView" ? "Next month" : "Next week",
     },
     week: shownDays("WeekView", w.anchorDay).map((n) => ({
@@ -206,109 +166,82 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
         };
       }),
     },
-    onSelectDay: (key) => go("SelectDay", Number(key))(),
+    onSelectDay: go("SelectDay", selected) && ((key) => go("SelectDay", Number(key))?.()),
     dayHeading: relative(selected, today),
     dayEvents: rows(selected, selected + 1).map(item),
     upcoming: upcoming(registry, sources, midnight(selected + 1), midnight(selected + 15)).sort(byStart).slice(0, 4).map(item),
     onOpenEvent: (id) => {
       const [key, ...rest] = id.split("/");
       const box = views.find((v) => v.key === Number(key));
-      const open: CalendarEvent = { type: "openOccurrence", id: rest.join("/") };
-      if (box?.can(open)) void box.send(open);
+      if (box) offer(box, { type: "openOccurrence", id: rest.join("/") })?.();
     },
     onToday: go("Today"),
-    onAdd: () => {
-      const v = lead.state;
-      const day = Math.max(selected, today);
-      const startAt = instant(day, 10 * 60);
-      act(lead, {
-        type: "createOccurrence",
-        entry: {
-          identity: { owner: v.owner, calendarId: v.calendarId, occurrenceId: `tablet-${crypto.randomUUID()}`, sourceRef: "", sourceAccount: 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" },
-          details: {
-            title: "", location: "", participant: "", notes: "", startAt, endAt: startAt + hour, timezone: v.timezone, allDay: false,
-            seriesId: "", recurrence: "Once", reminderEnabled: true, leadTime: hour, important: false,
-          },
-        },
-      })();
-    },
+    onAdd: actions && lead.can(adding(lead.state, addOn, "tablet-new")) ? () => actions.add(addOn) : undefined,
     onClose: fire({ type: "visit", destination: "Home" }),
     closeLabel: "Close Calendar",
-    guide: note?.row ? { kind: "confirm", targetId: note.row } : undefined,
+    guide,
     ...props,
   };
 
   const open = views.find((v) => v.key === openSelected(registry, sources));
-  if (!open) return <><CalendarApp {...browsing} />{toast}</>;
+  if (!open) return <CalendarApp {...browsing} />;
   const entry = selectedOccurrence(open.state);
-  if (entry.phase === "Editing") return <><Form key={`${open.key}/${entry.identity.occurrenceId}`} box={open} entry={entry} today={today} browsing={browsing} />{toast}</>;
+  if (entry.phase === "Editing") return <Form key={`${open.key}/${entry.identity.occurrenceId}`} box={open} entry={entry} today={today} browsing={browsing} />;
   const d = entry.committed;
   const deletion = open.state.deletion;
   const id = entry.identity.occurrenceId;
+  const showing = entry.reminder === "ReminderShown";
+  const reminderCommand = (command: Extract<CalendarEvent, { type: "changeOccurrence" }>["command"]) => (showing ? offer(open, { type: "changeOccurrence", id, command }) : undefined);
   return (
     <>
-      <CalendarApp {...browsing} view="detail" onBack={act(open, { type: "backToCalendar" })}
+      <CalendarApp {...browsing} view="detail" onBack={offer(open, { type: "backToCalendar" })}
         event={{
           title: d.title, when: `${longDate(dayOf(d.startAt))} · ${span(d)}`, where: d.location || undefined, who: d.participant || undefined,
           reminder: reminderLine(d), repeat: repeatLines[d.recurrence], note: d.notes || undefined,
-          onEdit: () => void editSeries(open, id), onDelete: act(open, { type: "requestDeletion" }),
+          onDismissReminder: reminderCommand({ tag: "DismissReminder" }), onSnoozeReminder: reminderCommand({ tag: "SnoozeReminder", until: now + snoozeFor }),
+          onEdit: actions && editingPlan(open.state, id) ? () => actions.edit(open.key, id) : undefined, onDelete: offer(open, { type: "requestDeletion" }),
         }} />
       <CalendarDeleteDialog open={deletion !== "NoDeletion"} title={`Delete ${d.title}?`}
         description={d.recurrence === "Once" ? `${longDate(dayOf(d.startAt))} at ${timeLabel(d.startAt)}.` : `It repeats ${repeats[d.recurrence].toLowerCase()}.`}
         repeating={d.recurrence !== "Once"} pending={deletion === "DeletionPending"}
         error={deletion === "DeletionFailed" ? "This wasn’t deleted. Choose again to try again." : undefined}
-        onOpenChange={(opened) => { if (!opened) act(open, { type: "keepOccurrence" })(); }}
-        onKeep={act(open, { type: "keepOccurrence" })}
-        onDelete={(scope) => act(open, { type: "approveDeletion", scope: scope === "series" ? "EntireSeries" : "ThisOccurrence" })()} />
-      {toast}
+        onOpenChange={(opened) => { if (!opened) offer(open, { type: "keepOccurrence" })?.(); }}
+        onKeep={offer(open, { type: "keepOccurrence" })}
+        onDelete={(scope) => offer(open, { type: "approveDeletion", scope: scope === "series" ? "EntireSeries" : "ThisOccurrence" })?.()} />
     </>
   );
 }
 
-type Texts = { title: string; where: string };
-
 function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: Entry; today: number; browsing: CalendarAppProps }) {
   const id = entry.identity.occurrenceId;
   const d = entry.draft;
-  const [texts, setTexts] = useState<Texts>({ title: d.title, where: d.location });
+  const [typedTitle, setTitle] = useDraft(d.title, true);
+  const [typedWhere, setWhere] = useDraft(d.location, true);
+  const title = typedTitle.trim() === d.title ? typedTitle : d.title;
+  const where = typedWhere.trim() === d.location ? typedWhere : d.location;
   const [pick, setPick] = useState<"day" | "time" | null>(null);
   const startingAt = (startAt: number) => ({ startAt, endAt: startAt + d.endAt - d.startAt });
-  const change = (next: Partial<EntryDetails>, typed: Texts = texts) => {
-    const details = { ...d, ...next, title: typed.title.trim(), location: typed.where.trim() };
+  const change = (next: Partial<EntryDetails>) => {
+    const details = { ...d, title: title.trim(), location: where.trim(), ...next };
     const recurring = details.recurrence !== "Once";
-    const event: CalendarEvent = {
+    offer(box, {
       type: "changeOccurrence", id,
       command: { tag: "ChangeDetails", details: { ...details, seriesId: entry.committed.seriesId || (recurring ? d.seriesId || id : "") } },
-    };
-    if (box.can(event)) void box.send(event);
-  };
-  const type = (next: Partial<Texts>) => {
-    const typed = { ...texts, ...next };
-    setTexts(typed);
-    change({}, typed);
+    })?.();
   };
   const approve: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "ApproveEntry", revision: entry.revision } };
-  const save = async () => {
-    if (!box.can(approve)) return;
-    await box.send(approve);
-    if (entry.hasSaved) return;
-    const after = await box.settled(id);
-    if (Option.isNone(after) || entryAt(after.value, id).phase !== "Saved") return;
-    const shown: CalendarEvent = { type: "navigate", report: navigation(after.value.window, "SelectDay", dayOf(d.startAt)) };
-    if (enabled(after.value, shown, "ViewUser")) await box.send(shown);
-  };
   const start = new Date(d.startAt);
   const minutes = start.getHours() * 60 + start.getMinutes();
   const days = Array.from({ length: 21 }, (_, i) => today + i);
   const times = Array.from({ length: 25 }, (_, i) => 7 * 60 + 30 * i);
-  const cancel: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "CancelEditing" } };
   return (
-    <CalendarApp {...browsing} view="form" onBack={() => { if (box.can(cancel)) void box.send(cancel); }}
-      canSave={box.can(approve)} onSave={() => void save()}
+    <CalendarApp {...browsing} view="form" onBack={offer(box, { type: "changeOccurrence", id, command: { tag: "CancelEditing" } })}
+      canSave={box.can(approve)} onSave={offer(box, approve)}
       saveStatus={entry.approvedRevision !== -1 ? "saving" : entry.storageError === "SaveFailure" ? "failed" : undefined}
       form={{
         heading: entry.hasSaved ? "Edit appointment" : "New appointment",
-        title: texts.title, onTitleChange: (title) => type({ title }), where: texts.where, onWhereChange: (where) => type({ where }),
+        title, onTitleChange: (typed) => { setTitle(typed); change({ title: typed.trim() }); },
+        where, onWhereChange: (typed) => { setWhere(typed); change({ location: typed.trim() }); },
         day: {
           value: longDate(dayOf(d.startAt)), selected: String(dayOf(d.startAt)), open: pick === "day",
           onOpenChange: (o) => setPick(o ? "day" : null),
