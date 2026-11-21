@@ -453,8 +453,15 @@ set-up waiting on Home at the hand-over for Grace to be able to think are
 all reachable.
 
 ```quint
-pure val weight_answer = 17
 pure val weight_hostStarted = 2
+pure val weight_cloudChanged = 8
+pure val weight_answer = 64
+pure val weight_skip = 64
+pure val weight_resume = 16
+pure val weight_endSaved = 32
+pure val weight_endSaveFailed = 32
+pure val weight_retryEnd = 16
+pure val weight_runAgain = 16
 pure def sometimesFinished(s: Setup): bool = s.phase == Ended
 pure def sometimesSaveFailed(s: Setup): bool = s.phase == EndFailed
 pure def sometimesAccountPutOff(s: Setup): bool = s.phase == Away and accountPutOff(s)
@@ -499,7 +506,9 @@ a session, and with it a plan; this is the step rule's promise, not a
 separate law. A tablet asking to sign in is confirmed only by the person's
 own choice, while a web account is signed in, and the confirmation holds
 only while the reports name that signed-in account: any other report, even
-one that the account could not be checked, asks her again.
+one that the account could not be checked, asks her again. She confirms for
+the account she is shown, and may confirm again for that same account when
+the tablet's sign-in did not finish. She can cancel while Grace checks the account or waits for a sign-in code. After cancellation, a late reply cannot open the tablet callback.
 
 A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
@@ -572,8 +581,9 @@ pure def canReportGraceService(s: Setup, report: GraceAccount, link: GoogleLink)
 pure def reportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
   { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: if (waiting) TabletSignInAsked else NoTabletSignIn }
-pure def canConfirmTabletSignIn(s: Setup): bool = tabletSignInAsked(s.tabletSignIn) and webAccountId(s.graceAccount) != ""
-pure def confirmTabletSignIn(s: Setup): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: webAccountId(s.graceAccount) }) }
+pure def canConfirmTabletSignIn(s: Setup, accountId: str): bool =
+  accountId != "" and accountId == webAccountId(s.graceAccount) and (tabletSignInAsked(s.tabletSignIn) or tabletSignInConfirmed(s))
+pure def confirmTabletSignIn(s: Setup, accountId: str): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: accountId }) }
 pure def tabletSignInConfirmed(s: Setup): bool =
   val t = s.tabletSignIn
   match t {
@@ -607,6 +617,7 @@ pure val reportValues: Set[GraceAccount] = Set(
   GraceSignedIn({ accountId: "other", email: "", plan: PlanActiveManaged })
 )
 pure val accountValues: Set[GraceAccount] = reportValues
+pure val accountIdValues: Set[str] = Set("", "known", "other")
 pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
   match account {
     | GraceSignedIn(info) => (info.plan == PlanActive or info.plan == PlanActiveManaged) implies not(mayStartCheckout(account))
@@ -796,20 +807,18 @@ exchange supplies browser approval to the native recovery operation.
 The recovery key and passwords stay in the native vault and its protected
 screens.
 
-The approval page is this application's own: it reads the native request's
-one action and the browser's signed-in account, and offers Approve only when
-the request is valid for the registered page and a signed-in account is
-shown that has not been reported changed or in need of a fresh sign-in.
-Approve sends that action with the shown account's identity in one request;
-the Grace service refuses it when the browser account is no longer that one,
-or the sign-in is not recent, and the page then asks her to sign in and
-choose again. Nothing is approved on a page that is not the registered one,
-after Cancel, for an account other than the one shown, or without a recent
-sign-in. The page returns to the tablet only to the registered callback,
-with the native request's own state and one code; the request it reads
-carries neither the recovery key nor any password. That the code is used
-once and only by the native request that asked for it is the Grace
-service's and the tablet's own exchange, and no rule here checks it.
+The rules below take the page registration, the freshness of the sign-in and
+the match to the shown account as inputs. All three must hold to offer
+Approve. Counting the action as approved also requires the person's explicit
+confirmation.
+
+The browser checks that the native request belongs to its registered page,
+shows the action and account, and closes the approval on Cancel. The service
+checks the current account and sign-in freshness when it receives the action
+and shown account together. The browser accepts only the registered callback
+with the request's own state and exactly one code. The request carries
+neither the recovery key nor a password. The service and tablet bind the
+code to the original native request and enforce its single use.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =

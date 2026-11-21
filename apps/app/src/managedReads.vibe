@@ -8,6 +8,7 @@ import type { SavedFile } from "../gen/app__files.effect.vibe"
 import { Library } from "./files.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin, currentManagedMailGrant } from "./graceAccount.vibe"
+import { type GoogleChange, type GoogleRead, googleRoute } from "./cloudRequests.vibe"
 import { messageLinkParts } from "./messageLinks.vibe"
 import { webView } from "./surfacePlugin.ts"
 
@@ -199,9 +200,7 @@ effect function ownerHash(owner: string) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-const google = apiOrigin + "/api/v1/eliza/google/"
-type GoogleRead = "gmail/triage" | "gmail/read" | "gmail/attachment" | "gmail/send/status" | "calendar/feed" | "calendar/series" | "calendar/reminder/event"
-type GoogleChange = "gmail/trash" | "gmail/send" | "calendar/change" | "calendar/reminder"
+const google = apiOrigin + googleRoute
 
 effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
   const params = new URLSearchParams(Object.entries(search).flatMap(([name, value]) => value ? [[name, value]] : []))
