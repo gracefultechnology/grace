@@ -1,6 +1,6 @@
-// spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"
+// spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it"
 import { initial, machine, Machine as Workspaces, canSavePreferences } from "../gen/app__workspace.effect.vibe"
-import { type DisplayPreferences, effectiveBrightness, nightDimmingApplies, restart, validSettings } from "../gen/app__preferences.effect.vibe"
+import { type DisplayPreferences, effectiveBrightness, restart, validSettings } from "../gen/app__preferences.effect.vibe"
 import type { PreferenceDevice, PreferenceRecords } from "./preferencesPlugin.ts"
 import { NoticeHost } from "./notices.vibe"
 
@@ -55,7 +55,7 @@ export const persistPreferences = (port: PreferenceRecords | undefined) => Layer
 })
 
 schema DeviceVolume { step: Schema.Int; min: Schema.Int; max: Schema.Int; muted: boolean }
-schema DeviceBrightness { percent?: Schema.Int; night?: Schema.Int }
+schema DeviceBrightness { percent?: Schema.Int }
 schema DeviceSettings { volume: DeviceVolume; brightness: DeviceBrightness }
 
 type DeviceChoice = Pick<DisplayPreferences, "brightness" | "volume" | "muted" | "nightDimming">
@@ -77,11 +77,10 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   try fork.scoped Stream.runForEach(requests, effect (requested) => {
     const { device, preferences: { session: choice } } = try workspace.get()
     if (device.readiness !== "Ready" || (requested && !sameChoice(requested, choice))) return
-    const hour = new Date(try Clock.currentTimeMillis).getHours()
-    if (!nightDimmingApplies(choice, hour) && confirmed !== undefined && sameChoice(confirmed, choice)) return
+    const target = { ...choice, brightness: effectiveBrightness(choice, new Date(try Clock.currentTimeMillis).getHours()) }
+    if (confirmed !== undefined && sameChoice(confirmed, target)) return
     const applied = effect {
       const before = try deviceSettings(port)
-      const target = { ...choice, brightness: effectiveBrightness(choice, hour, before.brightness.night ?? choice.brightness) }
       const watchBrightness = confirmed === undefined || confirmed.brightness !== target.brightness
       const watchVolume = confirmed === undefined || confirmed.volume !== target.volume || confirmed.muted !== target.muted
       if (!watchBrightness && !watchVolume) return target
@@ -93,7 +92,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
           ? timeout(tryPromise(() => port.setBrightness({ percent: target.brightness })), "2 seconds") : Effect.void,
         watchVolume && (before.volume.step !== step || before.volume.muted !== target.muted)
           ? timeout(tryPromise(() => port.setVolume({ step, muted: target.muted })), "2 seconds") : Effect.void,
-      ])
+      ], { concurrency: "unbounded" })
       const reported = try deviceSettings(port)
       const matches = (!watchBrightness || reported.brightness.percent === target.brightness) &&
         (!watchVolume || (reported.volume.muted === target.muted && (target.muted || reported.volume.step === step)))
