@@ -104,7 +104,7 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
   : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
 
-type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin }
+type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; openPrivateEmail?: () => Promise<void> }
 
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
   const platform = "native" in host ? host : { native: false }
@@ -115,7 +115,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const machines = Layer.provideMerge(library, Layer.mergeAll(storage, preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews()))
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost, started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), voice), machines)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateEmail), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), voice), machines)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)

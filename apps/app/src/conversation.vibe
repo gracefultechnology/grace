@@ -22,7 +22,7 @@ import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
 import { Reply, unreadable } from "./reply.schema.ts"
 import { ManagedReads, guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
-import { NativePage } from "./nativePage.vibe"
+import { NativePage, guidedPageState } from "./nativePage.vibe"
 import { PageId } from "./nativePage.schema.ts"
 import { statementFacts } from "./statement.vibe"
 
@@ -32,7 +32,7 @@ export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer
 export service Conversation {
   say(input: PersonTurn): boolean!!
   turnOrigin(generation: number): Origin!!
-  checkGuidedRead(): boolean!!
+  checkGuidedRead(): (boolean | "PrivateForm")!!
   help(need: Help): void!!
   startReadReview(revision: number): boolean!!
   resumeReadPlan(): boolean!!
@@ -60,7 +60,7 @@ effect function ask(link: CloudLink, messages: readonly { role: string; content:
 type GuidedReadSource =
   | { tag: "ManagedMail" | "ManagedAppointment"; grant: string; version: string }
   | ({ tag: "CurrentMessage" } & GuidedMail)
-  | { tag: "CurrentDocument"; tab: number; loadVersion: number }
+  | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; revision: number }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
@@ -70,14 +70,14 @@ function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
 }
 
-function namedReadScope(w: Scene["workspace"]): string {
+function browserReadScope(w: Scene["workspace"]): string {
   const { assistant, browser, plan } = w
   const tab = activeTab(browser)
   return JSON.stringify([plan.owner, assistant.taskId, assistant.workVersion, plan.receipts.length,
     nextOutcome(plan), plan.linkStep, plan.linkUrl, tab.id, tab.loadVersion, tabUrl(tab)])
 }
 
-effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage.Shape, managed: ManagedReads.Shape, expectedDocument?: string): (GuidedReadReceipt | undefined)!! {
+effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage.Shape, managed: ManagedReads.Shape, expectedDocument?: string): (GuidedReadReceipt | "PrivateForm" | undefined)!! {
   const { registry, workspace } = scene
   if (privateSurfaceActive(workspace)) return undefined
   function receipt(source: GuidedReadSource, identity: readonly string[], text: string): GuidedReadReceipt { return { source, identity, text } }
@@ -117,7 +117,9 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (!mayGuideReadLink(workspace)) return undefined
       const tab = activeTab(workspace.browser)
       const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
-      const facts = snapshot === undefined ? undefined : statementFacts(snapshot, tabUrl(tab))
+      const state = guidedPageState(snapshot, tabUrl(tab))
+      if (state === "PrivateForm") return state
+      const facts = snapshot === undefined || state !== "Ordinary" ? undefined : statementFacts(snapshot, tabUrl(tab))
       if (facts === undefined) return undefined
       return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: facts.document, revision: facts.revision },
         [tabUrl(tab).replace(/#.*$/u, "")], "Statement amount due: " + facts.amount + ". Due date: " + facts.due + ".")
@@ -125,29 +127,37 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
-          tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+          tab.load !== "Loaded") return undefined
       const url = tabUrl(tab)
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
-      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument) ||
-          before.result.url !== url || before.result.readyState !== "complete" ||
-          before.result.blockers.some((item) => item.covers !== "partial")) return undefined
+      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return undefined
+      const state = guidedPageState(before, url)
+      if (state === "PrivateForm") return state
+      if (state !== "Ordinary" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
       const primary = native.readPrimaryHeading(id) catch () => undefined
       const observed = normalizedHeading(primary?.text)
       if (!primary || primary.url !== url || observed === "" || observed !== normalizedHeading(step.subject)) return undefined
       const after = native.observeLinks(id) catch () => undefined
-      if (!after || after.documentId !== before.documentId || after.result.url !== url || after.result.readyState !== "complete" ||
-          after.result.blockers.some((item) => item.covers !== "partial")) return undefined
+      if (!after || after.documentId !== before.documentId) return undefined
+      const afterState = guidedPageState(after, url)
+      if (afterState === "PrivateForm") return afterState
+      if (afterState !== "Ordinary") return undefined
       return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
         [url.replace(/#.*$/u, "")], "Open page: " + observed)
     }
     case "ReadBrowser":
     case "ReadChangedBrowser": {
       const tab = activeTab(workspace.browser)
-      if (tab.load !== "Loaded" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      if (tab.load !== "Loaded") return undefined
       const url = try Effect.option(Effect.try(() => new URL(tabUrl(tab))))
       if (Option.isNone(url) || (url.value.protocol !== "https:" && url.value.protocol !== "http:")) return undefined
-      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion }, [url.value.origin + url.value.pathname + url.value.search], "Open page: " + url.value.origin + url.value.pathname)
+      const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
+      const state = guidedPageState(snapshot, url.value.href)
+      if (state === "PrivateForm") return state
+      if (snapshot === undefined || state !== "Ordinary" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId },
+        [snapshot.documentId, url.value.origin + url.value.pathname], "Open page: " + url.value.origin + url.value.pathname)
     }
     case "ReadCalendar": {
       const key = openSelected(registry, scene.calendars)
@@ -196,7 +206,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const digest = try Digest.Digest
   const setup = try Setup
 
-  effect function namedAccount() {
+  effect function browserReadAccount() {
     const { graceAccount } = try setup.get()
     return JSON.stringify(graceAccount.tag === "GraceSignedIn" ? [graceAccount.tag, graceAccount.accountId] : [graceAccount.tag])
   }
@@ -269,18 +279,28 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   }
 
   effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, unread: readonly string[], seen: number, authority: GuidedAuthority) {
+    const before = try workspace.get()
+    if (privateSurfaceActive(before) || before.assistant.conversation.generation !== token ||
+        before.assistant.conversation.turn !== "Thinking") return
+    const requested = { ...try request(token, workVersion), authority }
     const offeredRead = actions.some((action) => action.kind === "proposeReadPlan")
     const unavailableSave = actions.some((action) => action.kind === "proposeReadPlan" && action.steps.includes("SaveMailAppointment")) &&
       (try managed.ownsSurfaces())
+    const planned = offeredRead && !unavailableSave ? try agent.apply(actions, requested) : undefined
+    const current = try workspace.get()
+    const { review } = current
+    const offered = planned?.some((result) => result.outcome === "Applied") &&
+      current.assistant.workVersion === workVersion && review.generation === token && review.workVersion === workVersion &&
+      review.request.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), review.request.steps)
     const response = unavailableSave
       ? { text: "I can check your mail and calendar, but I can’t save an appointment from that plan.", isQuestion: false, answers: [] }
       : offeredRead
-      ? { text: actions.length === 1 ? "Review the selected-item checks before starting." : "I could not prepare that read plan.", isQuestion: false, answers: [] }
+      ? { text: offered ? "Review the selected-item checks before starting." : "I could not prepare that read plan.", isQuestion: false, answers: [] }
       : { text, isQuestion, answers: [...answers] }
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: false } }, "Host") catch () => undefined
     if (responded === undefined || unavailableSave) return
     try Ref.update(told, (all) => all.slice(seen))
-    const applied = try agent.apply(actions, { ...try request(token, workVersion), authority })
+    const applied = planned ?? (try agent.apply(actions, requested))
     try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
@@ -324,20 +344,21 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
       const read = step.tag
-      const namedScope = read === "ReachNamedPage" ? namedReadScope(current) : undefined
-      const account = namedScope === undefined ? undefined : try namedAccount()
+      const browserScope = surface === "Browser" ? browserReadScope(current) : undefined
+      const account = browserScope === undefined ? undefined : try browserReadAccount()
       const context = replyControlContext(current)
-      effect function ownsNamedRead() {
+      effect function ownsBrowserRead() {
         const w = try workspace.get()
         return replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
           w.device.surface === "Browser" && w.device.observationAllowed && activeTab(w.browser).load === "Loaded" &&
           w.assistant.activity === current.assistant.activity && w.assistant.conversation.turn === "Ready" &&
           !w.assistant.conversation.question && w.assistant.replacementId === "" &&
           w.execution.phase === "Idle" && w.commitmentTask === "" &&
-          namedReadScope(w) === namedScope && (try namedAccount()) === account
+          browserReadScope(w) === browserScope && (try browserReadAccount()) === account
       }
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return false
+      if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : false
       if (read === "SaveMailAppointment") {
         if (found.source.tag !== "CurrentAppointment") return false
         const { key, occurrence } = found.source
@@ -348,10 +369,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
       if (sourceKey === "") return false
       const confirmed = try look()
-      if (found.source.tag === "NamedDocument" && !(try ownsNamedRead())) return false
+      if (browserScope !== undefined && !(try ownsBrowserRead())) return false
       const rechecked = try guidedReceipt(confirmed, step, native, managed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
+      if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : false
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
-      if (!sameRecord || !(try ownsPlan(current.plan))) return false
+      if (!sameRecord || !(try ownsPlan(current.plan)) || (browserScope !== undefined && !(try ownsBrowserRead()))) return false
       const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
       const report = {
         owner: current.plan.owner,
@@ -364,7 +386,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         evidence
       }
       if (found.source.tag === "NamedDocument") {
-        if (!(try ownsNamedRead())) return false
         const { documentId, loadVersion, url, heading } = found.source
         const accepted = workspace.send({ type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }, "Host") catch () => undefined
         return accepted !== undefined

@@ -142,6 +142,27 @@ pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str)
   not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```
 
+### Only the person can open their mail app from the current private tab
+
+If the website asks for a code by email, the person taps **Check email** on
+the loaded private sign-in tab. Android opens a mail app through its normal
+app selection. Grace sends no address, search, message or code and receives
+no mail result. A stale request, another tab or a host request cannot open
+mail. The handoff leaves the private tab open and grants no website work or
+completion. If Android cannot open a mail app, the person can check on another
+device. Back or Android's app switcher returns to the same private tab, where
+the person enters the code directly on the website.
+
+~~~quint
+pure def canCheckPrivateEmail(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+  by == BrowserControlUser and id == b.selected and revision == b.revision and
+  B::activeTab(b).manualSignIn and B::activeTab(b).load == B::Loaded
+pure def lawPrivateEmailRequiresTheCurrentPersonTab(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+  (by != BrowserControlUser or id != b.selected or revision != b.revision or
+    not(B::activeTab(b).manualSignIn) or B::activeTab(b).load != B::Loaded) implies
+    not(canCheckPrivateEmail(b, id, revision, by))
+~~~
+
 ### A private sign-in tab keeps its address and page position to itself
 
 In a private sign-in tab, the person enters an address or moves through history

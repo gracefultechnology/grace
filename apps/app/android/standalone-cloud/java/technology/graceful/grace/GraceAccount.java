@@ -24,10 +24,6 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Locale;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -321,13 +317,8 @@ public final class GraceAccount extends Plugin {
   });
  }
 
- static JSObject projection(CloudDeviceAccount.Session session) throws NoSuchAlgorithmException {
-  if (session == null) return new JSObject().put("kind", "signedOut");
-  String identity = "grace-voice-disclosure\u0000" + session.organizationId() + "\u0000" + session.accountId();
-  byte[] digest = MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));
-  StringBuilder scope = new StringBuilder(64);
-  for (byte value : digest) scope.append(String.format(Locale.ROOT, "%02x", value & 0xff));
-  return new JSObject().put("kind", "signedIn").put("voiceDisclosureScope", scope.toString());
+ static JSObject projection(CloudDeviceAccount.Session session) {
+  return GracePasswordsOwner.accountStatus(session);
  }
 
  private void open(Uri address, PluginCall call) {
