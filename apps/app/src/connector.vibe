@@ -314,37 +314,45 @@ data CreateBinding {
   Received { providerId: string }
 }
 
+schema CalendarCreateClaim { grantId: Schema.NonEmptyString; mutation: Schema.NonEmptyString; fingerprint: Schema.NonEmptyString; providerId?: Schema.NonEmptyString }
+
 effect function calendarCreates(service: string) {
-  const journal = try KeyValueStore.KeyValueStore
+  const journal = KeyValueStore.toSchemaStore(try KeyValueStore.KeyValueStore, CalendarCreateClaim)
   const digest = try Digest.Digest
   const hash = (text: string) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(text)),
     (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
   return (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean) => {
     const { owner, calendarId, occurrenceId } = entry.identity
-    if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && (entry.phase !== "Editing" || entry.revision !== entry.approvedRevision))) return CreateBinding.Unknown()
-    const key = try hash(JSON.stringify([service, account.provider, grantId, account.address, owner, calendarId, occurrenceId, entry.revision]))
-    const at = "calendar-create:" + key
-    if (!approve && (journal.get(at) catch effect () => { throw new Unreachable() }) === undefined) return CreateBinding.Unknown()
+    if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && entry.phase !== "Editing")) return CreateBinding.Unknown()
+    if (approve && entry.phase === "Editing" && entry.approvedRevision !== entry.revision) return CreateBinding.Unknown()
+    const scope = try hash(JSON.stringify([service, account.provider, account.address.toLowerCase(), calendarId, occurrenceId]))
+    const at = "calendar-create:" + scope
+    const read = effect {
+      const stored = journal.get(at) catch effect () => { throw new Unreachable() }
+      return Option.getOrUndefined(stored)
+    }
+    if (!approve && (try read) === undefined) return CreateBinding.Unknown()
     const record = effect {
-      const intent = journal.get(at) catch effect () => { throw new Unreachable() }
-      if (intent === undefined && !approve) return CreateBinding.Unknown()
+      const previous = try read
+      if (previous === undefined && !approve) return CreateBinding.Unknown()
+      if (previous !== undefined && previous.grantId !== grantId) return CreateBinding.Pending()
       const fields = event({ ...entry, hasSaved: false })
-      if (fields === undefined) return CreateBinding.Unknown()
+      if (fields === undefined) return previous === undefined ? CreateBinding.Unknown() : CreateBinding.Pending()
       const body = { ...fields, calendarId, grantId }
       const { participant, seriesId, recurrence, reminderEnabled, leadTime, important } = entry.draft
       const fingerprint = try hash(JSON.stringify([body, entry.identity.sourceAccount, entry.identity.sourceRef, participant, seriesId, recurrence, reminderEnabled, leadTime, important]))
-      if (intent !== undefined && intent !== fingerprint) return CreateBinding.Unknown()
-      const received = journal.get(at + ":receipt") catch effect () => { throw new Unreachable() }
-      if (received !== undefined) return CreateBinding.Received({ providerId: received })
-      if (intent !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
-      if (intent === undefined) journal.set(at, fingerprint) catch effect () => { throw new Unreachable() }
-      const saved = send(body, key) catch effect (cause) => {
-        if (cause instanceof NeedsSignIn || (cause instanceof ProviderRefused && [400, 403, 404, 405, 415, 422].includes(cause.status)))
+      if (previous !== undefined && previous.fingerprint !== fingerprint) return CreateBinding.Pending()
+      if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId })
+      if (previous !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
+      const claim = previous ?? { fingerprint, grantId, mutation: try hash(JSON.stringify([scope, grantId, entry.revision])) }
+      if (previous === undefined) journal.set(at, claim) catch effect () => { throw new Unreachable() }
+      const saved = send(body, claim.mutation) catch effect (cause) => {
+        if (previous === undefined && (cause instanceof NeedsSignIn || (cause instanceof ProviderRefused && [400, 403, 404, 405, 415, 422].includes(cause.status))))
           journal.remove(at) catch effect () => { throw new Unreachable() }
         throw cause
       }
-      if (saved.calendarId !== calendarId) throw new ProviderRefused({ status: 409 })
-      journal.set(at + ":receipt", saved.externalId) catch effect () => { throw new Unreachable() }
+      if (saved.calendarId !== calendarId || saved.externalId === "") throw new ProviderRefused({ status: 409 })
+      journal.set(at, { ...claim, providerId: saved.externalId }) catch effect () => { throw new Unreachable() }
       return CreateBinding.Received({ providerId: saved.externalId })
     }
     const result = tryPromise((signal) => navigator.locks.request(at, { signal }, () => Effect.runPromise(Effect.result(record), { signal }))) catch effect () => { throw new Unreachable() }
@@ -395,8 +403,11 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       const bindings = new Map<string, Calendar>()
       const waiting = new Set<Calendar>()
       for (const c of view.entries) {
-        if (c.identity.calendarId !== view.calendarId || (c.phase !== "Saved" && (c.phase !== "Editing" || c.hasSaved)) || feed.some((e) => e.externalId === c.identity.occurrenceId)) continue
-        const bound = try createBinding(c, grantId, false)
+        if (c.identity.owner !== view.owner || c.identity.calendarId !== view.calendarId || (c.phase !== "Saved" && (c.phase !== "Editing" || c.hasSaved)) || feed.some((e) => e.externalId === c.identity.occurrenceId)) continue
+        const bound = createBinding(c, grantId, false) catch effect (cause) => match (cause) {
+          when NeedsSignIn: throw cause;
+          default: CreateBinding.Pending();
+        }
         if (bound._tag === "Received") {
           bindings.set(bound.providerId, c)
           if (!feed.some((e) => e.externalId === bound.providerId)) waiting.add(c)
