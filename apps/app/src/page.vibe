@@ -5,7 +5,7 @@ import { type HistoryDirection, canStepPrivate } from "../gen/app__deviceKeys.ef
 import { type Tab, loadWaitSeconds, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canChangePage, canStayOnPage, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
 import { type BrowserInput, canCheckPrivateEmail } from "../gen/app__browserControls.effect.vibe"
-import { type AndroidOutcome, type Event as WebsiteEvent, Machine as WebsiteRequests, Rejected as RequestRejected, type WebsiteActor, type WebsiteReply, canFollowView, isLeavePage, isMessage, opensElsewhere, presented as presentedRequest } from "../gen/app__websiteRequests.effect.vibe"
+import { type AndroidOutcome, type Event as WebsiteEvent, Machine as WebsiteRequests, Rejected as RequestRejected, type WebsiteActor, type WebsiteReply, canFollowView, isLeavePage, isMessage, opensElsewhere } from "../gen/app__websiteRequests.effect.vibe"
 import { type Corners, NativePage, type PageEvent } from "./nativePage.vibe"
 import { PageId, type RequestKey, Url } from "./nativePage.schema.ts"
 import { privateViewPlugin, webView } from "./surfacePlugin.ts"
@@ -217,15 +217,14 @@ effect function waitForLoads(workspace: Workspaces.Shape, requests: WebsiteReque
   const changes = Stream.merge(Stream.map(workspace.changes, () => undefined), Stream.map(requests.changes, () => undefined))
   try fork.scoped Stream.runForEach(changes, effect () => {
     const tabs = (try workspace.get()).browser.tabs
-    const shown = presentedRequest(try requests.get())
-    const held = isMessage(shown.ask) ? shown.tab : undefined
+    const held = new Set((try requests.get()).requests.filter((r) => isMessage(r.ask)).map((r) => r.tab))
     for (const [id, wait] of [...waits]) {
       const tab = tabs.find((t) => t.id === id)
-      if (tab?.load === "Loading" && tab.loadVersion === wait.version && id !== held) continue
+      if (tab?.load === "Loading" && tab.loadVersion === wait.version && !held.has(id)) continue
       waits.delete(id)
       try Fiber.interrupt(wait.fiber)
     }
-    for (const tab of tabs) if (tab.load === "Loading" && tab.id !== held && !waits.has(tab.id)) waits.set(tab.id, {
+    for (const tab of tabs) if (tab.load === "Loading" && !held.has(tab.id) && !waits.has(tab.id)) waits.set(tab.id, {
       version: tab.loadVersion,
       fiber: try fork.in(scope) Effect.andThen(sleep(`${loadWaitSeconds} seconds`), Queue.offer(signals, Signal.Waited({ tab })))
     })

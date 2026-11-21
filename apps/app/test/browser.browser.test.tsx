@@ -584,8 +584,14 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   const question = page.getByRole("alertdialog");
   await go("example.com/ask", "https://example.com/ask");
   device.started("https://example.com/ask");
+  device.ask("sitePermissionRequested", { requestId: "camera-1", origin: "https://example.com", kinds: ["camera"], topFrame: true });
+  const refuse = question.getByRole("button", { name: "Don't allow" });
+  await expect.element(refuse).toBeVisible();
   device.ask("dialogRequested", { dialogId: "hello-1", kind: "alert", message: "Welcome back" });
-  await expect.element(question).toBeVisible();
+  await later(loadWaitSeconds + 10);
+  expect(tab().load).toBe("Loading");
+  await userEvent.click(refuse);
+  await expect.element(question.getByText("Welcome back")).toBeVisible();
   await later(loadWaitSeconds + 10);
   expect(tab().load).toBe("Loading");
   await userEvent.click(question.getByRole("button", { name: "OK" }));

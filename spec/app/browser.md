@@ -305,7 +305,7 @@ thrown away, and the address bar keeps editing until the person submits it
 or dismisses it.
 
 ```quint
-pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url)
+pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url) and activeTab(b).load != Loading
 pure def pageMoved(b: Browser, url: str): Browser = {
   ...navigate(b, url),
   editingAddress: b.editingAddress, addressDraft: b.addressDraft, emptyAddressNotice: b.emptyAddressNotice
@@ -332,7 +332,7 @@ result with the address it ended at, which the entry it started then records
 
 ```quint
 pure def canTabMoved(b: Browser, id: int, url: str): bool =
-  hasTab(b, id) and canPageMoved(b, url) and tabById(b, id).load != Loading
+  hasTab(b, id) and canNavigate(b, url) and tabById(b, id).load != Loading
 pure def tabMoved(b: Browser, id: int, url: str): Browser =
   if (id == b.selected) pageMoved(b, url) else {
     ...b, tabs: b.tabs.listMap(t => if (t.id == id) { ...navigated(t, url, t.loadVersion), load: t.load } else t)
