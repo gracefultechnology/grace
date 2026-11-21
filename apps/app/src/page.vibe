@@ -200,7 +200,7 @@ effect function watchPage(layer: PageLayers.Shape, onMeasured: () => void!!) {
 }
 
 effect function report(workspace: Workspaces.Shape, event: Event) {
-  workspace.send(event, "Host") catch effect (error) => match (error) {
+  return workspace.send(event, "Host") catch effect (error) => match (error) {
     when Rejected: undefined;
   }
 }
@@ -214,17 +214,18 @@ effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth
 const goesElsewhere = (page: Page, url: string | undefined): url is string => url !== undefined && url !== "" && url !== page.url
 
 effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url: string) {
-  page.url = url
+  if (url !== "") page.url = url
   const before = try workspace.get()
   const shown = before.browser.tabs.find((t) => t.id === tab)
   const superseded = shown?.load === "Loading" && shown.loadVersion === page.own
-  if (shown !== undefined && (shown.load !== "Loading" || superseded) && url !== tabUrl(shown)) {
+  if (shown !== undefined && (shown.load !== "Loading" || (superseded && url !== "")) && url !== tabUrl(shown)) {
     const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: url }
-    try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
-    const after = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
+    const updated = try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
+    const after = updated?.state.browser.tabs.find((t) => t.id === tab)
     if (after !== undefined && after.loadVersion !== shown.loadVersion) {
       page.own = after.loadVersion
-      if (superseded) {
+      if (url === "") page.load = after.loadVersion
+      else if (superseded) {
         page.tab = after
         page.held = { from: after.cursor, to: after.cursor }
       }
@@ -238,7 +239,9 @@ effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url:
 }
 
 effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
-  if (goesElsewhere(page, event.url)) try moved(workspace, page, tab, event.url)
+  if (goesElsewhere(page, event.url) && (!page.tab.manualSignIn || event.url === tabUrl(page.tab))) {
+    try moved(workspace, page, tab, event.url)
+  }
   const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
   if (now === undefined || event.loading || now.load !== "Loading" || page.load !== now.loadVersion) return
   const endedAt = now.manualSignIn ? tabUrl(now) : event.url || tabUrl(now)
@@ -506,7 +509,10 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
     const unasked = page.asked.length === 0
     const at = page.asked.findLastIndex((a) => a.url === url)
     page.load = page.asked.splice(0, at + 1 || 1).at(-1)?.version ?? page.load
-    if (unasked && goesElsewhere(page, url)) try moved(workspace, page, tab, url)
+    if (unasked) {
+      if (!url || page.tab.manualSignIn || url === tabUrl(page.tab)) try moved(workspace, page, tab, "")
+      else if (goesElsewhere(page, url)) try moved(workspace, page, tab, url)
+    }
     const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
     if (now !== undefined && now.loadVersion !== page.tab.loadVersion) try step(native, page, now, close)
     try website({ type: "pageStarted", tab }, "WebsiteHost")
