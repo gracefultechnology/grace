@@ -348,17 +348,19 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
               await userEvent.click(showLink);
             } else {
               const last = disclosures.at(-1);
+              const nextMenu = page.getByRole("button", { name: "Try another menu", exact: true });
               if (exploratory && branch && leaf && approval && offeredControl && approval.query() !== null &&
                   (!branchMatches || !leafMatches) && last?.documentId === previous.documentId && last.label === branch) {
                 await expect.element(approval).toBeVisible();
-                outcome.miss = "rejected-scoped-leaf";
                 outcome.rejectedNameCorrection = {
                   original: named.subject, branch, leaf, offeredControl, branchMatches, leafMatches,
                   documentId: previous.documentId, instruction,
                 };
-                return;
+                if (nextMenu.query() === null) {
+                  outcome.miss = "rejected-scoped-leaf";
+                  return;
+                }
               }
-              const nextMenu = page.getByRole("button", { name: "Try another menu", exact: true });
               if (nextMenu.query() === null) {
                 if (exploratory && last?.documentId === previous.documentId &&
                     (instruction === `I couldn’t see “${named.subject}” in the open menu. You can try another menu.` ||
