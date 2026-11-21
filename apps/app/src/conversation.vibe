@@ -53,7 +53,7 @@ error Unanswered { status: number }
 
 const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
-  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true })
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true, response_format: { type: "json_object" } })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
   if (response.status !== 200) throw new Unanswered({ status: response.status })
   const lines = Stream.filter(Stream.splitLines(Stream.decodeText(response.stream)), (line) => line.startsWith("data: ") && line !== "data: [DONE]")

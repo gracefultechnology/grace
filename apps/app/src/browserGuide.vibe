@@ -105,6 +105,31 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
 type PublicMenu = { selector: string; label: string }
 type PublicLink = ReturnType<typeof links>[number]
 
+type MenuSearch = {
+  guided: Pick<NonNullable<ReturnType<typeof context>>, "url" | "approvedHref">; target: string
+  branch: readonly PublicMenu[]; skipped: readonly PublicMenu[]
+}
+
+const menuChoices = ({ guided, target, branch, skipped }: MenuSearch, inBranch: (menus: readonly PublicMenu[], selector: PublicLink["selector"]) => boolean!!) =>
+  effect (snapshot: LinkObservation, publicOnly: boolean) => {
+    const allLinks = links(snapshot, guided.url, target, publicOnly || branch.length > 0 || guided.approvedHref !== undefined)
+      .filter((link) => guided.approvedHref === undefined || (link.href === guided.approvedHref && link.exact))
+    if (branch.length === 0 && skipped.length === 0) return allLinks
+    const children: PublicLink[] = []
+    for (const link of allLinks) {
+      if (!link.pointable || branch.some((menu) => menu.selector === link.selector)) continue
+      let excluded = false
+      for (const menu of skipped) {
+        if (link.selector === menu.selector || (try inBranch([menu], link.selector))) {
+          excluded = true
+          break
+        }
+      }
+      if (!excluded && (try inBranch(branch, link.selector))) children.push(link)
+    }
+    return children
+  }
+
 function hasPublicName(snapshot: LinkObservation, url: URL, label: string, href: string): boolean {
   if (!label || label.length > 128 || label.includes("…") || url.search || url.hash) return false
   const matches = links(snapshot, url, label, true).filter((link) => link.exact && link.pointable)
@@ -251,24 +276,8 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         return { kind: "Unavailable", words, tryAnotherMenu: true, alternateHref }
       }
       let disclosed: LinkObservation | undefined
-      effect function visibleChoices(snapshot: LinkObservation, publicOnly: boolean) {
-        const allLinks = links(snapshot, guided.url, target, publicOnly || branch.length > 0 || guided.approvedHref !== undefined)
-          .filter((link) => guided.approvedHref === undefined || (link.href === guided.approvedHref && link.exact))
-        if (branch.length === 0 && skipped.length === 0) return allLinks
-        const children: PublicLink[] = []
-        for (const link of allLinks) {
-          if (!link.pointable || branch.some((menu) => menu.selector === link.selector)) continue
-          let excluded = false
-          for (const menu of skipped) {
-            if (link.selector === menu.selector || (try inBranch(guided.id, guided.url.href, [menu], link.selector))) {
-              excluded = true
-              break
-            }
-          }
-          if (!excluded && (try inBranch(guided.id, guided.url.href, branch, link.selector))) children.push(link)
-        }
-        return children
-      }
+      const visibleChoices = menuChoices({ guided, target, branch, skipped },
+        (menus, selector) => inBranch(guided.id, guided.url.href, menus, selector))
       let retries = 0
       while (retries < 2) {
         if ((try currentContext())?.key !== start.key) return changed
