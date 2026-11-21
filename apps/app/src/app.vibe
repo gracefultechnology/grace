@@ -98,7 +98,8 @@ const signInPage = Layer.sync(SignInPage, () => {
 
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
-const linked = (cloud: CloudLink) => Layer.mergeAll(Layer.provide(connector(cloud), signInPage), untraced)
+const tabletStorage = KeyValueStore.layerStorage(() => webView.window.localStorage)
+const linked = (cloud: CloudLink) => Layer.mergeAll(Layer.provide(connector(cloud), Layer.merge(signInPage, tabletStorage)), untraced)
 
 const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
@@ -110,7 +111,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const platform = "native" in host ? host : { native: false }
   const cloud = "url" in host ? host : undefined
   const storage = fileStorage(platform.native, platform.files ?? filesPlugin)
-  const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), KeyValueStore.layerStorage(() => webView.window.localStorage)))
+  const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), tabletStorage))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const machines = Layer.provideMerge(library, Layer.mergeAll(storage, preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews()))
   const guidance = Layer.provideMerge(agent, services(cloud))
