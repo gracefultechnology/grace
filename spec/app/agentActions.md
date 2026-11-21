@@ -277,7 +277,7 @@ pure def routeFromMessage(w: World, request: R::Request, account: int, seed: V::
   val review = appointmentReview(w, key, seed)
   val source = M::sourceOf(w.mail, account)
   if (not(M::showsMail(w.accounts, account))) Refused({ why: NotShown })
-  else if (K::alreadyFrom(w.calendars, source.mailbox.messageRef) or K::pendingFrom(w.pending, source.mailbox.messageRef))
+  else if (K::alreadyFrom(w.calendars, source.account, source.mailbox.messageRef) or K::pendingFrom(w.pending, source.account, source.mailbox.messageRef))
     Refused({ why: AlreadyInCalendar })
   else routeAsk(w, request, P::AddAsk({ target: key, review: review }),
     K::fromMessageAllowed(w.accounts, w.calendars, w.mail, w.pending, review))

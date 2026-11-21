@@ -211,9 +211,9 @@ function sameDetails(a: EntryDetails, b: EntryDetails) {
 
 const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "" ? 0 : Math.max(0, seriesAt(view, seriesId).version)
 
-function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails, sourceRef: string): Calendar | undefined {
+function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails): Calendar | undefined {
   if (known === undefined) {
-    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
   }
   if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined
@@ -226,24 +226,18 @@ const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(k
 function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[]): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
   const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
-  const unlisted = own.filter((c) => c.phase === "Saved" && c.identity.kind === "Appointment" && c.committed.seriesId === "" && !listed(c))
   const writing = own.filter((c) => c.phase === "Editing" && !c.hasSaved && c.approvedRevision === c.revision)
-  const taken = new Set<Calendar>()
-  const kept = new Set<Calendar>()
   const changed = events.flatMap((e) => {
     const known = own.find((c) => c.identity.occurrenceId === e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const copies = (d: EntryDetails) => d.title.trim() === e.title.trim() && d.startAt === startAt && d.endAt === endAt && d.allDay === e.isAllDay
     if (known === undefined && writing.some((c) => copies(c.draft))) return []
-    const created = known !== undefined ? undefined : unlisted.find((c) => !taken.has(c) && copies(c.committed))
-    if (created !== undefined) taken.add(created)
-    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
-    const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created?.identity.sourceRef ?? "") : undefined
-    if (incoming === undefined && created !== undefined) kept.add(created)
+    const entry = details(e, startAt, endAt, timezone, known?.committed)
+    const incoming = validDetails(entry) ? refreshed(known, view, e, entry) : undefined
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
   })
-  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c) && !kept.has(c))
+  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c))
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 
@@ -279,21 +273,8 @@ function sendOutcome(r: Receipt): SendOutcome {
   }
 }
 
-export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+effect function connectorTransport(link: CloudLink) {
   const http = try HttpClient.HttpClient
-  const page = try SignInPage
-  const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
-  const showing = (url: string, inSheet: boolean) => SubscriptionRef.set(shown, { url, host: URL.parse(url)?.host ?? "", inSheet })
-  const inSheet: SignInPage.Shape = { open: (url) => showing(url, true), close: () => SubscriptionRef.set(shown, undefined) }
-  const handedOff: SignInPage.Shape = {
-    open: (url) => Effect.andThen(showing(url, false), page.open(url)),
-    close: (url) => ensuring(page.close(url), SubscriptionRef.set(shown, undefined))
-  }
-  const framable = (url: string) => {
-    const at = URL.parse(url)
-    return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
-  }
-  const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
   effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
     if (!sent.url.includes("/inbox-v1/")) return true
@@ -319,6 +300,24 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   const get = (url: string, params: Record<string, string>) => Effect.succeed(HttpClientRequest.setUrlParams(HttpClientRequest.get(`${link.url}${url}`), params))
   const post = (url: string, body: object) => Effect.succeed(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}${url}`), body))
+  return { call, fetched, get, post }
+}
+
+export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+  const { call, fetched, get, post } = try connectorTransport(link)
+  const page = try SignInPage
+  const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
+  const showing = (url: string, inSheet: boolean) => SubscriptionRef.set(shown, { url, host: URL.parse(url)?.host ?? "", inSheet })
+  const inSheet: SignInPage.Shape = { open: (url) => showing(url, true), close: () => SubscriptionRef.set(shown, undefined) }
+  const handedOff: SignInPage.Shape = {
+    open: (url) => Effect.andThen(showing(url, false), page.open(url)),
+    close: (url) => ensuring(page.close(url), SubscriptionRef.set(shown, undefined))
+  }
+  const framable = (url: string) => {
+    const at = URL.parse(url)
+    return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
+  }
+  const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
   effect function grantOf(account: AccountRef) {
     const address = account.address.toLowerCase()

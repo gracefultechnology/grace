@@ -16,10 +16,27 @@ export schema HeldFile {
   readonly savedAt: number; readonly pages: number
 }
 schema HeldReply { readonly address: string; readonly subject: string; readonly verified: boolean }
-export schema Held { readonly content: MailContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
+const heldContent = MailContent
+export schema Held { readonly content: heldContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
 
 export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
 export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>
+
+export effect function followAccounts<R>(selections: Stream.Stream<readonly Account[]>, start: (account: Account) => Fiber.Fiber<void>!NotAnAccount!R) {
+  const active = new Map<number, Fiber.Fiber<void>>()
+  try Stream.runForEach(selections, effect (wanted) => {
+    for (const account of wanted) {
+      if (active.has(account.id)) continue
+      const fiber = start(account) catch () => undefined
+      if (fiber !== undefined) active.set(account.id, fiber)
+    }
+    for (const [id, fiber] of active) {
+      if (wanted.some((account) => account.id === id)) continue
+      try Fiber.interrupt(fiber)
+      active.delete(id)
+    }
+  })
+}
 
 export service Instances {
   mail(id: number): MailMachine.Shape!NotAnAccount
@@ -44,23 +61,17 @@ const contentKey = (id: number, ref: string) => `${id}/${ref}`
 const keyPattern = /^(?:mail|calendar|held)\/(\d+)$/
 const decodeHeld = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Held)))
 
-export effect function watchEach<B, E, R>(changes: Stream.Stream<Registry>, wanted: (a: Registry) => readonly Account[], open: (id: number) => B!NotAnAccount, watch: (account: Account, box: B) => Fiber.Fiber<void>!E!R) {
-  const watched = try Ref.make(new Map<number, Fiber.Fiber<void>>())
-  try Stream.runForEach(changes, effect (a: Registry) => {
-    const accounts = wanted(a)
-    for (const account of accounts) {
-      if ((try Ref.get(watched)).has(account.id)) continue
-      const box = open(account.id) catch () => undefined
-      if (box === undefined) continue
-      const fiber = try watch(account, box)
-      try Ref.update(watched, (all) => new Map(all).set(account.id, fiber))
-    }
-    for (const [id, fiber] of try Ref.get(watched)) {
-      if (accounts.some((x) => x.id === id)) continue
-      try Fiber.interrupt(fiber)
-      try Ref.update(watched, (all) => new Map([...all].filter(([k]) => k !== id)))
-    }
-  })
+effect function calendarWithMailSource(text: string | undefined, account: number) {
+  if (text === undefined) return text
+  let changed = false
+  const parsed: unknown = try Effect.try(() => JSON.parse(text, (key: string, value: unknown): unknown => {
+    if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
+        !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
+    const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0
+    changed = true
+    return { ...value, sourceAccount }
+  }))
+  return changed ? JSON.stringify(parsed) : text
 }
 
 export const instances = Layer.effect(Instances, effect {
@@ -98,7 +109,17 @@ export const instances = Layer.effect(Instances, effect {
     try Effect.orDie(box.send({ type: "restartMailbox" }, "MailHost"))
     return box
   }
-  const openCalendar = (key: number) => Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(calendarKey(key)), kept)))
+  const openCalendar = (key: number) => {
+    let last: { raw: string | undefined; compatible: string | undefined } | undefined
+    const compatible = Layer.succeed(KeyValueStore.KeyValueStore, {
+      ...store, get: effect (name: string) => {
+        const raw = try store.get(name)
+        if (last === undefined || raw !== last.raw) last = { raw, compatible: try Effect.orDie(calendarWithMailSource(raw, key)) }
+        return last.compatible
+      }
+    })
+    return Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(calendarKey(key)), compatible)))
+  }
   const mail = (id: number) => id === tablet ? Effect.fail(new NotAnAccount({ id })) : ensure(mails, id, openMail(id))
   const calendar = (key: number) => ensure(calendars, key, openCalendar(key))
   const heldOf = (id: number) => [...contents].filter(([key]) => key.startsWith(contentKey(id, "")))

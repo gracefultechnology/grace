@@ -224,7 +224,7 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
       act(lead, {
         type: "createOccurrence",
         entry: {
-          identity: { owner: v.owner, calendarId: v.calendarId, occurrenceId: `tablet-${crypto.randomUUID()}`, sourceRef: "", kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" },
+          identity: { owner: v.owner, calendarId: v.calendarId, occurrenceId: `tablet-${crypto.randomUUID()}`, sourceRef: "", sourceAccount: 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" },
           details: {
             title: "", location: "", participant: "", notes: "", startAt, endAt: startAt + hour, timezone: v.timezone, allDay: false,
             seriesId: "", recurrence: "Once", reminderEnabled: true, leadTime: hour, important: false,
