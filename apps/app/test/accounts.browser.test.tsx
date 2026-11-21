@@ -5,10 +5,10 @@ import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } f
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import { client, expire, otherPassword, reply, signIn } from "./cloud.vibe";
-import { mount } from "./screen.tsx";
+import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+actOnScreen();
 const cloud = inject("cloud");
 const outlook = "margaret@outlook.com";
 const riverview = "margaret@riverview.net";
@@ -32,9 +32,11 @@ const decoded = (body: BodyInit | null | undefined) => typeof body === "string" 
 
 let secret = "";
 
-beforeAll(async () => {
+beforeAll(() => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href));
+    if (account) return Promise.resolve(account);
     if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
     if (url.includes("/connections/other")) otherChecks.push(url);
     return fetched(input, init);
@@ -44,8 +46,6 @@ beforeAll(async () => {
     return opened(url, ...rest);
   };
   watcher.observe(document.body, { childList: true, subtree: true });
-  environment.IS_REACT_ACT_ENVIRONMENT = true;
-  await page.viewport(1280, 800);
 });
 beforeEach(async () => {
   localStorage.clear();
@@ -54,12 +54,12 @@ beforeEach(async () => {
   otherChecks.length = 0;
   providerPages.length = 0;
   secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
-  onTestFinished(() => localStorage.clear());
-  await mount(ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret })));
+  const app = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  await mount(app);
+  onTestFinished(() => { localStorage.clear(); });
 });
 afterAll(() => {
   watcher.disconnect();
-  environment.IS_REACT_ACT_ENVIRONMENT = false;
   globalThis.fetch = fetched;
   window.open = opened;
 });
@@ -96,7 +96,7 @@ async function closeSettings() {
   await tap(page.getByRole("button", { name: "Close Settings" }));
 }
 
-async function seeOutlookMail() {
+async function readOutlookFromHome() {
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
@@ -112,7 +112,7 @@ it("Connect the email I already use", async () => {
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
   await toasted("Outlook connected");
 
-  await seeOutlookMail();
+  await readOutlookFromHome();
   await tap(page.getByRole("button", { name: "Close Email" }));
 
   // spec/app/accounts.md, "The settings pages go back one step at a time"
@@ -254,5 +254,5 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await expect.element(page.getByText("Yahoo · Connected")).toBeVisible();
   await toasted("Yahoo connected");
   expect(providerPages).toEqual([]);
-  await seeOutlookMail();
+  await readOutlookFromHome();
 });

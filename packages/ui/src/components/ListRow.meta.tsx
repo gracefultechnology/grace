@@ -23,7 +23,7 @@ export const meta: ComponentMeta<ListRowProps> = {
       leading: (
         <>
           <div className="w-[92px] flex-none text-center">
-            <b className="block text-lg leading-[22px] font-bold tracking-[.06em] text-muted-foreground uppercase">Mon</b>
+            <b className="block text-control leading-[22px] font-bold tracking-[.06em] text-muted-foreground uppercase">Mon</b>
             <span className="block text-body-lg leading-7 font-bold text-chrome">12 pm</span>
           </div>
           <span className="w-[3px] flex-none self-stretch rounded-full bg-lavender" />

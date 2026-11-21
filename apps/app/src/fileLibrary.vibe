@@ -2,12 +2,11 @@
 import { type Files, type SavedFile, type FileActor, type Event, captureFile, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes } from "./files.vibe"
 
 const picture = Schema.String.check(Schema.isMaxLength(6_990_560), Schema.isPattern(/^data:(?:image\/(?:jpeg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/]+=*$/))
 schema Preview { id: fileId; page: Schema.Int; image: picture }
-schema Completion { id: fileId }
+const completion = Schema.decodeUnknownEffect(Schema.Struct({ id: fileId }))
 
 schema AttachmentImport { id?: fileId }
 
@@ -93,7 +92,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     if (!port) throw new FilesRejected()
     const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
     if (loading.model.pending !== "ReadingCatalog") return
-    const catalog = Schema.decodeUnknownEffect(Catalog)(try tryPromise(() => port.list({ lease: ready.lease }))) catch () => undefined
+    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: ready.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
     const entries = catalog?.entries.slice(0, 250).map((entry) => localFile(entry, ready.lease)) ?? []
     const { ready: loaded } = try advance(loading, { type: "loadCatalog", catalogReport: {
       owner: ready.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
@@ -102,7 +101,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
   }
 
   effect function readAttachmentImport() {
-    const request = Schema.decodeUnknownEffect(AttachmentImport)(try tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({}))) catch () => undefined
+    const request = Effect.flatMap(tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({})), Schema.decodeUnknownEffect(AttachmentImport)) catch () => undefined
     return request?.id
   }
 
@@ -110,7 +109,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const owner = try admitted()
     if (!port || !owner) return
     try SubscriptionRef.set(latest, { kind: "opening" })
-    const opened = Schema.decodeUnknownEffect(Lease)(try tryPromise(() => port.open())) catch () => undefined
+    const opened = Effect.flatMap(tryPromise(() => port.open()), Schema.decodeUnknownEffect(Lease)) catch () => undefined
     if (!opened) {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
       return
@@ -162,7 +161,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
       owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
     } }, "FileHost")
-    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => commit({ ...input, id: entry.id }))) catch () => undefined
+    const stored = Effect.flatMap(tryPromise(() => commit({ ...input, id: entry.id })), completion) catch () => undefined
     const success = stored?.id === entry.id
     const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
     const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {

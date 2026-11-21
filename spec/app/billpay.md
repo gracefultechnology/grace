@@ -63,12 +63,14 @@ pure val termsValues = Set(K::samplePayTerms, T::NoTerms,
   T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } }))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
-pure val weight_begin = 2
-pure val weight_inspectAccess = 2
-pure val weight_readFacts = 2
-pure val weight_choose = 2
-pure val weight_verifyForm = 2
-pure val weight_handOff = 2
+pure val weight_begin = 3
+pure val weight_inspectAccess = 3
+pure val weight_readFacts = 3
+pure val weight_confirmFacts = 3
+pure val weight_choose = 3
+pure val weight_decideFill = 3
+pure val weight_verifyForm = 3
+pure val weight_handOff = 3
 ```
 
 ### Opening a selected bill requests private sign-in without assuming account access
