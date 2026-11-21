@@ -952,16 +952,16 @@ pure def prepare(w: Workspace, operationRequest: OperationRequest, by: Workspace
 
 ### A page on another origin, or a step that is the person's, blocks the task where she can see it
 
-An observation that arrives on every current version but reads a page on
-another origin than the task's is not dropped: the task is blocked with that
-reason and its checkpoint. When the step the task needs, at the current
-observation, is one Grace may not take, because it is out of her reach or is
-the person's to tap, the task is blocked for the person with that step named,
-and an approved payment review on the old page is no longer current, also
-when the step left to the person is a payment's own pay button. Either
-way Grace's visible work waits for the person and fences older reports, so
-she continues only after the person chooses Continue and a fresh observation
-on the task's own origin arrives. Neither changes the conversation.
+A current observation for the same owner and task can report a page on a
+different origin. In that case Grace blocks the task, records the reason
+and shows the checkpoint from the observation.
+
+When the next step is out of Grace’s reach or belongs to the person, Grace
+keeps the existing checkpoint visible and records which step the person must
+take. This handoff invalidates an approved payment review, including when
+the step is the payment’s own Pay button. In either case Grace waits for the
+person to choose Continue and for a fresh observation on the task’s own
+origin. Both paths preserve the conversation.
 
 ```quint
 pure def canRefuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
@@ -1052,7 +1052,7 @@ pure def sometimesOperationDispatched(w: Workspace): bool = w.execution.phase ==
 pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X::Verified
 ```
 
-### An ordinary website goal finishes only with its own verified endpoint
+### An ordinary website goal finishes only on an observation quoting its fact
 
 The person's goal is not complete because a step was verified.
 The trusted domain integration separately reports that the requested goal
@@ -1115,8 +1115,10 @@ a nonempty ordered sequence of outcomes for the items the person opens. The revi
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
 The host records the account and linked source that the offer uses. The person must still be under that same authority when accepting the review, resuming it or confirming a read. Reconnecting the same linked account can renew access without changing the owner. Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
-this plan. Opening the app does not approve an external change. The
-browser’s opening revision identifies a document loaded later in the plan.
+this plan. Grace invites the person to review only after the offer is recorded
+for the current turn and authority. If the host refuses the offer, Grace says
+she could not prepare the plan. Opening the app does not approve an external
+change. The browser’s opening revision identifies a document loaded later in the plan.
 With permission and an active compact Browser step, the person can ask
 Grace to highlight a link on the loaded page. The host binds the
 highlighted destination to this step and its current page context. A
@@ -1205,9 +1207,17 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 ### Only a current observation of the next outcome advances the plan
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
 ```quint
+type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField
+pure def ordinaryGuidedPage(loaded: bool, sameUrl: bool, coveringBlocker: bool, controls: List[GuidedPageField]): bool =
+  loaded and sameUrl and not(coveringBlocker) and controls.every(controlKind => controlKind == NavigationPageField)
+pure def publicGuidedLink(outsideForms: bool, hasPrivateAddressState: bool): bool =
+  outsideForms and not(hasPrivateAddressState)
+pure def lawBrowserReadingRequiresOrdinaryEvidence(loaded: bool, sameUrl: bool, coveringBlocker: bool, controls: List[GuidedPageField]): bool =
+  ordinaryGuidedPage(loaded, sameUrl, coveringBlocker, controls) implies
+    (loaded and sameUrl and not(coveringBlocker) and controls.every(controlKind => controlKind == NavigationPageField))
 pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
   | SaveMailAppointment => true
   | _ => false

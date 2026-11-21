@@ -64,7 +64,8 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
           }} />
       ) : page === "BrightnessSettings" ? (
         <SettingsBrightness brightness={preferences.brightness} onBrightnessChange={(value) => preview(brightnessChoice(preferences, value))}
-          nightDim={preferences.nightDimming} />
+          nightDim={preferences.nightDimming} nightDimHint="From 9 pm to 7 am, easier on the eyes"
+          onNightDimChange={(nightDimming) => preview({ ...preferences, nightDimming })} />
       ) : page === "VoiceSettings" ? (
         <SettingsVoice speeds={paceOptions.map((pace) => ({ value: pace, label: pace }))} speed={preferences.pace}
           onSpeedChange={(value) => {

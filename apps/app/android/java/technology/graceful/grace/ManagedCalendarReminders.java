@@ -22,7 +22,7 @@ import org.json.JSONObject;
 
 final class ManagedCalendarReminders {
  static final String PREFIX = "owned-calendar-";
- private static final String ENDPOINT = "https://api.graceforseniors.com/api/v1/calendar-reminders/device";
+ private static final String ENDPOINT = BuildConfig.CLOUD_API_ORIGIN + "/api/v1/calendar-reminders/device";
  private static final Executor WORK = Executors.newSingleThreadExecutor();
  record ApprovedReminder(String id, String title, long fireAt, String binding) {}
  record LocalReminder(String id, String status, long alarmAt) {
@@ -32,7 +32,7 @@ final class ManagedCalendarReminders {
  private ManagedCalendarReminders() {}
 
  static String ownerPrefix(CloudDeviceAccount.Session owner) throws Exception {
-  return PREFIX + hex(owner.accountId()).substring(0, 24) + "-";
+  return PREFIX + hex(GracePasswordsOwner.storageOwner(owner)).substring(0, 24) + "-";
  }
 
  private static String hex(String value) throws Exception {
@@ -198,7 +198,7 @@ final class ManagedCalendarReminders {
       !target.getString("grantId").equals(binding.getString(2)) ||
       target.getLong("fireAt") != binding.getLong(3) ||
       !owner.equals(GracePasswordsOwner.stableSession(context))) throw new IllegalStateException();
-  return GraceAccount.account(context).hostedView("calendar").buildUpon()
+  return GraceAccount.hostedView(context, "calendar").buildUpon()
     .appendQueryParameter("occurrence", binding.getString(0)).build();
  }
 
