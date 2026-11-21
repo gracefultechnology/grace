@@ -8,15 +8,13 @@ export function VoiceNoticeDialog({ notice, continueWith, cancel }: {
   continueWith: (acknowledged: VoiceNotice) => void;
   cancel: () => void;
 }) {
-  const instructions = notice?.use === "instructions";
   return (
     <Dialog open={notice !== undefined} onOpenChange={(open) => { if (!open) cancel(); }}>
       <DialogContent>
-        <DialogTitle>{instructions ? "Read Passwords instructions aloud" : "Talk to Grace"}</DialogTitle>
+        <DialogTitle>Talk to Grace</DialogTitle>
         <PageText>{voiceDisclosure}</PageText>
         {notice?.use === "command" && <PageText>Say a Passwords command, such as “Open Passwords.” Keep saved passwords and codes private. Grace uses this recording to recognize the command.</PageText>}
-        {instructions && <PageText>Grace sends the fixed help text for speech. Your microphone stays off.</PageText>}
-        <Button variant="capsule" size="pill" onClick={() => { if (notice) continueWith(notice); }}>{instructions ? "Read aloud" : "Continue to Talk"}</Button>
+        <Button variant="capsule" size="pill" onClick={() => { if (notice) continueWith(notice); }}>Continue to Talk</Button>
         <Button variant="plain" size="pill" onClick={cancel}>Cancel</Button>
       </DialogContent>
     </Dialog>

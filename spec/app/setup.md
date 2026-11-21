@@ -760,20 +760,22 @@ pure def lawAManagedChangeNeedsItsAccountItsGrantAndItsOwnPermission(account: Gr
 
 ## Story: Approve a password backup in my browser
 
-> As the person using Grace Passwords on my tablet, I can see which Grace
-> account is approving my request, finish sign-in if needed, and choose
+> As the person using a Grace Cloud tablet, I can see which account is
+> approving my request in the browser, finish sign-in if needed, and choose
 > whether Grace should continue with the requested backup action.
 
 ### Browser approval needs an explicit choice for the shown account
 
-Grace opens its registered Cloud approval page in a browser. The page shows
-one requested action and the account that will approve it. Approve sends
-that account and action together. If the browser account changes or needs
-fresh sign-in, the person uses one of the deployment's available account
-sign-in methods and chooses again. Cancel closes the
-approval without issuing it. The return to the tablet carries a single-use
-code bound to the native request. The browser never handles the recovery
-key or password data.
+Standalone Grace Cloud opens its own registered approval page in a
+browser. The page shows one requested action and the account that will
+approve it. Approve sends that account and action together. If the browser
+account changes or needs fresh sign-in, the person uses one of that
+deployment's available sign-in methods and chooses again. Cancel closes
+the approval. The tablet exchanges the single-use return code for the
+registered native request's device grant. Only a completed, verified
+exchange supplies browser approval to the native recovery operation.
+The recovery key and passwords stay in the native vault and its protected
+screens.
 
 The approval page is this application's own: it reads the native request's
 one action and the browser's signed-in account, and offers Approve only when
@@ -809,7 +811,7 @@ pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(regi
 
 ### Only the device-only profile or the current verified owner can open the vault
 
-An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation in the same deployment environment. A debug tablet with two active environments must choose one account before opening the vault. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation in the same deployment environment. A tablet with ambiguous active credentials closes the vault until it has one acknowledged account on its selected deployment. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
 
 ```quint
 type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })
@@ -859,34 +861,161 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 
 ## Story: Back up and recover my saved passwords
 
-> As a tablet owner, I can choose to save an encrypted copy of my passwords,
-> restore it on a replacement tablet with my recovery key, or remove it
-> from my cloud account.
+> As a tablet owner, I can save an encrypted copy of my passwords to the
+> cloud deployment my tablet uses, restore them on a replacement tablet
+> with my recovery key, or remove the copy from my cloud account.
 
 ### A backup belongs to the signed-in owner and has its own approval
 
+The native account host fixes one deployment for this distribution of
+Grace. Either app form can use shared Eliza Cloud production or standalone
+Grace Cloud production. Shared Eliza Cloud staging is for debug builds.
 Grace offers Backup and recovery when exactly one acknowledged native
-account, its screen lock and that account’s backup service are ready.
-Production is available in every build. Staging is available only in a
-debug build. A credential change closes the recovery screen and ends its
-pending operation. Each operation needs the same signed-in account
-and a new native account confirmation. Verifying ownership, saving and
-restoring require a fresh tablet unlock. A tablet with saved passwords asks
-the owner before linking those passwords to the account. The recovery key stays in a protected native screen,
-and Grace sends only the encrypted snapshot. Restore fills an empty vault
-in one step. Removing a cloud copy leaves local passwords available.
+account on the selected deployment, the tablet's screen lock, and that
+deployment's backup service are ready. An unavailable deployment leaves
+the local vault available under its usual rules.
 
 ```quint
-pure def passwordRecoveryOffered(acknowledgedAccounts: int, debugBuild: bool, staging: bool, screenSecure: bool, serviceReady: bool): bool =
-  acknowledgedAccounts == 1 and (not(staging) or debugBuild) and screenSecure and serviceReady
-pure def lawAmbiguousAccountCannotOpenPasswordRecovery(debugBuild: bool, staging: bool): bool =
-  not(passwordRecoveryOffered(2, debugBuild, staging, true, true))
+type PasswordCloudProfile = SharedElizaProduction | SharedElizaStaging | StandaloneGraceProduction
+pure def passwordCloudIssuer(profile: PasswordCloudProfile): str =
+  match profile {
+    | SharedElizaProduction => "https://cloud.eliza.app"
+    | SharedElizaStaging => "https://cloud-staging.eliza.app"
+    | StandaloneGraceProduction => "https://api.graceforseniors.com"
+  }
+pure def passwordRecoveryOffered(profile: PasswordCloudProfile, acknowledgedAccounts: int, debugBuild: bool, screenSecure: bool, serviceReady: bool): bool =
+  acknowledgedAccounts == 1 and (profile != SharedElizaStaging or debugBuild) and screenSecure and serviceReady
+pure def lawAmbiguousAccountCannotOpenPasswordRecovery(profile: PasswordCloudProfile, debugBuild: bool): bool =
+  not(passwordRecoveryOffered(profile, 2, debugBuild, true, true))
 pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
-  not(passwordRecoveryOffered(1, false, true, screenSecure, serviceReady))
-pure def passwordRestoreAdmitted(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
-  ownerMatches and freshUnlock and recoveryKeyMatches and vaultEmpty
-pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, freshUnlock: bool, recoveryKeyMatches: bool): bool =
-  not(passwordRestoreAdmitted(ownerMatches, freshUnlock, recoveryKeyMatches, false))
+  not(passwordRecoveryOffered(SharedElizaStaging, 1, false, screenSecure, serviceReady))
+```
+
+### Each deployment approves through its own sign-in
+
+Each verify, save, restore or remove action starts a new approval for the
+current native account. Shared Eliza Cloud asks the owner for fresh native
+Google verification through Steward and for consent to the action in the
+native flow. The selected Google identity must resolve to the same verified
+account and organization. Standalone Grace Cloud uses its registered
+browser approval and gives the same tablet a bound device grant. A grant
+from either flow is usable only in that flow's deployment.
+
+```quint
+type PasswordBackupPurpose = VerifyPasswordOwner | SavePasswordBackup | RestorePasswordBackup | DeletePasswordBackup
+type PasswordBackupBinding = { profile: PasswordCloudProfile, issuer: str, registrationId: str, accountId: str, organizationId: str, generationId: str, requestId: str, purpose: PasswordBackupPurpose }
+type PasswordBackupApproval = SharedNativePasswordApproval({ binding: PasswordBackupBinding }) | StandaloneBrowserPasswordApproval({ binding: PasswordBackupBinding })
+pure def mayApproveSharedPasswordBackup(freshNativeGoogle: bool, sameAccount: bool, confirmed: bool): bool =
+  freshNativeGoogle and sameAccount and confirmed
+pure def validPasswordBackupBinding(binding: PasswordBackupBinding): bool =
+  binding.issuer == passwordCloudIssuer(binding.profile) and
+  binding.registrationId != "" and binding.accountId != "" and binding.organizationId != "" and
+  binding.generationId != "" and binding.requestId != ""
+pure def samePasswordBackupBinding(a: PasswordBackupBinding, b: PasswordBackupBinding): bool =
+  a.profile == b.profile and a.issuer == b.issuer and a.registrationId == b.registrationId and
+  a.accountId == b.accountId and a.organizationId == b.organizationId and
+  a.generationId == b.generationId and a.requestId == b.requestId and a.purpose == b.purpose
+pure def passwordBackupApprovalMatches(approval: PasswordBackupApproval, binding: PasswordBackupBinding): bool =
+  validPasswordBackupBinding(binding) and (match approval {
+    | StandaloneBrowserPasswordApproval(grant) => binding.profile == StandaloneGraceProduction and samePasswordBackupBinding(grant.binding, binding)
+    | SharedNativePasswordApproval(grant) => binding.profile != StandaloneGraceProduction and samePasswordBackupBinding(grant.binding, binding)
+  })
+pure def lawSharedCloudNeedsFreshNativeSignIn(sameAccount: bool, confirmed: bool): bool =
+  not(mayApproveSharedPasswordBackup(false, sameAccount, confirmed))
+pure def lawSharedConsentCannotApproveStandalone(binding: PasswordBackupBinding): bool =
+  binding.profile == StandaloneGraceProduction implies
+    not(passwordBackupApprovalMatches(SharedNativePasswordApproval({ binding: binding }), binding))
+pure def lawStandaloneConsentCannotApproveShared(binding: PasswordBackupBinding): bool =
+  binding.profile != StandaloneGraceProduction implies
+    not(passwordBackupApprovalMatches(StandaloneBrowserPasswordApproval({ binding: binding }), binding))
+```
+
+### A grant can be used once for the current request
+
+Grace captures the current verified account and the selected deployment's
+registered app when it opens a unique native request. The approval must
+match that deployment and canonical issuer, named app registration,
+verified account and organization, sign-in generation, request, and action.
+Both deployments supply the verified organization.
+Grace consumes the matching approval before starting the authorized
+operation. Cancel, sign-out, and replacement of the request or the account
+credentials close the pending operation. A credential change also closes
+the recovery screen. Later approvals for a closed operation are unusable.
+Expired or unverified approval material never becomes approval evidence.
+
+```quint
+type PasswordBackupRequest = PendingPasswordBackupRequest({ binding: PasswordBackupBinding }) | ClosedPasswordBackupRequest
+pure def mayUsePasswordBackupGrant(pending: PasswordBackupRequest, approval: PasswordBackupApproval): bool =
+  match pending {
+    | PendingPasswordBackupRequest(request) => passwordBackupApprovalMatches(approval, request.binding)
+    | ClosedPasswordBackupRequest => false
+  }
+pure def consumePasswordBackupGrant(pending: PasswordBackupRequest, approval: PasswordBackupApproval): PasswordBackupRequest =
+  if (mayUsePasswordBackupGrant(pending, approval)) ClosedPasswordBackupRequest else pending
+pure def cancelPasswordBackupRequest(pending: PasswordBackupRequest): PasswordBackupRequest =
+  ClosedPasswordBackupRequest
+pure val sharedPasswordBackupSample: PasswordBackupBinding = {
+  profile: SharedElizaProduction, issuer: "https://cloud.eliza.app", registrationId: "grace",
+  accountId: "owner", organizationId: "home", generationId: "active", requestId: "request", purpose: SavePasswordBackup
+}
+pure val standalonePasswordBackupSample: PasswordBackupBinding = {
+  ...sharedPasswordBackupSample, profile: StandaloneGraceProduction, issuer: "https://api.graceforseniors.com"
+}
+pure val bindingValues: Set[PasswordBackupBinding] = Set(sharedPasswordBackupSample)
+  .union(Set(standalonePasswordBackupSample))
+  .union(Set({ ...sharedPasswordBackupSample, issuer: "https://cloud-staging.eliza.app" }))
+  .union(Set({ ...sharedPasswordBackupSample, organizationId: "other-home" }))
+  .union(Set({ ...standalonePasswordBackupSample, organizationId: "" }))
+  .union(Set({ ...sharedPasswordBackupSample, purpose: RestorePasswordBackup }))
+  .union(Set({ ...standalonePasswordBackupSample, generationId: "old" }))
+pure val approvedValues: Set[PasswordBackupBinding] = bindingValues
+pure val pendingValues: Set[PasswordBackupRequest] = Set(ClosedPasswordBackupRequest)
+  .union(Set(PendingPasswordBackupRequest({ binding: sharedPasswordBackupSample })))
+  .union(Set(PendingPasswordBackupRequest({ binding: standalonePasswordBackupSample })))
+pure val approvalValues: Set[PasswordBackupApproval] = Set(SharedNativePasswordApproval({ binding: sharedPasswordBackupSample }))
+  .union(Set(StandaloneBrowserPasswordApproval({ binding: standalonePasswordBackupSample })))
+pure def lawPasswordBackupGrantFollowsItsBinding(binding: PasswordBackupBinding, approved: PasswordBackupBinding): bool =
+  binding != approved implies
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), SharedNativePasswordApproval({ binding: approved }))) and
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), StandaloneBrowserPasswordApproval({ binding: approved })))
+pure def lawPasswordBackupGrantNeedsCanonicalIssuer(binding: PasswordBackupBinding): bool =
+  binding.issuer != passwordCloudIssuer(binding.profile) implies
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), SharedNativePasswordApproval({ binding: binding }))) and
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), StandaloneBrowserPasswordApproval({ binding: binding })))
+pure def lawPasswordBackupGrantNeedsVerifiedOrganization(binding: PasswordBackupBinding): bool =
+  binding.organizationId == "" implies
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), SharedNativePasswordApproval({ binding: binding }))) and
+    not(mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }), StandaloneBrowserPasswordApproval({ binding: binding })))
+pure def lawMatchingPasswordBackupGrantIsUsable(binding: PasswordBackupBinding): bool =
+  validPasswordBackupBinding(binding) implies
+    mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }),
+      if (binding.profile == StandaloneGraceProduction) StandaloneBrowserPasswordApproval({ binding: binding })
+      else SharedNativePasswordApproval({ binding: binding }))
+pure def lawPasswordBackupGrantCannotBeReused(pending: PasswordBackupRequest, approval: PasswordBackupApproval): bool =
+  mayUsePasswordBackupGrant(pending, approval) implies
+    not(mayUsePasswordBackupGrant(consumePasswordBackupGrant(pending, approval), approval))
+pure def lawCancelledPasswordBackupRequestCannotBeApproved(pending: PasswordBackupRequest, approval: PasswordBackupApproval): bool =
+  not(mayUsePasswordBackupGrant(cancelPasswordBackupRequest(pending), approval))
+```
+
+### Restore fills an empty vault after a fresh unlock
+
+Verifying ownership, saving and restoring require a fresh Android unlock
+confirmation for that operation, even when the foreground Passwords screen is already open.
+A tablet with saved passwords asks the owner before linking those
+passwords to the account. Passwords and the recovery key stay in the
+protected native flow and are kept out of the agent. The cloud receives
+only the encrypted snapshot. Restore fills an empty vault in one step.
+Removing a cloud copy leaves local passwords available.
+
+```quint
+type RecoveryPresence = ForegroundVaultAccess | ConfirmedRecoveryUnlock | EndedRecoveryUnlock
+pure def passwordRestoreAdmitted(ownerMatches: bool, presence: RecoveryPresence, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  ownerMatches and presence == ConfirmedRecoveryUnlock and recoveryKeyMatches and vaultEmpty
+pure def lawPasswordRecoveryKeepsExistingVault(ownerMatches: bool, presence: RecoveryPresence, recoveryKeyMatches: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, presence, recoveryKeyMatches, false))
 pure def lawStaleUnlockCannotRestorePasswords(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
-  not(passwordRestoreAdmitted(ownerMatches, false, recoveryKeyMatches, vaultEmpty))
+  not(passwordRestoreAdmitted(ownerMatches, EndedRecoveryUnlock, recoveryKeyMatches, vaultEmpty))
+pure def lawForegroundVaultCannotAuthorizeRestore(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
+  not(passwordRestoreAdmitted(ownerMatches, ForegroundVaultAccess, recoveryKeyMatches, vaultEmpty))
 ```

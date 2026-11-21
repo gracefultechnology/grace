@@ -1,15 +1,17 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"; spec/app/conversation.md, "Listening waits eight seconds for her first word"
-import { Machine as PasswordViews, passwordsHelpText, type GuideMic } from "../gen/app.effect.vibe"
+import { Machine as PasswordViews, type GuideMic } from "../gen/app.effect.vibe"
 import { firstWordLimitMs, sendsHerVoice, voiceDisclosure } from "../gen/app__conversation.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces, localPasswordCommands, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
+import { apiOrigin } from "./graceAccount.vibe"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
 import { Passwords } from "./passwords.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const route = "/api/v1/voice/speech"
-const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
+const shared = import.meta.env.VITE_GRACE_CLOUD_PROFILE === "shared-production" || import.meta.env.VITE_GRACE_CLOUD_PROFILE === "shared-staging"
+const leaseToken = shared ? /^[A-Za-z0-9_-]{43}$/ : /^[a-f0-9]{64}$/
 
 schema Consent { consentNonce: string }
 schema Lease { version: 1; sessionId: string; token: string; expiresAt: string; wsUrl: string }
@@ -24,13 +26,11 @@ type InputFrame = { kind: "context" } | { kind: "state"; workspace: Workspace } 
   { kind: "received"; payload: unknown } | { kind: "drained"; token: number; played: boolean }
 
 type VoiceCapture = { microphone: Microphone; guide?: { person: string; ticket: number } }
-type VoiceUse = "talk" | "command" | "instructions"
+type VoiceUse = "talk" | "command"
 export type VoiceNotice = { scope: string | undefined; use: VoiceUse }
 
 export service SpeechActions {
   talk(acknowledged?: VoiceNotice): (VoiceNotice | undefined)!!
-  stopInstructions(): void!!
-  readInstructions(acknowledged?: VoiceNotice): (VoiceNotice | undefined)!!
 }
 
 export function mayOfferTalk(state: Workspace) {
@@ -78,11 +78,11 @@ effect function checkedLease(native: boolean) {
   const lease = try mint(native)
   const verified = effect {
     const url = try Effect.try(() => new URL(lease.wsUrl))
-    const expected = try Effect.try(() => new URL(import.meta.env.DEV ? "http://localhost:8787" : apiOrigin))
+    const expected = try Effect.try(() => new URL(apiOrigin || "http://localhost:8787"))
     if (url.hostname !== expected.hostname || url.port !== expected.port || url.protocol !== (expected.protocol === "https:" ? "wss:" : "ws:") ||
       url.username || url.password || url.hash || url.pathname !== route + "/ws" ||
       url.searchParams.size !== 1 || url.searchParams.get("sessionId") !== lease.sessionId ||
-      !/^[a-f0-9-]{36}$/i.test(lease.sessionId) || !/^[a-f0-9]{64}$/.test(lease.token) ||
+      !/^[a-f0-9-]{36}$/i.test(lease.sessionId) || !leaseToken.test(lease.token) ||
       !(Date.parse(lease.expiresAt) > (try Clock.currentTimeMillis))) throw new SpeechUnavailable()
     return lease
   }
@@ -326,47 +326,10 @@ effect function voiceNoticeScope(native: boolean, setup: Setup.Shape) {
     ? "device/" + status.voiceDisclosureScope : undefined
 }
 
-effect function playFixedHelp(native: boolean, current: () => boolean, validOwner: () => boolean!!, watch: Stream.Stream<unknown>, volume: number, pace: number) {
-  if (!current() || !(try validOwner())) throw new SpeechUnavailable()
-  const { lease, socket } = try speechConnection(native)
-  const player = try acquireRelease(Effect.try(gracePlayback), (p) => Effect.ignore(tryPromise(() => p.close())))
-  const drained = try Deferred.make<void>()
-  const id = "passwords-help"
-  let started = false
-  const frames = Stream.merge(speechEvents(socket), Stream.map(watch, (): InputFrame => ({ kind: "context" })))
-  const incoming = Stream.runForEach(frames, effect (frame) => {
-    if (!current() || frame.kind === "closed") throw new SpeechUnavailable()
-    if (frame.kind === "open") { try wire(socket, { t: "hello", token: lease.token, errorReasons: true }); return }
-    if (frame.kind !== "received") return
-    const raw = frame.payload
-    if (raw instanceof ArrayBuffer) {
-      const audio = try Effect.try(() => speechFrame(raw))
-      if (started && audio?.context === id) try Effect.try(() => player.play(audio.pcm, volume, pace))
-      return
-    }
-    if (typeof raw !== "string" || raw.length > 64_000) throw new SpeechUnavailable()
-    const payload: unknown = try Effect.try(() => JSON.parse(raw))
-    if (Option.isSome(Schema.decodeUnknownOption(UnavailableEvent)(payload))) throw new SpeechUnavailable()
-    if (!started) {
-      if (Option.isNone(Schema.decodeUnknownOption(Ready)(payload)) || !(try validOwner()) || !current()) throw new SpeechUnavailable()
-      started = true
-      try wire(socket, { t: "prepare", id })
-      try wire(socket, { t: "tts", id, text: passwordsHelpText("NoPasswordGuide"), flush: true })
-      try wire(socket, { t: "finish", id })
-      return
-    }
-    const ended = Schema.decodeUnknownOption(Complete)(payload)
-    if (Option.isSome(ended) && ended.value.id === id) try Effect.try(() => player.whenDrained(() => { Deferred.doneUnsafe(drained, Effect.void) }))
-  })
-  try race(Deferred.await(drained), Effect.andThen(incoming, Effect.fail(new SpeechUnavailable())))
-}
-
 export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effect {
   const workspace = try Workspaces
   const setup = try Setup
   const views = try PasswordViews
-  const activeHelp = try Ref.make<Deferred.Deferred<void> | null>(null)
-  const life = try Scope.Scope
   const mic = try Ref.make<VoiceCapture | null>(null)
   const heardIn = try Ref.make<number | null>(null)
   const opening = try Semaphore.make(1)
@@ -423,47 +386,10 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
     }
     return undefined
   }
-  effect function stopInstructions() {
-    const active = try Ref.getAndSet(activeHelp, null)
-    if (active) try Deferred.succeed(active, undefined)
-  }
   effect function finishGuide(ticket: number | undefined, result: GuideMic) {
     if (ticket !== undefined) views.send({ type: "finishGuideMic", ticket, result }, "PasswordsHost") catch () => undefined
   }
   return {
-    stopInstructions,
-    readInstructions: (acknowledged) => opening.withPermits(1)(effect {
-      const initial = try workspace.get()
-      const initialView = try views.get()
-      const prefs = initial.preferences.session
-      const generation = initialView.generation
-      const report = () => effect { views.send({ type: "reportVaultNotice", generation, notice: "SpokenHelpUnavailable" }, "PasswordsHost") catch () => undefined }
-      if (initial.device.surface !== "Passwords" || initial.device.readiness !== "Ready" || (Effect.try(() => webView.hidden()) catch () => true)) return undefined
-      const owner = try voiceNoticeScope(native, setup)
-      if (!owner || initial.device.connectivity !== "Online" || !prefs.voiceOutput || prefs.muted || prefs.volume === 0) { try report(); return undefined }
-      const notice = try noticeFor("instructions", owner, acknowledged)
-      if (notice) return notice
-      const current = () => {
-        const w = Effect.runSync(workspace.get())
-        const v = Effect.runSync(views.get())
-        const account = Effect.runSync(setup.get()).graceAccount
-        return !webView.hidden() && w.device.surface === "Passwords" && w.device.contextVersion === initial.device.contextVersion &&
-          w.device.readiness === "Ready" && w.device.connectivity === "Online" && v.generation === generation &&
-          w.preferences.session.voiceOutput && !w.preferences.session.muted && w.preferences.session.volume > 0 &&
-          (native || account.tag === "GraceSignedIn" && "web/" + account.accountId === owner)
-      }
-      const watch = Stream.mergeAll([workspace.changes, views.changes, setup.changes, Stream.fromEventListener(webView.document, "visibilitychange")], { concurrency: "unbounded" })
-      const validOwner = () => effect { return (try voiceNoticeScope(native, setup)) === owner }
-      try stopInstructions()
-      const stop = try Deferred.make<void>()
-      try Ref.set(activeHelp, stop)
-      try fork.in(life) ensuring(effect {
-        scoped(timeout(race(Deferred.await(stop), playFixedHelp(native, current, validOwner, watch, prefs.volume / 100, prefs.pace === "Slower" ? 0.85 : prefs.pace === "Faster" ? 1.15 : 1)), "30 seconds")) catch effect () => {
-          if (current()) try report()
-        }
-      }, Ref.update(activeHelp, (active) => active === stop ? null : active))
-      return undefined
-    }),
     talk: (acknowledged) => opening.withPermits(1)(effect {
       const state = try workspace.get()
       if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return undefined
