@@ -1234,11 +1234,14 @@ pure def startReadReview(w: Workspace, reviewRevision: int, by: WorkspaceActor):
 pure def lawAnOldReadReviewCannotStart(w: Workspace, reviewRevision: int, by: WorkspaceActor): bool =
   reviewRevision != w.review.revision implies not(canStartReadReview(w, reviewRevision, by))
 pure val offerValues = Set(
+  { owner: "owner", task: "task", generation: 4, workVersion: 0, steps: List(ReadBrowser, ReadMail, SaveMailAppointment) },
   { owner: "tablet", task: "read", generation: 1, workVersion: 0, steps: List(ReadMail) },
   { owner: "tablet", task: "read", generation: 2, workVersion: 0, steps: List(ReadChangedBrowser) },
   { owner: "tablet", task: "read", generation: 2, workVersion: 0, steps: List(ReachNamedPage({ subject: "Support" })) })
 pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
-  stepIndex: 0, url: "https://biller.example/help" })
+  stepIndex: 0, url: "https://biller.example/help" },
+  { task: "read", version: 1, generation: 3, deviceVersion: 7, browserRevision: 3, stepIndex: 0,
+    url: "https://utility.example/help" })
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 ```
 
@@ -1293,8 +1296,8 @@ pure def lawANameCorrectionNeedsItsCurrentPersonOffer(w: Workspace, correction: 
 pure def lawGuidanceKeepsTheApprovedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): bool =
   (w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "" and link.url != w.plan.linkUrl)
     implies not(canSetGuidedLink(w, link, by))
-pure val correctionValues = Set(
-  { owner: "tablet", task: "read", version: 1, generation: 4, deviceVersion: 7, browserRevision: 3,
+pure val correctionValues = Set(3, 4).map(generation =>
+  { owner: "tablet", task: "read", version: 1, generation: generation, deviceVersion: 7, browserRevision: 3,
     stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://utility.example",
     href: "https://utility.example/help", original: "Support", label: "Help" })
 ```
@@ -1379,8 +1382,13 @@ pure val namedReport = { ...sampleReport, step: ReachNamedPage({ subject: "Suppo
 pure val samplePageCheck: GuidedNamedPageCheck = {
   report: namedReport, documentId: "help-document", loadVersion: 2, url: "https://example.org/help", heading: "Support"
 }
-pure val reportValues = Set(sampleReport, { ...sampleReport, deviceVersion: 2 }, { ...sampleReport, deviceVersion: 5 }, namedReport)
-pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "Home" })
+pure val reportValues = Set(sampleReport, { ...sampleReport, deviceVersion: 2 }, { ...sampleReport, deviceVersion: 5 }, namedReport,
+  { ...sampleReport, deviceVersion: 7, browserRevision: 5, step: ReadBrowser, sourceKey: "current-page", evidence: "Utility website" },
+  { ...sampleReport, version: 9, deviceVersion: 11, browserRevision: 5, step: SaveMailAppointment, sourceKey: "saved", evidence: "Saved Visit" })
+pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "Home" },
+  { ...samplePageCheck, report: { ...namedReport, owner: "tablet", task: "read", version: 4, deviceVersion: 7,
+      browserRevision: 5, step: ReachNamedPage({ subject: "Help" }), evidence: "Help" },
+    loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
 ```
@@ -1434,12 +1442,16 @@ pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCal
     not(canExpectGuidedCalendar(w, approval, by))
 pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   (isAppointmentSave(report.step) and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
-pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
+pure val mailCheckValues = {
+  val mail = { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" }
+  Set({ report: sampleReport, mail: mail },
+    { report: { ...sampleReport, version: 5, deviceVersion: 9, browserRevision: 5, step: ReadMail,
+      sourceKey: "selected-mail", evidence: "Open message: Clinic appointment" }, mail: mail })
+}
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
   sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })
-pure val savedValues = Set({ approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" },
-  occurrence: "saved", evidence: "Saved Visit" })
+pure val savedValues = approvalValues.map(approval => { approval: approval, occurrence: "saved", evidence: "" })
+  .union(approvalValues.map(approval => { approval: approval, occurrence: "saved", evidence: "Saved Visit" }))
 ```
 
 ## Story: Preserve payment authorization and uncertainty across surfaces
@@ -1691,7 +1703,9 @@ Walks include an ordinary task and payments at two different origins. Host avail
 A read can finish from the first observation that quotes its goal. Starting an actuator
 operation requires compact chat. Both a resize and choosing Home in the rail can make
 chat compact. The first load, guidance, observations and payment receipts carry the
-device, browser and conversation revisions from these paths. Walks also go offline, lose the
+device, browser and conversation revisions from these paths. Guided walks follow the
+approved link label to its named page and a separately approved appointment from
+the selected email to the saved occurrence and its readback. Walks also go offline, lose the
 microphone, sleep, wake, restart, fail to start and retry, and open every
 application. The laws are checked on the states the walks reach.
 
@@ -1730,7 +1744,9 @@ pure val timerValues = Set(
   { generation: 3, conversationVersion: 4, now: 8000 }, { generation: 3, conversationVersion: 5, now: 16000 },
   { generation: 4, conversationVersion: 5, now: 8000 }, { generation: 4, conversationVersion: 6, now: 16000 })
 pure val settingsValues = R::settingsValues
-pure val inputValues = I::inputValues
+pure val inputValues = I::inputValues.union(Set(
+  I::EditDraft({ text: "Check this open website, read the clinic email I open, and guide me through adding its appointment to my calendar." }),
+  I::Respond({ token: 4, text: "Review the selected-item checks before starting.", isQuestion: false, answers: List(), audible: false })))
 pure val requestedTaskValues = Set("other", "")
 pure val requestedGoalValues = Set("Read another account", "")
 pure val spokenValues = Set(
@@ -1744,14 +1760,14 @@ pure val spokenValues = Set(
 pure val taskRequestValues = Set(
   { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" },
   { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" })
-pure val browserInputValues = BC::browserInputValues
+pure val browserInputValues = BC::browserInputValues.union(Set(BC::Navigate({ url: "https://utility.example/help" })))
 pure val unexpectedValues = Set(
   { id: 1, revision: 2, loadVersion: 1, destination: "https://utility.example/updated" },
   { id: 2, revision: 2, loadVersion: 0, destination: "https://credit.example" },
   { id: 1, revision: 0, loadVersion: 0, destination: "https://utility.example/updated" })
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded }, { id: 1, version: 1, result: B::LoadFailed },
-  { id: 1, version: 2, result: B::Loaded }, { id: 1, version: 3, result: B::Loaded })
+  { id: 1, version: 2, result: B::Loaded }, { id: 1, version: 3, result: B::Loaded }, { id: 1, version: 4, result: B::Loaded })
 pure val observed: CurrentObservation = {
   deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
