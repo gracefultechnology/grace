@@ -425,6 +425,7 @@ pure def lawOnlyPersonCanAllowBrowserObservation(w: Workspace, availability: Ava
 pure val choiceValues = Set(
   { allowed: true, deviceVersion: 2, browserRevision: 0 },
   { allowed: true, deviceVersion: 6, browserRevision: 0 },
+  { allowed: true, deviceVersion: 7, browserRevision: 0 },
   { allowed: true, deviceVersion: 6, browserRevision: 1 },
   { allowed: true, deviceVersion: 7, browserRevision: 1 },
   { allowed: true, deviceVersion: 8, browserRevision: 1 },
@@ -639,6 +640,9 @@ pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) a
 pure val guidanceRevisionValues = Set(0, 1, 2)
 pure val guidanceTitleValues = Set("", "Tap Send")
 pure val guidanceReportValues = Set(
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 7, browserRevision: 2, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 4, deviceVersion: 8, browserRevision: 2, verified: true },
+  { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 7, browserRevision: 3, verified: true },
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 6, browserRevision: 2, verified: true },
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 6, browserRevision: 2, verified: true },
   { target: "control", revision: 0, workVersion: 0, conversationVersion: 2, deviceVersion: 2, browserRevision: 0, verified: true },
@@ -1375,7 +1379,7 @@ pure val namedReport = { ...sampleReport, step: ReachNamedPage({ subject: "Suppo
 pure val samplePageCheck: GuidedNamedPageCheck = {
   report: namedReport, documentId: "help-document", loadVersion: 2, url: "https://example.org/help", heading: "Support"
 }
-pure val reportValues = Set(sampleReport, { ...sampleReport, deviceVersion: 2 }, namedReport)
+pure val reportValues = Set(sampleReport, { ...sampleReport, deviceVersion: 2 }, { ...sampleReport, deviceVersion: 5 }, namedReport)
 pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "Home" })
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
@@ -1683,18 +1687,17 @@ pure def sometimesCommitmentResultFinishesTask(w: Workspace): bool =
 The samples exercise the first operation and a stale context alongside a
 different website. They are only simulation inputs; generated APIs accept
 arbitrary request identifiers, nonempty destinations and integer generations.
-Walks include an ordinary task and payments at two different origins. Preparing
-an ordinary step has the weight of the other website callbacks: ordinary
-completion needs browser observation permission, a compact chat and a fresh
-observation that quotes its goal, and the steps toward that goal come from
-preparation, which a rarer preparation almost never reaches within a sampled walk. Navigation
-uses its default weight, giving current callbacks a chance to arrive before
-a later visit advances the context. Walks also go offline, lose the
+Walks include an ordinary task and payments at two different origins. Host availability includes an online connection before the person grants browser observation.
+A read can finish from the first observation that quotes its goal. Starting an actuator
+operation requires compact chat. Both a resize and choosing Home in the rail can make
+chat compact. The first load, guidance, observations and payment receipts carry the
+device, browser and conversation revisions from these paths. Walks also go offline, lose the
 microphone, sleep, wake, restart, fail to start and retry, and open every
 application. The laws are checked on the states the walks reach.
 
 ```quint
 pure val availabilityValues = Set(
+  { connection: S::Online, reasoning: true, microphone: true, observation: false },
   { connection: S::Online, reasoning: true, microphone: true, observation: true },
   { connection: S::Offline, reasoning: true, microphone: true, observation: true },
   { connection: S::Online, reasoning: true, microphone: false, observation: true })
@@ -1733,6 +1736,7 @@ pure val requestedGoalValues = Set("Read another account", "")
 pure val spokenValues = Set(
   { token: 3, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
+  { token: 5, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 2, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 1, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false },
   { token: 2, text: "Yes, but change the amount.", owner: C::HumanAudio, complete: true, approves: true, correction: true },
@@ -1751,28 +1755,39 @@ pure val loadReportValues = Set(
 pure val observed: CurrentObservation = {
   deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
-pure val currentObservationValues = Set(observed,
+pure val currentObservationValues = {
+  val quoted = { ...observed, checkpoint: "Account read",
+    website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } }
+  val elsewhere = { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } }
+  Set(observed, quoted,
   { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } },
   { ...observed, browserRevision: 4, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 4, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 5, taskVersion: 3,
     website: { ...X::goodObservation, generation: 3, task: "other", origin: "https://credit.example" } },
   { ...observed, taskVersion: 3, checkpoint: "Back on the account page", website: { ...X::goodObservation, generation: 3 } },
-  { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } },
-  { ...observed, taskVersion: 2, checkpoint: "Account read",
-    website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } },
+  elsewhere, { ...quoted, taskVersion: 2 },
   { ...observed, browserRevision: 5, taskVersion: 3, website: { ...X::goodObservation, generation: 3 } },
   { ...observed, browserRevision: 5, taskVersion: 4, website: { ...X::goodObservation, generation: 3 } })
+    .union(Set(7, 8).map(deviceVersion => { ...observed, deviceVersion: deviceVersion, browserRevision: 2 }))
+    .union(Set(7, 8).map(deviceVersion => { ...quoted, deviceVersion: deviceVersion, browserRevision: 2 }))
+    .union(Set(7, 8).map(deviceVersion => { ...elsewhere, deviceVersion: deviceVersion, browserRevision: 2 }))
+}
 pure val operation: OperationRequest = {
   deviceVersion: 7, browserRevision: 3, taskVersion: 1,
   generation: 1, observation: 1, target: "control", valueRef: "", kind: X::ReadPage
 }
 pure val operationRequestValues = Set(operation, { ...operation, deviceVersion: 0 }, { ...operation, kind: X::FinalSubmit },
-  { ...operation, target: "booking-frame", kind: X::Choose })
+  { ...operation, target: "booking-frame", kind: X::Choose }, { ...operation, deviceVersion: 8, browserRevision: 2 })
+  .union(Set(7, 8).map(deviceVersion => { ...operation, deviceVersion: deviceVersion,
+    browserRevision: 2, target: "booking-frame", kind: X::Choose }))
 pure val tokensValues = Set(
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 },
-  { deviceVersion: 0, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 })
-pure val currentVerificationValues = Set({ deviceVersion: 7, browserRevision: 3, taskVersion: 1,
+  { deviceVersion: 0, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 },
+  { deviceVersion: 8, browserRevision: 2, taskVersion: 1, generation: 1, observation: 1 })
+pure val currentVerificationValues = Set({ deviceVersion: 8, browserRevision: 2, taskVersion: 1,
+  website: X::goodVerification, checkpoint: "Current account read", needsUser: false },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
   website: X::goodVerification, checkpoint: "Current account read", needsUser: false },
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     website: { ...X::goodVerification, task: "other" }, checkpoint: "Current account read", needsUser: false },
@@ -1784,20 +1799,26 @@ pure val completedGoal: GoalCompletion = {
   owner: "owner", task: "task", goal: "Read the account", evidence: "goal-endpoint",
   deviceVersion: 7, browserRevision: 3, taskVersion: 2, generation: 1, observation: 2
 }
-pure val completionValues = Set(completedGoal,
+pure val completionValues = Set(completedGoal, { ...completedGoal, taskVersion: 1, observation: 1 },
   { ...completedGoal, task: "other", goal: "Read another account" },
   { ...completedGoal, evidence: "" },
   { ...completedGoal, taskVersion: 1 }, { ...completedGoal, goal: "Another goal" })
+  .union(Set(7, 8).map(deviceVersion => { ...completedGoal, deviceVersion: deviceVersion,
+    browserRevision: 2, taskVersion: 1, observation: 1 }))
 pure val commitmentTokensValues = Set(
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 },
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 },
   { deviceVersion: 7, browserRevision: 3, taskVersion: 2, revision: 1, attempt: 1 },
   { deviceVersion: 0, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 })
+  .union(Set(7, 8).map(deviceVersion => { deviceVersion: deviceVersion, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 0 }))
+  .union(Set(7, 8).map(deviceVersion => { deviceVersion: deviceVersion, browserRevision: 2, taskVersion: 1, revision: 1, attempt: 1 }))
 pure val currentReviewValues = Set(
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview },
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     review: { ...CM::exampleReview, key: { ...CM::exampleKey, origin: "https://credit.example" } } })
-pure val currentOutcomeValues = Set({ deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome },
+  .union(Set(7, 8).map(deviceVersion => { deviceVersion: deviceVersion, browserRevision: 2, taskVersion: 1, review: CM::exampleReview }))
+pure val currentOutcomeValues = Set({ deviceVersion: 8, browserRevision: 2, taskVersion: 1, report: CM::exampleOutcome },
+  { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome },
   { deviceVersion: 7, browserRevision: 3, taskVersion: 2, report: CM::exampleOutcome },
   { deviceVersion: 7, browserRevision: 4, taskVersion: 1, report: { ...CM::exampleOutcome, revision: 3 } },
   { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::exampleOutcome, result: CM::Pending, reference: "" } },
@@ -1823,19 +1844,23 @@ pure val progressValues = Set(
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: CommitmentProgress, destination: "" })
 pure val weight_changeLifecycle = 4
 pure val weight_setAvailability = 4
-pure val weight_openGrace = 12
+pure val weight_visit = 16
+pure val weight_setBrowserObservation = 100
+pure val weight_openGrace = 20
 pure val weight_publishGuidance = 12
 pure val weight_begin = 24
 pure val weight_receiveLoad = 24
-pure val weight_observe = 24
+pure val weight_observe = 64
 pure val weight_prepare = 24
 pure val weight_dispatch = 24
 pure val weight_verify = 24
 pure val weight_bindCommitment = 24
 pure val weight_reviewCommitment = 24
 pure val weight_readBackCommitment = 4
+pure val weight_observeCommitmentTap = 16
+pure val weight_talk = 4
 pure val weight_journalCommitment = 24
-pure val weight_approveSpokenCommitment = 24
+pure val weight_approveSpokenCommitment = 64
 pure val weight_submitCommitment = 24
 pure val weight_recordCommitment = 24
 pure val weight_completeOrdinary = 24
