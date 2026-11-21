@@ -453,8 +453,12 @@ set-up waiting on Home at the hand-over for Grace to be able to think are
 all reachable.
 
 ```quint
-pure val weight_answer = 17
 pure val weight_hostStarted = 2
+pure val weight_cloudChanged = 8
+pure val weight_answer = 64
+pure val weight_resume = 16
+pure val weight_endSaved = 32
+pure val weight_endSaveFailed = 32
 pure def sometimesFinished(s: Setup): bool = s.phase == Ended
 pure def sometimesSaveFailed(s: Setup): bool = s.phase == EndFailed
 pure def sometimesAccountPutOff(s: Setup): bool = s.phase == Away and accountPutOff(s)
