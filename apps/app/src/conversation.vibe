@@ -12,7 +12,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
@@ -21,6 +21,7 @@ import { Instances, tablet } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
 import { Reply, unreadable } from "./reply.schema.ts"
+import { GuidedRecovery } from "./guidedRecovery.vibe"
 import { ManagedReads, guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
 import { comparableName, NativePage, guidedPageState } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
@@ -197,7 +198,20 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
         occurrence: identity.occurrenceId, generation: view.generation, revision }, [read, identity.owner, identity.calendarId, identity.occurrenceId], committed.title + " · " + time.value)
     }
     case "SaveMailAppointment": {
-      const { calendarApproval, savedOccurrence } = workspace.plan
+      const { calendarApproval, savedOccurrence, saveRecovery } = workspace.plan
+      if (saveRecovery.tag === "GuidedSaveReconcile") {
+        const { owner, calendar, occurrence, mailDigest } = saveRecovery
+        const key = openSelected(registry, scene.calendars)
+        const account = registry.accounts.find((source) => source.id === key && source.address === owner && source.use.calendar && source.use.mail)
+        const view = sourceAt(scene.calendars, key).view
+        const { committed, identity, revision, hasSaved, phase } = entryAt(view, view.selectedId)
+        if (!account || occurrence === "" || view.selectedId !== occurrence || mailDigest !== priorGuidedMail(workspace.plan).digest ||
+            !view.opened || view.owner !== owner || view.calendarId !== calendar || !hasSaved || phase !== "Saved" ||
+            identity.kind !== "Appointment" || identity.owner !== owner || identity.calendarId !== calendar ||
+            identity.occurrenceId !== occurrence) return undefined
+        return receipt({ tag: "CurrentAppointment", key, owner, calendarId: calendar, occurrence, generation: view.generation, revision },
+          [read, owner, calendar, occurrence], "Saved appointment: " + committed.title)
+      }
       const account = registry.accounts.find((source) => source.id === calendarApproval.account && source.use.calendar && source.use.mail)
       if (account === undefined || account.address !== calendarApproval.owner || savedOccurrence === "") return undefined
       const view = sourceAt(scene.calendars, account.id).view
@@ -229,6 +243,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const scope = try Scope.Scope
   const digest = try Digest.Digest
   const setup = try Setup
+  const recovery = try GuidedRecovery
 
   effect function browserReadAccount() {
     const { graceAccount } = try setup.get()
@@ -352,28 +367,23 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     try fork.scoped Stream.runDrain(Stream.switchMap(thinking, (token) => token < 0 ? Stream.empty : Stream.fromEffect(answer(link, token))))
   }
 
-  effect function ownsPlan(plan: Pick<Scene["workspace"]["plan"], "owner" | "steps">): boolean!! {
-    return plan.owner !== "" && plan.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), plan.steps)
-  }
-
   return {
     turnOrigin,
-    startReadReview: effect (revision) => {
-      const { review } = try workspace.get()
-      if (!(try ownsPlan(review.request))) return false
-      return (workspace.send({ type: "startReadReview", reviewRevision: revision }, "Person") catch () => undefined) !== undefined
-    },
+    startReadReview: recovery.begin,
     resumeReadPlan: effect () => {
-      const { plan } = try workspace.get()
-      if (!hasNext(plan) || !(try ownsPlan(plan))) return false
+      const state = try workspace.get()
+      if (!hasNext(state.plan) || !(try recovery.canAccess(state))) return false
       return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
     },
     checkGuidedRead: effect () => {
       const scene = try look()
       const current = scene.workspace
-      const step = nextOutcome(current.plan)
+      const pending = nextOutcome(current.plan)
+      const rebind = pending.tag === "SaveMailAppointment" && current.plan.mail.ref === "" &&
+        current.device.surface === "Email" && priorGuidedMail(current.plan).digest !== ""
+      const step: GuidedStep = rebind ? { tag: "ReadMail" } : pending
       const surface = guidedDetails(step).surface
-      if (!hasNext(current.plan) || !(try ownsPlan(current.plan)) || surface !== current.device.surface || (surface === "Browser" && !current.device.observationAllowed) ||
+      if (!hasNext(current.plan) || !(try recovery.canAccess(current)) || surface !== current.device.surface || (surface === "Browser" && !current.device.observationAllowed) ||
           current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return "Refused"
       const read = step.tag
@@ -398,23 +408,26 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (found === undefined) return "NotFound"
       if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : "Refused"
       if (typeof found === "string") return found
+      let detailsDigest = ""
       if (read === "SaveMailAppointment") {
         if (found.source.tag !== "CurrentAppointment") return "NotFound"
         const { key, occurrence } = found.source
         const view = sourceAt(scene.calendars, key).view
-        if (!(try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed))) return "NotFound"
+        detailsDigest = try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed)
+        if (detailsDigest === "" || (current.plan.saveRecovery.tag === "GuidedSaveUntouched" &&
+            detailsDigest !== current.plan.calendarApproval.detailsDigest)) return "NotFound"
       }
       const keyBytes = new TextEncoder().encode(JSON.stringify([found.source.tag, ...found.identity]))
       const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
-      if (sourceKey === "") return "Refused"
-      if (usedSource(current.plan, sourceKey)) return "Used"
+      if (sourceKey === "" || !(try recovery.canAccess(current))) return "Refused"
+      if (!rebind && usedSource(current.plan, sourceKey)) return "Used"
       const confirmed = try look()
       if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
       const rechecked = try guidedReceipt(confirmed, step, native, managed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
       if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : "Refused"
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return typeof rechecked === "string" ? rechecked : "Changed"
-      if (!(try ownsPlan(current.plan)) || (browserScope !== undefined && !(try ownsBrowserRead()))) return "Refused"
+      if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
       const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
       const report = {
         owner: current.plan.owner,
@@ -429,11 +442,23 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (found.source.tag === "NamedDocument") {
         const { documentId, loadVersion, url, heading } = found.source
         const accepted = workspace.send({ type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }, "Host") catch () => undefined
+        if (accepted !== undefined) try recovery.keepProgress()
         return accepted === undefined ? "Refused" : "Confirmed"
       }
       if (found.source.tag === "CurrentMessage") {
         const { account, owner, address, ref, generation, revision, version } = found.source
-        const accepted = workspace.send({ type: "confirmGuidedMail", mailCheck: { report, mail: { account, owner, address, ref, generation, revision, version } } }, "Host") catch () => undefined
+        const mailCheck = { report, mail: { account, owner, address, ref, generation, revision, version } }
+        const accepted = workspace.send(rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }, "Host") catch () => undefined
+        if (accepted !== undefined) try recovery.keepProgress()
+        return accepted === undefined ? "Refused" : "Confirmed"
+      }
+      const savedCheckpoint = current.plan.saveRecovery
+      if (read === "SaveMailAppointment" && savedCheckpoint.tag === "GuidedSaveReconcile") {
+        const { occurrence, owner, calendar, mailDigest } = savedCheckpoint
+        const accepted = workspace.send({ type: "reconcileGuidedSave", recoveryCheck: {
+          report, saved: { occurrence, owner, calendar, mailDigest, detailsDigest }
+        } }, "Host") catch () => undefined
+        if (accepted !== undefined) try recovery.keepProgress()
         return accepted === undefined ? "Refused" : "Confirmed"
       }
       if (read === "SaveMailAppointment" && current.plan.savedEvidence === "") {
@@ -445,6 +470,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         workspace.send({ type: "observeGuidedCalendar", saved }, "Host") catch () => undefined
       }
       const accepted = workspace.send({ type: "confirmGuided", report }, "Host") catch () => undefined
+      if (accepted !== undefined) try recovery.keepProgress()
       return accepted === undefined ? "Refused" : "Confirmed"
     },
     say: (input) => take(input, origins[input.tag]),

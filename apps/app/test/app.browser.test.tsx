@@ -10,7 +10,7 @@ import { cdp, commands, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { agentTextLimit, personSays, tabletShows } from "../src/agentTurn.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -19,13 +19,14 @@ import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
+import { GuidedRecovery } from "../src/guidedRecovery.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { ManagedReads } from "../src/managedReads.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, contexts, otherPassword, photos, reply, script, signIn, turns } from "./cloud.vibe";
+import { client, contexts, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
 import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
@@ -2351,6 +2352,143 @@ it("Talk or type without losing the conversation", async () => {
   );
 });
 
+it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome")', async () => {
+  localStorage.clear();
+  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
+  const accounts = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
+  localStorage.setItem("accounts", JSON.stringify(accounts));
+  const get = localStorage.getItem.bind(localStorage);
+  const set = localStorage.setItem.bind(localStorage);
+  const sessionGet = sessionStorage.getItem.bind(sessionStorage);
+  const sessionSet = sessionStorage.setItem.bind(sessionStorage);
+  let readable = false;
+  let writable = true;
+  let lost = false;
+  let beforeClear: (() => void) | undefined;
+  let delayProgress = false;
+  let pendingProgress: (() => void) | undefined;
+  const storedRecord = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
+    revision: Schema.Int, value: Schema.String,
+  })));
+  const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+    if (key.startsWith("grace/guided-task-") && !readable) throw new Error("The store is unavailable");
+    return (this === localStorage ? get : sessionGet)(key);
+  });
+  const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+    if (key.startsWith("grace/guided-task-") && !writable) throw new Error("The store is unavailable");
+    if (key.startsWith("grace/guided-task-") && delayProgress && storedRecord(value).value !== "") {
+      pendingProgress = () => {
+        if (storedRecord(get(key)).revision + 1 === storedRecord(value).revision) set(key, value);
+      };
+      throw new Error("The write result has not arrived");
+    }
+    (this === localStorage ? set : sessionSet)(key, value);
+    if (key.startsWith("grace/guided-task-") && value.includes('"value":""') && beforeClear) {
+      const interrupt = beforeClear;
+      beforeClear = undefined;
+      interrupt();
+    }
+    if (key.startsWith("grace/guided-task-") && lost) {
+      lost = false;
+      readable = false;
+      throw new Error("The write response was lost");
+    }
+  });
+  let runtime = ManagedRuntime.make(application(undefined));
+  let view = tabletView(runtime);
+  const sync = () => runtime.runPromise(Effect.flatMap(GuidedRecovery, (recovery) => recovery.keepProgress()));
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  const legacySave = { tag: "GuidedSaveReconcile", occurrence: "old-provider-id", owner: "mail", calendar: "primary", mailDigest: "prior-mail" } as const;
+  const checkpoint: GuidedCheckpoint = {
+    request: { owner: "tablet", task: "receipt-retry", goal: "Save my appointment", steps: [{ tag: "ReadMail" }, { tag: "SaveMailAppointment" }] },
+    receipts: [{ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }], workVersion: 4,
+    correction: { tag: "NoGuidedCheckpointCorrection" },
+    save: { ...legacySave, occurrence: "", detailsDigest: "" },
+  };
+  const restoreTask = (workspace: Workspaces.Shape, task: string) => act(() => runtime.runPromise(
+    workspace.send({ type: "restoreGuided", recovery: { owner: "tablet", checkpoint: {
+      ...checkpoint, request: { ...checkpoint.request, task },
+    } } }, "Store")));
+  try {
+    await view.render();
+    const workspace = await runtime.runPromise(Workspaces);
+    await restoreTask(workspace, checkpoint.request.task);
+    await tap("Ask Grace");
+    await sync();
+    await sync();
+    expect(Object.keys(localStorage).some((key) => key.startsWith("grace/guided-task-"))).toBe(false);
+
+    readable = true;
+    lost = true;
+    await sync();
+    const key = Object.keys(localStorage).find((entry) => entry.startsWith("grace/guided-task-"));
+    expect(key).toBeDefined();
+    if (key === undefined) throw new Error("The reviewed task was never saved");
+    const persisted = () => storedRecord(get(key));
+    const first = persisted();
+    expect(first.value).toContain("receipt-retry");
+    await act(() => runtime.runPromise(workspace.send({ type: "stop" }, "Person")));
+    readable = true;
+    await sync();
+    expect(persisted().revision).toBeGreaterThan(first.revision);
+    if ((await runtime.runPromise(workspace.get())).assistant.presentation === "Closed") await tap("Ask Grace");
+    writable = false;
+    await tap("End this task");
+    await expect.element(page.getByRole("status", { name: "End task result" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "End this task", exact: true })).toBeEnabled();
+    expect(persisted().value).not.toBe("");
+    writable = true;
+    beforeClear = () => {
+      void runtime.runPromise(workspace.send({ type: "stop" }, "Person"));
+    };
+    await tap("End this task");
+    await expect.poll(async () => ({
+      stored: persisted().value,
+      outcome: (await runtime.runPromise(workspace.get())).assistant.outcome,
+    })).toEqual({ stored: "", outcome: "Abandoned" });
+    await view.dispose();
+    runtime = ManagedRuntime.make(application(undefined));
+    view = tabletView(runtime);
+    await view.render();
+    await tap("Ask Grace");
+    expect(page.getByRole("button", { name: "Resume Grace" }).query()).toBeNull();
+
+    const restarted = await runtime.runPromise(Workspaces);
+    await act(() => runtime.runPromise(restarted.send({ type: "closeGrace" }, "Person")));
+    const tombstone = persisted();
+    delayProgress = true;
+    await restoreTask(restarted, "pending-progress");
+    await tap("Ask Grace");
+    await sync();
+    expect(pendingProgress).toBeDefined();
+    expect(persisted()).toEqual(tombstone);
+    await tap("End this task");
+    await expect.poll(async () => ({
+      revision: persisted().revision,
+      outcome: (await runtime.runPromise(restarted.get())).assistant.outcome,
+    })).toEqual({ revision: tombstone.revision + 1, outcome: "Abandoned" });
+    pendingProgress?.();
+    expect(persisted()).toEqual({ revision: tombstone.revision + 1, value: "" });
+
+    delayProgress = false;
+    await view.dispose();
+    const { scope } = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ scope: Schema.String })))(first.value);
+    set(key, JSON.stringify({ revision: persisted().revision + 1, value: JSON.stringify({ version: 1, scope, checkpoint: { ...checkpoint, save: legacySave } }) }));
+    runtime = ManagedRuntime.make(application(undefined));
+    view = tabletView(runtime);
+    await view.render();
+    await tap("Ask Grace");
+    await expect.element(page.getByText(/The save was interrupted/)).toBeVisible();
+    expect(page.getByRole("button", { name: "Resume Grace" }).query()).toBeNull();
+    expect(page.getByRole("button", { name: "Check saved appointment" }).query()).toBeNull();
+  } finally {
+    await view.dispose();
+    read.mockRestore();
+    write.mockRestore();
+    localStorage.clear();
+  }
+});
+
 it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
@@ -2361,17 +2499,15 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const mixed = 'Open my email and help me reach the help page named "Help center".';
   const invalidAsk = "Help me find the website help page.";
   const helpStep = { kind: "ReachNamedPage", target };
+  const askPlan = JSON.stringify({ text: "Review and start the read plan.", isQuestion: false, answers: [],
+    actions: [{ kind: "proposeReadPlan", steps: [helpStep, "ReadStatement", "ReadStatement",
+      { kind: "ReachNamedPage", target: "today's usage" }, "ReadMail", "ReadMail", "ReadCalendar"] }] });
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: invalidAsk, answer: JSON.stringify({ text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: "Account history" }] }] }) },
     { said: misnamed, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [helpStep] }] }) },
     { said: mixed, context: { includes: ["about your last answer: proposeReadPlan was not done"], excludes: [] },
       answer: JSON.stringify({ text: "Opening your email.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [helpStep] }, { kind: "open", surface: "Email" }] }) },
-    { said: ask, context: { includes: ["open was not done"], excludes: [] }, answer: JSON.stringify({
-      text: "Review and start the read plan.", isQuestion: false, answers: [],
-      actions: [{ kind: "proposeReadPlan", steps: [helpStep, "ReadStatement", "ReadStatement",
-        { kind: "ReachNamedPage", target: "today's usage" }, "ReadMail", "ReadMail", "ReadCalendar"] }],
-    }) },
   ], { goalIncludes: "help page", labels: [target] }), client));
   const subject = "Reminder: your appointment tomorrow at 10 am";
   const deliver = (from: string, fromEmail: string, subject: string, body: string) => fetch(new URL("/fake/gmail/incoming", cloud), {
@@ -2524,20 +2660,35 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       default: return browserFetch(input, init);
     }
   });
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
-
-  try {
-    await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  let tablet = await cloudReadPlan(native, cloud, secret);
+  const { routeTo, tap } = tablet;
+  const field = page.getByRole("textbox", { name: "Message to Grace" });
+  const openBrowserAndAsk = async () => {
+    await tap(page.getByRole("button", { name: "Internet" }));
     await native.route();
     await visitExampleSite(native);
-
     await tap(page.getByRole("button", { name: "Ask Grace" }));
-    const field = page.getByRole("textbox", { name: "Message to Grace" });
-    const send = async (words: string) => {
-      await routeTo(field);
-      await act(() => field.fill(words));
-      await act(() => userEvent.keyboard("{Enter}"));
-    };
+    await routeTo(field);
+  };
+  const send = async (words: string) => {
+    await routeTo(field);
+    await act(() => field.fill(words));
+    await act(() => userEvent.keyboard("{Enter}"));
+  };
+  const planList = page.getByRole("list", { name: "Read plan" });
+  const reviewPlan = async (context?: { includes: string[]; excludes: string[] }) => {
+    await Effect.runPromise(Effect.provide(script(cloud, secret, [{ said: ask, context, answer: askPlan }]), client));
+    await send(ask);
+    await routeTo(planList.getByText(target, { exact: true }));
+    expect(page.getByRole("button", { name: /Main St Clinic/ }).query()).toBeNull();
+    await expect.element(planList.getByText(usage, { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
+    await tap(page.getByRole("button", { name: "Collapse", exact: true }));
+    await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
+  };
+
+  try {
+    await openBrowserAndAsk();
     const unprepared = page.getByText("I could not prepare that read plan.", { exact: true });
     const review = page.getByRole("region", { name: "Review read plan" });
     await send(invalidAsk);
@@ -2549,19 +2700,13 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await send(mixed);
     await expect.poll(() => unprepared.elements().length).toBe(3);
     expect(review.query()).toBeNull();
-    await send(ask);
-    await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
-    expect(page.getByRole("button", { name: /Main St Clinic/ }).query()).toBeNull();
-    await expect.element(page.getByRole("list", { name: "Read plan" }).getByText(usage, { exact: true })).toBeVisible();
+    await reviewPlan({ includes: ["open was not done"], excludes: [] });
     // spec/app/conversation.md, "Detected private content is removed before the conversation continues"
     const inbox = await shownToGrace();
     expect(inbox).toContain("****** is your Chase verification code");
     expect(inbox).toContain("Chase: ******");
     expect(inbox).toContain("Your code: **** **");
     for (const digits of withheld) expect(inbox).not.toContain(digits);
-    await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
-    await tap(page.getByRole("button", { name: "Collapse", exact: true }));
-    await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
     const check = page.getByRole("button", { name: "Check page" });
     const plan = page.getByRole("region", { name: "Task plan" });
     const pending = plan.getByRole("paragraph");
@@ -2602,6 +2747,20 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
+    await tap(showLink);
+    await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
+    expect(guideCalls).toBe(0);
+    await tablet.dispose();
+    tablet = await cloudReadPlan(native, cloud, secret);
+    currentPage = home;
+    await openBrowserAndAsk();
+    await reviewPlan();
+    await tap(page.getByRole("button", { name: "Start read plan" }));
+    await tap(allowReading);
+    await tap(resumeReading);
+    currentPage = about;
+    await native.report("tab-1", origin + about.path, 100);
+    await tap(resume);
     for (const challenge of ["captcha", "code"] as const) {
       challengeShown = challenge;
       await tap(showLink);
@@ -2829,7 +2988,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(opened).toContain(forged);
     expect(opened.split("\n").some((line) => line.startsWith(personSays))).toBe(false);
   } finally {
-    await dispose();
+    await tablet.dispose();
     accountNetwork.mockRestore();
     localStorage.clear();
   }
@@ -3045,6 +3204,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const firstOwner = { id: "managed-plan-owner", email: "managed-a@grace.test" };
   const secondOwner = { id: "managed-plan-owner-b", email: "managed-b@grace.test" };
   let person = firstOwner;
+  let organization = "a";
   let browserCookieOwner: typeof firstOwner | undefined;
   let ownerProbes = 0;
   let sessionGeneration = 1;
@@ -3082,7 +3242,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         if (!signedIn) return respond({}, 401);
         if (browserCookieOwner) ownerProbes++;
         const current = browserCookieOwner ?? person;
-        const owner = (current.id === firstOwner.id ? "a" : "b").repeat(64);
+        const owner = (current.id === firstOwner.id ? organization : "b").repeat(64);
         const result = { accountId: current.id, owner, session: owner.slice(0, 62) + sessionGeneration.toString(16).padStart(2, "0") };
         const wait = nextScope;
         nextScope = undefined;
@@ -3141,9 +3301,15 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     }
     return { result: { accepted: true } };
   });
-  const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
-  const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
+  const startRuntime = () => ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
+  let runtime = startRuntime();
+  let view = tabletView(runtime);
+  const restart = async () => {
+    await view.dispose();
+    runtime = startRuntime();
+    view = tabletView(runtime);
+    await view.render();
+  };
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
   const { routeTo, tap } = routedControls(native);
   const send = async (message: string) => {
@@ -3163,7 +3329,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const receipts = () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.plan.receipts.map(({ evidence }) => evidence))));
 
   try {
-    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await view.render();
     await tap(button(/^Email/));
     await tap(button(/Main St Clinic/));
     await routeTo(page.getByText(/appointment with Dr\. Patel/));
@@ -3187,6 +3353,25 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await refresh();
     await routeTo(review);
     await tap(button("Collapse"));
+    const localWrite = localStorage.setItem.bind(localStorage);
+    const sessionWrite = sessionStorage.setItem.bind(sessionStorage);
+    let delayedCheckpoint: { key: string; value: string } | undefined;
+    const unavailable = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (this === localStorage && key.startsWith("grace/guided-task-")) {
+        delayedCheckpoint = { key, value };
+        throw new DOMException("Storage unavailable", "TimeoutError");
+      }
+      (this === localStorage ? localWrite : sessionWrite)(key, value);
+    });
+    try {
+      await tap(button("Start read plan"));
+      await routeTo(review.getByRole("status"));
+      expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    } finally {
+      unavailable.mockRestore();
+    }
+    if (!delayedCheckpoint) throw new Error("The first attempt must reach durable storage");
+    localWrite(delayedCheckpoint.key, delayedCheckpoint.value);
     await tap(button("Start read plan"));
 
     await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
@@ -3198,6 +3383,36 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     const mailReceipt = "Open message: " + selected.subject;
     await expect.poll(receipts).toEqual([mailReceipt]);
+
+    organization = "c";
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await expect.poll(receipts).toEqual([]);
+    expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    organization = "a";
+    person = secondOwner;
+    await restart();
+    await refresh();
+    await tap(button("Ask Grace"));
+    expect(await receipts()).toEqual([]);
+    expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    expect(button("Resume Grace").query()).toBeNull();
+    expect(await check()).toBe("Refused");
+
+    person = firstOwner;
+    await restart();
+    await refresh();
+    await tap(button("Ask Grace"));
+    const recoveredPlan = page.getByRole("region", { name: "Task plan" });
+    await routeTo(recoveredPlan.getByText("Paused", { exact: true }));
+    expect(await receipts()).toEqual([mailReceipt]);
+    expect(await check()).toBe("Refused");
+    await tap(button("Home"));
+    await tap(button(/^Email/));
+    await tap(button(/Riverview Clinic/));
+    await routeTo(page.getByText("Riverview Clinic message body"));
+    await tap(button("Resume Grace"));
+    expect(await check()).toBe("Used");
+    expect(await receipts()).toEqual([mailReceipt]);
 
     connected = false;
     await refresh();
@@ -3313,14 +3528,13 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check page"));
     await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
+    await view.dispose();
     provider.mockRestore();
     localStorage.clear();
   }
 });
 
-it('Save a separately approved email appointment in the reviewed plan (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+it.each(["acknowledged", "lost"] as const)('Save a separately approved appointment (%s) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (responseState) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const gmail = "owner@grace.test";
@@ -3363,7 +3577,12 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   const native = fakePlugin(() => ({ documentId: "example-main", frameScope: "main", result: {
     snapshotId: "example-snapshot", url: shownAt, complete: true, readyState: "complete", blockers: [], elements: [],
   } }));
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  let view = await cloudReadPlan(native, cloud, secret);
+  const { routeTo, tap } = view;
+  const restart = async () => {
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+  };
   const button = (name: string | RegExp) => page.getByRole("button", { name });
   const say = async (text: string) => {
     const field = page.getByRole("textbox", { name: "Message to Grace" });
@@ -3373,14 +3592,16 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   };
   const plan = page.getByRole("region", { name: "Task plan" });
   const receipt = page.getByText("Saved appointment: " + title, { exact: true });
-  const calendars = async () => {
+  const calendarState = async () => {
     const Kept = Schema.Struct({
+      calendarCreateRequests: Schema.Int,
       boxes: Schema.Array(Schema.Struct({ address: Schema.String, calendar: Schema.Array(Schema.Struct({ title: Schema.String, startAt: Schema.String, location: Schema.String })) })),
     });
     const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } });
-    const { boxes } = Schema.decodeUnknownSync(Kept)(await response.json());
-    return boxes;
+    return Schema.decodeUnknownSync(Kept)(await response.json());
   };
+
+  const calendars = async () => (await calendarState()).boxes;
 
   try {
     await tap(button("Internet"));
@@ -3413,27 +3634,121 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
     const previous = await calendars();
     expect(previous.map(({ address }) => address)).toEqual([gmail, other]);
+    await restart();
+    await tap(button("Ask Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    await tap(button("Home"));
+    await tap(button(/^Email/));
+    await tap(button(/Riverview Eye Clinic/));
+    await routeTo(page.getByText(selectedBody, { exact: true }));
+    await tap(button("Resume Grace"));
+    await tap(button("Check original email"));
+    await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
     await say(prepare);
     const yes = button(approve);
     await routeTo(yes);
-    expect(await calendars()).toEqual(previous);
+    expect(await calendarState()).toEqual({ boxes: previous, calendarCreateRequests: 0 });
     expect(receipt.query()).toBeNull();
+    if (responseState === "lost") await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "createResponse"), client));
     await tap(yes);
     await expect.poll(calendars, { timeout: 10000 }).toEqual(previous.map((box) => box.address === gmail
       ? { ...box, calendar: [...box.calendar, { title, startAt: when.toISOString(), location: place }] }
       : box));
-    await tap(button("Home"));
-    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
-    await tap(button("Resume Grace"));
-    await tap(button("Check saved appointment"));
+    expect((await calendarState()).calendarCreateRequests).toBe(1);
+    const savedAttempt = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({
+      value: Schema.fromJsonString(Schema.Struct({ checkpoint: Schema.Struct({
+        save: Schema.Struct({ tag: Schema.Literal("GuidedSaveReconcile"), occurrence: Schema.String }),
+      }) })),
+    })));
+    const savedOccurrence = () => {
+      for (const key of Object.keys(localStorage).filter((key) => key.startsWith("grace/guided-task-"))) {
+        const record = savedAttempt(localStorage.getItem(key));
+        if (Option.isSome(record)) return record.value.value.checkpoint.save.occurrence;
+      }
+    };
+    await expect.poll(() => {
+      const occurrence = savedOccurrence();
+      return occurrence !== undefined && Boolean(occurrence) === (responseState === "acknowledged");
+    }).toBe(true);
+    const changeLocation = async (location: string) => {
+      const occurrence = Schema.decodeUnknownSync(Schema.NonEmptyString)(savedOccurrence());
+      const response = await fetch(new URL("/api/v1/eliza/google/calendar/events/" + encodeURIComponent(occurrence), cloud), {
+        method: "PATCH", headers, body: JSON.stringify({ calendarId: "primary", location }),
+      });
+      expect(response.ok).toBe(true);
+    };
+    const editedPlace = "North clinic, suite 17";
+    if (responseState === "acknowledged") await changeLocation(editedPlace);
+    await restart();
+    await tap(button("Ask Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    if (responseState === "lost") {
+      await routeTo(plan.getByText(/^The save was interrupted/));
+      expect(button("Resume Grace").query()).toBeNull();
+      expect(button("Check saved appointment").query()).toBeNull();
+      await tap(button("Home"));
+      await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
+      const save = page.getByRole("button", { name: "Save", exact: true });
+      await routeTo(save);
+      await expect.element(save).toBeDisabled();
+      const localRead = localStorage.getItem.bind(localStorage);
+      const sessionRead = sessionStorage.getItem.bind(sessionStorage);
+      const unavailableFence = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+        if (key.startsWith("calendar-guided-create:")) throw new Error("Calendar draft storage is unavailable");
+        return (this === localStorage ? localRead : sessionRead)(key);
+      });
+      try {
+        await tap(button("End this task"));
+        await routeTo(page.getByRole("status", { name: "End task result" }));
+        await expect.element(save).toBeDisabled();
+      } finally {
+        unavailableFence.mockRestore();
+      }
+      await tap(page.getByRole("button", { name: "Back to Calendar", exact: true }));
+      const today = new Date(when);
+      today.setDate(today.getDate() - 4);
+      if ((today.getDay() + 6) % 7 + 4 >= 7) await tap(button("Next week"));
+      const weekday = when.toLocaleDateString("en-US", { weekday: "short" });
+      await tap(button(new RegExp(`^${weekday}\\s*${when.getDate()}(?:\\s*has plans)?$`, "i")));
+      await routeTo(page.getByText(title, { exact: true }).first());
+      await tap(button("Home"));
+      await tap(button("Open Calendar"));
+      await routeTo(page.getByRole("heading", { name: "Calendar", exact: true }));
+      expect(receipt.query()).toBeNull();
+      await tap(button("End this task"));
+      await restart();
+      await tap(button("Ask Grace"));
+      expect(plan.query()).toBeNull();
+      expect((await calendarState()).calendarCreateRequests).toBe(1);
+      return;
+    }
+    const checkSelected = async (location: string) => {
+      await tap(button("Open Calendar"));
+      await tap(page.getByText(title, { exact: true }).first());
+      await routeTo(page.getByText(location, { exact: true }).first());
+      await tap(button("Resume Grace"));
+      await tap(button("Check saved appointment"));
+    };
+    await checkSelected(editedPlace);
+    await routeTo(page.getByText(/I couldn’t verify the saved appointment|Planned checks complete/));
+    expect(plan.getByText("Planned checks complete", { exact: true }).query()).toBeNull();
+    await expect.element(page.getByRole("status", { name: "Task check result" })).toBeVisible();
+    expect(receipt.query()).toBeNull();
+    await changeLocation(place);
+    await restart();
+    await tap(button("Ask Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    await checkSelected(place);
     await routeTo(plan.getByText("Planned checks complete", { exact: true }));
     await routeTo(receipt);
+    expect((await calendars()).flatMap((box) => box.calendar).filter((entry) => entry.title === title)).toHaveLength(1);
     await tap(button("Expand"));
     await routeTo(plan.getByText("Open page: https://example.org/", { exact: true }));
     await routeTo(plan.getByText("Open page: https://example.org/#/billing", { exact: true }));
     await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
+    expect((await calendarState()).calendarCreateRequests).toBe(1);
   } finally {
-    await dispose();
+    await view.dispose();
     localStorage.clear();
   }
 });

@@ -2,10 +2,11 @@
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
 import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
-import { Effect, Stream } from "effect";
+import { Effect, Exit, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, type GuidedStep } from "../gen/app__workspace.ts";
+import { CalendarNews } from "./calendar.vibe";
+import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, priorGuidedMail, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import type { GuidedCheck } from "./conversation.vibe";
@@ -83,6 +84,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
+  const [startFailure, setStartFailure] = useState<number>();
+  const [endFailure, setEndFailure] = useState<string>();
   const [stepCheck, setStepCheck] = useState<{ key: string; result?: GuidedCheck }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
@@ -117,9 +120,26 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep?.tag ?? "SurfaceOutcome";
   const details = currentStep && guidedDetails(currentStep);
-  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checks[stepKind].label;
-  const canCheck = ownsPlan && label && (details?.surface !== "Browser" || workspace?.device.observationAllowed) &&
-    details?.surface === workspace?.device.surface &&
+  const recoveredSave = stepKind === "SaveMailAppointment" && plan.saveRecovery.tag === "GuidedSaveReconcile" ? plan.saveRecovery : undefined;
+  const reopenMail = stepKind === "SaveMailAppointment" && !recoveredSave && !plan.mail.ref && priorGuidedMail(plan).digest !== "";
+  const checkSurface = reopenMail ? "Email" : details?.surface;
+  const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checks[stepKind].label;
+  const calendar = { type: "visit", destination: "Calendar" } as const;
+  const closeInterruptedDraft = () => ownsPlan && recoveredSave && !recoveredSave.occurrence
+    ? runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(recoveredSave.owner, recoveredSave.calendar)))
+    : Promise.resolve(true);
+  const openRecoveryCalendar = async () => {
+    await closeInterruptedDraft();
+    await send(calendar);
+    const opened = current();
+    if (opened.device.surface === "Calendar" && opened.assistant.presentation === "Expanded") interact({ tag: "Resize", expanded: false });
+  };
+  const recoveryInstruction = recoveredSave ? recoveredSave.occurrence
+    ? "Open the saved appointment in Calendar to check it."
+    : "The save was interrupted. Check your calendar before asking to save this appointment again."
+    : reopenMail ? "Reopen the original email and check it before reviewing the appointment." : undefined;
+  const canCheck = ownsPlan && label && (checkSurface !== "Browser" || workspace?.device.observationAllowed) &&
+    checkSurface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
   const observation = workspace && {
@@ -129,10 +149,18 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     },
   } as const;
   const scopeKey = JSON.stringify([owner, assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision]);
+  const endTask = () => {
+    setEndFailure(undefined);
+    const finish = async () => {
+      if (!(await closeInterruptedDraft()) || Exit.isFailure(await send(abandon))) setEndFailure(scopeKey);
+    };
+    void finish().catch(() => setEndFailure(scopeKey));
+  };
   const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const checked = canCheck && stepCheck?.key === scopeKey ? stepCheck : undefined;
   const checking = checked !== undefined && checked.result === undefined;
-  const failed = checked?.result === undefined || checked.result === "Confirmed" ? undefined : notCounted(checked.result, currentStep);
+  const failed = checked?.result === undefined || checked.result === "Confirmed" ? undefined
+    : reopenMail ? "Open the same email you checked for this task and try again." : notCounted(checked.result, currentStep);
   const check = () => {
     const attempt = { key: scopeKey };
     setStepCheck(attempt);
@@ -213,11 +241,16 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <ol aria-label="Read plan" className="list-decimal pl-6">
                 {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{guidedDetails(step).subject}</li>)}
               </ol>
-              <AnswerChips><AnswerChip onClick={() => void startReadReview(review.revision)}>Start read plan</AnswerChip></AnswerChips>
+              {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
+              <AnswerChips><AnswerChip onClick={() => {
+                setStartFailure(undefined);
+                void startReadReview(review.revision).then((started) => { if (!started) setStartFailure(review.revision); }, () => setStartFailure(review.revision));
+              }}>Start read plan</AnswerChip></AnswerChips>
             </section>
           )}
+          {endFailure === scopeKey && can(abandon) && <GraceBubble role="status" aria-label="End task result">This task is still open. Try ending it again.</GraceBubble>}
           {hasPlan && !ownsPlan && can(abandon) && (
-            <AnswerChips><AnswerChip onClick={() => void send(abandon)}>End previous task</AnswerChip></AnswerChips>
+            <AnswerChips><AnswerChip onClick={endTask}>End previous task</AnswerChip></AnswerChips>
           )}
           {hasPlan && ownsPlan && (
             <section aria-label="Task plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
@@ -229,12 +262,16 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                     {keyedSteps(plan.steps).map(({ step, key }, index) => {
                       const displayed = index === next && currentStep ? currentStep : step;
                       return <li key={key} aria-current={index === next ? "step" : undefined}>
-                        {index < next ? plan.receipts[index]?.evidence : displayed.tag === "ReachNamedPage" ? `Find and check “${displayed.subject}”.` : guidedDetails(displayed).outcome}
+                        {index < next ? plan.receipts[index]?.evidence : index === next && recoveryInstruction ? recoveryInstruction : displayed.tag === "ReachNamedPage" ? `Find and check “${displayed.subject}”.` : guidedDetails(displayed).outcome}
                       </li>;
                     })}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence)}</p>}
+              {recoveredSave && <AnswerChips>
+                {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void openRecoveryCalendar()}>Open Calendar</AnswerChip>}
+                {can(abandon) && <AnswerChip onClick={endTask}>End this task</AnswerChip>}
+              </AnswerChips>}
             </section>
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
@@ -243,7 +280,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
           {canCheck && <AnswerChips>
             {correction && <AnswerChip className="mr-0 h-auto min-h-13 max-w-full shrink whitespace-normal wrap-anywhere" onClick={chooseSiteName}>Use “{correction.label}” for this step</AnswerChip>}
-            {guideKey && <AnswerChip disabled={checking || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
+            {guideKey && <AnswerChip disabled={checking || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>{feedback?.result?.kind === "Unavailable" && feedback.result.tryAnotherMenu ? "Try another menu" : "Show me the link"}</AnswerChip>}
             <AnswerChip disabled={checking} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
           {answers.length > 0 && (
