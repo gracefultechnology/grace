@@ -223,3 +223,39 @@ pure def lawLauncherHomeLeavesOnlyGraceToStepBack(shell: S::Shell, a: A::Assista
     (afterHome == DismissKeyboard or afterHome == Unconsumed) and
     (afterHome == Unconsumed iff (a.keyboard == A::NoKeyboard or shell.surface != S::Home or shell.homePage == S::PasswordsCard))
 ```
+
+## Story: Answer a website before Grace goes on
+
+> As an older adult, when a website asks me something while Grace is working
+> on it, Grace waits for my answer and then carries on where she was.
+
+### A task waits while a website's question holds me, and goes on after my answer
+
+Grace's task steps and completions are the workspace's `prepare`, `dispatch`,
+`submitCommitment`, `completeOrdinary`, `confirmGuided`,
+`confirmGuidedNamedPage` and `confirmGuidedMail`. The shell admits one only
+when its own workspace guard allows it and what websites ask does not hold
+the person (`holdsThePerson`: a question is presented, or a site permission
+she allowed is waiting for Android). While it holds her, none of them is
+admitted, whatever the workspace allows. When she answers a website message
+that was the only thing the page held, the task goes on exactly where the
+workspace allows it.
+
+```quint
+pure def taskMayAdvance(r: WR::WebsiteRequests, workspaceAdmits: bool): bool =
+  workspaceAdmits and not(WR::holdsThePerson(r))
+pure def lawAHeldTaskDoesNotAdvance(w: WS::Workspace, r: WR::WebsiteRequests, operationRequest: WS::OperationRequest,
+  tokens: WS::OperationTokens, commitmentTokens: WS::CommitmentTokens, completion: WS::GoalCompletion,
+  report: WS::GuidedObservation, pageCheck: WS::GuidedNamedPageCheck, mailCheck: WS::GuidedMailCheck, by: WS::WorkspaceActor): bool =
+  WR::holdsThePerson(r) implies not(
+    taskMayAdvance(r, WS::canPrepare(w, operationRequest, by)) or taskMayAdvance(r, WS::canDispatch(w, tokens, by)) or
+    taskMayAdvance(r, WS::canSubmitCommitment(w, commitmentTokens, by)) or
+    taskMayAdvance(r, WS::canCompleteOrdinary(w, completion, by)) or taskMayAdvance(r, WS::canConfirmGuided(w, report, by)) or
+    taskMayAdvance(r, WS::canConfirmGuidedNamedPage(w, pageCheck, by)) or
+    taskMayAdvance(r, WS::canConfirmGuidedMail(w, mailCheck, by)))
+pure def lawAnsweringHerOnlyQuestionLetsTheTaskGoOn(r: WR::WebsiteRequests, id: int, choice: WR::Choice,
+  answeredBy: WR::WebsiteActor, workspaceAdmits: bool): bool =
+  WR::canAnswer(r, id, choice, answeredBy) and WR::isMessage(WR::presented(r).ask) and
+    r.requests.length() == 1 and r.asking.length() == 0
+    implies taskMayAdvance(WR::answer(r, id, choice, answeredBy).state, workspaceAdmits) == workspaceAdmits
+```
