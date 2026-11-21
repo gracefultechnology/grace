@@ -7,5 +7,6 @@ public final class GraceApplication extends Application {
  @Override public void onCreate() {
   super.onCreate();
   PasswordVaultAccess.setAdmission(GracePasswordsOwner::admitted);
+  PasswordVaultAccess.installDeviceUnlockedCustody(this);
  }
 }

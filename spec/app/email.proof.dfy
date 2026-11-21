@@ -355,10 +355,10 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
 
   if inv(m) && canChangeSelectedMessage(m, target, change, by_) {
     var after := changeSelectedMessage(m, target, change, by_);
-    if change.UnreadMessage? {
-      assert after.messageRefs == m.messageRefs;
-    } else {
+    if !change.UnreadMessage? {
       assert after.messageRefs == ProofLib.Filter((set_x: string) => !((set_x in [target.ref])), m.messageRefs);
+    } else {
+      assert after.messageRefs == m.messageRefs;
     }
     forall ref | ref in after.messageRefs
       ensures availableMessage(after, ref)
@@ -367,11 +367,13 @@ lemma changeSelectedMessage_ensures(m: Mailbox, target: MessageTarget, change: a
         ProofLib.FilterMember((set_x: string) => !((set_x in [target.ref])), m.messageRefs, ref);
         assert ref != target.ref;
       }
-      assert ref in m.messageRefs;
-      assert availableMessage(m, ref);
       if ref != target.ref {
+        assert ref in m.messageRefs;
+        assert availableMessage(m, ref);
         assert messageRecord(after, ref) == messageRecord(m, ref);
       } else {
+        assert change.UnreadMessage?;
+        assert availableMessage(m, ref);
         assert messageRecord(after, ref) == app__emailItem_changeMessage(messageRecord(m, ref), change, app__emailItem_MessageActor.MessageUser);
         assert !changingFolder(messageRecord(after, ref));
       }
@@ -455,6 +457,90 @@ lemma undoMessageTrash_ensures(m: Mailbox, target: MessageTarget, by_: MailActor
   }
 }
 
+
+lemma closeUndoToast_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysConnectedIdentity(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysAccountIdentityIsBound(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysGenerationAndRevision(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSelectedContent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysReadAccess(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysReadSelectionIsBound(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysFolderIsVisible(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSearchMatchesQuery(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysMessageRegistry(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysListedMessagesAreCurrent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSelectionUsesCanonicalMessage(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysBillProvenance(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysScamWarningIsCurrent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysLinkBelongsToSelection(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysFlaggedMessageIsNoBillSource(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysResultPersistenceHasTerminal(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysApprovalIsCurrent(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSendHasRecipient(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSendEvidence(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysQueuedSendsAreIssued(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftHasAccount(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftStoreHasRevision(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysRetirementHasMailbox(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftVersions(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysEditableDraftIsNotRetired(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftAssetsAreValid(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysMessageAssetsAreBound(closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepMessageRecordsAreRetained(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepOnlyThePersonApproves(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepSendingNeedsCurrentApproval(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepUnresolvedDraftIsFixed(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepQueueNeedsCurrentApproval(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepQueuedSendGoesOnce(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepWorthyComposerIsNotDropped(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepMailboxIdentityIsFixed(m, closeUndoToast(m, target, by_)))
+  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepRetirementRequiresCompletion(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+{
+  if inv(m) && canCloseUndoToast(m, target, by_) {
+    var prior := messageRecord(m, target.ref);
+    var record := app__emailItem_closeUndo(prior, target.revision, app__emailItem_MessageActor.MessageUser);
+    var after := closeUndoToast(m, target, by_);
+    EmailLookupFacts(m, target.ref);
+    assert app__emailItem_inv(prior);
+    app__emailItem_closeUndo_ensures(prior, target.revision, app__emailItem_MessageActor.MessageUser);
+    EmailPutInto(m, record, after);
+    forall ref: string
+      ensures availableMessage(after, ref) == availableMessage(m, ref)
+    {
+      if ref != target.ref {
+        assert messageRecord(after, ref) == messageRecord(m, ref);
+      } else {
+        assert messageRecord(after, ref) == record;
+      }
+    }
+    assert selectedMessageIsCurrent(after) == selectedMessageIsCurrent(m);
+    assert messageRecord(after, m.messageRef).loaded == messageRecord(m, m.messageRef).loaded;
+    assert messageRecord(after, m.messageRef).folder == messageRecord(m, m.messageRef).folder;
+  }
+}
+
+lemma lawClosedToastCannotUndo_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
+  ensures (lawClosedToastCannotUndo(m, target, by_) == true)
+{
+  if canCloseUndoToast(m, target, by_) {
+    var prior := messageRecord(m, target.ref);
+    var record := app__emailItem_closeUndo(prior, target.revision, app__emailItem_MessageActor.MessageUser);
+    var after := closeUndoToast(m, target, by_);
+    EmailRegistryView(m, target.ref, record);
+    EmailRegistryView(after, target.ref, record);
+    var kept := ProofLib.Filter((old_: app__emailItem_MessageRecord) => (old_.identity.ref != record.identity.ref), m.messages);
+    forall item | item in kept
+      ensures item.identity.ref != target.ref
+    {
+      ProofLib.FilterMember((old_: app__emailItem_MessageRecord) => (old_.identity.ref != record.identity.ref), m.messages, item);
+    }
+    ProofLib.FilterNone((record: app__emailItem_MessageRecord) => (record.identity.ref == target.ref), kept);
+    ProofLib.FilterAppend((record: app__emailItem_MessageRecord) => (record.identity.ref == target.ref), kept, record);
+    assert messageRecord(after, target.ref) == record;
+    assert record.undoRevision == -1 && target.revision != -1;
+  }
+}
 
 lemma completeMessageChange_ensures(m: Mailbox, messageReceipt: app__emailItem_ChangeReceipt, by_: MailActor)
   ensures (inv(m) ==> canCompleteMessageChange(m, messageReceipt, by_) ==> alwaysConnectedIdentity(completeMessageChange(m, messageReceipt, by_)))
@@ -540,6 +626,29 @@ lemma EmailRegistryView(m: Mailbox, ref: string, record: app__emailItem_MessageR
     ProofLib.Filter((record: app__emailItem_MessageRecord) => (record.identity.ref == ref), m.messages)[0] else app__emailItem_initial)
   ensures putMessage(m.messages, record) == ProofLib.Filter((old_: app__emailItem_MessageRecord) => (old_.identity.ref != record.identity.ref), m.messages) + [record]
 {
+}
+
+lemma lawGraceNeverRaisesApproval_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailActor)
+  ensures (lawGraceNeverRaisesApproval(m, assist, asked, by_) == true)
+{
+  var after := assistMail(m, assist, asked, by_);
+  forall item | item in after.messages && item.pending.PurgeMessage?
+    ensures exists original :: original in m.messages && original.identity == item.identity && original.pending.PurgeMessage?
+  {
+    if assist.AssistTrash? || assist.AssistRestore? || assist.AssistUndoTrash? || assist.AssistMarkUnread? {
+      var change := if assist.AssistTrash? then app__emailItem_MessageChange.TrashMessage
+        else if assist.AssistMarkUnread? then app__emailItem_MessageChange.UnreadMessage
+        else app__emailItem_MessageChange.RestoreMessage;
+      var replacement := app__emailItem_changeMessage(messageRecord(m, assist.target.ref), change, app__emailItem_MessageActor.MessageUser);
+      assert after.messages == putMessage(m.messages, replacement);
+      EmailRegistryView(m, replacement.identity.ref, replacement);
+      ProofLib.FilterMember((old_: app__emailItem_MessageRecord) => (old_.identity.ref != replacement.identity.ref), m.messages, item);
+      assert item != replacement;
+    } else {
+      assert after.messages == m.messages;
+    }
+    assert item in m.messages;
+  }
 }
 
 lemma EmailRegistryDistinct(m: Mailbox)
@@ -839,93 +948,165 @@ lemma EmailPutInto(m: Mailbox, record: app__emailItem_MessageRecord, after: Mail
   EmailPutKeepsHistory(m, record);
 }
 
-lemma closeUndoToast_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysConnectedIdentity(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysAccountIdentityIsBound(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysGenerationAndRevision(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSelectedContent(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysReadAccess(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysReadSelectionIsBound(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysFolderIsVisible(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSearchMatchesQuery(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysMessageRegistry(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysListedMessagesAreCurrent(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSelectionUsesCanonicalMessage(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysBillProvenance(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysScamWarningIsCurrent(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysLinkBelongsToSelection(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysFlaggedMessageIsNoBillSource(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysResultPersistenceHasTerminal(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysApprovalIsCurrent(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSendHasRecipient(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysSendEvidence(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysQueuedSendsAreIssued(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftHasAccount(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftStoreHasRevision(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysRetirementHasMailbox(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftVersions(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysEditableDraftIsNotRetired(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysDraftAssetsAreValid(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> alwaysMessageAssetsAreBound(closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepMessageRecordsAreRetained(m, closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepOnlyThePersonApproves(m, "closeUndoToast", closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepSendingNeedsCurrentApproval(m, "closeUndoToast", closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepUnresolvedDraftIsFixed(m, closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepQueueNeedsCurrentApproval(m, "closeUndoToast", closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepQueuedSendGoesOnce(m, closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepWorthyComposerIsNotDropped(m, "closeUndoToast", closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepMailboxIdentityIsFixed(m, closeUndoToast(m, target, by_)))
-  ensures (inv(m) ==> canCloseUndoToast(m, target, by_) ==> stepRetirementRequiresCompletion(m, "closeUndoToast", closeUndoToast(m, target, by_)))
+lemma OutboxView(m: Mailbox, id: string)
+  ensures alwaysQueuedSendsAreIssued(m) == (m.outboxSent >= 0 && forall q :: q in m.outbox ==>
+    q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" && q.snapshot.version >= 0 &&
+    (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) && (q.status.DispatchFailed? ==> q.evidence != "") &&
+    |ProofLib.Filter((o: QueuedSend) => o.operationId == q.operationId, m.outbox)| == 1)
+  ensures queuedIn(m.outbox, id) == (if |ProofLib.Filter((q: QueuedSend) => q.operationId == id, m.outbox)| > 0 then
+    ProofLib.Filter((q: QueuedSend) => q.operationId == id, m.outbox)[0] else noQueued)
 {
-  if inv(m) && canCloseUndoToast(m, target, by_) {
-    EmailLookupFacts(m, target.ref);
-    var old_ := messageRecord(m, target.ref);
-    assert app__emailItem_inv(old_);
-    app__emailItem_closeUndo_ensures(old_, target.revision, app__emailItem_MessageActor.MessageUser);
-    var record := app__emailItem_closeUndo(old_, target.revision, app__emailItem_MessageActor.MessageUser);
-    var after := closeUndoToast(m, target, by_);
-    EmailPutInto(m, record, after);
-    forall ref
-      ensures availableMessage(after, ref) == availableMessage(m, ref)
-      ensures messageRecord(after, ref).loaded == messageRecord(m, ref).loaded
-      ensures messageRecord(after, ref).folder == messageRecord(m, ref).folder
-    {
-      if ref == target.ref {
-        assert messageRecord(after, ref) == record;
-      } else {
-        assert messageRecord(after, ref) == messageRecord(m, ref);
-      }
-    }
-  }
 }
 
-lemma lawClosedToastCannotUndo_ensures(m: Mailbox, target: MessageTarget, by_: MailActor)
-  ensures (lawClosedToastCannotUndo(m, target, by_) == true)
+lemma OutboxDistinct(m: Mailbox)
+  requires alwaysQueuedSendsAreIssued(m)
+  ensures ProofLib.DistinctBy(m.outbox, (q: QueuedSend) => q.operationId)
 {
-  if canCloseUndoToast(m, target, by_) {
-    var record := app__emailItem_closeUndo(messageRecord(m, target.ref), target.revision, app__emailItem_MessageActor.MessageUser);
-    assert record.identity.ref == target.ref;
-    EmailPutFinds(m, record);
-    assert messageRecord(closeUndoToast(m, target, by_), target.ref) == record;
-    assert record.undoRevision == -1;
-  }
-}
-
-lemma EmailPutFinds(m: Mailbox, rec: app__emailItem_MessageRecord)
-  ensures messageRecord(m.(messages := putMessage(m.messages, rec)), rec.identity.ref) == rec
-{
-  var after := m.(messages := putMessage(m.messages, rec));
-  EmailRegistryView(m, rec.identity.ref, rec);
-  EmailRegistryView(after, rec.identity.ref, rec);
-  var retained := ProofLib.Filter((old_: app__emailItem_MessageRecord) => (old_.identity.ref != rec.identity.ref), m.messages);
-  forall i | 0 <= i < |retained|
-    ensures retained[i].identity.ref != rec.identity.ref
+  OutboxView(m, "");
+  forall i, j | 0 <= i < |m.outbox| && 0 <= j < |m.outbox| && i != j
+    ensures m.outbox[i].operationId != m.outbox[j].operationId
   {
-    ProofLib.FilterMember((old_: app__emailItem_MessageRecord) => (old_.identity.ref != rec.identity.ref), m.messages, retained[i]);
+    var q := m.outbox[i];
+    ProofLib.FilterCountOneIffUnique((o: QueuedSend) => o.operationId == q.operationId, m.outbox, (o: QueuedSend) => o.operationId, i);
   }
-  ProofLib.FilterNone((record: app__emailItem_MessageRecord) => (record.identity.ref == rec.identity.ref), retained);
-  ProofLib.FilterAppend((record: app__emailItem_MessageRecord) => (record.identity.ref == rec.identity.ref), retained, rec);
+}
+
+lemma OutboxEntry(m: Mailbox, q: QueuedSend)
+  requires q in m.outbox
+  requires ProofLib.DistinctBy(m.outbox, (o: QueuedSend) => o.operationId)
+  ensures queuedIn(m.outbox, q.operationId) == q
+  ensures |ProofLib.Filter((o: QueuedSend) => o.operationId == q.operationId, m.outbox)| == 1
+{
+  OutboxView(m, q.operationId);
+  var keep := (o: QueuedSend) => o.operationId == q.operationId;
+  var i :| 0 <= i < |m.outbox| && m.outbox[i] == q;
+  ProofLib.FilterOne(keep, m.outbox, i);
+  var found := ProofLib.Filter(keep, m.outbox);
+  ProofLib.FilterMember(keep, m.outbox, found[0]);
+  var j :| 0 <= j < |m.outbox| && m.outbox[j] == found[0];
+  assert i == j;
+}
+
+lemma OutboxAfter(before: Mailbox, after: Mailbox)
+  requires after.outboxSent >= 0 && ProofLib.DistinctBy(after.outbox, (q: QueuedSend) => q.operationId)
+  requires forall q :: q in after.outbox ==> (q.operationId != "" && q.operationId in after.issuedSends &&
+    q.snapshot.content.to != "" && q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
+    (q.status.DispatchFailed? ==> q.evidence != "") && ((q.status.Waiting? || q.status.Dispatching?) ==>
+      !isQueued(before.outbox, q.operationId) || queuedIn(before.outbox, q.operationId).status.Waiting? ||
+      queuedIn(before.outbox, q.operationId).status == q.status))
+  ensures alwaysQueuedSendsAreIssued(after)
+  ensures stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(after, "");
+  forall q | q in after.outbox
+    ensures queuedIn(after.outbox, q.operationId) == q && |ProofLib.Filter((o: QueuedSend) => o.operationId == q.operationId, after.outbox)| == 1
+  {
+    OutboxEntry(after, q);
+  }
+}
+
+lemma OutboxChanged(before: Mailbox, after: Mailbox)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent == before.outboxSent
+  requires |before.outbox| == |after.outbox|
+  requires forall i :: 0 <= i < |before.outbox| ==>
+    after.outbox[i].operationId == before.outbox[i].operationId && after.outbox[i].snapshot == before.outbox[i].snapshot &&
+    (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
+    ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==>
+      before.outbox[i].status.Waiting? || before.outbox[i].status == after.outbox[i].status)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  assert ProofLib.DistinctBy(after.outbox, (q: QueuedSend) => q.operationId);
+  forall q | q in after.outbox
+    ensures q.operationId != "" && q.operationId in after.issuedSends && q.snapshot.content.to != "" && q.snapshot.version >= 0 &&
+      (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) && (q.status.DispatchFailed? ==> q.evidence != "") &&
+      ((q.status.Waiting? || q.status.Dispatching?) ==> (!isQueued(before.outbox, q.operationId) ||
+        queuedIn(before.outbox, q.operationId).status.Waiting? || queuedIn(before.outbox, q.operationId).status == q.status))
+  {
+    var i :| 0 <= i < |after.outbox| && after.outbox[i] == q;
+    OutboxEntry(before, before.outbox[i]);
+  }
+  OutboxAfter(before, after);
+}
+
+lemma OutboxStatusChanged(before: Mailbox, after: Mailbox, id: string, status: OutboxStatus, evidence: string)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent == before.outboxSent
+  requires after.outbox == withStatus(before.outbox, id, status, evidence)
+  requires status.DispatchFailed? ==> evidence != ""
+  requires status.Dispatching? || status.Waiting? ==> queuedIn(before.outbox, id).status.Waiting?
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  forall i | 0 <= i < |before.outbox|
+    ensures after.outbox[i].operationId == before.outbox[i].operationId && after.outbox[i].snapshot == before.outbox[i].snapshot &&
+      (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
+      ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==>
+        before.outbox[i].status.Waiting? || before.outbox[i].status == after.outbox[i].status)
+  {
+    OutboxEntry(before, before.outbox[i]);
+    assert after.outbox[i] == (if before.outbox[i].operationId == id then before.outbox[i].(status := status, evidence := evidence) else before.outbox[i]);
+  }
+  OutboxChanged(before, after);
+}
+
+lemma OutboxFenced(before: Mailbox, after: Mailbox)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent == before.outboxSent
+  requires after.outbox == fenceQueue(before.outbox)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  forall i | 0 <= i < |before.outbox|
+    ensures after.outbox[i].operationId == before.outbox[i].operationId && after.outbox[i].snapshot == before.outbox[i].snapshot &&
+      (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
+      ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==>
+        before.outbox[i].status.Waiting? || before.outbox[i].status == after.outbox[i].status)
+  {
+    assert after.outbox[i] == (if before.outbox[i].status.Dispatching? then before.outbox[i].(status := OutboxStatus.DispatchUnknown) else before.outbox[i]);
+  }
+  OutboxChanged(before, after);
+}
+
+lemma OutboxAppend(before: Mailbox, after: Mailbox, newEntry: QueuedSend)
+  requires alwaysQueuedSendsAreIssued(before) && after.outboxSent == before.outboxSent
+  requires after.outbox == before.outbox + [newEntry]
+  requires newEntry.operationId != "" && newEntry.operationId !in before.issuedSends && newEntry.operationId in after.issuedSends
+  requires forall id :: id in before.issuedSends ==> id in after.issuedSends
+  requires newEntry.snapshot.content.to != "" && newEntry.snapshot.version >= 0 && newEntry.status.Waiting?
+  requires forall a :: a in newEntry.snapshot.attachments ==> app__files_validFile(a)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  assert !isQueued(before.outbox, newEntry.operationId);
+  assert ProofLib.DistinctBy(after.outbox, (q: QueuedSend) => q.operationId);
+  forall q | q in after.outbox && q != newEntry
+    ensures queuedIn(before.outbox, q.operationId) == q && q in before.outbox
+  {
+    assert q in before.outbox;
+    OutboxEntry(before,q);
+  }
+  OutboxAfter(before,after);
+}
+
+lemma OutboxRemoved(before: Mailbox, after: Mailbox, id: string)
+  requires alwaysQueuedSendsAreIssued(before) && after.issuedSends == before.issuedSends && after.outboxSent >= before.outboxSent
+  requires after.outbox == withoutQueued(before.outbox,id)
+  ensures alwaysQueuedSendsAreIssued(after) && stepQueuedSendGoesOnce(before, after)
+{
+  OutboxView(before, "");
+  OutboxDistinct(before);
+  var keep := (q: QueuedSend) => q.operationId != id;
+  assert after.outbox == ProofLib.Filter(keep,before.outbox);
+  ProofLib.FilterKeepsDistinctBy(keep,before.outbox,(q: QueuedSend) => q.operationId);
+  ProofLib.FilterSubset(keep,before.outbox);
+  forall q | q in after.outbox
+    ensures q in before.outbox && queuedIn(before.outbox, q.operationId) == q
+  {
+    OutboxEntry(before,q);
+  }
+  OutboxAfter(before,after);
 }
 
 lemma endConnection_ensures(m: Mailbox, resultStatus: Connection, by_: MailActor)
@@ -1100,7 +1281,7 @@ lemma dispatchQueued_ensures(m: Mailbox, operationId: string, reachable: bool, b
   ensures (inv(m) ==> canDispatchQueued(m, operationId, reachable, by_) ==> stepRetirementRequiresCompletion(m, "dispatchQueued", dispatchQueued(m, operationId, reachable, by_)))
 {
   if inv(m) && canDispatchQueued(m, operationId, reachable, by_) {
-    OutboxRestatus(m, operationId, OutboxStatus.Dispatching, "", dispatchQueued(m, operationId, reachable, by_));
+    OutboxStatusChanged(m, dispatchQueued(m, operationId, reachable, by_), operationId, OutboxStatus.Dispatching, "");
   }
 }
 
@@ -1146,59 +1327,12 @@ lemma queuedResult_ensures(m: Mailbox, operationId: string, resultStatus: SendSt
   if inv(m) && canQueuedResult(m, operationId, resultStatus, evidence, persisted, by_) {
     var after := queuedResult(m, operationId, resultStatus, evidence, persisted, by_);
     if resultStatus.Sent? && persisted {
-      OutboxRemoved(m, operationId, after);
+      OutboxRemoved(m, after, operationId);
     } else if resultStatus.SendFailed? && persisted {
-      OutboxRestatus(m, operationId, OutboxStatus.DispatchFailed, evidence, after);
+      OutboxStatusChanged(m, after, operationId, OutboxStatus.DispatchFailed, evidence);
     } else {
-      OutboxRestatus(m, operationId, OutboxStatus.DispatchUnknown, "", after);
+      OutboxStatusChanged(m, after, operationId, OutboxStatus.DispatchUnknown, "");
     }
-  }
-}
-
-lemma reopenQueued_ensures(m: Mailbox, operationId: string, by_: MailActor)
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysConnectedIdentity(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysAccountIdentityIsBound(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysGenerationAndRevision(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSelectedContent(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysReadAccess(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysReadSelectionIsBound(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysFolderIsVisible(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSearchMatchesQuery(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysMessageRegistry(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysListedMessagesAreCurrent(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSelectionUsesCanonicalMessage(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysBillProvenance(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysScamWarningIsCurrent(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysLinkBelongsToSelection(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysFlaggedMessageIsNoBillSource(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysResultPersistenceHasTerminal(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysApprovalIsCurrent(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSendHasRecipient(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSendEvidence(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysQueuedSendsAreIssued(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftHasAccount(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftStoreHasRevision(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysRetirementHasMailbox(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftVersions(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysEditableDraftIsNotRetired(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftAssetsAreValid(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysMessageAssetsAreBound(reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepMessageRecordsAreRetained(m, reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepOnlyThePersonApproves(m, "reopenQueued", reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepSendingNeedsCurrentApproval(m, "reopenQueued", reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepUnresolvedDraftIsFixed(m, reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepQueueNeedsCurrentApproval(m, "reopenQueued", reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepQueuedSendGoesOnce(m, reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepWorthyComposerIsNotDropped(m, "reopenQueued", reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepMailboxIdentityIsFixed(m, reopenQueued(m, operationId, by_)))
-  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepRetirementRequiresCompletion(m, "reopenQueued", reopenQueued(m, operationId, by_)))
-{
-  if inv(m) && canReopenQueued(m, operationId, by_) {
-    OutboxFacts(m);
-    var w :| w in m.outbox && w.operationId == operationId;
-    OutboxFound(m.outbox, operationId, w);
-    OutboxRemoved(m, operationId, reopenQueued(m, operationId, by_));
   }
 }
 
@@ -1243,8 +1377,56 @@ lemma queueSend_ensures(m: Mailbox, operationId: string, recipientValid: bool, p
 {
   if inv(m) && canQueueSend(m, operationId, recipientValid, persisted, reachable, by_) {
     var after := queueSend(m, operationId, recipientValid, persisted, reachable, by_);
-    ProofLib.FilterMember((set_x: string) => !((set_x in m.issuedSends)), [operationId], operationId);
-    OutboxAppended(m, QueuedSend(operationId, currentDraft(m), OutboxStatus.Waiting, ""), after);
+    ProofLib.FilterMember((set_x: string) => !(set_x in m.issuedSends), [operationId], operationId);
+    OutboxAppend(m, after, QueuedSend(operationId, currentDraft(m), OutboxStatus.Waiting, ""));
+  }
+}
+
+lemma reopenQueued_ensures(m: Mailbox, operationId: string, by_: MailActor)
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysConnectedIdentity(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysAccountIdentityIsBound(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysGenerationAndRevision(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSelectedContent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysReadAccess(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysReadSelectionIsBound(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysFolderIsVisible(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSearchMatchesQuery(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysMessageRegistry(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysListedMessagesAreCurrent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSelectionUsesCanonicalMessage(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysBillProvenance(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysScamWarningIsCurrent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysLinkBelongsToSelection(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysFlaggedMessageIsNoBillSource(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysResultPersistenceHasTerminal(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysApprovalIsCurrent(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSendHasRecipient(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysSendEvidence(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysQueuedSendsAreIssued(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftHasAccount(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftStoreHasRevision(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysRetirementHasMailbox(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftVersions(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysEditableDraftIsNotRetired(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysDraftAssetsAreValid(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> alwaysMessageAssetsAreBound(reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepMessageRecordsAreRetained(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepOnlyThePersonApproves(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepSendingNeedsCurrentApproval(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepUnresolvedDraftIsFixed(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepQueueNeedsCurrentApproval(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepQueuedSendGoesOnce(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepWorthyComposerIsNotDropped(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepMailboxIdentityIsFixed(m, reopenQueued(m, operationId, by_)))
+  ensures (inv(m) ==> canReopenQueued(m, operationId, by_) ==> stepRetirementRequiresCompletion(m, "reopenQueued", reopenQueued(m, operationId, by_)))
+{
+  if inv(m) && canReopenQueued(m, operationId, by_) {
+    OutboxView(m, operationId);
+    OutboxDistinct(m);
+    var record :| record in m.outbox && record.operationId == operationId;
+    OutboxEntry(m, record);
+    OutboxRemoved(m, reopenQueued(m, operationId, by_), operationId);
   }
 }
 
@@ -1288,281 +1470,35 @@ lemma assistMail_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailA
   ensures (inv(m) ==> canAssistMail(m, assist, asked, by_) ==> stepRetirementRequiresCompletion(m, "assistMail", assistMail(m, assist, asked, by_)))
 {
   if inv(m) && canAssistMail(m, assist, asked, by_) {
-    if assist.AssistTrash? {
-      changeSelectedMessage_ensures(m, assist.target, app__emailItem_MessageChange.TrashMessage, MailActor.MailUser);
-    } else if assist.AssistRestore? {
-      changeSelectedMessage_ensures(m, assist.target, app__emailItem_MessageChange.RestoreMessage, MailActor.MailUser);
-    } else if assist.AssistMarkUnread? {
-      changeSelectedMessage_ensures(m, assist.target, app__emailItem_MessageChange.UnreadMessage, MailActor.MailUser);
-    } else if assist.AssistUndoTrash? {
-      undoMessageTrash_ensures(m, assist.target, MailActor.MailUser);
-    }
+    match assist
+    case AssistSearch(query) =>
+      var inbox := assistedView(ReadKind.Search, m);
+      assert inv(inbox);
+      readMail_ensures(inbox, ReadKind.Search, query, true, MailActor.MailUser);
+    case AssistOpen(ref) =>
+      readMail_ensures(m, ReadKind.OpenMessage, ref, true, MailActor.MailUser);
+    case AssistList =>
+      showInbox_ensures(m, MailActor.MailUser);
+    case AssistNewEmail(recipient, subject, body) =>
+      startDraft_ensures(m, false, MailActor.MailUser);
+      var composer := startDraft(m, false, MailActor.MailUser);
+      assert inv(composer);
+      editDraft_ensures(composer, emptyContent.(to := recipient.address, subject := subject, body := body), MailActor.MailUser);
+    case AssistAddress(recipient) =>
+      editDraft_ensures(m, m.draft.(to := recipient.address), MailActor.MailUser);
+    case AssistFill(body) =>
+      editDraft_ensures(m, m.draft.(body := body), MailActor.MailUser);
+    case AssistForward(content) =>
+      forwardMessage_ensures(m, content, MailActor.MailUser);
+    case AssistSaveDraft(draftId) =>
+      preserveDraft_ensures(m, draftId, MailActor.MailUser);
+    case AssistTrash(target) =>
+      changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.TrashMessage, MailActor.MailUser);
+    case AssistRestore(target) =>
+      changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.RestoreMessage, MailActor.MailUser);
+    case AssistUndoTrash(target) =>
+      undoMessageTrash_ensures(m, target, MailActor.MailUser);
+    case AssistMarkUnread(target) =>
+      changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.UnreadMessage, MailActor.MailUser);
   }
-}
-
-lemma lawGraceNeverRaisesApproval_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailActor)
-  ensures (lawGraceNeverRaisesApproval(m, assist, asked, by_) == true)
-{
-  if canAssistMail(m, assist, asked, by_) && !(assist.AssistTrash? || assist.AssistRestore? || assist.AssistMarkUnread? || assist.AssistUndoTrash?) {
-    assert assistMail(m, assist, asked, by_).messages == m.messages;
-  }
-  if canAssistMail(m, assist, asked, by_) && (assist.AssistTrash? || assist.AssistRestore? || assist.AssistMarkUnread? || assist.AssistUndoTrash?) {
-    var after := assistMail(m, assist, asked, by_);
-    var change := if assist.AssistTrash? then app__emailItem_MessageChange.TrashMessage
-      else if assist.AssistMarkUnread? then app__emailItem_MessageChange.UnreadMessage else app__emailItem_MessageChange.RestoreMessage;
-    var changed := app__emailItem_changeMessage(messageRecord(m, assist.target.ref), change, app__emailItem_MessageActor.MessageUser);
-    assert after.messages == putMessage(m.messages, changed);
-    EmailRegistryView(m, assist.target.ref, changed);
-    forall r | r in after.messages && r.pending.PurgeMessage?
-      ensures exists o :: o in m.messages && o.identity == r.identity && o.pending.PurgeMessage?
-    {
-      ProofLib.FilterMember((old_: app__emailItem_MessageRecord) => (old_.identity.ref != changed.identity.ref), m.messages, r);
-      assert r in m.messages;
-    }
-  }
-}
-
-lemma OutboxIssuedView(m: Mailbox)
-  ensures alwaysQueuedSendsAreIssued(m) == ((m.outboxSent >= 0) && !((exists q :: q in m.outbox && !((((((((q.operationId != "") && (q.operationId in m.issuedSends)) && (q.snapshot.content.to != "")) && (q.snapshot.version >= 0)) && !((exists a :: a in q.snapshot.attachments && !(app__files_validFile(a))))) && (!(q.status.DispatchFailed?) || (q.evidence != ""))) && (|ProofLib.Filter((o: QueuedSend) => (o.operationId == q.operationId), m.outbox)| == 1))))))
-{
-}
-
-lemma OutboxQueuedInView(outbox: seq<QueuedSend>, operationId: string)
-  ensures queuedIn(outbox, operationId) == (if 0 < |ProofLib.Filter((q: QueuedSend) => (q.operationId == operationId), outbox)| then
-    ProofLib.Filter((q: QueuedSend) => (q.operationId == operationId), outbox)[0] else noQueued)
-  ensures withoutQueued(outbox, operationId) == ProofLib.Filter((q: QueuedSend) => (q.operationId != operationId), outbox)
-{
-}
-
-lemma OutboxCountsDistinct(xs: seq<QueuedSend>)
-  requires forall q :: q in xs ==> |ProofLib.Filter((o: QueuedSend) => (o.operationId == q.operationId), xs)| == 1
-  ensures ProofLib.DistinctBy(xs, (x: QueuedSend) => x.operationId)
-{
-  forall i, j | 0 <= i < |xs| && 0 <= j < |xs| && i != j
-    ensures xs[i].operationId != xs[j].operationId
-  {
-    var q := xs[i];
-    assert q in xs;
-    if xs[j].operationId == q.operationId {
-      ProofLib.FilterTwo((o: QueuedSend) => (o.operationId == q.operationId), xs, i, j);
-    }
-  }
-}
-
-lemma OutboxDistinctCount(xs: seq<QueuedSend>, q: QueuedSend)
-  requires ProofLib.DistinctBy(xs, (x: QueuedSend) => x.operationId) && q in xs
-  ensures |ProofLib.Filter((o: QueuedSend) => (o.operationId == q.operationId), xs)| == 1
-{
-  var i :| 0 <= i < |xs| && xs[i] == q;
-  ProofLib.FilterOne((o: QueuedSend) => (o.operationId == q.operationId), xs, i);
-}
-
-lemma OutboxFound(xs: seq<QueuedSend>, operationId: string, found: QueuedSend)
-  requires ProofLib.DistinctBy(xs, (x: QueuedSend) => x.operationId)
-  requires found in xs && found.operationId == operationId
-  ensures isQueued(xs, operationId) && queuedIn(xs, operationId) == found
-{
-  OutboxQueuedInView(xs, operationId);
-  var i :| 0 <= i < |xs| && xs[i] == found;
-  ProofLib.FilterOne((q: QueuedSend) => (q.operationId == operationId), xs, i);
-  var first := ProofLib.Filter((q: QueuedSend) => (q.operationId == operationId), xs)[0];
-  ProofLib.FilterMember((q: QueuedSend) => (q.operationId == operationId), xs, first);
-  var j :| 0 <= j < |xs| && xs[j] == first;
-  assert i == j;
-}
-
-lemma OutboxMissing(xs: seq<QueuedSend>, operationId: string)
-  requires !isQueued(xs, operationId)
-  ensures queuedIn(xs, operationId) == noQueued
-{
-  OutboxQueuedInView(xs, operationId);
-  ProofLib.FilterNone((q: QueuedSend) => (q.operationId == operationId), xs);
-}
-
-lemma OutboxFacts(m: Mailbox)
-  requires alwaysQueuedSendsAreIssued(m)
-  ensures ProofLib.DistinctBy(m.outbox, (x: QueuedSend) => x.operationId)
-  ensures forall q :: q in m.outbox ==> (q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" &&
-    q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
-    (q.status.DispatchFailed? ==> q.evidence != ""))
-  ensures m.outboxSent >= 0
-{
-  OutboxIssuedView(m);
-  OutboxCountsDistinct(m.outbox);
-}
-
-lemma OutboxValid(m: Mailbox)
-  requires ProofLib.DistinctBy(m.outbox, (x: QueuedSend) => x.operationId)
-  requires forall q :: q in m.outbox ==> (q.operationId != "" && q.operationId in m.issuedSends && q.snapshot.content.to != "" &&
-    q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
-    (q.status.DispatchFailed? ==> q.evidence != ""))
-  requires m.outboxSent >= 0
-  ensures alwaysQueuedSendsAreIssued(m)
-{
-  OutboxIssuedView(m);
-  forall q | q in m.outbox
-    ensures |ProofLib.Filter((o: QueuedSend) => (o.operationId == q.operationId), m.outbox)| == 1
-  {
-    OutboxDistinctCount(m.outbox, q);
-  }
-}
-
-lemma OutboxGoesOnceView(before: Mailbox, after: Mailbox)
-  requires ProofLib.DistinctBy(before.outbox, (x: QueuedSend) => x.operationId)
-  requires ProofLib.DistinctBy(after.outbox, (x: QueuedSend) => x.operationId)
-  requires forall q :: q in after.outbox && (q.status.Waiting? || q.status.Dispatching?) ==>
-    (forall p :: p in before.outbox && p.operationId == q.operationId ==> (p.status.Waiting? || p.status == q.status))
-  ensures stepQueuedSendGoesOnce(before, after)
-{
-  forall q | q in after.outbox
-    ensures (!((queuedIn(after.outbox, q.operationId).status.Waiting? || queuedIn(after.outbox, q.operationId).status.Dispatching?)) || ((!(isQueued(before.outbox, q.operationId)) || queuedIn(before.outbox, q.operationId).status.Waiting?) || (queuedIn(before.outbox, q.operationId).status == queuedIn(after.outbox, q.operationId).status)))
-  {
-    OutboxFound(after.outbox, q.operationId, q);
-    if isQueued(before.outbox, q.operationId) {
-      var p :| p in before.outbox && p.operationId == q.operationId;
-      OutboxFound(before.outbox, q.operationId, p);
-    }
-  }
-}
-
-lemma OutboxMapped(m: Mailbox, after: Mailbox)
-  requires alwaysQueuedSendsAreIssued(m)
-  requires |after.outbox| == |m.outbox| && after.outboxSent == m.outboxSent
-  requires forall x :: x in m.issuedSends ==> x in after.issuedSends
-  requires forall i :: 0 <= i < |m.outbox| ==> (after.outbox[i].operationId == m.outbox[i].operationId &&
-    after.outbox[i].snapshot == m.outbox[i].snapshot &&
-    (after.outbox[i].status.DispatchFailed? ==> after.outbox[i].evidence != "") &&
-    ((after.outbox[i].status.Waiting? || after.outbox[i].status.Dispatching?) ==> (m.outbox[i].status.Waiting? || m.outbox[i].status == after.outbox[i].status)))
-  ensures alwaysQueuedSendsAreIssued(after)
-  ensures stepQueuedSendGoesOnce(m, after)
-{
-  OutboxFacts(m);
-  forall i, j | 0 <= i < |after.outbox| && 0 <= j < |after.outbox| && i != j
-    ensures after.outbox[i].operationId != after.outbox[j].operationId
-  {
-  }
-  forall q | q in after.outbox
-    ensures q.operationId != "" && q.operationId in after.issuedSends && q.snapshot.content.to != "" &&
-      q.snapshot.version >= 0 && (forall a :: a in q.snapshot.attachments ==> app__files_validFile(a)) &&
-      (q.status.DispatchFailed? ==> q.evidence != "")
-  {
-    var i :| 0 <= i < |after.outbox| && after.outbox[i] == q;
-    assert m.outbox[i] in m.outbox;
-  }
-  OutboxValid(after);
-  forall q | q in after.outbox && (q.status.Waiting? || q.status.Dispatching?)
-    ensures forall p :: p in m.outbox && p.operationId == q.operationId ==> (p.status.Waiting? || p.status == q.status)
-  {
-    var i :| 0 <= i < |after.outbox| && after.outbox[i] == q;
-    forall p | p in m.outbox && p.operationId == q.operationId
-      ensures p.status.Waiting? || p.status == q.status
-    {
-      var j :| 0 <= j < |m.outbox| && m.outbox[j] == p;
-      assert i == j;
-    }
-  }
-  OutboxGoesOnceView(m, after);
-}
-
-lemma OutboxFenceShape(outbox: seq<QueuedSend>)
-  ensures |fenceQueue(outbox)| == |outbox|
-  ensures forall i :: 0 <= i < |outbox| ==> (fenceQueue(outbox)[i] ==
-    (if outbox[i].status.Dispatching? then outbox[i].(status := OutboxStatus.DispatchUnknown) else outbox[i]))
-{
-}
-
-lemma OutboxStatusShape(outbox: seq<QueuedSend>, operationId: string, queueStatus: OutboxStatus, evidence: string)
-  ensures |withStatus(outbox, operationId, queueStatus, evidence)| == |outbox|
-  ensures forall i :: 0 <= i < |outbox| ==> (withStatus(outbox, operationId, queueStatus, evidence)[i] ==
-    (if outbox[i].operationId == operationId then outbox[i].(status := queueStatus, evidence := evidence) else outbox[i]))
-{
-}
-
-lemma OutboxFenced(m: Mailbox, after: Mailbox)
-  requires alwaysQueuedSendsAreIssued(m)
-  requires after.outbox == fenceQueue(m.outbox) && after.outboxSent == m.outboxSent && after.issuedSends == m.issuedSends
-  ensures alwaysQueuedSendsAreIssued(after)
-  ensures stepQueuedSendGoesOnce(m, after)
-{
-  OutboxFacts(m);
-  OutboxFenceShape(m.outbox);
-  OutboxMapped(m, after);
-}
-
-lemma OutboxRestatus(m: Mailbox, operationId: string, queueStatus: OutboxStatus, evidence: string, after: Mailbox)
-  requires alwaysQueuedSendsAreIssued(m)
-  requires after.outbox == withStatus(m.outbox, operationId, queueStatus, evidence) && after.outboxSent == m.outboxSent && after.issuedSends == m.issuedSends
-  requires queueStatus.DispatchFailed? ==> evidence != ""
-  requires queueStatus.Waiting? ==> false
-  requires queueStatus.Dispatching? ==> (isQueued(m.outbox, operationId) && queuedIn(m.outbox, operationId).status.Waiting?)
-  ensures alwaysQueuedSendsAreIssued(after)
-  ensures stepQueuedSendGoesOnce(m, after)
-{
-  OutboxFacts(m);
-  OutboxStatusShape(m.outbox, operationId, queueStatus, evidence);
-  forall i | 0 <= i < |m.outbox| && m.outbox[i].operationId == operationId && queueStatus.Dispatching?
-    ensures m.outbox[i].status.Waiting?
-  {
-    assert m.outbox[i] in m.outbox;
-    OutboxFound(m.outbox, operationId, m.outbox[i]);
-  }
-  OutboxMapped(m, after);
-}
-
-lemma OutboxRemoved(m: Mailbox, operationId: string, after: Mailbox)
-  requires alwaysQueuedSendsAreIssued(m)
-  requires after.outbox == withoutQueued(m.outbox, operationId) && after.outboxSent >= m.outboxSent
-  requires forall x :: x in m.issuedSends ==> x in after.issuedSends
-  ensures alwaysQueuedSendsAreIssued(after)
-  ensures stepQueuedSendGoesOnce(m, after)
-{
-  OutboxFacts(m);
-  OutboxQueuedInView(m.outbox, operationId);
-  ProofLib.FilterKeepsDistinctBy((q: QueuedSend) => (q.operationId != operationId), m.outbox, (x: QueuedSend) => x.operationId);
-  forall q | q in after.outbox
-    ensures q in m.outbox
-  {
-    ProofLib.FilterMember((q: QueuedSend) => (q.operationId != operationId), m.outbox, q);
-  }
-  OutboxValid(after);
-  forall q | q in after.outbox && (q.status.Waiting? || q.status.Dispatching?)
-    ensures forall p :: p in m.outbox && p.operationId == q.operationId ==> (p.status.Waiting? || p.status == q.status)
-  {
-    forall p | p in m.outbox && p.operationId == q.operationId
-      ensures p.status.Waiting? || p.status == q.status
-    {
-      var i :| 0 <= i < |m.outbox| && m.outbox[i] == p;
-      var j :| 0 <= j < |m.outbox| && m.outbox[j] == q;
-      assert i == j;
-    }
-  }
-  OutboxGoesOnceView(m, after);
-}
-
-lemma OutboxAppended(m: Mailbox, entry: QueuedSend, after: Mailbox)
-  requires alwaysQueuedSendsAreIssued(m)
-  requires after.outbox == m.outbox + [entry] && after.outboxSent == m.outboxSent
-  requires forall x :: x in m.issuedSends ==> x in after.issuedSends
-  requires entry.operationId != "" && entry.operationId in after.issuedSends && !(entry.operationId in m.issuedSends)
-  requires entry.snapshot.content.to != "" && entry.snapshot.version >= 0 && entry.status.Waiting?
-  requires forall a :: a in entry.snapshot.attachments ==> app__files_validFile(a)
-  ensures alwaysQueuedSendsAreIssued(after)
-  ensures stepQueuedSendGoesOnce(m, after)
-{
-  OutboxFacts(m);
-  ProofLib.DistinctByConcat(m.outbox, [entry], (x: QueuedSend) => x.operationId);
-  OutboxValid(after);
-  forall q | q in after.outbox && (q.status.Waiting? || q.status.Dispatching?)
-    ensures forall p :: p in m.outbox && p.operationId == q.operationId ==> (p.status.Waiting? || p.status == q.status)
-  {
-    forall p | p in m.outbox && p.operationId == q.operationId
-      ensures p.status.Waiting? || p.status == q.status
-    {
-      var i :| 0 <= i < |m.outbox| && m.outbox[i] == p;
-      var j :| 0 <= j < |after.outbox| && after.outbox[j] == q;
-      assert after.outbox[i] == p;
-      assert i == j;
-    }
-  }
-  OutboxGoesOnceView(m, after);
 }

@@ -2,7 +2,7 @@
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
 import { approveSave, beginEdit, create, edit, initial as noEntry, save, type Calendar } from "../gen/app__calendar.effect.vibe"
-import { initial as noView } from "../gen/app__calendarView.effect.vibe"
+import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
 import { client, expire, otherPassword, outage, parts, reply, script, sentMail, sessions, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
@@ -355,7 +355,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
   }
 })
 
-it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email that the company keeps under its own id, so the feed brings the company's copy with the reminder, person and email the tablet's entry held, and the tablet's entry leaves, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, and a deletion the company cannot confirm twice", () => effect {
+it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment whose provider receipt binds its reminder, person and source email to the saved occurrence, and, when no receipt arrived, the feed brings the company's copy with the reminder, person and email the tablet's entry held and the tablet's entry leaves, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, and a deletion the company cannot confirm twice", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
@@ -369,13 +369,16 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const found = (id: string) => imported.find((p) => p.incoming.identity.occurrenceId === id)
       const eyeCheck = found("eye-check")?.incoming ?? noEntry
       const start = now + day
-      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
       const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + hour, reminderEnabled: true, leadTime: day }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
       const added = try calendar.write(fresh, view([eyeCheck]))
-      const tablet = save(fresh, 1, true, "CalendarStore")
-      const settled = (try feed([eyeCheck, tablet])).filter((p) => p.incoming.committed.title === details.title)
-      const visit = settled.find((p) => p.incoming.identity.occurrenceId !== identity.occurrenceId)?.incoming ?? noEntry
+      const created = { owner: identity.owner, calendarId: identity.calendarId, localId: identity.occurrenceId, providerId: added.providerId ?? "", revision: added.revision }
+      const pending = view([eyeCheck, fresh])
+      try Effect.try(() => assert.isTrue(canStoreCreated(pending, created, "ViewStore")))
+      const settled = storeCreated(pending, created, "ViewStore")
+      const visit = settled.entries.find((e) => e.identity.occurrenceId === created.providerId) ?? noEntry
+      const copied = (try feed([eyeCheck, save(fresh, 1, true, "CalendarStore")])).filter((p) => p.incoming.committed.title === details.title)
       const unchanged = (try feed([eyeCheck, visit])).map((p) => p.incoming.identity.occurrenceId)
       const elsewhere = effect {
         provide connectorAt(secret) {
@@ -392,7 +395,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const birthday = seen?.incoming ?? noEntry
       const renamed = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, title: "Joan’s 80th birthday" }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
       const shifted = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, startAt: birthday.committed.startAt + day, endAt: birthday.committed.endAt + day }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
-      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "" }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
+      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "", sourceAccount: 0 }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
       const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
       const removed = [try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(eyeCheck.identity, "EntireSeries")]
       const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
@@ -400,8 +403,9 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const tokyoMidnight = Date.parse(`${new Date(Math.floor(now / day) * day + 3 * day).toISOString().slice(0, 10)}T00:00:00+09:00`)
       try Effect.try(() => assert.deepStrictEqual({
         eyeCheck: [eyeCheck.phase, eyeCheck.committed.participant, found("eye-check")?.scheduleVerified],
-        added, settled: settled.map((p) => [p.incoming.identity.occurrenceId === identity.occurrenceId, p.incoming.phase, p.incoming.committed.participant, p.incoming.identity.sourceRef, p.scheduleVerified]),
-        visit: [visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled, visit.committed.leadTime],
+        added, localRemoved: settled.entries.every((e) => e.identity.occurrenceId !== identity.occurrenceId),
+        copied: copied.map((p) => [p.incoming.identity.occurrenceId === identity.occurrenceId, p.incoming.phase, p.incoming.committed.participant, p.incoming.identity.sourceRef, p.incoming.identity.sourceAccount, p.incoming.committed.reminderEnabled, p.scheduleVerified]),
+        visit: [visit.phase, visit.identity.sourceAccount, visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled, visit.committed.leadTime],
         unchanged, elsewhere: otherTablet.succeeded,
         refreshed: [r.title, r.participant, r.reminderEnabled, r.leadTime, refreshed.identity.sourceRef, refreshed.revision > visit.revision], changed,
         allDay: [seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
@@ -411,8 +415,9 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
         added: { revision: 1, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
-        settled: [[false, "Saved", "Dr. Patel", "clinic", true], [true, "Deleted", "Dr. Patel", "clinic", true]],
-        visit: ["clinic", "Dr. Patel", true, day],
+        localRemoved: true,
+        copied: [[false, "Saved", "Dr. Patel", "clinic", 1, true, true], [true, "Deleted", "Dr. Patel", "clinic", 1, true, true]],
+        visit: ["Saved", 1, "clinic", "Dr. Patel", true, day],
         unchanged: ["birthday"],
         elsewhere: true,
         refreshed: ["Check-up at 11", "Dr. Patel", true, day, "clinic", true],

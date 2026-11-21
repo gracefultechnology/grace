@@ -251,15 +251,20 @@ above, as that calendar is now, and is exactly one its calendar would take on
 her yes: a new appointment, never marked important. Grace does not ask while
 any calendar already holds an appointment from that email, while she is
 already asking about it, or while Margaret’s yes to an earlier question is
-being applied. The email is compared by the provider’s own reference for it.
+being applied. The source is the pair of the originating mailbox’s registry ID and the provider’s
+message reference. Distinct mailboxes can use identical provider references.
+A saved or pending appointment matches this pair even when its destination is the
+tablet’s calendar.
 
 ```quint
-pure def alreadyFrom(calendars: List[CalendarSource], ref: str): bool =
-  ref != "" and calendars.some(s => s.view.entries.some(c => c.identity.sourceRef == ref and c.phase != C::Deleted))
-pure def pendingFrom(pending: P::Pending, ref: str): bool =
+pure def matchesEmail(identity: C::EntryIdentity, account: int, ref: str): bool =
+  account > 0 and ref != "" and identity.kind == C::Appointment and identity.sourceAccount == account and identity.sourceRef == ref
+pure def alreadyFrom(calendars: List[CalendarSource], account: int, ref: str): bool =
+  calendars.some(s => s.view.entries.some(c => matchesEmail(c.identity, account, ref) and c.phase != C::Deleted))
+pure def pendingFrom(pending: P::Pending, account: int, ref: str): bool =
   val ask = pending.ask
   match ask {
-    | AddAsk(x) => ref != "" and x.review.entry.identity.sourceRef == ref
+    | AddAsk(x) => matchesEmail(x.review.entry.identity, account, ref)
     | _ => false
   }
 pure def openMail(registry: A::Accounts, sources: List[M::MailSource]): M::MailSource =
@@ -272,14 +277,14 @@ pure def fromMessageAllowed(registry: A::Accounts, calendars: List[CalendarSourc
   M::showsMail(registry, mail.account) and box.view == E::Message and E::selectedMessageIsCurrent(box) and
   box.warning.evidence == "" and pending.agreed == 0 and
   review.entry.identity.kind == C::Appointment and not(review.entry.details.important) and
-  review.entry.identity.sourceRef == box.messageRef and target.key >= 0 and target.view.owner != "" and
+  matchesEmail(review.entry.identity, mail.account, box.messageRef) and target.key >= 0 and target.view.owner != "" and
   review.entry.identity.owner == target.view.owner and review.entry.identity.calendarId == target.view.calendarId and
   V::canConfirmAppointment(target.view, { entry: review.entry, review: review }, V::ViewConsent) and
-  not(alreadyFrom(calendars, box.messageRef)) and not(pendingFrom(pending, box.messageRef))
+  not(alreadyFrom(calendars, mail.account, box.messageRef)) and not(pendingFrom(pending, mail.account, box.messageRef))
 pure def lawEmailAppointmentNamesItsSource(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
   fromMessageAllowed(registry, calendars, sources, pending, review) implies
-    (review.entry.identity.sourceRef == openMail(registry, sources).mailbox.messageRef and openMail(registry, sources).mailbox.messageRef != "" and
+    (matchesEmail(review.entry.identity, openMail(registry, sources).account, openMail(registry, sources).mailbox.messageRef) and
       openMail(registry, sources).account == M::openSource(registry, sources))
 pure def lawEmailAppointmentGoesToItsAccountsCalendar(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
@@ -289,7 +294,7 @@ pure def lawEmailAppointmentGoesToItsAccountsCalendar(registry: A::Accounts, cal
       review.calendarGeneration == target.view.generation and showsCalendar(registry, target.key))
 pure def lawSameEmailIsNotAskedTwice(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
-  (alreadyFrom(calendars, openMail(registry, sources).mailbox.messageRef) or pendingFrom(pending, openMail(registry, sources).mailbox.messageRef) or pending.agreed != 0) implies
+  (alreadyFrom(calendars, openMail(registry, sources).account, openMail(registry, sources).mailbox.messageRef) or pendingFrom(pending, openMail(registry, sources).account, openMail(registry, sources).mailbox.messageRef) or pending.agreed != 0) implies
     not(fromMessageAllowed(registry, calendars, sources, pending, review))
 pure def lawScamEmailMakesNoAppointment(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
@@ -470,13 +475,13 @@ kind; news of each kind; and days chosen for Week or Month, verified or not.
 ```quint
 pure val zone: str = "America/New_York"
 pure val lunchIdentity: C::EntryIdentity = {
-  owner: "margaret", calendarId: "tablet", occurrenceId: "lunch", sourceRef: "",
+  owner: "margaret", calendarId: "tablet", occurrenceId: "lunch", sourceRef: "", sourceAccount: 0,
   kind: C::Appointment, billRef: "", billOrigin: "", billAccount: "" }
 pure val lunchDetails: C::EntryDetails = { ...C::timedDetails, title: "Lunch with Susan", startAt: 3, endAt: 4, timezone: zone }
 pure val gardenIdentity: C::EntryIdentity = { ...lunchIdentity, calendarId: "gmail", occurrenceId: "garden" }
 pure val gardenDetails: C::EntryDetails = { ...lunchDetails, title: "Garden club", startAt: 5, endAt: 6 }
 pure val movedGarden: C::EntryDetails = { ...gardenDetails, startAt: 6, endAt: 7 }
-pure val clinicIdentity: C::EntryIdentity = { ...gardenIdentity, occurrenceId: "clinicVisit", sourceRef: "clinic" }
+pure val clinicIdentity: C::EntryIdentity = { ...gardenIdentity, occurrenceId: "clinicVisit", sourceRef: "clinic", sourceAccount: 1 }
 pure val clinicDetails: C::EntryDetails =
   { ...lunchDetails, title: "Doctor appointment", location: "Main St clinic", participant: "Dr. Patel", startAt: 4, endAt: 5 }
 pure val tabletOpen: V::CalendarView = V::openCalendar(V::initial, "margaret", "tablet", zone, V::ViewUser)

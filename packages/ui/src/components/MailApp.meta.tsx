@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { House, Settings, Volume2, Wifi } from "lucide-react";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, type queries, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { susan as susanPhoto } from "./Avatar.meta.tsx";
@@ -11,7 +11,7 @@ import { Rail, RailButton } from "./Rail.tsx";
 import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { Toast } from "./Toast.tsx";
 
-export const onMailScreen = (interact: (canvas: ReturnType<typeof within>) => Promise<void>) => async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+export const onMailScreen = (interact: (canvas: ReturnType<typeof within<typeof queries>>) => Promise<void>) => async ({ canvasElement }: { canvasElement: HTMLElement }) => {
   await interact(within(canvasElement));
   unfocus();
 };

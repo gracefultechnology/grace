@@ -36,7 +36,7 @@ it.live("Connect the email I already use and write from it, from the app's own p
       const mail = connector.mail(outlook)
       const sends = [try mail.send("operation-1", draft), try mail.send("operation-1", draft)]
       const calendar = connector.calendar(outlook)
-      const identity = { owner: outlook.address, calendarId: "primary", occurrenceId: "dinner", sourceRef: "outlook-welcome", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+      const identity = { owner: outlook.address, calendarId: "primary", occurrenceId: "dinner", sourceRef: "outlook-welcome", sourceAccount: 2, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
       const details = { title: "Thanksgiving dinner", location: "St. Mark’s hall", participant: "", notes: "", startAt: 0, endAt: 60 * 60 * 1000, timezone: "UTC", allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
       const view = { ...noView, owner: outlook.address, calendarId: "primary", timezone: "UTC", window: { ...noView.window, fromTime: -1, untilTime: 2 * 60 * 60 * 1000 } }

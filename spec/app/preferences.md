@@ -159,11 +159,13 @@ pure def sometimesUndoAvailable(p: Preferences): bool = p.canUndo
 
 ### Night dimming and sound samples use the current preference without rewriting it
 
-The night interval is 9 pm through before 7 am in the device's local time. The
-native display chooses its calibrated night level; it may dim but never brighten
-the chosen setting or fall below the readable minimum. At daytime the chosen
-brightness returns. A native settings failure is reported and leaves the last
-confirmed device value; a CSS overlay is not evidence of actual device control.
+The night interval is 9 pm through before 7 am in the device's local time. At
+night the display shows half the chosen brightness, never below the readable
+minimum, so it dims every setting above that minimum and never brightens one. At
+daytime the chosen brightness returns. A native settings failure is reported and
+leaves the last confirmed device value; Grace tries the unconfirmed setting again
+each minute without reporting it twice. A CSS overlay is not evidence of actual
+device control.
 Play a sample and Test sound emit an explicit request at the chosen pace and
 system volume, respect mute, and neither activate the mic nor change Voice on/off.
 A sample is spoken by Grace's cloud voice, so it needs the internet and the
@@ -173,12 +175,16 @@ failure says why.
 ```quint
 pure def nightDimmingApplies(settings: DisplayPreferences, hour: int): bool =
   settings.nightDimming and hour >= 0 and hour < 24 and (hour >= 21 or hour < 7)
-pure def effectiveBrightness(settings: DisplayPreferences, hour: int, nativeNightLevel: int): int =
-  val level = if (nativeNightLevel < 20) 20 else if (nativeNightLevel > settings.brightness) settings.brightness else nativeNightLevel
-  if (nightDimmingApplies(settings, hour)) level else settings.brightness
-pure def lawNightDimmingIsBounded(settings: DisplayPreferences, hour: int, nativeNightLevel: int): bool =
-  validSettings(settings) implies effectiveBrightness(settings, hour, nativeNightLevel) >= 20 and
-    effectiveBrightness(settings, hour, nativeNightLevel) <= settings.brightness
+pure def nightBrightness(settings: DisplayPreferences): int =
+  if (settings.brightness / 2 < 20) 20 else settings.brightness / 2
+pure def effectiveBrightness(settings: DisplayPreferences, hour: int): int =
+  if (nightDimmingApplies(settings, hour)) nightBrightness(settings) else settings.brightness
+pure def lawNightDimmingIsBounded(settings: DisplayPreferences, hour: int): bool =
+  validSettings(settings) implies effectiveBrightness(settings, hour) >= 20 and
+    effectiveBrightness(settings, hour) <= settings.brightness
+pure def lawNightDimmingDims(settings: DisplayPreferences, hour: int): bool =
+  validSettings(settings) and nightDimmingApplies(settings, hour) and settings.brightness > 20 implies
+    effectiveBrightness(settings, hour) < settings.brightness
 pure def canSample(p: Preferences, by: PreferenceActor): bool = by == PreferenceUser
 pure def sample(p: Preferences, by: PreferenceActor): PreferenceResult =
   { state: p, out: List(PlaySample({ pace: p.session.pace, volume: p.session.volume, muted: p.session.muted })) }
@@ -192,11 +198,11 @@ combination of the declared output, pace and text-size options.
 ```quint
 pure val amountValues = Set(-1, 0, 20, 50, 60, 100, 101)
 pure val hourValues = Set(0, 6, 7, 20, 21, 23, 24)
-pure val nativeNightLevelValues = Set(0, 20, 40, 100)
 pure val settingsValues = Set(
   defaults,
   { ...defaults, voiceOutput: false, wakeEnabled: false },
   { ...defaults, pace: Slower, textSize: Larger, brightness: 40 },
+  { ...defaults, brightness: 21 },
   { ...defaults, pace: Faster, textSize: Largest, volume: 0, muted: true },
   { ...defaults, textSize: Smaller, volume: 100, brightness: 20, nightDimming: false },
   { ...defaults, brightness: 0 },

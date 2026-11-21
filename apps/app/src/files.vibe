@@ -4,6 +4,7 @@ import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vi
 import { accountPlugin } from "./accountPlugin.ts"
 import { webView } from "./surfacePlugin.ts"
 import type { Attached } from "./connector.vibe"
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { HeldFile } from "./instances.vibe"
 import type { FilesPort } from "./filesPlugin.ts"
 import { browserFiles } from "./webFiles.vibe"
@@ -13,10 +14,11 @@ export schema FileLease { lease: fileId }
 const displayName = Schema.NonEmptyString.check(Schema.isMaxLength(180))
 const fileTimestamp = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(8640000000000000))
 const attachmentDigest = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))
+const attachmentSource = HeldFile
 export schema FileEntry {
   attachmentSource?: attachmentDigest; attachmentSha256?: attachmentDigest
   id: fileId; name: displayName; kind: "photo" | "pdf"; savedAt: fileTimestamp; pages: Schema.Int
-  source?: HeldFile; version?: Schema.NonEmptyString; from?: Schema.NonEmptyString; subject?: Schema.NonEmptyString
+  source?: attachmentSource; version?: Schema.NonEmptyString; from?: Schema.NonEmptyString; subject?: Schema.NonEmptyString
 }
 export schema FileCatalog { entries: FileEntry[] }
 

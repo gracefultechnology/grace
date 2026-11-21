@@ -12,6 +12,13 @@ import type { Runtime } from "../src/useApp.ts";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
+export function browserAccountResponse(url: URL, accountId?: string) {
+  if (url.origin !== location.origin) return;
+  if (url.pathname === "/api/auth/session") return Response.json({ account: accountId ? { id: accountId, email: null } : null });
+  if (url.pathname === "/api/auth/providers") return Response.json({ google: true, email: true, sms: false });
+  if (url.pathname === "/api/auth/refresh") return new Response(null, { status: 401 });
+}
+
 export function connected(accounts: Accounts, provider: Provider, address: string, name: string) {
   const chosen = chooseProvider(accounts, provider, "AccountPerson");
   return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, name, "AccountConnector");
@@ -33,16 +40,24 @@ export function actOnScreen() {
   afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
 }
 
-export async function mount(runtime: Runtime) {
+export function tabletView(runtime: Runtime) {
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
-  onTestFinished(async () => {
-    await act(() => root.unmount());
-    host.remove();
-    await runtime.dispose();
-  });
-  await act(() => root.render(<App runtime={runtime} />));
-  return root;
+  return {
+    render: (content = <App runtime={runtime} />) => act(() => Promise.resolve(root.render(content))),
+    dispose: async () => {
+      await act(() => Promise.resolve(root.unmount()));
+      await runtime.dispose();
+      host.remove();
+    },
+  };
+}
+
+export async function mount(runtime: Runtime) {
+  const view = tabletView(runtime);
+  onTestFinished(view.dispose);
+  await view.render();
+  return view;
 }
 
 export async function signInToGrace(runtime: Runtime) {

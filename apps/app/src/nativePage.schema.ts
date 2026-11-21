@@ -21,6 +21,8 @@ export const NavigationChanged = Schema.Struct({
   ...surface,
   exists: Schema.optional(Schema.Boolean),
   currentUrl: Schema.optional(Schema.NullOr(Url)),
+  canGoBack: Schema.optional(Schema.Boolean),
+  canGoForward: Schema.optional(Schema.Boolean),
   progress: Schema.optional(Schema.Finite),
   pageError: Schema.optional(Schema.NullOr(Schema.String)),
   securityBlocked: Schema.optional(Schema.Boolean)
@@ -80,7 +82,10 @@ export const LinkObservation = Schema.Struct({
     })),
     blockers: Schema.Array(Schema.Struct({ kind: Schema.String, covers: Schema.String })),
     elements: Schema.Array(Schema.Struct({
-      id: Schema.NonEmptyString, tag: Schema.String, label: Schema.NullOr(Schema.String),
+      id: Schema.NonEmptyString, tag: Schema.String, type: Schema.optional(Schema.NullOr(Schema.String)), fieldName: Schema.optional(Schema.NullOr(Schema.String)),
+      form: Schema.optional(Schema.NullOr(Schema.Struct({ index: Schema.Int, name: Schema.optional(Schema.NullOr(Schema.String)) }))),
+      submits: Schema.optional(Schema.Boolean),
+      focused: Schema.optional(Schema.Boolean), edited: Schema.optional(Schema.Boolean), hasInput: Schema.optional(Schema.Boolean), label: Schema.NullOr(Schema.String),
       role: Schema.optional(Schema.NullOr(Schema.String)), expanded: Schema.optional(Schema.Boolean),
       targetSelector: Schema.optional(Schema.NullOr(Schema.String)),
       href: Schema.NullOr(Schema.String), disabled: Schema.optional(Schema.Boolean),

@@ -50,6 +50,12 @@ function saverOf(box: MailInstance, mail: MailWriter | undefined, files: Files |
   };
 }
 
+const notices: Record<MailBanner["kind"], (b: MailBanner, name: string, onSignIn?: () => void) => ReactNode> = {
+  OfflineBanner: () => null,
+  SignInBanner: (b, name, onSignIn) => <MailSignInBanner key={`sign-in-${b.account}`} name={name} others={b.othersFine} onSignIn={onSignIn} />,
+  SyncingRow: (b, name) => <MailSyncingRow key={`syncing-${b.account}`} name={name} />,
+};
+
 function when(at: number, now: Date) {
   if (now.getTime() - at < 60_000) return "Just now";
   const day = new Date(at);
@@ -229,19 +235,8 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
       time: c ? when(c.receivedAt, now) : "", unread: r.record.unread, attachment: c?.attachment, account: rows.length ? name(r.account) : undefined,
     };
   });
-  const notice = (b: MailBanner): ReactNode => {
-    switch (b.kind) {
-      case "OfflineBanner": return null;
-      case "SignInBanner": return <MailSignInBanner key={`sign-in-${b.account}`} name={name(b.account)} others={b.othersFine} onSignIn={renew(b.account)} />;
-      case "SyncingRow": return <MailSyncingRow key={`syncing-${b.account}`} name={name(b.account)} />;
-      default: {
-        const _exhaustive: never = b.kind;
-        return _exhaustive;
-      }
-    }
-  };
   const shownBanners = banners(registry, sources, online);
-  const notes = shownBanners.filter((b) => b.kind !== "OfflineBanner").map(notice);
+  const notes = shownBanners.filter((b) => b.kind !== "OfflineBanner").map((b) => notices[b.kind](b, name(b.account), renew(b.account)));
   const failed = shown.filter((b) => b.state.readKind === "Search" && b.state.readStatus === "ReadFailed");
   const search = (query: string): MailEvent => ({ type: "readMail", kind: "Search", ref: query, approved: true });
   const undo = shown.flatMap((b) => undoable(b.state).map((r) => ({ b, event: { type: "undoMessageTrash", target: { ref: r.identity.ref, revision: r.undoRevision } } satisfies MailEvent })))[0];

@@ -18,8 +18,8 @@ Grace's tablet: one indigo on lilac light and clear glass. A fixed 1280×800 pro
 - **Type.** Figtree. Every size is a `text-*` token: `text-body` 20, `text-body-lg` 22, `text-lead` 24 (Grace's
   words), `text-title` 28, `text-display` 40. The Text size setting is `TextScale`, which sets each `--text-*` on the
   document's root to its token times the chosen percent, so every word that names a token follows, in dialogs and
-  menus too, and no box changes size. A size or line height written in pixels (`text-[19px]`, `leading-[26px]`) or from the spacing scale (`leading-7`, `leading-8`) stays put, so a word
-  that must scale names a token and a line height that must follow it is unitless.
+  menus too. Compact detail text is 14px, controls are 18px and the sleep clock is 150px at the standard setting.
+  A unitless line height follows the chosen size.
 - **Motion.** `press` with `ease-spring` for a tap (scale 1.05), `window` for a window changing size.
 - **Dark.** The tablet keeps its light look; `.dark` changes only the semantic colors, for tools around it.
 
@@ -341,8 +341,10 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `gradient.sheen` | linear-gradient(108deg, color-mix(in srgb, var(--glass) 0%, transparent) 47%, color-mix(in srgb, var(--glass) 35%, transparent) 50%, color-mix(in srgb, var(--glass) 0%, transparent) 53%) |
 | `gradient.orb` | radial-gradient(circle at 40% 38%, var(--orb-light), var(--orb-deep)) |
 | `text.mark` | 0.75rem |
+| `text.detail` | 0.875rem |
 | `text.caption` | 0.9375rem |
 | `text.label` | 1.0625rem |
+| `text.control` | 1.125rem |
 | `text.body` | 1.25rem |
 | `text.body-lg` | 1.375rem |
 | `text.lead` | 1.5rem |
@@ -351,6 +353,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `text.title-lg` | 1.875rem |
 | `text.display-sm` | 2.125rem |
 | `text.display` | 2.5rem |
+| `text.clock` | 9.375rem |
 | `blur.glass` | 1.5px |
 | `blur.soft` | 3px |
 | `blur.mist` | 14px |

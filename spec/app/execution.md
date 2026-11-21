@@ -60,6 +60,7 @@ pure val goodObservation: ObservationReport = {
 pure val observationReportValues = Set(
   { ...goodObservation, facts: List({ name: "confirmed", valueRef: "confirmation-value", quoteRef: "confirmation-quote" }) },
   { ...goodObservation, facts: List({ name: "confirmed", valueRef: "confirmation-value", quoteRef: "" }) },
+  { ...goodObservation, targets: List({ id: "control", consequence: Routine, inReach: true }, { id: "control", consequence: Commit, inReach: true }) },
   goodObservation, { ...goodObservation, generation: 2 }, { ...goodObservation, generation: 3 },
   { ...goodObservation, generation: 4 }, { ...goodObservation, generation: 5 }, { ...goodObservation, generation: 6 },
   { ...goodObservation, origin: "https://credit.example" }, { ...goodObservation, owner: "other" },
@@ -104,15 +105,17 @@ pure def alwaysGenerations(x: Execution): bool = x.generation >= 0 and x.observa
 
 The bridge emits this only after validating the active tab, document, frame, viewport and task. Any change to them or the authenticated account invalidates this observation before dispatch. A nonempty matched account is the opaque identity of the verified account for this task. The bridge leaves it empty while sign-in is unavailable or the account cannot be matched. Public sign-in guidance remains available; filling personal information requires the matched account. When reliable redaction is unavailable, capture stops. Private fields are handled by the user and never included as values here.
 
-The observation carries what the page shows, in the prototype's shape: facts, each with a reference to the quoted page text that supports it, and named targets, each with its consequence class and whether it is in Grace's reach. A fact without its quote is not a fact, so an observation holding one is refused. Facts, quotes and labels are data read from the page, never a request to Grace: nothing on a page can start, approve or widen a step.
+The observation carries what the page shows, in the prototype's shape: facts, each with a reference to the quoted page text that supports it, and named targets, each with its consequence class and whether it is in Grace's reach. Each target needs its own nonempty identity in this observation. An unnamed or ambiguous target makes the report unusable. A fact without its quote is not a fact, so an observation holding one is refused. Facts, quotes and labels are data read from the page, never a request to Grace: nothing on a page can start, approve or widen a step.
 
 ```quint
 pure def quoted(observationReport: ObservationReport): bool = observationReport.facts.every(f => f.quoteRef != "")
+pure def distinctTargets(targets: List[PageTarget]): bool =
+  targets.every(t => t.id != "" and targets.select(other => other.id == t.id).length() == 1)
 pure def canObserve(x: Execution, observationReport: ObservationReport, by: ExecutionActor): bool =
   (x.phase == NeedObservation or x.phase == Verified or x.phase == Blocked) and
   observationReport.owner == x.owner and observationReport.task == x.task and observationReport.origin == x.origin and
   observationReport.generation == x.generation and observationReport.contextRef != "" and
-  observationReport.originVerified and observationReport.redactionReady and quoted(observationReport) and by == BrowserBridge
+  observationReport.originVerified and observationReport.redactionReady and quoted(observationReport) and distinctTargets(observationReport.targets) and by == BrowserBridge
 pure def observe(x: Execution, observationReport: ObservationReport, by: ExecutionActor): Execution = {
   ...x, phase: Observed, observation: x.observation + 1, contextRef: observationReport.contextRef, originVerified: observationReport.originVerified,
   matchedAccount: observationReport.matchedAccount, privateInput: observationReport.privateInput,
@@ -149,8 +152,8 @@ pure def sometimesGoalObserved(x: Execution): bool = goalObserved(x, "confirmed"
 
 ### Observed, queued and in-flight work always has a verified, redaction-ready page context
 
-Only `observe` enters these phases, and its guard requires a stable context
-reference, a verified origin and reliable redaction. Preparing and dispatching
+The current context begins with `observe`, whose guard requires a stable
+context reference, a verified origin and reliable redaction. Preparing and dispatching
 keep that context.
 
 ```quint

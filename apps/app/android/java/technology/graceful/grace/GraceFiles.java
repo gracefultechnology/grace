@@ -97,7 +97,7 @@ public final class GraceFiles extends Plugin {
  }
 
  private static String owner(CloudDeviceAccount.Session account) throws Exception {
-  byte[] digest = MessageDigest.getInstance("SHA-256").digest(("grace-files\u0000" + account.accountId()).getBytes(StandardCharsets.UTF_8));
+  byte[] digest = MessageDigest.getInstance("SHA-256").digest(("grace-files\u0000" + GracePasswordsOwner.storageOwner(account)).getBytes(StandardCharsets.UTF_8));
   StringBuilder name = new StringBuilder();
   for (byte value : digest) name.append(String.format(Locale.ROOT, "%02x", value & 0xff));
   return name.toString();

@@ -8,7 +8,7 @@ import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/ap
 import { enabled as admits, guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Watched } from "./accounts.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
-import { Instances, tablet, watchEach } from "./instances.vibe"
+import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import { Machine as Notices } from "../gen/app__notices.effect.vibe"
 import { NoticeHost } from "./notices.vibe"
@@ -163,7 +163,7 @@ function removal(v: CalendarView): Removal {
 }
 
 const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(approveSave(create(noEntry, {
-  owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", kind: "Appointment", billRef: "", billOrigin: "", billAccount: ""
+  owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", sourceAccount: 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: ""
 }, details, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
 
 function repetitions(v: CalendarView, span: Reach): Published[] {
@@ -285,7 +285,7 @@ effect function remind(box: CalendarMachine.Shape) {
 function matchesGuidedApproval(key: number, c: Calendar, approval: GuidedCalendarApproval): boolean {
   const { identity, draft } = c
   return key === approval.account && identity.owner === approval.owner && identity.calendarId === approval.calendar &&
-    identity.sourceRef === approval.sourceRef && draft.title === approval.title && draft.startAt === approval.starts &&
+    identity.sourceAccount === approval.account && identity.sourceRef === approval.sourceRef && draft.title === approval.title && draft.startAt === approval.starts &&
     draft.endAt === approval.ends && draft.timezone === approval.timezone && draft.location === approval.location && draft.notes === approval.notes
 }
 
@@ -620,5 +620,6 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace, deletedBy(host)), fill], { concurrency: "unbounded" }))
   }
 
-  try fork.scoped watchEach(registry.changes, (a) => a.accounts.filter((x) => x.use.calendar), (id) => shelf.calendar(id), watch)
+  const selections = Stream.map(registry.changes, ({ accounts }) => accounts.filter((account) => account.use.calendar))
+  try fork.scoped followAccounts(selections, effect (account) => try watch(account, try shelf.calendar(account.id)))
 })

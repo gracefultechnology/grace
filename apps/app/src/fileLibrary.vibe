@@ -3,9 +3,10 @@ import { type Files, type FileActor, type Event, enabled, fileAt, initial, step 
 import { enabled as deskEnabled, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Mail } from "./mail.vibe"
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes, Preview, savedFile, type Origin } from "./files.vibe"
 
-schema Completion { id: fileId }
+const completion = Schema.decodeUnknownEffect(Schema.Struct({ id: fileId }))
 
 schema AttachmentImport { id?: fileId }
 
@@ -90,7 +91,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     if (!port) throw new FilesRejected()
     const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
     if (loading.model.pending !== "ReadingCatalog") return
-    const catalog = Schema.decodeUnknownEffect(Catalog)(try tryPromise(() => port.list({ lease: ready.lease }))) catch () => undefined
+    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: ready.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
     const listed = catalog?.entries.slice(0, 250) ?? []
     const entries = listed.map((entry) => savedFile(entry, ready.owner, ready.lease))
     const origins = Object.fromEntries(listed.map(({ id, from, subject }) => [id, { from, subject }]))
@@ -101,7 +102,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
   }
 
   effect function readAttachmentImport() {
-    const request = Schema.decodeUnknownEffect(AttachmentImport)(try tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({}))) catch () => undefined
+    const request = Effect.flatMap(tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({})), Schema.decodeUnknownEffect(AttachmentImport)) catch () => undefined
     return request?.id
   }
 
@@ -109,7 +110,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const owner = try admitted()
     if (!port || !owner) return
     try SubscriptionRef.set(latest, { kind: "opening" })
-    const opened = Schema.decodeUnknownEffect(Lease)(try tryPromise(() => port.open())) catch () => undefined
+    const opened = Effect.flatMap(tryPromise(() => port.open()), Schema.decodeUnknownEffect(Lease)) catch () => undefined
     if (!opened) {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
       return
@@ -161,7 +162,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
       owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
     } }, "FileHost")
-    const stored = Schema.decodeUnknownEffect(Completion)(try tryPromise(() => commit({ ...input, id: entry.id }))) catch () => undefined
+    const stored = Effect.flatMap(tryPromise(() => commit({ ...input, id: entry.id })), completion) catch () => undefined
     const success = stored?.id === entry.id
     const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
     const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {

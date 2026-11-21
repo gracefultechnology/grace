@@ -190,7 +190,7 @@ it('Ask Grace to tidy my email (spec/app/agentActions.md, "Story: Ask Grace to h
   expect((await record("instruction"))?.folder).toBe("InboxFolder");
 });
 
-it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar")', async () => {
+it('Save the clinic appointment (spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar")', async () => {
   const { secret, mailbox, calendar, asked, person, visit, say, tap } = await start();
   const today = dayOf(Date.now());
   const fromClinic = { kind: "proposeFromMessage", title: "Doctor’s appointment", day: dateOf(today + 1), time: "10:00", place: "Main St clinic", who: "Dr. Patel", remind: "DayBefore" } as const;
@@ -211,6 +211,7 @@ it('Ask Grace to put an email’s appointment in my calendar (spec/app/calendars
   // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"
   await tap("Yes, add it", { text: "I added it to your calendar.", actions: [{ kind: "confirmProposal" }] });
   await expect.poll(async () => (await company(secret)).boxes[0].calendar.map((e) => e.title)).toContain("Doctor’s appointment");
+  await expect.element(page.getByRole("heading", { name: "Doctor’s appointment" })).toBeVisible();
   await expect.element(page.getByText("From Main St Clinic’s email · Visit form attached")).toBeVisible();
   await act(() => userEvent.click(page.getByRole("button", { name: "Back to Calendar" })));
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();

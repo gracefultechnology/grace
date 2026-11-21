@@ -25,7 +25,7 @@ export function HomeEventRow({ weekday, time, title, detail, next = false, onCli
   const row = (
     <Panel variant="white" className={cn("flex items-center gap-[18px] text-left", !onClick && className)}>
       <span className="min-w-[74px] flex-none text-center whitespace-nowrap">
-        <b className={cn("block text-label leading-[22px] tracking-[.06em]", next ? "text-rose" : "text-muted-foreground")}>{weekday}</b>
+        <b className={cn("block text-control leading-[22px] tracking-[.06em]", next ? "text-rose" : "text-muted-foreground")}>{weekday}</b>
         <span className="block text-body-lg leading-7 font-bold">{time}</span>
       </span>
       <span aria-hidden className={cn("w-0.5 self-stretch rounded-full", next ? "bg-rose" : "bg-lavender")} />

@@ -1,9 +1,9 @@
 [
-  { "tap": "Email" },
-  { "expect": "Open email on Grace’s website" },
+  { "homeCard": "Email" },
+  { "expect": "Connect your email" },
   { "tap": "Close Email" },
-  { "tap": "Calendar" },
-  { "expect": "Open your calendar on Grace’s website" },
+  { "homeCard": "Calendar" },
+  { "expect": "Connect your email to keep your calendar up to date" },
   { "tap": "Close Calendar" },
   { "tap": "Files" },
   { "expect": "Sign in to see your files" },

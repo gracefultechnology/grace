@@ -4,10 +4,10 @@
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
-import { Machine as PasswordViews } from "../gen/app.effect.vibe";
+import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
@@ -19,11 +19,10 @@ import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
-import type { GuideSpeechResult, SurfacePlugin } from "../src/surfacePlugin.ts";
+import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, otherPassword, photos, reply, script, signIn, turns } from "./cloud.vibe";
-import { actOnScreen, mount, signInToGrace } from "./screen.tsx";
+import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
-import statementPdf from "./site/statement.pdf?raw";
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Call = { method: string; options: Record<string, unknown>; graceShown: boolean };
@@ -42,7 +41,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
   const android = { allows: true };
   const privateSignIn = { allows: true };
   const held = { starts: false };
-  const starts: (() => Promise<void>)[] = [];
+  const starts: (() => void)[] = [];
   const unanswered: (() => void)[] = [];
   const purges: ((clean: boolean) => void)[] = [];
   const listeners = new Map<string, (event: unknown) => void>();
@@ -65,25 +64,25 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "purgeProfiles") return new Promise((resolve) => purges.push((clean) => resolve({ purged: 1, clean })));
       // Grace's own navigation ends what the page holds, then starts its next page (definitions.ts, pageStarted).
       if (hostNavigation.includes(method)) {
-        const start = () => emit("pageStarted", { id: options.id, url: options.url ?? "" });
+        const start = () => publish("pageStarted", { id: options.id, url: options.url ?? "" });
         return Promise.resolve().then(() => held.starts ? void starts.push(start) : start());
       }
       return method === "setOcclusionRects" && !autoRoute ? new Promise<void>((resolve) => unanswered.push(resolve)) : Promise.resolve();
     },
   }) as SurfacePlugin;
   /** A plugin event of this renderer's surfaces. */
-  const emit = (event: string, fields: Record<string, unknown>) => act(() => {
+  const publish = (event: string, fields: Record<string, unknown>) => {
     const { owner, session, epoch } = calls.find((c) => c.method === "createSurface")!.options;
     listeners.get(event)!({ owner, session, epoch, ...fields });
-    return Promise.resolve();
-  });
+  };
+  const emit = (event: string, fields: Record<string, unknown>) => act(() => Promise.resolve(publish(event, fields)));
   return {
     plugin,
     android,
     privateSignIn,
     held,
     /** The page starts what Grace asked last: a command superseded before it started never starts. */
-    start: () => starts.splice(0).at(-1)?.(),
+    start: () => act(() => Promise.resolve(starts.splice(0).at(-1)?.())),
     calls: (method: string): Sent[] => calls.filter((c) => c.method === method).map((c) => ({ ...c.options, graceShown: c.graceShown })),
     /** Every call so far, in order, as its method and surface. */
     log: () => calls.map((c) => [c.method, c.options.id]),
@@ -115,10 +114,17 @@ const shown = (locator: Locator) => locator.query()?.checkVisibility({ visibilit
 
 actOnScreen();
 
-const vaultStatus = (locked: boolean): ReturnType<PasswordVault["status"]> => Promise.resolve({
-  available: true, locked, unlockRemainingMs: locked ? 0 : 60_000, unlockSeconds: 60, biometric: false,
+const foregroundVault = {
+  available: true, locked: false, unlockRemainingMs: null, unlockSeconds: 0, biometric: false, custody: "device-unlocked",
   autofill: { supported: true, selected: "this-app" },
-});
+} satisfies Awaited<ReturnType<PasswordVault["status"]>>;
+
+async function visitExampleSite(native: ReturnType<typeof fakePlugin>) {
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+  await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+  await native.started("tab-1");
+  await native.report("tab-1", "https://example.org/", 100);
+}
 
 function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
@@ -129,50 +135,29 @@ function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   return { routeTo, tap };
 }
 
-const openRouted = async (native: ReturnType<typeof fakePlugin>, cloud: Parameters<typeof application>[2]) => {
-  const runtime = ManagedRuntime.make(application(native.plugin, undefined, cloud));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
-  const { routeTo, tap } = routedControls(native);
-  const browse = async () => {
-    await tap(page.getByRole("button", { name: "Internet" }));
-    await native.route();
-    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
-    await native.started("tab-1");
-    await native.report("tab-1", "https://example.org/", 100);
-  };
-  const stop = async () => {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-  };
-  return { routeTo, tap, browse, stop };
-};
-
-const listening = (listeners: Map<string, (input: unknown) => void>): Pick<EmbeddedAgent, "abort" | "addListener"> => ({
-  abort: () => Promise.resolve({ aborted: true }),
-  addListener: (event, listener) => {
-    listeners.set(event, listener);
-    return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
-  },
-});
+async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: string, secret: string) {
+  const view = tabletView(ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret })));
+  await view.render();
+  return { ...routedControls(native), dispose: view.dispose };
+}
 
 const askForPasswords = async () => {
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
-  const unlock = page.getByRole("button", { name: "Unlock Passwords" });
-  await expect.element(unlock).toBeEnabled();
-  return unlock;
 };
 
-const showThenEdit = async (revealed: () => boolean) => {
-  expect(revealed()).toBe(false);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Show password" })));
-  await expect.poll(revealed).toBe(true);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
-  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
-};
+async function pressBack() {
+  const event = new Event("hardware-back", { cancelable: true });
+  await act(() => { window.dispatchEvent(event); return Promise.resolve(); });
+  return event.defaultPrevented;
+}
+
+async function backToHomeThenLeaveToAndroid() {
+  expect(await pressBack()).toBe(true);
+  await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
+  expect(await pressBack()).toBe(false);
+}
 
 it("Use the website under Grace's controls", async () => {
   const native = fakePlugin();
@@ -282,11 +267,6 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   await native.route();
 
-  const pressBack = async () => {
-    const event = new Event("hardware-back", { cancelable: true });
-    await act(() => { window.dispatchEvent(event); return Promise.resolve(); });
-    return event.defaultPrevented;
-  };
   /** The website's question is drawn once the host routes its rect. */
   const asked = () => expect.poll(async () => { await native.route(); return shown(page.getByRole("alertdialog")); }).toBe(true);
   // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": Back closes a website's prompt as its Cancel does.
@@ -383,9 +363,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("goBack")).toHaveLength(4);
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("destroySurface")).toMatchObject([{ id: "tab-1" }]);
-  expect(await pressBack()).toBe(true);
-  await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
-  expect(await pressBack()).toBe(false);
+  await backToHomeThenLeaveToAndroid();
 
   // spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": what covers a
@@ -523,10 +501,35 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Clear browsing data");
   await expect.element(page.getByRole("dialog")).toBeVisible();
   await tap("Cancel");
+
+  await tap("Home");
+  await tap("More apps");
+  await tap("More apps");
+  await tap("Expand");
+  expect(await pressBack()).toBe(true);
+  await expect.element(button("Expand")).toBeVisible();
+  await expect.element(button("Passwords")).toBeVisible();
+  await tap("Expand");
+  await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+    machine.send({ type: "visit", destination: "Passwords" }, "Person"))));
+  const workspace = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get()));
+  expect(workspace()).toMatchObject({ device: { surface: "Passwords" }, assistant: { presentation: "Expanded" } });
+  expect(await pressBack()).toBe(true);
+  await expect.element(page.getByRole("button", { name: /^Internet\b/ })).toBeVisible();
+  expect(workspace()).toMatchObject({ device: { surface: "Home", homePage: "MainCards" }, assistant: { presentation: "Compact" } });
+  expect(await pressBack()).toBe(false);
 });
 
+async function revealAndEditPassword(isShown: () => boolean) {
+  expect(isShown()).toBe(false);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Show password" })));
+  await expect.poll(isShown).toBe(true);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Edit", exact: true })));
+  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
+}
+
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  let locked = true;
+  let lockRequests = 0;
   let edited = false;
   let shown = false;
   let copied = false;
@@ -534,14 +537,13 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   let recoveryOpened = false;
   let ownerAvailable = true;
   let ownerChanged: (() => void) | undefined;
+  const unlock = vi.fn(() => Promise.reject(new Error("The foreground vault must open directly")));
   const vault: PasswordVault = {
-    status: () => vaultStatus(locked),
-    lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => {
-      if (!ownerAvailable) return Promise.reject(new PasswordsClientError("not-admitted", "The account changed"));
-      locked = false;
-      return Promise.resolve({ unlockRemainingMs: 60_000 });
-    },
+    status: () => Promise.resolve(ownerAvailable
+      ? foregroundVault
+      : { ...foregroundVault, available: false, locked: true, reason: "unsupported" }),
+    lock: () => { lockRequests += 1; return Promise.resolve(); },
+    unlock,
     list: () => Promise.resolve([
       { id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] },
       ...(phoneRevision === undefined ? [] : [{ id: "phone", revision: phoneRevision, updatedAt: 2, label: "Phone account", username: phoneRevision === 1 ? "Original" : "Updated on Android", bindings: [] }]),
@@ -582,16 +584,12 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     openBackupRecovery: () => { recoveryOpened = true; return Promise.resolve({ status: "opened" }); },
   }));
   await mount(runtime);
-  const unlock = await askForPasswords();
-  const guide = () => runtime.runSync(Effect.flatMap(Effect.service(PasswordViews), (machine) => machine.get())).guide;
-  expect(guide()).toBe("ShowPasswordGuide");
+  await askForPasswords();
+  const guide = page.getByText("Choose a sign-in first.");
+  await expect.element(guide).toBeVisible();
   await act(() => { ownerChanged?.(); return Promise.resolve(); });
-  await expect.poll(guide).toBe("NoPasswordGuide");
-  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
-  await expect.poll(() => recoveryOpened).toBe(true);
-  expect(locked).toBe(true);
-  await act(() => userEvent.click(unlock));
+  await expect.element(guide).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   const search = page.getByRole("searchbox", { name: "Find a saved password" });
   const login = page.getByRole("button", { name: /Utility account/ });
   await act(() => search.fill("missing"));
@@ -602,7 +600,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await act(() => userEvent.click(page.getByRole("button", { name: "All passwords" })));
   await expect.element(login).toHaveFocus();
   await act(() => userEvent.keyboard("{Enter}"));
-  await showThenEdit(() => shown);
+  await revealAndEditPassword(() => shown);
   await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
   await expect.poll(() => copied).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "All passwords" })));
@@ -625,14 +623,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(phone).not.toBeInTheDocument();
   await expect.element(page.getByText("Password deleted.")).toBeVisible();
   await act(() => userEvent.click(login));
-  await act(() => { ownerChanged?.(); return Promise.resolve(); });
-  await expect.element(unlock).toBeEnabled();
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
-  await expect.poll(() => locked).toBe(true);
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
   ownerAvailable = false;
-  recoveryOpened = false;
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  const locksBeforeClose = lockRequests;
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
+  await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   const nextPage = page.getByRole("button", { name: "More apps" });
   await act(() => userEvent.click(nextPage));
   const passwordsCard = page.getByRole("button", { name: "Passwords", exact: true });
@@ -642,25 +640,43 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(passwordsCard).not.toBeInTheDocument();
   await act(() => userEvent.click(nextPage));
   await act(() => userEvent.click(passwordsCard));
-  await act(() => userEvent.click(unlock));
-  await expect.element(unlock).not.toBeInTheDocument();
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  const backup = page.getByRole("button", { name: "Backup and recovery" });
+  await expect.element(backup).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(backup));
   await expect.poll(() => recoveryOpened).toBe(true);
-  expect(locked).toBe(true);
+  expect(unlock).not.toHaveBeenCalled();
 });
 
-const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
-  const runtime = ManagedRuntime.make(application(native.plugin));
+const fillField = (field: Locator, text: string): PromiseLike<void> => act(() => field.fill(text));
+
+async function askForPrivateSignIn(native: ReturnType<typeof fakePlugin>, request: string, enter = fillField) {
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
+  await enter(message, request);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+}
+
+async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fillField, openPrivateEmail?: () => Promise<void>) {
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, { native: false, openPrivateEmail }));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal{Enter}"));
+  await askForPrivateSignIn(native, "use a saved password", enter);
+  await expect.element(page.getByText("Open a secure website first.")).toBeVisible();
+  expect(native.calls("createSurface")).toEqual([]);
+  await enter(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal");
+  await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("createSurface").length).toBe(1);
   await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  const checkEmail = page.getByRole("button", { name: "Check email" });
+  await expect.element(checkEmail).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Private sign-in", exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Ask Grace to use a saved password.")).toBeVisible();
+  await askForPrivateSignIn(native, "fill my password", enter);
   await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -668,35 +684,57 @@ const signInPrivately = async (native: ReturnType<typeof fakePlugin>) => {
   await native.route();
   await native.report("tab-2", "https://utility.example", 100);
   const address = page.getByRole("textbox", { name: "Private website address" });
-  await act(() => userEvent.clear(address));
-  await act(() => userEvent.type(address, "https://utility.example/enter/sample?ref=one-time{Enter}"));
+  await enter(address, "https://utility.example/enter/sample?ref=one-time");
+  await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
   });
-  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100);
+  const back = page.getByRole("button", { name: "Back", exact: true });
+  const waitForBack = (enabled: boolean) => expect.poll(async () => {
+    await native.route();
+    return back.query()?.matches(":enabled");
+  }).toBe(enabled);
+  await native.report("tab-2", "https://utility.example", 100, { canGoBack: true, canGoForward: false });
+  await waitForBack(true);
+  expect(await pressBack()).toBe(true);
+  await expect.poll(() => native.calls("goBack").at(-1)?.id).toBe("tab-2");
+  await native.report("tab-2", "https://utility.example", 100, { canGoBack: false, canGoForward: true });
+  await waitForBack(false);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Forward", exact: true })));
+  await expect.poll(() => native.calls("goForward").at(-1)?.id).toBe("tab-2");
+  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100, { canGoBack: true, canGoForward: false });
   const state = JSON.stringify(browserState());
   expect(state).not.toContain("one-time");
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  if (openPrivateEmail) {
+    const visit = () => ({ selected: browserState().selected, navigations: native.calls("navigate"), surfaces: native.calls("createSurface") });
+    const before = visit();
+    await act(() => userEvent.click(checkEmail));
+    await expect.element(page.getByRole("status").filter({ hasText: "return here" })).toBeVisible();
+    expect(visit()).toEqual(before);
+    await act(() => userEvent.click(checkEmail));
+    await expect.element(page.getByRole("status").filter({ hasText: "another device" })).toBeVisible();
+    await expect.element(address).toBeVisible();
+    expect(visit()).toEqual(before);
+  }
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  const message = page.getByRole("textbox", { name: "Message to Grace" });
-  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
-  await act(() => userEvent.type(message, "sign me in to pay my bill"));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  await askForPrivateSignIn(native, "sign me in to pay my bill", enter);
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
   return browserState;
-};
+}
 
 it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
   const native = fakePlugin(undefined, true);
-  const browserState = await signInPrivately(native);
+  const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
+  const browserState = await signInPrivately(native, undefined, openEmail);
+  expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await askForPrivateSignIn(native, "use a saved password");
   const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
   await expect.element(unavailable).toBeVisible();
   await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");
@@ -710,38 +748,37 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await native.report("tab-4", "https://utility.example", 100);
   await expect.element(unavailable).not.toBeInTheDocument();
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  await backToHomeThenLeaveToAndroid();
 });
 
-it('Use only the current local speech for Passwords guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  type Heard = { status: "complete"; text: string };
-  const requests: ((result: Heard) => void)[] = [];
-  const cancellations: string[] = [];
-  const runtime = ManagedRuntime.make(application(undefined, undefined, undefined, undefined, undefined, {
-    listen: () => new Promise<Heard>((resolve) => requests.push(resolve)),
-    cancel: ({ id }) => { cancellations.push(id); return Promise.resolve(); },
-  }));
+it('Use the current typed Passwords command when cloud speech is unavailable (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+  const runtime = ManagedRuntime.make(application(undefined));
   await mount(runtime);
-  const ask = page.getByRole("button", { name: "Ask Grace" });
-  const mic = () => page.getByRole("switch", { name: "Mic off" });
-  await act(() => userEvent.click(ask));
-  expect(requests).toHaveLength(0);
-  await act(() => userEvent.click(mic()));
-  await expect.poll(() => requests.length).toBe(1);
-  await act(() => userEvent.click(page.getByRole("textbox", { name: "Message to Grace" })));
-  await expect.poll(() => cancellations.length).toBe(1);
-  await act(() => { requests[0]?.({ status: "complete", text: "open passwords" }); return Promise.resolve(); });
+  const card = page.getByRole("button", { name: "Page 3", exact: true });
+  await act(() => userEvent.click(card));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  const mic = page.getByRole("switch", { name: "Mic off" });
+  const draft = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.element(mic).toBeDisabled();
+  await act(() => userEvent.type(draft, "sample secret words"));
+  await act(() => userEvent.keyboard("{Enter}"));
+  await expect.element(draft).toHaveValue("sample secret words");
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(mic()));
-  await expect.poll(() => requests.length).toBe(2);
-  await act(() => { requests[1]?.({ status: "complete", text: "sample secret words" }); return Promise.resolve(); });
-  await expect.element(mic()).toBeVisible();
-  await expect.element(page.getByText("sample secret words")).not.toBeInTheDocument();
-  await act(() => userEvent.click(mic()));
-  await expect.poll(() => requests.length).toBe(3);
-  await act(() => { requests[2]?.({ status: "complete", text: "Open passwords." }); return Promise.resolve(); });
+  await act(() => userEvent.clear(draft));
+  await act(() => userEvent.type(draft, "Open passwords."));
+  await act(() => userEvent.keyboard("{Enter}"));
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
 });
 
+function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<EmbeddedAgent, "abort" | "addListener"> {
+  return {
+    abort: () => Promise.resolve({ aborted: true }),
+    addListener: (event, listener) => {
+      listeners.set(event, listener);
+      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
+    },
+  };
+}
 
 it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
@@ -759,7 +796,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
       return Promise.resolve({ status: 201, data: { conversation: { id: "conversation", roomId: "room" } } });
     },
     requestStream: (input) => { requests.push(input); return Promise.resolve({ id: input.id }); },
-    ...listening(listeners),
+    ...agentEvents(listeners),
   };
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
   const host = document.body.appendChild(document.createElement("div"));
@@ -856,6 +893,10 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.poll(() => refusal.elements().length).toBe(2);
     expect(review.query()).toBeNull();
 
+    await offer("Check the website help page.", [namedPage]);
+    await expect.poll(() => refusal.elements().length).toBe(3);
+    expect(review.query()).toBeNull();
+
     await offer(askForPage, [namedPage]);
     await expect.element(review.getByText(target, { exact: true })).toBeVisible();
     expect(plan.query()).toBeNull();
@@ -881,10 +922,14 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it('Talk and hear a reply through the metered voice transport (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async () => {
+it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords by voice"] as const)(
+  '%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
+  const firstAccount = crypto.randomUUID();
+  const secondAccount = crypto.randomUUID();
+  let accountId: string | undefined = firstAccount;
   const calls: string[] = [];
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
@@ -898,26 +943,29 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
   const captures: MediaStreamTrack[] = [];
   const turns: unknown[] = [];
   const phrases: string[] = [];
+  const microphones: AudioContext[] = [];
   vi.stubGlobal("AudioContext", class extends AudioContext {
     constructor(options?: AudioContextOptions) {
       const silentOutput = { ...options, sinkId: { type: "none" } };
       super(silentOutput);
     }
   });
-  const microphone = new AudioContext({ sampleRate: 16_000 });
-  const source = microphone.createOscillator();
-  const inputMedia = microphone.createMediaStreamDestination();
-  source.connect(inputMedia);
-  source.start();
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
+    const microphone = new AudioContext({ sampleRate: 16_000 });
+    microphones.push(microphone);
+    const source = microphone.createOscillator();
+    const input = microphone.createMediaStreamDestination();
+    source.connect(input);
+    source.start();
     await microphone.resume();
-    const stream = inputMedia.stream.clone();
-    captures.push(...stream.getAudioTracks());
-    return stream;
+    captures.push(...input.stream.getAudioTracks());
+    return input.stream;
   });
   const originalFetch = window.fetch.bind(window);
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const pathname = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+    if (pathname === "/api/auth/session") return accountId ? Response.json({ account: { id: accountId, email: null } }) : new Response(null, { status: 401 });
+    if (pathname === "/api/v1/billing/subscription" || pathname === "/api/v1/eliza/google/status") return new Response(null, { status: 404 });
     if (!pathname.startsWith(speechPath)) return originalFetch(input, options);
     calls.push(pathname);
     if (pathname.endsWith("/consent")) return Response.json({ consentNonce: sessionId });
@@ -933,12 +981,15 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     }
     return Response.json({ revoked: true });
   });
+  const sockets: FixtureSocket[] = [];
+  let recordedFrames = 0;
   class FixtureSocket extends EventTarget {
     readyState = 0;
     bufferedAmount = 0;
 
     constructor(url: string) {
       super();
+      sockets.push(this);
       expect(new URL(url).pathname).toBe(speechPath + "/ws");
       queueMicrotask(() => {
         this.readyState = 1;
@@ -954,6 +1005,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
 
     send(value: string | ArrayBuffer) {
       if (value instanceof ArrayBuffer) {
+        recordedFrames++;
         expect(value.byteLength % 2).toBe(0);
         if (nextTranscript) {
           this.receive({ t: "stt", event: { type: "start-of-turn", transcript: "" } });
@@ -1005,7 +1057,7 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
       });
       return Promise.resolve({ id });
     },
-    ...listening(listeners),
+    ...agentEvents(listeners),
   };
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
   const host = document.body.appendChild(document.createElement("div"));
@@ -1014,97 +1066,205 @@ it('Talk and hear a reply through the metered voice transport (spec/app/conversa
     const workspace = () => runtime.runSync(Effect.flatMap(Workspaces, (machine) => machine.get()));
     await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
     await expect.poll(() => workspace().device.reasoningAvailable).toBe(true);
-    await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-    await act(() => userEvent.click(page.getByRole("button", { name: "Allow mic" })));
-    await act(async () => {
-      await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
-      await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
-      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
-    });
+    const press = (control: Locator) => act(() => userEvent.click(control));
+    const notice = page.getByRole("dialog", { name: "Talk to Grace" });
+    const continueTalk = notice.getByRole("button", { name: "Continue to Talk" });
+    const talkControl = page.getByRole("button", { name: "Allow mic" }).or(page.getByRole("switch", { name: "Mic off" }));
+    const ask = page.getByRole("button", { name: "Ask Grace" });
     const speechSession = [speechPath + "/consent", speechPath + "/session", speechPath + "/session/" + sessionId + "/revoke"];
-    await expect.poll(() => calls).toEqual(speechSession);
+    const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+      machine.send({ type: "chooseHomePage", page }, "Person")));
+    const refresh = () => act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    if (journey === "Talk and hear a reply" || journey === "Answer a spoken question") {
+      await press(page.getByRole("button", { name: "Settings", exact: true }));
+      await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
+      await expect.element(page.getByText(voiceDisclosure, { exact: true })).toBeVisible();
+      await press(page.getByRole("button", { name: "Close Settings", exact: true }));
+      await press(ask);
+      await press(talkControl);
+      await expect.element(notice.getByText(voiceDisclosure)).toBeVisible();
+      await press(notice.getByRole("button", { name: "Cancel" }));
+      expect(audio).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      await press(talkControl);
+      await expect.element(notice).toBeVisible();
+      accountId = secondAccount;
+      await refresh();
+      await press(continueTalk);
+      await expect.element(notice).toBeVisible();
+      expect(audio).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      await press(continueTalk);
+      await act(async () => {
+        await expect.poll(() => recordedFrames).toBeGreaterThan(0);
+        await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+        await expect.poll(() => workspace().assistant.conversation.turn).toBe("Ready");
+        await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+      });
+      await expect.poll(() => calls).toEqual(speechSession);
 
-    const conversation = () => workspace().assistant.conversation;
-    const texts = () => conversation().messages.map((turn) => turn.text);
-    const tracks = () => captures.map((track) => track.readyState);
-    const question = "Shall I call Anne?";
-    const chips = ["Yes, call Anne now", "Not now"];
-    const asked = JSON.stringify({ text: question, isQuestion: true, answers: chips });
-    const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more", "Mute the next reply", "Read another question", "Read the last question"];
-    const done = "I’ll ring her now.";
-    const talk = () => act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+      if (journey === "Talk and hear a reply") {
+        audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
+        await press(talkControl);
+        await expect.poll(() => audio.mock.calls.length).toBe(2);
+        await expect.element(notice).not.toBeInTheDocument();
+        accountId = firstAccount;
+        await refresh();
+        await press(talkControl);
+        await expect.element(notice).toBeVisible();
+        expect(audio).toHaveBeenCalledTimes(2);
+        await press(notice.getByRole("button", { name: "Cancel" }));
+        return;
+      }
+      const conversation = () => workspace().assistant.conversation;
+      const texts = () => conversation().messages.map((turn) => turn.text);
+      const tracks = () => captures.map((track) => track.readyState);
+      const question = "Shall I call Anne?";
+      const chips = ["Yes, call Anne now", "Not now"];
+      const asked = JSON.stringify({ text: question, isQuestion: true, answers: chips });
+      const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more", "Mute the next reply", "Read another question", "Read the last question"];
+      const done = "I’ll ring her now.";
+      const talk = () => act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
 
-    replies.push(asked, done);
-    nextTranscript = said[0];
-    const before = conversation().generation;
-    await talk();
-    await expect.poll(() => [conversation().turn, conversation().voice, conversation().generation, texts().at(-1)]).toEqual(["Listening", true, before + 2, question]);
-    expect(tracks()).toEqual(["ended", "live"]);
-    expect(audio).toHaveBeenCalledTimes(2);
-    await expect.element(page.getByRole("button", { name: chips[0] })).toBeEnabled();
-    nextTranscript = said[1];
-    await expect.poll(() => texts()).toEqual([voiceInput, voiceOutput, said[0], question, said[1], done]);
-    await expect.poll(() => [conversation().turn, conversation().voice, tracks()]).toEqual(["Ready", false, ["ended", "ended"]]);
-    await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
-
-    replies.push(asked);
-    nextTranscript = said[2];
-    await talk();
-    await expect.poll(() => [conversation().turn, texts().at(-1)]).toEqual(["Listening", question]);
-    await expect.poll(() => [conversation().turn, conversation().voice, tracks()], { timeout: 12_000 }).toEqual(["Ready", false, ["ended", "ended", "ended"]]);
-    expect([texts().slice(-2), conversation().question, conversation().answers]).toEqual([[said[2], question], true, chips]);
-    await expect.element(page.getByRole("button", { name: chips[1] })).toBeEnabled();
-
-    replies.push(asked);
-    holdComplete = true;
-    nextTranscript = said[3];
-    await talk();
-    await expect.poll(() => [conversation().turn, texts().at(-1)]).toEqual(["Speaking", question]);
-    await act(() => userEvent.click(page.getByRole("button", { name: "Pause Grace" })));
-    await expect.poll(() => [conversation().turn, conversation().voice, tracks()]).toEqual(["Paused", false, ["ended", "ended", "ended", "ended"]]);
-    await act(() => userEvent.click(page.getByRole("button", { name: "Resume Grace" })));
-    await expect.poll(() => [conversation().turn, conversation().voice]).toEqual(["Speaking", false]);
-    holdComplete = false;
-    release();
-    await expect.poll(() => [conversation().turn, conversation().voice]).toEqual(["Ready", false]);
-    expect(audio).toHaveBeenCalledTimes(4);
-    const preference = (muted: boolean) => act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
-      machine.send({ type: "changePreferences", settings: { ...workspace().preferences.session, muted } }, "Person"))).then(() => undefined));
-    for (const [offset, cause] of (["mute", "empty", "disconnect"] as const).entries()) {
-      const index = 4 + offset;
-      sendAudio = cause !== "empty";
-      const priorFinishes = finishes;
-      replies.push(asked);
-      nextTranscript = said[index];
-      holdComplete = true;
+      replies.push(asked, done);
+      nextTranscript = said[0];
+      const before = conversation().generation;
       await talk();
-      await expect.poll(() => [conversation().turn, texts().at(-1), finishes]).toEqual(["Speaking", question, priorFinishes + 1]);
-      const delayedComplete = release;
-      if (cause === "mute") await preference(true);
-      else await act(() => Promise.resolve(cause === "empty" ? release() : disconnect()));
-      await expect.poll(() => [conversation().turn, conversation().voice, tracks().at(-1)]).toEqual(["Ready", false, "ended"]);
-      await act(() => Promise.resolve(delayedComplete()));
+      await expect.poll(() => [conversation().turn, conversation().voice, conversation().generation, texts().at(-1)]).toEqual(["Listening", true, before + 2, question]);
+      expect(tracks()).toEqual(["ended", "live"]);
+      expect(audio).toHaveBeenCalledTimes(2);
       await expect.element(page.getByRole("button", { name: chips[0] })).toBeEnabled();
-      expect([conversation().turn, conversation().voice]).toEqual(["Ready", false]);
-      if (cause === "mute") await preference(false);
-    }
-    holdComplete = false;
-    const sessions = Array.from({ length: 7 }).flatMap(() => speechSession);
-    await expect.poll(() => calls).toEqual(sessions);
-    const transcript = texts();
+      nextTranscript = said[1];
+      await expect.poll(() => texts()).toEqual([voiceInput, voiceOutput, said[0], question, said[1], done]);
+      await expect.poll(() => [conversation().turn, conversation().voice, tracks()]).toEqual(["Ready", false, ["ended", "ended"]]);
+      await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
 
+      replies.push(asked);
+      nextTranscript = said[2];
+      await talk();
+      await expect.poll(() => [conversation().turn, texts().at(-1)]).toEqual(["Listening", question]);
+      await expect.poll(() => [conversation().turn, conversation().voice, tracks()], { timeout: 12_000 }).toEqual(["Ready", false, ["ended", "ended", "ended"]]);
+      expect([texts().slice(-2), conversation().question, conversation().answers]).toEqual([[said[2], question], true, chips]);
+      await expect.element(page.getByRole("button", { name: chips[1] })).toBeEnabled();
+
+      replies.push(asked);
+      holdComplete = true;
+      nextTranscript = said[3];
+      await talk();
+      await expect.poll(() => [conversation().turn, texts().at(-1)]).toEqual(["Speaking", question]);
+      await act(() => userEvent.click(page.getByRole("button", { name: "Pause Grace" })));
+      await expect.poll(() => [conversation().turn, conversation().voice, tracks()]).toEqual(["Paused", false, ["ended", "ended", "ended", "ended"]]);
+      await act(() => userEvent.click(page.getByRole("button", { name: "Resume Grace" })));
+      await expect.poll(() => [conversation().turn, conversation().voice]).toEqual(["Speaking", false]);
+      holdComplete = false;
+      release();
+      await expect.poll(() => [conversation().turn, conversation().voice]).toEqual(["Ready", false]);
+      expect(audio).toHaveBeenCalledTimes(4);
+      const preference = (muted: boolean) => act(() => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+        machine.send({ type: "changePreferences", settings: { ...workspace().preferences.session, muted } }, "Person"))).then(() => undefined));
+      for (const [offset, cause] of (["mute", "empty", "disconnect"] as const).entries()) {
+        const index = 4 + offset;
+        sendAudio = cause !== "empty";
+        const priorFinishes = finishes;
+        replies.push(asked);
+        nextTranscript = said[index];
+        holdComplete = true;
+        await talk();
+        await expect.poll(() => [conversation().turn, texts().at(-1), finishes]).toEqual(["Speaking", question, priorFinishes + 1]);
+        const delayedComplete = release;
+        if (cause === "mute") await preference(true);
+        else await act(() => Promise.resolve(cause === "empty" ? release() : disconnect()));
+        await expect.poll(() => [conversation().turn, conversation().voice, tracks().at(-1)]).toEqual(["Ready", false, "ended"]);
+        await act(() => Promise.resolve(delayedComplete()));
+        await expect.element(page.getByRole("button", { name: chips[0] })).toBeEnabled();
+        expect([conversation().turn, conversation().voice]).toEqual(["Ready", false]);
+        if (cause === "mute") await preference(false);
+      }
+      holdComplete = false;
+      const sessions = Array.from({ length: 7 }).flatMap(() => speechSession);
+      await expect.poll(() => calls).toEqual(sessions);
+      const transcript = texts();
+
+      nextTranscript = "Where can I find my saved passwords?";
+      await talk();
+      await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
+      await expect.poll(() => tracks()).toEqual(Array(8).fill("ended"));
+      await expect.poll(() => calls).toEqual([...sessions, ...speechSession]);
+      expect(texts()).toEqual(transcript);
+      expect(turns).toEqual([voiceInput, ...said].map((text) => ({ text })));
+      expect(phrases).toEqual([voiceOutput, question, done, ...Array.from({ length: 5 }, () => question)]);
+      return;
+    }
+    if (journey === "Keep private card inputs out of chat") {
+      nextTranscript = "";
+      await press(ask);
+      await press(talkControl);
+      await press(continueTalk);
+      await expect.poll(() => recordedFrames).toBeGreaterThan(0);
+      await act(() => choosePage("PasswordsCard").then(() => undefined));
+      await expect.poll(() => calls).toEqual(speechSession);
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+      await act(() => Promise.resolve(sockets.at(-1)?.receive({ t: "stt", event: { type: "end-of-turn", transcript: "fixture stale utterance" } })));
+      const recordedBeforeGuide = audio.mock.calls.length;
+      await press(talkControl);
+      await expect.element(notice).toBeVisible();
+      await press(notice.getByRole("button", { name: "Cancel" }));
+      expect(audio).toHaveBeenCalledTimes(recordedBeforeGuide);
+      expect(calls).toEqual(speechSession);
+      nextTranscript = "fixture unrecognized private phrase";
+      await press(talkControl);
+      await press(continueTalk);
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+      await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+      expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([]);
+      expect(turns).toEqual([]);
+      const draft = page.getByRole("textbox", { name: "Message to Grace" });
+      await act(() => userEvent.fill(draft, "fixture arbitrary credential"));
+      const revision = workspace().assistant.conversation.draftRevision;
+      await expect(runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
+        machine.send({ type: "interact", input: { tag: "SendDraft", revision } }, "Person")))).rejects.toBeDefined();
+      await expect.element(page.getByRole("button", { name: "Send", exact: true })).not.toBeInTheDocument();
+      await act(() => userEvent.keyboard("{Enter}"));
+      expect(calls).toEqual([...speechSession, ...speechSession]);
+      expect(captures).toHaveLength(2);
+      expect(turns).toEqual([]);
+      await expect.element(page.getByText("I couldn’t recognize that Passwords command. Try typing it.")).toBeVisible();
+      await act(() => choosePage("MainCards").then(() => undefined));
+      await expect.element(draft).toHaveValue("");
+      expect(workspace().assistant.conversation.draft).toBe("");
+
+      return;
+    }
+    await act(() => choosePage("PasswordsCard").then(() => undefined));
+    await press(ask);
     nextTranscript = "Where can I find my saved passwords?";
-    await talk();
+    await press(talkControl);
+    await press(continueTalk);
     await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
-    await expect.poll(() => tracks()).toEqual(Array(8).fill("ended"));
-    await expect.poll(() => calls).toEqual([...sessions, ...speechSession]);
-    expect(texts()).toEqual(transcript);
-    expect(turns).toEqual([voiceInput, ...said].map((text) => ({ text })));
-    expect(phrases).toEqual([voiceOutput, question, done, ...Array(5).fill(question)]);
+    await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+    await expect.poll(() => calls).toEqual(speechSession);
+    expect(workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([]);
+    expect(turns).toEqual([]);
+    expect(phrases).toEqual([]);
+    await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).not.toBeInTheDocument();
+    const inputCount = audio.mock.calls.length;
+    await press(page.getByRole("button", { name: "Close Passwords" }));
+    await act(() => choosePage("PasswordsCard").then(() => undefined));
+    accountId = undefined;
+    await refresh();
+    await press(ask);
+    await press(talkControl);
+    await expect.element(page.getByText("Cloud speech is unavailable. You can type a Passwords command.")).toBeVisible();
+    expect(audio).toHaveBeenCalledTimes(inputCount);
+    expect(calls).toHaveLength(speechSession.length);
+    expect(turns).toEqual([]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
-    await microphone.close();
+    for (const person of [firstAccount, secondAccount]) {
+      for (const suffix of ["", "/command"]) localStorage.removeItem("grace/voice-disclosure/web/" + person + suffix);
+    }
+    await Promise.all(microphones.map((microphone) => microphone.close()));
     host.remove();
     request.mockRestore();
     audio.mockRestore();
@@ -1132,7 +1292,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   const attachment = { partId: "1", name: "Receipt.txt", mimeType: "text/plain", size: originalText.length, supported: true };
   const archive = { partId: "2", name: "Extras.zip", mimeType: "application/zip", size: 100, supported: false };
-  const pdfBytes = statementPdf;
+  const pdfBytes = await window.fetch(new URL("./site/statement.pdf", import.meta.url)).then((response) => response.text());
   const pdf = { partId: "3", name: "Original receipt.pdf", mimeType: "application/pdf", size: pdfBytes.length, supported: true };
   const pdfHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pdfBytes))),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1222,7 +1382,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
           bodyText: replyFromOwner ? literalText : "Another person’s message",
         });
-      case "/api/v1/eliza/google/gmail/attachment":
+      case "/api/v1/eliza/google/gmail/attachment": {
         attachmentReads++;
         const photo = photoParts.find(({ part }) => part.partId === api.searchParams.get("partId"));
         if (photo) return reply({ ...photo.part, version: 1, accountId: attachmentOwner, organizationId: "grace-org", grantId: grant, messageId: mail.externalId,
@@ -1235,6 +1395,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant, historyId: "8", partId: attachment.partId });
         return reply({ ...attachment, version: 1, accountId: attachmentOwner, messageId: mail.externalId, historyId: "8",
           dataBase64: btoa(originalText), sha256: originalHash });
+      }
       case "/api/v1/eliza/google/gmail/send": {
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, recipient: "robin@example.test" });
@@ -1313,12 +1474,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     }
   });
 
-  let runtime = ManagedRuntime.make(application(undefined));
-  const host = document.body.appendChild(document.createElement("div"));
-  let root = createRoot(host);
+  const runtime = ManagedRuntime.make(application(undefined));
+  let view = tabletView(runtime);
   const tap = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   try {
-    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await view.render();
     await tap("Go to Account");
     await tap("Use email");
     await act(() => userEvent.type(page.getByRole("textbox", { name: "Email address" }), person.email));
@@ -1481,22 +1641,21 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Open " + pdf.name);
     await expect.poll(() => document.querySelector("object[type='application/pdf']")?.getAttribute("data"))
       .toBe("data:application/pdf;base64," + btoa(pdfBytes) + "#page=1");
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    const reminderUrl = new URL(oldURL);
-    reminderUrl.hash = "calendar";
-    reminderUrl.searchParams.set("owner_hint", ownerHint);
-    reminderUrl.searchParams.set("occurrence", reminderEvent.externalId);
-    window.history.replaceState(undefined, "", reminderUrl);
-    runtime = ManagedRuntime.make(application(undefined));
-    root = createRoot(host);
-    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+
+    await view.dispose();
+    const noticeUrl = new URL(oldURL);
+    noticeUrl.hash = "calendar";
+    noticeUrl.searchParams.set("owner_hint", ownerHint);
+    noticeUrl.searchParams.set("occurrence", reminderEvent.externalId);
+    window.history.replaceState(undefined, "", noticeUrl);
+    view = tabletView(ManagedRuntime.make(application(undefined)));
+    await view.render();
+    await expect.element(page.getByRole("heading", { name: reminderEvent.title, exact: true })).toBeVisible();
     await expect.element(page.getByText(reminderEvent.description, { exact: true })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "Back to calendar" })).toBeVisible();
+    expect(new URL(window.location.href).searchParams.has("occurrence")).toBe(false);
   } finally {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
-    host.remove();
+    await view.dispose();
     provider.mockRestore();
     if (oldAccounts === null) localStorage.removeItem("accounts");
     else localStorage.setItem("accounts", oldAccounts);
@@ -1504,7 +1663,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     else sessionStorage.setItem("grace-hosted-read", oldIntent);
     window.history.replaceState(undefined, "", oldURL);
   }
-});
+}, 120_000);
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
   const audio = { step: 0, min: 0, max: 15, muted: false };
@@ -1514,12 +1673,12 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     display: {
-      getDevice: async () => {
+      getDevice: () => {
         readback.push({ brightness, muted: audio.muted, step: audio.step });
-        return { volume: { ...audio }, brightness: { percent: brightness } };
+        return Promise.resolve({ volume: { ...audio }, brightness: { percent: brightness } });
       },
-      setBrightness: async ({ percent }) => { if (!denyBrightness) brightness = percent; },
-      setVolume: async ({ step, muted }) => { Object.assign(audio, { step, muted }); },
+      setBrightness: ({ percent }) => { if (!denyBrightness) brightness = percent; return Promise.resolve(); },
+      setVolume: ({ step, muted }) => { Object.assign(audio, { step, muted }); return Promise.resolve(); },
     },
   }));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
@@ -1554,15 +1713,15 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   const options = {
     native: true,
     preferences: {
-      read: async () => stored,
-      write: async ({ revision, value }: { revision: number; value: string }) => {
+      read: () => Promise.resolve(stored),
+      write: ({ revision, value }: { revision: number; value: string }) => {
         expect(revision).toBe(stored.revision);
         if (rejectNextWrite) {
           rejectNextWrite = false;
-          throw new Error("Device storage unavailable");
+          return Promise.reject(new Error("Device storage unavailable"));
         }
         stored = { revision: revision + 1, value };
-        return { revision: stored.revision };
+        return Promise.resolve({ revision: stored.revision });
       },
     },
   };
@@ -1570,12 +1729,12 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   let runtime = ManagedRuntime.make(application(undefined, undefined, options));
   let root = createRoot(host);
   onTestFinished(async () => {
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
     host.remove();
   });
   const mountSettings = async () => {
-    await act(() => root.render(<App runtime={runtime} />));
+    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
     await act(() => userEvent.click(page.getByRole("button", { name: "Settings", exact: true })));
   };
   const larger = page.getByRole("radio", { name: "Larger", exact: true });
@@ -1586,7 +1745,7 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   expect(stored.revision).toBe(0);
   await act(() => userEvent.click(page.getByRole("button", { name: "Try again", exact: true })));
   await expect.poll(() => stored.revision).toBe(1);
-  await act(() => root.unmount());
+  await act(() => Promise.resolve(root.unmount()));
   await runtime.dispose();
   root = createRoot(host);
   runtime = ManagedRuntime.make(application(undefined, undefined, options));
@@ -1610,12 +1769,12 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
     native: true,
     files: {
       saveAttachments: () => Promise.reject(new Error("No mail attachments in this journey")),
-      open: async () => ({ lease }),
-      close: async () => undefined,
-      list: async () => ({ entries }),
-      preview: async ({ id, page }) => ({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
-      pick: async () => undefined,
-      capture: async () => undefined,
+      open: () => Promise.resolve({ lease }),
+      close: () => Promise.resolve(),
+      list: () => Promise.resolve({ entries }),
+      preview: ({ id, page }) => Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
+      pick: () => Promise.resolve(),
+      capture: () => Promise.resolve(),
       addListener: (_event, listener) => {
         notify = listener;
         return Promise.resolve({ remove: () => { notify = () => undefined; return Promise.resolve(); } });
@@ -1638,11 +1797,12 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
         incoming = undefined;
         return Promise.resolve({ id: attachment.id });
       },
-      remove: async (request) => {
+      remove: (request) => {
         expect(request).toEqual({ lease, id: photo.id });
         removals.push(request.id);
-        if (removals.length === 1) throw new Error("Device storage unavailable");
+        if (removals.length === 1) return Promise.reject(new Error("Device storage unavailable"));
         entries = [];
+        return Promise.resolve();
       },
     },
   }));
@@ -1679,14 +1839,21 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   expect(transfers).toEqual([request, request, request]);
 });
 
-it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  let locked = true;
+it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
+  let lockRequests = 0;
+  let needsMigration = true;
   let saved = { id: "first-login", revision: 4, updatedAt: 1, label: "Utility account", username: "Pat", bindings: [] };
   let shown = false;
   const vault: PasswordVault = {
-    status: () => vaultStatus(locked),
-    lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => { locked = false; return Promise.resolve({ unlockRemainingMs: 60_000 }); },
+    status: () => Promise.resolve(needsMigration
+      ? { ...foregroundVault, locked: true, reason: "legacy-authorization-required" }
+      : foregroundVault),
+    lock: () => { lockRequests += 1; return Promise.resolve(); },
+    unlock: () => {
+      if (!needsMigration) return Promise.reject(new Error("The existing sign-in was already migrated"));
+      needsMigration = false;
+      return Promise.resolve({ unlockRemainingMs: null });
+    },
     list: () => Promise.resolve([saved]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
@@ -1703,27 +1870,24 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
     },
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
-  let finishSpeech: ((result: GuideSpeechResult) => void) | undefined;
-  const runtime = ManagedRuntime.make(application(undefined, undefined, {
-    native: false, vault,
-    guideSpeech: {
-      listen: () => new Promise<GuideSpeechResult>((resolve) => { finishSpeech = resolve; }),
-      cancel: () => { finishSpeech?.({ status: "cancelled" }); return Promise.resolve(); },
-    },
-  }));
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, vault }));
   await mount(runtime);
-  const unlock = await askForPasswords();
-  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(unlock));
+  await askForPasswords();
+  const migrate = page.getByRole("button", { name: "Open saved passwords" });
+  await expect.element(migrate).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: /Utility account/ })).not.toBeInTheDocument();
+  await act(() => userEvent.click(migrate));
   await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
-  await showThenEdit(() => shown);
+  await revealAndEditPassword(() => shown);
   saved = { ...saved, username: "Updated on this tablet", revision: 6 };
   await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).toBeVisible();
+  const locksBeforeClose = lockRequests;
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
-  await expect.poll(() => locked).toBe(true);
+  await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
+  await expect.element(filesPage).toBeVisible();
   const swipe = (direction: "left" | "right") => act(async () => {
     const session = cdp();
     const cards = filesPage.element().parentElement!.getBoundingClientRect();
@@ -1741,27 +1905,35 @@ it('Use a standalone vault and local voice guidance (spec/app/index.md, "Story: 
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
-  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  await act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
-  await expect.poll(() => typeof finishSpeech).toBe("function");
-  await act(async () => { finishSpeech?.({ status: "complete", text: "Open passwords" }); });
-  await expect.element(unlock).toBeEnabled();
+  const draft = page.getByRole("textbox", { name: "Message to Grace" });
+  await act(() => userEvent.type(draft, "Open passwords"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
 });
 
 it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
-  await signInPrivately(fakePlugin());
+  const native = fakePlugin();
+  await signInPrivately(native, async (field, text) => {
+    await act(() => userEvent.clear(field));
+    await act(() => userEvent.type(field, text));
+  });
 });
 
-const approval = {
+const passwordBackupApproval = {
   clientId: "technology.graceful.grace", environment: "staging", purpose: "save",
   redirectUri: "https://app.graceforseniors.com/android/auth/callback", state: "s".repeat(43),
   codeChallenge: "c".repeat(43), codeChallengeMethod: "S256",
 } as const;
-const returned = new URL(approval.redirectUri);
-returned.searchParams.set("code", "pbackup_" + "k".repeat(43));
-returned.searchParams.set("state", approval.state);
+
+function approvedBackupReturn() {
+  const returned = new URL(passwordBackupApproval.redirectUri);
+  returned.searchParams.set("code", "pbackup_" + "k".repeat(43));
+  returned.searchParams.set("state", passwordBackupApproval.state);
+  return returned;
+}
 
 it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
   const original = location.href;
@@ -1783,7 +1955,7 @@ it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story:
     return network(input, init);
   });
   onTestFinished(async () => {
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     await Promise.all([first.dispose(), reopened.dispose()]);
     service.mockRestore();
     host.remove();
@@ -1792,12 +1964,12 @@ it('Keep a cancelled tablet sign-in closed on return (spec/app/setup.md, "Story:
     else sessionStorage.setItem("grace-device-sign-in", pending);
   });
 
-  await act(() => root.render(<App key="first" runtime={first} />));
+  await act(() => Promise.resolve(root.render(<App key="first" runtime={first} />)));
   const cancel = page.getByRole("button", { name: "Cancel tablet sign-in" });
   await expect.element(cancel).toBeVisible();
   await act(() => userEvent.click(cancel));
   await expect.element(cancel).not.toBeInTheDocument();
-  await act(() => root.render(<App key="reopened" runtime={reopened} />));
+  await act(() => Promise.resolve(root.render(<App key="reopened" runtime={reopened} />)));
   await expect.element(page.getByText("tablet-owner@example.test", { exact: true })).toBeVisible();
   await expect.element(cancel).not.toBeInTheDocument();
 });
@@ -1806,19 +1978,21 @@ it('Approve the shown account before returning to the tablet (spec/app/setup.md,
   const element = document.createElement("div");
   document.body.append(element);
   const root = createRoot(element);
+  const approval = passwordBackupApproval;
+  const returned = approvedBackupReturn();
   const requests: unknown[] = [];
   const network = window.fetch.bind(window);
   const fetch = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     if (typeof input !== "string" || !input.endsWith("/api/v1/app-auth/mobile/password-backup")) return network(input, init);
-    requests.push(JSON.parse(String(init?.body)));
+    requests.push(await new Response(init?.body).json());
     return Response.json({ redirectUrl: returned.href });
   });
   onTestFinished(async () => {
     fetch.mockRestore();
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     element.remove();
   });
-  await act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }} />));
+  await act(() => Promise.resolve(root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }} />)));
   expect(requests).toEqual([]);
   await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
   await expect.element(page.getByRole("link", { name: "Return to Grace" })).toHaveAttribute("href", returned.href);
@@ -1829,8 +2003,10 @@ it('Refresh an email-only sign-in before approving a password backup (spec/app/s
   const element = document.createElement("div");
   document.body.append(element);
   const root = createRoot(element);
+  const approval = passwordBackupApproval;
   const calls: string[] = [];
   const network = window.fetch.bind(window);
+  const returned = approvedBackupReturn();
   let approves = 0;
   const mock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     if (typeof input !== "string") return network(input, init);
@@ -1843,16 +2019,16 @@ it('Refresh an email-only sign-in before approving a password backup (spec/app/s
     if (pathname !== "/api/v1/app-auth/mobile/password-backup") return network(input, init);
     calls.push(pathname);
     if (++approves === 1) return new Response(null, { status: 401 });
-    expect(JSON.parse(String(init?.body))).toEqual({ approval, expectedOwnerId: "owner" });
+    expect(await new Response(init?.body).json()).toEqual({ approval, expectedOwnerId: "owner" });
     return Response.json({ redirectUrl: returned.href });
   });
   onTestFinished(async () => {
     mock.mockRestore();
-    await act(() => root.unmount());
+    await act(() => Promise.resolve(root.unmount()));
     element.remove();
   });
-  await act(() => root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }}
-    providers={{ google: false, email: true, sms: false }} />));
+  await act(() => Promise.resolve(root.render(<PasswordBackupConsent approval={approval} account={{ id: "owner", email: "owner@example.test" }}
+    providers={{ google: false, email: true, sms: false }} />)));
   await act(async () => { await page.getByRole("button", { name: "Approve" }).click(); });
   await act(async () => { await page.getByRole("button", { name: "Use email" }).click(); });
   await act(async () => { await page.getByLabelText("Email address").fill("owner@example.test"); });
@@ -1903,7 +2079,14 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const target = "Help center";
   const ask = 'Help me reach the help page named "Help center", then read my two appointment emails and saved appointment. Leave everything unchanged.';
+  const invalidAsk = "Help me find the website help page.";
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: invalidAsk,
+    answer: JSON.stringify({
+      text: "Review and start the read plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: "Account history" }] }],
+    }),
+  }, {
     said: ask,
     answer: JSON.stringify({
       text: "Review and start the read plan.", isQuestion: false, answers: [],
@@ -1929,6 +2112,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let domRevision = 1;
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
+  let addChallengeDuringRead = false;
+  let challengeShown = false;
+  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
@@ -1936,10 +2122,20 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
+          ...(signInWidget === "hidden" ? [] : [
+            { id: "username", tag: "input", type: "text", fieldName: "username", label: signInWidget === "accountOnly" ? "Username" : "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
+            signInWidget === "accountOnly"
+              ? { id: "continue", tag: "button", label: "Continue ›", submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
+              : { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
+            { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
+            { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
+          ]),
+          { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search", href: null, inViewport: true },
+          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
           { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
           { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: -2, width: 100, height: 32 } },
-          { id: "help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
+          { id: "help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: 80, width: 100, height: 32 } },
         ],
       } };
@@ -1947,6 +2143,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     return { result: { accepted: true } };
   }, false, () => {
     if (reviseDuringRead) domRevision++;
+    if (addChallengeDuringRead) challengeShown = true;
     if (replaceDocumentDuringRead) {
       currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
       replaceDocumentDuringRead = false;
@@ -1958,15 +2155,18 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let replaceGuideOwner = true;
   const browserFetch = window.fetch.bind(window);
   const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
-    const url = new URL(String(input), window.location.origin);
+    const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (url.origin !== window.location.origin) return browserFetch(input, init);
     switch (url.pathname) {
       case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
       case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
-      case "/api/v1/decisions":
+      case "/api/v1/decisions": {
         guideCalls++;
+        expect(init?.body).not.toContain("Private sign-in link");
+        expect(init?.body).not.toContain("Private username");
+        expect(init?.body).not.toContain("Credential URL");
         expect(init?.credentials).toBe("include");
         const headers = new Headers(init?.headers);
         expect(headers.has("Authorization")).toBe(false);
@@ -1979,17 +2179,24 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
           }
           return response;
         });
+      }
       default: return browserFetch(input, init);
     }
   });
-  const { routeTo, tap, browse, stop } = await openRouted(native, { url: cloud, key: secret });
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
 
   try {
-    await browse();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+    await native.route();
+    await visitExampleSite(native);
 
     await tap(page.getByRole("button", { name: "Ask Grace" }));
     const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
+    await act(() => field.fill(invalidAsk));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByText("I could not prepare that read plan.", { exact: true }));
+    expect(page.getByRole("button", { name: "Start read plan" }).query()).toBeNull();
     await act(() => field.fill(ask));
     await act(() => userEvent.keyboard("{Enter}"));
     await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
@@ -2034,12 +2241,22 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
+    challengeShown = true;
+    await tap(showLink);
+    await routeTo(page.getByText(/Finish the form yourself in this tab/));
+    expect(guideCalls).toBe(0);
+    challengeShown = false;
+    signInWidget = "active";
+    await tap(showLink);
+    await routeTo(page.getByText(/Finish the form yourself in this tab/));
+    expect(guideCalls).toBe(0);
+    signInWidget = "idle";
     await tap(showLink);
     await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
-    expect(native.calls("controlPage")).not.toContainEqual(expect.objectContaining({
-      command: expect.objectContaining({ subaction: "guide", guidance: expect.objectContaining({ kind: "show" }) }),
-    }));
+    const shownGuide = Schema.Struct({ command: Schema.Struct({ subaction: Schema.Literal("guide"), guidance: Schema.Struct({ kind: Schema.Literal("show") }) }) });
+    expect(native.calls("controlPage").some(Schema.is(shownGuide))).toBe(false);
     guideOwner = "guide-owner";
+    signInWidget = "accountOnly";
     await tap(showLink);
     await routeTo(page.getByText("Look for “Help center” on example.org."));
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
@@ -2047,16 +2264,29 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     } });
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
+    signInWidget = "hidden";
     currentPage = help;
     await native.report("tab-1", origin + help.path, 100);
     await native.route();
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
+    signInWidget = "idle";
+    await tap(check);
+    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    signInWidget = "hidden";
     replaceDocumentDuringRead = true;
     await tap(check);
     await expect.poll(() => result.query()?.textContent).toContain(target);
     await expect.element(pending).toHaveAttribute("aria-current", "step");
+    addChallengeDuringRead = true;
+    await tap(check);
+    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    expect(plan.getByText(/^Open page:/).query()).toBeNull();
+    addChallengeDuringRead = false;
+    challengeShown = false;
     reviseDuringRead = true;
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
@@ -2076,6 +2306,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.element(checkedMail).toBeVisible();
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
     await tap(checkEmail);
+    const retry = page.getByRole("status", { name: "Task check result" });
+    await routeTo(retry);
+    await expect.element(checkEmail).toBeEnabled();
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
     await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
     await tap(page.getByRole("button", { name: "Back to Inbox" }));
@@ -2086,6 +2319,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(resume);
     await tap(checkEmail);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the saved appointment/)).toBeVisible();
+    expect(retry.query()).toBeNull();
 
     await tap(page.getByRole("button", { name: "Home", exact: true }));
     const appointment = page.getByRole("group", { name: "Calendar", exact: true }).getByText("Eye check with Dr. Patel");
@@ -2099,7 +2333,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(plan.getByText("Open page: Help center", { exact: true }));
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
   } finally {
-    await stop();
+    await dispose();
     accountNetwork.mockRestore();
     localStorage.clear();
   }
@@ -2278,7 +2512,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     await expect.poll(receipts).toEqual([mailReceipt, mailReceipt]);
     await tap(button("Close Email"));
-    await tap(button(/^Calendar/));
+    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
     await tap(button(/Managed calendar appointment/));
     await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
 
@@ -2379,8 +2613,10 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   ]), client));
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(account));
-  const native = fakePlugin();
-  const { routeTo, tap, browse, stop } = await openRouted(native, { url: cloud, key: secret });
+  const native = fakePlugin(() => ({ documentId: "example-main", frameScope: "main", result: {
+    snapshotId: "example-snapshot", url: "https://example.org/", complete: true, readyState: "complete", blockers: [], elements: [],
+  } }));
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
   const button = (name: string | RegExp) => page.getByRole("button", { name });
   const say = async (text: string) => {
     const field = page.getByRole("textbox", { name: "Message to Grace" });
@@ -2400,7 +2636,8 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   };
 
   try {
-    await browse();
+    await tap(button("Internet"));
+    await visitExampleSite(native);
     await tap(button("Ask Grace"));
     await tap(button("Allow Grace to read this browser"));
     await say(start);
@@ -2439,7 +2676,7 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await routeTo(plan.getByText("Open page: https://example.org/", { exact: true }));
     await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
   } finally {
-    await stop();
+    await dispose();
     localStorage.clear();
   }
 });

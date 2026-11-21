@@ -6,10 +6,10 @@ import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, otherPassword, outage, reply, signIn } from "./cloud.vibe";
-import { mount } from "./screen.tsx";
+import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+actOnScreen();
 const cloud = inject("cloud");
 const outlook = "margaret@outlook.com";
 const riverview = "margaret@riverview.net";
@@ -36,9 +36,11 @@ const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promi
 let secret = "";
 let firstListing: Promise<void> | undefined;
 
-beforeAll(async () => {
+beforeAll(() => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href));
+    if (account) return Promise.resolve(account);
     if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
     if (url.includes("/connections/other")) otherChecks.push(url);
     const held = url.includes("/mail/outlook/search") ? firstListing : undefined;
@@ -49,8 +51,6 @@ beforeAll(async () => {
     return opened(url, ...rest);
   };
   watcher.observe(document.body, { childList: true, subtree: true });
-  environment.IS_REACT_ACT_ENVIRONMENT = true;
-  await page.viewport(1280, 800);
 });
 beforeEach(async () => {
   localStorage.clear();
@@ -61,12 +61,12 @@ beforeEach(async () => {
   network.online = true;
   firstListing = undefined;
   secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
-  onTestFinished(() => localStorage.clear());
-  await mount(ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret })));
+  const app = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
+  await mount(app);
+  onTestFinished(() => { localStorage.clear(); });
 });
 afterAll(() => {
   watcher.disconnect();
-  environment.IS_REACT_ACT_ENVIRONMENT = false;
   globalThis.fetch = fetched;
   window.open = opened;
 });
@@ -121,7 +121,7 @@ async function askGrace(said: string) {
 const told = () => chatBodies.join("\n");
 const emailCard = () => page.getByRole("button", { name: /^Email/ });
 
-async function seeOutlookMail() {
+async function readOutlookFromHome() {
   await closeSettings();
   await tap(emailCard());
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
@@ -335,7 +335,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await expect.element(page.getByText("Yahoo · Connected")).toBeVisible();
   await toasted("Yahoo connected");
   expect(providerPages).toEqual([]);
-  await seeOutlookMail();
+  await readOutlookFromHome();
 
   // spec/app/accounts.md, "Signing in again renews the same account"
   await Effect.runPromise(Effect.provide(expire(cloud, secret, riverview), client));

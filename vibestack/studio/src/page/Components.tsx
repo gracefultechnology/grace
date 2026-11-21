@@ -44,8 +44,8 @@ const typeOf = (p: Prop) => (p.options ? p.options.map((o) => JSON.stringify(o))
 const isArg = (v: unknown): v is Arg => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 /** A file of the project, by its path from the root: one of the specs opens in the Specs view, any other in the editor. */
 const File = ({ path }: { path: string }) => (S.specs.some((s) => s.file === path)
-  ? <Button variant="ghost" size="sm" className="h-auto px-1 py-0 font-mono text-xs text-primary" onClick={() => select(path)}>{path}</Button>
-  : <a href={encodeURI(`vscode://file/${S.snap?.project.root.replaceAll("\\", "/").replace(/^\/+/, "")}/${path.replace(/#.*$/, "")}`)} className="font-mono text-xs text-primary">{path}</a>);
+  ? <Button variant="ghost" size="sm" className="h-auto px-1 py-0 font-mono text-mark text-primary" onClick={() => select(path)}>{path}</Button>
+  : <a href={encodeURI(`vscode://file/${S.snap?.project.root.replaceAll("\\", "/").replace(/^\/+/, "")}/${path.replace(/#.*$/, "")}`)} className="font-mono text-mark text-primary">{path}</a>);
 
 /** Which component and story the view shows, for as long as the page is open. */
 const catalog = ManagedRuntime.make(machine());
@@ -99,7 +99,7 @@ export function Components({ index }: { index: ComponentIndex }) {
         <Input type="search" placeholder="Search" aria-label="Search components" value={query} onChange={(e) => setQuery(e.target.value)} />
         {[...new Set(found.map((c) => c.package))].map((pkg) => (
           <div key={pkg} className="flex flex-col">
-            <h3 className="mt-3 mb-1 text-xs font-medium text-muted-foreground">{pkg}</h3>
+            <h3 className="mt-3 mb-1 text-mark font-medium text-muted-foreground">{pkg}</h3>
             {found.filter((c) => c.package === pkg).map((c) => (
               <button key={c.id} type="button" aria-current={c === component} disabled={!can({ type: "chooseComponent", at: index.components.indexOf(c) })} onClick={() => choose({ type: "chooseComponent", at: index.components.indexOf(c) })}
                 className={cn("rounded-md px-2 py-1 text-left hover:bg-accent", c === component && "bg-accent text-primary")}>{c.name}</button>
@@ -109,7 +109,7 @@ export function Components({ index }: { index: ComponentIndex }) {
       </nav>
       {component ? (
         <section className="flex min-w-0 flex-col gap-4 overflow-auto">
-          <h2 className="text-lg font-semibold">{component.name}</h2>
+          <h2 className="text-control font-semibold">{component.name}</h2>
           {component.description && <p className="text-muted-foreground">{component.description}</p>}
           {component.diagnostics.map((d) => <p key={d} role="alert" className="text-destructive">{d}</p>)}
           {story && (storybook === false
@@ -126,9 +126,9 @@ export function Components({ index }: { index: ComponentIndex }) {
             <tbody>
               {component.props.map((p) => (
                 <tr key={p.name} className="border-b border-border align-top">
-                  <td className="py-1 pr-3"><code className="font-mono text-xs">{p.name + (p.required ? "" : "?")}</code></td>
-                  <td className="py-1 pr-3"><code className="font-mono text-xs">{typeOf(p)}</code></td>
-                  <td className="py-1 pr-3">{p.default !== undefined && <code className="font-mono text-xs">{JSON.stringify(p.default)}</code>}</td>
+                  <td className="py-1 pr-3"><code className="font-mono text-mark">{p.name + (p.required ? "" : "?")}</code></td>
+                  <td className="py-1 pr-3"><code className="font-mono text-mark">{typeOf(p)}</code></td>
+                  <td className="py-1 pr-3">{p.default !== undefined && <code className="font-mono text-mark">{JSON.stringify(p.default)}</code>}</td>
                   <td className="py-1">{p.description ?? ""}</td>
                 </tr>
               ))}
