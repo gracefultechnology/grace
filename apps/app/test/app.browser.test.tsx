@@ -12,7 +12,7 @@ import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
-import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
+import { PasswordsClientError } from "@elizaos/os/bridges/passwords";
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
@@ -562,7 +562,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     },
     remove: (id, expectedRevision) => {
       expect(id).toBe("phone");
-      if (expectedRevision !== undefined && expectedRevision !== phoneRevision) return Promise.reject(new PasswordsClientError("conflict", "Sign-in changed"));
+      if (expectedRevision !== undefined && expectedRevision !== phoneRevision) return Promise.reject(new PasswordsClientError({ code: "conflict", message: "Sign-in changed" }));
       phoneRevision = undefined;
       return Promise.resolve();
     },
@@ -1947,10 +1947,10 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
     remove: () => Promise.resolve(),
     reveal: () => { shown = true; return Promise.resolve({ hidesAfterMs: 30_000 }); },
     copy: (_id, revision) => {
-      if (revision === undefined) return Promise.reject(new PasswordsClientError("unavailable", "No displayed revision"));
+      if (revision === undefined) return Promise.reject(new PasswordsClientError({ code: "unavailable", message: "No displayed revision" }));
       return revision === saved.revision
         ? Promise.resolve({ clearsAfterMs: 45_000 })
-        : Promise.reject(new PasswordsClientError("conflict", "The record changed"));
+        : Promise.reject(new PasswordsClientError({ code: "conflict", message: "The record changed" }));
     },
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
