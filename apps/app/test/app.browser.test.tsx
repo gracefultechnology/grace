@@ -1354,7 +1354,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     })),
   }));
   const decodeChange = Schema.decodeUnknownSync(changeInput);
-  const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
+  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
