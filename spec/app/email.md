@@ -418,6 +418,7 @@ it changes nothing else in the mailbox.
 pure def canCountDrafts(m: Mailbox, generation: int, total: int, by: MailActor): bool =
   by == MailConnector and readable(m) and generation == m.generation and total >= 0
 pure def countDrafts(m: Mailbox, generation: int, total: int, by: MailActor): Mailbox = { ...m, draftsTotal: total }
+pure def alwaysDraftCountIsNonnegative(m: Mailbox): bool = m.draftsTotal >= 0
 pure def lawStaleDraftCountIsRefused(m: Mailbox, generation: int, total: int, by: MailActor): bool =
   (generation != m.generation or total < 0) implies not(canCountDrafts(m, generation, total, by))
 pure def sometimesDraftsCountedElsewhere(m: Mailbox): bool = m.draftsTotal > 0 and m.folder != I::DraftsFolder
