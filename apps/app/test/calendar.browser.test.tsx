@@ -3,8 +3,7 @@ import { Effect } from "effect";
 import { act } from "react";
 import { expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
-import { allowedUse } from "../gen/app__accounts.ts";
+import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { type Ask, type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { proposalOf } from "../gen/app__proposal.ts";
 import { consent, type Request } from "../gen/app__request.ts";
@@ -66,7 +65,7 @@ async function start(down = false) {
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
     },
-    useCalendar: async (on: boolean) => {
+    switchCalendar: async (on: boolean) => {
       await click("Settings");
       await act(() => userEvent.click(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" })));
       await act(() => userEvent.click(page.getByRole("button", { name: new RegExp(gmail) })));
@@ -78,7 +77,7 @@ async function start(down = false) {
 }
 
 it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence")', async () => {
-  const { secret, eyeDay, card, run, reachable, agree, toEyeWeek, useCalendar } = await start(true);
+  const { secret, eyeDay, card, run, reachable, agree, toEyeWeek, switchCalendar } = await start(true);
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
   // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
@@ -125,7 +124,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
   // spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"
   await click("Close Calendar");
-  await useCalendar(false);
+  await switchCalendar(false);
   await expect.element(card.getByText("Eye check with Dr. Patel")).not.toBeInTheDocument();
   await toEyeWeek();
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).toBeVisible();
@@ -139,7 +138,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).not.toBeInTheDocument();
   await click("Close Calendar");
   await expect.element(card.getByText("Eye check with Dr. Patel")).not.toBeInTheDocument();
-  await useCalendar(true);
+  await switchCalendar(true);
   await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
 
   // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendarView.md, "Coming up lists saved events after the selected day"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
@@ -382,10 +381,10 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(reminded("Pill pickup", "7 am")).not.toBeInTheDocument();
   await click("Home");
   // spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"
-  await reach(false);
+  reach(false);
   await expect.element(page.getByText("Not connected to the internet")).toBeVisible();
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
-  await reach(true);
+  reach(true);
   await expect.element(page.getByText("Not connected to the internet")).not.toBeInTheDocument();
   await click("See details");
   await expect.element(page.getByText(/8 am to 9 am/)).toBeVisible();

@@ -3,7 +3,6 @@ import { type Files, type FileActor, type Event, enabled, fileAt, initial, step 
 import { enabled as deskEnabled, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Mail } from "./mail.vibe"
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes, Preview, savedFile, type Origin } from "./files.vibe"
 
 const completion = Schema.decodeUnknownEffect(Schema.Struct({ id: fileId }))

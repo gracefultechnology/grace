@@ -4,7 +4,6 @@ import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vi
 import { accountPlugin } from "./accountPlugin.ts"
 import { webView } from "./surfacePlugin.ts"
 import type { Attached } from "./connector.vibe"
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { HeldFile } from "./instances.vibe"
 import type { FilesPort } from "./filesPlugin.ts"
 import { browserFiles } from "./webFiles.vibe"

@@ -99,7 +99,6 @@ export function useWorkspace() {
     send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
     guide: <Target extends string>(idOf: (target: string) => Target | undefined) =>
       guideOn(workspace, idOf, workspace && offer({ type: "interact", input: { tag: "DismissGuidance", revision: workspace.assistant.guidance.revision } })),
-    /** Ask Grace: opens her compact and starts her answer to the need, or undefined while the rules refuse all of it. */
     askGrace: (need: Help) => can({ type: "openGrace" }, "Person") || can(compact, "Person") || can(hostTurn, "Host") ? () => void help(need) : undefined,
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
     current,

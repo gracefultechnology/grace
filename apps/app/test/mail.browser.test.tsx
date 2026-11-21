@@ -267,7 +267,7 @@ it("See all my email in one place", async () => {
   await click(card);
   await expect.element(row("All inboxes 5")).toBeVisible();
   await changeSession(true);
-  await expect.element(row("Outlook")).not.toBeInTheDocument();
+  await expect.element(row("Outlook 1")).toBeVisible();
   await providerComponent();
   await expect.element(row("Gmail 4")).toBeVisible();
   await expect.element(row("Outlook 1")).toBeVisible();

@@ -8,6 +8,7 @@ import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
+import { usesManagedSurfaces } from "./managedReads.vibe";
 import { retryPreferences } from "./preferences.vibe";
 import { useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
 import { Wifi } from "./Wifi.tsx";
@@ -48,11 +49,10 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
   };
   if (page === "EmailCalendarSettings") {
-    const account = setup?.graceAccount;
-    if (account?.tag === "GraceSignedOut" || account?.tag === "GraceDeviceSignedOut") return <EmailAccounts {...frame} />;
+    if (!usesManagedSurfaces(setup, window.location.hash)) return <EmailAccounts {...frame} />;
     return <SettingsApp {...frame}>
       <PageHeading>Email &amp; calendar</PageHeading>
-      {account?.tag === "GraceSignedIn" && setup?.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
+      {setup?.graceAccount.tag === "GraceSignedIn" && setup.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
       <Button variant="prominent" size="pill" onClick={() => choose("account")}>Manage connections in Grace account</Button>
     </SettingsApp>;
   }

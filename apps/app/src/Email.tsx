@@ -29,8 +29,11 @@ const unlinked = (body: string) => body.replace(new RegExp(links.source, "g"), "
 const tones = [1, 2, 3, 4, 5, 6] as const;
 const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
 const contact = (name: string, address: string): MailContact => ({ name, tone: toneOf(address || name) });
-const linked = (body: string, guide: GuidePointing | undefined) =>
-  body.split(new RegExp(`(${links.source})`, "g")).map((part, i) => (i % 2 ? <MailLink key={i} guide={i === 1 ? guide : undefined}>{part}</MailLink> : part));
+const linked = (body: string, guide: GuidePointing | undefined) => {
+  const parts = body.split(new RegExp(`(${links.source})`, "g"));
+  const starts = parts.map((_, i) => parts.slice(0, i).join("").length);
+  return parts.map((part, i) => (i % 2 ? <MailLink key={starts[i]} guide={i === 1 ? guide : undefined}>{part}</MailLink> : part));
+};
 const unshown = "This attachment couldn’t be shown";
 const unrendered = "This PDF can’t be shown on this tablet.";
 
