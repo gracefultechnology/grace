@@ -293,7 +293,22 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects")).toMatchObject([{ id: "tab-1", rects: [] }]);
   await native.route();
   await native.started("tab-1");
-  await native.report("tab-1", "https://example.com/", 100);
+  await native.ask("navigationChanged", { id: "tab-1", exists: true, currentUrl: "https://example.com/", pageError: null, securityBlocked: false });
+  expect(tab(1).load).toBe("Loading");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => [tab(1).load, tab(1).secure]).toEqual(["Loaded", true]);
+  const siteAddress = page.getByRole("textbox", { name: "Address" });
+  const firstVisit = tab(1).history;
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
+  await native.ask("pageStarted", { id: "tab-1", url: "https://example.com/" });
+  await expect.element(siteAddress).toHaveAccessibleDescription("");
+  await native.report("tab-1", "https://example.com/", 35, { securityBlocked: true });
+  await expect.poll(async () => { await native.route(); return shown(page.getByText("This page isn't safe to open.")); }).toBe(true);
+  expect([tab(1).history, native.calls("reloadSurface")]).toEqual([firstVisit, []]);
+  await native.started("tab-1");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(async () => { await native.route(); return tab(1).secure; }).toBe(true);
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
   await expect.poll(() => native.calls("setBounds").at(-1)).toMatchObject({ id: "tab-1", ...rectOf(pageArea) });
@@ -397,7 +412,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   expect(native.unanswered()).toBe(1);
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the site's certificate is refused this time.
-  await native.report("tab-1", "https://example.com/", 100, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
+  await native.report("tab-1", "https://example.com/", 43, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
   await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
   expect(tab(1).load).not.toBe("SecurityBlocked");
   await native.route();
@@ -786,9 +801,11 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   });
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
   await native.route();
-  await native.report("tab-2", "https://utility.example", 100);
+  await native.report("tab-2", "https://utility.example", 100, { pageError: null, securityBlocked: false });
   const address = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await enter(address, "https://utility.example/enter/sample?ref=one-time");
+  await expect.element(address).toHaveAccessibleDescription("");
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
@@ -837,6 +854,13 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const { agent, requests, answer, created, refused } = deviceAgent();
   const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
   const browserState = await signInPrivately(native, undefined, { native: true, agent, openPrivateEmail: openEmail });
+  await native.started("tab-3");
+  await native.report("tab-3", "https://issuer.example/private?ref=one-time", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => browserState().tabs.find((tab) => tab.id === 3)?.load).toBe("Loaded");
+  const privateAddress = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(privateAddress).toHaveValue("https://utility.example");
+  await expect.element(privateAddress).toHaveAccessibleDescription("");
+  expect(JSON.stringify(browserState())).not.toContain("one-time");
   expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;

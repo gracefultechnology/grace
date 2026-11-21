@@ -1397,12 +1397,12 @@ lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceAc
 {
 if inv(w) && canReceiveLoad(w, loadReport, by_) {
   ComponentInvariants(w);
-  app__browser_finishLoad_ensures(w.browser, loadReport.id, loadReport.version, loadReport.result);
-  var browser := app__browser_finishLoad(w.browser, loadReport.id, loadReport.version, loadReport.result);
+  app__browser_finishPageLoad_ensures(w.browser, loadReport.id, loadReport.version, loadReport.result, loadReport.secure, loadReport.endedAt);
+  var browser := app__browser_finishPageLoad(w.browser, loadReport.id, loadReport.version, loadReport.result, loadReport.secure, loadReport.endedAt);
   if loadReport.id == w.browser.selected && ((loadReport.result != app__browser_Load.Loaded && app__assistant_unfinished(w.assistant)) || w.execution.phase == app__execution_OperationPhase.Observed || w.execution.phase == app__execution_OperationPhase.Queued || w.execution.phase == app__execution_OperationPhase.InFlight) {
     InterruptedInvariant(w.device, browser, w);
   } else if loadReport.id != w.browser.selected {
-    BackgroundLoadKeepsSelected(w.browser, loadReport.id, loadReport.version, loadReport.result);
+    BackgroundLoadKeepsSelected(w.browser, loadReport.id, loadReport.version, loadReport.result, loadReport.secure, loadReport.endedAt);
   }
 }
 }
@@ -1558,16 +1558,16 @@ lemma BrowserLookupMember(b: app__browser_Browser, id: int, t: app__browser_Tab)
   assert |matches| == 1;
   assert matches[0] == t;
 }
-lemma BackgroundLoadKeepsSelected(b: app__browser_Browser, id: int, version: int, result: app__browser_Load)
-  requires app__browser_inv(b) && app__browser_canFinishLoad(b, id, version, result)
+lemma BackgroundLoadKeepsSelected(b: app__browser_Browser, id: int, version: int, result: app__browser_Load, secure: bool, endedAt: string)
+  requires app__browser_inv(b) && app__browser_canFinishPageLoad(b, id, version, result, endedAt)
   requires id != b.selected
-  ensures app__browser_activeTab(app__browser_finishLoad(b, id, version, result)) == app__browser_activeTab(b)
-  ensures app__browser_finishLoad(b, id, version, result).revision == b.revision
+  ensures app__browser_activeTab(app__browser_finishPageLoad(b, id, version, result, secure, endedAt)) == app__browser_activeTab(b)
+  ensures app__browser_finishPageLoad(b, id, version, result, secure, endedAt).revision == b.revision
 {
-  app__browser_finishLoad_ensures(b, id, version, result);
+  app__browser_finishPageLoad_ensures(b, id, version, result, secure, endedAt);
   var t :| t in b.tabs && t.id == b.selected;
   var i :| 0 <= i < |b.tabs| && b.tabs[i] == t;
-  var after := app__browser_finishLoad(b, id, version, result);
+  var after := app__browser_finishPageLoad(b, id, version, result, secure, endedAt);
   assert after.tabs[i] == t;
   BrowserLookupMember(b, b.selected, t);
   BrowserLookupMember(after, after.selected, t);
