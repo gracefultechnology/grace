@@ -72,11 +72,11 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   const notices = try NoticeHost
   const ready = Stream.filter(workspace.changes, ({ device }) => device.readiness === "Ready")
   const chosen = Stream.changesWith(Stream.map(ready, ({ preferences }) => preferences.session), sameChoice)
-  const everyMinute = Stream.mapEffect(Stream.tick("1 minute"), effect () => (try workspace.get()).preferences.session)
-  const requests = Stream.merge(Stream.map(chosen, (choice) => ({ choice, byUser: true })), Stream.map(everyMinute, (choice) => ({ choice, byUser: false })))
+  const requests = Stream.merge(chosen, Stream.map(Stream.tick("1 minute"), () => undefined))
   let confirmed: DeviceChoice | undefined
-  try fork.scoped Stream.runForEach(requests, effect ({ choice, byUser }) => {
-    if ((try workspace.get()).device.readiness !== "Ready") return
+  try fork.scoped Stream.runForEach(requests, effect (requested) => {
+    const { device, preferences: { session: choice } } = try workspace.get()
+    if (device.readiness !== "Ready" || (requested && !sameChoice(requested, choice))) return
     const hour = new Date(try Clock.currentTimeMillis).getHours()
     if (!nightDimmingApplies(choice, hour) && confirmed !== undefined && sameChoice(confirmed, choice)) return
     const applied = effect {
@@ -100,7 +100,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
       return matches ? target : undefined
     } catch () => undefined
     confirmed = applied
-    if (!applied && byUser && sameChoice((try workspace.get()).preferences.session, choice)) {
+    if (!applied && requested && sameChoice((try workspace.get()).preferences.session, choice)) {
       notices.raise({ source: "Settings", offer: "NoOffer", subject: "The tablet couldn’t apply that setting." }) catch () => undefined
     }
   })
