@@ -3294,10 +3294,13 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const save = "Read this email and save its appointment.";
   const browserAsk = "Check the website I have open.";
   const newAppointment = "Check the open appointment on this account.";
+  const subject = "Managed appointment details 642815";
+  const maskedSubject = "Managed appointment details ******";
+  const body = "Riverview Clinic message body about signing in.";
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: ask, context: {
-      includes: ["Selected email subject: Managed appointment details"],
-      excludes: ["appointment with Dr. Patel", "Main St Clinic", "Eye check with Dr. Patel"],
+      includes: ["Selected email subject: " + maskedSubject],
+      excludes: ["642815", body, "appointment with Dr. Patel", "Main St Clinic", "Eye check with Dr. Patel"],
     }, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: ["ReadMail", "ReadMail", "ReadCalendar"] }] }) },
     { said: newAppointment, context: { includes: ["Selected calendar appointment: Account B appointment"], excludes: ["Managed appointment details"] },
@@ -3321,9 +3324,9 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let hostedChoices = 0;
   const when = Date.now();
   const receivedAt = new Date(when).toISOString();
-  const selected = { externalId: "mail-one", from: "Riverview Clinic", subject: "Managed appointment details", receivedAt,
+  const selected = { externalId: "mail-one", from: "Riverview Clinic", subject, receivedAt,
     isUnread: true, metadata: { historyId: "one" } };
-  const second = { ...selected, externalId: "mail-two", from: "Eastwood Clinic" };
+  const second = { ...selected, externalId: "mail-two", from: "Eastwood Clinic", snippet: "Sign-in notice" };
   const appointment = { externalId: "event-one", title: "Managed calendar appointment", description: "", location: "Riverview",
     startAt: new Date(when + 3_600_000).toISOString(), endAt: new Date(when + 7_200_000).toISOString(), isAllDay: false, etag: "one" };
   const otherAppointment = { ...appointment, externalId: "event-b", title: "Account B appointment" };
@@ -3375,7 +3378,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         expect(url.searchParams.get("grantId")).toBe(grant);
         const row = url.searchParams.get("messageId") === second.externalId ? second : selected;
         return respond({ accountId: person.id, message: { ...row, metadata: { historyId } }, historyId: null, attachments: [],
-          bodyText: row.from + " message body", bodyTextAvailable: true });
+          bodyText: row === selected ? body : row.from + " message body", bodyTextAvailable: true });
       }
       case "/api/v1/eliza/google/calendar/feed":
         expect(url.searchParams.get("grantId")).toBe(grant);
@@ -3444,7 +3447,8 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await refresh();
     await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByRole("heading", { name: subject, exact: true }));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(button("Ask Grace"));
     await send(ask);
     const review = page.getByRole("region", { name: "Review read plan" });
@@ -3486,9 +3490,9 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(await receipts()).toEqual([]);
 
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(button("Check email"));
-    const mailReceipt = "Open message: " + selected.subject;
+    const mailReceipt = "Open message: " + maskedSubject;
     await expect.poll(receipts).toEqual([mailReceipt]);
 
     organization = "c";
@@ -3516,7 +3520,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Home"));
     await tap(button(/^Email/));
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(button("Resume Grace"));
     expect(await check()).toBe("Used");
     expect(await receipts()).toEqual([mailReceipt]);
@@ -3531,7 +3535,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     connected = true;
     await refresh();
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByText(body, { exact: true }));
     expect(await check()).not.toBe("Confirmed");
     expect(await receipts()).toEqual([mailReceipt]);
 

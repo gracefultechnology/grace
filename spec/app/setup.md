@@ -507,8 +507,13 @@ separate law. A tablet asking to sign in is confirmed only by the person's
 own choice, while a web account is signed in, and the confirmation holds
 only while the reports name that signed-in account: any other report, even
 one that the account could not be checked, asks her again. She confirms for
-the account she is shown, and may confirm again for that same account when
-the tablet's sign-in did not finish. She can cancel while Grace checks the account or waits for a sign-in code. After cancellation, a late reply cannot open the tablet callback.
+the account she is shown, and may confirm again for that same account while
+her earlier confirmation still holds, as after a sign-in that did not
+finish. She can cancel while Grace checks the account or waits for a sign-in
+code. The tablet must then ask again before she can confirm. The model records
+her confirmation. Just before it opens the tablet callback, the browser
+checks that the same request still has her confirmation. This runtime check
+prevents a late reply from reopening a cancelled request.
 
 A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
@@ -818,7 +823,10 @@ checks the current account and sign-in freshness when it receives the action
 and shown account together. The browser accepts only the registered callback
 with the request's own state and exactly one code. The request carries
 neither the recovery key nor a password. The service and tablet bind the
-code to the original native request and enforce its single use.
+code to the original native request and enforce its single use. The browser,
+service and tablet enforce these checks at runtime. The two approval laws
+below cover the decision given registration, freshness, account match and
+confirmation.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
