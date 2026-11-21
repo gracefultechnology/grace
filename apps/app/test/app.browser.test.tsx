@@ -2297,9 +2297,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     { said: invalidAsk, answer: JSON.stringify({ text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: "Account history" }] }] }) },
     { said: misnamed, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [helpStep] }] }) },
-    { said: mixed, context: { includes: ["Last time, proposeReadPlan was not done"], excludes: [] },
+    { said: mixed, context: { includes: ["about your last answer: proposeReadPlan was not done"], excludes: [] },
       answer: JSON.stringify({ text: "Opening your email.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: [helpStep] }, { kind: "open", surface: "Email" }] }) },
-    { said: ask, context: { includes: ["Last time, open was not done"], excludes: [] }, answer: JSON.stringify({
+    { said: ask, context: { includes: ["open was not done"], excludes: [] }, answer: JSON.stringify({
       text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [helpStep, "ReadStatement", "ReadStatement",
         { kind: "ReachNamedPage", target: "today's usage" }, "ReadMail", "ReadMail", "ReadCalendar"] }],
