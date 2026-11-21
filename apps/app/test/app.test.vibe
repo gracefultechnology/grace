@@ -7,6 +7,7 @@ import { approveSave, beginEdit, create, edit, initial as noEntry, save, saveFai
 import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
+import { Stored } from "../src/connector.schema.ts"
 import { client, expire, otherPassword, outage, parts, reply, script, sentMail, sessions, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
@@ -411,29 +412,48 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       }
       const copied = try recover
       const added = try calendar.write(reapproved, view([eyeCheck, reapproved]))
-      const { connectionId: grantId } = (try googleOwnerGrants(secret))[0]
-      const upgraded = effect (receipt?: string) => {
+      const upgraded = effect (format: "revision" | "occurrence", receipt?: string) => {
+        const key = format === "revision" ? secret : alternateKey
+        const { connectionId: grantId } = (try googleOwnerGrants(key))[0]
         provide Layer.merge(KeyValueStore.layerMemory, Digest.layerWebCrypto) {
           const storage = try KeyValueStore.KeyValueStore
           const digest = try Digest.Digest
           const hash = (fields: readonly unknown[]) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(JSON.stringify(fields))),
             (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
-          const original = try hash([cloud, gmail.provider, grantId, gmail.address, identity.owner, identity.calendarId, identity.occurrenceId, fresh.revision])
           const body = { title: details.title, description: details.notes, location: details.location, startAt: new Date(details.startAt).toISOString(),
             endAt: new Date(details.endAt).toISOString(), timeZone: details.timezone, calendarId: identity.calendarId, grantId }
           const fingerprint = try hash([body, identity.sourceAccount, identity.sourceRef, details.participant, details.seriesId, details.recurrence, details.reminderEnabled, details.leadTime, details.important])
-          try storage.set("calendar-create:" + original, fingerprint)
-          if (receipt !== undefined) try storage.set("calendar-create:" + original + ":receipt", receipt)
-          provide connectorAt(secret) {
-            return try (try Connector).calendar(gmail).write(reapproved, view([reapproved]))
+          const seedClaim = effect {
+            if (format === "revision") {
+              const original = try hash([cloud, gmail.provider, grantId, gmail.address, identity.owner, identity.calendarId, identity.occurrenceId, fresh.revision])
+              try storage.set("calendar-create:" + original, fingerprint)
+              if (receipt !== undefined) try storage.set("calendar-create:" + original + ":receipt", receipt)
+              return added.providerId
+            }
+            const scope = try hash([cloud, gmail.provider, gmail.address.toLowerCase(), identity.calendarId, identity.occurrenceId])
+            const mutation = try hash([scope, grantId, fresh.revision])
+            const request = HttpClientRequest.post(`${cloud}/api/v1/eliza/google/calendar/events`).pipe(
+              HttpClientRequest.bearerToken(key), HttpClientRequest.setHeader("Idempotency-Key", mutation), HttpClientRequest.bodyJsonUnsafe(body))
+            const saved = try Schema.decodeUnknownEffect(Stored)(try (try HttpClient.execute(request)).json)
+            try storage.set("calendar-create:" + scope, JSON.stringify({ grantId, mutation, fingerprint, providerId: receipt }))
+            if (receipt !== undefined) try outage(cloud, key, false, "conflictCreate")
+            return saved.event.externalId
+          }
+          const expectedId = try seedClaim
+          provide connectorAt(key) {
+            const saved = try (try Connector).calendar(gmail).write(reapproved, view([reapproved]))
+            try Effect.try(() => assert.equal(saved.providerId, expectedId))
+            return saved
           }
         }
       }
-      const migrated = try upgraded()
+      const migrated = try upgraded("revision")
       try outage(cloud, secret, false, "conflictCreate")
-      const received = try upgraded(added.providerId)
+      const received = try upgraded("revision", added.providerId)
       try outage(cloud, secret, false)
       try Effect.try(() => assert.deepStrictEqual([migrated, received], [added, added]))
+      const fromTablet = try upgraded("occurrence")
+      try upgraded("occurrence", fromTablet.providerId)
       const created = { owner: identity.owner, calendarId: identity.calendarId, localId: identity.occurrenceId, providerId: added.providerId ?? "", revision: added.revision }
       const pending = view([eyeCheck, reapproved])
       try Effect.try(() => assert.isTrue(canStoreCreated(pending, created, "ViewStore")))
