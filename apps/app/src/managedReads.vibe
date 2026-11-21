@@ -19,7 +19,7 @@ const dateField = Schema.String.check(Schema.makeFilter((text) => Number.isFinit
 schema Intent { view: "Email" | "Calendar"; returning: boolean; owner?: string; occurrence?: string }
 const nullableText = Schema.NullOr(Schema.String)
 schema MailMetadata { historyId?: nullableText }
-export schema MailRow { labels?: string[]; fromEmail?: nullableText; metadata?: MailMetadata; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
+export schema MailRow { metadata?: MailMetadata; labels?: readonly string[]; fromEmail?: nullableText; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
 export schema EventRow { etag?: nullableText; editable?: boolean; seriesId?: nullableText; timezone?: nullableText; externalId: idField; title: string; description: string; location: string; startAt: dateField; endAt: dateField; isAllDay: boolean }
 const Folder = Schema.Literals(["inbox", "sent", "drafts", "trash"])
 export type ManagedFolder = typeof Folder.Type
@@ -97,6 +97,10 @@ type Scope =
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
 type Mail = { linkReview?: ReleasedEmailLink; replying?: boolean; folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
+export function inboxTrashVersion(mail: Mail) {
+  const row = mail.selected?.message
+  return mail.folder !== "trash" && row?.labels?.includes("INBOX") && !row.labels.includes("TRASH") ? row.metadata?.historyId : undefined
+}
 type Calendar = { window: ViewWindow; proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
@@ -277,8 +281,9 @@ effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope
     return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken }
   }
   const window = prior?.kind === "calendar" ? prior.window : navigation(initialCalendarView.window, "Today", dayOf(try Clock.currentTimeMillis)).window
-  const from = home?.from ?? new Date(window.fromTime).toISOString()
-  const until = home?.until ?? new Date(window.mode === "MonthView" ? window.untilTime : Math.max(window.untilTime, midnight(window.selectedDay + 15))).toISOString()
+  const interval = next && prior?.kind === "calendar" ? prior : home
+  const from = interval?.from ?? new Date(window.fromTime).toISOString()
+  const until = interval?.until ?? new Date(window.mode === "MonthView" ? window.untilTime : Math.max(window.untilTime, midnight(window.selectedDay + 15))).toISOString()
   const loaded = try query("calendar/feed", { timeMin: from, timeMax: until, ...paging }, CalendarPage, authorization)
   if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
   const existing = next && prior?.kind === "calendar" ? prior.rows : []
@@ -453,7 +458,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if (saved.operationId || saved.recipient || saved.subject || saved.text) return false
       try keepMailDraft(accountId, email, { recipient: proposal.recipient, subject: proposal.subject, text: proposal.text }, proposal.replyTo)
     } else if (proposal.kind === "trash") {
-      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", proposal.id, proposal.version) ||
+      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown) ?? "", proposal.id, proposal.version) ||
         !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
     } else {
       if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return false
@@ -491,7 +496,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
     if (action.kind === "trash" && (shown.kind !== "mail" || !shown.selected ||
-      !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", action.id, action.version))) return undefined
+      !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown) ?? "", action.id, action.version))) return undefined
     if (action.kind === "appointment" && action.action !== "create") {
       if (shown.kind !== "calendar") return undefined
       const target = action.seriesFor === undefined ? shown.selected
@@ -509,7 +514,12 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if (!managedReadMatches(accountId, receipt.accountId, expected, receipt.itemId) || receipt.operationId !== operationId ||
       !(try still(scope))) return undefined
     if (action.kind === "trash" && shown.kind === "mail") {
-      try publish({ ...shown, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined })
+      const remaining = { ...shown, counts: undefined, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined }
+      try publish(remaining)
+      if (shown.counts !== undefined) {
+        const refreshed = fetchPage(authorization, scope, remaining) catch () => undefined
+        if (refreshed?.kind === "mail" && refreshed.counts !== undefined) try publishReview(scope, remaining, { ...remaining, counts: refreshed.counts })
+      }
     }
     if (action.kind === "undo" || action.kind === "appointment") try refresh(scope)
     return receipt

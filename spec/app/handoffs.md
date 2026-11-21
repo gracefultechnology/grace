@@ -53,7 +53,7 @@ pure val initial: Registry = {
 }
 pure def emailSource(mail: E::Mailbox): BillSource = {
   key: if (E::billReady(mail)) { kind: T::BillPay, owner: mail.owner, origin: mail.bill.origin, account: mail.bill.account, ref: mail.bill.ref } else T::emptyKey,
-  kind: EmailSource, reference: if (E::billReady(mail)) mail.messageRef else ""
+  kind: EmailSource, reference: if (E::billReady(mail)) mail.bill.sourceRef else ""
 }
 pure def calendarSource(entry: C::Calendar): BillSource = {
   key: if (C::billAvailable(entry)) { kind: T::BillPay, owner: entry.identity.owner, origin: entry.identity.billOrigin, account: entry.identity.billAccount, ref: entry.identity.billRef } else T::emptyKey,
@@ -117,7 +117,7 @@ pure val mailValues = Set(E::initial, photoMailbox,
       { identity: { owner: "owner", provider: "mail-provider", account: "mail-account", ref: "message" },
         folder: I::InboxFolder, unread: false, answered: false }, I::MessageProvider)),
     view: E::Message, messageRef: "message", messageRefs: Set("message"),
-    bill: { ref: "bill", origin: "https://utility.example", account: "account", confirmed: true } })
+    bill: { ref: "bill", sourceRef: "message", origin: "https://utility.example", account: "account", confirmed: true } })
 pure val entryValues = Set(C::initial,
   { ...C::initial, phase: C::Saved, hasSaved: true,
     identity: { owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", sourceRef: "message", sourceAccount: 0,
@@ -520,10 +520,10 @@ acknowledged; ordinary detail selection clears. Close does not fabricate a
 saved occurrence. Files Close uses `closeFiles`, which clears the preview and
 cancels reads while keeping the tab and the saved library.
 
-Email Close uses `preserveDraft` for an editable composer that holds anything:
-a recipient, subject, text or attachment, or an earlier save. The host supplies
-the draft's ID. An editable composer that holds nothing is put away with
-`discardDraft` and nothing is stored, as the prototype drops an empty composer.
+Email Close follows Email’s Back and Close rule. A previously stored draft,
+a body, an attachment or a subject the person typed is kept with
+`preserveDraft` and the host-supplied draft ID. A new composer with only
+recipients or an automatic subject closes through `closeEmptyComposer`.
 A save may finish after the composer hides, but failure reopens that same
 recoverable editor and the host brings the failed save to the person's
 attention. Pending or uncertain sends remain in their original mailbox for
@@ -531,20 +531,17 @@ reconciliation. Discarding a draft with something in it stays the person's
 explicit Discard in Email.
 
 Closing the window is never an implicit Send, save success, discard of a draft
-with content, or payment outcome. Close keeps the composer's content and never
-retires a draft.
+worth preserving, or payment outcome. Close keeps a preserved composer’s
+content and never retires a draft.
 
 ```quint
 type AppClose = CloseDeclined | ClosedApp({ device: S::Shell, calendar: V::CalendarView, mail: E::Mailbox, files: F::Files })
-pure def emptyComposer(mailbox: E::Mailbox): bool =
-  mailbox.draftId == "" and mailbox.draft.to == "" and mailbox.draft.cc.size() == 0 and mailbox.draft.bcc.size() == 0 and
-  mailbox.draft.subject == "" and mailbox.draft.body == "" and mailbox.draftAttachments == List()
 pure def mayCloseMailbox(mailbox: E::Mailbox, draftId: str): bool =
-  not(E::canEditDraft(mailbox, E::MailUser)) or
-  (if (emptyComposer(mailbox)) E::canDiscardDraft(mailbox, true, E::MailUser) else E::canPreserveDraft(mailbox, draftId, E::MailUser))
+  not(E::canEditDraft(mailbox, E::MailUser)) or E::canCloseEmptyComposer(mailbox, E::MailUser) or
+  E::canPreserveDraft(mailbox, draftId, E::MailUser)
 pure def closeMailbox(mailbox: E::Mailbox, draftId: str): E::Mailbox =
   if (not(E::canEditDraft(mailbox, E::MailUser))) mailbox
-  else if (emptyComposer(mailbox)) E::discardDraft(mailbox, true, E::MailUser)
+  else if (E::canCloseEmptyComposer(mailbox, E::MailUser)) E::closeEmptyComposer(mailbox, E::MailUser)
   else E::preserveDraft(mailbox, draftId, E::MailUser)
 pure def mayCloseApp(device: S::Shell, calendarView: V::CalendarView, mailbox: E::Mailbox, files: F::Files,
     app: S::Surface, draftId: str, by: RegistryActor): bool =
@@ -583,14 +580,17 @@ pure def lawCloseNeverSendsOrRetiresADraft(device: S::Shell, calendarView: V::Ca
 pure def lawCloseKeepsTheComposerContent(device: S::Shell, calendarView: V::CalendarView, mailbox: E::Mailbox,
     files: F::Files, app: S::Surface, draftId: str, by: RegistryActor): bool =
   val closed = closeApp(device, calendarView, mailbox, files, app, draftId, by)
+  val empty = app == S::Email and E::canCloseEmptyComposer(mailbox, E::MailUser)
+  val expected = if (empty) E::closeEmptyComposer(mailbox, E::MailUser) else mailbox
   match closed {
     | CloseDeclined => true
-    | ClosedApp(result) => result.mail.draft.to == mailbox.draft.to and result.mail.draft.subject == mailbox.draft.subject and
-        result.mail.draft.body == mailbox.draft.body and result.mail.draftAttachments == mailbox.draftAttachments and
-        result.mail.draft.cc.subseteq(mailbox.draft.cc) and mailbox.draft.cc.subseteq(result.mail.draft.cc) and
-        result.mail.draft.bcc.subseteq(mailbox.draft.bcc) and mailbox.draft.bcc.subseteq(result.mail.draft.bcc) and
-        ((app == S::Email and E::canEditDraft(mailbox, E::MailUser) and not(emptyComposer(mailbox))) implies
-          result.mail.draftStorage == E::DraftSaving)
+    | ClosedApp(result) =>
+        result.mail.draft.to == expected.draft.to and result.mail.draft.subject == expected.draft.subject and
+        result.mail.draft.body == expected.draft.body and result.mail.draftAttachments == expected.draftAttachments and
+        result.mail.draft.cc.subseteq(expected.draft.cc) and expected.draft.cc.subseteq(result.mail.draft.cc) and
+        result.mail.draft.bcc.subseteq(expected.draft.bcc) and expected.draft.bcc.subseteq(result.mail.draft.bcc) and
+        (empty implies (result.mail.sendStatus == E::NoDraft and result.mail.draftStorage == E::DraftUnstored)) and
+        ((app == S::Email and E::canEditDraft(mailbox, E::MailUser) and not(empty)) implies result.mail.draftStorage == E::DraftSaving)
   }
 pure val calendarViewValues = Set(V::initial, { ...V::initial, owner: "owner", calendarId: "calendar", opened: true })
 pure val mailboxValues = Set(photoMailbox,

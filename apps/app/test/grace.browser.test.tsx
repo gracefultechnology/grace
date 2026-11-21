@@ -12,7 +12,7 @@ import { Agent, type GraceAction } from "../src/agent.vibe";
 import { day, dayOf, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, otherPassword, script, signIn } from "./cloud.vibe";
-import { actOnScreen, captureSignedOutChat, connected, mountAccounts } from "./screen.tsx";
+import { actOnScreen, allowOutlook, captureSignedOutChat, connected, mountAccounts } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -40,14 +40,6 @@ const kept = (withOutlook: boolean) => {
   return withOutlook ? connected(addAccount(goBack(first, "AccountPerson"), "AccountPerson"), "Outlook", outlook, "Outlook") : first;
 };
 
-async function allowOutlook(key: string) {
-  const started = await fetch(`${cloud}/api/v1/eliza/connections/outlook/sessions`, {
-    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
-  });
-  const { pageUrl } = await started.json() as { pageUrl: string };
-  await fetch(pageUrl, { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
-}
-
 async function company(key: string) {
   const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${key}` } });
   return await response.json() as { boxes: { calendar: { title: string; startAt: string }[]; mail: { subject: string; labels: string[] }[] }[] };
@@ -55,7 +47,7 @@ async function company(key: string) {
 
 async function start(withOutlook = false) {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  if (withOutlook) await allowOutlook(secret);
+  if (withOutlook) await allowOutlook({ cloud, key: secret, address: outlook });
   const runtime = await mountAccounts(kept(withOutlook), { url: cloud, key: secret });
   const run = <A,>(effect: Effect.Effect<A, unknown, Runs>) => act(() => runtime.runPromise(effect));
   const scripted = (said: string, reply: Reply) =>

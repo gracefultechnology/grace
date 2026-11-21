@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
@@ -34,6 +34,16 @@ export function captureSignedOutChat(bodies: string[], observe?: (url: string) =
     return fetchNetwork(input, init);
   };
   return () => { globalThis.fetch = fetchNetwork; };
+}
+
+export async function allowOutlook({ cloud, key, address }: { cloud: string; key: string; address: string }) {
+  const started = await fetch(new URL("/api/v1/eliza/connections/outlook/sessions", cloud), {
+    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
+  });
+  expect(started.ok).toBe(true);
+  const { pageUrl } = Schema.decodeUnknownSync(Schema.Struct({ pageUrl: Schema.String }))(await started.json());
+  const consent = await fetch(pageUrl, { method: "POST", body: new URLSearchParams({ address, choice: "allow" }) });
+  expect(consent.ok).toBe(true);
 }
 
 export function connected(accounts: Accounts, provider: Provider, address: string, name: string) {

@@ -715,7 +715,8 @@ pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: st
 
 ### Trash and Calendar changes use the exact selected version
 
-The owner may separately enable Trash and Undo, and appointment changes. Undo
+The owner may separately enable Trash and Undo, and appointment changes. Gmail
+offers Move to Trash when the opened message still carries the Inbox label. Undo
 is available only once the provider confirms moving the selected message to
 Trash. Appointments are read back to the person before confirmation. For a
 new weekly or monthly appointment, the review includes its frequency and
