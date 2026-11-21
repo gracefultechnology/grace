@@ -1253,12 +1253,14 @@ pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrect
   correction.href != "" and correction.href != correction.url and correction.label != "" and
   correction.label != correction.original
 }
-pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState =
-  match w.plan.nameCorrection {
+pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState = {
+  val offeredName = w.plan.nameCorrection
+  match offeredName {
     | PendingGuidedNameCorrection(pending) => if (guidedNameCorrectionCurrent(w, pending.value))
-        w.plan.nameCorrection else NoGuidedNameCorrection
+        offeredName else NoGuidedNameCorrection
     | NoGuidedNameCorrection => NoGuidedNameCorrection
   }
+}
 pure def canOfferGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
   by == Host and guidedNameCorrectionCurrent(w, correction)
 pure def offerGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
