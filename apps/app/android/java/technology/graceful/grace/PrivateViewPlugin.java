@@ -1,5 +1,7 @@
 package technology.graceful.grace;
 
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.view.WindowManager;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -26,6 +28,22 @@ public final class PrivateViewPlugin extends Plugin {
    if (vault || browser) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
    else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
    call.resolve();
+  });
+ }
+
+ @PluginMethod public void openEmail(PluginCall call) {
+  getActivity().runOnUiThread(() -> {
+   if (!browser || !getActivity().hasWindowFocus()) {
+    call.reject("Private sign-in is unavailable");
+    return;
+   }
+   try {
+    getActivity().startActivity(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_EMAIL)
+     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    call.resolve();
+   } catch (ActivityNotFoundException | SecurityException unavailable) {
+    call.reject("No mail app could open");
+   }
   });
  }
 }
