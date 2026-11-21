@@ -76,7 +76,8 @@ async function start(down = false) {
   };
 }
 
-it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence")', async () => {
+it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives")', async () => {
+  // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
   const { secret, eyeDay, card, run, reachable, agree, toEyeWeek, switchCalendar } = await start(true);
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
@@ -311,7 +312,7 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await expect.poll(titles, atCloud).toEqual([]);
 }, journey);
 
-it('Delete the first and then every appointment of a repeating email series (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
+it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eyeDay, toEyeWeek, run, agree } = await start();
   // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"
   await toEyeWeek();

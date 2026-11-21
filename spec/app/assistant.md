@@ -361,7 +361,11 @@ pure val exampleReport: GuidanceReport =
 pure val reportValues = Set(exampleReport,
   { ...exampleReport, workVersion: 0, conversationVersion: 2 }, { ...exampleReport, conversationVersion: 2 },
   { ...exampleReport, verified: false }, { ...exampleReport, target: "" },
-  { ...exampleReport, workVersion: 2, conversationVersion: 3 })
+  { ...exampleReport, workVersion: 2, conversationVersion: 3 },
+  { ...exampleReport, workVersion: 2, conversationVersion: 3, revision: 1 },
+  { ...exampleReport, workVersion: 3, conversationVersion: 3 },
+  { ...exampleReport, workVersion: 3, conversationVersion: 3, revision: 1 },
+  { ...exampleReport, workVersion: 3, conversationVersion: 3, revision: 2 })
 ```
 
 ### Page guidance shows only on the visible page and steps aside while Grace talks or works
@@ -538,6 +542,12 @@ pure def sometimesAbandoned(a: Assistant): bool = a.outcome == Abandoned
 pure def sometimesKeyboardCaption(a: Assistant): bool = keyboardCaptionVisible(a)
 pure def sometimesReopenedOverInterruptedWork(a: Assistant): bool =
   a.presentation == Compact and a.activity == Paused and a.interruptedWork
+pure val weight_beginTask = 10
+pure val weight_finishTask = 10
+pure val weight_publishGuidanceAs = 10
+pure val weight_talk = 10
+pure val weight_hear = 10
+pure val weight_respond = 10
 pure val weight_publishGuidance = 10
 pure val weight_dismissGuidance = 10
 pure val weight_showGuidance = 10

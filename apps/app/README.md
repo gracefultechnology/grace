@@ -234,17 +234,35 @@ another cause; the state is one of upstream's `unavailable`, `stopped`, `startin
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
 background processes (`am kill`), fails unless her process is the same one, and opens her again.
-Five steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
+Seven steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
 expression in Grace's page and fails unless its value is that JSON, and `{ "evaluate": "<expression>",
 "rejects": "<code>" }` unless it rejects with that code; `{ "grant": "android.permission.<NAME>" }`
-grants Grace that permission, as the person's Allow would; `{ "notification": "<title>" }` opens
+grants Grace that permission, as the person's Allow would; `{ "forget": "<SSID>" }` forgets that
+saved Wi-Fi network (`cmd wifi forget-network`); `{ "approve": "<label>" }` waits up to three
+minutes for a button with that label shown by Android's Settings (`com.android.settings`) or System
+UI (`com.android.systemui`), such as Save in Settings' "Save this network?" dialog, and taps it, as
+the person would, first acknowledging System UI's first-use "Viewing full screen" notice and
+Android's "Wait" on a slow app, as the BillWorld walk does; `{ "notification": "<title>" }` opens
 Android's settings over Grace, waits up to five minutes for a notification of hers with that title, and
 opens her again; `{ "restart": "force-stop" }` force-stops Grace, opens Home and walks on in her new
 process. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, and `records.json` the record store, reminders and signed-out Files refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens it after a process restart, renders its page and removes the file by its returned ID.
+`agent.json` walks the agent service, `device-controls.json` speech and the device controls,
+`signin-status.json` sign-in, `wifi.json` the Wi-Fi page forgetting the emulator's open AndroidWifi
+and joining it again through Android's Save dialog, `wifi-password.json` the page joining a WPA2
+network with its password, and `records.json` the record store, reminders and signed-out Files
+refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens
+it after a process restart, renders its page and removes the file by its returned ID.
+
+`wifi-password.json` needs an emulator whose only access point is that WPA2 network. Boot it first,
+with an empty `TMPDIR` of its own so that it starts its own netsimd rather than sharing one another
+emulator started:
+`TMPDIR=<empty directory> emulator -avd <avd> -no-window -netsim-args "--wifi-ssid GraceWifiPage --wifi-password garden-fixture-2026"`,
+then run `--install emulator-<port> --exercise wifi-password`. Both Wi-Fi walks expect Grace without
+location access and, for `wifi.json`, AndroidWifi saved. A walk that stops after `forget` leaves the
+AVD's quickboot snapshot without either, so boot it once with `-wipe-data` before walking it again.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523

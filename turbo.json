@@ -65,6 +65,24 @@
         ".cache/test-result-*.json"
       ]
     },
+    "@grace/cloud#build": {
+      "dependsOn": ["//#gen:cloud"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vendor/eliza/tsconfig.base.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud/tsconfig*.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud/src/**"
+      ],
+      "outputs": ["dist/**", "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**"]
+    },
+    "@repo/app#build": {
+      "dependsOn": ["gen", "//#gen", "^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,os}/src/**"
+      ],
+      "outputs": ["dist/**"]
+    },
     "@repo/app#typecheck": {
       "dependsOn": [
         "gen",
@@ -107,7 +125,18 @@
       ],
       "cache": false
     },
+    "//#gen:cloud": {
+      "inputs": [
+        "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
+        "vendor/eliza/{apps,packages}/*/package.json",
+        "vendor/eliza/spec/**/*.md",
+        "vendor/eliza/vibestack/*.ts",
+        "vendor/eliza/vibestack/{gen,patches,proof,std}/**"
+      ],
+      "outputs": ["vendor/eliza/packages/cloud/gen/**"]
+    },
     "//#gen": {
+      "dependsOn": ["//#gen:cloud"],
       "inputs": [
         "spec/**",
         "apps/*/package.json",
@@ -301,6 +330,11 @@
       "persistent": true
     },
     "//#studio": {
+      "cache": false,
+      "persistent": true
+    },
+    "@grace/cloud#dev": {
+      "dependsOn": ["//#gen:cloud"],
       "cache": false,
       "persistent": true
     },

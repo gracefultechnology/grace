@@ -56,7 +56,7 @@ function kept(): Accounts {
 async function start(withAccounts = true, tabletCalendar?: CalendarView) {
   const { secret, credentialId } = await Effect.runPromise(Effect.provide(signIn(cloud, withAccounts), client));
   const digest = async (purpose: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(purpose + credentialId))), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  const scope = { owner: await digest("files/owner"), session: await digest("files/session") };
+  const scope = { accountId: credentialId, owner: await digest("files/owner"), session: await digest("files/session") };
   let signedIn = false;
   const fetchOriginal = window.fetch.bind(window);
   const browserSession = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
