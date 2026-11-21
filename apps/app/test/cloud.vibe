@@ -319,7 +319,7 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
         "Dear Margaret, this is a reminder of your appointment with Dr. Patel tomorrow at 10:00 am. Please fill in the attached form and bring it with you.",
         { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] }),
       letter("scam", address, at, "Account Security", "security-alert@acc0unt-help.co", "Urgent: confirm your password",
-        `Your account will be closed today. To keep it open, confirm your password here: ${site}/${visit}/confirm-password/`,
+        `Your account will be closed today. To keep it open, confirm your password here: ${site}/${visit}/confirm-password/ Alternative: https://reader:example@invalid.example/`,
         { isUnread: false, labels: ["INBOX"], triageScore: 0, triageReason: "", suspicion: "Asks for your password urgently from an address that imitates a real company" })
     ];
     when "outlook": one("St. Mark’s Church Office", "office@stmarks.test", "Thanksgiving dinner sign-up", "Dear Margaret, our Thanksgiving dinner is on Thursday the 26th at 5 pm in the hall. Reply to let us know if you’ll come.");
