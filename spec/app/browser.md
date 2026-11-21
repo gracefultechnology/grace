@@ -291,17 +291,22 @@ navigation: its history, load and revision change as they do for Go. The
 person's address edit is left as it was: an address being typed stays open
 with its draft and any empty-address notice, so the person's typing is never
 thrown away, and the address bar keeps editing until the person submits it
-or dismisses it.
+or dismisses it. A host-observed start at the same address, or without an
+observable new address, reports an empty destination. A completed visit
+then starts a fresh load at its retained address and clears the padlock.
+Its history, forward entries and address edit survive.
 
 ```quint
-pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url)
-pure def pageMoved(b: Browser, url: str): Browser = {
+pure def canRestartVisit(t: Tab): bool = tabUrl(t) != "" and t.load != Blank and t.load != Loading
+pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url) or canRestartVisit(activeTab(b))
+pure def pageMoved(b: Browser, url: str): Browser = if (url == "") reload(b) else {
   ...navigate(b, url),
   editingAddress: b.editingAddress, addressDraft: b.addressDraft, emptyAddressNotice: b.emptyAddressNotice
 }
 pure def lawAPageMovingByItselfKeepsTheAddressEdit(b: Browser, url: str): bool =
+  val navigation = if (url == "") reload(b) else navigate(b, url)
   canPageMoved(b, url) implies
-    (pageMoved(b, url).tabs == navigate(b, url).tabs and pageMoved(b, url).revision == navigate(b, url).revision and
+    (pageMoved(b, url).tabs == navigation.tabs and pageMoved(b, url).revision == navigation.revision and
      pageMoved(b, url).editingAddress == b.editingAddress and pageMoved(b, url).addressDraft == b.addressDraft)
 ```
 
@@ -317,14 +322,18 @@ revision, the selected tab and the person's address edit stay as they were.
 Such a tab records a move only once its own load has ended: while it is
 loading, the move is refused and the load under way reports its result with
 the address it ended at, which the entry it started then records (a load
-that ends at another address, below).
+that ends at another address, below). When an unselected page restarts without
+a new observable address, it drops the prior connection mark and retains
+its history and load outcome until a new load can be correlated.
 
 ```quint
 pure def canTabMoved(b: Browser, id: int, url: str): bool =
-  hasTab(b, id) and canPageMoved(b, url) and (id == b.selected or tabById(b, id).load != Loading)
+  hasTab(b, id) and (canNavigate(b, url) or canRestartVisit(tabById(b, id))) and
+  (id == b.selected or tabById(b, id).load != Loading)
 pure def tabMoved(b: Browser, id: int, url: str): Browser =
   if (id == b.selected) pageMoved(b, url) else {
-    ...b, tabs: b.tabs.listMap(t => if (t.id == id) { ...navigated(t, url, t.loadVersion), load: t.load } else t)
+    ...b, tabs: b.tabs.listMap(t => if (t.id != id) t else if (url == "") { ...t, secure: false }
+      else { ...navigated(t, url, t.loadVersion), load: t.load })
   }
 pure def lawABackgroundTabMovingKeepsTheSelectedPage(b: Browser, id: int, url: str): bool =
   canTabMoved(b, id, url) and id != b.selected implies
