@@ -32,18 +32,24 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
   const [own, setOwn] = useState(defaultValue);
   const [dragged, setDragged] = useState<number>();
   const pressedRef = useRef(false);
+  const askedRef = useRef<{ while?: number; next: number }>(undefined);
   const current = value ?? own;
   const set = (next: number) => {
     setDragged(undefined);
     if (disabled) return;
     const clamped = Math.min(max, Math.max(min, next));
+    askedRef.current = { while: value, next: clamped };
     setOwn(clamped);
     onValueChange?.(clamped);
+  };
+  const stepBy = (change: number) => {
+    const asked = askedRef.current;
+    set((asked && asked.while === value ? asked.next : current) + change);
   };
   const end = "text-chrome active:scale-96";
   return (
     <div className={cn("flex items-center gap-3", disabled && "opacity-40", className)} {...props}>
-      <Button variant="capsule" size="pill-icon" aria-label={decreaseLabel} disabled={disabled} onClick={() => set(current - step)} className={end}>
+      <Button variant="capsule" size="pill-icon" aria-label={decreaseLabel} disabled={disabled} onClick={() => stepBy(-step)} className={end}>
         <Minus size={28} strokeWidth={2.6} aria-hidden />
       </Button>
       <SliderPrimitive.Root
@@ -67,7 +73,7 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
           <span className="absolute -top-5 -left-5 size-10 rounded-full bg-card shadow-thumb group-focus-visible:ring-2 group-focus-visible:ring-ring" />
         </SliderPrimitive.Thumb>
       </SliderPrimitive.Root>
-      <Button variant="capsule" size="pill-icon" aria-label={increaseLabel} disabled={disabled} onClick={() => set(current + step)} className={end}>
+      <Button variant="capsule" size="pill-icon" aria-label={increaseLabel} disabled={disabled} onClick={() => stepBy(step)} className={end}>
         <Plus size={28} strokeWidth={2.6} aria-hidden />
       </Button>
     </div>
