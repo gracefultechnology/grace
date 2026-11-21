@@ -176,8 +176,8 @@ Six offline Chromium journeys passed in GitHub Actions on `45c81f0`. They cover 
 
 | Priority | Remaining work | Acceptance |
 |---|---|---|
-| 1 | Restore the standard GitHub-hosted runner allowance and qualify the WebArena job there. | Dispatch `ci` with `webarena` and compare its two official Shopping receipts with the pinned Linux results. Fleet and the offline Google journeys already have passing GitHub Actions runs on temporary self-hosted runners. |
-| 2 | Extend independent grading beyond the four authenticated bill reads and the two Shopping navigation intents. | Publish denominators separately for authored billing tasks, additional Shopping intents and each new WebArena evaluator or site. Exercise a refusal, interruption and a successful outcome before qualifying each kind of write. |
+| 1 | Restore the standard GitHub-hosted runner allowance and qualify the WebArena job there. | Dispatch `ci` with `webarena` and compare its official Shopping receipts with the pinned results. Fleet and the offline Google journeys already have passing GitHub Actions runs on temporary self-hosted runners. |
+| 2 | Extend independent grading beyond the authenticated bill reads and the Shopping URL grader. | Publish denominators separately for authored billing tasks, additional Shopping intents and each new WebArena evaluator or site. Exercise a refusal, interruption and a successful outcome before qualifying each kind of write. |
 | 3 | Extend app coverage with a source-bound checkpoint and a new adapter. | Recover a paused task after process restart under the same account, reject recovery under a different account and complete a Files or multi-tab task without reusing an earlier observation. Carry a venue read from a webpage into an explicitly approved calendar write. |
 | 4 | Qualify the installed standalone app against its own cloud and finish whole-repository verification. | Record an authenticated hosted decision from an installed device, a completed browser task and the ordinary full `pnpm check` result. Keep the upstream sandbox, native build and installed-device receipts identifiable by revision. |
 
@@ -257,9 +257,15 @@ The plan belongs to the active account. Grace rechecks ownership when offering, 
 
 ### WebArena Shopping on x86 Linux
 
-The pinned upstream catalog has 812 tasks. Its grader assigns 325 solely by answer text, 282 solely by page content, 66 solely by URL, and 139 by combinations of those checks. The current adapter can load the 42 single-site Shopping tasks that start on the home page and use only URL matching. The workflow selects tasks 260 and 261. Task 260 retains its one-hop baseline and task 261 exercises the live planner and named-destination readback. Qualifying the other classes requires adapters for their own evaluators and authenticated site state. [Upstream catalog](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
+On Grace `e7a95d02` and Eliza `67d4b912`, all seven declared cases reached the pinned URL evaluator with fresh Chromium documents and synthetic Shopping sessions. The two baselines qualified with hosted guidance and the grader rejected all seven no-action controls. The five exploratory attempts scored zero. In 262 and 263 Grace opened the apparel menu and could not locate the reviewed names among deeper links labeled Shoes and Clothing. In 264 Grace pointed at a different top-level menu from the furniture destination. In 298 upstream chat offered a generic browser read. In 299 Grace guided the person into My Orders, then back to an already visited page while the requested order remained unconfirmed. [Tested source](https://github.com/gracefultechnology/grace-new/tree/e7a95d027ae9685d52fee36a30d3db8411c45119) · [Official task definitions](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
 
-The manual `ci` workflow accepts the optional `webarena` input. It runs both cases and uploads the receipts as `webarena-shopping`. Turn off `billworld` to run only the Shopping benchmark in addition to the normal repository verification. The job uses the configured `GRACE_BENCHMARK_CLEF_ORIGIN` variable and `GRACE_BENCHMARK_CLEF_KEY` secret. A pass requires `officialScore: 1` and `qualifiedHostedGuidance: true` in Grace's browser receipt. The job uploads the image identity, browser log and scoring receipt. The synthetic account state, browser setup inputs and local CA stay under the runner's private directory. [Manual workflow](../.github/workflows/ci.yml)
+A follow-up run with the branch-scoped guide passed 262 and 263 with hosted upstream planning and link decisions. Trusted pointer input opened two visible menus in each case. The person accepted the site’s shorter link label within the selected Men or Women branch. Chromium reached the expected page, Grace checked the visible heading, and the independent grader scored each landing 1 and starting document 0. Task 264 still scored zero after the guide chose the wrong top-level menu. The runner keeps that attempt alongside the first run. [Branch-scoped guide](https://github.com/gracefultechnology/grace-new/commit/dbaad030)
+
+On Grace `2b029bf9` with the same Eliza pin, all four required cases qualified again. The two order tasks reached My Account and My Orders, then stopped when guidance returned to an earlier address. Task 264 used the visible alternate-menu control twice after guidance selected other branches. The person declined a similar but different label, and the case recorded a timeout before opening the destination. The official grader rejected all seven untouched storefront starts. A focused rerun on `83efa2ff` recorded the person’s rejection of the visibly offered Racks, Shelves & Drawers leaf as an exploratory miss. The separate workflow scorecard replay accepted that witnessed refusal and rejected the earlier unclassified timeout, stale document evidence, a missing approval control and corrupted score controls. After guidance continued through the person’s alternate-menu control, task 264 qualified on `ea579b23` with five distinct pointer hovers, two alternate-menu taps and one checked landing. The grader scored the landing 1 and the untouched page 0. The workflow still treats 264 as exploratory while repeatability is measured. [Frozen Shopping source](https://github.com/gracefultechnology/grace-new/tree/2b029bf9)
+
+The pinned upstream catalog has 812 tasks. Its grader assigns 325 solely by answer text, 282 solely by page content, 66 solely by URL, and 139 by combinations of those checks. The current adapter can load the 42 single-site Shopping tasks that start on the home page and use only URL matching. The workflow runs seven official Shopping tasks. Video Game, Headphones, men’s shoes and women’s clothing are required. The office-furniture and order tasks remain exploratory. Tasks 262–264 cover men’s shoes, women’s clothing and office furniture. Tasks 298 and 299 ask to show orders with specific statuses from the synthetic shopper account. Task 260 retains its fixed chat proposal. The remaining tasks exercise live upstream planning and require a completed named step for qualification. Qualifying other evaluator types requires their own adapters and corresponding site state. [Upstream catalog](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
+
+The manual `ci` workflow accepts the optional `webarena` input. Run it with `benchmarks_only` enabled and `billworld` disabled for Shopping alone. The workflow uploads receipts as `webarena-shopping`. The job uses the configured `GRACE_BENCHMARK_CLEF_ORIGIN` variable and `GRACE_BENCHMARK_CLEF_KEY` secret. A qualified task has an accepted landing, rejected starting document and a completed Grace plan supported by observed hosted guidance. The scorecard reports the official landing score, the independent no-action score and the Grace outcome for each task. The workflow requires all four required tasks to qualify and the grader to reject every untouched starting document. It preserves misses in the exploratory cohort as measurements. The job uploads the image identity, browser log and scoring receipt. The synthetic account state, browser setup inputs and local CA stay under the runner's private directory. [Manual workflow](../.github/workflows/ci.yml)
 
 Standard Linux GitHub-hosted runners list 14 GB of SSD storage. The manual job measures Docker's volume and releases unused preinstalled Android and .NET SDKs when the isolated hosted runner is short on space. Set the optional `GRACE_WEBARENA_RUNNER` repository variable to an existing x86-64 Linux runner label when you need a larger disk. [GitHub runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 
@@ -343,24 +349,33 @@ JS
 unset WA_SHOPPING_FIXTURE_LOGIN
 ```
 
-Provide the hosted decision origin and test key in the environment. Generate both cases from the pinned public intents. The upstream evaluator keeps the expected URLs. The local fixture directory holds the synthetic shopper session.
+Provide the hosted decision origin and test key in the environment. Generate the seven cases from the pinned public intents. The upstream evaluator keeps the expected URLs. The local fixture directory holds the synthetic shopper session. The exploratory cases record a missing reviewed step, a target absent from an opened menu, or a return to a visited address alongside their official scores. A test or tooling failure fails the run.
 
 ```sh
 git -C "$fx/upstream" show HEAD:config_files/test.raw.json |
-  jq -e --arg results "$fx" --arg state "$fx/shopping-state.json" '
-    [.[] | select(.task_id == 260 or .task_id == 261) |
+  jq -e --arg results "$fx" --arg state "$fx/shopping-state.json" --argjson required '[260,261,262,263]' '
+    [.[] | select((.task_id >= 260 and .task_id <= 264) or .task_id == 298 or .task_id == 299) |
       {taskId: (.task_id | tostring), intent, startUrl: "https://127.0.0.1:7770/",
        receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
        siteStorageState: $state, evaluator: "webarena"} +
-      (if .task_id == 261 then {chat: "upstream", requiredStep: "ReachNamedPage"} else {} end)]' \
+      (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
+      (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)]' \
     > "$fx/shopping-input.json"
 GRACE_WEBARENA_UPSTREAM="$fx/upstream" GRACE_WEBARENA_PYTHON="$fx/evaluator/bin/python" \
 GRACE_BROWSER_BENCHMARK_FILE="$fx/shopping-input.json" \
   pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
-jq -es 'length == 2 and all(.[]; .webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance)' \
-  "$fx/task-260.json" "$fx/task-261.json"
-jq -e '.chatStatus == 200 and .outcome.chatProvider == "upstream" and
-  (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked' "$fx/task-261.json"
+jq -es '
+  (map(.taskId | tonumber) | sort) == [260,261,262,263,264,298,299] and
+  all(.[]; .webArena.noActionScore == 0 and (.webArena.officialScore == 0 or .webArena.officialScore == 1)) and
+  all(.[] | select((.taskId | tonumber) <= 263);
+    .webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true)
+' "$fx"/task-*.json
 ```
 
 For offline preparation, prefetch the pinned OCI image, upstream checkout and Python wheels, the application's Chromium binary and its Linux system packages, the Eliza submodule and pnpm dependencies. The pinned Python venv supplies the URL grader's dependencies. Hosted qualification needs access to the configured Decisions API.
+
+#### Shopping Admin
+
+The separate Shopping Admin fixture uses `am1n3e/webarena-verified-shopping_admin@sha256:d0531dd27ed98d0c459ff9e88118bf2ed8b660b0ed99c38837db46c065a5be13`. Start it on a separate loopback HTTPS origin and use the published synthetic login to save a private Chromium storage-state file. Load the official `/admin` start and verify its authenticated redirect to `/admin/admin/dashboard/`. Declare that observed dashboard URL as `startUrl` for task `157`, along with the unchanged official intent, storage-state and receipt paths, `evaluator: "webarena"`, `chat: "upstream"` and `requiredStep: "ReachNamedPage"`. Run the same browser command. Task navigation stays on the Admin origin and the browser sends only GET or HEAD requests. [Shopping Admin environment](https://servicenow.github.io/webarena-verified/v1.2.3/environments/shopping_admin/)
+
+The first authenticated attempt returned a follow-up question about finding the Customers control. After the planner began offering reviewed navigation before seeing a matching control, task 157 proposed a named step. Grace paused on the authenticated dashboard before sending a guidance request. A redacted native snapshot showed one form-owned text field with no declared search semantics. The pinned evaluator scored both the observed dashboard and the no-action control 0. This case remains outside the required workflow. [Frozen Admin source](https://github.com/gracefultechnology/grace-new/tree/2b029bf9)
