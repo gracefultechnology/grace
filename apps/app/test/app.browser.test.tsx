@@ -1638,6 +1638,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       await Effect.runPromise(seriesRequested.await);
       await tap("Close Calendar");
       await tap(/^Calendar/);
+      await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
       await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
     } finally {
       beforeSeriesReply = undefined;
@@ -1647,6 +1648,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
     expect(changed).toEqual(["update", "delete", "create"]);
     await tap(/Therapy/);
+    await act(async () => { expect(await runtime.runPromise(managed.stage(removal))).toBe(true); });
+    await expect.element(page.getByRole("heading", { name: "Remove this appointment?" })).toBeVisible();
+    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
+    await act(async () => { await runtime.runPromise(managed.send({ kind: "dismissProposal" })); });
     await tap("Change entire series");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
     await tap("Review appointment");
