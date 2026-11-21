@@ -1,7 +1,7 @@
 // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does"
 import { linkDestination, messageLinkParts } from "./messageLinks.vibe"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
-import { apply as applyMail, type Event as MailEvent, selectedMessageIsCurrent } from "../gen/app__email.effect.vibe"
+import { apply as applyMail, type Event as MailEvent, type Mailbox, selectedMessageIsCurrent } from "../gen/app__email.effect.vibe"
 import { openEmailLink } from "../gen/app__handoffs.effect.vibe"
 import { openSource, showsMail } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
@@ -19,13 +19,22 @@ export effect function chooseMailLink(selection: LinkSelection, choice: LinkChoi
   const destination = linkDestination(link)
   if (destination === undefined) return false
   const startingVersion = shelf.content(account, ref)?.version
-  const box = try shelf.mail(account)
+  const initial = try accounts.get()
+  const sources = try Effect.forEach(initial.accounts.filter((a) => showsMail(initial, a.id)), effect (a) =>
+    [a.id, try shelf.mail(a.id)] as const)
+  const machines = new Map(sources)
+  const box = machines.get(account)
+  if (!box) return false
 
   const selected = effect {
     if (try managed.ownsSurfaces()) return undefined
     const registry = try accounts.get()
-    const visible = try Effect.forEach(registry.accounts.filter((a) => showsMail(registry, a.id)), effect (a) =>
-      ({ account: a.id, mailbox: try (try shelf.mail(a.id)).get() }))
+    const visible = []
+    for (const a of registry.accounts.filter((candidate) => showsMail(registry, candidate.id))) {
+      const mailbox = machines.get(a.id)
+      if (!mailbox) return undefined
+      visible.push({ account: a.id, mailbox: try mailbox.get() })
+    }
     const reader = visible.find((view) => view.account === account)?.mailbox
     if (openSource(registry, visible) !== account || visible.some((view) => view.mailbox.composeVisible) ||
       reader?.view !== "Message" || reader.messageRef !== ref || reader.generation !== generation) return undefined
@@ -42,26 +51,34 @@ export effect function chooseMailLink(selection: LinkSelection, choice: LinkChoi
     current.browser.revision !== selection.browserRevision) return false
   const reader = try selected
   if (!reader || (choice !== "open" && reader.link.link !== destination)) return false
+  const sameRelease = (expected: Mailbox) => () => {
+    const live = Effect.runSyncExit(selected)
+    if (!Exit.isSuccess(live) || !live.value) return false
+    const held = live.value
+    return held.link.status === expected.link.status && held.link.link === expected.link.link &&
+      held.link.ref === expected.link.ref && held.warning.evidence === expected.warning.evidence
+  }
+  const stillReading = () => {
+    const { device, browser } = Effect.runSync(workspace.get())
+    return device.surface === "Email" && device.contextVersion === selection.deviceVersion &&
+      browser.revision === selection.browserRevision && sameRelease(reader)()
+  }
   if (choice === "cancel") {
-    try box.send({ type: "cancelLink" }, "MailUser")
-    return true
+    return Effect.as(box.send({ type: "cancelLink" }, "MailUser", stillReading), true) catch () => false
   }
   const event: MailEvent = choice === "open" ? { type: "openLink", link: destination } : { type: "confirmLink", link: destination, confirmed: true }
-  const released = try applyMail(reader, event, "MailUser")
+  const released = applyMail(reader, event, "MailUser") catch () => undefined
+  if (!released) return false
   if (released.link.status === "LinkHeld") {
-    try box.send(event, "MailUser")
-    return true
+    return Effect.as(box.send(event, "MailUser", stillReading), true) catch () => false
   }
   if (openEmailLink(current.device, released, current.browser, destination).tag !== "OpenedLink") return false
   const publication = { link: destination, deviceVersion: selection.deviceVersion, browserRevision: selection.browserRevision }
-  const opened = Effect.as(workspace.send({ type: "openReleasedEmailLink", release: publication }, "Host"), true) catch () => false
+  const opened = Effect.as(workspace.send({ type: "openReleasedEmailLink", release: publication }, "Host", sameRelease(reader)), true) catch () => false
   if (!opened) return false
-  const latest = try selected
-  if (latest && latest.link.status === reader.link.status && latest.link.link === reader.link.link) {
-    const marked = box.send(event, "MailUser") catch () => undefined
-    if (marked?.link.status === "LinkReleased" && marked.generation === generation && marked.messageRef === ref) {
-      box.send({ type: "linkOpened", link: destination }, "MailHost") catch () => undefined
-    }
+  const marked = box.send(event, "MailUser", sameRelease(reader)) catch () => undefined
+  if (marked?.link.status === "LinkReleased") {
+    box.send({ type: "linkOpened", link: destination }, "MailHost", sameRelease(marked)) catch () => undefined
   }
   return true
 }

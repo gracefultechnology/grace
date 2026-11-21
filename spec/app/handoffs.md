@@ -444,10 +444,10 @@ pure def mayOpenEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Brow
   reader.view == E::Message and not(reader.composeVisible) and reader.link.ref == reader.messageRef and
   E::canLinkOpened(reader, link, E::MailHost) and E::selectedMessageIsCurrent(reader)
 pure def openEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): LinkHandoff =
-  if (mayOpenEmailLink(device, reader, browser, link)) {
-    val target = showEmailDestination(device, browser, link)
+  val target = showEmailDestination(device, browser, link)
+  if (mayOpenEmailLink(device, reader, browser, link))
     OpenedLink({ device: target.device, mail: E::linkOpened(reader, link, E::MailHost), browser: target.browser })
-  } else LinkDeclined
+  else LinkDeclined
 pure def lawOnlyAReleasedLinkOpens(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
   val handoff = openEmailLink(device, reader, browser, link)
   (reader.link.status != E::LinkReleased or reader.link.link != link or reader.view != E::Message or
