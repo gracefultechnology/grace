@@ -87,6 +87,18 @@ async function source(file: "command" | "guidance", entry: "pageCommand" | "page
   return Function.prototype.toString.call(run);
 }
 
+const observationWorld = "grace-benchmark";
+
+async function observeFromDocumentStart(page: Page) {
+  const session = await page.context().newCDPSession(page);
+  await session.send("Page.enable");
+  await session.send("Page.addScriptToEvaluateOnNewDocument", {
+    worldName: observationWorld,
+    source: `if (window === window.top) (${await source("command", "pageCommand")})(null)`,
+  });
+  return session;
+}
+
 async function benchmarkSurface(context: BrowserCommandContext, action: SiteAction) {
   if (action.kind === "begin") {
     const fixture = byId.get(action.taskId);
@@ -194,12 +206,19 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       ...(storage && { storageState: { cookies: [...storage.cookies], origins: storage.origins.map(({ origin, localStorage }) => ({ origin, localStorage: [...localStorage] })) } }),
     });
     if (!browser) throw new Error("The benchmark needs a Chromium browser context");
-    const website = await browser.newPage();
-    run.site = { page: website, origin, browser, session: await browser.newCDPSession(website) };
-    await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    const response = await website.goto(action.url, { waitUntil: "load" });
-    if (!response?.ok()) throw new Error("The benchmark site did not load");
-    return { url: website.url() };
+    try {
+      const website = await browser.newPage();
+      const session = await observeFromDocumentStart(website);
+      await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+      const response = await website.goto(action.url, { waitUntil: "load" });
+      if (!response?.ok()) throw new Error("The benchmark site did not load");
+      if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");
+      run.site = { page: website, origin, browser, session };
+      return { url: website.url() };
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
   }
   if (!existing) throw new Error("The Chromium benchmark site is not open");
   return observeSite(existing, action);
@@ -213,7 +232,7 @@ async function observeSite(existing: Site, action: SiteObservation) {
   const { id, loaderId, url } = frameTree.frame;
   if (new URL(url).origin !== origin) throw new Error("The site left its benchmark origin");
   if (existing.world?.loaderId !== loaderId) {
-    const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: id, worldName: "grace-benchmark" });
+    const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: id, worldName: observationWorld });
     existing.world = { loaderId, executionContextId };
   }
   const { executionContextId } = existing.world;
@@ -383,8 +402,8 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
       browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
       if (!browser) throw new Error("The statement trial needs an isolated Chromium context");
       const page = await browser.newPage();
+      const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await observeFromDocumentStart(page) };
       await episode.prepareStatement(page);
-      const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await browser.newCDPSession(page) };
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
       await context.page.bringToFront();
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
