@@ -316,7 +316,9 @@ data CreateBinding {
 
 schema CalendarCreateClaim { grantId: Schema.NonEmptyString; mutation: Schema.NonEmptyString; fingerprint: Schema.NonEmptyString; providerId?: Schema.NonEmptyString }
 
-effect function calendarCreates(service: string) {
+type CalendarPlatform = { readonly locks?: LockManager }
+
+effect function calendarCreates(service: string, platform: CalendarPlatform) {
   const storage = try KeyValueStore.KeyValueStore
   const journal = KeyValueStore.toSchemaStore(storage, CalendarCreateClaim)
   const legacyKeys = try Effect.cached(Effect.map(storage.keys, (keys) => new Set(keys.filter((key) => /^calendar-create:[0-9a-f]{64}$/.test(key)))))
@@ -374,8 +376,12 @@ effect function calendarCreates(service: string) {
       journal.set(at, { ...claim, providerId: saved.externalId }) catch effect () => { throw new Unreachable() }
       return CreateBinding.Received({ providerId: saved.externalId })
     }
-    const result = tryPromise((signal) => navigator.locks.request(at, { signal }, () => Effect.runPromise(Effect.result(record), { signal }))) catch effect () => { throw new Unreachable() }
-    return try Effect.fromResult(result)
+    const manager = Effect.try(() => platform.locks) catch effect () => { throw new Unreachable() }
+    if (manager === undefined) throw new Unreachable()
+    return try Effect.scoped(effect {
+      Experimental.Locks.make(manager).hold(at) catch effect () => { throw new Unreachable() }
+      return try record
+    })
   }
 }
 
@@ -463,8 +469,8 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
   }
 }
 
-export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
-  const bind = try calendarCreates(link.url)
+export const connector = (link: CloudLink, platform: CalendarPlatform) => Layer.effect(Connector, effect {
+  const bind = try calendarCreates(link.url, platform)
   const transport = try connectorTransport(link)
   const { call, fetched, get, post } = transport
   const page = try SignInPage

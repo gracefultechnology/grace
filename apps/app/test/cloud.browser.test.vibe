@@ -8,7 +8,7 @@ import { client, parts, reply, signIn, turns, type Visit, visiting } from "./clo
 
 const cloud = inject("cloud")
 const site = inject("site")
-const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits)))
+const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }, navigator), Layer.effect(SignInPage, visiting(visits)))
 
 it.live("Talk or type without losing the conversation, from the app's own page: the fake and the site answer across origins", () => effect {
   provide client {

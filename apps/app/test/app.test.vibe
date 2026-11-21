@@ -16,7 +16,7 @@ const framedVisits = Layer.effectDiscard(effect {
   try fork.scoped Stream.runForEach(shown, (at) => at?.inSheet === true ? page.open(at.url) : Effect.void)
 })
 const connectorAt = (key: string, visits: readonly Visit[] = [], opened?: Deferred.Deferred<string>) =>
-  Layer.provideMerge(framedVisits, Layer.provideMerge(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits, opened))))
+  Layer.provideMerge(framedVisits, Layer.provideMerge(connector({ url: cloud, key }, navigator), Layer.effect(SignInPage, visiting(visits, opened))))
 
 schema Payment { amount: string; to: string }
 schema Booking { time: string }

@@ -99,7 +99,7 @@ const signInPage = Layer.sync(SignInPage, () => {
 const untraced = Layer.succeed(HttpClient.TracerPropagationEnabled, false)
 
 const tabletStorage = KeyValueStore.layerStorage(() => webView.window.localStorage)
-const linked = (cloud: CloudLink) => Layer.mergeAll(Layer.provide(connector(cloud), Layer.merge(signInPage, tabletStorage)), untraced)
+const linked = (cloud: CloudLink) => Layer.mergeAll(Layer.provide(connector(cloud, webView.window.navigator), Layer.merge(signInPage, tabletStorage)), untraced)
 
 const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
