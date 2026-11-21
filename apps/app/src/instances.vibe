@@ -284,8 +284,6 @@ export const reading = Layer.effectDiscard(effect {
           const accepted = Effect.as(box.send({ type: "receiveMessage", scope, listing: found.receipt }, "MailConnector"), true) catch () => false
           if (accepted) shelf.remember(id, { content: found.content })
         })
-        const total = mail.draftCount() catch () => undefined
-        if (total !== undefined) box.send({ type: "countDrafts", generation: m.generation, total }, "MailConnector") catch () => undefined
         return read(m.generation)
       };
       when "OpenMessage": effect {
@@ -345,7 +343,21 @@ export const reading = Layer.effectDiscard(effect {
       Stream.changesWith((a: Mailbox, b: Mailbox) => a.generation === b.generation),
       Stream.switchMap((m: Mailbox) => Stream.fromEffect(answer(account.id, mail, box, m)))
     )
-    try.all [Stream.runDrain(reads), Stream.runForEach(box.changes, effect (m) => { try settle(account.id, mail, box, m, sent) })]
+    const counts = Stream.zipWithPrevious(box.changes).pipe(
+      Stream.filter(([previous, m]) => {
+        const before = Option.getOrUndefined(previous)
+        return m.connection === "Connected" && m.canRead && (
+          (m.readKind === "Search" && m.readStatus === "Reading" && before?.generation !== m.generation) ||
+          (before?.draftStorage === "DraftSaving" && m.draftStorage === "DraftSaved") ||
+          (before?.draftStorage === "DraftDeleting" && m.draftStorage === "DraftUnstored")
+        )
+      }),
+      Stream.switchMap(([, { generation }]) => Stream.fromEffect(effect {
+        const total = mail.draftCount() catch () => undefined
+        if (total !== undefined) box.send({ type: "countDrafts", generation, total }, "MailConnector") catch () => undefined
+      }))
+    )
+    try.all [Stream.runDrain(reads), Stream.runDrain(counts), Stream.runForEach(box.changes, effect (m) => { try settle(account.id, mail, box, m, sent) })]
   }
 
   effect function follow(a: Registry) {

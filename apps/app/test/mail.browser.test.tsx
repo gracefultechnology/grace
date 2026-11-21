@@ -520,7 +520,7 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Shall we have lunch on Tuesday?"));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week").map((m) => [b.address, m.labels]))).toEqual([[outlook, ["DRAFT"]]]);
-  // spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"
+  // spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/mailboxes.md, "Drafts counts the shown accounts’ saved drafts"
   await expect.element(row("Drafts 1")).toBeVisible();
   await click(row("Drafts"));
   await click(email(/^To Susan.*Lunch next week/));
@@ -539,6 +539,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Close Email" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Tea on Friday").map((m) => m.labels))).toEqual([["DRAFT"]]);
   await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(row("Drafts 2")).toBeVisible();
   await click(row("Drafts"));
   await expect.element(email(/^To Susan.*Tea on Friday/)).toBeVisible();
   await expect.element(row("Drafts 2")).toBeVisible();
@@ -548,6 +549,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Discard" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(email(/^To Susan.*Lunch next week/)).not.toBeInTheDocument();
+  await expect.element(row("Drafts 1")).toBeVisible();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
