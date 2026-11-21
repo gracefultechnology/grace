@@ -5,12 +5,13 @@
   { "expect": "The tablet uses its location only to find Wi-Fi networks nearby." },
   { "grant": "android.permission.ACCESS_FINE_LOCATION" },
   { "tap": "Allow" },
+  { "expect": "AndroidWifi" },
   { "expect": "Connected" },
   { "evaluate": "Capacitor.Plugins.ElizaWiFi.getConnectivity().then(({ ssid }) => { const lines = document.body.innerText.split('\\n').map(line => line.trim()).filter(Boolean); return typeof ssid === 'string' && lines.some((line, i) => line === ssid && lines[i + 1] === 'Connected'); })", "returns": true },
   { "call": "ElizaWiFi.getConnectivity", "returns": { "online": true } },
   { "forget": "AndroidWifi" },
   { "tap": "AndroidWifi" },
   { "approve": "Save" },
-  { "expect": "Connected" },
+  { "expect": "AndroidWifi\nConnected" },
   { "call": "ElizaWiFi.getConnectivity", "returns": { "online": true, "validated": true, "ssid": "AndroidWifi" } }
 ]

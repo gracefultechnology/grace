@@ -259,7 +259,9 @@ it after a process restart, renders its page and removes the file by its returne
 with an empty `TMPDIR` of its own so that it starts its own netsimd rather than sharing one another
 emulator started:
 `TMPDIR=<empty directory> emulator -avd <avd> -no-window -netsim-args "--wifi-ssid GraceWifiPage --wifi-password garden-fixture-2026"`,
-then run `--install emulator-<port> --exercise wifi-password`.
+then run `--install emulator-<port> --exercise wifi-password`. Both Wi-Fi walks expect Grace without
+location access and, for `wifi.json`, AndroidWifi saved. A walk that stops after `forget` leaves the
+AVD's quickboot snapshot without either, so boot it once with `-wipe-data` before walking it again.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
