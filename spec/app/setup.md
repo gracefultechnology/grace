@@ -721,18 +721,23 @@ Set-up's part is who may change anything: only the signed-in web account
 named by the change, through its current grant, and a device session alone
 never. Trash needs mail with Trash enabled, and an appointment change needs
 the calendar with changes enabled, so enabling one never enables the other.
-No rule here checks the rest yet. The managed Google Trash, Undo and
-appointment change run in the shell, which consults only this guard: it
-compares the selected message's version or the selected appointment's
-version with the change before sending it, and the provider's receipt with
-the change before showing success, by hand. They do not go through the
-[Email](./email.md) or [Calendar view](./calendarView.md) machines, whose
-rules hold Undo after confirmation, the read-back, the one-or-all choice
-and the evidence before success for the local mailbox and calendar only.
-Until those machines govern the managed path, the selected version, Undo
-only after the provider's confirmation, the read-back with a new series'
-frequency and time zone, skipped months, the one-or-all choice and the
-evidence before success are promises of this heading that no rule checks.
+Moving a message to Trash or changing an existing appointment requires the
+ID and version that the person reviewed. Grace checks both when it stages
+the proposal and again before sending the change. For a whole-series change,
+Grace checks the series selected for review. A series lookup can open a
+review only while the selection that requested it is still on screen.
+Creating an appointment starts
+with a new item, and Undo refers to the confirmed Trash operation.
+The provider's receipt must name the same account, item and operation before
+Grace shows success. The managed Google Trash, Undo and
+appointment change run in the shell through these checks. They do not go
+through the [Email](./email.md) or [Calendar view](./calendarView.md)
+machines, whose rules hold Undo after confirmation, the read-back, the
+one-or-all choice and the evidence before success for the local mailbox and
+calendar only. Until those machines govern the managed path, Undo only after
+the provider's confirmation, the read-back with a new series' frequency and
+time zone, skipped months and the one-or-all choice are promises of this
+heading that no rule checks.
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -745,6 +750,11 @@ pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: st
     }
     | _ => false
   }
+pure def isSelectedVersion(selectedId: str, selectedVersion: str, id: str, version: str): bool =
+  id != "" and version != "" and id == selectedId and version == selectedVersion
+pure def lawOnlyTheSelectedVersionIsChanged(selectedId: str, selectedVersion: str, id: str, version: str): bool =
+  (isSelectedVersion(selectedId, selectedVersion, selectedId, selectedVersion) == (selectedId != "" and selectedVersion != "")) and
+  (isSelectedVersion(selectedId, selectedVersion, id, version) implies (id == selectedId and version == selectedVersion))
 pure def grantOf(link: GoogleLink): str = match link {
   | GoogleLinkConnected(g) => g.grant
   | _ => ""

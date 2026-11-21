@@ -1,7 +1,8 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, Latch, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, Layer, ManagedRuntime, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
@@ -18,6 +19,7 @@ import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
+import { ManagedReads } from "../src/managedReads.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -37,7 +39,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
  * the page starts what Grace asked only when the test says, and only what it asked last.
  */
-function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: () => unknown) {
+function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: (options: Record<string, unknown>) => unknown) {
   const calls: Call[] = [];
   const android = { allows: true };
   const privateSignIn = { allows: true };
@@ -56,7 +58,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "createSurface" && options.purpose === "manual-sign-in" && !privateSignIn.allows) {
         return Promise.reject(new Error("Android private WebView unavailable"));
       }
-      if (method === "readPage" && readPage) return Promise.resolve(readPage());
+      if (method === "readPage" && readPage) return Promise.resolve(readPage(options));
       if (method === "controlPage" && controlPage) return Promise.resolve(controlPage(options));
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
@@ -1285,6 +1287,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   let filesScope = filesOwner;
   let trashed = false;
+  let trashRequests = 0;
   const sent: string[] = [];
   let changed: string[] = [];
   const reminders: number[] = [];
@@ -1331,6 +1334,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
+  let beforeSeriesReply: (() => Promise<void>) | undefined;
   events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
   const changeInput = Schema.fromJsonString(Schema.Struct({
@@ -1352,7 +1356,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     })),
   }));
   const decodeChange = Schema.decodeUnknownSync(changeInput);
-  const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
+  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
@@ -1415,6 +1419,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         expect(Object.fromEntries(api.searchParams)).toEqual({ grantId: grant, operationId: unconfirmed });
         return reply({ accountId: person.id, operationId: unconfirmed, messageId: "sent-2" });
       case "/api/v1/eliza/google/gmail/trash": {
+        trashRequests++;
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
         if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
@@ -1438,6 +1443,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/calendar/series":
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
         expect(api.searchParams.get("grantId")).toBe(grant);
+        await beforeSeriesReply?.();
         return reply({ accountId: person.id, occurrenceId: occurrence.externalId, event: series });
       case "/api/v1/eliza/google/calendar/change": {
         const outbound = decodeChange(options?.body);
@@ -1567,6 +1573,12 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply"]);
 
+    const managed = await runtime.runPromise(ManagedReads);
+    const scope = { accountId: person.id, grant };
+    const oldMessage = { kind: "trash", id: mail.externalId, version: "7" } as const;
+    expect(await runtime.runPromise(managed.stage({ ...scope, ...oldMessage }))).toBe(false);
+    expect(await runtime.runPromise(managed.change(scope, oldMessage))).toBeUndefined();
+    expect(trashRequests).toBe(0);
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
     await tap("Undo");
@@ -1591,6 +1603,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Reminder choice saved. Your tablet schedules it when it reconnects.")).toBeVisible();
     await tap("Remove reminder");
     await expect.poll(() => reminders).toEqual([60, 0]);
+    expect(await runtime.runPromise(managed.stage({
+      ...scope, kind: "appointment", version: events[0].etag, title: "Dentist", start: time, location: "Main Street", repeat: "Once",
+    }))).toBe(false);
+    expect(await runtime.runPromise(managed.change(scope, {
+      kind: "appointment", action: "delete", id: events[0].externalId, version: "old-etag",
+    }))).toBeUndefined();
+    expect(changed).toEqual([]);
     await tap("Change appointment");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
     await tap("Review appointment");
@@ -1612,6 +1631,29 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
     await tap(/Therapy/);
     await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
+    const seriesRequested = Latch.makeUnsafe();
+    const releaseSeries = Latch.makeUnsafe();
+    beforeSeriesReply = () => { seriesRequested.openUnsafe(); return Effect.runPromise(releaseSeries.await); };
+    const removal = { ...scope, kind: "removeAppointment", id: occurrence.externalId, version: occurrence.etag, series: true } as const;
+    const pendingRemoval = runtime.runPromise(managed.stage(removal));
+    try {
+      await Effect.runPromise(seriesRequested.await);
+      await tap("Close Calendar");
+      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
+      await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
+      await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    } finally {
+      beforeSeriesReply = undefined;
+      releaseSeries.openUnsafe();
+    }
+    expect(await pendingRemoval).toBe(false);
+    await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    expect(changed).toEqual(["update", "delete", "create"]);
+    await tap(/Therapy/);
+    await act(async () => { expect(await runtime.runPromise(managed.stage(removal))).toBe(true); });
+    await expect.element(page.getByRole("heading", { name: "Remove this appointment?" })).toBeVisible();
+    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
+    await act(async () => { await runtime.runPromise(managed.send({ kind: "dismissProposal" })); });
     await tap("Change entire series");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
     await tap("Review appointment");
@@ -1668,6 +1710,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
 }, 120_000);
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
+  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const audio = { step: 0, min: 0, max: 15, muted: false };
   let brightness = 20;
   let denyBrightness = false;
@@ -1682,7 +1725,7 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
       setBrightness: ({ percent }) => { if (!denyBrightness) brightness = percent; return Promise.resolve(); },
       setVolume: ({ step, muted }) => { Object.assign(audio, { step, muted }); return Promise.resolve(); },
     },
-  }));
+  }).pipe(Layer.provideMerge(clock)));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await mount(runtime);
   const shown = effectiveBrightness(defaults, new Date().getHours());
@@ -2095,7 +2138,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }, "ReadMail", "ReadMail", "ReadCalendar"] }],
     }),
-  }]), client));
+  }], { goalIncludes: "help page", labels: [target] }), client));
   const subject = "Reminder: your appointment tomorrow at 10 am";
   const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
     method: "POST",
@@ -2147,7 +2190,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "subscribe", tag: "button", type: "submit", label: "Subscribe", sensitive: null,
               form: newsletterEmail.form, focused: false, submits: true, href: null, inViewport: false },
             { id: "form-help", tag: "a", label: "Help center inside a form", form: { index: 3, name: null },
-              href: "https://example.org/form-help", inViewport: true },
+              href: "https://example.org/form-help", inViewport: true, bounds: { x: 100, y: 140, width: 100, height: 32 } },
           ]),
           ...(challengeShown === "code" ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code",
             form: { index: 4, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true }] : []),
@@ -2395,6 +2438,191 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Expand", exact: true }));
     await routeTo(plan.getByText("Open page: Help center", { exact: true }));
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
+  } finally {
+    await dispose();
+    accountNetwork.mockRestore();
+    localStorage.clear();
+  }
+});
+
+it('Approve the website’s exact label for one step (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const requested = "Customer support";
+  const siteLabel = "Service desk";
+  const ask = 'Help me reach the page named "Customer support", then read the appointment email I open.';
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: ask,
+    answer: JSON.stringify({
+      text: "Review the page and email checks.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: requested }, "ReadMail"] }],
+    }),
+  }], { goalIncludes: requested, labels: [siteLabel, `${siteLabel} (collapsed menu)`] }), client));
+  const guideOwner = { id: "guide-owner", email: "owner@grace.test" };
+  const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
+  const subject = "Service desk follow-up appointment";
+  const body = "Your Thursday appointment is at noon.";
+  const selected = { externalId: "service-desk-appointment", from: "Harbor Clinic", subject,
+    receivedAt: new Date().toISOString(), isUnread: true, metadata: { historyId: "1" } };
+  localStorage.clear();
+
+  const home = "https://example.org/";
+  const destination = home + "service-desk";
+  let url = home;
+  let documentId = "directory";
+  let heading = "Example";
+  let domRevision = 1;
+  let replacement: "idle" | "armed" | "observed" | "replaced" = "idle";
+  let session = "2".repeat(64);
+  let observationsBeforeSignIn = 0;
+  const native = fakePlugin(({ command }) => {
+    if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      if (replacement === "armed") replacement = "observed";
+      if (observationsBeforeSignIn > 0) {
+        observationsBeforeSignIn--;
+        if (observationsBeforeSignIn === 0) session = "3".repeat(64);
+      }
+      return { documentId, frameScope: "main", result: {
+        snapshotId: documentId, domRevision, url, title: heading, text: heading,
+        complete: true, readyState: "complete", blockers: [],
+        viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
+        elements: url === home ? [{
+          id: "service-desk", tag: "a", role: "menuitem", label: siteLabel, form: null, href: destination,
+          targetSelector: "#service-desk", expanded: false, inViewport: true, bounds: { x: 100, y: 80, width: 155, height: 32 },
+        }] : [],
+      } };
+    }
+    return { result: { accepted: true } };
+  }, false, ({ selector }) => ({
+    url: typeof selector === "string" && selector.includes(":focus-within") ? "" : url,
+    title: heading, text: heading, truncated: false,
+  }));
+  const browserFetch = window.fetch.bind(window);
+  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    const request = new URL(input instanceof Request ? input.url : input, window.location.origin);
+    if (request.origin !== window.location.origin) return browserFetch(input, init);
+    const respond = (body: unknown) => Promise.resolve(Response.json(body));
+    switch (request.pathname) {
+      case "/api/product/files/scope":
+        if (replacement === "observed") {
+          documentId = "replacement-directory";
+          replacement = "replaced";
+        }
+        return respond({ accountId: guideOwner.id, owner: "1".repeat(64), session });
+      case "/api/auth/session": return respond({ account: guideOwner });
+      case "/api/v1/eliza/google/status": return respond({
+        accountId: guideOwner.id, provider: "google", side: "owner", mode: "cloud_managed",
+        configured: true, connected: true, identity: { email: guideOwner.email }, connectionId: grant,
+        grantedCapabilities: ["google.gmail.triage"],
+      });
+      case "/api/v1/eliza/google/gmail/triage":
+        expect(request.searchParams.get("grantId")).toBe(grant);
+        return respond({ accountId: guideOwner.id, messages: [selected], nextPageToken: null });
+      case "/api/v1/eliza/google/gmail/read":
+        expect(request.searchParams.get("grantId")).toBe(grant);
+        expect(request.searchParams.get("messageId")).toBe(selected.externalId);
+        return respond({ accountId: guideOwner.id, message: selected, historyId: "1", attachments: [],
+          bodyText: body, bodyTextAvailable: true });
+      case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
+      case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
+      case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
+      case "/api/v1/decisions":
+        expect(new Headers(init?.headers).get("X-Eliza-Account")).toBe(guideOwner.id);
+        return browserFetch(new URL(request.pathname, cloud), { ...init, credentials: "omit",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } });
+      default: return browserFetch(input, init);
+    }
+  });
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
+  const status = (name: string) => page.getByRole("status", { name });
+  const plan = page.getByRole("region", { name: "Task plan" });
+  const offer = button(`Use “${siteLabel}” for this step`);
+  const showLink = button("Show me the link");
+  const resume = button("Resume Grace");
+  const pageReceipt = plan.getByText(/^Open page:/);
+  const pending = (label: string) => plan.getByText(`Find and check “${label}”.`, { exact: true });
+  try {
+    await routeTo(page.getByText(subject, { exact: true }));
+    await tap(button("Internet"));
+    await visitExampleSite(native);
+    await tap(button("Ask Grace"));
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(ask));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(requested, { exact: true }));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await tap(button("Allow Grace to read this browser"));
+    await tap(resume);
+    await routeTo(pending(requested));
+    await tap(showLink);
+    await routeTo(status("Open submenu guidance"));
+    await routeTo(offer);
+
+    replacement = "armed";
+    await tap(offer);
+    await routeTo(status("Link unavailable").getByText("The page or task changed. Ask me again on the page you want."));
+    expect(replacement).toBe("replaced");
+    await expect.element(pending(requested)).toHaveAttribute("aria-current", "step");
+    expect(pageReceipt.query()).toBeNull();
+
+    await tap(showLink);
+    await routeTo(offer);
+    observationsBeforeSignIn = 2;
+    await tap(offer);
+    await routeTo(status("Link unavailable").getByText("The page or task changed. Ask me again on the page you want."));
+    await expect.element(pending(requested)).toHaveAttribute("aria-current", "step");
+    expect(pageReceipt.query()).toBeNull();
+
+    await tap(showLink);
+    await routeTo(offer);
+    await tap(offer);
+    await routeTo(pending(siteLabel));
+    await expect.element(pending(siteLabel)).toHaveAttribute("aria-current", "step");
+    expect(pending(requested).query()).toBeNull();
+    expect(pageReceipt.query()).toBeNull();
+    expect(button("Check email").query()).toBeNull();
+
+    await tap(showLink);
+    await routeTo(status("Link guide result"));
+    url = "https://example.org/other-desk";
+    documentId = "other-desk";
+    heading = siteLabel;
+    await native.report("tab-1", url, 100);
+    await tap(resume);
+    const checkPage = button("Check page");
+    const readsBeforeWrongAddress = native.calls("readPage").length;
+    await tap(checkPage);
+    await routeTo(status("Page check result"));
+    expect(native.calls("readPage")).toHaveLength(readsBeforeWrongAddress);
+    expect(pageReceipt.query()).toBeNull();
+
+    url = destination;
+    documentId = "service-page";
+    heading = requested;
+    await native.report("tab-1", url, 100);
+    await tap(resume);
+    await tap(checkPage);
+    await routeTo(status("Page check result"));
+    await expect.element(pending(siteLabel)).toHaveAttribute("aria-current", "step");
+    expect(pageReceipt.query()).toBeNull();
+
+    heading = siteLabel;
+    domRevision++;
+    await tap(checkPage);
+    await routeTo(plan.getByText(/^Open the email you want me to read/));
+    await tap(button("Home"));
+    await tap(button(/^Email/));
+    await tap(button(/Harbor Clinic/));
+    await routeTo(page.getByText(body, { exact: true }));
+    await tap(resume);
+    await tap(button("Check email"));
+    await routeTo(plan.getByText("Read checks complete"));
+    await tap(button("Expand"));
+    await routeTo(plan.getByText(`Open page: ${siteLabel}`, { exact: true }));
+    await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
   } finally {
     await dispose();
     accountNetwork.mockRestore();

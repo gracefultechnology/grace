@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
@@ -129,7 +129,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
-          tab.load !== "Loaded") return undefined
+          tab.load !== "Loaded" || !guidedLinkObserved(workspace)) return undefined
       const url = tabUrl(tab)
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined

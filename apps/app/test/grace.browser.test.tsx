@@ -12,7 +12,7 @@ import { Agent, type GraceAction } from "../src/agent.vibe";
 import { day, dayOf, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, otherPassword, script, signIn } from "./cloud.vibe";
-import { connected, mountAccounts } from "./screen.tsx";
+import { browserAccountResponse, connected, mountAccounts } from "./screen.tsx";
 import "../src/main.css";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -21,7 +21,10 @@ const chatBodies: string[] = [];
 const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "";
 beforeAll(async () => {
   globalThis.fetch = (input, init) => {
-    if ((input instanceof Request ? input.url : String(input)).includes("/chat/completions")) chatBodies.push(decoded(init?.body));
+    const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href));
+    if (account) return Promise.resolve(account);
+    if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
     return fetched(input, init);
   };
   environment.IS_REACT_ACT_ENVIRONMENT = true;

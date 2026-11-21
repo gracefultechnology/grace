@@ -91,6 +91,7 @@ type Account = {
   mailFault?: "dispatch" | "lookupMissing"
   sendLookups: string[]
   script: Scripted[]
+  decision?: ScriptedDecision
   turns: (Turn & { id: number })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
   consents: string[]
@@ -155,7 +156,8 @@ schema Expiry { address: string }
 schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; answer: string }
-schema Script { replies: Scripted[] }
+schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
+schema Script { replies: Scripted[]; decision?: ScriptedDecision }
 schema SessionQuery { sessionId: string }
 schema GoogleAuthorization { state: Uuid; response_type: "code"; client_id: "grace-browser-fixture"; redirect_uri: Url; scope: Filled }
 schema GoogleCallback { state: Uuid; code: Uuid }
@@ -1070,8 +1072,8 @@ effect function store(site: string) {
 
   effect function script() {
     const { key } = try signedIn()
-    const { replies } = try HttpServerRequest.schemaBodyJson(Script)
-    try change(key, (a) => ({ ...a, script: [...a.script, ...replies] }))
+    const { replies, decision } = try HttpServerRequest.schemaBodyJson(Script)
+    try change(key, (a) => ({ ...a, script: [...a.script, ...replies], decision: decision ?? a.decision }))
     return try HttpServerResponse.json({ ok: true })
   }
 
@@ -1099,12 +1101,13 @@ effect function store(site: string) {
   }
 
   effect function decide() {
-    try signedIn()
+    const { decision } = try signedIn()
     const body = try HttpServerRequest.schemaBodyJson(Schema.Struct({
       kind: Schema.Literal("choice"), goal: Schema.String,
       candidates: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String }))
     }))
-    const choice = body.goal.includes("help page") ? body.candidates.find((candidate) => candidate.label === "Help center")?.id ?? null : null
+    const choice = decision && body.goal.includes(decision.goalIncludes)
+      ? body.candidates.find((candidate) => decision.labels.includes(candidate.label))?.id ?? null : null
     const winner = choice ?? "none"
     const probabilities = Object.fromEntries([...body.candidates.map(({ id }) => id), "none"].map(id => [id, id === winner ? 1 : 0]))
     return try HttpServerResponse.json({ status: "ok", kind: "choice", model: "fixture", choice, confidence: 1, probabilities })
@@ -1299,8 +1302,8 @@ export effect function parts(cloud: string, key: string, said: string) {
   return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)
 }
 
-export effect function script(cloud: string, key: string, replies: readonly Scripted[]) {
-  try post(cloud, "/fake/chat/script", { replies }, key)
+export effect function script(cloud: string, key: string, replies: readonly Scripted[], decision?: ScriptedDecision) {
+  try post(cloud, "/fake/chat/script", { replies, decision }, key)
 }
 
 export effect function expire(cloud: string, key: string, address: string) {
