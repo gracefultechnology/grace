@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
@@ -1355,7 +1355,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
-      case "/api/product/files/scope": return signedIn ? reply({ owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
+      case "/api/product/files/scope": return signedIn ? reply({ accountId: person.id, owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
       case "/api/auth/refresh": return reply({}, 401);
       case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
       case "/api/auth/email/send":
@@ -2179,6 +2179,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (url.origin !== window.location.origin) return browserFetch(input, init);
     switch (url.pathname) {
+      case "/api/product/files/scope": return Promise.resolve(guideOwner === null ? new Response(null, { status: 401 }) :
+        Response.json({ accountId: guideOwner, owner: "1".repeat(64), session: (guideOwner === "another-owner" ? "3" : "2").repeat(64) }));
       case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
@@ -2568,6 +2570,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let person = firstOwner;
   let browserCookieOwner: typeof firstOwner | undefined;
   let ownerProbes = 0;
+  let sessionGeneration = 1;
+  let privatePage = false;
+  let nextSnapshot: (() => void) | undefined;
+  let nextScope: (() => Promise<void>) | undefined;
   let hostedChoices = 0;
   const when = Date.now();
   const receivedAt = new Date(when).toISOString();
@@ -2592,9 +2598,17 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     if (url.origin === new URL(cloud).origin) return fetch(input, options);
     const respond = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
     switch (url.pathname) {
-      case "/api/auth/session":
+      case "/api/auth/session": return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+      case "/api/product/files/scope": {
+        if (!signedIn) return respond({}, 401);
         if (browserCookieOwner) ownerProbes++;
-        return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+        const current = browserCookieOwner ?? person;
+        const owner = (current.id === firstOwner.id ? "a" : "b").repeat(64);
+        const result = { accountId: current.id, owner, session: owner.slice(0, 62) + sessionGeneration.toString(16).padStart(2, "0") };
+        const wait = nextScope;
+        nextScope = undefined;
+        return wait ? wait().then(() => respond(result)) : respond(result);
+      }
       case "/api/v1/decisions":
         hostedChoices++;
         expect(new Headers(options?.headers).get("X-Eliza-Account")).toBe(secondOwner.id);
@@ -2632,10 +2646,12 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         browserCookieOwner = firstOwner;
         switchOwnerDuringPageRead = false;
       }
+      nextSnapshot?.();
+      nextSnapshot = undefined;
       const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
       return { documentId, frameScope: "main", result: {
         snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
-        text: "Example Help center", complete: true, readyState: "complete", blockers: [],
+        text: "Example Help center", complete: true, readyState: "complete", blockers: privatePage ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [{ id: "help", tag: "a", label: "Help center", href: browserHome + "help", inViewport: true,
           bounds: { x: 100, y: 80, width: 100, height: 32 } }],
@@ -2775,6 +2791,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    await tap(guide);
+    await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
+    expect(hostedChoices).toBe(0);
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
@@ -2787,6 +2807,27 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(switchOwnerDuringPageRead).toBe(false);
     expect(await receipts()).toEqual([]);
     browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    expect(await check()).toBe(false);
+    expect(await receipts()).toEqual([]);
+
+    privatePage = true;
+    const probing = Latch.makeUnsafe();
+    const resumeProbe = Latch.makeUnsafe();
+    nextSnapshot = () => { nextScope = () => { probing.openUnsafe(); return Effect.runPromise(resumeProbe.await); }; };
+    const pending = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
+    try {
+      await Effect.runPromise(probing.await);
+      await tap(button("Turn off browser reading"));
+    } finally {
+      resumeProbe.openUnsafe();
+    }
+    expect(await pending).toBe(false);
+    expect(await receipts()).toEqual([]);
+
+    privatePage = false;
+    await tap(button("Allow Grace to read this browser"));
+    await tap(button("Resume Grace"));
     await tap(button("Check page"));
     await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
