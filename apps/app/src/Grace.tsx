@@ -117,10 +117,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const checkSurface = reopenMail ? "Email" : details?.surface;
   const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checkLabels[stepKind];
   const calendar = { type: "visit", destination: "Calendar" } as const;
-  const openRecoveryCalendar = async () => {
+  const closeInterruptedDraft = async () => {
     if (recoveredSave && !recoveredSave.occurrence) {
       await runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(recoveredSave.owner, recoveredSave.calendar)));
     }
+  };
+  const openRecoveryCalendar = async () => {
+    await closeInterruptedDraft();
     await send(calendar);
     const opened = current();
     if (opened.device.surface === "Calendar" && opened.assistant.presentation === "Expanded") interact({ tag: "Resize", expanded: false });
@@ -253,7 +256,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence)}</p>}
               {recoveredSave && <AnswerChips>
                 {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void openRecoveryCalendar()}>Open Calendar</AnswerChip>}
-                {can(abandon) && <AnswerChip onClick={() => void send(abandon)}>End this task</AnswerChip>}
+                {can(abandon) && <AnswerChip onClick={() => void closeInterruptedDraft().then(() => send(abandon))}>End this task</AnswerChip>}
               </AnswerChips>}
             </section>
           )}
