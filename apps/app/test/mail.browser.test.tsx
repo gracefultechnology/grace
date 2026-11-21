@@ -14,7 +14,7 @@ import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
+import { tabletView, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -79,8 +79,11 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const connectivity = vi.spyOn(window.navigator, "onLine", "get");
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const view = await mount(runtime);
+  const open = () => ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  let runtime = open();
+  let view = tabletView(runtime);
+  onTestFinished(() => view.dispose());
+  await view.render();
   onTestFinished(async () => {
     connectivity.mockRestore();
     browserSession.mockRestore();
@@ -89,6 +92,19 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
   });
   return {
     secret,
+    restartFromEarlierMailbox: async (account: number) => {
+      await view.dispose();
+      const key = `mail/${account}`;
+      const raw = localStorage.getItem(key);
+      if (raw === null) throw new Error("Missing the saved mailbox");
+      const box = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(raw);
+      expect(box.draftsTotal).toBeTypeOf("number");
+      const { draftsTotal: _, ...earlier } = box;
+      localStorage.setItem(key, JSON.stringify(earlier));
+      runtime = open();
+      view = tabletView(runtime);
+      await view.render();
+    },
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
       const calendar = yield* shelf.calendar(key);
@@ -588,7 +604,7 @@ it("Write or reply and confirm before sending", async () => {
 }, 600_000);
 
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
-  const { secret, host, company } = await start();
+  const { secret, host, company, restartFromEarlierMailbox } = await start();
   await replyToClinic();
   await act(() => userEvent.fill(words(), "Please call me tomorrow."));
   const send = page.getByRole("button", { name: "Send", exact: true });
@@ -606,6 +622,10 @@ it('Review an unsent reply (spec/app/email.md, "Only the current approved draft 
   expect((await operations()).slice(previous).map((c) => c.receipt.state)).toEqual(["prepared"]);
   await expect.poll(async () => (await company()).sendLookups.includes("prepared")).toBe(true);
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "lookupMissing"), client));
+  await restartFromEarlierMailbox(1);
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(words()).toHaveValue("Please call me this afternoon.");
+  await expect.element(send).toBeDisabled();
   await host("Offline");
   await host("Online");
   await expect.poll(async () => (await company()).sendLookups.includes("missing")).toBe(true);
