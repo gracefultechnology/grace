@@ -419,8 +419,9 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", proposal.id, proposal.version) ||
         !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
     } else {
-      if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange") ||
-        (proposal.id !== undefined && !(shown.selected && isSelectedVersion(shown.selected.externalId, shown.selected.etag ?? "", proposal.id, proposal.version ?? "")))) return false
+      if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return false
+      if ((proposal.id !== undefined || proposal.version !== undefined) && (!shown.selected ||
+        !isSelectedVersion(shown.selected.externalId, shown.selected.etag ?? "", proposal.id ?? "", proposal.version ?? ""))) return false
       if (proposal.kind === "removeAppointment" && proposal.series) {
         if (!(try series({ accountId, grant }, proposal.id))) return false
       }
