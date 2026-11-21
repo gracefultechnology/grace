@@ -83,13 +83,15 @@ effect function calendarWithMailSource(text: string, account: number) {
 }
 
 function reviewedRead(known: Held | undefined, content: MailContent, observed: ObservedRead | undefined) {
-  if (!observed) return known?.content.version === content.version ? known.read : undefined
+  const prior = known?.content
+  const sameHeader = prior && prior.from === content.from && prior.fromAddress === content.fromAddress &&
+    prior.subject === content.subject && prior.receivedAt === content.receivedAt
+  if (!observed) return sameHeader && prior.version === content.version && (!content.body || prior.body === content.body) ? known.read : undefined
   const { generation, succeeded, suspicion } = observed.receipt
   if (!succeeded) return undefined
   if (observed.kind === "opened") return { generation, version: content.version, evidence: suspicion }
-  const prior = known?.content
-  return known?.read?.evidence === suspicion && prior && prior.from === content.from && prior.fromAddress === content.fromAddress &&
-    prior.subject === content.subject && prior.receivedAt === content.receivedAt && prior.body === content.body ? known.read : undefined
+  return sameHeader && prior.body === content.body && known.read?.generation === generation &&
+    known.read.evidence === suspicion ? known.read : undefined
 }
 
 export const instances = Layer.effect(Instances, effect {
@@ -220,7 +222,7 @@ export const instances = Layer.effect(Instances, effect {
     remember: (id, held, observed) => {
       const known = contents.get(contentKey(id, held.content.ref))
       contents.set(contentKey(id, held.content.ref), {
-        content: known === undefined ? held.content : { ...held.content, body: held.content.body || known.content.body, replied: held.content.replied || known.content.replied },
+        content: known === undefined ? held.content : { ...held.content, body: observed ? held.content.body : held.content.body || known.content.body, replied: held.content.replied || known.content.replied },
         assets: held.assets ?? known?.assets,
         reply: held.reply ?? known?.reply,
         read: reviewedRead(known, held.content, observed)
