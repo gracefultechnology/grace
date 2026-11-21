@@ -47,6 +47,7 @@ import preferences as R from "./preferences"
 import wake as W from "./wake"
 import interaction as I from "./interaction"
 import browserControls as BC from "./browserControls"
+import handoffs as H from "./handoffs"
 
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
@@ -494,6 +495,27 @@ pure def purgePrivate(w: Workspace, token: int, messageIndex: int, purgeDraft: b
   ...w, assistant: A::purgePrivate(w.assistant, token, messageIndex, purgeDraft, C::ConversationRuntime),
   execution: quietExecution(w.execution), commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost)
 }
+```
+
+### A released email link opens Browser and its fresh tab together
+
+After Email releases the selected message's link, the host opens Browser with
+that link already loading in its own new tab. The existing tabs retain their
+pages, including a tab used for private sign-in. A change of surface or
+browser revision since the person chose the link withdraws the handoff.
+
+```quint
+type ReleasedEmailLink = { link: str, deviceVersion: int, browserRevision: int }
+pure val releaseValues = Set(
+  { link: "https://mail.example/bill", deviceVersion: 2, browserRevision: 0 },
+  { link: "https://mail.example/bill", deviceVersion: 3, browserRevision: 0 },
+  { link: "", deviceVersion: 2, browserRevision: 0 })
+pure def canOpenReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: WorkspaceActor): bool =
+  by == Host and release.deviceVersion == w.device.contextVersion and release.browserRevision == w.browser.revision and
+  H::mayShowEmailDestination(w.device, w.browser, release.link)
+pure def openReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: WorkspaceActor): Workspace =
+  val target = H::showEmailDestination(w.device, w.browser, release.link)
+  interrupted(target.device, target.browser, w)
 ```
 
 ### Conversation input and geometry use the same owned assistant state

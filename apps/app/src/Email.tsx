@@ -188,7 +188,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const follow = (link: string, choice: LinkChoice) => {
       if (!ready) return;
       setUnopenedLink(undefined);
-      void runtime.runPromiseExit(chooseMailLink({ account: opening.id, ref, generation: m.generation, version: reviewed?.version, link }, choice)).then((result) => {
+      void runtime.runPromiseExit(chooseMailLink({ account: opening.id, ref, generation: m.generation, version: reviewed?.version, link, deviceVersion: workspace.device.contextVersion, browserRevision: workspace.browser.revision }, choice)).then((result) => {
         if (!Exit.isSuccess(result) || !result.value) setUnopenedLink(source);
       });
     };
