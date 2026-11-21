@@ -606,6 +606,11 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
     await Effect.runPromise(Effect.sleep("100 millis"));
   };
   const count = (method: string) => device.called(method).length;
+  const arrive = async (url: string) => {
+    device.started(url);
+    device.finished(url);
+    await expect.poll(at).toEqual({ url, load: "Loaded", address: url });
+  };
 
   device.refused.creates = 1;
   await userEvent.click(page.getByRole("button", { name: "Internet" }));
@@ -616,28 +621,20 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(device.called("createSurface")).toHaveLength(1);
   await userEvent.click(page.getByRole("button", { name: "Try again" }));
   await expect.poll(() => device.called("createSurface")).toHaveLength(2);
-  device.started("https://example.com/");
-  device.finished("https://example.com/");
-  await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
+  await arrive("https://example.com/");
   await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
 
   const entries = tab().history.length;
-  device.started("https://example.com/b");
-  device.finished("https://example.com/b");
-  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+  await arrive("https://example.com/b");
   expect(tab().history).toHaveLength(entries + 1);
   device.started("https://example.com/c");
   await expect.poll(at).toEqual({ url: "https://example.com/c", load: "Loading", address: "https://example.com/c" });
   await expect.element(address).toHaveAccessibleDescription("");
-  device.started("https://example.com/next");
-  device.finished("https://example.com/next");
-  await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loaded", address: "https://example.com/next" });
+  await arrive("https://example.com/next");
   expect(tab().history).toHaveLength(entries + 2);
   await userEvent.click(page.getByRole("button", { name: "Back" }));
   await expect.poll(() => count("goBack")).toBe(1);
-  device.started("https://example.com/b");
-  device.finished("https://example.com/b");
-  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+  await arrive("https://example.com/b");
 
   device.crashed();
   await expect.poll(() => device.called("createSurface").at(-1)?.url).toBe("https://example.com/b");
@@ -645,9 +642,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.finished("https://example.com/b");
   await userEvent.click(page.getByRole("button", { name: "Back" }));
   await expect.poll(() => ({ navigated: device.called("navigate").map((n) => n.url), back: count("goBack") })).toEqual({ navigated: ["https://example.com/"], back: 1 });
-  device.started("https://example.com/");
-  device.finished("https://example.com/");
-  await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
+  await arrive("https://example.com/");
   await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await userEvent.type(address, "x");
   await expect.element(address).toHaveAccessibleDescription("");
@@ -659,18 +654,14 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
 
   await go("example.com/start", "https://example.com/start");
   const history = tab().history.length;
-  device.started("https://www.example.com/home");
-  device.finished("https://www.example.com/home");
-  await expect.poll(at).toEqual({ url: "https://www.example.com/home", load: "Loaded", address: "https://www.example.com/home" });
+  await arrive("https://www.example.com/home");
   expect(tab().history).toHaveLength(history);
   await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   const navigated = count("navigate");
   await userEvent.click(page.getByRole("button", { name: "Back" }));
   await expect.poll(() => count("goBack")).toBe(2);
   expect(count("navigate")).toBe(navigated);
-  device.started("https://example.com/");
-  device.finished("https://example.com/");
-  await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
+  await arrive("https://example.com/");
 
   await later(loadWaitSeconds - 10);
   await go("example.com/slow", "https://example.com/slow");
@@ -738,9 +729,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(tab().load).toBe("Loaded");
 
   await go("http://example.com/plain", "http://example.com/plain");
-  device.started("http://example.com/plain");
-  device.finished("http://example.com/plain");
-  await expect.poll(at).toEqual({ url: "http://example.com/plain", load: "Loaded", address: "http://example.com/plain" });
+  await arrive("http://example.com/plain");
   await expect.element(address).toHaveAccessibleDescription("");
 
   const openings = () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())).openings;
