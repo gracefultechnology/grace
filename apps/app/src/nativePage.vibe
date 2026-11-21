@@ -10,6 +10,7 @@ import {
   SitePermissionWithdrawn, SurfaceCrashed, type Url
 } from "./nativePage.schema.ts"
 import { webPage } from "./webPage.vibe"
+import { foldApostrophes } from "./words.ts"
 
 export error PageFailed { cause: unknown }
 
@@ -27,6 +28,15 @@ export type Corners = { topLeft: number; topRight: number; bottomRight: number; 
 export type Reply = { id: PageId; key: RequestKey; ask: Ask; answer: Answer; text: string }
 
 export type LinkPointer = Extract<NonNullable<Parameters<SurfacePlugin["controlPage"]>[0]["command"]["guidance"]>, { kind: "show" }>
+
+const levelOne = ':is(h1,[role="heading"][aria-level="1"])'
+const mainHeading = `:is(main,[role="main"]) ${levelOne}:not(:is(nav,aside,footer,[role="navigation"],[hidden],[aria-hidden="true"]) *)`
+const banner = "header:not(:is(article,aside,main,nav,section) header)"
+const pageHeading = `${levelOne}:not(:is(nav,aside,footer,${banner},[role="navigation"],[role="banner"],[role="complementary"],[role="contentinfo"],[hidden],[aria-hidden="true"]) *)`
+
+export function comparableName(value: string): string {
+  return foldApostrophes(value.normalize("NFC").trim().replace(/\s+/gu, " ")).toLowerCase()
+}
 
 export service NativePage {
   readonly privateSignIn: boolean
@@ -138,9 +148,10 @@ function devicePage(plugin: SurfacePlugin) {
   return Layer.succeed(NativePage, {
     privateSignIn: true,
     observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
-    readPrimaryHeading: (id) => observe(id, () => ask(VisibleTextRead, (p) => p.readPage({ ...own(id),
-      selector: ':is(main,[role="main"]) :is(h1,[role="heading"][aria-level="1"]):not(:is(nav,aside,footer,[role="navigation"],[hidden],[aria-hidden="true"]) *)'
-    }))),
+    readPrimaryHeading: (id) => observe(id, () => {
+      const heading = (selector: string) => ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector }))
+      return Effect.catch(heading(mainHeading), () => heading(pageHeading))
+    }),
     hasNavigationMenu: (id, selector, url) => Effect.orElseSucceed(observe(id, () => Effect.map(ask(VisibleTextRead, (p) =>
       p.readPage({ ...own(id), selector: `:is(${selector}):is([aria-haspopup="true"],[aria-haspopup="menu"])` })), (reply) => reply.url === url)), () => false),
     pointAt: (id, documentId, guidance) => observe(id, () => Effect.map(ask(PointResult, (p) =>

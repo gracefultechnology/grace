@@ -153,10 +153,11 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
             ? item === "ReadBrowser" || item === "ReadChangedBrowser" || item === "ReadStatement"
             : item.kind === "ReachNamedPage")
           const offer = reply.actions.length === 1 && supported && safe === reply.text && !reply.isQuestion && fromPerson(origin)
-          const words = offer ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
-          const accepted = workspace.send({ type: "interact", input: { tag: "Respond", token, text: words,
+          const applied = offer ? try agent.apply([plan], { generation: token, workVersion, origin, authority }) : []
+          const prepared = applied.length === 1 && applied.every((a) => a.outcome === "Applied")
+          const words = prepared ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
+          workspace.send({ type: "interact", input: { tag: "Respond", token, text: words,
             isQuestion: false, answers: [], audible: false } }, "Host") catch () => undefined
-          if (offer && accepted !== undefined) try agent.apply([plan], { generation: token, workVersion, origin, authority })
           return
         }
         const response: Event = { type: "interact", input: { tag: "Respond", token, text: safe,

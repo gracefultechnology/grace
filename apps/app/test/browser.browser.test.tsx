@@ -287,7 +287,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const showLink = page.getByRole("button", { name: "Show me the link" });
     const plan = page.getByRole("region", { name: "Task plan" });
     const finished = plan.getByText("Read checks complete", { exact: true });
-    const continuing = page.getByRole("status", { name: "Page check result" });
+    const continuing = page.getByRole("status", { name: "Check result" });
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
@@ -295,7 +295,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
-    const hops: { url: string; documentId: string; checked: boolean }[] = [];
+    const hops: { url: string; documentId: string; checked: boolean; reason?: string | null }[] = [];
     outcome.hops = hops;
     let previous = initial;
     while (hops.length + disclosures.length < (named ? 8 : 1)) {
@@ -359,9 +359,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       await userEvent.click(check);
       await expect.poll(() => finished.query() !== null || continuing.query() !== null).toBe(true);
       const checked = finished.query() !== null;
-      hops.push({ url: landed.url, documentId: landed.documentId, checked });
+      const reason = continuing.query()?.textContent;
+      hops.push({ url: landed.url, documentId: landed.documentId, checked, reason });
       if (checked) break;
       expect(named).toBeDefined();
+      expect(reason).toBe(`I couldn’t verify “${named?.subject}” on this page. Check the page again or try another link.`);
       expect(workspace().plan.receipts).toHaveLength(0);
       previous = landed;
     }
@@ -438,7 +440,7 @@ it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec
   await userEvent.click(check);
   await expect.element(complete).toBeVisible();
   await userEvent.click(ui.getByRole("button", { name: "Expand", exact: true }));
-  const answer = ui.getByRole("region", { name: "Grace" }).getByText(/^Statement amount due:/);
+  const answer = ui.getByRole("region", { name: "Task plan" }).getByText(/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
   await expect.element(answer).toBeVisible();
   const grade = await transport({ kind: "answer", text: answer.element().textContent ?? "" });
   if (billerId === undefined) {

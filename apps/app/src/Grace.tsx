@@ -8,6 +8,7 @@ import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { guidedDetails, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
+import type { GuidedCheck } from "./conversation.vibe";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
 import { mayOfferTalk, SpeechActions } from "./graceSpeech.vibe";
@@ -18,15 +19,28 @@ import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
 
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
-const checkLabels: Record<GuidedStep["tag"], string> = {
-  ReadMail: "Check email",
-  ReadBrowser: "Check page",
-  ReadChangedBrowser: "Check page",
-  ReachNamedPage: "Check page",
-  ReadStatement: "Read statement",
-  ReadCalendar: "Check appointment",
-  SaveMailAppointment: "Check saved appointment",
-  SurfaceOutcome: "",
+const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: string }> = {
+  ReadMail: { label: "Check email", item: "email", missing: "I couldn’t read an open email. Open the one you want me to check." },
+  ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
+  ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
+  ReachNamedPage: { label: "Check page", item: "page", missing: "" },
+  ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
+  ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
+  SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t find that saved appointment in your calendar." },
+  SurfaceOutcome: { label: "", item: "item", missing: "I couldn’t confirm this step yet." },
+};
+
+const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep | undefined): string => {
+  const { item, missing } = checks[step?.tag ?? "SurfaceOutcome"];
+  switch (check) {
+    case "NotFound": return step?.tag === "ReachNamedPage" ? `I couldn’t verify “${step.subject}” on this page. Check the page again or try another link.` : missing;
+    case "Several": return "I found more than one amount due or due date on this page.";
+    case "Past": return "This is an earlier statement. Open the current one.";
+    case "Changed": return `The ${item} changed while I checked it. Check it again.`;
+    case "Covered": return "Something on the website covers the page. Close it or answer it there, then check again.";
+    case "Used": return `You already used this ${item} for an earlier step. Open the next one.`;
+    case "Refused": return "I couldn’t confirm this step yet.";
+  }
 };
 
 /** @model spec/app/assistant.md */
@@ -54,7 +68,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   };
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
-  const [pageCheck, setPageCheck] = useState<{ key: string; pending: boolean }>();
+  const [stepCheck, setStepCheck] = useState<{ key: string; result?: GuidedCheck }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
@@ -85,7 +99,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep?.tag ?? "SurfaceOutcome";
   const details = currentStep && guidedDetails(currentStep);
-  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
+  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checks[stepKind].label;
   const canCheck = ownsPlan && label && (details?.surface !== "Browser" || workspace?.device.observationAllowed) &&
     details?.surface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
@@ -98,16 +112,14 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   } as const;
   const scopeKey = [assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision].join(":");
   const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
-  const namedCheck = stepKind === "ReachNamedPage" && canCheck && pageCheck?.key === scopeKey ? pageCheck : undefined;
+  const checked = canCheck && stepCheck?.key === scopeKey ? stepCheck : undefined;
+  const checking = checked !== undefined && checked.result === undefined;
+  const failed = checked?.result === undefined || checked.result === "Confirmed" ? undefined : notCounted(checked.result, currentStep);
   const check = () => {
-    if (stepKind !== "ReachNamedPage") {
-      void checkGuidedRead();
-      return;
-    }
-    setPageCheck({ key: scopeKey, pending: true });
-    const report = (accepted: boolean) => setPageCheck((current) =>
-      current?.key === scopeKey ? (accepted ? undefined : { key: scopeKey, pending: false }) : current);
-    void checkGuidedRead().then(report, () => report(false));
+    setStepCheck({ key: scopeKey });
+    const report = (result: GuidedCheck) => setStepCheck((current) =>
+      current?.key === scopeKey ? (result === "Confirmed" ? undefined : { key: scopeKey, result }) : current);
+    void checkGuidedRead().then(report, () => report("Refused"));
   };
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
   const showLink = () => {
@@ -194,12 +206,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             </section>
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
-          {namedCheck?.pending === false && (
-            <GraceBubble role="status" aria-label="Page check result">I couldn’t verify “{details?.subject}” on this page. Check the page again or try another link.</GraceBubble>
-          )}
+          {failed && <GraceBubble role="status" aria-label="Check result">{failed}</GraceBubble>}
           {canCheck && <AnswerChips>
-            {guideKey && <AnswerChip disabled={namedCheck?.pending || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
-            <AnswerChip disabled={namedCheck?.pending} onClick={check}>{label}</AnswerChip>
+            {guideKey && <AnswerChip disabled={checking || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
+            <AnswerChip disabled={checking} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
           {answers.length > 0 && (
             <AnswerChips>
