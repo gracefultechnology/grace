@@ -31,6 +31,7 @@ export const webOrigin = import.meta.env.VITE_GRACE_CLOUD_WEB_ORIGIN || "https:/
 const deviceAttemptKey = "grace-device-sign-in"
 const deviceChallenge = /^[A-Za-z0-9_-]{43}$/
 const deviceState = /^[A-Za-z0-9_-]{43,128}$/
+const deviceCode = /^[a-f0-9]{64}$/
 
 effect function pendingDevice() {
   const candidate = Effect.try(() => {
@@ -268,10 +269,12 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       if (!tabletSignInConfirmed(try setup.get())) return false
       const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", { ...device, expectedAccountId: operation.expectedAccountId }), DeviceApproval)
       const destination = try Effect.try(() => new URL(redirectUrl))
-      if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||
-        destination.searchParams.get("state") !== device.state || !destination.searchParams.get("code")) return false
+      const states = destination.searchParams.getAll("state")
+      const codes = destination.searchParams.getAll("code")
+      if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" || destination.href.includes("#") ||
+        states.length !== 1 || states[0] !== device.state || codes.length !== 1 || !deviceCode.test(codes[0] ?? "")) return false
+      try transport.openExternal(destination)
       try dismissDevice()
-      try Effect.try(() => webView.window.location.assign(destination))
       return true
     }
     if (operation.kind === "manageAccount") return false
