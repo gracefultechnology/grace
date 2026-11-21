@@ -3,7 +3,7 @@ import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { Machine as Workspaces, mayGuideReadLink, nextOutcome, publicGuidedLink, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, decodeClefResult, type ClefDecisionRequest, type ClefDecisionResponse } from "@elizaos/cloud/clef-decisions"
-import { accountFetch, apiOrigin, browserAccountId, nativeBrowserGuideLease } from "./graceAccount.vibe"
+import { accountFetch, apiOrigin, browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { supportsPointerHover, webView } from "./surfacePlugin.ts"
 import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
@@ -121,14 +121,14 @@ effect function decisionSession(native: boolean, fixture?: GuideDecision): (Deci
       },
     }
   }
-  const owner = try browserAccountId()
-  if (owner === undefined) return undefined
+  const scope = try browserSessionScope()
+  if (scope === undefined) return undefined
   const choose = try Effect.try(() => createClefDecisionsClient({
     baseUrl: apiOrigin || webView.window.location.origin,
-    headers: () => ({ "X-Eliza-Account": owner }),
+    headers: () => ({ "X-Eliza-Account": scope.accountId }),
     fetch: accountFetch,
   }))
-  return { accountId: owner, choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserAccountId())) === owner }
+  return { accountId: scope.accountId, choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserSessionScope()))?.session === scope.session }
 }
 
 export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.effect(BrowserGuide, effect {
@@ -148,7 +148,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   if (fixture === undefined) try fork.scoped Stream.runForEach(setup.changes, effect () => {
     const shown = active
     if (shown === undefined) return
-    const current = (try currentContext())?.key === shown.key && (tryPromise(() => shown.account.current()) catch () => false)
+    const current = (tryPromise(() => shown.account.current()) catch () => false) && (try currentContext())?.key === shown.key
     if (!current && active === shown) {
       active = undefined
       page.clearGuide(shown.id) catch () => undefined
@@ -162,11 +162,13 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       if (previous !== undefined) page.clearGuide(previous.id) catch () => undefined
       const start = (try currentContext())
       if (start === undefined) return changed
-      const initial = page.observeLinks(start.id) catch () => undefined
-      const initialState = guidedPageState(initial, start.url.href, true)
-      if ((try currentContext())?.key !== start.key) return changed
-      if (initialState !== "Ordinary" && initialState !== "PublicLinks") return initialState === "PrivateForm" ? privateForm : unobservable
       const account = decisionSession(native, fixture) catch () => null
+      if ((try currentContext())?.key !== start.key) return changed
+      const initial = page.observeLinks(start.id) catch () => undefined
+      const initialState = guidedPageState(initial, start.url.href, "GuidePublicLinks")
+      const sameSession = account === null || account === undefined || (tryPromise(() => account.current()) catch () => false)
+      if (!sameSession || (try currentContext())?.key !== start.key) return changed
+      if (initialState !== "Ordinary" && initialState !== "PublicOnly") return initialState === "PrivateForm" ? privateForm : unobservable
       if (account === null) return unavailableBecause("I couldn’t reach Grace to verify your sign-in.")
       if (account === undefined) return unavailableBecause("Sign in to Grace to get help choosing a link.")
       const signedIn = (try setup.get()).graceAccount
@@ -184,9 +186,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if ((try currentContext())?.key !== start.key) return changed
         const snapshot: LinkObservation | undefined = disclosed ?? (retries === 0 ? initial : (page.observeLinks(start.id) catch () => undefined))
         if (snapshot === undefined) return unobservable
-        const availability = guidedPageState(snapshot, start.url.href, true)
-        if (availability !== "Ordinary" && availability !== "PublicLinks") return availability === "PrivateForm" ? privateForm : unobservable
-        const observed = links(snapshot, start.url, target, availability === "PublicLinks")
+        const availability = guidedPageState(snapshot, start.url.href, "GuidePublicLinks")
+        if (availability !== "Ordinary" && availability !== "PublicOnly") return availability === "PrivateForm" ? privateForm : unobservable
+        const observed = links(snapshot, start.url, target, availability === "PublicOnly")
         const exact = observed.filter((link) => link.exact)
         if (disclosed !== undefined && exact.length === 0) return changed
         if (exact.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
@@ -201,13 +203,13 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             for (let index = 0; index < round.length; index += CLEF_DECISION_LIMITS.candidates) {
               const candidates = round.slice(index, index + CLEF_DECISION_LIMITS.candidates)
               const options = candidates.map(({ description }, index) => ({ id: String(index + 1), label: description }))
-              if (!(await account.current()) || (await runPromise(currentContext()))?.key !== start.key) return { retry: false }
+              if ((await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
               const fresh = await runPromise(Effect.option(page.observeLinks(start.id)))
               if (Option.isNone(fresh) || fresh.value.documentId !== snapshot.documentId ||
-                  (await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
-              const state = guidedPageState(fresh.value, start.url.href, true)
-              if (state !== "Ordinary" && state !== "PublicLinks") return { retry: false, stopped: state === "PrivateForm" ? privateForm : unobservable }
-              const currentLinks = links(fresh.value, start.url, target, state === "PublicLinks")
+                  !(await account.current()) || (await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
+              const state = guidedPageState(fresh.value, start.url.href, "GuidePublicLinks")
+              if (state !== "Ordinary" && state !== "PublicOnly") return { retry: false, stopped: state === "PrivateForm" ? privateForm : unobservable }
+              const currentLinks = links(fresh.value, start.url, target, state === "PublicOnly")
               if (!candidates.every(candidate => currentLinks.some(current =>
                 current.href === candidate.href && current.description === candidate.description &&
                 current.pointable === candidate.pointable && current.selector === candidate.selector)))
@@ -230,9 +232,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if (winner === undefined) return unavailable
         const current = page.observeLinks(start.id) catch () => undefined
         if (current === undefined || current.documentId !== snapshot.documentId) return changed
-        const state = guidedPageState(current, start.url.href, true)
-        if (state !== "Ordinary" && state !== "PublicLinks") return state === "PrivateForm" ? privateForm : unobservable
-        const matches = links(current, start.url, target, state === "PublicLinks").filter((link) =>
+        const state = guidedPageState(current, start.url.href, "GuidePublicLinks")
+        if (state !== "Ordinary" && state !== "PublicOnly") return state === "PrivateForm" ? privateForm : unobservable
+        const matches = links(current, start.url, target, state === "PublicOnly").filter((link) =>
           disclosed !== undefined ? link.exact && link.pointable : link.href === winner.href && link.selector === winner.selector)
         const node = matches.length === 1 ? matches[0] : undefined
         if (!node || node.href !== winner.href || (try currentContext())?.key !== start.key) return changed
@@ -267,12 +269,12 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             if (!(try page.hasNavigationMenu(start.id, selector, start.url.href))) continue
             const opened = page.observeLinks(start.id) catch () => undefined
             if (!opened || opened.documentId !== snapshot.documentId) return changed
-            const state = guidedPageState(opened, start.url.href, true)
-            if (state !== "Ordinary" && state !== "PublicLinks") {
+            const state = guidedPageState(opened, start.url.href, "GuidePublicLinks")
+            if (state !== "Ordinary" && state !== "PublicOnly") {
               page.clearGuide(start.id) catch () => undefined
               return state === "PrivateForm" ? privateForm : unobservable
             }
-            const visible = links(opened, start.url, target, state === "PublicLinks").filter((link) => link.exact && link.pointable)
+            const visible = links(opened, start.url, target, state === "PublicOnly").filter((link) => link.exact && link.pointable)
             if (visible.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
             if (visible.length === 1) { disclosed = opened; break }
           }

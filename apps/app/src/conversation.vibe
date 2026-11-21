@@ -15,7 +15,7 @@ import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
-import { browserAccountId, nativeBrowserGuideLease } from "./graceAccount.vibe"
+import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { type Help, helpWith, type Last, looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
@@ -133,17 +133,17 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
       if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return undefined
-      const state = guidedPageState(before, url)
+      const state = guidedPageState(before, url, "CheckPublicDocument")
       if (state === "PrivateForm") return state
-      if (state !== "Ordinary" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+      if (state === "Unavailable" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
       const primary = native.readPrimaryHeading(id) catch () => undefined
       const observed = normalizedHeading(primary?.text)
       if (!primary || primary.url !== url || observed === "" || observed !== normalizedHeading(step.subject)) return undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId) return undefined
-      const afterState = guidedPageState(after, url)
+      const afterState = guidedPageState(after, url, "CheckPublicDocument")
       if (afterState === "PrivateForm") return afterState
-      if (afterState !== "Ordinary") return undefined
+      if (afterState === "Unavailable") return undefined
       return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
         [url.replace(/#.*$/u, "")], "Open page: " + observed)
     }
@@ -154,9 +154,9 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const url = try Effect.option(Effect.try(() => new URL(tabUrl(tab))))
       if (Option.isNone(url) || (url.value.protocol !== "https:" && url.value.protocol !== "http:")) return undefined
       const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
-      const state = guidedPageState(snapshot, url.value.href)
+      const state = guidedPageState(snapshot, url.value.href, "CheckPublicDocument")
       if (state === "PrivateForm") return state
-      if (snapshot === undefined || state !== "Ordinary" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      if (snapshot === undefined || state === "Unavailable" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
       return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId },
         [snapshot.documentId, url.value.origin + url.value.pathname], "Open page: " + url.value.origin + url.value.pathname)
     }
@@ -211,11 +211,13 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const { graceAccount } = try setup.get()
     if (graceAccount.tag === "GraceDeviceSignedIn") {
       const lease = nativeBrowserGuideLease() catch () => undefined
-      return lease === undefined ? undefined : JSON.stringify([graceAccount.tag, lease])
+      return lease !== undefined && (try setup.get()).graceAccount.tag === graceAccount.tag ? JSON.stringify([graceAccount.tag, lease]) : undefined
     }
     if (graceAccount.tag === "GraceSignedIn") {
-      const owner = browserAccountId() catch () => undefined
-      return owner === graceAccount.accountId ? JSON.stringify([graceAccount.tag, owner]) : undefined
+      const scope = browserSessionScope() catch () => undefined
+      const active = (try setup.get()).graceAccount
+      return scope !== undefined && active.tag === "GraceSignedIn" && active.accountId === graceAccount.accountId &&
+        scope.accountId === active.accountId ? JSON.stringify([active.tag, scope.session]) : undefined
     }
     return graceAccount.tag
   }
@@ -357,15 +359,19 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const account = browserScope === undefined ? undefined : try browserReadAccount()
       if (browserScope !== undefined && account === undefined) return false
       const context = replyControlContext(current)
-      effect function ownsBrowserRead() {
+      effect function currentBrowserWorkspace() {
         const w = try workspace.get()
         return replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
           w.device.surface === "Browser" && w.device.observationAllowed && activeTab(w.browser).load === "Loaded" &&
           w.assistant.activity === current.assistant.activity && w.assistant.conversation.turn === "Ready" &&
           !w.assistant.conversation.question && w.assistant.replacementId === "" &&
           w.execution.phase === "Idle" && w.commitmentTask === "" &&
-          browserReadScope(w) === browserScope && (try browserReadAccount()) === account
+          browserReadScope(w) === browserScope
       }
+      effect function ownsBrowserRead() {
+        return (try browserReadAccount()) === account && (try currentBrowserWorkspace())
+      }
+      if (browserScope !== undefined && !(try currentBrowserWorkspace())) return false
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return false
       if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : false
