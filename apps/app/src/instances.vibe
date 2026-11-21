@@ -1,7 +1,7 @@
 // spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/email.md, "Sending or discarding retires the completed draft revision without hiding newer work"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { Machine as CalendarMachine, stored as storedCalendar } from "../gen/app__calendarView.effect.vibe"
-import { type Event as MailEvent, hasMessage, initial as initialMail, listingScope, Machine as MailMachine, messageRecord, retainedOnly, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
+import { type Event as MailEvent, hasMessage, initial as initialMail, listingScope, Machine as MailMachine, messageRecord, parseState as parseMail, retainedOnly, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
@@ -61,11 +61,15 @@ const keyPattern = /^(?:mail|calendar|held)\/(\d+)$/
 const decodeHeld = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Held)))
 const decodeMailRecord = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))
 
-function mailWithDraftCount(text: string) {
+function currentMailRecord(text: string) {
   const box = Option.getOrUndefined(decodeMailRecord(text))
-  return box !== undefined && !("draftsTotal" in box)
-    ? JSON.stringify({ ...box, draftsTotal: initialMail.draftsTotal })
-    : text
+  if (box === undefined) return text
+  const current = { draftsTotal: initialMail.draftsTotal, ...box }
+  if (typeof box.bill === "object" && box.bill !== null && !("sourceRef" in box.bill)) {
+    const historical = parseMail({ ...current, bill: { ...box.bill, sourceRef: box.messageRef } })
+    return historical === undefined ? text : JSON.stringify({ ...historical, bill: initialMail.bill })
+  }
+  return "draftsTotal" in box ? text : JSON.stringify(current)
 }
 
 effect function calendarWithMailSource(text: string, account: number) {
@@ -122,7 +126,7 @@ export const instances = Layer.effect(Instances, effect {
   }
   const openMail = (id: number) => effect {
     const key = mailKey(id)
-    const compatible = compatibleStore(key, (raw) => Effect.succeed(mailWithDraftCount(raw)))
+    const compatible = compatibleStore(key, (raw) => Effect.succeed(currentMailRecord(raw)))
     const box = try Effect.orDie(Effect.provide(effect { return try MailMachine }, Layer.provide(storedMail(key), compatible)))
     try Effect.orDie(box.send({ type: "restartMailbox" }, "MailHost"))
     return box

@@ -7,6 +7,7 @@ import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine }
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
+import { parseState as parseMail } from "../gen/app__email.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { Email } from "../src/Email.tsx";
 import { RuntimeContext } from "../src/useApp.ts";
@@ -97,13 +98,24 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       const key = `mail/${account}`;
       const raw = localStorage.getItem(key);
       if (raw === null) throw new Error("Missing the saved mailbox");
-      const box = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(raw);
-      expect(box.draftsTotal).toBeTypeOf("number");
-      const { draftsTotal: _, ...earlier } = box;
-      localStorage.setItem(key, JSON.stringify(earlier));
+      const box = parseMail(JSON.parse(raw));
+      if (box === undefined) throw new Error("Invalid stored mailbox");
+      const { draftsTotal: _, bill: _bill, ...earlier } = box;
+      expect(box.messageRef).not.toBe("");
+      const oldBill = { ref: "prior-invoice", origin: "https://billing.example", account: "prior-utility", confirmed: true };
+      localStorage.setItem(key, JSON.stringify({ ...earlier, bill: oldBill }));
       runtime = open();
       view = tabletView(runtime);
       await view.render();
+      const restored = await runtime.runPromise(Effect.gen(function*() {
+        const mail = yield* (yield* Instances).mail(account);
+        return yield* mail.get();
+      }));
+      expect(restored).toMatchObject({
+        operationId: box.operationId, issuedSends: box.issuedSends, retiredDrafts: box.retiredDrafts,
+        outbox: box.outbox, draft: box.draft, draftAttachments: box.draftAttachments, bill: { ref: "", sourceRef: "", confirmed: false },
+      });
+      expect(restored.messages.map((message) => message.identity)).toEqual(expect.arrayContaining(box.messages.map((message) => message.identity)));
     },
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
