@@ -17,29 +17,29 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     display: {
-      getDevice: () => Promise.resolve({ volume: { ...audio }, brightness: { percent: brightness, night: 30 } }),
+      getDevice: () => Promise.resolve({ volume: { ...audio }, brightness: { percent: brightness } }),
       setBrightness: ({ percent }) => { if (acceptsBrightness) brightness = percent; return Promise.resolve(); },
       setVolume: ({ step, muted }) => { Object.assign(audio, { step, muted }); return Promise.resolve(); },
     },
   }).pipe(Layer.provideMerge(clock)));
   await mount(runtime);
-  await expect.poll(() => brightness).toBe(30);
+  await expect.poll(() => brightness).toBe(50);
   await act(() => userEvent.click(page.getByRole("button", { name: "Settings", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Brightness", exact: true })));
   const toggle = page.getByRole("switch", { name: "Dim the screen at night" });
   acceptsBrightness = false;
   await act(() => userEvent.click(toggle));
   await expect.element(page.getByText("The tablet couldn’t apply that setting.")).toBeVisible();
-  expect(brightness).toBe(30);
+  expect(brightness).toBe(50);
   acceptsBrightness = true;
   await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
   await expect.poll(() => brightness).toBe(100);
   await act(() => userEvent.click(toggle));
-  await expect.poll(() => brightness).toBe(30);
+  await expect.poll(() => brightness).toBe(50);
   for (let taps = 0; taps < 8; taps++) await act(() => userEvent.click(page.getByRole("button", { name: "Dimmer", exact: true })));
   await expect.poll(() => brightness).toBe(20);
-  for (let taps = 0; taps < 2; taps++) await act(() => userEvent.click(page.getByRole("button", { name: "Brighter", exact: true })));
+  for (let taps = 0; taps < 4; taps++) await act(() => userEvent.click(page.getByRole("button", { name: "Brighter", exact: true })));
   await expect.poll(() => brightness).toBe(30);
   await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
-  await expect.poll(() => brightness).toBe(40);
+  await expect.poll(() => brightness).toBe(60);
 });
