@@ -20,6 +20,12 @@ match its existing unresolved attempt and the same observed account, task,
 device and page. An observed manual tap emits no agent submission. The host
 uses only entries emitted by the model, checks current saved-value authority
 where applicable and enforces one-time delivery before handing off to Chromium.
+When the outbox consumer claims a fill of a task's form, it makes three checks
+before the write reaches the page: this check of the command against the
+current Workspace; the [task bridge's](./taskBridge.md) `fillPermitted` against
+the current preparation, which holds only after the person's "Yes, fill it in"
+for that task; and the preparation's `graceMayFill` for exactly the values it
+would type. A fill that fails any of the three is dropped like a stale command.
 
 ```quint
 import workspace as WS from "./workspace"
