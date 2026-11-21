@@ -269,8 +269,10 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
   await click("Next week");
   await act(() => userEvent.click(row("Bridge night").first()));
+  const retainedId = (await tablet()).selectedId;
   await edit("Bridge night", "Never");
-  await expect.element(selectedDay(eyeDay)).toBeVisible();
+  await expect.element(selectedDay(eyeDay + 14)).toBeVisible();
+  await expect.poll(async () => (await tablet()).entries.filter((entry) => entry.phase === "Saved" && entry.committed.title === "Bridge night").map((entry) => entry.identity.occurrenceId)).toEqual([retainedId]);
   await act(() => userEvent.click(row("Bridge night").first()));
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await click("Back to Calendar");
