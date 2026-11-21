@@ -1,5 +1,5 @@
-// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"
-// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
+// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
+// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, NewTabPage } from "@repo/ui";
 import { Mail } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
@@ -92,7 +92,7 @@ function PrivateToolbar({ active, browser, edit, offered, step, navigate, checkE
             });
           }}><Mail aria-hidden /> Check email</Button>
         ) : undefined}>
-        <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} secure={showsSecureIndicator(browser, draft !== null)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+        <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} secureAddress={showsSecureIndicator(browser, draft !== null) ? tabUrl(active) : undefined} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
           notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); setEmailNotice(undefined); }} onSubmit={go} />
       </BrowserToolbar>
       {emailNotice?.loadVersion === active.loadVersion && (
@@ -130,6 +130,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   };
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
+  const secureAddress = showsSecureIndicator(browser, false) ? tabUrl(active) : undefined;
   const failure = failures[active.load];
   const privateFailure = active.manualSignIn && active.load === "LoadFailed";
   const fillNotice = guide === "FillPasswordGuide"
@@ -151,7 +152,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
-          <AddressBar ref={fieldRef} value={address} secure={showsSecureIndicator(browser, false)} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
+          <AddressBar ref={fieldRef} value={address} secureAddress={secureAddress} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>

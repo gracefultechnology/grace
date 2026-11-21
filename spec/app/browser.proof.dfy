@@ -82,10 +82,14 @@ lemma pageMoved_ensures(b: Browser, url: string)
   ensures (inv(b) ==> canPageMoved(b, url) ==> stepRevisionNeverMovesBack(b, pageMoved(b, url)))
 {
   if inv(b) && canPageMoved(b, url) {
-    navigate_ensures(b, url);
-    var n := navigate(b, url);
-    assert pageMoved(b, url) == n.(editingAddress := b.editingAddress, addressDraft := b.addressDraft, emptyAddressNotice := b.emptyAddressNotice);
-    assert pageMoved(b, url).tabs == n.tabs && pageMoved(b, url).selected == n.selected;
+    if url == "" {
+      reload_ensures(b);
+    } else {
+      navigate_ensures(b, url);
+      var n := navigate(b, url);
+      assert pageMoved(b, url) == n.(editingAddress := b.editingAddress, addressDraft := b.addressDraft, emptyAddressNotice := b.emptyAddressNotice);
+      assert pageMoved(b, url).tabs == n.tabs && pageMoved(b, url).selected == n.selected;
+    }
   }
 }
 

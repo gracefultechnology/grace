@@ -1,5 +1,5 @@
 import { type ComponentProps, useId } from "react";
-import { Info } from "lucide-react";
+import { Info, Lock } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 
 export type AddressBarProps = Omit<
@@ -8,6 +8,7 @@ export type AddressBarProps = Omit<
 > & {
   /** The address shown: the page's, or the draft being typed. */
   value: string;
+  secureAddress?: string;
   /** Called with the text as it is edited. */
   onValueChange?: (text: string) => void;
   /** Called by Enter: go to the address. */
@@ -18,24 +19,22 @@ export type AddressBarProps = Omit<
   notice?: string;
   /** The accessible name of the field. */
   label?: string;
-  /** The page shown loaded over a secure connection: the padlock goes before the address. */
-  secure?: boolean;
 };
 
 /**
- * The browser's address capsule, with a padlock before the address of a page that loaded securely. Empty, it shows
- * its placeholder; a `notice` under it explains a Go that could not go.
+ * The browser's address capsule, with a lock for the loaded page's encrypted connection. Empty, it shows its placeholder; a `notice`
+ * under it explains a Go that could not go.
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#guidance
  */
 export function AddressBar({
   value,
+  secureAddress,
   onValueChange,
   onSubmit,
   guided = false,
   notice,
   label = "Address",
-  secure = false,
   placeholder = "Search or type a website",
   disabled,
   className,
@@ -43,6 +42,8 @@ export function AddressBar({
   ...props
 }: AddressBarProps) {
   const noticeId = useId();
+  const connectionId = useId();
+  const encrypted = !!secureAddress && secureAddress === value;
   return (
     <label
       className={cn(
@@ -50,23 +51,11 @@ export function AddressBar({
         className,
       )}
     >
-      {secure && (
-        <svg
-          role="img"
-          aria-label="Secure connection"
-          width={22}
-          height={22}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="shrink-0 text-chrome-muted"
-        >
-          <rect x={5} y={11} width={14} height={10} rx={2} />
-          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-        </svg>
+      {encrypted && (
+        <>
+          <Lock aria-hidden size={22} className="shrink-0 text-chrome-muted" />
+          <span id={connectionId} className="sr-only">Encrypted connection</span>
+        </>
       )}
       <span className="relative flex min-w-0 flex-1 text-lead font-normal">
         <input
@@ -75,7 +64,7 @@ export function AddressBar({
           autoComplete="off"
           spellCheck={false}
           aria-label={label}
-          aria-describedby={[describedBy, notice && noticeId].filter(Boolean).join(" ") || undefined}
+          aria-describedby={[describedBy, encrypted && connectionId, notice && noticeId].filter(Boolean).join(" ") || undefined}
           value={value}
           placeholder={guided ? undefined : placeholder}
           readOnly={!onValueChange}

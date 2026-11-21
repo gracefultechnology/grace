@@ -155,13 +155,35 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await address.fill("https://bank.invalid/");
   await enter();
   await expect.poll(() => ({ load: workspace().browser.tabs.find((t) => t.id === workspace().browser.selected)?.load, showing: showing() })).toEqual({ load: "LoadFailed", showing: framed });
-  const framedTabs = workspace().browser.tabs;
-  const framedPage = frames().find((frame) => !frame.hidden)!;
-  const away = new Promise((resolve) => framedPage.addEventListener("load", resolve, { once: true }));
-  framedPage.contentWindow!.location.href = "about:blank";
-  await away;
-  await expect.poll(() => framedPage.contentDocument).toBeNull();
-  expect(workspace().browser.tabs).toEqual(framedTabs);
+
+  const id = workspace().browser.selected;
+  const readable = new URL("./site/index.html", import.meta.url).href;
+  await visit(readable, id);
+  const instruction = shown(id)?.contentDocument?.querySelector<HTMLAnchorElement>('a[href="instruction.html"]');
+  if (!instruction) throw new Error("The local website did not offer its instruction page");
+  instruction.click();
+  await expect.element(address).toHaveValue(instruction.href);
+  await expect.poll(() => tab(id)?.load).toBe("Loaded");
+  const prior = tab(id)!;
+  expect(prior.history.slice(-2)).toEqual([readable, instruction.href]);
+  const instructionPage = shown(id)?.contentDocument;
+  if (!instructionPage) throw new Error("The instruction page is unreadable");
+  instructionPage.location.assign(new URL("index.html", site).href);
+  await expect.poll(() => {
+    const after = tab(id)!;
+    return shown(id)?.contentDocument === null && after.loadVersion > prior.loadVersion && after.load === "Loaded";
+  }).toBe(true);
+  expect(tab(id)?.history).toEqual(prior.history);
+  await expect.element(address).toHaveAccessibleDescription("");
+
+  const unavailable = new URL(site);
+  unavailable.protocol = "https:";
+  await address.fill(unavailable.href);
+  await enter();
+  await expect.poll(() => {
+    const active = tab(id);
+    return shown(id)?.src === unavailable.href && active?.load !== "Loading" && active?.secure === false;
+  }).toBe(true);
 
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
@@ -202,7 +224,8 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
     refused,
     called: (method: string) => calls.filter(([m]) => m === method).map(([, options]) => options),
     started: (url = "") => emit("pageStarted", { url }),
-    finished: (url: string, state: Record<string, unknown> = {}) => emit("navigationChanged", { exists: true, currentUrl: url, progress: 100, ...state }),
+    finished: (url: string, state: Record<string, unknown> = {}) =>
+      emit("navigationChanged", { exists: true, currentUrl: url, progress: 100, pageError: null, securityBlocked: false, ...state }),
     ask: (event: string, fields: Record<string, unknown>) => emit(event, fields),
     crashed: () => emit("surfaceCrashed", {}),
   };
@@ -586,14 +609,17 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
 
   device.refused.creates = 1;
   await userEvent.click(page.getByRole("button", { name: "Internet" }));
+  await expect.element(address).toHaveAccessibleDescription("");
   await userEvent.type(address, "example.com{Enter}");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "LoadFailed", address: "https://example.com/" });
+  await expect.element(address).toHaveAccessibleDescription("");
   expect(device.called("createSurface")).toHaveLength(1);
   await userEvent.click(page.getByRole("button", { name: "Try again" }));
   await expect.poll(() => device.called("createSurface")).toHaveLength(2);
   device.started("https://example.com/");
   device.finished("https://example.com/");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
 
   const entries = tab().history.length;
   device.started("https://example.com/b");
@@ -602,6 +628,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(tab().history).toHaveLength(entries + 1);
   device.started("https://example.com/c");
   await expect.poll(at).toEqual({ url: "https://example.com/c", load: "Loading", address: "https://example.com/c" });
+  await expect.element(address).toHaveAccessibleDescription("");
   device.started("https://example.com/next");
   device.finished("https://example.com/next");
   await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loaded", address: "https://example.com/next" });
@@ -621,10 +648,9 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.started("https://example.com/");
   device.finished("https://example.com/");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
-  const padlock = page.getByRole("img", { name: "Secure connection" });
-  await expect.element(padlock).toBeVisible();
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await userEvent.type(address, "x");
-  await expect.element(padlock).not.toBeInTheDocument();
+  await expect.element(address).toHaveAccessibleDescription("");
   const go = async (text: string, url: string) => {
     await userEvent.fill(address, text);
     await userEvent.keyboard("{Enter}");
@@ -637,7 +663,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.finished("https://www.example.com/home");
   await expect.poll(at).toEqual({ url: "https://www.example.com/home", load: "Loaded", address: "https://www.example.com/home" });
   expect(tab().history).toHaveLength(history);
-  await expect.element(padlock).toBeVisible();
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   const navigated = count("navigate");
   await userEvent.click(page.getByRole("button", { name: "Back" }));
   await expect.poll(() => count("goBack")).toBe(2);
@@ -653,14 +679,14 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   await later(loadWaitSeconds - 10);
   await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "LoadFailed", address: "https://example.com/slow" });
   expect(device.called("stopLoading")).toHaveLength(1);
-  expect(padlock.query()).toBeNull();
+  await expect.element(address).toHaveAccessibleDescription("");
   await userEvent.click(page.getByRole("button", { name: "Try again" }));
   await expect.poll(() => count("navigate")).toBe(navigated + 2);
   expect({ to: device.called("navigate").at(-1)?.url, reloaded: count("reloadSurface") }).toEqual({ to: "https://example.com/slow", reloaded: 0 });
   device.started("https://example.com/slow");
   device.finished("https://example.com/slow", { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
   await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "SecurityBlocked", address: "https://example.com/slow" });
-  expect(padlock.query()).toBeNull();
+  await expect.element(address).toHaveAccessibleDescription("");
 
   await go("example.com/hang", "https://example.com/hang");
   await later(loadWaitSeconds);
@@ -707,7 +733,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   await userEvent.click(question.getByRole("button", { name: "Stay" }));
   await expect.poll(at).toEqual({ url: "https://example.com/ask", load: "Loaded", address: "https://example.com/ask" });
   expect(tab().history).toEqual(kept);
-  await expect.element(padlock).toBeVisible();
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await later(loadWaitSeconds);
   expect(tab().load).toBe("Loaded");
 
@@ -715,7 +741,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.started("http://example.com/plain");
   device.finished("http://example.com/plain");
   await expect.poll(at).toEqual({ url: "http://example.com/plain", load: "Loaded", address: "http://example.com/plain" });
-  expect(padlock.query()).toBeNull();
+  await expect.element(address).toHaveAccessibleDescription("");
 
   const openings = () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())).openings;
   const intent = "intent://pay#Intent;scheme=examplepay;package=com.example.pay;end";

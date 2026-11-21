@@ -838,16 +838,17 @@ reload, tabs, layout capacity, scroll, zoom, page panels and recent shortcuts.
 The resulting browser is stored here. Recent-list edits leave website work
 alone; changes to the actual page or keyboard geometry interrupt it. Current
 host reports cover form/account changes and measured layout; stale reports
-cannot rewrite a newer page. A background load can complete without disturbing
-the selected page. The host's report of a load says where the load ended and
-whether its connection was secure, and the tab records both: a page that a
-website sent on while it loaded, such as from its bare name to `www`, is
-named by where it really is, and the padlock follows the connection
-([browser](./browser.md)). A report that names no address is refused, and a
-private sign-in tab's report must name the tab's own address. When the
-person answers Stay to a leave-page warning that her own navigation raised,
-the host reports that load as stayed, and the tab returns to the page she
-stayed on. A selected-page change invalidates prior observations.
+cannot rewrite a newer page. A host's load report carries the address the
+page ended at and whether its connection was secure, so a followed redirect
+and the padlock reach the browser as it
+[finishes a page load](./browser.md): a page that a website sent on while it
+loaded, such as from its bare name to `www`, is named by where it really is.
+A report that names no address is refused, and a private sign-in tab's
+report must name the tab's own address. When the person answers Stay to a
+leave-page warning that her own navigation raised, the host reports that
+load as stayed, and the tab returns to the page she stayed on. A background
+load can complete without disturbing the selected page. A selected-page
+change invalidates prior observations.
 An address keyboard hides the visible Grace window using its existing website
 keyboard presentation. Dismissal, navigation, Talk, Type and Show chat synchronize
 that presentation with the actual address focus without opening hidden Grace.
@@ -931,7 +932,8 @@ pure def receiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceAc
 pure def canUnexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
   by == Host and w.device.readiness == S::Ready and w.device.surface == S::Browser and
   unexpected.id == w.browser.selected and unexpected.revision == w.browser.revision and
-  B::canTabMoved(w.browser, unexpected.id, unexpected.destination)
+  B::canPageMoved(w.browser, unexpected.destination) and
+  (unexpected.destination != "" or unexpected.loadVersion == B::activeTab(w.browser).loadVersion)
 pure def unexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): Workspace =
   interrupted(w.device, B::pageMoved(w.browser, unexpected.destination), w)
 pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
@@ -966,7 +968,8 @@ were; the selected page's own move, while hidden, changes the revision as
 any page moving by itself does. The host names the load version of the
 load the page was running when it moved, and a report is refused once that
 tab has started another load; what happens in other tabs, or to the
-browser's revision, never makes it late.
+browser's revision, never makes it late. A start at a retained address also
+names the prior load version when the page is in view.
 
 ```quint
 pure def canUnwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
@@ -1978,16 +1981,18 @@ pure val taskRequestValues = Set(
   { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" })
 pure val browserInputValues = BC::browserInputValues
 pure val unexpectedValues = Set(
+  { id: 1, revision: 2, loadVersion: 1, destination: "" },
   { id: 1, revision: 2, loadVersion: 1, destination: "https://utility.example/updated" },
   { id: 2, revision: 2, loadVersion: 0, destination: "https://credit.example" },
   { id: 1, revision: 0, loadVersion: 0, destination: "https://utility.example/updated" })
 pure val stayedValues = Set({ id: 1, version: 1 }, { id: 1, version: 2 }, { id: 2, version: 1 })
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
-  { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
-  { id: 1, version: 1, result: B::LoadFailed, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 1, result: B::Loaded, secure: false, endedAt: B::redirectedTo },
+  { id: 1, version: 1, result: B::LoadFailed, secure: false, endedAt: "https://utility.example" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
-  { id: 1, version: 3, result: B::Loaded, secure: false, endedAt: "https://utility.example" })
+  { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
+  { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: "https://utility.example" })
 pure val observed: CurrentObservation = {
   deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }

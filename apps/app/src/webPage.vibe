@@ -1,10 +1,9 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 import { NativePage, PageEvent, PageFailed } from "./nativePage.vibe"
-import { LoopbackPage, type PageId, SecurePage, Url } from "./nativePage.schema.ts"
+import { LoopbackPage, type PageId, Url } from "./nativePage.schema.ts"
 import { webView } from "./surfacePlugin.ts"
-import type { Load } from "../gen/app__browser.effect.vibe"
 
-type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined; restoring: boolean }
+type Frame = { element: HTMLIFrameElement; history: string[]; at: number; navigation: "Idle" | "Requested" | "Leaving" }
 
 export const websites = webView.document.createElement("div")
 
@@ -14,27 +13,39 @@ export function webPage() {
     const events = try Queue.unbounded<PageEvent>()
     const frames = new Map<PageId, Frame>()
 
-    const changed = (id: PageId, frame: Frame, url: string, result: Load) => Queue.offerUnsafe(events, PageEvent.Changed({
-      id, url: Url.make(url), loading: false, result, secure: Schema.is(SecurePage)(url), back: frame.at > 0, forward: frame.at + 1 < frame.history.length
-    }))
     const go = (id: PageId, frame: Frame, url: string) => {
       const opens = Schema.is(LoopbackPage)(url)
-      frame.going = opens ? url : undefined
-      frame.restoring = false
+      frame.navigation = opens ? "Requested" : "Idle"
       if (opens) frame.element.src = url
       Queue.offerUnsafe(events, PageEvent.Started({ id, url: Url.make(url) }))
-      if (!opens) changed(id, frame, url, "LoadFailed")
+      if (!opens) Queue.offerUnsafe(events, PageEvent.Changed({
+        id, url: Url.make(url), loading: false, result: "LoadFailed", secure: false, back: frame.at > 0, forward: frame.at + 1 < frame.history.length
+      }))
     }
     const loaded = (id: PageId, frame: Frame) => {
-      const url = frame.going
-      frame.going = undefined
-      if (url !== undefined) return changed(id, frame, url, "Loaded")
-      frame.restoring = !frame.restoring
-      if (frame.restoring) frame.element.setAttribute("src", frame.element.src)
+      const loadedDocument = frame.element.contentDocument
+      const address = URL.parse(loadedDocument?.URL ?? "")
+      const url = address?.protocol === "https:" || address?.protocol === "http:" ? Url.make(address.href) : undefined
+      const navigation = frame.navigation
+      if (url !== undefined && navigation !== "Requested" && frame.history[frame.at] !== url) {
+        frame.history = [...frame.history.slice(0, frame.at + 1), url]
+        frame.at = frame.history.length - 1
+      } else if (url !== undefined) frame.history[frame.at] = url
+      if (navigation === "Idle") Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
+      frame.navigation = "Idle"
+      loadedDocument?.defaultView?.addEventListener("pagehide", () => {
+        if (frame.navigation !== "Idle" || frames.get(id) !== frame) return
+        frame.navigation = "Leaving"
+        Queue.offerUnsafe(events, PageEvent.Started({ id, url: undefined }))
+      }, { once: true })
+      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded",
+        secure: address?.protocol === "https:" && loadedDocument?.defaultView?.isSecureContext === true,
+        back: frame.at > 0, forward: frame.at + 1 < frame.history.length }))
     }
     const remove = (id: PageId) => {
-      frames.get(id)?.element.remove()
+      const frame = frames.get(id)
       frames.delete(id)
+      frame?.element.remove()
     }
     effect function on(id: PageId, run: (frame: Frame) => void) {
       const frame = frames.get(id)
@@ -70,7 +81,7 @@ export function webPage() {
           element.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms", "allow-popups")
           element.hidden = true
           Object.assign(element.style, { position: "fixed", border: "0", left: "0", top: "0", width: "0", height: "0", pointerEvents: "none" })
-          const frame: Frame = { element, history: [url], at: 0, going: undefined, restoring: false }
+          const frame: Frame = { element, history: [url], at: 0, navigation: "Idle" }
           element.addEventListener("load", () => loaded(id, frame))
           frames.set(id, frame)
           go(id, frame, url)
