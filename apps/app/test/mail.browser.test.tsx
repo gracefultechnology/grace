@@ -298,22 +298,6 @@ it("See all my email in one place", async () => {
   await host("Online");
   await expect.element(page.getByText("No internet right now")).not.toBeInTheDocument();
 
-  // spec/app/email.md, "Each search or content read needs current access and the user's choice"
-  await click(clinic);
-  await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
-  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
-  // spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
-  await click(page.getByRole("button", { name: "Open" }));
-  await expect.element(page.getByRole("heading", { name: "Visit form.pdf" })).toBeVisible();
-  await expect.poll(() => document.querySelector("object[type='application/pdf']")?.getAttribute("data")).toMatch(/^data:application\/pdf;base64,JVBERi/);
-  await expect.element(page.getByText("Page 1 of 2")).toBeVisible();
-  await click(page.getByRole("button", { name: "Save to Files" }));
-  await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
-  await click(page.getByRole("button", { name: "Back to Main St Clinic’s email" }));
-  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
-  await click(page.getByRole("button", { name: "Back to Inbox" }));
-  await expect.element(row("Gmail 3")).toBeVisible();
-
   const png = /^data:image\/png;base64,iVBORw0KGgo/;
   const unread = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "family").map((m) => m.labels.includes("UNREAD")));
   await opened(/^Ruth.*Has attachments/, "Lunch on Sunday?");
@@ -350,6 +334,21 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Back to Ruth’s email" }));
   await click(page.getByRole("button", { name: "Save all to Files" }));
   await expect.element(page.getByText("3 photos saved to Files")).toBeVisible();
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(row("Gmail 3")).toBeVisible();
+  // spec/app/email.md, "Each search or content read needs current access and the user's choice"
+  await click(clinic);
+  await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
+  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
+  // spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
+  await click(page.getByRole("button", { name: "Open" }));
+  await expect.element(page.getByRole("heading", { name: "Visit form.pdf" })).toBeVisible();
+  await expect.poll(() => document.querySelector("object[type='application/pdf']")?.getAttribute("data")).toMatch(/^data:application\/pdf;base64,JVBERi/);
+  await expect.element(page.getByText("Page 1 of 2")).toBeVisible();
+  await click(page.getByRole("button", { name: "Save to Files" }));
+  await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
+  await click(page.getByRole("button", { name: "Back to Main St Clinic’s email" }));
+  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(row("Gmail 2")).toBeVisible();
 

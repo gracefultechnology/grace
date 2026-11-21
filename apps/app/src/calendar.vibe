@@ -263,7 +263,7 @@ export function adding(v: CalendarView, n: number, id: string): CalendarEvent {
   return {
     type: "createOccurrence",
     entry: {
-      identity: { owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" },
+      identity: { owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", sourceAccount: 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" },
       details: {
         title: "", location: "", participant: "", notes: "", startAt, endAt: startAt + hour, timezone: v.timezone, allDay: false,
         seriesId: "", recurrence: "Once", reminderEnabled: true, leadTime: hour, important: false
@@ -485,7 +485,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   effect function follow(_: Account, box: CalendarMachine.Shape) {
     return try fork.scoped Stream.runForEach(box.changes, () => noticeReminders)
   }
-  try fork.scoped watchEach(registry.changes, (a) => a.accounts, (id) => shelf.calendar(id), follow)
+  try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try follow(account, try shelf.calendar(account.id)))
   try fork.scoped Stream.runForEach(Stream.merge(Stream.merge(registry.changes, lead.changes), setup.changes), () => noticeReminders)
 
   const arrival = { type: "visit", destination: "Calendar" } as const
