@@ -209,7 +209,15 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     try {
       const website = await browser.newPage();
       const session = await observeFromDocumentStart(website);
-      await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+      await website.route("**/*", (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (url.origin !== origin) return route.abort();
+        if (definition.evaluator === "webarena" && definition.taskId === "157" &&
+          (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
+          return route.abort();
+        return route.continue();
+      });
       const response = await website.goto(action.url, { waitUntil: "load" });
       if (!response?.ok()) throw new Error("The benchmark site did not load");
       if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");

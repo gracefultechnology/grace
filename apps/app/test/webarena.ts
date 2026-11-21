@@ -7,17 +7,18 @@ import { Schema } from "effect";
 const execute = promisify(execFile);
 const revision = "dce04686a56253aefba7b18a4fa0937cf1dc987b";
 const catalogPath = "config_files/test.raw.json";
-const Task = Schema.Struct({
-  task_id: Schema.Int,
-  sites: Schema.Tuple([Schema.Literal("shopping")]),
-  start_url: Schema.Literal("__SHOPPING__"),
+const urlTask = {
   intent: Schema.NonEmptyString,
   require_login: Schema.Boolean,
   eval: Schema.Struct({
     eval_types: Schema.Tuple([Schema.Literal("url_match")]),
     reference_url: Schema.NonEmptyString,
   }),
-});
+};
+const Task = Schema.Union([
+  Schema.Struct({ ...urlTask, task_id: Schema.Int, sites: Schema.Tuple([Schema.Literal("shopping")]), start_url: Schema.Literal("__SHOPPING__") }),
+  Schema.Struct({ ...urlTask, task_id: Schema.Literal(157), sites: Schema.Tuple([Schema.Literal("shopping_admin")]), start_url: Schema.Literal("__SHOPPING_ADMIN__") }),
+]);
 const Document = Schema.Struct({ url: Schema.NonEmptyString, documentId: Schema.NonEmptyString });
 const Outcome = Schema.Struct({
   start: Schema.optional(Document),
@@ -58,11 +59,15 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
     const task = Schema.decodeUnknownSync(Task)(hits[0]);
     const start = new URL(startUrl);
     const { origin } = start;
-    if (start.protocol !== "https:" || !["127.0.0.1", "localhost"].includes(start.hostname) || start.href !== `${origin}/` || task.intent !== intent)
-      throw new Error("WebArena input needs the unchanged official task intent and the synthetic Shopping start origin");
-    const fixture = JSON.stringify(hits[0]).replaceAll("__SHOPPING__", origin);
+    const admin = task.start_url === "__SHOPPING_ADMIN__";
+    const siteRoot = admin ? `${origin}/admin` : origin;
+    const initialPath = admin ? "/admin/admin/dashboard/" : "/";
+    if (start.protocol !== "https:" || !["127.0.0.1", "localhost"].includes(start.hostname) || start.href !== `${origin}${initialPath}` || task.intent !== intent)
+      throw new Error("WebArena input needs the unchanged official task intent and the synthetic site's starting document");
+    const fixture = JSON.stringify(hits[0]).replaceAll(task.start_url, siteRoot);
     const unused = "http://127.0.0.1:1";
-    const env = { SHOPPING: origin, SHOPPING_ADMIN: unused, REDDIT: unused, GITLAB: unused, WIKIPEDIA: unused, MAP: unused, HOMEPAGE: unused };
+    const env = { SHOPPING: admin ? unused : siteRoot, SHOPPING_ADMIN: admin ? siteRoot : unused,
+      REDDIT: unused, GITLAB: unused, WIKIPEDIA: unused, MAP: unused, HOMEPAGE: unused };
     return async (observed: unknown, evidence: { guided: boolean; authenticatedFixture: boolean }) => {
       const outcome = Schema.decodeUnknownSync(Outcome)(observed);
       const { destination } = outcome;
@@ -71,8 +76,9 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
       let noActionScore: number | null = null;
       let groundedNavigation = false;
       if (initial) {
-        if (new URL(initial.url).href !== start.href || destination && new URL(destination.url).origin !== origin)
-          throw new Error("The observed Chromium URL left the pinned Shopping fixture");
+        const landed = destination && new URL(destination.url);
+        if (new URL(initial.url).href !== start.href || landed && (landed.origin !== origin || admin && !landed.pathname.startsWith("/admin/")))
+          throw new Error("The observed Chromium URL left the pinned WebArena fixture");
         const { stdout } = await execute(python, ["-IB", "-c", officialUrlEvaluator, root, fixture, destination?.url ?? initial.url, initial.url], {
           env, cwd: root, timeout: 30_000,
         }).catch(() => { throw new Error("The pinned WebArena URL evaluator could not run"); });
@@ -86,7 +92,7 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
         }
       }
       return {
-        evaluatorRevision: revision, catalogSha256, officialScore, noActionScore, groundedNavigation,
+        evaluatorRevision: revision, catalogSha256, site: task.sites[0], officialScore, noActionScore, groundedNavigation,
         qualifiedHostedGuidance: officialScore === 1 && noActionScore === 0 && groundedNavigation && evidence.guided &&
           (!task.require_login || evidence.authenticatedFixture),
       };
