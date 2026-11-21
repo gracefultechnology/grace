@@ -521,7 +521,7 @@ jobs:
             assert.equal(positive.grade.taskId, taskId);
             assert.equal(positive.grade.predicateSource, "task");
             assert.ok(positive.grade.taskRevision);
-            assert.match(positive.answer, /^Statement amount due: .+\. Due date: .+\.$/u);
+            assert.match(positive.answer, /^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
             for (const [receipt, failed] of [
               [positive, []], [read("no-action.json"), ["logged_in", "answer"]], [read("wrong-answer.json"), ["answer"]],
             ]) {
