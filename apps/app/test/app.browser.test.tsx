@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, ManagedRuntime, Schema } from "effect";
@@ -683,8 +683,11 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
   await native.route();
   await native.report("tab-2", "https://utility.example", 100);
+  const padlock = page.getByRole("img", { name: "Secure connection" });
+  await expect.poll(async () => { await native.route(); return padlock.query() !== null; }).toBe(true);
   const address = page.getByRole("textbox", { name: "Private website address" });
   await enter(address, "https://utility.example/enter/sample?ref=one-time");
+  await expect.element(padlock).not.toBeInTheDocument();
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
@@ -2270,8 +2273,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     signInWidget = "hidden";
-    currentPage = help;
-    await native.report("tab-1", origin + help.path, 100);
+    currentPage = { ...help, path: "/help/center" };
+    await native.report("tab-1", origin + help.path, 40);
+    await native.report("tab-1", origin + currentPage.path, 100);
     await native.route();
     await routeTo(resume);
     expect(check.query()).toBeNull();

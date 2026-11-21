@@ -7,7 +7,7 @@ import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../ge
 import { type SurfacePlugin, identity } from "./surfacePlugin.ts"
 import {
   AppUnavailable, DialogRequested, DownloadFinished, DownloadRequested, ExternalLinkRequested, FileChooserRequested, IdentityProviderRequested,
-  LinkObservation, VisibleTextRead, NavigationChanged, PageStarted, type PageId, PermissionClosed, PointResult, PurgeResult, RequestKey, SitePermissionAnswer, SitePermissionRequested,
+  LinkObservation, VisibleTextRead, NavigationChanged, PageStarted, type PageId, PermissionClosed, PointResult, PurgeResult, RequestKey, SecurePage, SitePermissionAnswer, SitePermissionRequested,
   SitePermissionWithdrawn, SurfaceCrashed, type Url
 } from "./nativePage.schema.ts"
 import { webPage } from "./webPage.vibe"
@@ -78,6 +78,7 @@ export type LinkPointer = Extract<NonNullable<Parameters<SurfacePlugin["controlP
 
 export service NativePage {
   readonly privateSignIn: boolean
+  readonly opensWebsites: boolean
   observeLinks(id: PageId): LinkObservation!PageFailed
   readPrimaryHeading(id: PageId): (typeof VisibleTextRead.Type)!PageFailed
   hasNavigationMenu(id: PageId, selector: string, url: string): boolean!!
@@ -94,6 +95,7 @@ export service NativePage {
   back(id: PageId): void!PageFailed
   forward(id: PageId): void!PageFailed
   reload(id: PageId): void!PageFailed
+  stop(id: PageId): void!PageFailed
   destroy(id: PageId): void!PageFailed
   reply(reply: Reply): void!PageFailed
   grant(id: PageId, key: RequestKey): AndroidOutcome!PageFailed
@@ -108,11 +110,7 @@ const outcomes: Record<typeof SitePermissionAnswer.Type["outcome"], AndroidOutco
 
 type Surface = { owner: string; session: string; epoch: number; id: PageId }
 
-type OfferedLink = { url: RequestKey; fallback: Url }
-
-export const secureAddress = (address: string | null | undefined) => URL.parse(address ?? "")?.protocol === "https:"
-
-function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text }: Reply, fallback: Url | undefined): Promise<unknown> {
+function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text }: Reply): Promise<unknown> {
   switch (ask.tag) {
     case "WebsiteMessage": return p.answerDialog({ ...surface, dialogId: key, accept: answer === "Ok", text })
     case "FileChoice": {
@@ -123,7 +121,7 @@ function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text
     case "SitePermission": return key === "" ? Promise.resolve() : p.answerSitePermission({ ...surface, requestId: key, grant: answer === "Allowed" })
     case "DownloadOffer": return answer === "SaveDownload" ? p.saveDownload({ ...surface, requestId: key }) : Promise.resolve()
     case "OtherApp": return answer !== "OpenOtherApp" ? Promise.resolve() : p.openExternalLink({ ...surface, url: key }).catch((cause: unknown) =>
-      fallback !== undefined && Schema.is(AppUnavailable)(cause) ? p.navigate({ ...surface, url: fallback }) : Promise.reject(cause))
+      ask.fallback !== "" && Schema.is(AppUnavailable)(cause) ? p.navigate({ ...surface, url: ask.fallback }) : Promise.reject(cause))
     case "BlockedSignIn": return answer === "OpenSystemBrowser" ? p.openIdentityProvider({ ...surface, requestId: key }) : Promise.resolve()
   }
 }
@@ -148,12 +146,12 @@ effect function reported(heard: Heard) {
   return Result.isSuccess(heard) ? heard.success : undefined
 }
 
-function surfaceEvents(plugin: SurfacePlugin, offered: Map<PageId, OfferedLink>) {
+function surfaceEvents(plugin: SurfacePlugin) {
   const heard = Stream.callback<Heard>((queue) => acquireRelease(
     Effect.orDie(tryPromise(() => Promise.all([
       plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => e.exists === false ? undefined : PageEvent.Changed({
         id: e.id, url: e.currentUrl ?? undefined, back: e.canGoBack === true, forward: e.canGoForward === true, loading: e.progress !== undefined && e.progress < 100,
-        result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded", secure: secureAddress(e.currentUrl)
+        result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded", secure: Schema.is(SecurePage)(e.currentUrl)
       }))),
       plugin.addListener("surfaceCrashed", hear(queue, SurfaceCrashed, (e) => PageEvent.Crashed({ id: e.id }))),
       plugin.addListener("pageStarted", hear(queue, PageStarted, (e) => PageEvent.Started({ id: e.id, url: e.url }))),
@@ -169,12 +167,10 @@ function surfaceEvents(plugin: SurfacePlugin, offered: Map<PageId, OfferedLink>)
         ask: { tag: "SitePermission", origin: e.origin ?? "", kinds: { camera: e.kinds.includes("camera"), microphone: e.kinds.includes("microphone"), location: e.kinds.includes("location") } }
       }))),
       plugin.addListener("sitePermissionWithdrawn", hear(queue, SitePermissionWithdrawn, (e) => PageEvent.Withdrawn({ id: e.id, key: e.requestId }))),
-      plugin.addListener("externalLinkRequested", hear(queue, ExternalLinkRequested, (e) => {
-        const key = RequestKey.make(e.url)
-        if (e.fallbackUrl == null) offered.delete(e.id)
-        else offered.set(e.id, { url: key, fallback: e.fallbackUrl })
-        return PageEvent.Asked({ id: e.id, key, ask: { tag: "OtherApp", handoff: handoffs[e.handoff] }, topFrame: true, said: e.url })
-      })),
+      plugin.addListener("externalLinkRequested", hear(queue, ExternalLinkRequested, (e) => PageEvent.Asked({
+        id: e.id, key: RequestKey.make(e.url), topFrame: true, said: e.url,
+        ask: { tag: "OtherApp", handoff: handoffs[e.handoff], fallback: Schema.is(SecurePage)(e.fallbackUrl) ? e.fallbackUrl : "" }
+      }))),
       plugin.addListener("identityProviderRequested", hear(queue, IdentityProviderRequested, (e) =>
         PageEvent.Asked({ id: e.id, key: e.requestId, ask: { tag: "BlockedSignIn", provider: providers[e.provider] }, topFrame: true, said: "" })))
     ]))),
@@ -190,16 +186,11 @@ function devicePage(plugin: SurfacePlugin) {
       (answer) => Effect.mapError(Schema.decodeUnknownEffect(schema)(answer), (cause) => new PageFailed({ cause })))
   const own = (id: PageId) => ({ ...identity, id })
   const observablePages = new Set<PageId>()
-  const offered = new Map<PageId, OfferedLink>()
-  const fallbackFor = ({ id, key }: Reply) => {
-    const link = offered.get(id)
-    offered.delete(id)
-    return link?.url === key ? link.fallback : undefined
-  }
   const observe = <A>(id: PageId, run: () => A!PageFailed): A!PageFailed => Effect.suspend(() =>
     observablePages.has(id) ? run() : Effect.fail(new PageFailed({ cause: "This page does not permit website observation." })))
   return Layer.succeed(NativePage, {
     privateSignIn: true,
+    opensWebsites: true,
     observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
     readPrimaryHeading: (id) => observe(id, () => ask(VisibleTextRead, (p) => p.readPage({ ...own(id),
       selector: ':is(main,[role="main"]) :is(h1,[role="heading"][aria-level="1"]):not(:is(nav,aside,footer,[role="navigation"],[hidden],[aria-hidden="true"]) *)'
@@ -213,7 +204,6 @@ function devicePage(plugin: SurfacePlugin) {
     },
     claim: effect () => {
       observablePages.clear()
-      offered.clear()
       try call((p) => p.reconcileOwner({ ...identity, desiredIds: [] }))
     },
     create: effect (id, url, manualSignIn) => {
@@ -233,17 +223,17 @@ function devicePage(plugin: SurfacePlugin) {
     back: (id) => call((p) => p.goBack(own(id))),
     forward: (id) => call((p) => p.goForward(own(id))),
     reload: (id) => call((p) => p.reloadSurface(own(id))),
+    stop: (id) => call((p) => p.stopLoading(own(id))),
     destroy: effect (id) => {
       observablePages.delete(id)
-      offered.delete(id)
       try call((p) => p.destroySurface(own(id)))
     },
-    reply: (reply) => call((p) => answerPage(p, own(reply.id), reply, reply.ask.tag === "OtherApp" ? fallbackFor(reply) : undefined)),
+    reply: (reply) => call((p) => answerPage(p, own(reply.id), reply)),
     grant: (id, key) => Effect.catch(
       Effect.map(ask(SitePermissionAnswer, (p) => p.answerSitePermission({ ...own(id), requestId: key, grant: true })), (r) => outcomes[r.outcome]),
       (failed) => Schema.is(PermissionClosed)(failed.cause) ? Effect.succeed(outcomes.ended) : Effect.fail(failed)),
     purge: () => Effect.map(ask(PurgeResult, (p) => p.purgeProfiles({ ...identity, profileKey })), (r) => r.clean === true),
-    events: surfaceEvents(plugin, offered)
+    events: surfaceEvents(plugin)
   })
 }
 

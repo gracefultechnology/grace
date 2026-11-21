@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/browser.md, "A load that never starts or never ends becomes the failure view with Reload"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/browser.md, "A load that never starts or never ends becomes the failure view with Reload"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/browser.md, "Stay on a leave-page warning keeps the page she was on"; spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { createRoot } from "react-dom/client";
@@ -154,6 +154,13 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await address.fill("https://bank.invalid/");
   await enter();
   await expect.poll(() => ({ load: workspace().browser.tabs.find((t) => t.id === workspace().browser.selected)?.load, showing: showing() })).toEqual({ load: "LoadFailed", showing: framed });
+  const framedTabs = workspace().browser.tabs;
+  const framedPage = frames().find((frame) => !frame.hidden)!;
+  const away = new Promise((resolve) => framedPage.addEventListener("load", resolve, { once: true }));
+  framedPage.contentWindow!.location.href = "about:blank";
+  await away;
+  await expect.poll(() => framedPage.contentDocument).toBeNull();
+  expect(workspace().browser.tabs).toEqual(framedTabs);
 
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
@@ -163,6 +170,7 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
   const calls: [string, Record<string, unknown>][] = [];
   const listeners = new Map<string, (event: unknown) => void>();
   const refused = { creates: 0 };
+  let committed = "";
   const plugin = new Proxy(overrides, {
     get: (_, method: string) => (options: Record<string, unknown> | string, listener?: (event: unknown) => void) => {
       if (typeof options === "string") {
@@ -174,6 +182,7 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
         refused.creates -= 1;
         return Promise.reject(new Error("This WebView cannot isolate the page"));
       }
+      if (method === "reloadSurface") emit("pageStarted", { url: committed });
       const override: unknown = Reflect.get(overrides, method);
       if (typeof override === "function") {
         const result: unknown = Reflect.apply(override, overrides, [options]);
@@ -183,6 +192,7 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
     },
   }) as SurfacePlugin;
   const emit = (event: string, fields: Record<string, unknown>) => {
+    if (event === "pageStarted" && typeof fields.url === "string" && fields.url !== "") committed = fields.url;
     const surface = calls.find(([method]) => method === "createSurface")?.[1];
     listeners.get(event)?.({ owner: surface?.owner, session: surface?.session, epoch: surface?.epoch, id: "tab-1", ...fields });
   };
@@ -464,13 +474,18 @@ it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec
 });
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
-  const device = androidPagePluginAtItsBoundary({
-    openExternalLink: () => Promise.reject(Object.assign(new Error("No app on this device opens this link"), { code: "EXTERNAL_APP_UNAVAILABLE" })),
-  });
+  const unavailable = Object.assign(new Error("No app on this device opens this link"), { code: "EXTERNAL_APP_UNAVAILABLE" });
+  let opening = (): Promise<{ status: "dispatched" }> => Promise.reject(unavailable);
+  const device = androidPagePluginAtItsBoundary({ openExternalLink: () => opening() });
   const { runtime, workspace } = await launch(device.plugin, undefined, undefined, true);
   const tab = () => workspace().browser.tabs[0];
   const address = page.getByRole("textbox", { name: "Address" });
   const at = () => ({ url: tab().history[tab().cursor], load: tab().load, address: document.querySelector<HTMLInputElement>("input[aria-label=Address]")?.value });
+  const later = async (seconds: number) => {
+    await runtime.runPromise(TestClock.adjust(`${seconds} seconds`));
+    await Effect.runPromise(Effect.sleep("100 millis"));
+  };
+  const count = (method: string) => device.called(method).length;
 
   device.refused.creates = 1;
   await userEvent.click(page.getByRole("button", { name: "Internet" }));
@@ -483,22 +498,32 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.finished("https://example.com/");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
 
-  device.started("https://example.com/b");
-  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loading", address: "https://example.com/b" });
-  device.started("https://example.com/next");
-  await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loading", address: "https://example.com/next" });
-  device.finished("https://example.com/next");
-  await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loaded", address: "https://example.com/next" });
-
-  device.crashed();
-  await expect.poll(() => device.called("createSurface").at(-1)?.url).toBe("https://example.com/next");
-  device.started();
-  device.finished("https://example.com/next");
-  await userEvent.click(page.getByRole("button", { name: "Back" }));
-  await expect.poll(() => ({ navigated: device.called("navigate").map((n) => n.url), back: device.called("goBack") })).toEqual({ navigated: ["https://example.com/b"], back: [] });
+  const entries = tab().history.length;
   device.started("https://example.com/b");
   device.finished("https://example.com/b");
   await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+  expect(tab().history).toHaveLength(entries + 1);
+  device.started("https://example.com/c");
+  await expect.poll(at).toEqual({ url: "https://example.com/c", load: "Loading", address: "https://example.com/c" });
+  device.started("https://example.com/next");
+  device.finished("https://example.com/next");
+  await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loaded", address: "https://example.com/next" });
+  expect(tab().history).toHaveLength(entries + 2);
+  await userEvent.click(page.getByRole("button", { name: "Back" }));
+  await expect.poll(() => count("goBack")).toBe(1);
+  device.started("https://example.com/b");
+  device.finished("https://example.com/b");
+  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+
+  device.crashed();
+  await expect.poll(() => device.called("createSurface").at(-1)?.url).toBe("https://example.com/b");
+  device.started();
+  device.finished("https://example.com/b");
+  await userEvent.click(page.getByRole("button", { name: "Back" }));
+  await expect.poll(() => ({ navigated: device.called("navigate").map((n) => n.url), back: count("goBack") })).toEqual({ navigated: ["https://example.com/"], back: 1 });
+  device.started("https://example.com/");
+  device.finished("https://example.com/");
+  await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
   const padlock = page.getByRole("img", { name: "Secure connection" });
   await expect.element(padlock).toBeVisible();
   await userEvent.type(address, "x");
@@ -511,32 +536,77 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
 
   await go("example.com/start", "https://example.com/start");
   const history = tab().history.length;
-  device.started("https://example.com/start");
+  device.started("https://www.example.com/home");
   device.finished("https://www.example.com/home");
   await expect.poll(at).toEqual({ url: "https://www.example.com/home", load: "Loaded", address: "https://www.example.com/home" });
   expect(tab().history).toHaveLength(history);
   await expect.element(padlock).toBeVisible();
-  const navigated = device.called("navigate").length;
+  const navigated = count("navigate");
   await userEvent.click(page.getByRole("button", { name: "Back" }));
-  await expect.poll(() => device.called("goBack")).toHaveLength(1);
-  expect(device.called("navigate")).toHaveLength(navigated);
-  device.started("https://example.com/b");
-  device.finished("https://example.com/b");
-  await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+  await expect.poll(() => count("goBack")).toBe(2);
+  expect(count("navigate")).toBe(navigated);
+  device.started("https://example.com/");
+  device.finished("https://example.com/");
+  await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
 
+  await later(loadWaitSeconds - 10);
   await go("example.com/slow", "https://example.com/slow");
-  device.started("https://example.com/slow");
-  await runtime.runPromise(TestClock.adjust(`${loadWaitSeconds - 1} seconds`));
+  await later(10);
   expect(tab().load).toBe("Loading");
-  await runtime.runPromise(TestClock.adjust("1 second"));
+  await later(loadWaitSeconds - 10);
   await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "LoadFailed", address: "https://example.com/slow" });
+  expect(device.called("stopLoading")).toHaveLength(1);
   expect(padlock.query()).toBeNull();
   await userEvent.click(page.getByRole("button", { name: "Try again" }));
-  await expect.poll(() => device.called("reloadSurface")).toHaveLength(1);
+  await expect.poll(() => count("navigate")).toBe(navigated + 2);
+  expect({ to: device.called("navigate").at(-1)?.url, reloaded: count("reloadSurface") }).toEqual({ to: "https://example.com/slow", reloaded: 0 });
   device.started("https://example.com/slow");
   device.finished("https://example.com/slow", { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
   await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "SecurityBlocked", address: "https://example.com/slow" });
   expect(padlock.query()).toBeNull();
+
+  await go("example.com/hang", "https://example.com/hang");
+  await later(loadWaitSeconds);
+  await expect.poll(at).toEqual({ url: "https://example.com/hang", load: "LoadFailed", address: "https://example.com/hang" });
+  await userEvent.click(page.getByRole("button", { name: "Back" }));
+  await expect.poll(() => count("reloadSurface")).toBe(1);
+  expect(count("goBack")).toBe(2);
+  device.finished("https://example.com/slow");
+  await expect.poll(at).toEqual({ url: "https://example.com/slow", load: "Loaded", address: "https://example.com/slow" });
+
+  await go("example.com/stalled", "https://example.com/stalled");
+  device.started("https://example.com/stalled");
+  await later(loadWaitSeconds);
+  await expect.poll(at).toEqual({ url: "https://example.com/stalled", load: "LoadFailed", address: "https://example.com/stalled" });
+  await userEvent.click(page.getByRole("button", { name: "Try again" }));
+  await expect.poll(() => count("reloadSurface")).toBe(2);
+  device.finished("https://example.com/stalled");
+  await expect.poll(at).toEqual({ url: "https://example.com/stalled", load: "Loaded", address: "https://example.com/stalled" });
+
+  const question = page.getByRole("alertdialog");
+  await go("example.com/ask", "https://example.com/ask");
+  device.started("https://example.com/ask");
+  device.ask("dialogRequested", { dialogId: "hello-1", kind: "alert", message: "Welcome back" });
+  await expect.element(question).toBeVisible();
+  await later(loadWaitSeconds + 10);
+  expect(tab().load).toBe("Loading");
+  await userEvent.click(question.getByRole("button", { name: "OK" }));
+  await expect.poll(() => device.called("answerDialog")).toMatchObject([{ dialogId: "hello-1", accept: true }]);
+  await later(loadWaitSeconds - 1);
+  expect(tab().load).toBe("Loading");
+  device.finished("https://example.com/ask");
+  await expect.poll(at).toEqual({ url: "https://example.com/ask", load: "Loaded", address: "https://example.com/ask" });
+
+  const kept = tab().history;
+  await go("example.com/away", "https://example.com/away");
+  device.ask("dialogRequested", { dialogId: "leave-1", kind: "beforeunload", message: "" });
+  await expect.element(question).toBeVisible();
+  await userEvent.click(question.getByRole("button", { name: "Stay" }));
+  await expect.poll(at).toEqual({ url: "https://example.com/ask", load: "Loaded", address: "https://example.com/ask" });
+  expect(tab().history).toEqual(kept);
+  await expect.element(padlock).toBeVisible();
+  await later(loadWaitSeconds);
+  expect(tab().load).toBe("Loaded");
 
   await go("http://example.com/plain", "http://example.com/plain");
   device.started("http://example.com/plain");
@@ -544,15 +614,42 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   await expect.poll(at).toEqual({ url: "http://example.com/plain", load: "Loaded", address: "http://example.com/plain" });
   expect(padlock.query()).toBeNull();
 
+  const openings = () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())).openings;
+  const intent = "intent://pay#Intent;scheme=examplepay;package=com.example.pay;end";
   const fallback = "https://example.com/pay";
-  device.ask("externalLinkRequested", { url: "intent://pay#Intent;scheme=examplepay;package=com.example.pay;end", handoff: "view", fallbackUrl: fallback });
-  const question = page.getByRole("alertdialog");
+  const offer = async (fallbackUrl: string | null) => {
+    const asked = count("openExternalLink");
+    device.ask("externalLinkRequested", { url: intent, handoff: "view", fallbackUrl });
+    await expect.element(question).toBeVisible();
+    await userEvent.click(question.getByRole("button", { name: "Open" }));
+    await expect.poll(() => count("openExternalLink")).toBe(asked + 1);
+    expect(device.called("openExternalLink").at(-1)?.url).toBe(intent);
+  };
+  const before = count("navigate");
+  device.ask("externalLinkRequested", { url: intent, handoff: "view", fallbackUrl: fallback });
   await expect.element(question).toBeVisible();
-  expect(device.called("navigate").map((n) => n.url)).not.toContain(fallback);
+  expect(count("navigate")).toBe(before);
   await userEvent.click(question.getByRole("button", { name: "Open" }));
   await expect.poll(() => device.called("navigate").at(-1)?.url).toBe(fallback);
+  expect(device.called("openExternalLink")).toMatchObject([{ url: intent }]);
   device.started(fallback);
   device.finished(fallback);
   await expect.poll(at).toEqual({ url: fallback, load: "Loaded", address: fallback });
-  expect(runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())).openings).toEqual([]);
-}, 120_000);
+  expect(openings()).toEqual([]);
+
+  opening = () => Promise.resolve({ status: "dispatched" });
+  await offer(fallback);
+  await expect.poll(() => ({ navigated: count("navigate"), openings: openings() })).toEqual({ navigated: before + 1, openings: [] });
+
+  opening = () => Promise.reject(Object.assign(new Error("Android refused the link"), { code: "EXTERNAL_LINK_DENIED" }));
+  await offer(fallback);
+  await expect.poll(() => openings().map((o) => o.failed)).toEqual([true]);
+  expect(count("navigate")).toBe(before + 1);
+  await userEvent.click(page.getByRole("button", { name: "Close", exact: true }));
+  await expect.poll(openings).toEqual([]);
+
+  opening = () => Promise.reject(unavailable);
+  await offer("http://example.com/pay");
+  await expect.poll(() => openings().map((o) => o.failed)).toEqual([true]);
+  expect(count("navigate")).toBe(before + 1);
+}, 180_000);

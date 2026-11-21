@@ -6,7 +6,7 @@ import { type ComponentProps, useRef, useState } from "react";
 import { canStepPrivate, type HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { historyFor } from "../gen/app__surface.ts";
 import { type BrowserInput, canCheckPrivateEmail } from "../gen/app__browserControls.ts";
-import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
+import { type Browser as BrowserModel, type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { Part } from "./page.vibe";
@@ -52,7 +52,7 @@ function secureOrigin(address: string): string {
 
 type PrivateToolbarProps = {
   active: Tab;
-  secure: boolean;
+  browser: BrowserModel;
   edit: (input: BrowserInput) => void;
   offered: (direction: HistoryDirection) => boolean;
   step: (direction: HistoryDirection) => void;
@@ -60,7 +60,7 @@ type PrivateToolbarProps = {
   checkEmail: (() => Promise<boolean>) | undefined;
 };
 
-function PrivateToolbar({ active, secure, edit, offered, step, navigate, checkEmail }: PrivateToolbarProps) {
+function PrivateToolbar({ active, browser, edit, offered, step, navigate, checkEmail }: PrivateToolbarProps) {
   const fieldRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
@@ -92,7 +92,7 @@ function PrivateToolbar({ active, secure, edit, offered, step, navigate, checkEm
             });
           }}><Mail aria-hidden /> Check email</Button>
         ) : undefined}>
-        <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} secure={draft === null && secure} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+        <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} secure={showsSecureIndicator(browser, draft !== null)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
           notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); setEmailNotice(undefined); }} onSubmit={go} />
       </BrowserToolbar>
       {emailNotice?.loadVersion === active.loadVersion && (
@@ -109,7 +109,7 @@ function PrivateToolbar({ active, secure, edit, offered, step, navigate, checkEm
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
   const { guide } = usePasswordGuide();
-  const { workspace, can, send, closeBrowser, navigatePrivate, stepPrivate, checkPrivateEmail } = useWorkspace();
+  const { workspace, can, send, closeBrowser, navigatePrivate, stepPrivate, checkPrivateEmail, opensWebsites } = useWorkspace();
   const layer = usePageLayer();
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
@@ -144,14 +144,14 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
-      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} secure={showsSecureIndicator(browser)} edit={edit} navigate={navigatePrivate}
+      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} browser={browser} edit={edit} navigate={navigatePrivate}
         offered={(direction) => !!layer && canStepPrivate(workspace.device, browser, historyFor(layer, active.id), direction)}
         step={(direction) => void stepPrivate(active.id, direction)}
         checkEmail={canCheckPrivateEmail(browser, active.id, browser.revision, "BrowserControlUser") ? () => checkPrivateEmail(active.id, browser.revision) : undefined} /> : (
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
-          <AddressBar ref={fieldRef} value={address} secure={showsSecureIndicator(browser)} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
+          <AddressBar ref={fieldRef} value={address} secure={showsSecureIndicator(browser, false)} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>
@@ -171,7 +171,8 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
           <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"}
             labels={{ failed: () => privateFailure ? "Private sign-in couldn’t open" : failure }}
-            message={privateFailure ? "Check your internet connection. If it still won’t open, update Android System WebView in the Play Store." : undefined}
+            message={privateFailure ? "Check your internet connection. If it still won’t open, update Android System WebView in the Play Store."
+              : !opensWebsites && active.load === "LoadFailed" ? "Websites open in Grace on the tablet. Here Grace opens only pages served from this computer." : undefined}
             onRetry={() => edit({ tag: "Reload" })} onFixWifi={() => { if (can(fixWifi)) void send(fixWifi); }} />
         </OverPage>
       )}

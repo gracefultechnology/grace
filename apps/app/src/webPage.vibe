@@ -1,16 +1,10 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
-import { NativePage, PageEvent, PageFailed, secureAddress } from "./nativePage.vibe"
-import { type PageId, Url } from "./nativePage.schema.ts"
+import { NativePage, PageEvent, PageFailed } from "./nativePage.vibe"
+import { LoopbackPage, type PageId, SecurePage, Url } from "./nativePage.schema.ts"
 import { webView } from "./surfacePlugin.ts"
+import type { Load } from "../gen/app__browser.effect.vibe"
 
-type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined }
-
-const loopbackHosts = ["localhost", "127.0.0.1", "[::1]"]
-
-const opensHere = (address: string) => {
-  const host = URL.parse(address)?.hostname
-  return host !== undefined && (loopbackHosts.includes(host) || host.endsWith(".localhost"))
-}
+type Frame = { element: HTMLIFrameElement; history: string[]; at: number; going: string | undefined; restoring: boolean }
 
 export const websites = webView.document.createElement("div")
 
@@ -20,18 +14,23 @@ export function webPage() {
     const events = try Queue.unbounded<PageEvent>()
     const frames = new Map<PageId, Frame>()
 
+    const changed = (id: PageId, frame: Frame, url: string, result: Load) => Queue.offerUnsafe(events, PageEvent.Changed({
+      id, url: Url.make(url), loading: false, result, secure: Schema.is(SecurePage)(url), back: frame.at > 0, forward: frame.at + 1 < frame.history.length
+    }))
     const go = (id: PageId, frame: Frame, url: string) => {
-      const opens = opensHere(url)
+      const opens = Schema.is(LoopbackPage)(url)
       frame.going = opens ? url : undefined
+      frame.restoring = false
       if (opens) frame.element.src = url
       Queue.offerUnsafe(events, PageEvent.Started({ id, url: Url.make(url) }))
-      if (!opens) Queue.offerUnsafe(events, PageEvent.Changed({ id, url: Url.make(url), loading: false, result: "LoadFailed", secure: false, back: frame.at > 0, forward: frame.at + 1 < frame.history.length }))
+      if (!opens) changed(id, frame, url, "LoadFailed")
     }
     const loaded = (id: PageId, frame: Frame) => {
-      const url = frame.going === undefined ? undefined : Url.make(frame.going)
+      const url = frame.going
       frame.going = undefined
-      if (url === undefined) Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
-      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded", secure: secureAddress(url), back: frame.at > 0, forward: frame.at + 1 < frame.history.length }))
+      if (url !== undefined) return changed(id, frame, url, "Loaded")
+      frame.restoring = !frame.restoring
+      if (frame.restoring) frame.element.setAttribute("src", frame.element.src)
     }
     const remove = (id: PageId) => {
       frames.get(id)?.element.remove()
@@ -53,6 +52,7 @@ export function webPage() {
     try addFinalizer(() => sync(() => { for (const id of [...frames.keys()]) remove(id) }))
     return {
       privateSignIn: false,
+      opensWebsites: false,
       readPrimaryHeading: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
       hasNavigationMenu: () => Effect.succeed(false),
       observeLinks: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
@@ -69,7 +69,7 @@ export function webPage() {
           element.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms", "allow-popups")
           element.hidden = true
           Object.assign(element.style, { position: "fixed", border: "0", left: "0", top: "0", width: "0", height: "0", pointerEvents: "none" })
-          const frame: Frame = { element, history: [url], at: 0, going: undefined }
+          const frame: Frame = { element, history: [url], at: 0, going: undefined, restoring: false }
           element.addEventListener("load", () => loaded(id, frame))
           frames.set(id, frame)
           go(id, frame, url)
@@ -93,6 +93,7 @@ export function webPage() {
       back: (id) => step(id, -1),
       forward: (id) => step(id, 1),
       reload: (id) => step(id, 0),
+      stop: (id) => on(id, () => undefined),
       destroy: (id) => sync(() => remove(id)),
       reply: unasked,
       grant: unasked,
