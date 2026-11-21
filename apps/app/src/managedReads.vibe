@@ -18,7 +18,7 @@ const dateField = Schema.String.check(Schema.makeFilter((text) => Number.isFinit
 schema Intent { view: "Email" | "Calendar"; returning: boolean; owner?: string; occurrence?: string }
 const nullableText = Schema.NullOr(Schema.String)
 schema MailMetadata { historyId?: nullableText }
-export schema MailRow { metadata?: MailMetadata; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
+export schema MailRow { metadata?: MailMetadata; labels?: readonly string[]; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
 export schema EventRow { etag?: nullableText; editable?: boolean; seriesId?: nullableText; timezone?: nullableText; externalId: idField; title: string; description: string; location: string; startAt: dateField; endAt: dateField; isAllDay: boolean }
 const Folder = Schema.Literals(["inbox", "sent", "drafts", "trash"])
 export type ManagedFolder = typeof Folder.Type
@@ -92,6 +92,10 @@ type Scope =
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
 type Mail = { folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
+export function inboxTrashVersion(mail: Mail) {
+  const row = mail.selected?.message
+  return mail.folder !== "trash" && row?.labels?.includes("INBOX") && !row.labels.includes("TRASH") ? row.metadata?.historyId : undefined
+}
 type Calendar = { window: ViewWindow; proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
@@ -446,7 +450,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if (saved.operationId || saved.recipient || saved.subject || saved.text) return false
       try keepMailDraft(accountId, email, { recipient: proposal.recipient, subject: proposal.subject, text: proposal.text }, proposal.replyTo)
     } else if (proposal.kind === "trash") {
-      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", proposal.id, proposal.version) ||
+      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown) ?? "", proposal.id, proposal.version) ||
         !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
     } else {
       if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return false
@@ -484,7 +488,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
     if (action.kind === "trash" && (shown.kind !== "mail" || !shown.selected ||
-      !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", action.id, action.version))) return undefined
+      !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown) ?? "", action.id, action.version))) return undefined
     if (action.kind === "appointment" && action.action !== "create") {
       if (shown.kind !== "calendar") return undefined
       const target = action.seriesFor === undefined ? shown.selected
