@@ -2924,8 +2924,12 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Collapse"));
     const localWrite = localStorage.setItem.bind(localStorage);
     const sessionWrite = sessionStorage.setItem.bind(sessionStorage);
+    let delayedCheckpoint: { key: string; value: string } | undefined;
     const unavailable = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (this === localStorage && key.startsWith("grace/guided-task-")) throw new DOMException("Storage full", "QuotaExceededError");
+      if (this === localStorage && key.startsWith("grace/guided-task-")) {
+        delayedCheckpoint = { key, value };
+        throw new DOMException("Storage unavailable", "TimeoutError");
+      }
       (this === localStorage ? localWrite : sessionWrite)(key, value);
     });
     try {
@@ -2935,6 +2939,8 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     } finally {
       unavailable.mockRestore();
     }
+    if (!delayedCheckpoint) throw new Error("The first attempt must reach durable storage");
+    localWrite(delayedCheckpoint.key, delayedCheckpoint.value);
     await tap(button("Start read plan"));
 
     await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
