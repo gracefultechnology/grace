@@ -838,6 +838,13 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const { agent, requests, answer, created, refused } = deviceAgent();
   const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
   const browserState = await signInPrivately(native, undefined, { native: true, agent, openPrivateEmail: openEmail });
+  await native.started("tab-3");
+  await native.report("tab-3", "https://issuer.example/private?ref=one-time", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => browserState().tabs.find((tab) => tab.id === 3)?.load).toBe("Loaded");
+  const privateAddress = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(privateAddress).toHaveValue("https://utility.example");
+  await expect.element(privateAddress).toHaveAccessibleDescription("");
+  expect(JSON.stringify(browserState())).not.toContain("one-time");
   expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
