@@ -162,11 +162,13 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       if (previous !== undefined) page.clearGuide(previous.id) catch () => undefined
       const start = (try currentContext())
       if (start === undefined) return changed
+      const account = decisionSession(native, fixture) catch () => null
+      if ((try currentContext())?.key !== start.key) return changed
       const initial = page.observeLinks(start.id) catch () => undefined
       const initialState = guidedPageState(initial, start.url.href, true)
-      if ((try currentContext())?.key !== start.key) return changed
+      const sameSession = account === null || account === undefined || (tryPromise(() => account.current()) catch () => false)
+      if (!sameSession || (try currentContext())?.key !== start.key) return changed
       if (initialState !== "Ordinary" && initialState !== "PublicLinks") return initialState === "PrivateForm" ? privateForm : unobservable
-      const account = decisionSession(native, fixture) catch () => null
       if (account === null) return unavailableBecause("I couldn’t reach Grace to verify your sign-in.")
       if (account === undefined) return unavailableBecause("Sign in to Grace to get help choosing a link.")
       const signedIn = (try setup.get()).graceAccount
@@ -201,10 +203,10 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             for (let index = 0; index < round.length; index += CLEF_DECISION_LIMITS.candidates) {
               const candidates = round.slice(index, index + CLEF_DECISION_LIMITS.candidates)
               const options = candidates.map(({ description }, index) => ({ id: String(index + 1), label: description }))
-              if (!(await account.current()) || (await runPromise(currentContext()))?.key !== start.key) return { retry: false }
+              if ((await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
               const fresh = await runPromise(Effect.option(page.observeLinks(start.id)))
               if (Option.isNone(fresh) || fresh.value.documentId !== snapshot.documentId ||
-                  (await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
+                  !(await account.current()) || (await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
               const state = guidedPageState(fresh.value, start.url.href, true)
               if (state !== "Ordinary" && state !== "PublicLinks") return { retry: false, stopped: state === "PrivateForm" ? privateForm : unobservable }
               const currentLinks = links(fresh.value, start.url, target, state === "PublicLinks")

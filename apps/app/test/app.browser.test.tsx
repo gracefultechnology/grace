@@ -2596,6 +2596,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    await tap(guide);
+    await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
+    expect(hostedChoices).toBe(0);
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
