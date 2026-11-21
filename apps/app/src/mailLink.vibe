@@ -1,7 +1,7 @@
 // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does"
 import { linkDestination, messageLinkParts } from "./messageLinks.vibe"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
-import { apply as applyMail, type Event as MailEvent, type Mailbox, selectedMessageIsCurrent } from "../gen/app__email.effect.vibe"
+import { enabled as mailEnabled, type Event as MailEvent, type Mailbox, selectedMessageIsCurrent, step as previewMail } from "../gen/app__email.effect.vibe"
 import { openEmailLink } from "../gen/app__handoffs.effect.vibe"
 import { openSource, showsMail } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
@@ -67,8 +67,8 @@ export effect function chooseMailLink(selection: LinkSelection, choice: LinkChoi
     return Effect.as(box.send({ type: "cancelLink" }, "MailUser", stillReading), true) catch () => false
   }
   const event: MailEvent = choice === "open" ? { type: "openLink", link: destination } : { type: "confirmLink", link: destination, confirmed: true }
-  const released = applyMail(reader, event, "MailUser") catch () => undefined
-  if (!released) return false
+  if (!mailEnabled(reader, event, "MailUser")) return false
+  const released = previewMail(reader, event, "MailUser")
   if (released.link.status === "LinkHeld") {
     return Effect.as(box.send(event, "MailUser", stillReading), true) catch () => false
   }
