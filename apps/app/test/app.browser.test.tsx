@@ -3636,6 +3636,13 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
   };
 
   const calendars = async () => (await calendarState()).boxes;
+  const resumeFromSelectedEmail = async () => {
+    await tap(button("Home"));
+    await tap(button(/^Email/));
+    await tap(button(/Riverview Eye Clinic/));
+    await routeTo(page.getByText(selectedBody, { exact: true }));
+    await tap(button("Resume Grace"));
+  };
 
   try {
     await tap(button("Internet"));
@@ -3659,11 +3666,7 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
     await tap(button("Check page"));
     await routeTo(plan.getByText(/^Open the email/));
 
-    await tap(button("Home"));
-    await tap(button(/^Email/));
-    await tap(button(/Riverview Eye Clinic/));
-    await routeTo(page.getByText(selectedBody, { exact: true }));
-    await tap(button("Resume Grace"));
+    await resumeFromSelectedEmail();
     await tap(button("Check email"));
     await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
     const previous = await calendars();
@@ -3671,11 +3674,7 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
     await restart();
     await tap(button("Ask Grace"));
     await routeTo(plan.getByText("Paused", { exact: true }));
-    await tap(button("Home"));
-    await tap(button(/^Email/));
-    await tap(button(/Riverview Eye Clinic/));
-    await routeTo(page.getByText(selectedBody, { exact: true }));
-    await tap(button("Resume Grace"));
+    await resumeFromSelectedEmail();
     await tap(button("Check original email"));
     await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
     await say(prepare);
