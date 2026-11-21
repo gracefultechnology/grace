@@ -645,14 +645,17 @@ pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
 
 ## Story: Read the Google mail and calendar I connected
 
-> As a person using Grace, I can open my managed Google inbox or upcoming
-> calendar in Grace, including when I start from the tablet and sign in on
-> Grace's web page. I choose the message or appointment I want to open.
+> As a person using Grace, I can search my connected Gmail folders and browse
+> my primary Google calendar by week, month or day. I can start on my tablet,
+> sign in on Grace's web page and choose the message or appointment I want.
 
 ### Managed reads show only the matching signed-in account and the capability it granted
 
-The hosted read views show the Inbox and upcoming primary calendar, with
-read access by default. A message opens into a
+The hosted Gmail view opens in Inbox. The person can choose Sent, Drafts
+or Trash and search within that folder. Inbox unread and Drafts counts come
+from the connected account's provider. The calendar opens on the current
+week. Changing the week, month or selected day shows appointments from the
+chosen dates. Both views start with read access. A message opens into a
 plain-text preview for the chosen reference, never executable HTML.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. A

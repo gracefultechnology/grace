@@ -2,8 +2,8 @@
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { type CalendarSource, type CalRow, changeOf, confirmationOf, deletionOf, shownReminders, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { type Machine as CalendarMachine, enabled, entryAt, hasEditing, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
-import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
+import { type Machine as CalendarMachine, enabled, entryAt, hasEditing, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { enabled as admits, guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Watched } from "./accounts.vibe"
@@ -13,50 +13,18 @@ import { messageRecord } from "../gen/app__email.effect.vibe"
 import { Machine as Notices } from "../gen/app__notices.effect.vibe"
 import { NoticeHost } from "./notices.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { day, dayOf, instant, midnight, navigation, windowOf } from "./calendarWindow.vibe"
 import { usesManagedSurfaces } from "./managedReads.vibe"
 import { webView } from "./surfacePlugin.ts"
 
-export const day = 24 * 60 * 60 * 1000
+export { day, dayOf, instant, midnight, navigation, shownDays } from "./calendarWindow.vibe"
+
 export const hour = 60 * 60 * 1000
 export const horizon = 60 * day
-
-const utc = (n: number) => new Date(n * day)
-
-export function dayOf(at: number) {
-  const d = new Date(at)
-  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / day)
-}
-
-export function instant(n: number, minutes: number) {
-  const d = utc(n)
-  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, minutes).getTime()
-}
-
-export const midnight = (n: number) => instant(n, 0)
 
 const minutesOf = (at: number) => {
   const d = new Date(at)
   return d.getHours() * 60 + d.getMinutes()
-}
-
-export function shownDays(mode: ViewMode, anchor: number) {
-  const { first, until } = shown(mode, anchor)
-  return Array.from({ length: until - first }, (_, i) => first + i)
-}
-
-function windowOf(days: Days): ViewWindow {
-  const { first, until } = shown(days.mode, days.anchorDay)
-  return { ...days, fromTime: midnight(first), untilTime: midnight(until) }
-}
-
-function exact(w: ViewWindow) {
-  const { first, until } = shown(w.mode, w.anchorDay)
-  return w.fromTime < w.untilTime && dayOf(w.fromTime) === first && dayOf(w.untilTime) === until
-}
-
-export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
-  const window = windowOf(moved(w, kind, chosen))
-  return { window, kind, verified: exact(window) }
 }
 
 const opened = (w: ViewWindow) => w.untilTime - w.fromTime >= day
