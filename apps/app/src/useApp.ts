@@ -48,7 +48,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -261,6 +261,11 @@ const unnoted = () => undefined;
 export function useCalendarNote() {
   const news = Option.getOrUndefined(useRuntime().runSync(Effect.serviceOption(CalendarNews)));
   return useSyncExternalStore(news?.notes.subscribe ?? silence, news?.notes.current ?? unnoted);
+}
+
+export function useRecoveredCalendarDrafts() {
+  const news = Option.getOrUndefined(useRuntime().runSync(Effect.serviceOption(CalendarNews)));
+  return useSyncExternalStore(news?.recoveredDrafts.subscribe ?? silence, news?.recoveredDrafts.current ?? unnoted);
 }
 
 export type MailWriter = NonNullable<ReturnType<typeof useMail>>;

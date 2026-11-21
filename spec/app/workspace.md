@@ -1179,7 +1179,10 @@ write flow keeps only a reconciliation marker and an adopted occurrence
 reference under its original account and calendar when available. A known
 occurrence can be checked against a fresh provider read under its matching
 source identity. Without an occurrence reference, the save stays paused for
-explicit replacement review. A future calendar save needs
+explicit replacement review. If Calendar still shows the draft fenced to that
+task, it explains that the appointment may already be saved. The person can
+return to the list to check the provider’s calendar, and the draft cannot
+submit again. A future calendar save needs
 fresh observation of the original mail receipt and its own separate approval.
 
 ```quint

@@ -164,10 +164,12 @@ export type Reminded = { readonly key: number; readonly id: string }
 
 export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
+  readonly recoveryRefreshes: Stream.Stream<number>
   publish(report: CalendarReport): void!!
   openRecoveredSaveList(owner: string, calendar: string): void!!
   verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): boolean!!
   readonly notes: Watched<CalendarNote | undefined>
+  readonly recoveredDrafts: Watched<{ task: string; occurrences: readonly string[] } | undefined>
   open(key: number, id: string, how: Opening): void!!
   edit(key: number, id: string): void!!
   add(day: number): void!!
@@ -354,6 +356,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const notices = try Notices
   const setup = try Setup
   const hub = try PubSub.unbounded<CalendarReport>()
+  const recoveryRefreshes = try PubSub.unbounded<number>()
   const publish = (report: CalendarReport) => Effect.asVoid(PubSub.publish(hub, report))
   const lead = try Effect.orDie(shelf.calendar(tablet))
 
@@ -402,6 +405,30 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
 
   const listeners = new Set<() => void>()
   const board: { note: CalendarNote | undefined; next: number } = { note: undefined, next: 1 }
+  let recoveredDrafts: { task: string; occurrences: readonly string[] } | undefined
+  const recoveryContext = Stream.changes(Stream.map(workspace.changes, (state) =>
+    JSON.stringify([state.assistant.taskId, state.plan.saveRecovery])))
+  try fork.scoped Stream.runForEach(Stream.merge(Stream.as(recoveryContext, undefined), Stream.as(registry.changes, undefined)), effect () => {
+    const state = try workspace.get()
+    const task = state.assistant.taskId
+    const marker = state.plan.saveRecovery
+    if (marker.tag !== "GuidedSaveReconcile" || marker.occurrence !== "" || Option.isNone(connector)) return
+    const account = (try registry.get()).accounts.find((source) => source.use.calendar && source.address === marker.owner)
+    const box = account === undefined ? undefined : try boxOf(account.id)
+    const occurrences: string[] = []
+    if (box !== undefined && account !== undefined && (try recovery.canAccess(state))) {
+      const view = try box.get()
+      const remote = connector.value.calendar(account)
+      for (const entry of view.entries) {
+        const { identity } = entry
+        if (entry.phase === "Editing" && !entry.hasSaved && identity.owner === marker.owner && identity.calendarId === marker.calendar &&
+            (try remote.isGuidedCreateFenced(identity, task))) occurrences.push(identity.occurrenceId)
+      }
+    }
+    if ((try workspace.get()).assistant.taskId !== task) return
+    recoveredDrafts = { task, occurrences }
+    listeners.forEach((listener) => listener())
+  })
 
   effect function ring(row: string) {
     board.note = { id: board.next, row }
@@ -551,7 +578,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   })
 
   return {
-    reports: Stream.fromPubSub(hub), publish,
+    reports: Stream.fromPubSub(hub), recoveryRefreshes: Stream.fromPubSub(recoveryRefreshes), publish,
     openRecoveredSaveList: effect (owner, calendar) => {
       const state = try workspace.get()
       const marker = state.plan.saveRecovery
@@ -574,7 +601,8 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       if (ready === undefined || ready.selectedId !== identity.occurrenceId || live.assistant.taskId !== state.assistant.taskId ||
           live.assistant.workVersion !== state.assistant.workVersion) return
       if (!ready.opened) box.send({ type: "openCalendar", owner, calendarId: calendar, timezone: ready.timezone }, "ViewUser") catch () => undefined
-      box.send({ type: "changeOccurrence", id: identity.occurrenceId, command: { tag: "CancelEditing" } }, "ViewUser") catch () => undefined
+      const dismissed = box.send({ type: "changeOccurrence", id: identity.occurrenceId, command: { tag: "CancelEditing" } }, "ViewUser") catch () => undefined
+      if (dismissed !== undefined) try PubSub.publish(recoveryRefreshes, account.id)
     },
     verifySaved: effect (key, view, occurrence, expected) => {
       const account = (try registry.get()).accounts.find((candidate) => candidate.id === key && candidate.use.calendar && candidate.address === view.owner)
@@ -588,6 +616,10 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       },
       current: () => board.note
     },
+    recoveredDrafts: { subscribe: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    }, current: () => recoveredDrafts },
     open,
     edit,
     add: effect (n) => {
@@ -622,7 +654,11 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     const arrives = (shows: (w: Workspace) => boolean) => Stream.filter(Stream.drop(Stream.changes(Stream.map(workspace.changes, shows)), 1), (now) => now)
     const reopened = arrives((w) => w.device.surface === "Calendar")
     const reconnected = arrives((w) => w.device.connectivity === "Online")
-    const again = Stream.mapEffect(Stream.mergeAll([Stream.drop(Stream.tick("5 minutes"), 1), Stream.as(signedIn, undefined), Stream.as(reopened, undefined), Stream.as(reconnected, undefined)], { concurrency: "unbounded" }), () => spanOf(lead))
+    const recovered = Stream.filter(news.recoveryRefreshes, (id) => id === account.id)
+    const again = Stream.mapEffect(Stream.mergeAll([
+      Stream.drop(Stream.tick("5 minutes"), 1), Stream.as(signedIn, undefined), Stream.as(reopened, undefined),
+      Stream.as(reconnected, undefined), Stream.as(recovered, undefined)
+    ], { concurrency: "unbounded" }), () => spanOf(lead))
     const fill = Stream.runForEach(Stream.merge(grown, again), effect (span) => {
       const v = provided(try box.get())
       const feed = link.feed({ ...v, window: { ...v.window, ...span } })
