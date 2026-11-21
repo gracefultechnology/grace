@@ -921,6 +921,7 @@ it.skipIf(!inject("realModel"))('Ask in my own words to sign in, answered by the
   };
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   expect(await answered("Please sign me in")).toBe("");
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "https://utility.example/bills{Enter}"));
   await expect.poll(() => native.calls("createSurface").length).toBe(1);
