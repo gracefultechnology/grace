@@ -49,7 +49,7 @@ type DraftStorage = DraftUnstored | DraftSaving | DraftDeleting | DraftSaved | D
 type DraftContent = { to: str, cc: Set[str], bcc: Set[str], subject: str, body: str }
 type DraftSnapshot = { id: str, version: int, content: DraftContent, attachments: List[F::SavedFile], replyTo: str }
 type MessageTarget = { ref: str, revision: int }
-type Bill = { ref: str, origin: str, account: str, confirmed: bool }
+type Bill = { ref: str, sourceRef: str, origin: str, account: str, confirmed: bool }
 type Warning = { ref: str, generation: int, evidence: str }
 type LinkStatus = NoLink | LinkHeld | LinkReleased
 type LinkRequest = { ref: str, link: str, status: LinkStatus }
@@ -71,7 +71,7 @@ type Mailbox = {
 }
 pure val noRetiredDrafts: str -> int = Map()
 pure val emptyContent: DraftContent = { to: "", cc: Set(), bcc: Set(), subject: "", body: "" }
-pure val noBill: Bill = { ref: "", origin: "", account: "", confirmed: false }
+pure val noBill: Bill = { ref: "", sourceRef: "", origin: "", account: "", confirmed: false }
 pure val noWarning: Warning = { ref: "", generation: -1, evidence: "" }
 pure val noLink: LinkRequest = { ref: "", link: "", status: NoLink }
 pure val initial: Mailbox = {
@@ -532,25 +532,27 @@ choice; a different source, account, invoice, origin or read generation needs a
 fresh displayed confirmation. The host authenticates the complete person's
 choice; planner or connector identity cannot supply it.
 
-The bill belongs to the selected message: its source is always `messageRef`,
-so it holds no separate source reference. A message Grace flags as a scam never
-becomes a bill source (next rule).
+The connector names the message it read. Grace keeps that reference with the
+bill and checks it against the current selection before confirmation and
+handoff. An older stored candidate without a verified source is cleared
+without disturbing the mailbox or its outgoing sends. A message Grace flags
+as a scam never becomes a bill source (next rule).
 
 ```quint
 type BillSelection = { source: I::MessageIdentity, generation: int, billRef: str, origin: str, account: str }
 pure def billSelection(m: Mailbox): BillSelection = {
-  source: messageIdentity(m, m.messageRef), generation: m.generation,
+  source: messageIdentity(m, m.bill.sourceRef), generation: m.generation,
   billRef: m.bill.ref, origin: m.bill.origin, account: m.bill.account
 }
-pure def canReceiveBill(m: Mailbox, generation: int, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): bool =
+pure def canReceiveBill(m: Mailbox, generation: int, ref: str, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): bool =
   by == MailConnector and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle and
-  generation == m.generation and m.messageRef != "" and billRef != "" and origin != "" and billAccount != "" and verified and
+  generation == m.generation and ref == m.messageRef and ref != "" and billRef != "" and origin != "" and billAccount != "" and verified and
   m.warning.evidence == ""
-pure def receiveBill(m: Mailbox, generation: int, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): Mailbox =
-  { ...m, bill: { ref: billRef, origin: origin, account: billAccount, confirmed: false } }
+pure def receiveBill(m: Mailbox, generation: int, ref: str, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): Mailbox =
+  { ...m, bill: { ref: billRef, sourceRef: ref, origin: origin, account: billAccount, confirmed: false } }
 pure def canConfirmBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
   by == MailUser and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle and
-  m.bill.ref != "" and confirmed and selection == billSelection(m)
+  m.bill.ref != "" and m.bill.sourceRef == m.messageRef and confirmed and selection == billSelection(m)
 pure def confirmBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): Mailbox =
   { ...m, bill: { ...m.bill, confirmed: true } }
 pure def lawStaleBillSelectionCannotConfirm(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
@@ -559,9 +561,9 @@ pure def lawConfirmationKeepsDisplayedBill(m: Mailbox, selection: BillSelection,
   canConfirmBill(m, selection, confirmed, by) implies
     billSelection(confirmBill(m, selection, confirmed, by)) == selection
 pure def billReady(m: Mailbox): bool =
-  m.bill.confirmed and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
+  m.bill.confirmed and m.bill.sourceRef == m.messageRef and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
 pure def alwaysBillProvenance(m: Mailbox): bool =
-  (m.bill.ref != "" implies (m.messageRef != "" and m.bill.origin != "" and m.bill.account != "")) and
+  (m.bill.ref != "" implies (m.messageRef != "" and m.bill.sourceRef == m.messageRef and m.bill.origin != "" and m.bill.account != "")) and
   (m.bill.confirmed implies m.bill.ref != "")
 pure def sometimesBillReady(m: Mailbox): bool = billReady(m)
 ```
