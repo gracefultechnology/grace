@@ -2520,12 +2520,23 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
 
     await tap(showLink);
     await routeTo(status("Link guide result"));
+    url = "https://example.org/other-desk";
+    documentId = "other-desk";
+    heading = siteLabel;
+    await native.report("tab-1", url, 100);
+    await tap(resume);
+    const checkPage = button("Check page");
+    const readsBeforeWrongAddress = native.calls("readPage").length;
+    await tap(checkPage);
+    await routeTo(status("Page check result"));
+    expect(native.calls("readPage")).toHaveLength(readsBeforeWrongAddress);
+    expect(pageReceipt.query()).toBeNull();
+
     url = destination;
     documentId = "service-page";
     heading = requested;
     await native.report("tab-1", url, 100);
     await tap(resume);
-    const checkPage = button("Check page");
     await tap(checkPage);
     await routeTo(status("Page check result"));
     await expect.element(pending(siteLabel)).toHaveAttribute("aria-current", "step");
