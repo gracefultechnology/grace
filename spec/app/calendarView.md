@@ -370,6 +370,13 @@ the returned ID identifies the provider’s first event and its series keeps
 the same ID for all subsequent occurrences. A different account, calendar,
 revision, occupied ID or repeated receipt cannot replace an entry.
 
+If the create reply is lost, Grace keeps the original request. Under the
+same account grant, approving the same details again or reopening the
+calendar lets Grace ask Google for that request’s receipt. A provider
+without that guarantee leaves the appointment pending. Changed details or
+a replacement grant also leave it pending. Other provider appointments
+can still appear with their own details while recovery is unavailable.
+
 ```quint
 type CreatedReceipt = { owner: str, calendarId: str, localId: str, providerId: str, revision: int }
 pure def withProviderId(localId: str, saved: CalendarView, providerId: str): CalendarView =

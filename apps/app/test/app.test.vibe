@@ -1,5 +1,6 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
 import { assert, it } from "@effect/vitest"
+import { Digest } from "effect/crypto"
 import { inject } from "vitest"
 import { approveSave, beginEdit, create, edit, initial as noEntry, save, saveFailed, type Calendar } from "../gen/app__calendar.effect.vibe"
 import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
@@ -396,6 +397,35 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       }
       const copied = try recover
       const added = try calendar.write(reapproved, view([eyeCheck, reapproved]))
+      const { secret: replacementKey } = try signIn(cloud)
+      const rotated = effect {
+        provide connectorAt(replacementKey) {
+          const replacement = (try Connector).calendar(gmail)
+          return [(try replacement.write(reapproved, view([]))).succeeded,
+            Array.from(try Stream.runCollect(replacement.feed(view([])))).some(({ incoming }) => incoming.committed.title === details.title)]
+        }
+      }
+      const withReplacement = try rotated
+      try Effect.try(() => assert.deepStrictEqual(withReplacement, [false, false]))
+      const { connectionId: grantId } = (try googleOwnerGrants(secret))[0]
+      const upgraded = effect {
+        provide Layer.merge(KeyValueStore.layerMemory, Digest.layerWebCrypto) {
+          const storage = try KeyValueStore.KeyValueStore
+          const digest = try Digest.Digest
+          const hash = (fields: readonly unknown[]) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(JSON.stringify(fields))),
+            (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
+          const original = try hash([cloud, gmail.provider, grantId, gmail.address, identity.owner, identity.calendarId, identity.occurrenceId, fresh.revision])
+          const body = { title: details.title, description: details.notes, location: details.location, startAt: new Date(details.startAt).toISOString(),
+            endAt: new Date(details.endAt).toISOString(), timeZone: details.timezone, calendarId: identity.calendarId, grantId }
+          const fingerprint = try hash([body, identity.sourceAccount, identity.sourceRef, details.participant, details.seriesId, details.recurrence, details.reminderEnabled, details.leadTime, details.important])
+          try storage.set("calendar-create:" + original, fingerprint)
+          provide connectorAt(secret) {
+            return try (try Connector).calendar(gmail).write(reapproved, view([reapproved]))
+          }
+        }
+      }
+      const migrated = try upgraded
+      try Effect.try(() => assert.deepStrictEqual(migrated, added))
       const created = { owner: identity.owner, calendarId: identity.calendarId, localId: identity.occurrenceId, providerId: added.providerId ?? "", revision: added.revision }
       const pending = view([eyeCheck, reapproved])
       try Effect.try(() => assert.isTrue(canStoreCreated(pending, created, "ViewStore")))

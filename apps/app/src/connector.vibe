@@ -317,7 +317,9 @@ data CreateBinding {
 schema CalendarCreateClaim { grantId: Schema.NonEmptyString; mutation: Schema.NonEmptyString; fingerprint: Schema.NonEmptyString; providerId?: Schema.NonEmptyString }
 
 effect function calendarCreates(service: string) {
-  const journal = KeyValueStore.toSchemaStore(try KeyValueStore.KeyValueStore, CalendarCreateClaim)
+  const storage = try KeyValueStore.KeyValueStore
+  const journal = KeyValueStore.toSchemaStore(storage, CalendarCreateClaim)
+  const legacyKeys = try Effect.cached(Effect.map(storage.keys, (keys) => new Set(keys.filter((key) => /^calendar-create:[0-9a-f]{64}$/.test(key)))))
   const digest = try Digest.Digest
   const hash = (text: string) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(text)),
     (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
@@ -326,14 +328,31 @@ effect function calendarCreates(service: string) {
     if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && entry.phase !== "Editing")) return CreateBinding.Unknown()
     if (approve && entry.phase === "Editing" && entry.approvedRevision !== entry.revision) return CreateBinding.Unknown()
     const scope = try hash(JSON.stringify([service, account.provider, account.address.toLowerCase(), calendarId, occurrenceId]))
-    const at = "calendar-create:" + scope
+    const at = "calendar-create/occurrence/" + scope
+    const providerKey = (revision: number) => hash(JSON.stringify([service, account.provider, grantId, account.address, owner, calendarId, occurrenceId, revision]))
     const read = effect {
       const stored = journal.get(at) catch effect () => { throw new Unreachable() }
       return Option.getOrUndefined(stored)
     }
-    if (!approve && (try read) === undefined) return CreateBinding.Unknown()
+    const readLegacy = effect {
+      const keys = legacyKeys catch effect () => { throw new Unreachable() }
+      if (keys.size === 0) return undefined
+      for (let revision = 1; revision <= entry.revision; revision++) {
+        const mutation = try providerKey(revision)
+        const oldKey = "calendar-create:" + mutation
+        if (!keys.has(oldKey)) continue
+        const fingerprint = storage.get(oldKey) catch effect () => { throw new Unreachable() }
+        if (fingerprint === undefined) continue
+        const providerId = storage.get(oldKey + ":receipt") catch effect () => { throw new Unreachable() }
+        return { grantId, mutation, fingerprint, ...providerId === undefined ? {} : { providerId } }
+      }
+      return undefined
+    }
+    if (!approve && (try read) === undefined && (try readLegacy) === undefined) return CreateBinding.Unknown()
     const record = effect {
-      const previous = try read
+      const current = try read
+      const previous = current ?? (try readLegacy)
+      if (current === undefined && previous !== undefined) journal.set(at, previous) catch effect () => { throw new Unreachable() }
       if (previous === undefined && !approve) return CreateBinding.Unknown()
       if (previous !== undefined && previous.grantId !== grantId) return CreateBinding.Pending()
       const fields = event({ ...entry, hasSaved: false })
@@ -344,7 +363,7 @@ effect function calendarCreates(service: string) {
       if (previous !== undefined && previous.fingerprint !== fingerprint) return CreateBinding.Pending()
       if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId })
       if (previous !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
-      const claim = previous ?? { fingerprint, grantId, mutation: try hash(JSON.stringify([scope, grantId, entry.revision])) }
+      const claim = previous ?? { fingerprint, grantId, mutation: try providerKey(entry.revision) }
       if (previous === undefined) journal.set(at, claim) catch effect () => { throw new Unreachable() }
       const saved = send(body, claim.mutation) catch effect (cause) => {
         if (previous === undefined && (cause instanceof NeedsSignIn || (cause instanceof ProviderRefused && [400, 403, 404, 405, 415, 422].includes(cause.status))))
