@@ -95,7 +95,8 @@ pure def save(p: Preferences, by: PreferenceActor): Preferences =
 
 Acknowledging a pending snapshot changes the durable options, never the
 possibly newer session preview. A failed save keeps the session's choice,
-exposes Retry and preserves the previous durable options. Callbacks from
+exposes Retry and preserves the previous durable options; Grace also tries a
+failed save again each minute, wherever the choice was made. Callbacks from
 superseded writes or a previous session are refused.
 
 ```quint
