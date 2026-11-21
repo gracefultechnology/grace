@@ -133,17 +133,17 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
       if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return undefined
-      const state = guidedPageState(before, url)
+      const state = guidedPageState(before, url, "CheckPublicDocument")
       if (state === "PrivateForm") return state
-      if (state !== "Ordinary" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+      if (state === "Unavailable" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
       const primary = native.readPrimaryHeading(id) catch () => undefined
       const observed = normalizedHeading(primary?.text)
       if (!primary || primary.url !== url || observed === "" || observed !== normalizedHeading(step.subject)) return undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId) return undefined
-      const afterState = guidedPageState(after, url)
+      const afterState = guidedPageState(after, url, "CheckPublicDocument")
       if (afterState === "PrivateForm") return afterState
-      if (afterState !== "Ordinary") return undefined
+      if (afterState === "Unavailable") return undefined
       return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
         [url.replace(/#.*$/u, "")], "Open page: " + observed)
     }
@@ -154,9 +154,9 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const url = try Effect.option(Effect.try(() => new URL(tabUrl(tab))))
       if (Option.isNone(url) || (url.value.protocol !== "https:" && url.value.protocol !== "http:")) return undefined
       const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
-      const state = guidedPageState(snapshot, url.value.href)
+      const state = guidedPageState(snapshot, url.value.href, "CheckPublicDocument")
       if (state === "PrivateForm") return state
-      if (snapshot === undefined || state !== "Ordinary" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      if (snapshot === undefined || state === "Unavailable" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
       return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId },
         [snapshot.documentId, url.value.origin + url.value.pathname], "Open page: " + url.value.origin + url.value.pathname)
     }
