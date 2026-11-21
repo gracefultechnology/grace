@@ -25,6 +25,7 @@ const BenchmarkDefinition = Schema.Struct({
   chat: Schema.optional(Schema.Literal("upstream")),
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
+  exploratory: Schema.optional(Schema.Literal(true)),
   requiredStep: Schema.optional(Schema.Literal("ReachNamedPage")),
   receipt: Schema.NonEmptyString,
 });
@@ -175,14 +176,24 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const grade = await fleet?.grade(definition.taskId, run.site?.page, guided);
       const webArenaGrade = await officialGrades.get(definition.taskId)?.(action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
-      }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
+      }).catch(() => ({ failure: "The official WebArena evaluation failed" }));
       const receipt = { ...observation, grade, webArena: webArenaGrade };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-      if (webArenaGrade && (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore !== 1))
-        throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
-      if (webArenaGrade && decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
-        throw new Error("The WebArena landing has no verified hosted guidance");
+      if (webArenaGrade && action.outcome.failure === undefined) {
+        if (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore === null || webArenaGrade.noActionScore !== 0)
+          throw new Error("The pinned WebArena evaluator did not return a landing score and a zero no-action control");
+        if (definition.exploratory) {
+          if ((definition.chat === "upstream" && run.chatStatus !== 200) ||
+              run.decisionResults.some(({ http, result }) => http !== 200 || result?.status !== "ok"))
+            throw new Error("A hosted WebArena service failed during the exploratory case");
+        } else {
+          if (webArenaGrade.officialScore !== 1)
+            throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
+          if (decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
+            throw new Error("The WebArena landing has no verified hosted guidance");
+        }
+      }
     } finally {
       activeRuns.delete(context.page);
       if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
@@ -199,7 +210,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       throw new Error("A benchmark instance opens one local synthetic website");
     const storage = definition.siteStorageState === undefined ? undefined
       : Schema.decodeUnknownSync(SiteState)(JSON.parse(readFileSync(definition.siteStorageState, "utf8")));
-    if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
+    if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain.replace(/^\./u, "") !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
       throw new Error("Benchmark storage state must belong only to the declared synthetic website");
     const browser = await context.context.browser()?.newContext({
       ignoreHTTPSErrors: true,
@@ -209,7 +220,15 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     try {
       const website = await browser.newPage();
       const session = await observeFromDocumentStart(website);
-      await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+      await website.route("**/*", (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (url.origin !== origin) return route.abort();
+        if (definition.evaluator === "webarena" && definition.taskId === "157" &&
+          (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
+          return route.abort();
+        return route.continue();
+      });
       const response = await website.goto(action.url, { waitUntil: "load" });
       if (!response?.ok()) throw new Error("The benchmark site did not load");
       if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");
@@ -441,6 +460,23 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
   return observeSite(existing.site, { kind: "control", request: action.request });
 }
 
+const agentModel = Schema.decodeUnknownSync(Schema.Struct({ model: Schema.NonEmptyString }))(JSON.parse(readFileSync(join(import.meta.dirname, "agent/policy.json"), "utf8"))).model;
+const ModelReply = Schema.Struct({ choices: Schema.Array(Schema.Struct({ message: Schema.Struct({ content: Schema.String }) })) });
+const realModelCredential = process.env.GRACE_BENCHMARK_CLEF_ORIGIN && process.env.GRACE_BENCHMARK_CLEF_KEY
+  ? { origin: process.env.GRACE_BENCHMARK_CLEF_ORIGIN, key: process.env.GRACE_BENCHMARK_CLEF_KEY } : undefined;
+async function realModel(_context: BrowserCommandContext, system: string, messages: readonly { role: "user" | "assistant"; content: string }[]) {
+  if (!realModelCredential || new URL(realModelCredential.origin).protocol !== "https:") throw new Error("The real model requires a test credential");
+  const response = await fetch(new URL("/api/v1/chat/completions", realModelCredential.origin), {
+    method: "POST", redirect: "error", signal: AbortSignal.timeout(60000),
+    headers: { Authorization: `Bearer ${realModelCredential.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: agentModel, max_tokens: 1024, messages: [{ role: "system", content: system }, ...messages] }),
+  });
+  if (!response.ok) throw new Error(`The real model answered ${response.status}`);
+  const [choice] = Schema.decodeUnknownSync(ModelReply)(await response.json()).choices;
+  if (!choice) throw new Error("The real model gave no reply");
+  return choice.message.content;
+}
+
 async function googleConsent(context: BrowserCommandContext, endpoint: string, address: string) {
   const expected = new URL(endpoint);
   if (expected.hostname !== "127.0.0.1" || expected.pathname !== "/o/oauth2/v2/auth" || !address.endsWith("@grace.test"))
@@ -470,6 +506,7 @@ declare module "vitest/browser" {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
     releasedStatement: (attempt: string, action: StatementAction) => Promise<Record<string, unknown>>;
+    realModel: (system: string, messages: readonly { role: "user" | "assistant"; content: string }[]) => Promise<string>;
   }
 }
 declare module "vitest" {
@@ -477,8 +514,9 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
     billworldStatements: readonly { label: string; billerId?: string }[];
+    realModel: boolean;
   }
 }
 
@@ -489,14 +527,16 @@ export default defineConfig(async (env) => {
       ? {
           ...entry,
           optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/testing", "pdf-lib"] },
-          test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
+          test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement, realModel } } },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep }) => ({ taskId, intent, startUrl, requiredStep, gradeWholeCohort: Boolean(fleet) }));
+  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
+    taskId, intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+  }));
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
   ];
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
-  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements }, globalSetup: ["test/setup.vibe"] } };
+  return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements, realModel: realModelCredential !== undefined }, globalSetup: ["test/setup.vibe"] } };
 });

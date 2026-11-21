@@ -1906,3 +1906,9 @@ lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
     app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
 }
+
+lemma lawRemainingBalanceReplacesStatementBalance_ensures(due: seq<string>, balances: seq<string>, remaining: seq<string>, value: string)
+  ensures (lawRemainingBalanceReplacesStatementBalance(due, balances, remaining, value) == true)
+{
+  ProofLib.FilterMember((set_x: string) => !((set_x in due)), remaining, value);
+}

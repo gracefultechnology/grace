@@ -61,7 +61,7 @@ public class GraceRecordStorePlugin extends Plugin {
 
  private File record(PluginCall call) {
   String name = call.getString("name", "");
-  if (!RECORDS.contains(name)) throw new IllegalArgumentException("Unknown record " + name);
+  if (!RECORDS.contains(name) && !name.matches("guided-task-[a-f0-9]{64}")) throw new IllegalArgumentException("Unknown record " + name);
   return new File(folder(getContext(), "records"), name + ".json");
  }
 

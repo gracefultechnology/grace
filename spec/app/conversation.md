@@ -399,6 +399,13 @@ affected entries, the adapter applies this operation successively with each
 new generation before releasing the conversation for further use. Sanitized
 state replaces any retained prompt/context copy; raw capture buffers and logs
 are outside this model and must be scrubbed by the same privacy boundary.
+What the tablet tells Grace with each turn, on either path, passes through
+the same detection before it leaves the tablet: the screen, the open
+website's host, the inbox, the open email and the calendar. An email whose
+sender, subject or text names a code, a password or a sign-in is judged
+whole: every number in it that could be a code is masked too, wherever it
+stands. What the detection finds there is masked, not removed from her
+transcript, and each thing told keeps to its own line.
 
 ```quint
 pure val privateNotice = "[Private information removed]"

@@ -91,10 +91,11 @@ type Account = {
   outage: boolean
   mailFault?: Outage["mailFault"]
   calendarFault?: Outage["calendarFault"]
+  calendarCreateRequests: number
   sendLookups: string[]
   script: Scripted[]
   decision?: ScriptedDecision
-  turns: (Turn & { id: number })[]
+  turns: (Turn & { id: number; context: string })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
   consents: string[]
   googleRequests: string[]
@@ -177,6 +178,7 @@ schema GoogleCalendarPath { calendar: Filled }
 schema GoogleMailPath { message: Filled }
 schema SpeechSession { consentNonce: Uuid }
 schema Recorded { turns: Turn[] }
+schema Shown { turns: { context: string }[] }
 schema Credential { credentialId: string; secret: string; code: string }
 schema Acknowledged { status: "acknowledged" }
 schema Delta { content: string }
@@ -384,7 +386,7 @@ function seed(n: number, grantId: string | null, at: number, site: string): Acco
   return {
     key: `fake-key-${uuid(n)}`, credentialId: uuid(n), code: `code-${n}`, expiresAt: new Date(at + lifetimes.credential * 1000).toISOString(), acknowledged: false,
     boxes: grantId === null ? [] : [box("google", owner, grantId, at, site, uuid(n))], sessions: [], outage: false, script: [...scripted],
-    turns: [], changes: [], sendLookups: [], consents: [], googleRequests: [], speech: []
+    turns: [], changes: [], sendLookups: [], consents: [], googleRequests: [], speech: [], calendarCreateRequests: 0
   }
 }
 
@@ -815,7 +817,7 @@ effect function store(site: string) {
     const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = fields
     const { key, box: found } = try connection(fixed, grantId)
     const fault = (try caller()).calendarFault
-    if (fault !== undefined) try change(key, (a) => ({ ...a, calendarFault: undefined }))
+    try change(key, (a) => ({ ...a, calendarFault: undefined, calendarCreateRequests: a.calendarCreateRequests + 1 }))
     if (fault === "beforeCreate") throw new Unavailable()
     if (fault === "refuseCreate") throw new BadAddress()
     if (fault === "reauthCreate" || fault === "conflictCreate") {
@@ -1118,7 +1120,7 @@ effect function store(site: string) {
     const answer = chosen < 0 ? reply(said) : queued[chosen].answer
     const id = try next()
     const settled = (outcome: Turn["outcome"]) => change(key, (a) => ({ ...a, turns: a.turns.map((t) => t.id === id ? { ...t, outcome } : t) }))
-    try change(key, (a) => ({ ...a, script: a.script.filter((_, i) => i !== chosen), turns: [...a.turns, { id, said, outcome: "streaming" }] }))
+    try change(key, (a) => ({ ...a, script: a.script.filter((_, i) => i !== chosen), turns: [...a.turns, { id, said, outcome: "streaming", context }] }))
     if (!stream) {
       try settled("completed")
       return try HttpServerResponse.json({ object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }] })
@@ -1323,6 +1325,11 @@ export effect function signIn(cloud: string, linkGoogle = true) {
 export effect function turns(cloud: string, key: string) {
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
   return (try Schema.decodeUnknownEffect(Recorded)(try response.json)).turns
+}
+
+export effect function contexts(cloud: string, key: string) {
+  const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
+  return (try Schema.decodeUnknownEffect(Shown)(try response.json)).turns.map((turn) => turn.context)
 }
 
 export effect function parts(cloud: string, key: string, said: string) {
