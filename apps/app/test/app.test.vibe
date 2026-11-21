@@ -412,8 +412,8 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       }
       const copied = try recover
       const added = try calendar.write(reapproved, view([eyeCheck, reapproved]))
-      const upgraded = effect (format: "revision" | "occurrence", receipt?: string) => {
-        const key = format === "revision" ? secret : alternateKey
+      const upgraded = effect (format: "revision" | "damaged-revision" | "occurrence", receipt?: string) => {
+        const key = format === "occurrence" ? alternateKey : secret
         const { connectionId: grantId } = (try googleOwnerGrants(key))[0]
         provide Layer.merge(KeyValueStore.layerMemory, Digest.layerWebCrypto) {
           const storage = try KeyValueStore.KeyValueStore
@@ -424,11 +424,11 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
             endAt: new Date(details.endAt).toISOString(), timeZone: details.timezone, calendarId: identity.calendarId, grantId }
           const fingerprint = try hash([body, identity.sourceAccount, identity.sourceRef, details.participant, details.seriesId, details.recurrence, details.reminderEnabled, details.leadTime, details.important])
           const seedClaim = effect {
-            if (format === "revision") {
+            if (format !== "occurrence") {
               const original = try hash([cloud, gmail.provider, grantId, gmail.address, identity.owner, identity.calendarId, identity.occurrenceId, fresh.revision])
-              try storage.set("calendar-create:" + original, fingerprint)
+              try storage.set("calendar-create:" + original, format === "revision" ? fingerprint : "damaged")
               if (receipt !== undefined) try storage.set("calendar-create:" + original + ":receipt", receipt)
-              return added.providerId
+              return format === "revision" ? added.providerId : undefined
             }
             const scope = try hash([cloud, gmail.provider, gmail.address.toLowerCase(), identity.calendarId, identity.occurrenceId])
             const mutation = try hash([scope, grantId, fresh.revision])
@@ -452,6 +452,8 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const received = try upgraded("revision", added.providerId)
       try outage(cloud, secret, false)
       try Effect.try(() => assert.deepStrictEqual([migrated, received], [added, added]))
+      const damaged = try upgraded("damaged-revision")
+      try Effect.try(() => assert.isFalse(damaged.succeeded))
       const fromTablet = try upgraded("occurrence")
       try upgraded("occurrence", fromTablet.providerId)
       const created = { owner: identity.owner, calendarId: identity.calendarId, localId: identity.occurrenceId, providerId: added.providerId ?? "", revision: added.revision }

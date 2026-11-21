@@ -344,7 +344,8 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
         const mutation = try providerKey(revision)
         const oldKey = "calendar-create:" + mutation
         const fingerprint = storage.get(oldKey) catch effect () => { throw new Unreachable() }
-        if (fingerprint === undefined || !/^[0-9a-f]{64}$/.test(fingerprint)) continue
+        if (fingerprint === undefined) continue
+        if (!/^[0-9a-f]{64}$/.test(fingerprint)) throw new Unreachable()
         const providerId = storage.get(oldKey + ":receipt") catch effect () => { throw new Unreachable() }
         return { grantId, mutation, fingerprint, ...providerId === undefined ? {} : { providerId } }
       }
