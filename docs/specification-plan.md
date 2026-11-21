@@ -347,15 +347,16 @@ JS
 unset WA_SHOPPING_FIXTURE_LOGIN
 ```
 
-Provide the hosted decision origin and test key in the environment. Generate the seven cases from the pinned public intents. The upstream evaluator keeps the expected URLs. The local fixture directory holds the synthetic shopper session.
+Provide the hosted decision origin and test key in the environment. Generate the seven cases from the pinned public intents. The upstream evaluator keeps the expected URLs. The local fixture directory holds the synthetic shopper session. The exploratory cases record a missing reviewed step, a target absent from an opened menu, or a return to a visited address alongside their official scores. A test or tooling failure fails the run.
 
 ```sh
 git -C "$fx/upstream" show HEAD:config_files/test.raw.json |
-  jq -e --arg results "$fx" --arg state "$fx/shopping-state.json" '
+  jq -e --arg results "$fx" --arg state "$fx/shopping-state.json" --argjson required '[260,261,262,263]' '
     [.[] | select((.task_id >= 260 and .task_id <= 264) or .task_id == 298 or .task_id == 299) |
       {taskId: (.task_id | tostring), intent, startUrl: "https://127.0.0.1:7770/",
        receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
        siteStorageState: $state, evaluator: "webarena"} +
+      (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
       (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)]' \
     > "$fx/shopping-input.json"
 GRACE_WEBARENA_UPSTREAM="$fx/upstream" GRACE_WEBARENA_PYTHON="$fx/evaluator/bin/python" \

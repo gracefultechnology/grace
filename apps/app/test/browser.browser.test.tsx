@@ -214,7 +214,7 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, gradeWholeCohort, requiredStep }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
@@ -277,6 +277,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep === "ReachNamedPage") {
       outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
+      if (exploratory && !named && reviewed.length > 0) {
+        outcome.miss = "missing-reviewed-step";
+        return;
+      }
       expect(named).toBeDefined();
       expect(reviewed).toHaveLength(1);
     }
@@ -337,7 +341,17 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
               await userEvent.click(showLink);
             } else {
               const nextMenu = page.getByRole("button", { name: "Try another menu", exact: true });
-              if (nextMenu.query() === null) throw new Error(instruction);
+              if (nextMenu.query() === null) {
+                const last = disclosures.at(-1);
+                if (exploratory && last?.documentId === previous.documentId &&
+                    (instruction === `I couldn’t see “${named.subject}” in the open menu. You can try another menu.` ||
+                     instruction === `I couldn’t find “${named.subject}” in the “${last.label}” menu.`)) {
+                  outcome.miss = "target-absent-from-open-menu";
+                  outcome.guideResult = instruction;
+                  return;
+                }
+                throw new Error(instruction);
+              }
               expect(actionsTaken()).toBeLessThan(7);
               await userEvent.click(nextMenu);
               menuRetries.push({ documentId: previous.documentId, instruction });
@@ -385,6 +399,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }, { timeout: 30_000 }).toBe(true);
       const landed = await read();
       outcome.destination = { url: landed.url, documentId: landed.documentId };
+      if (exploratory && visited.has(landed.url)) {
+        outcome.miss = "repeated-address";
+        return;
+      }
       expect(visited.has(landed.url)).toBe(false);
       visited.add(landed.url);
       const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;

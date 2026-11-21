@@ -25,6 +25,7 @@ const BenchmarkDefinition = Schema.Struct({
   chat: Schema.optional(Schema.Literal("upstream")),
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
+  exploratory: Schema.optional(Schema.Literal(true)),
   requiredStep: Schema.optional(Schema.Literal("ReachNamedPage")),
   receipt: Schema.NonEmptyString,
 });
@@ -179,10 +180,20 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const receipt = { ...observation, grade, webArena: webArenaGrade };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-      if (webArenaGrade && (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore !== 1))
-        throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
-      if (webArenaGrade && decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
-        throw new Error("The WebArena landing has no verified hosted guidance");
+      if (webArenaGrade && action.outcome.failure === undefined) {
+        if (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore === null || webArenaGrade.noActionScore !== 0)
+          throw new Error("The pinned WebArena evaluator did not return a landing score and a zero no-action control");
+        if (definition.exploratory) {
+          if ((definition.chat === "upstream" && run.chatStatus !== 200) ||
+              run.decisionResults.some(({ http, result }) => http !== 200 || result?.status !== "ok"))
+            throw new Error("A hosted WebArena service failed during the exploratory case");
+        } else {
+          if (webArenaGrade.officialScore !== 1)
+            throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
+          if (decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
+            throw new Error("The WebArena landing has no verified hosted guidance");
+        }
+      }
     } finally {
       activeRuns.delete(context.page);
       if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
@@ -485,7 +496,7 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
     billworldStatements: readonly { label: string; billerId?: string }[];
   }
 }
@@ -500,7 +511,9 @@ export default defineConfig(async (env) => {
           test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep }) => ({ taskId, intent, startUrl, requiredStep, gradeWholeCohort: Boolean(fleet) }));
+  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
+    taskId, intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+  }));
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),

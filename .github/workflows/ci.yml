@@ -176,10 +176,11 @@ jobs:
           required='[260,261,262,263]'
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
             jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
-              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" \
               '[.[] | select(.task_id as $id | $tasks | index($id)) |
                 {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
                  siteStorageState: $state, evaluator: "webarena"} +
+                (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
                 (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
@@ -189,6 +190,7 @@ jobs:
             sort_by(.taskId | tonumber) |
             select(map(.taskId | tonumber) == $tasks) |
             map({taskId, cohort: (if (.taskId | tonumber) as $id | $required | index($id) then "required" else "exploratory" end),
+              miss: .outcome.miss, failed: (.outcome.failure != null), completed: (.outcome.graceTerminal | type == "string"),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
               checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
@@ -202,14 +204,12 @@ jobs:
             (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedPlan) |")
           ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '
-            all(.[]; .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
+            all(.[]; (.failed | not) and (.completed or (.cohort == "exploratory" and
+              (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address"))) and
+              .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
-          if jq -e 'all(.[]; .hostedGuidance and .checkedPlan)' "$WEBARENA_RESULTS/scorecard.json"; then
-            test "$browser_exit" -eq 0
-          else
-            test "$browser_exit" -eq 1
-          fi
+          test "$browser_exit" -eq 0
       - if: always()
         uses: actions/upload-artifact@v7
         with:
