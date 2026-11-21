@@ -848,8 +848,8 @@ pure def lawGoogleFailureDoesNotResumeBackup(pending: PendingBrowserBackupApprov
   not(mayResumeSavedBackupApproval(FailedGoogleBackupReturn, pending))
 pure def lawUsedGoogleBackupReturnCannotResumeAgain(result: BrowserBackupSignInReturn): bool =
   not(mayResumeSavedBackupApproval(result, NoPendingBrowserBackupApproval))
-pure def lawNewBackupCannotResumeOnOrdinaryAccountReturn: bool =
-  not(mayResumeSavedBackupApproval(LegacyGoogleAccountReturn, ProtectedPendingBrowserBackupApproval))
+pure def lawNewBackupCannotResumeOnOrdinaryAccountReturn(pending: PendingBrowserBackupApproval): bool =
+  pending == ProtectedPendingBrowserBackupApproval implies not(mayResumeSavedBackupApproval(LegacyGoogleAccountReturn, pending))
 ```
 
 ## Story: Keep my passwords private when the tablet account changes
