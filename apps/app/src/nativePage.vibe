@@ -184,7 +184,7 @@ function surfaceEvents(plugin: SurfacePlugin) {
         const result = e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
         return PageEvent.Changed({
           id: e.id, url, back: e.canGoBack === true, forward: e.canGoForward === true, result,
-          loading: result === "Loaded" && e.progress !== undefined && e.progress < 100,
+          loading: result === "Loaded" && e.progress !== 100,
           secure: e.exists === true && e.progress === 100 && e.pageError === null && e.securityBlocked === false && URL.parse(url ?? "")?.protocol === "https:"
         })
       })),
