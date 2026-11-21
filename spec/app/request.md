@@ -27,18 +27,20 @@ pending-request, saving or outcome record is built here.
 
 ### A request records its turn, the work it belongs to and where the turn came from
 
-A turn comes from the person when she typed it, said it, tapped an answer or tapped Ask Grace.
-Words heard while a page plays sound are the page's, not hers. Every other
+A turn comes from the person when she typed it, said it, tapped an answer or
+tapped an Ask Grace button. Only the first three are her answer to a
+question: Ask Grace asks for help and never says yes or no. Words heard while a page plays sound are the page's, not hers. Every other
 turn is made by the host: from a page, an email, a file, a device event, or
 Grace's own words, such as her opening line or her report of what she did on
 another surface. A host turn may still be read and answered.
 
 ```quint
-type Origin = Typed | Spoken | Tapped | FromPage | FromEmail | FromFile | FromDevice | FromGrace
+type Origin = Typed | Spoken | Tapped | AskedForHelp | FromPage | FromEmail | FromFile | FromDevice | FromGrace
 type Request = { generation: int, workVersion: int, origin: Origin }
 type Moment = { generation: int, workVersion: int }
 
-pure def fromPerson(origin: Origin): bool = origin == Typed or origin == Spoken or origin == Tapped
+pure def answers(origin: Origin): bool = origin == Typed or origin == Spoken or origin == Tapped
+pure def fromPerson(origin: Origin): bool = answers(origin) or origin == AskedForHelp
 ```
 
 ### Only a current request from the person's own turn may ask for an action on any surface
@@ -46,21 +48,27 @@ pure def fromPerson(origin: Origin): bool = origin == Typed or origin == Spoken 
 An action is admitted only for a request from the person's own turn, in the
 conversation's current generation and for the current work. A turn the host
 made can produce words and guidance, and no action and no consent on any
-surface: even a consent built from it can never be used.
+surface: even a consent built from it can never be used. Her Ask Grace turn
+may ask for an action, and gives no consent: a consent built from it can
+never be used either.
 
 ```quint
 pure def mayAct(request: Request, now: Moment): bool =
   fromPerson(request.origin) and request.generation == now.generation and request.workVersion == now.workVersion
-pure def canConsent(request: Request, now: Moment, stamp: int): bool = mayAct(request, now) and stamp > 0
+pure def canConsent(request: Request, now: Moment, stamp: int): bool = mayAct(request, now) and answers(request.origin) and stamp > 0
 
 pure def lawHostTurnNeverAuthorizes(request: Request, now: Moment, stamp: int, proposal: Proposal, held: Held): bool =
   not(fromPerson(request.origin)) implies
     (not(mayAct(request, now)) and not(canConsent(request, now, stamp)) and
       not(canUse(consent(request, stamp, proposal), held, now)))
+pure def lawAskingForHelpNeverConsents(request: Request, now: Moment, stamp: int, proposal: Proposal, held: Held): bool =
+  request.origin == AskedForHelp implies
+    (not(canConsent(request, now, stamp)) and not(canUse(consent(request, stamp, proposal), held, now)))
 
 pure val requestValues = Set(
   { generation: 1, workVersion: 1, origin: Typed }, { generation: 1, workVersion: 1, origin: Spoken },
-  { generation: 1, workVersion: 1, origin: Tapped }, { generation: 1, workVersion: 1, origin: FromPage },
+  { generation: 1, workVersion: 1, origin: Tapped }, { generation: 1, workVersion: 1, origin: AskedForHelp },
+  { generation: 1, workVersion: 1, origin: FromPage },
   { generation: 1, workVersion: 1, origin: FromEmail }, { generation: 1, workVersion: 1, origin: FromFile },
   { generation: 1, workVersion: 1, origin: FromDevice }, { generation: 1, workVersion: 1, origin: FromGrace },
   { generation: 0, workVersion: 1, origin: Typed }, { generation: 1, workVersion: 2, origin: Spoken })
@@ -116,7 +124,7 @@ pure val proposalValues = Set(
 ### A consent is used once, and a newer turn voids it
 
 The owner holds the proposal it is waiting on and the last stamp it used. A
-consent is usable only if the person's own turn gave it, while the
+consent is usable only if the person's own answer gave it, while the
 conversation is still in the generation of that turn, for the subject and
 revision the owner holds, and with a stamp the owner has not used. Using it
 records the stamp, so the same yes cannot act twice; any newer turn of the
@@ -127,7 +135,7 @@ holds.
 type Held = { proposal: Proposal, spent: int }
 
 pure def canUse(given: Consent, held: Held, now: Moment): bool =
-  fromPerson(given.origin) and given.generation == now.generation and given.subject == held.proposal.subject and
+  answers(given.origin) and given.generation == now.generation and given.subject == held.proposal.subject and
   given.revision == held.proposal.revision and given.stamp > held.spent
 pure def spend(given: Consent, held: Held): Held = { ...held, spent: given.stamp }
 
@@ -147,7 +155,8 @@ pure val givenValues = Set(
   { stamp: 1, generation: 1, origin: Tapped, subject: visit, revision: 1 },
   { stamp: 1, generation: 0, origin: Tapped, subject: letter, revision: 1 },
   { stamp: 2, generation: 1, origin: FromEmail, subject: visit, revision: 1 },
-  { stamp: 2, generation: 1, origin: FromGrace, subject: letter, revision: 1 })
+  { stamp: 2, generation: 1, origin: FromGrace, subject: letter, revision: 1 },
+  { stamp: 2, generation: 1, origin: AskedForHelp, subject: visit, revision: 1 })
 pure val heldValues = Set(
   { proposal: { subject: letter, revision: 1 }, spent: 0 },
   { proposal: { subject: letter, revision: 1 }, spent: 1 },

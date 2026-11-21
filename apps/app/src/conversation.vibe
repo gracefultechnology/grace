@@ -441,7 +441,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     say: (input) => take(input, origins[input.tag]),
     help: effect (need) => {
       try tell(helpWith(need, try registry.get()))
-      if (link !== undefined) try take(askedForHelp, "Tapped")
+      if (link !== undefined) try take(askedForHelp, "AskedForHelp")
     }
   }
 }).pipe(Layer.provide(Layer.merge(client, Digest.layerWebCrypto)))

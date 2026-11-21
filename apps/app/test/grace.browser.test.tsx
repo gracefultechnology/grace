@@ -298,7 +298,8 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
 });
 
 it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect the email I already use")', async () => {
-  const { say, window, secret, visit } = await start();
+  const { say, window, secret, visit, asked, calendar } = await start();
+  const tea = async () => (await calendar(0)).entries.filter((c) => c.committed.title === "Tea with Susan" && c.phase === "Saved");
   const form = (name: string) => page.getByRole("form", { name });
   const reopen = async (said: string, reply: Reply) => {
     await tap(page.getByRole("button", { name: "Close Settings" }));
@@ -317,6 +318,9 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await expect.element(page.getByText(/^Tap your Gmail, not card [* ]+$/)).toBeVisible();
   expect(document.body.textContent).not.toContain("4111");
   await tap(page.getByRole("button", { name: "Close this tip" }));
+  await say("Add tea with Susan.", { text: "Tea with Susan, the day after tomorrow at 3 pm. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
+    actions: [{ kind: "proposeAppointment", title: "Tea with Susan", day: dateOf(dayOf(Date.now()) + 2), time: "15:00", repeat: "Once" }] });
+  await expect.poll(async () => (await asked()).ask.tag).toBe("AddAsk");
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(page.getByRole("button", { name: new RegExp(gmail) }));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
@@ -324,7 +328,7 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
 
   // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/conversation.md, "A turn may start without her words, marked with where it came from"; spec/app/request.md, "A request records its turn, the work it belongs to and where the turn came from"
-  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "EmailCalendarSettings" }] };
+  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "EmailCalendarSettings" }, { kind: "confirmProposal" }] };
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{ answer: JSON.stringify(which) }]), client));
   await tap(page.getByRole("button", { name: "Close Settings" }));
   await visit("Email");
@@ -351,6 +355,9 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await say("What are these?", { text: "They are the addresses your email company uses. They are not secret.", actions: [] });
   expect(toldGrace()).toContain("Her email company said the password she typed was wrong.");
   expect(toldGrace()).toContain("Margaret tapped Ask Grace while connecting her riverview.net email");
+  // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"
+  expect(toldGrace()).toContain("confirmProposal was not done");
+  expect(await tea()).toEqual([]);
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(form("Mail settings").getByRole("button", { name: "Connect" }));
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();

@@ -302,7 +302,8 @@ A yes is routed only while Grace is asking and nothing is agreed yet, as the
 consent `R::consent` builds from Margaret's own turn, the host's new answer
 stamp and the question as it is held now, and only when the proposal would
 take it: a turn after the one that asked, in the current generation. Any
-other yes is refused as nothing asked. Her No or a cancellation drops a
+other yes is refused as nothing asked, and so is a yes in Grace's reply to
+an Ask Grace tap: that tap asked for help and agreed to nothing. Her No or a cancellation drops a
 question she has not agreed to.
 
 ```quint
@@ -311,9 +312,15 @@ pure def answerOf(w: World, request: R::Request): R::Consent = R::consent(reques
 pure def lawConsentNeedsAWaitingQuestion(w: World, request: R::Request, command: AgentAction): bool =
   val routed = route(w, request, command)
   match routed {
-    | ToAnswer(x) => P::asking(w.pending) and w.pending.agreed == 0 and R::fromPerson(x.consent.origin) and
+    | ToAnswer(x) => P::asking(w.pending) and w.pending.agreed == 0 and R::answers(x.consent.origin) and
         x.consent == answerOf(w, request) and P::canAgree(w.pending, x.consent, w.now, P::Person)
     | ToWithdraw => P::canWithdraw(w.pending, R::Cancellation, P::Grace)
+    | _ => true
+  }
+pure def lawAskingForHelpNeverAgrees(w: World, request: R::Request, command: AgentAction): bool =
+  val routed = route(w, request, command)
+  request.origin == R::AskedForHelp implies match routed {
+    | ToAnswer(_) => false
     | _ => true
   }
 ```
@@ -349,7 +356,7 @@ pure val wValues = Set(reading, asking, agreed, stored, flagged, answering, cale
 pure val requestValues = Set(
   { generation: 1, workVersion: 1, origin: R::Spoken }, { generation: 2, workVersion: 1, origin: R::Tapped },
   { generation: 1, workVersion: 1, origin: R::FromEmail }, { generation: 2, workVersion: 1, origin: R::FromGrace },
-  { generation: 1, workVersion: 2, origin: R::Typed })
+  { generation: 1, workVersion: 2, origin: R::Typed }, { generation: 2, workVersion: 1, origin: R::AskedForHelp })
 pure val teaSeed: V::EntrySeed = { identity: { ...K::lunchIdentity, occurrenceId: "tea" },
   details: { ...K::lunchDetails, title: "Tea with Susan", startAt: 5, endAt: 6 } }
 pure val clinicSeed: V::EntrySeed = K::clinicReview.entry
