@@ -184,6 +184,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
   // spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
   await click("Ask Grace");
+  await expect.element(page.getByRole("button", { name: "Collapse", exact: true })).toBeVisible();
   await click("Collapse");
   await say("Which one is my eye check?", "This one is your eye check.", [{ kind: "guide", target: `event:1:${eye}`, emphasis: "instruction", title: "Your eye check" }]);
   await expect.element(ringed("Eye check with Dr\\. Patel", "Your eye check")).toBeVisible();
