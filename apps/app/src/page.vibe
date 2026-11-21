@@ -221,7 +221,7 @@ effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url:
   if (shown !== undefined && (shown.load !== "Loading" || (superseded && url !== "")) && url !== tabUrl(shown)) {
     const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: url }
     const updated = try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
-    const after = updated?.browser.tabs.find((t) => t.id === tab)
+    const after = updated?.state.browser.tabs.find((t) => t.id === tab)
     if (after !== undefined && after.loadVersion !== shown.loadVersion) {
       page.own = after.loadVersion
       if (url === "") page.load = after.loadVersion
