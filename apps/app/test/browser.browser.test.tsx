@@ -320,13 +320,12 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }
       if (named) {
         let lastInstruction: string | undefined;
-        let guidanceDeadline = performance.now() + 45_000;
         while (true) {
           await expect.poll(() => {
             const instruction = menuGuidance.query()?.textContent;
             return linkGuidance.query() !== null || guidanceFailure.query() !== null ||
               (typeof instruction === "string" && instruction !== lastInstruction);
-          }, { timeout: Math.max(1, guidanceDeadline - performance.now()) }).toBe(true);
+          }, { timeout: lastInstruction === undefined ? 45_000 : 50_000 }).toBe(true);
           const failure = guidanceFailure.query();
           if (failure) {
             const instruction = failure.textContent ?? "The link could not be highlighted";
@@ -335,7 +334,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
               expect(actionsTaken()).toBeLessThan(7);
               await userEvent.click(page.getByRole("button", { name: `Use “${leaf}” for this step`, exact: true }));
               await expect.poll(() => plan.getByText(`Find and check “${leaf}”.`, { exact: true }).query() !== null, {
-                timeout: Math.max(1, guidanceDeadline - performance.now()),
+                timeout: 45_000,
               }).toBe(true);
               outcome.nameCorrection = { original: named.subject, branch, leaf, instruction, documentId: previous.documentId };
               await userEvent.click(showLink);
@@ -357,7 +356,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
               menuRetries.push({ documentId: previous.documentId, instruction });
             }
             await expect.poll(() => guidanceFailure.query()?.textContent !== instruction, {
-              timeout: Math.max(1, guidanceDeadline - performance.now()),
+              timeout: 45_000,
             }).toBe(true);
             continue;
           }
@@ -366,13 +365,13 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           const instruction = menuGuidance.element().textContent;
           if (!instruction || instruction === lastInstruction) throw new Error("Grace did not present fresh submenu guidance");
           outcome.menuInstruction = instruction;
-          const hoverTimeout = lastInstruction === undefined ? 15_000 : Math.min(15_000, Math.max(1, guidanceDeadline - performance.now()));
+          outcome.menuInteraction = { instruction, documentId: previous.documentId, status: "awaiting-hover" };
           await expect.poll(async () => {
             const result = await transport({ kind: "hoverGuide" });
             outcome.menuInteraction = result;
             if (result.reason) throw new Error(typeof result.reason === "string" ? result.reason : JSON.stringify(result.reason));
             return result.disclosed === true;
-          }, { timeout: hoverTimeout }).toBe(true);
+          }, { timeout: 15_000 }).toBe(true);
           const evidence = Schema.decodeUnknownSync(Schema.Struct({
             disclosed: Schema.Literal(true), url: Schema.NonEmptyString, documentId: Schema.NonEmptyString,
             snapshotId: Schema.NonEmptyString, label: Schema.NonEmptyString,
@@ -387,7 +386,6 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           expect(disclosed.has(disclosureId)).toBe(false);
           disclosed.add(disclosureId);
           disclosures.push({ ...evidence, instruction });
-          if (lastInstruction === undefined) guidanceDeadline = performance.now() + 50_000;
           lastInstruction = instruction;
         }
       }
