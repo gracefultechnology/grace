@@ -838,18 +838,18 @@ the previous account return. A new request uses only the protected return.
 ```quint
 type BrowserBackupSignInReturn = ProtectedGoogleBackupReturn | FailedGoogleBackupReturn | LegacyGoogleAccountReturn
 type PendingBrowserBackupApproval = NoPendingBrowserBackupApproval | LegacyPendingBrowserBackupApproval | ProtectedPendingBrowserBackupApproval
-pure def mayResumeSavedBackupApproval(result: BrowserBackupSignInReturn, pending: PendingBrowserBackupApproval): bool =
-  match result {
-    | ProtectedGoogleBackupReturn => pending != NoPendingBrowserBackupApproval
+pure def mayResumeSavedBackupApproval(signInReturn: BrowserBackupSignInReturn, savedApproval: PendingBrowserBackupApproval): bool =
+  match signInReturn {
+    | ProtectedGoogleBackupReturn => savedApproval != NoPendingBrowserBackupApproval
     | FailedGoogleBackupReturn => false
-    | LegacyGoogleAccountReturn => pending == LegacyPendingBrowserBackupApproval
+    | LegacyGoogleAccountReturn => savedApproval == LegacyPendingBrowserBackupApproval
   }
-pure def lawGoogleFailureDoesNotResumeBackup(pending: PendingBrowserBackupApproval): bool =
-  not(mayResumeSavedBackupApproval(FailedGoogleBackupReturn, pending))
-pure def lawUsedGoogleBackupReturnCannotResumeAgain(result: BrowserBackupSignInReturn): bool =
-  not(mayResumeSavedBackupApproval(result, NoPendingBrowserBackupApproval))
-pure def lawNewBackupCannotResumeOnOrdinaryAccountReturn(pending: PendingBrowserBackupApproval): bool =
-  pending == ProtectedPendingBrowserBackupApproval implies not(mayResumeSavedBackupApproval(LegacyGoogleAccountReturn, pending))
+pure def lawGoogleFailureDoesNotResumeBackup(savedApproval: PendingBrowserBackupApproval): bool =
+  not(mayResumeSavedBackupApproval(FailedGoogleBackupReturn, savedApproval))
+pure def lawUsedGoogleBackupReturnCannotResumeAgain(signInReturn: BrowserBackupSignInReturn): bool =
+  not(mayResumeSavedBackupApproval(signInReturn, NoPendingBrowserBackupApproval))
+pure def lawNewBackupCannotResumeOnOrdinaryAccountReturn(savedApproval: PendingBrowserBackupApproval): bool =
+  savedApproval == ProtectedPendingBrowserBackupApproval implies not(mayResumeSavedBackupApproval(LegacyGoogleAccountReturn, savedApproval))
 ```
 
 ## Story: Keep my passwords private when the tablet account changes
