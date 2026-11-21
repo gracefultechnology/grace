@@ -2118,18 +2118,20 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
-  let challengeShown = false;
+  let challengeShown: false | "code" | "captcha" = false;
   let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
   const blankNewsletterEmail = {
     id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
     sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
   };
   let newsletterEmail: typeof blankNewsletterEmail | null = null;
+  const blankSearch = { focused: false, edited: false, hasInput: false };
+  let searchEvidence: Partial<typeof blankSearch> = blankSearch;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
-        complete: true, readyState: "complete", blockers: [],
+        complete: true, readyState: "complete", blockers: challengeShown === "captcha" ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
@@ -2141,7 +2143,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
           { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search",
-            form: { index: 1, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
+            form: { index: 1, name: null }, ...searchEvidence, href: null, inViewport: true },
           ...(newsletterEmail === null ? [] : [
             newsletterEmail,
             { id: "subscribe", tag: "button", type: "submit", label: "Subscribe", sensitive: null,
@@ -2149,7 +2151,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "form-help", tag: "a", label: "Help center inside a form", form: { index: 3, name: null },
               href: "https://example.org/form-help", inViewport: true },
           ]),
-          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code",
+          ...(challengeShown === "code" ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code",
             form: { index: 4, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true }] : []),
           { id: "about", tag: "a", label: "About us", form: null, href: "https://example.org/about", inViewport: true },
           { id: "clipped-help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
@@ -2162,7 +2164,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     return { result: { accepted: true } };
   }, false, () => {
     if (reviseDuringRead) domRevision++;
-    if (addChallengeDuringRead) challengeShown = true;
+    if (addChallengeDuringRead) challengeShown = "code";
     if (replaceDocumentDuringRead) {
       currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
       replaceDocumentDuringRead = false;
@@ -2264,10 +2266,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
-    challengeShown = true;
-    await tap(showLink);
-    await routeTo(page.getByText(/Finish the form yourself in this tab/));
-    expect(guideCalls).toBe(0);
+    for (const challenge of ["captcha", "code"] as const) {
+      challengeShown = challenge;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(0);
+    }
     challengeShown = false;
     signInWidget = "active";
     await tap(showLink);
@@ -2333,9 +2337,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
       await expect.element(pending).toHaveAttribute("aria-current", "step");
     }
-    expect(native.calls("readPage")).toHaveLength(beforeNewsletterRead);
-
     newsletterEmail = blankNewsletterEmail;
+    for (const key of ["focused", "edited", "hasInput"] as const) {
+      searchEvidence = { ...blankSearch };
+      delete searchEvidence[key];
+      await tap(check);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    expect(native.calls("readPage")).toHaveLength(beforeNewsletterRead);
+    searchEvidence = blankSearch;
     reviseDuringRead = true;
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
@@ -2473,14 +2484,21 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       default: return fetch(input, options);
     }
   });
-  const browserUrl = "https://example.org/";
+  const browserHome = "https://example.org/";
+  let browserUrl = browserHome;
+  let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
-      return { documentId: "owner-guide-page", frameScope: "main", result: {
-        snapshotId: "owner-guide-page", domRevision: 1, url: browserUrl, title: "Example",
+      if (switchOwnerDuringPageRead) {
+        browserCookieOwner = firstOwner;
+        switchOwnerDuringPageRead = false;
+      }
+      const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
+      return { documentId, frameScope: "main", result: {
+        snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
         text: "Example Help center", complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
-        elements: [{ id: "help", tag: "a", label: "Help center", href: browserUrl + "help", inViewport: true,
+        elements: [{ id: "help", tag: "a", label: "Help center", href: browserHome + "help", inViewport: true,
           bounds: { x: 100, y: 80, width: 100, height: 32 } }],
       } };
     }
@@ -2613,11 +2631,25 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
     expect(ownerProbes).toBeGreaterThan(0);
     expect(hostedChoices).toBe(0);
+    await tap(button("Check page"));
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
+    browserUrl = browserHome + "help";
+    await native.report("tab-1", browserUrl, 100);
+    await native.route();
+    await tap(button("Resume Grace"));
+    switchOwnerDuringPageRead = true;
+    expect(await check()).toBe(false);
+    expect(switchOwnerDuringPageRead).toBe(false);
+    expect(await receipts()).toEqual([]);
+    browserCookieOwner = undefined;
+    await tap(button("Check page"));
+    await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();

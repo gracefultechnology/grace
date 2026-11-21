@@ -58,6 +58,7 @@ function idleOptIn(group: readonly PageElement[], field: PageElement): boolean {
 export function guidedPageState(observation: LinkObservation | undefined, url: string, use: GuidedEvidenceUse = "ReadGuidedContent"): "Ordinary" | "PublicOnly" | "PrivateForm" | "Unavailable" {
   if (observation === undefined || observation.result.readyState !== "complete" || observation.result.url !== url) return "Unavailable"
   const { blockers, elements } = observation.result
+  if (blockers.some((blocker) => blocker.kind === "captcha")) return "PrivateForm"
   if (blockers.some((blocker) => blocker.covers !== "partial")) return "Unavailable"
   const fields = elements.map(pageField)
   if (ordinaryGuidedPage(true, true, false, fields)) return "Ordinary"
@@ -67,8 +68,8 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
   const witnessed = elements.map((element): GuidedPageField => {
     const kind = pageField(element)
     if (kind === "NavigationPageField") {
-      const textInput = element.tag === "input" && ["search", "text", ""].includes(element.type ?? "")
-      return element.edited === true || (textInput && (element.focused === true || element.hasInput === true)) ? "UnknownPageField" : kind
+      const textInput = element.role === "searchbox" || (element.tag === "input" && ["search", "text", ""].includes(element.type ?? ""))
+      return element.edited === true || (textInput && (element.focused !== false || element.edited !== false || element.hasInput !== false)) ? "UnknownPageField" : kind
     }
     if (element.form == null || element.form.index < 0) return kind
     const group = elements.filter((member) => member.form?.index === element.form?.index)
