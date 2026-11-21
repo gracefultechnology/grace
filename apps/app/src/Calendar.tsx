@@ -10,7 +10,7 @@ import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
 import type { ReminderNotice } from "./Notices.tsx";
-import { type CalendarInstance, useAccounts, useCalendarNote, useDraft, useProposal, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
+import { type CalendarInstance, useAccounts, useCalendarNote, useDraft, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
@@ -142,7 +142,8 @@ export function Calendar({ now, ...props }: Covered & { now: number }) {
 }
 
 function Shown({ registry, pending, views, now, ...props }: Covered & { registry: Accounts; pending: Pending; views: readonly CalendarInstance[]; now: number }) {
-  const { can, send, guide: graceGuide } = useWorkspace();
+  const { workspace, can, send, guide: graceGuide } = useWorkspace();
+  const recoveredDrafts = useRecoveredCalendarDrafts();
   const accounts = useAccounts();
   const note = useCalendarNote();
   const actions = useCalendarActions();
@@ -193,7 +194,14 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
   const open = views.find((v) => v.key === openSelected(registry, sources));
   if (!open) return <CalendarApp {...browsing} />;
   const entry = selectedOccurrence(open.state);
-  if (entry.phase === "Editing") return <Form key={`${open.key}/${entry.identity.occurrenceId}`} box={open} entry={entry} today={today} browsing={browsing} />;
+  if (entry.phase === "Editing") {
+    const recovery = workspace?.plan.saveRecovery;
+    const sameCalendar = recovery?.tag === "GuidedSaveReconcile" && !recovery.occurrence && !entry.hasSaved &&
+      Boolean(entry.identity.sourceRef) && entry.identity.owner === recovery.owner && entry.identity.calendarId === recovery.calendar;
+    const uncertain = sameCalendar && (recoveredDrafts?.task !== workspace?.assistant.taskId ||
+      recoveredDrafts?.occurrences.includes(entry.identity.occurrenceId));
+    return <Form key={`${open.key}/${entry.identity.occurrenceId}`} box={open} entry={entry} today={today} browsing={browsing} uncertain={Boolean(uncertain)} />;
+  }
   const d = entry.committed;
   const deletion = open.state.deletion;
   const id = entry.identity.occurrenceId;
@@ -219,8 +227,9 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
   );
 }
 
-function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: Entry; today: number; browsing: CalendarAppProps }) {
-  const id = entry.identity.occurrenceId;
+function Form({ box, entry, today, browsing, uncertain }: { box: CalendarInstance; entry: Entry; today: number; browsing: CalendarAppProps; uncertain: boolean }) {
+  const runtime = useRuntime();
+  const { owner, calendarId, occurrenceId: id } = entry.identity;
   const d = entry.draft;
   const [typedTitle, setTitle] = useDraft(d.title, true);
   const [typedWhere, setWhere] = useDraft(d.location, true);
@@ -241,10 +250,13 @@ function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: E
   const minutes = start.getHours() * 60 + start.getMinutes();
   const days = Array.from({ length: 21 }, (_, i) => today + i);
   const times = Array.from({ length: 25 }, (_, i) => 7 * 60 + 30 * i);
+  const back = offer(box, { type: "changeOccurrence", id, command: { tag: "CancelEditing" } });
+  const checkCalendar = () => void runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(owner, calendarId)));
   return (
-    <CalendarApp {...browsing} view="form" onBack={offer(box, { type: "changeOccurrence", id, command: { tag: "CancelEditing" } })}
-      canSave={box.can(approve)} onSave={offer(box, approve)}
-      saveStatus={entry.approvedRevision !== -1 ? "saving" : entry.storageError === "SaveFailure" ? "failed" : undefined}
+    <CalendarApp {...browsing} view="form" onBack={uncertain && back ? checkCalendar : back}
+      canSave={!uncertain && box.can(approve)} onSave={uncertain ? undefined : offer(box, approve)}
+      saveStatus={uncertain ? "failed" : entry.approvedRevision !== -1 ? "saving" : entry.storageError === "SaveFailure" ? "failed" : undefined}
+      saveError={uncertain ? "This appointment may already be saved. Go back to Calendar to check." : undefined}
       form={{
         heading: entry.hasSaved ? "Edit appointment" : "New appointment",
         title, onTitleChange: (typed) => { setTitle(typed); change({ title: typed.trim() }); },

@@ -55,7 +55,7 @@ type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | 
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
   task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
-  title: str, starts: int, ends: int, timezone: str, location: str, notes: str
+  title: str, starts: int, ends: int, timezone: str, location: str, notes: str, detailsDigest: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
 type GuidedNameCorrection = {
@@ -64,10 +64,19 @@ type GuidedNameCorrection = {
 }
 type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
 type GuidedNameOverride = { stepIndex: int, label: str }
+type GuidedCheckpointCorrection = NoGuidedCheckpointCorrection | GuidedCheckpointCorrectionBound({ label: str, url: str })
+type GuidedSaveReference = { occurrence: str, owner: str, calendar: str, mailDigest: str, detailsDigest: str }
+type GuidedCheckpointSave = GuidedSaveUntouched | GuidedSaveReconcile({ occurrence: str, owner: str, calendar: str, mailDigest: str, detailsDigest: str })
+type GuidedCheckpoint = {
+  request: GuidedRequest, receipts: List[GuidedReceipt], workVersion: int,
+  correction: GuidedCheckpointCorrection, save: GuidedCheckpointSave
+}
+type GuidedRecovery = { owner: str, checkpoint: GuidedCheckpoint }
+type GuidedFence = { task: str, version: int }
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
   mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
-  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride
+  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride, saveRecovery: GuidedCheckpointSave
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
@@ -76,6 +85,7 @@ type GuidedObservation = {
 }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
+type GuidedSaveRecoveryCheck = { report: GuidedObservation, saved: GuidedSaveReference }
 type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
 type GuidedReview = { revision: int, generation: int, workVersion: int, request: GuidedRequest }
 type GuidedLink = {
@@ -89,13 +99,13 @@ pure def emptyReview(revision: int): GuidedReview = {
 pure val noGuidedMail: GuidedMail = { account: 0, owner: "", address: "", ref: "", generation: 0, revision: 0, version: "" }
 pure val noGuidedApproval: GuidedCalendarApproval = {
   task: "", account: 0, owner: "", calendar: "", sourceRef: "", provisional: "", proposal: -1,
-  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: ""
+  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: "", detailsDigest: ""
 }
 pure val noGuidedNameOverride: GuidedNameOverride = { stepIndex: -1, label: "" }
 pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
   mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
-  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride
+  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -307,7 +317,8 @@ not evidence of authentication and must be reobserved. Callback generations
 advance rather than returning to initial zeroes. Confirmed preferences and
 every canonical payment record survive; a volatile payment observation restores
 from its durable outcome, including Unknown. Restart never reports a completed
-task or retries a payment.
+task or retries a payment. A separately authenticated recovery can restore a
+reviewed guided checkpoint after startup.
 
 ```quint
 pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
@@ -907,9 +918,14 @@ pure def unexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: Work
 pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
   (unexpected.id != w.browser.selected or unexpected.revision != w.browser.revision)
   implies not(canUnexpectedPage(w, unexpected, by))
+pure def hasRecoveredSaveReference(save: GuidedCheckpointSave): bool = match save {
+  | GuidedSaveUntouched => false
+  | GuidedSaveReconcile(ref) => ref.occurrence != "" and ref.detailsDigest != ""
+}
 pure def canResume(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canResume(w.assistant, C::ConversationUser) and
-  (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == ""
+  (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == "" and
+    (w.plan.saveRecovery == GuidedSaveUntouched or hasRecoveredSaveReference(w.plan.saveRecovery))
    else mayAssist(w) and X::canResume(w.execution, X::User))
 pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::resume(w.assistant, C::ConversationUser),
@@ -1140,6 +1156,130 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
     commitmentTask: "", commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeUser) }
 ```
 
+### An authenticated restart restores the reviewed plan paused at its next outcome
+
+For a plan bound to a verified owner, Start records the first checkpoint before guidance begins. If the device cannot store it, the reviewed plan stays available for the person to retry. If a delayed write arrives before the retry, Grace can use it only when the full checkpoint matches that same review and owner. When the person ends a saved task under that owner, Grace clears its checkpoint before closing the task. If the device cannot confirm the checkpoint or matching Calendar draft was cleared, the task stays open and the person can try again. An earlier delayed write cannot reopen a task after End succeeds.
+
+A durable checkpoint keeps the reviewed owner, task and goal, the ordered
+outcomes and the ordered prefix of confirmed receipts. Receipt identifiers
+are opaque source digests. A confirmed correction keeps the exact replacement
+name and the public link the person approved with it. The host stores the
+checkpoint under the authenticated account that reviewed it. The authenticated
+store may recover that checkpoint only into an empty workspace for the same
+owner. An account change retires a guided task only when the host names its
+current task and work version.
+
+Grace restores the next instruction with a work version newer than the saved
+one. Recovery starts closed and paused. Opening Grace waits for an explicit
+Resume with the current authority. An observation must use the new work
+version and current app, page and permission. The checkpoint contains no
+queued work, browser session, selected private source, page observation,
+unapproved link or permission. A calendar save that had entered the approved
+write flow keeps only a reconciliation marker and an adopted occurrence
+reference under its original account and calendar when available. A known
+occurrence can be checked against a fresh provider read under its matching
+source identity. The checkpoint keeps a digest of the reviewed appointment details.
+The provider must still report those details for Grace to confirm the save.
+Without an occurrence reference or an original details digest, the save stays
+paused for explicit replacement review. If Calendar still shows the draft fenced to that
+task, it explains that the appointment may already be saved. The person can
+return to the list to check the provider’s calendar, and the draft cannot
+submit again. A future calendar save needs
+fresh observation of the original mail receipt and its own separate approval.
+
+```quint
+pure def guidedCheckpoint(w: Workspace): GuidedCheckpoint = {
+  request: { owner: w.plan.owner, task: w.assistant.taskId, goal: w.plan.originalAsk, steps: w.plan.steps },
+  receipts: w.plan.receipts, workVersion: w.assistant.workVersion,
+  correction: if (w.plan.nameOverride.stepIndex == w.plan.receipts.length() and w.plan.nameOverride.label != "" and w.plan.linkUrl != "")
+    GuidedCheckpointCorrectionBound({ label: w.plan.nameOverride.label, url: w.plan.linkUrl }) else NoGuidedCheckpointCorrection,
+  save: if (w.plan.calendarApproval.proposal >= 0 and isAppointmentSave(nextOutcome(w.plan)))
+    GuidedSaveReconcile({ occurrence: w.plan.savedOccurrence, owner: w.plan.calendarApproval.owner,
+      calendar: w.plan.calendarApproval.calendar, mailDigest: priorGuidedMail(w.plan).digest, detailsDigest: w.plan.calendarApproval.detailsDigest }) else w.plan.saveRecovery
+}
+pure def validGuidedCheckpoint(checkpoint: GuidedCheckpoint): bool =
+  val request = checkpoint.request
+  val index = checkpoint.receipts.length()
+  val pending = request.steps.nthOr(index, noGuidedStep)
+  val correction = checkpoint.correction
+  val savedMail = priorGuidedMail({ ...emptyPlan, steps: request.steps, receipts: checkpoint.receipts })
+  val save = checkpoint.save
+  request.owner != "" and request.task != "" and request.goal != "" and checkpoint.workVersion >= 0 and
+  index < request.steps.length() and
+  request.steps.every(checkpointStep => hasGuidedAdapter(checkpointStep) and guidedDetails(checkpointStep).subject != "" and guidedDetails(checkpointStep).outcome != "") and
+  checkpoint.receipts.every(retained => retained.sourceKey != "" and retained.evidence != "" and
+    checkpoint.receipts.select(prior => prior.sourceKey == retained.sourceKey).length() == 1) and
+  (match correction {
+    | NoGuidedCheckpointCorrection => true
+    | GuidedCheckpointCorrectionBound(binding) => isNamedDestination(pending) and binding.label != "" and binding.url != ""
+  }) and (match save {
+    | GuidedSaveUntouched => true
+    | GuidedSaveReconcile(ref) => isAppointmentSave(pending) and ref.owner != "" and ref.calendar != "" and
+      ref.mailDigest != "" and ref.mailDigest == savedMail.digest and (ref.occurrence == "" or ref.detailsDigest != "")
+  })
+pure def canRestoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
+  by == Store and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
+  w.assistant.activity == A::NoTask and w.assistant.presentation == A::Closed and
+  w.execution.phase == X::Idle and w.commitmentTask == "" and w.plan.owner == "" and
+  recovery.owner == recovery.checkpoint.request.owner and validGuidedCheckpoint(recovery.checkpoint)
+pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): Workspace =
+  val checkpoint = recovery.checkpoint
+  val request = checkpoint.request
+  val nextIndex = checkpoint.receipts.length()
+  val recoveredPlan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps, receipts: checkpoint.receipts,
+    openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save }
+  val correction = checkpoint.correction
+  val plan: GuidedPlan = match correction {
+    | NoGuidedCheckpointCorrection => recoveredPlan
+    | GuidedCheckpointCorrectionBound(binding) => { ...recoveredPlan,
+      nameOverride: { stepIndex: nextIndex, label: binding.label }, linkStep: nextIndex, linkUrl: binding.url }
+  }
+  val earlier = restartedAssistant(w.assistant)
+  val version = if (earlier.workVersion > checkpoint.workVersion) earlier.workVersion else checkpoint.workVersion + 1
+  { ...w, plan: plan, review: emptyReview(w.review.revision + 1),
+    assistant: { ...earlier, activity: A::Paused, taskId: request.task, goal: request.goal,
+      checkpoint: if (checkpoint.save == GuidedSaveUntouched) guidedDetails(nextOutcome(plan)).outcome
+        else if (hasRecoveredSaveReference(checkpoint.save)) "Open the saved appointment in Calendar to check it."
+        else "Check whether the appointment was already saved before starting another plan.",
+      workVersion: version },
+    commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost) }
+pure def canDiscardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): bool =
+  by == Host and w.plan.owner != "" and fence.task == w.assistant.taskId and fence.version == w.assistant.workVersion
+pure def discardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): Workspace = {
+  ...w, plan: emptyPlan, review: emptyReview(w.review.revision + 1),
+  assistant: restartedAssistant(w.assistant), commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost)
+}
+pure def lawOtherOwnersCannotRestoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
+  recovery.owner != recovery.checkpoint.request.owner implies not(canRestoreGuided(w, recovery, by))
+pure def lawRestoredGuidanceWaitsForACurrentRead(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
+  val after = restoreGuided(w, recovery, by)
+  canRestoreGuided(w, recovery, by) implies (
+    after.assistant.presentation == A::Closed and after.assistant.activity == A::Paused and
+    after.assistant.workVersion > recovery.checkpoint.workVersion and after.assistant.operation == "" and
+    after.plan.steps == recovery.checkpoint.request.steps and after.plan.receipts == recovery.checkpoint.receipts and
+    after.plan.mail == noGuidedMail and after.plan.calendarApproval == noGuidedApproval and
+    after.browser == w.browser and after.execution == w.execution and not(canRestoreGuided(after, recovery, by)))
+pure def sometimesRecoveredGuidanceIsPaused(w: Workspace): bool =
+  w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.activity == A::Paused and w.assistant.presentation == A::Closed
+pure val guidedCheckpointSample: GuidedCheckpoint = {
+  request: { owner: "tablet", task: "recovered", goal: "Read the message then check the website", steps: List(ReadMail, ReadBrowser) },
+  receipts: List({ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }), workVersion: 4,
+  correction: NoGuidedCheckpointCorrection, save: GuidedSaveUntouched
+}
+pure val recoveryValues = Set(
+  { owner: "tablet", checkpoint: guidedCheckpointSample },
+  { owner: "other", checkpoint: guidedCheckpointSample },
+  { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
+    request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) } } },
+  { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
+    request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
+    save: GuidedSaveReconcile({ occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } },
+  { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
+    request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
+    save: GuidedSaveReconcile({ occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } })
+pure val fenceValues = Set({ task: "recovered", version: 5 }, { task: "recovered", version: 6 }, { task: "other", version: 5 })
+```
+
 ### A read plan offered in chat waits for the person to start it
 
 The conversation host validates the current human request before it offers
@@ -1322,7 +1462,7 @@ pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
   | SaveMailAppointment => true
   | _ => false
 }
-pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+pure def guidedReadContextCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   by == Host and not(privateSurfaceActive(w)) and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
   A::isVisible(w.assistant) and w.device.readiness == S::Ready and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
@@ -1331,14 +1471,16 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and
   report.step == nextOutcome(w.plan) and guidedDetails(report.step).surface == w.device.surface and
   (guidedDetails(report.step).surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
-  report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
+  report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey))
+pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  guidedReadContextCurrent(w, report, by) and w.plan.saveRecovery == GuidedSaveUntouched and
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
-    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride }
+    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
     if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
@@ -1410,13 +1552,46 @@ pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: Workspa
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
 pure def guidedSavePending(w: Workspace): bool =
   hasNext(w.plan) and isAppointmentSave(nextOutcome(w.plan)) and
-  w.execution.phase == X::Idle and w.commitmentTask == ""
+  w.execution.phase == X::Idle and w.commitmentTask == "" and w.plan.saveRecovery == GuidedSaveUntouched
+type PriorGuidedMail = { index: int, digest: str }
+pure def priorGuidedMail(plan: GuidedPlan): PriorGuidedMail =
+  plan.receipts.foldl({ index: 0, digest: "" }, (prior, receipt) => {
+    index: prior.index + 1,
+    digest: if (plan.steps.nthOr(prior.index, noGuidedStep) == ReadMail) receipt.sourceKey else prior.digest
+  })
+pure def canRebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
+  val report = mailCheck.report
+  val mail = mailCheck.mail
+  by == Host and guidedSavePending(w) and not(privateSurfaceActive(w)) and
+  w.plan.mail == noGuidedMail and w.device.surface == S::Email and w.device.readiness == S::Ready and
+  A::isVisible(w.assistant) and w.assistant.activity == A::Rechecking and w.assistant.replacementId == "" and
+  w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
+  report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
+  report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and report.step == ReadMail and
+  report.sourceKey != "" and report.sourceKey == priorGuidedMail(w.plan).digest and report.evidence != "" and
+  mail.account > 0 and mail.owner != "" and mail.address != "" and mail.ref != "" and
+  mail.generation >= 0 and mail.revision >= 0
+pure def rebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
+  { ...w, plan: { ...w.plan, mail: mailCheck.mail } }
+pure def canReconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
+  val saved = recoveryCheck.saved
+  guidedReadContextCurrent(w, recoveryCheck.report, by) and isAppointmentSave(recoveryCheck.report.step) and
+  w.assistant.activity == A::Rechecking and saved.occurrence != "" and saved.detailsDigest != "" and
+  w.plan.saveRecovery == GuidedSaveReconcile({ occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest, detailsDigest: saved.detailsDigest })
+pure def reconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, recoveryCheck.report, by)
+pure def lawRecoveredSaveNeedsItsExactReadBack(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
+  val saved = recoveryCheck.saved
+  val sameSaved = w.plan.saveRecovery == GuidedSaveReconcile({
+    occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest, detailsDigest: saved.detailsDigest
+  })
+  not(saved.occurrence != "" and saved.detailsDigest != "" and sameSaved) implies not(canReconcileGuidedSave(w, recoveryCheck, by))
 pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
   approval.task == w.assistant.taskId and approval.account == w.plan.mail.account and approval.account > 0 and
   approval.owner == w.plan.mail.address and approval.sourceRef == w.plan.mail.ref and approval.sourceRef != "" and
   approval.calendar != "" and approval.provisional != "" and approval.proposal > w.plan.calendarApproval.proposal and
-  approval.title != "" and approval.ends > approval.starts and approval.timezone != ""
+  approval.title != "" and approval.ends > approval.starts and approval.timezone != "" and approval.detailsDigest != ""
 pure def expectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, calendarApproval: approval } }
 pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): bool =
@@ -1427,16 +1602,37 @@ pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, b
     (w.plan.savedOccurrence == saved.occurrence and w.plan.savedEvidence == "" and saved.evidence != ""))
 pure def observeGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, savedOccurrence: saved.occurrence, savedEvidence: saved.evidence } }
+pure def lawUncertainGuidedSaveCannotAuthorizeAnotherWrite(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
+  (hasNext(w.plan) and w.plan.saveRecovery != GuidedSaveUntouched) implies
+    not(canExpectGuidedCalendar(w, approval, by)) and
+    (not(hasRecoveredSaveReference(w.plan.saveRecovery)) implies not(canResume(w, by)))
 pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   (approval.sourceRef != w.plan.mail.ref or approval.account != w.plan.mail.account) implies
     not(canExpectGuidedCalendar(w, approval, by))
 pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   (isAppointmentSave(report.step) and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
-pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
+pure val guidedMailSample: GuidedMail = { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" }
+pure val mailCheckValues = Set(
+  { report: sampleReport, mail: guidedMailSample },
+  { report: { owner: "tablet", task: "recovered", version: 7, deviceVersion: 2, browserRevision: 0,
+    step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample },
+  { report: { owner: "tablet", task: "recovered", version: 6, deviceVersion: 2, browserRevision: 0,
+    step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample })
+pure val weight_restoreGuided = 6
+pure val weight_rebindGuidedMail = 8
+pure val weight_reconcileGuidedSave = 8
+pure val recoveredSaveReport: GuidedObservation = { owner: "tablet", task: "recovered", version: 7, deviceVersion: 2,
+  browserRevision: 0, step: SaveMailAppointment, sourceKey: "saved-appointment", evidence: "Saved appointment: Visit" }
+pure val recoveredSaveRef: GuidedSaveReference = { occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }
+pure val recoveryCheckValues = Set(
+  { report: recoveredSaveReport, saved: recoveredSaveRef },
+  { report: { ...recoveredSaveReport, version: 6 }, saved: recoveredSaveRef },
+  { report: recoveredSaveReport, saved: { ...recoveredSaveRef, detailsDigest: "edited-details" } },
+  { report: recoveredSaveReport, saved: { ...recoveredSaveRef, owner: "other" } })
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" })
 pure val savedValues = Set({ approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" },
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" },
   occurrence: "saved", evidence: "Saved Visit" })
 ```
 

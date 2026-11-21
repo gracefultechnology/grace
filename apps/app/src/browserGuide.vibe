@@ -6,6 +6,7 @@ import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, de
 import { accountFetch, apiOrigin, browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { supportsPointerHover, webView } from "./surfacePlugin.ts"
+import { GuidedRecovery } from "./guidedRecovery.vibe"
 import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
 import { NativePage, guidedPageState, privateFormRecovery } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
@@ -147,6 +148,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   const workspace = try Workspaces
   const page = try NativePage
   const setup = try Setup
+  const recovery = try GuidedRecovery
   const authority = effect () => guidedAuthority(try setup.get(), webView.window.location.hash)
   const currentContext = effect () => context(try workspace.get(), try authority())
   effect function inBranch(id: PageId, url: string, branch: readonly PublicMenu[], selector: string | null | undefined) {
@@ -179,6 +181,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   return {
     confirmName: effect (correction) => {
       const shown = active
+      if (!(try recovery.canAccess(try workspace.get()))) return false
       const start = try currentContext()
       if (!shown || !start || shown.key !== start.key || shown.alternateHref !== correction.href ||
           !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
@@ -198,7 +201,10 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       if (active !== shown) return false
       if (sameAccount && (try currentContext())?.key === start.key) {
         const accepted = workspace.send({ type: "confirmGuidedNameCorrection", correction }, "Person") catch () => undefined
-        if (accepted !== undefined) return true
+        if (accepted !== undefined) {
+          try recovery.keepProgress()
+          return true
+        }
       }
       if (active === shown) {
         active = undefined
@@ -210,6 +216,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const previous = active
       active = undefined
       if (previous !== undefined) page.clearGuide(previous.id) catch () => undefined
+      if (!(try recovery.canAccess(try workspace.get()))) return changed
       const start = (try currentContext())
       if (start === undefined) return changed
       const account = decisionSession(native, fixture) catch () => null

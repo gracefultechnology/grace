@@ -1,4 +1,4 @@
-// spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"
+// spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export interface PreferenceRecords {
@@ -6,8 +6,19 @@ export interface PreferenceRecords {
   write(input: { name: "preferences"; revision: number; value: string }): Promise<unknown>;
 }
 
-export const preferenceRecords = Capacitor.isPluginAvailable("GraceRecords")
-  ? registerPlugin<PreferenceRecords>("GraceRecords") : undefined;
+const records = Capacitor.isPluginAvailable("GraceRecords")
+  ? registerPlugin<PreferenceRecords & GuidedTaskRecords>("GraceRecords") : undefined;
+
+export const preferenceRecords: PreferenceRecords | undefined = records;
+
+export type GuidedRecordName = `guided-task-${string}`;
+
+export interface GuidedTaskRecords {
+  read(input: { name: GuidedRecordName }): Promise<unknown>;
+  write(input: { name: GuidedRecordName; revision: number; value: string }): Promise<unknown>;
+}
+
+export const guidedTaskRecords: GuidedTaskRecords | undefined = records;
 
 export interface PreferenceDevice {
   getDevice(): Promise<unknown>;
