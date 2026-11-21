@@ -83,6 +83,7 @@ export function useWorkspace() {
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
     /** The person's Close browser, which the page host also tells what websites asked. */
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
+    checkPrivateEmail: (tab: number, revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.checkPrivateEmail(tab, revision))),
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
 }
