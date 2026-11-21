@@ -1067,7 +1067,6 @@ async function deviceScreen({ serial, file, signal }: DeviceScreen) {
 
 async function waitForUi<Found>(screen: DeviceScreen, select: (nodes: DeviceNode[]) => Found | undefined, label: string) {
   const until = Date.now() + 180_000;
-  let seen: string[] = [];
   while (Date.now() < until) {
     screen.signal.throwIfAborted();
     const nodes = await deviceScreen(screen).catch(() => []);
@@ -1082,11 +1081,10 @@ async function waitForUi<Found>(screen: DeviceScreen, select: (nodes: DeviceNode
     } else {
       const found = select(nodes);
       if (found !== undefined) return found;
-      seen = nodes.filter((node) => node.clickable).map((node) => node.label || node.description);
     }
     await delay(1000);
   }
-  throw new Error(`Android did not show ${label}; last seen ${JSON.stringify(seen)}`);
+  throw new Error(`Android did not show ${label}`);
 }
 
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi, signal: AbortSignal) {
