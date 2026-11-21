@@ -199,7 +199,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       throw new Error("A benchmark instance opens one local synthetic website");
     const storage = definition.siteStorageState === undefined ? undefined
       : Schema.decodeUnknownSync(SiteState)(JSON.parse(readFileSync(definition.siteStorageState, "utf8")));
-    if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
+    if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain.replace(/^\./u, "") !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
       throw new Error("Benchmark storage state must belong only to the declared synthetic website");
     const browser = await context.context.browser()?.newContext({
       ignoreHTTPSErrors: true,
