@@ -2138,7 +2138,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }, "ReadMail", "ReadMail", "ReadCalendar"] }],
     }),
-  }]), client));
+  }], { goalIncludes: "help page", labels: [target] }), client));
   const subject = "Reminder: your appointment tomorrow at 10 am";
   const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
     method: "POST",
@@ -2457,7 +2457,7 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
       text: "Review the page and email checks.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: requested }, "ReadMail"] }],
     }),
-  }]), client));
+  }], { goalIncludes: requested, labels: [siteLabel, `${siteLabel} (collapsed menu)`] }), client));
   const guideOwner = { id: "guide-owner", email: "owner@grace.test" };
   const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
   const subject = "Service desk follow-up appointment";
@@ -2527,6 +2527,7 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
       case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
       case "/api/v1/decisions":
+        expect(new Headers(init?.headers).get("X-Eliza-Account")).toBe(guideOwner.id);
         return browserFetch(new URL(request.pathname, cloud), { ...init, credentials: "omit",
           headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } });
       default: return browserFetch(input, init);
