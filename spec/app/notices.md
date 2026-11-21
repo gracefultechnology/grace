@@ -16,10 +16,11 @@ The prototype's toasts are all raised here: "Saved to your calendar" and
 "Deleted" with the event's title from the calendar
 (`prototype/Grace Prototype.html:2173–2176`), "Connected to" with the
 network's name from the Wi-Fi page (`:2035`), "The internet isn't connected.
-Tap Wi-Fi to fix it." and "Email needs the internet" when the person opens
-the internet or Email while offline (`:2249–2250`), Email's and Files' own
-messages, and "Back online" and the reminder toast below. Its "In the full
-version…" toasts and the "Hey Grace is off" toast are demo messages with no
+Tap Wi-Fi to fix it." when the person opens the internet while offline
+(`:2249–2250`), Email's and Files' own messages, and "Back online" and the
+reminder toast below. Email can open offline to show saved mail and keep an
+outgoing message in Outbox. Fresh provider reads and sending need a connection. Its
+"In the full version…" toasts and the "Hey Grace is off" toast are demo messages with no
 counterpart in this delivery.
 
 The prototype's toast replaces whatever toast was showing
