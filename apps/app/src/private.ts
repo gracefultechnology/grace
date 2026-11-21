@@ -562,6 +562,77 @@ function covers(text: string, word: string, i: number, back: number): boolean {
   return occursAt(text, word, i - back) || covers(text, word, i, back + 1);
 }
 
+function isSpacedAt(text: string, i: number): boolean {
+  const c = charAt(text, i);
+  return c === 32 || c === 160 || c === 8201 || c === 8239;
+}
+
+function isDashAt(text: string, i: number): boolean {
+  const c = charAt(text, i);
+  return c === 45 || c === 8209 || c === 8211;
+}
+
+function spacedStart(text: string, s: number, steps: number): number {
+  //@ decreases steps
+  return steps > 0 && isSpacedAt(text, s - 1) && isDigitAt(text, s - 2) ? spacedStart(text, runStart(text, s - 1, 13), steps - 1) : s;
+}
+
+function spacedEnd(text: string, q: number, steps: number): number {
+  //@ decreases steps
+  return steps > 0 && isSpacedAt(text, q) && isDigitAt(text, q + 1) ? spacedEnd(text, runEnd(text, q + 1, 13), steps - 1) : q;
+}
+
+function isYearAt(text: string, s: number, e: number): boolean {
+  return e - s === 4 && ((digitValue(text, s) === 1 && digitValue(text, s + 1) === 9) || (digitValue(text, s) === 2 && digitValue(text, s + 1) === 0));
+}
+
+function standsAlone(text: string, s: number, e: number): boolean {
+  return !isDigitAt(text, s - 1) && !isDigitAt(text, e) && !attachedBefore(text, s) && !attachedAfter(text, e);
+}
+
+function pairedFrom(text: string, s: number): boolean {
+  const q = runEnd(text, s, 5);
+  const e = runEnd(text, q + 1, 5);
+  return isDashAt(text, q) && (q - s === 3 || q - s === 4) && e - q - 1 === q - s && standsAlone(text, s, e);
+}
+
+function isMailCodeAt(text: string, i: number): boolean {
+  if (!isDigitAt(text, i)) return false;
+  const r = runStart(text, i, 13);
+  const s = spacedStart(text, r, 10);
+  const e = spacedEnd(text, runEnd(text, i, 13), 10);
+  const digits = digitsBetween(text, s, e, 64);
+  const before = isDashAt(text, r - 1) && isDigitAt(text, r - 2) ? runStart(text, r - 1, 5) : r;
+  return (digits >= 4 && digits <= 10 && !isYearAt(text, s, e) && standsAlone(text, s, e)
+      && !(isSpacedAt(text, s - 1) && isDigitAt(text, s - 2)) && !(isSpacedAt(text, e) && isDigitAt(text, e + 1)))
+    || pairedFrom(text, r) || (before < r && pairedFrom(text, before));
+}
+
+function joinedWordAfter(text: string, e: number): string {
+  return (charAt(text, e) === 32 || charAt(text, e) === 45) && isLetterAt(text, e + 1) ? wordBetween(text, e + 1, wordEnd(text, e + 1, 12)) : "";
+}
+
+function namesCodeAt(text: string, j: number): boolean {
+  const end = wordEnd(text, j, 16);
+  const word = wordBetween(text, j, end);
+  const next = joinedWordAfter(text, end);
+  const cue = cueAt(text, j, end);
+  return (cue > 0 && cue <= 4) || word === "login" || word === "logon" || word === "signin" || word === "mfa"
+    || ((word === "sign" || word === "signing" || word === "log" || word === "logging") && (next === "in" || next === "on"))
+    || (word === "one" && next === "time") || (word === "two" && (next === "factor" || next === "step"));
+}
+
+export function namesCode(text: string): boolean {
+  let j = 0;
+  while (j < text.length) {
+    //@ invariant 0 <= j && j <= text.length
+    //@ decreases text.length - j
+    if (isLetterAt(text, j) && !isLetterAt(text, j - 1) && namesCodeAt(text, j)) return true;
+    j = j + 1;
+  }
+  return false;
+}
+
 function isDetectedAt(text: string, i: number): boolean {
   return isCardDigit(text, i) || isCodeDigit(text, i) || isChainCodeDigit(text, i) || isLetteredCodeAt(text, i)
     || isSsnDigit(text, i) || isStatedAt(text, i);
@@ -644,5 +715,22 @@ export function withhold(leaving: Leaving): string {
   if (next !== out) return hidden(text.length);
   //@ assert forall(k, 0 <= k && k < out.length && isPrivateAt(out, passwords, k) ==> out.charCodeAt(k) === 42)
   //@ assert forall(j, forall(at, 0 <= j && j < passwords.length && passwords[j].length >= 4 && occursAt(out, passwords[j], at) ==> covers(out, passwords[j], at, 0)))
+  return out;
+}
+
+export function withholdMail(leaving: Leaving, coded: boolean): string {
+  //@ ensures \result.length === leaving.text.length
+  //@ ensures forall(k, 0 <= k && k < leaving.text.length ==> (isPrivateAt(leaving.text, leaving.passwords, k) || (coded && isMailCodeAt(leaving.text, k)) ? \result.charCodeAt(k) === 42 : \result.charCodeAt(k) === leaving.text.charCodeAt(k)))
+  const text = leaving.text;
+  const passwords = leaving.passwords;
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant out.length === i
+    //@ invariant forall(k, 0 <= k && k < i ==> (isPrivateAt(text, passwords, k) || (coded && isMailCodeAt(text, k)) ? out.charCodeAt(k) === 42 : out.charCodeAt(k) === text.charCodeAt(k)))
+    out = out + (isDetectedAt(text, i) || hidesPassword(text, passwords, i) || (coded && isMailCodeAt(text, i)) ? "*" : text.slice(i, i + 1));
+    i = i + 1;
+  }
   return out;
 }
