@@ -397,6 +397,20 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
 }) {
   const proposedNumber = try Ref.make(0)
 
+  effect function publishReview(scope: ReadyScope, shown: Mail | Calendar, next: Mail | Calendar) {
+    if (!(try still(scope))) return false
+    return try SubscriptionRef.modifySome(latest, (current) =>
+      current === shown ? [true, Option.some(next)] : [false, Option.none()])
+  }
+
+  effect function readSeries(scope: ReadyScope, shown: Calendar, occurrenceId: string) {
+    const selected = shown.selected
+    if (shown.accountId !== scope.accountId || shown.grant !== scope.grant || selected?.externalId !== occurrenceId || !selected.seriesId) return undefined
+    const found = try query("calendar/series", { grantId: scope.grant, occurrenceId }, Series, authorization)
+    return managedReadMatches(scope.accountId, found.accountId, occurrenceId, found.occurrenceId) &&
+      found.event.externalId === selected.seriesId ? found.event : undefined
+  }
+
   effect function stage(proposal: ProposedWork) {
     const scope = try activeScope()
     const { accountId, grant } = proposal
@@ -406,6 +420,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     const account = try setup.get()
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== accountId || shown.grant !== grant) return false
+    let reviewed = shown
     if (proposal.kind === "draft") {
       if (shown.kind !== "mail" || account.googleLink.tag !== "GoogleLinkConnected" ||
         !maySendManagedMail(account.graceAccount, account.googleLink, accountId, grant)) return false
@@ -423,14 +438,13 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if ((proposal.id !== undefined || proposal.version !== undefined) && (!shown.selected ||
         !isSelectedVersion(shown.selected.externalId, shown.selected.etag ?? "", proposal.id ?? "", proposal.version ?? ""))) return false
       if (proposal.kind === "removeAppointment" && proposal.series) {
-        if (!(try series({ accountId, grant }, proposal.id))) return false
+        const event = try readSeries(scope, shown, proposal.id)
+        if (!event) return false
+        reviewed = { ...shown, series: event }
       }
     }
-    const current = try SubscriptionRef.get(latest)
-    if (!(try still(scope)) || (current.kind !== "mail" && current.kind !== "calendar")) return false
     const number = try Ref.updateAndGet(proposedNumber, (prior) => prior + 1)
-    try publish({ ...current, proposed: { number, proposal } })
-    return true
+    return try publishReview(scope, shown, { ...reviewed, proposed: { number, proposal } })
   }
 
   effect function series({ accountId, grant }: WriteScope, occurrenceId: string) {
@@ -439,12 +453,10 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if (scope.kind !== "ready" || scope.view !== "Calendar" || scope.accountId !== accountId || scope.grant !== grant ||
       !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return undefined
     const shown = try SubscriptionRef.get(latest)
-    if (shown.kind !== "calendar" || shown.grant !== grant || shown.selected?.externalId !== occurrenceId || !shown.selected.seriesId) return undefined
-    const found = try query("calendar/series", { grantId: grant, occurrenceId }, Series, authorization)
-    if (!managedReadMatches(accountId, found.accountId, occurrenceId, found.occurrenceId) ||
-      found.event.externalId !== shown.selected.seriesId || !(try still(scope))) return undefined
-    try publish({ ...shown, series: found.event })
-    return found.event
+    if (shown.kind !== "calendar") return undefined
+    const event = try readSeries(scope, shown, occurrenceId)
+    if (!event || !(try publishReview(scope, shown, { ...shown, series: event }))) return undefined
+    return event
   }
 
   effect function change({ accountId, grant }: WriteScope, action: ManagedWrite) {

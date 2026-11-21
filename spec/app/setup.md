@@ -724,7 +724,9 @@ the calendar with changes enabled, so enabling one never enables the other.
 Moving a message to Trash or changing an existing appointment requires the
 ID and version that the person reviewed. Grace checks both when it stages
 the proposal and again before sending the change. For a whole-series change,
-Grace checks the series selected for review. Creating an appointment starts
+Grace checks the series selected for review. A series lookup can open a
+review only while the selection that requested it is still on screen.
+Creating an appointment starts
 with a new item, and Undo refers to the confirmed Trash operation.
 The provider's receipt must name the same account, item and operation before
 Grace shows success. The managed Google Trash, Undo and

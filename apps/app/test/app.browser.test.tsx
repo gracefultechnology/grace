@@ -1332,6 +1332,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
+  let beforeSeriesReply: (() => Promise<void>) | undefined;
   events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
   const changeInput = Schema.fromJsonString(Schema.Struct({
@@ -1440,6 +1441,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/calendar/series":
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
         expect(api.searchParams.get("grantId")).toBe(grant);
+        await beforeSeriesReply?.();
         return reply({ accountId: person.id, occurrenceId: occurrence.externalId, event: series });
       case "/api/v1/eliza/google/calendar/change": {
         const outbound = decodeChange(options?.body);
@@ -1627,6 +1629,24 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
     await tap(/Therapy/);
     await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
+    const seriesRequested = Latch.makeUnsafe();
+    const releaseSeries = Latch.makeUnsafe();
+    beforeSeriesReply = () => { seriesRequested.openUnsafe(); return Effect.runPromise(releaseSeries.await); };
+    const removal = { ...scope, kind: "removeAppointment", id: occurrence.externalId, version: occurrence.etag, series: true } as const;
+    const pendingRemoval = runtime.runPromise(managed.stage(removal));
+    try {
+      await Effect.runPromise(seriesRequested.await);
+      await tap("Close Calendar");
+      await tap(/^Calendar/);
+      await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    } finally {
+      beforeSeriesReply = undefined;
+      releaseSeries.openUnsafe();
+    }
+    expect(await pendingRemoval).toBe(false);
+    await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    expect(changed).toEqual(["update", "delete", "create"]);
+    await tap(/Therapy/);
     await tap("Change entire series");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
     await tap("Review appointment");
