@@ -293,7 +293,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
-    const hops: { url: string; documentId: string; checked: boolean }[] = [];
+    const browserObservationTimeoutMs = 15_000;
+    const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number }[] = [];
     outcome.hops = hops;
     let previous = initial;
     while (hops.length + disclosures.length < (named ? 8 : 1)) {
@@ -349,19 +350,22 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       await expect.poll(() => {
         const tab = workspace().browser.tabs[0];
         return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-      }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
+      }, { timeout: browserObservationTimeoutMs }).toEqual({ address: landed.url, arrived: true });
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
       await expect.poll(() => resume.query() !== null || check.query() !== null, {
+        timeout: browserObservationTimeoutMs,
         message: "Waiting for Grace to offer Resume Grace or Check page after navigation",
       }).toBe(true);
       if (resume.query() !== null) await userEvent.click(resume);
       await userEvent.click(check);
+      const checkReturnedAt = performance.now();
       await expect.poll(() => finished.query() !== null || continuing.query() !== null, {
+        timeout: browserObservationTimeoutMs,
         message: "Waiting for Grace to show a completed read or a page-check result after Check page",
       }).toBe(true);
       const checked = finished.query() !== null;
-      hops.push({ url: landed.url, documentId: landed.documentId, checked });
+      hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt) });
       if (checked) break;
       expect(named).toBeDefined();
       expect(workspace().plan.receipts).toHaveLength(0);
