@@ -7,5 +7,10 @@
   { "tap": "Allow" },
   { "expect": "AndroidWifi" },
   { "expect": "Connected" },
-  { "call": "ElizaWiFi.getConnectivity", "returns": { "online": true } }
+  { "call": "ElizaWiFi.getConnectivity", "returns": { "online": true } },
+  { "forget": "AndroidWifi" },
+  { "tap": "AndroidWifi" },
+  { "approve": "Save" },
+  { "expect": "Connected" },
+  { "call": "ElizaWiFi.getConnectivity", "returns": { "online": true, "validated": true, "ssid": "AndroidWifi" } }
 ]

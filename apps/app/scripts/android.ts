@@ -827,7 +827,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
     const until = Date.now() + 180_000;
     while (Date.now() < until) {
       const nodes = deviceNodes(await shell(serial, `uiautomator dump ${screen} >/dev/null && cat ${screen}; rm -f ${screen}`, 75).catch(() => ""));
-      const button = nodes.find((node) => node.label === step.approve && node.clickable && node.enabled && node.packageName !== identity.appId);
+      const button = nodes.find((node) => node.label === step.approve && node.clickable && node.enabled && ["com.android.settings", "com.android.systemui"].includes(node.packageName));
       if (button) {
         await shell(serial, `input tap ${button.x} ${button.y}`);
         return;
