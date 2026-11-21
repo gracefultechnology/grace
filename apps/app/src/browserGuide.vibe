@@ -8,7 +8,7 @@ import { accountPlugin } from "./accountPlugin.ts"
 import { supportsPointerHover, webView } from "./surfacePlugin.ts"
 import { GuidedRecovery } from "./guidedRecovery.vibe"
 import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
-import { NativePage, guidedPageState, privateFormRecovery } from "./nativePage.vibe"
+import { comparableName, NativePage, guidedPageState, privateFormRecovery } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
 
@@ -26,6 +26,7 @@ const privateForm = unavailableBecause(privateFormRecovery)
 const changed = unavailableBecause("The page or task changed. Ask me again on the page you want.")
 const namedPageContext = " Prefer an exact page label. If it is absent, choose a navigation section that leads there. Keep the requested kind of page, such as a category or an individual item."
 const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
+const statementContext = " Prefer a page that shows the bill, statement or account activity. Avoid a link that only starts a payment, such as Make a payment."
 
 function context(w: Workspace, authority: GuidedAuthority) {
   if (!mayGuideReadLink(w) || w.plan.owner !== guidedOwner(authority, w.plan.steps)) return undefined
@@ -40,7 +41,8 @@ function context(w: Workspace, authority: GuidedAuthority) {
   const outcome = nextOutcome(w.plan)
   const approvedHref = w.plan.nameOverride.stepIndex === step.stepIndex ? w.plan.linkUrl : undefined
   return { key, step, owner: w.plan.owner, approvedHref, loadVersion: tab.loadVersion, id: PageId.make(`tab-${tab.id}`), url,
-    goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "" }
+    goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "",
+    instruction: outcome.tag === "ReadStatement" ? choiceContext + statementContext : choiceContext }
 }
 
 function publicWords(text: string): string {
@@ -90,7 +92,7 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
     if (target !== "") {
       const control = link.expanded === false ? " (collapsed menu)" : link.expanded === true ? " (expanded menu)" : link.menuItem ? " (menu item)" : ""
       return { id: link.id, label: link.label, description: (description + control).slice(0, CLEF_DECISION_LIMITS.candidateLabel),
-        href, menuItem: link.menuItem, selector: link.selector, samePage: link.samePage, exact: aliases.some((label) => label.toLowerCase() === target.toLowerCase()), pointable: link.rank === 2 }
+        href, menuItem: link.menuItem, selector: link.selector, samePage: link.samePage, exact: aliases.some((label) => comparableName(label) === comparableName(target)), pointable: link.rank === 2 }
     }
     const prefix = link.path.replace(/\/+$/u, "") + "/"
     const children = [...destinations.values()].filter(other => other.path !== link.path && other.path.startsWith(prefix))
@@ -235,7 +237,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const request = publicWords(start.goal)
       const target = publicWords(start.target)
       if (!request || (start.target !== "" && (!target || target.includes("*")))) return unavailable
-      const instruction = target === "" ? choiceContext : " Find the named page: " + target + "." + namedPageContext
+      const instruction = target === "" ? start.instruction : " Find the named page: " + target + "." + namedPageContext
       if (request.length > CLEF_DECISION_LIMITS.goal || (target !== "" && request.length + instruction.length > CLEF_DECISION_LIMITS.goal)) return unavailable
       const goal = request.length + instruction.length <= CLEF_DECISION_LIMITS.goal ? request + instruction : request
       const guided = start
@@ -338,11 +340,20 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         const sameAccount = tryPromise(() => account.current()) catch () => false
         if (!sameAccount || (try currentContext())?.key !== start.key) return changed
         const expiresAt = (try Clock.currentTimeMillis) + (opensMenu ? 45000 : 20000)
-        const accepted = page.pointAt(start.id, current.documentId, {
-          kind: "show", id: current.result.snapshotId, snapshotId: current.result.snapshotId,
-          nodeId: node.id, origin: start.url.origin, expiresAt, text: node.label, assistantName: "Grace"
-        }) catch () => false
-        if (!accepted) return changed
+        let pointed = false
+        for (let attempt = 0; attempt < 2 && !pointed; attempt++) {
+          const fresh = attempt === 0 ? current : (page.observeLinks(start.id) catch () => undefined)
+          if (fresh === undefined || fresh.documentId !== snapshot.documentId || (try currentContext())?.key !== start.key) return changed
+          const freshState = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
+          if (freshState !== "Ordinary" && freshState !== "PublicOnly") return freshState === "PrivateForm" ? privateForm : unobservable
+          const shown = links(fresh, start.url, target, freshState === "PublicOnly" || start.approvedHref !== undefined).find((link) => link.href === node.href && link.selector === node.selector)
+          if (shown === undefined) return changed
+          pointed = page.pointAt(start.id, fresh.documentId, {
+            kind: "show", id: fresh.result.snapshotId, snapshotId: fresh.result.snapshotId,
+            nodeId: shown.id, origin: start.url.origin, expiresAt, text: shown.label, assistantName: "Grace"
+          }) catch () => false
+        }
+        if (!pointed) return changed
         const currentAccount = tryPromise(() => account.current()) catch () => false
         if (!currentAccount || (try currentContext())?.key !== start.key) {
           page.clearGuide(start.id) catch () => undefined

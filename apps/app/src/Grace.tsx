@@ -9,6 +9,7 @@ import { CalendarNews } from "./calendar.vibe";
 import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, priorGuidedMail, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
+import type { GuidedCheck } from "./conversation.vibe";
 import { OverPage } from "./PageLayer.tsx";
 import { passwordDirection } from "./passwords.vibe";
 import { VoiceNoticeDialog } from "./VoiceNoticeDialog.tsx";
@@ -31,23 +32,29 @@ function keyedSteps(steps: readonly GuidedStep[]) {
   });
 }
 
-const checkLabels: Record<GuidedStep["tag"], string> = {
-  ReadMail: "Check email",
-  ReadBrowser: "Check page",
-  ReadChangedBrowser: "Check page",
-  ReachNamedPage: "Check page",
-  ReadStatement: "Read statement",
-  ReadCalendar: "Check appointment",
-  SaveMailAppointment: "Check saved appointment",
-  SurfaceOutcome: "",
+const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: string }> = {
+  ReadMail: { label: "Check email", item: "email", missing: "I couldn’t read an open email. Open the one you want me to check." },
+  ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
+  ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
+  ReachNamedPage: { label: "Check page", item: "page", missing: "" },
+  ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
+  ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
+  SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t verify the saved appointment. Open it on your calendar and try again." },
+  SurfaceOutcome: { label: "", item: "item", missing: "I couldn’t confirm this step yet." },
 };
 
-const pageRetry = "I couldn’t verify this page. Open the page for this step and try again.";
-const checkRetries: Partial<Record<GuidedStep["tag"], string>> = {
-  ReadMail: "Open an email you haven’t checked in this task and try again.",
-  ReadCalendar: "Open an appointment you haven’t checked in this task and try again.",
-  SaveMailAppointment: "I couldn’t verify the saved appointment. Open it on your calendar and try again.",
-  ReadStatement: "Open the current statement with the amount due and due date, then try again.",
+const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep | undefined): string => {
+  const { item, missing } = checks[step?.tag ?? "SurfaceOutcome"];
+  switch (check) {
+    case "NotFound": return step?.tag === "ReachNamedPage" ? `I couldn’t verify “${step.subject}” on this page. Check the page again or try another link.` : missing;
+    case "Several": return "I found more than one amount due or due date on this page.";
+    case "Past": return "This is an earlier statement. Open the current one.";
+    case "Changed": return `The ${item} changed while I checked it. Check it again.`;
+    case "Covered": return "Something on the website covers the page. Close it or answer it there, then check again.";
+    case "Used": return `You already used this ${item} for an earlier step. Open the next one.`;
+    case "PrivateForm": return privateFormRecovery;
+    case "Refused": return "I couldn’t confirm this step yet.";
+  }
 };
 
 /** @model spec/app/assistant.md */
@@ -79,7 +86,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [startFailure, setStartFailure] = useState<number>();
   const [endFailure, setEndFailure] = useState<string>();
-  const [guidedCheck, setGuidedCheck] = useState<{ key: string; phase: "checking" | "retry" | "privateForm" }>();
+  const [stepCheck, setStepCheck] = useState<{ key: string; result?: GuidedCheck }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
@@ -116,7 +123,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const recoveredSave = stepKind === "SaveMailAppointment" && plan.saveRecovery.tag === "GuidedSaveReconcile" ? plan.saveRecovery : undefined;
   const reopenMail = stepKind === "SaveMailAppointment" && !recoveredSave && !plan.mail.ref && priorGuidedMail(plan).digest !== "";
   const checkSurface = reopenMail ? "Email" : details?.surface;
-  const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checkLabels[stepKind];
+  const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checks[stepKind].label;
   const calendar = { type: "visit", destination: "Calendar" } as const;
   const closeInterruptedDraft = () => ownsPlan && recoveredSave && !recoveredSave.occurrence
     ? runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(recoveredSave.owner, recoveredSave.calendar)))
@@ -150,17 +157,17 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     void finish().catch(() => setEndFailure(scopeKey));
   };
   const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
-  const checking = canCheck && guidedCheck?.key === scopeKey ? guidedCheck : undefined;
+  const checked = canCheck && stepCheck?.key === scopeKey ? stepCheck : undefined;
+  const checking = checked !== undefined && checked.result === undefined;
+  const failed = checked?.result === undefined || checked.result === "Confirmed" ? undefined
+    : reopenMail ? "Open the same email you checked for this task and try again." : notCounted(checked.result, currentStep);
   const check = () => {
-    const attempt = { key: scopeKey, phase: "checking" } as const;
-    setGuidedCheck(attempt);
-    const report = (accepted: boolean | "PrivateForm") => setGuidedCheck((current) =>
-      current === attempt ? (accepted === true ? undefined : { key: scopeKey, phase: accepted === "PrivateForm" ? "privateForm" : "retry" }) : current);
-    void checkGuidedRead().then(report, () => report(false));
+    const attempt = { key: scopeKey };
+    setStepCheck(attempt);
+    const report = (result: GuidedCheck) => setStepCheck((current) =>
+      current === attempt ? (result === "Confirmed" ? undefined : { key: scopeKey, result }) : current);
+    void checkGuidedRead().then(report, () => report("Refused"));
   };
-  const checkRecovery = checking?.phase === "privateForm" ? privateFormRecovery : reopenMail ? "Open the same email you checked for this task and try again." : stepKind === "ReachNamedPage"
-    ? `I couldn’t verify “${details?.subject}” on this page. Check the page again or try another link.`
-    : checkRetries[stepKind] ?? pageRetry;
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
   const alternateHref = feedback?.result && "alternateHref" in feedback.result ? feedback.result.alternateHref : undefined;
   const nameOffer = workspace && alternateHref ? currentGuidedNameCorrection(workspace) : undefined;
@@ -268,15 +275,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
             </section>
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
-          {(checking?.phase === "retry" || checking?.phase === "privateForm") && (
-            <GraceBubble role="status" aria-label={details?.surface === "Browser" ? "Page check result" : "Task check result"}>{checkRecovery}</GraceBubble>
-          )}
+          {failed && <GraceBubble role="status" aria-label={details?.surface === "Browser" ? "Page check result" : "Task check result"}>{failed}</GraceBubble>}
           {localCommands && guide.mic === "GuideMicUnavailable" && <PageText role="status">Cloud speech is unavailable. You can type a Passwords command.</PageText>}
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
           {canCheck && <AnswerChips>
             {correction && <AnswerChip className="mr-0 h-auto min-h-13 max-w-full shrink whitespace-normal wrap-anywhere" onClick={chooseSiteName}>Use “{correction.label}” for this step</AnswerChip>}
-            {guideKey && <AnswerChip disabled={checking?.phase === "checking" || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>{feedback?.result?.kind === "Unavailable" && feedback.result.tryAnotherMenu ? "Try another menu" : "Show me the link"}</AnswerChip>}
-            <AnswerChip disabled={checking?.phase === "checking"} onClick={check}>{label}</AnswerChip>
+            {guideKey && <AnswerChip disabled={checking || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>{feedback?.result?.kind === "Unavailable" && feedback.result.tryAnotherMenu ? "Try another menu" : "Show me the link"}</AnswerChip>}
+            <AnswerChip disabled={checking} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
           {answers.length > 0 && (
             <AnswerChips>

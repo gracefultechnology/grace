@@ -186,4 +186,8 @@ export default defineConfig(
   { files: ["{apps,packages}/**/*.{vibe,vibex}"], languageOptions: { parser: guarded(vibelang) } },
   { files: own, plugins: { code }, rules: { "no-console": "error", "code/comments": ["error", { left: commented }], "code/effects": ["error", { left: scheduled }] } },
   { files: ["packages/ui/src/components/**"], ignores: ["**/*.meta.tsx"], rules: { "code/comments": ["error", { jsdoc: true, left: commented }] } },
+  {
+    files: ["apps/app/src/**/*.{vibe,ts}"],
+    rules: { "no-restricted-syntax": ["error", ...["Literal[value=/\\bMargaret\\b/]", "TemplateElement[value.raw=/\\bMargaret\\b/]"].map((selector) => ({ selector, message: "What Grace is told names the person, never a fixed name." }))] },
+  },
 )

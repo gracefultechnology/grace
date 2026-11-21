@@ -7,6 +7,7 @@ import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
+import { privateFormRecovery } from "../src/nativePage.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, script, signIn } from "./cloud.vibe";
 import { decisionCloud } from "./browser-decisions.fixture.vibe";
@@ -313,7 +314,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
     const browserObservationTimeoutMs = 15_000;
-    const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number }[] = [];
+    const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number; reason?: string | null }[] = [];
     outcome.hops = hops;
     const menuRetries: { documentId: string; instruction: string }[] = [];
     outcome.menuRetries = menuRetries;
@@ -451,9 +452,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const checkReturnedAt = performance.now();
       await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
       const checked = finished.query() !== null;
-      hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt) });
+      const reason = continuing.query()?.textContent;
+      hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
       if (checked) break;
       expect(named).toBeDefined();
+      expect([`I couldn’t verify “${named?.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);
       expect(workspace().plan.receipts).toHaveLength(0);
       previous = landed;
     }
@@ -534,7 +537,7 @@ it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec
   await userEvent.click(check);
   await expect.element(complete).toBeVisible();
   await userEvent.click(ui.getByRole("button", { name: "Expand", exact: true }));
-  const answer = ui.getByRole("region", { name: "Grace" }).getByText(/^Statement amount due:/);
+  const answer = ui.getByRole("region", { name: "Task plan" }).getByText(/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
   await expect.element(answer).toBeVisible();
   const grade = await transport({ kind: "answer", text: answer.element().textContent ?? "" });
   if (billerId === undefined) {
