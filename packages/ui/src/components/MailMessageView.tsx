@@ -16,13 +16,16 @@ import { Skeleton } from "./Skeleton.tsx";
 const pill = { size: 22, strokeWidth: 2.2, "aria-hidden": true } as const;
 
 export type MailLinkProps = ComponentProps<"a"> & {
+  onOpen?: () => void;
   /** Grace pointing at the link (prototype `link`). */
   guide?: GuidePointing;
 };
 
 /** A link in an email's words: blue, underlined and bold (prototype `.a-link`). */
-export function MailLink({ guide, className, ...props }: MailLinkProps) {
-  const link = <a className={cn(focusRing, "rounded-sm font-semibold text-link underline", className)} {...props} />;
+export function MailLink({ guide, className, onOpen, children, ...props }: MailLinkProps) {
+  const style = cn(focusRing, "rounded-sm font-semibold text-link underline", className);
+  const link = onOpen ? <button type="button" role="link" className={style} onClick={onOpen}>{children}</button>
+    : <a className={style} {...props}>{children}</a>;
   return guide ? <GuideAnchor radius={4} {...guide}>{link}</GuideAnchor> : link;
 }
 

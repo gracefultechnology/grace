@@ -1,5 +1,5 @@
 // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"; spec/app/mailboxes.md, "With no account’s Email on, Email offers only Connect your email and Ask Grace"; spec/app/mailboxes.md, "The Home Email card says Not connected, Waiting for the internet, or how many are new"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/mailboxes.md, "Drafts counts the shown accounts’ saved drafts"
-import { type Guide, type GuidePointing, type HomeEmailCardProps, type HomeMail, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
+import { BrowserDialog, BrowserDialogText, Button, type Guide, type GuidePointing, type HomeEmailCardProps, type HomeMail, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
@@ -10,8 +10,9 @@ import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accoun
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
 import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
+import { chooseMailLink, linkDestination, type LinkChoice, messageLinks } from "./mailLink.vibe";
 import { answerable, headerFor, queuedAt, recipientsOf } from "./mail.vibe";
-import { type MailInstance, type MailWriter, useAccounts, useFiles, useMail, useMailContent, useMailFile, useMailHeld, useWorkspace, WithMailboxes } from "./useApp.ts";
+import { type MailInstance, type MailWriter, useAccounts, useFiles, useMail, useMailContent, useMailFile, useMailHeld, useRuntime, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 type Read = (id: number, ref: string) => MailContent | undefined;
@@ -24,15 +25,19 @@ const folderOf = (folder: Folder) => (Object.keys(folders) as (keyof typeof fold
 const sourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
 const close = "Close Email";
-const links = /https?:\/\/\S*[^\s.,;:!?)\]'"]/;
-const unlinked = (body: string) => body.replace(new RegExp(links.source, "g"), "(link removed)");
+const unlinked = (body: string) => body.replace(new RegExp(messageLinks.source, "gi"), "(link removed)");
 const tones = [1, 2, 3, 4, 5, 6] as const;
 const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
 const contact = (name: string, address: string): MailContact => ({ name, tone: toneOf(address || name) });
-const linked = (body: string, guide: GuidePointing | undefined) => {
-  const parts = body.split(new RegExp(`(${links.source})`, "g"));
-  const starts = parts.map((_, i) => parts.slice(0, i).join("").length);
-  return parts.map((part, i) => (i % 2 ? <MailLink key={starts[i]} guide={i === 1 ? guide : undefined}>{part}</MailLink> : part));
+const linked = (body: string, guide: GuidePointing | undefined, open: (link: string) => void) => {
+  const parts = body.split(new RegExp(`(${messageLinks.source})`, "gi"));
+  let offset = 0;
+  return parts.map((part, i) => {
+    const key = offset;
+    offset += part.length;
+    const link = i % 2 ? linkDestination(part) : undefined;
+    return link ? <MailLink key={key} guide={i === 1 ? guide : undefined} onOpen={() => open(link)}>{part}</MailLink> : part;
+  });
 };
 const unshown = "This attachment couldn’t be shown";
 const unrendered = "This PDF can’t be shown on this tablet.";
@@ -124,6 +129,8 @@ export function Email(props: Covered) {
 
 function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; boxes: readonly MailInstance[] }) {
   const { workspace, can, send, guide, askGrace } = useWorkspace();
+  const runtime = useRuntime();
+  const [unopenedLink, setUnopenedLink] = useState<string>();
   const account = useAccounts();
   const read = useMailContent();
   const kept = useMailHeld();
@@ -184,14 +191,23 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const header = mail && headerFor(mail, kept(opening.id, m.messageRef), opening.id, m);
     const replying = mail && ready && answerable(m) && header && canReplyToMessage(m, header, "MailHost");
     const scam = showsScamWarning(m);
+    const reviewed = kept(opening.id, ref)?.read;
+    const source = JSON.stringify([opening.id, ref, m.generation, reviewed?.version]);
+    const follow = (link: string, choice: LinkChoice) => {
+      if (!ready) return;
+      setUnopenedLink(undefined);
+      void runtime.runPromiseExit(chooseMailLink({ account: opening.id, ref, generation: m.generation, version: reviewed?.version, link }, choice)).then((result) => {
+        if (!Exit.isSuccess(result) || !result.value) setUnopenedLink(source);
+      });
+    };
     const saveAll = saver.offer(allPhotos);
     const present: Record<Ringed, boolean> = {
-      caution: scam, mbody: ready, saveall: ready && photos.length > 0 && saveAll !== undefined, file: ready && pdfs.length > 0, link: ready && links.test(c?.body ?? ""),
+      caution: scam, mbody: ready, saveall: ready && photos.length > 0 && saveAll !== undefined, file: ready && pdfs.length > 0, link: ready && messageLinks.test(c?.body ?? ""),
     };
     const pointing = aimed(guide((target) => (isRinged(target) && present[target] ? target : undefined)));
     return (
       <>
-      <MailMessageView from={contact(c?.from ?? "", c?.fromAddress ?? "")} address={scam ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={linked(c?.body ?? "", pointing.link)} guide={pointing.message}
+      <MailMessageView from={contact(c?.from ?? "", c?.fromAddress ?? "")} address={scam ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={linked(c?.body ?? "", pointing.link, (link) => follow(link, "open"))} guide={pointing.message}
         scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
         photos={ready ? photos.map((p) => picture(p, held(opening.id, p))) : undefined} onOpenPhoto={opener(photos)}
         onSaveAll={saveAll} saveAllStatus={saver.status(photos)} onRetrySaveAll={saver.offer(allPhotos)}
@@ -202,6 +218,11 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         onForward={m.folder !== "DraftsFolder" && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
+      {ready && m.link.status === "LinkHeld" && <BrowserDialog title="Open this link?" tone="caution" onEscape={() => follow(m.link.link, "cancel")} actions={<>
+        <Button variant="prominent" onClick={() => follow(m.link.link, "cancel")}>Stay in email</Button>
+        <Button variant="capsule" onClick={() => follow(m.link.link, "confirm")}>Open in Browser</Button>
+      </>}><BrowserDialogText className="break-all">{m.link.link}</BrowserDialogText></BrowserDialog>}
+      {unopenedLink === source && <Toast placement="screen">This link couldn’t open.</Toast>}
       {toast}
       </>
     );
