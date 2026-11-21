@@ -47,7 +47,7 @@ const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook"
 const internetCompanies: Record<string, string> = { "comcast.net": "Comcast", "att.net": "AT&T", "verizon.net": "Verizon", "cox.net": "Cox", "charter.net": "Charter" }
 const noteFor = "2600 millis"
 
-export const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).trim().toLowerCase()
+const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).trim().toLowerCase()
 
 function nameFor(a: Registry, provider: Provider, address: string): string {
   const known = accountWith(a, address)

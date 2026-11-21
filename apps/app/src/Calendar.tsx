@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type Event as CalendarEvent, selectedOccurrence } from "../gen/app__calendarView.ts";
+import { type Event as CalendarEvent, type ViewWindow, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
@@ -39,6 +39,34 @@ function period(mode: "WeekView" | "MonthView", anchor: number) {
   return first.getMonth() === last.getMonth()
     ? `${say(days[0], { month: "long" })} ${first.getDate()} – ${last.getDate()}`
     : `${say(days[0], { month: "short", day: "numeric" })} – ${say(days[6], { month: "short", day: "numeric" })}`;
+}
+
+export function calendarGrid(w: ViewWindow, today: number, firstEvent: (from: number, until: number) => { title: string; important?: boolean } | undefined,
+  go: (kind: Parameters<typeof navigation>[1], day?: number) => (() => void) | undefined): Pick<CalendarAppProps, "nav" | "week" | "month" | "onSelectDay" | "dayHeading"> {
+  const switchMode = go("SwitchMode");
+  return {
+    nav: {
+      period: period(w.mode, w.anchorDay), onPrevious: go("Earlier"), onNext: go("Later"),
+      onModeChange: switchMode && ((mode) => { if ((mode === "month") !== (w.mode === "MonthView")) switchMode(); }),
+      previousLabel: w.mode === "MonthView" ? "Previous month" : "Previous week", nextLabel: w.mode === "MonthView" ? "Next month" : "Next week",
+    },
+    week: shownDays("WeekView", w.anchorDay).map((n) => ({
+      key: String(n), weekday: short(n, today), day: String(dateOf(n).getDate()), today: n === today, selected: n === w.selectedDay, busy: firstEvent(n, n + 1) !== undefined,
+    })),
+    month: {
+      weekdays,
+      days: shownDays("MonthView", w.anchorDay).map((n) => {
+        const outside = dateOf(n).getMonth() !== dateOf(w.anchorDay).getMonth();
+        const first = outside ? undefined : firstEvent(n, n + 1);
+        return {
+          key: String(n), day: String(dateOf(n).getDate()), outside, today: n === today, selected: n === w.selectedDay,
+          event: first?.title.replace(/’s appointment$| appointment$/, ""), important: first?.important,
+        };
+      }),
+    },
+    onSelectDay: go("SelectDay", w.selectedDay) && ((key) => go("SelectDay", Number(key))?.()),
+    dayHeading: relative(w.selectedDay, today),
+  };
 }
 
 export function useCalendarActions() {
@@ -136,7 +164,6 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
   });
   const selected = w.selectedDay;
   const connect = fire({ type: "chooseSettingsPage", page: "EmailCalendarSettings" });
-  const switchMode = go("SwitchMode");
   const addOn = Math.max(selected, today);
   const guide = note?.row ? { kind: "confirm" as const, targetId: note.row } : graceGuide(eventRow);
   const browsing: CalendarAppProps = {
@@ -147,27 +174,7 @@ function Shown({ registry, pending, views, now, ...props }: Covered & { registry
         actions={connect && <BannerButton onClick={connect}>Connect email</BannerButton>}
         onDismiss={accounts.can({ type: "dismissBanner" }) ? () => void accounts.send({ type: "dismissBanner" }) : undefined} />
     ) : undefined,
-    nav: {
-      period: period(w.mode, w.anchorDay), onPrevious: go("Earlier"), onNext: go("Later"),
-      onModeChange: switchMode && ((mode) => { if ((mode === "month") !== (w.mode === "MonthView")) switchMode(); }),
-      previousLabel: w.mode === "MonthView" ? "Previous month" : "Previous week", nextLabel: w.mode === "MonthView" ? "Next month" : "Next week",
-    },
-    week: shownDays("WeekView", w.anchorDay).map((n) => ({
-      key: String(n), weekday: short(n, today), day: String(dateOf(n).getDate()), today: n === today, selected: n === selected, busy: rows(n, n + 1).length > 0,
-    })),
-    month: {
-      weekdays,
-      days: shownDays("MonthView", w.anchorDay).map((n) => {
-        const outside = dateOf(n).getMonth() !== dateOf(w.anchorDay).getMonth();
-        const [first] = outside ? [] : rows(n, n + 1);
-        return {
-          key: String(n), day: String(dateOf(n).getDate()), outside, today: n === today, selected: n === selected,
-          event: first?.details.title.replace(/’s appointment$| appointment$/, ""), important: first?.details.important,
-        };
-      }),
-    },
-    onSelectDay: go("SelectDay", selected) && ((key) => go("SelectDay", Number(key))?.()),
-    dayHeading: relative(selected, today),
+    ...calendarGrid(w, today, (from, until) => rows(from, until)[0]?.details, go),
     dayEvents: rows(selected, selected + 1).map(item),
     upcoming: upcoming(registry, sources, midnight(selected + 1), midnight(selected + 15)).sort(byStart).slice(0, 4).map(item),
     onOpenEvent: (id) => {

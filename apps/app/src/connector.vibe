@@ -59,6 +59,7 @@ export type MailConnection = {
   readonly read: (ref: string, generation: number) => Opened!ConnectorFailure
   readonly header: (ref: string, generation: number) => ReplyHeader!ConnectorFailure
   readonly attachment: (file: SavedFile, version: string) => Attached!ConnectorFailure
+  readonly draftCount: () => (number | undefined)!ConnectorFailure
   readonly draft: (ref: string, version: number) => Restored!ConnectorFailure
   readonly resolve: (contact: string) => Recipient!ConnectorFailure
   readonly contacts: () => readonly Contact[]!ConnectorFailure
@@ -523,12 +524,35 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       return try fetched(asked("/read", { messageId: ref }), ReadResponse)
     }
 
-    effect function draftOf(ref: string, pageToken: string | undefined): string!ConnectorFailure {
-      const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }), DraftList)
+    function draftPage(grantId: string, pageToken?: string) {
+      return fetched(get(`${at}/inbox-v1/drafts`, pageToken === undefined ? { grantId } : { grantId, pageToken }), DraftList)
+    }
+
+    effect function draftOf(ref: string, grantId: string, pageToken?: string): string!ConnectorFailure {
+      const page = try draftPage(grantId, pageToken)
       const found = page.drafts.find((d) => d.messageId === ref)
       if (found !== undefined) return found.draftId
       if (page.nextPageToken === null) throw new ProviderRefused({ status: 404 })
-      return try draftOf(ref, page.nextPageToken)
+      return try draftOf(ref, grantId, page.nextPageToken)
+    }
+
+    effect function draftCount() {
+      const grantId = try grantOf(account)
+      const drafts = new Set<string>()
+      const cursors = new Set<string>()
+      let pageToken: string | undefined
+      while (true) {
+        const page = draftPage(grantId, pageToken) catch effect (e) => match (e) {
+          when ProviderRefused: undefined;
+          default: throw e;
+        }
+        if (page === undefined) return undefined
+        for (const draft of page.drafts) drafts.add(draft.draftId)
+        if (page.nextPageToken === null) return (try grantOf(account)) === grantId ? drafts.size : undefined
+        if (cursors.has(page.nextPageToken)) return undefined
+        pageToken = page.nextPageToken
+        cursors.add(pageToken)
+      }
     }
 
     effect function contacts(query: string) {
@@ -594,8 +618,9 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
         if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
         return { mimeType: got.mimeType, data: got.dataBase64 }
       },
+      draftCount,
       draft: effect (ref, version) => {
-        const draftId = try draftOf(ref, undefined)
+        const draftId = try draftOf(ref, try grantOf(account))
         const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }), DraftRead)
         const opened = d.attachmentCount === 0 ? undefined : try read(messageId)
         const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)

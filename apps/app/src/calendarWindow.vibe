@@ -1,0 +1,38 @@
+// spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"
+import type { Navigation, NavigationReport, ViewMode, ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { type Days, moved, shown } from "./schedule.ts"
+
+export const day = 24 * 60 * 60 * 1000
+const utc = (n: number) => new Date(n * day)
+
+export function dayOf(at: number) {
+  const d = new Date(at)
+  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / day)
+}
+
+export function instant(n: number, minutes: number) {
+  const d = utc(n)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, minutes).getTime()
+}
+
+export const midnight = (n: number) => instant(n, 0)
+
+export function shownDays(mode: ViewMode, anchor: number) {
+  const { first, until } = shown(mode, anchor)
+  return Array.from({ length: until - first }, (_, i) => first + i)
+}
+
+export function windowOf(days: Days): ViewWindow {
+  const { first, until } = shown(days.mode, days.anchorDay)
+  return { ...days, fromTime: midnight(first), untilTime: midnight(until) }
+}
+
+function exact(w: ViewWindow) {
+  const { first, until } = shown(w.mode, w.anchorDay)
+  return w.fromTime < w.untilTime && dayOf(w.fromTime) === first && dayOf(w.untilTime) === until
+}
+
+export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
+  const window = windowOf(moved(w, kind, chosen))
+  return { window, kind, verified: exact(window) }
+}
