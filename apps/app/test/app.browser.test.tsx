@@ -2428,14 +2428,16 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       default: return fetch(input, options);
     }
   });
-  const browserUrl = "https://example.org/";
+  const browserHome = "https://example.org/";
+  let browserUrl = browserHome;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
-      return { documentId: "owner-guide-page", frameScope: "main", result: {
-        snapshotId: "owner-guide-page", domRevision: 1, url: browserUrl, title: "Example",
+      const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
+      return { documentId, frameScope: "main", result: {
+        snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
         text: "Example Help center", complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
-        elements: [{ id: "help", tag: "a", label: "Help center", href: browserUrl + "help", inViewport: true,
+        elements: [{ id: "help", tag: "a", label: "Help center", href: browserHome + "help", inViewport: true,
           bounds: { x: 100, y: 80, width: 100, height: 32 } }],
       } };
     }
@@ -2576,8 +2578,12 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
+    browserUrl = browserHome + "help";
+    await native.report("tab-1", browserUrl, 100);
+    await native.route();
+    await tap(button("Resume Grace"));
     await tap(button("Check page"));
-    await routeTo(page.getByText("Open page: https://example.org/", { exact: true }));
+    await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
