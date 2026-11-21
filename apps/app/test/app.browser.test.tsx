@@ -17,6 +17,7 @@ import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
+import { ManagedReads } from "../src/managedReads.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -1284,6 +1285,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   let filesScope = filesOwner;
   let trashed = false;
+  let trashRequests = 0;
   const sent: string[] = [];
   let changed: string[] = [];
   const reminders: number[] = [];
@@ -1330,6 +1332,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
+  let beforeSeriesReply: (() => Promise<void>) | undefined;
   events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
   const changeInput = Schema.fromJsonString(Schema.Struct({
@@ -1351,7 +1354,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     })),
   }));
   const decodeChange = Schema.decodeUnknownSync(changeInput);
-  const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
+  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
@@ -1414,6 +1417,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         expect(Object.fromEntries(api.searchParams)).toEqual({ grantId: grant, operationId: unconfirmed });
         return reply({ accountId: person.id, operationId: unconfirmed, messageId: "sent-2" });
       case "/api/v1/eliza/google/gmail/trash": {
+        trashRequests++;
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
         if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
@@ -1437,6 +1441,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/calendar/series":
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
         expect(api.searchParams.get("grantId")).toBe(grant);
+        await beforeSeriesReply?.();
         return reply({ accountId: person.id, occurrenceId: occurrence.externalId, event: series });
       case "/api/v1/eliza/google/calendar/change": {
         const outbound = decodeChange(options?.body);
@@ -1566,6 +1571,12 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply"]);
 
+    const managed = await runtime.runPromise(ManagedReads);
+    const scope = { accountId: person.id, grant };
+    const oldMessage = { kind: "trash", id: mail.externalId, version: "7" } as const;
+    expect(await runtime.runPromise(managed.stage({ ...scope, ...oldMessage }))).toBe(false);
+    expect(await runtime.runPromise(managed.change(scope, oldMessage))).toBeUndefined();
+    expect(trashRequests).toBe(0);
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
     await tap("Undo");
@@ -1590,6 +1601,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Reminder choice saved. Your tablet schedules it when it reconnects.")).toBeVisible();
     await tap("Remove reminder");
     await expect.poll(() => reminders).toEqual([60, 0]);
+    expect(await runtime.runPromise(managed.stage({
+      ...scope, kind: "appointment", version: events[0].etag, title: "Dentist", start: time, location: "Main Street", repeat: "Once",
+    }))).toBe(false);
+    expect(await runtime.runPromise(managed.change(scope, {
+      kind: "appointment", action: "delete", id: events[0].externalId, version: "old-etag",
+    }))).toBeUndefined();
+    expect(changed).toEqual([]);
     await tap("Change appointment");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
     await tap("Review appointment");
@@ -1611,6 +1629,29 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
     await tap(/Therapy/);
     await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
+    const seriesRequested = Latch.makeUnsafe();
+    const releaseSeries = Latch.makeUnsafe();
+    beforeSeriesReply = () => { seriesRequested.openUnsafe(); return Effect.runPromise(releaseSeries.await); };
+    const removal = { ...scope, kind: "removeAppointment", id: occurrence.externalId, version: occurrence.etag, series: true } as const;
+    const pendingRemoval = runtime.runPromise(managed.stage(removal));
+    try {
+      await Effect.runPromise(seriesRequested.await);
+      await tap("Close Calendar");
+      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
+      await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
+      await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    } finally {
+      beforeSeriesReply = undefined;
+      releaseSeries.openUnsafe();
+    }
+    expect(await pendingRemoval).toBe(false);
+    await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    expect(changed).toEqual(["update", "delete", "create"]);
+    await tap(/Therapy/);
+    await act(async () => { expect(await runtime.runPromise(managed.stage(removal))).toBe(true); });
+    await expect.element(page.getByRole("heading", { name: "Remove this appointment?" })).toBeVisible();
+    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
+    await act(async () => { await runtime.runPromise(managed.send({ kind: "dismissProposal" })); });
     await tap("Change entire series");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
     await tap("Review appointment");
