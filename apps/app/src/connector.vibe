@@ -72,7 +72,9 @@ export type MailConnection = {
 
 export type CalendarConnection = {
   readonly feed: (view: CalendarView) => Stream.Stream<Published, ConnectorFailure>
-  readonly write: (entry: Calendar, view: CalendarView) => StoreReceipt!NeedsSignIn
+  readonly isGuidedCreateFenced: (identity: Calendar["identity"], task: string) => boolean!!
+  readonly fenceGuidedCreate: (identity: Calendar["identity"], task: string) => boolean!!
+  readonly write: (entry: Calendar, view: CalendarView, guidedFirstDispatch?: boolean) => StoreReceipt!NeedsSignIn
   readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => boolean!ConnectorFailure
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
 }
@@ -329,11 +331,22 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
   const digest = try Digest.Digest
   const hash = (text: string) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(text)),
     (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
-  return (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean) => {
+  const scopeOf = (account: AccountRef, { calendarId, occurrenceId }: Calendar["identity"]) =>
+    hash(JSON.stringify([service, account.provider, account.address.toLowerCase(), calendarId, occurrenceId]))
+  const fenceKey = (scope: string) => "calendar-guided-create:" + scope
+  effect function fence(account: AccountRef, identity: Calendar["identity"], task: string): boolean!! {
+    const scope = try scopeOf(account, identity)
+    return Effect.as(storage.set(fenceKey(scope), task), true) catch () => false
+  }
+  effect function isFenced(account: AccountRef, identity: Calendar["identity"], task: string): boolean!! {
+    const scope = try scopeOf(account, identity)
+    return Effect.map(storage.get(fenceKey(scope)), (value) => value === task) catch () => false
+  }
+  const bind = (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean, guidedFirstDispatch: boolean) => {
     const { owner, calendarId, occurrenceId } = entry.identity
     if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && entry.phase !== "Editing")) return CreateBinding.Unknown()
     if (approve && entry.phase === "Editing" && entry.approvedRevision !== entry.revision) return CreateBinding.Unknown()
-    const scope = try hash(JSON.stringify([service, account.provider, account.address.toLowerCase(), calendarId, occurrenceId]))
+    const scope = try scopeOf(account, entry.identity)
     const at = "calendar-create:" + scope
     const providerKey = (revision: number) => hash(JSON.stringify([service, account.provider, grantId, account.address, owner, calendarId, occurrenceId, revision]))
     const read = effect {
@@ -365,7 +378,11 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       const { participant, seriesId, recurrence, reminderEnabled, leadTime, important } = entry.draft
       const fingerprint = try hash(JSON.stringify([body, entry.identity.sourceAccount, entry.identity.sourceRef, participant, seriesId, recurrence, reminderEnabled, leadTime, important]))
       if (previous !== undefined && previous.fingerprint !== fingerprint) return CreateBinding.Pending()
+      const fenceValue = storage.get(fenceKey(scope)) catch effect () => { throw new Unreachable() }
+      const fenced = fenceValue !== undefined
+      if (guidedFirstDispatch && (!fenced || previous !== undefined)) return CreateBinding.Pending()
       if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId })
+      if (!guidedFirstDispatch && fenced) return CreateBinding.Pending()
       if (previous !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
       const claim = previous ?? { fingerprint, grantId, mutation: try providerKey(entry.revision) }
       if (previous === undefined) journal.set(at, claim) catch effect () => { throw new Unreachable() }
@@ -383,15 +400,16 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       return try record
     })
   }
+  return { bind, fence, isFenced }
 }
 
 function connectedCalendar(link: CloudLink, account: AccountRef, zones: ReadonlySet<string>,
-  bind: Effect.Success<ReturnType<typeof calendarCreates>>, transport: Effect.Success<ReturnType<typeof connectorTransport>>,
+  creates: Effect.Success<ReturnType<typeof calendarCreates>>, transport: Effect.Success<ReturnType<typeof connectorTransport>>,
   grantOf: (account: AccountRef) => string!ConnectorFailure): CalendarConnection {
   const { call, fetched, get } = transport
   const at = routes[account.provider].calendar
   const url = (path: string) => `${link.url}${at}${path}`
-  const createBinding = bind(account, effect (body, key) => {
+  const createBinding = creates.bind(account, effect (body, key) => {
     const request = HttpClientRequest.setHeader(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body), "Idempotency-Key", key)
     return (try fetched(Effect.succeed(request), Stored)).event
   })
@@ -399,11 +417,11 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
 
 
-  effect function stored(entry: Calendar) {
+  effect function stored(entry: Calendar, guidedFirstDispatch: boolean) {
     const { calendarId, occurrenceId: id } = entry.identity
     const grantId = try grantOf(account)
     if (!entry.hasSaved) {
-      const bound = try createBinding(entry, grantId, true)
+      const bound = try createBinding(entry, grantId, true, guidedFirstDispatch)
       if (bound._tag !== "Received") throw new ProviderRefused({ status: 409 })
       return bound.providerId
     }
@@ -429,7 +447,7 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       const waiting = new Set<Calendar>()
       for (const c of view.entries) {
         if (c.identity.owner !== view.owner || c.identity.calendarId !== view.calendarId || (c.phase !== "Saved" && (c.phase !== "Editing" || c.hasSaved)) || feed.some((e) => e.externalId === c.identity.occurrenceId)) continue
-        const bound = createBinding(c, grantId, false) catch effect (cause) => match (cause) {
+        const bound = createBinding(c, grantId, false, false) catch effect (cause) => match (cause) {
           when NeedsSignIn: throw cause;
           default: CreateBinding.Pending();
         }
@@ -440,6 +458,8 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       }
       return Stream.fromIterable(published(zones, view, feed, bindings, waiting))
     }),
+    isGuidedCreateFenced: (identity, task) => creates.isFenced(account, identity, task),
+    fenceGuidedCreate: (identity, task) => creates.fence(account, identity, task),
     verifySaved: effect (view, occurrence, expected) => {
       const feed = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
       const saved = feed.find((row) => row.externalId === occurrence)
@@ -448,9 +468,9 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       const { startAt, endAt, verified } = schedule(zones, saved, timezone)
       return verified && sameDetails(details(saved, startAt, endAt, timezone, expected), expected)
     },
-    write: effect (entry) => {
+    write: effect (entry, _view, guidedFirstDispatch = false) => {
       const revision = entry.revision
-      return Effect.map(stored(entry), (saved): StoreReceipt => ({
+      return Effect.map(stored(entry, guidedFirstDispatch), (saved): StoreReceipt => ({
         revision, succeeded: true, published: [],
         ...entry.hasSaved ? {} : { providerId: saved }
       })) catch effect (e) => match (e) {
@@ -470,7 +490,7 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
 }
 
 export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unreachable) => Layer.effect(Connector, effect {
-  const bind = try calendarCreates(link.url, locks)
+  const creates = try calendarCreates(link.url, locks)
   const transport = try connectorTransport(link)
   const { call, fetched, get, post } = transport
   const page = try SignInPage
@@ -696,6 +716,6 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
     connectServers: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
     shown: SubscriptionRef.changes(shown),
     mail,
-    calendar: (account) => connectedCalendar(link, account, zones, bind, transport, grantOf)
+    calendar: (account) => connectedCalendar(link, account, zones, creates, transport, grantOf)
   }
 }).pipe(Layer.provide(Layer.merge(FetchHttpClient.layer, Digest.layerWebCrypto)))

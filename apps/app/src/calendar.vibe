@@ -148,7 +148,7 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
 }
 
 type Store = {
-  readonly write: (entry: Calendar, view: CalendarView) => StoreReceipt!!
+  readonly write: (entry: Calendar, view: CalendarView, guidedFirstDispatch?: boolean) => StoreReceipt!!
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!!
 }
 
@@ -165,6 +165,7 @@ export type Reminded = { readonly key: number; readonly id: string }
 export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
   publish(report: CalendarReport): void!!
+  openRecoveredSaveList(owner: string, calendar: string): void!!
   verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): boolean!!
   readonly notes: Watched<CalendarNote | undefined>
   open(key: number, id: string, how: Opening): void!!
@@ -268,10 +269,7 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   effect function first(mark: string) {
     return try Ref.modify(sent, (all) => [!all.has(mark), new Set(all).add(mark)] as const)
   }
-  effect function observed(v: CalendarView, providerId: string) {
-    const task = try workspace.get()
-    const approval = task.plan.calendarApproval
-    if (!guidedSavePending(task) || approval.task !== task.assistant.taskId) return
+  effect function observed(v: CalendarView, providerId: string, approval: GuidedCalendarApproval) {
     const saved = v.entries.find((c) => c.phase === "Saved" && c.hasSaved && c.identity.occurrenceId === providerId && providerId !== approval.provisional && matchesGuidedApproval(key, c, approval))
     if (saved === undefined || !(try first(`guided@${approval.task}@${saved.identity.occurrenceId}`))) return
     const recorded = workspace.send({ type: "observeGuidedCalendar", saved: { approval, occurrence: providerId, evidence: "" } }, "Host") catch () => undefined
@@ -279,7 +277,11 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   }
   effect function stored(c: Calendar) {
     const v = try box.get()
-    const receipt = try store.write(written(v, c), v)
+    const task = try workspace.get()
+    const approval = task.plan.calendarApproval
+    const guidedFirstDispatch = guidedSavePending(task) && approval.task === task.assistant.taskId &&
+      c.identity.occurrenceId === approval.provisional && matchesGuidedApproval(key, c, approval)
+    const receipt = try store.write(written(v, c), v, guidedFirstDispatch)
     const event: CalendarEvent = receipt.providerId !== undefined && !single(c)
       ? { type: "storeCreatedSeries", receipt: seriesReceipt(try box.get(), c, receipt), providerId: receipt.providerId }
       : receipt.providerId !== undefined
@@ -287,8 +289,8 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
       : single(c) ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
       : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
     const adopted = box.send(event, "ViewStore") catch () => undefined
-    if (adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined)
-      try observed(try box.get(), receipt.providerId)
+    if (guidedFirstDispatch && adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined)
+      try observed(try box.get(), receipt.providerId, approval)
     for (const p of receipt.published) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
   }
   effect function removedBy(v: CalendarView, plan: Removal) {
@@ -530,9 +532,15 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
           title: details.title, starts: details.startAt, ends: details.endAt, timezone: details.timezone, location: details.location, notes: details.notes
         }
         const armed = workspace.send({ type: "expectGuidedCalendar", approval }, "Host") catch () => undefined
-        if (armed !== undefined && (try recovery.flushSave(w.assistant.taskId, w.assistant.workVersion))) {
+        const account = (try registry.get()).accounts.find((source) => source.id === target && source.address === identity.owner)
+        if (armed !== undefined && account !== undefined && Option.isSome(connector) &&
+            (try recovery.flushSave(w.assistant.taskId, w.assistant.workVersion)) &&
+            (try connector.value.calendar(account).fenceGuidedCreate(identity, approval.task))) {
           const current = try proposals.get()
-          mayApply = current.revision === p.revision && current.agreed === p.agreed
+          const live = try workspace.get()
+          mayApply = current.revision === p.revision && current.agreed === p.agreed &&
+            live.assistant.taskId === approval.task && live.assistant.workVersion === w.assistant.workVersion &&
+            live.plan.calendarApproval.proposal === approval.proposal && guidedSavePending(live)
         }
       }
     }
@@ -544,6 +552,30 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
 
   return {
     reports: Stream.fromPubSub(hub), publish,
+    openRecoveredSaveList: effect (owner, calendar) => {
+      const state = try workspace.get()
+      const marker = state.plan.saveRecovery
+      if (marker.tag !== "GuidedSaveReconcile" || marker.occurrence !== "" || marker.owner !== owner || marker.calendar !== calendar ||
+          !(try recovery.canAccess(state))) return
+      const account = (try registry.get()).accounts.find((source) => source.use.calendar && source.address === owner)
+      if (account === undefined || Option.isNone(connector)) return
+      const box = shelf.calendar(account.id) catch () => undefined
+      if (box === undefined) return
+      const view = try box.get()
+      if (view.owner !== owner || view.calendarId !== calendar) return
+      const entry = entryAt(view, view.selectedId)
+      const { identity } = entry
+      if (entry.phase !== "Editing" || entry.hasSaved || identity.owner !== owner || identity.calendarId !== calendar ||
+          !(try connector.value.calendar(account).isGuidedCreateFenced(identity, state.assistant.taskId))) return
+      const ready = entry.approvedRevision === -1 ? view : Option.getOrUndefined(try Effect.orElseSucceed(timeout(
+        Stream.runHead(Stream.filter(box.changes, (state) => entryAt(state, identity.occurrenceId).approvedRevision === -1)), "2 seconds"),
+        () => Option.none()))
+      const live = try workspace.get()
+      if (ready === undefined || ready.selectedId !== identity.occurrenceId || live.assistant.taskId !== state.assistant.taskId ||
+          live.assistant.workVersion !== state.assistant.workVersion) return
+      if (!ready.opened) box.send({ type: "openCalendar", owner, calendarId: calendar, timezone: ready.timezone }, "ViewUser") catch () => undefined
+      box.send({ type: "changeOccurrence", id: identity.occurrenceId, command: { tag: "CancelEditing" } }, "ViewUser") catch () => undefined
+    },
     verifySaved: effect (key, view, occurrence, expected) => {
       const account = (try registry.get()).accounts.find((candidate) => candidate.id === key && candidate.use.calendar && candidate.address === view.owner)
       if (!linked || account === undefined || Option.isNone(connector)) return false
@@ -582,7 +614,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     if ((try workspace.get()).device.surface === "Calendar" && !bound.opened) box.send({ type: "openCalendar", owner: bound.owner, calendarId: bound.calendarId, timezone: bound.timezone }, "ViewUser") catch () => undefined
     const link = connector.calendar({ provider: account.provider, address: account.address })
     const store: Store = {
-      write: effect (entry, view) => link.write(entry, view) catch () => ({ revision: entry.revision, succeeded: false, published: [] }),
+      write: effect (entry, view, guidedFirstDispatch) => link.write(entry, view, guidedFirstDispatch) catch () => ({ revision: entry.revision, succeeded: false, published: [] }),
       remove: effect (identity, scope) => link.remove(identity, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
     const grown = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)

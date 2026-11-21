@@ -1158,6 +1158,8 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
 
 ### An authenticated restart restores the reviewed plan paused at its next outcome
 
+For a plan bound to a verified owner, Start records the first checkpoint before guidance begins. If the device cannot store it, the reviewed plan stays available for the person to retry.
+
 A durable checkpoint keeps the reviewed owner, task and goal, the ordered
 outcomes and the ordered prefix of confirmed receipts. Receipt identifiers
 are opaque source digests. A confirmed correction keeps the exact replacement

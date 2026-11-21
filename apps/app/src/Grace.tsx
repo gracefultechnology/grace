@@ -5,6 +5,7 @@ import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceH
 import { Effect, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
+import { CalendarNews } from "./calendar.vibe";
 import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, priorGuidedMail, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
@@ -76,6 +77,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
+  const [startFailure, setStartFailure] = useState<number>();
   const [guidedCheck, setGuidedCheck] = useState<{ key: string; phase: "checking" | "retry" | "privateForm" }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
@@ -115,6 +117,14 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const checkSurface = reopenMail ? "Email" : details?.surface;
   const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checkLabels[stepKind];
   const calendar = { type: "visit", destination: "Calendar" } as const;
+  const openRecoveryCalendar = async () => {
+    if (recoveredSave && !recoveredSave.occurrence) {
+      await runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(recoveredSave.owner, recoveredSave.calendar)));
+    }
+    await send(calendar);
+    const opened = current();
+    if (opened.device.surface === "Calendar" && opened.assistant.presentation === "Expanded") interact({ tag: "Resize", expanded: false });
+  };
   const recoveryInstruction = recoveredSave ? recoveredSave.occurrence
     ? "Open the saved appointment in Calendar to check it."
     : "The save was interrupted. Check your calendar before asking to save this appointment again."
@@ -215,7 +225,11 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <ol aria-label="Read plan" className="list-decimal pl-6">
                 {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{guidedDetails(step).subject}</li>)}
               </ol>
-              <AnswerChips><AnswerChip onClick={() => void startReadReview(review.revision)}>Start read plan</AnswerChip></AnswerChips>
+              {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
+              <AnswerChips><AnswerChip onClick={() => {
+                setStartFailure(undefined);
+                void startReadReview(review.revision).then((started) => { if (!started) setStartFailure(review.revision); }, () => setStartFailure(review.revision));
+              }}>Start read plan</AnswerChip></AnswerChips>
             </section>
           )}
           {hasPlan && !ownsPlan && can(abandon) && (
@@ -238,7 +252,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                 </>
               ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence)}</p>}
               {recoveredSave && <AnswerChips>
-                {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void send(calendar)}>Open Calendar</AnswerChip>}
+                {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void openRecoveryCalendar()}>Open Calendar</AnswerChip>}
                 {can(abandon) && <AnswerChip onClick={() => void send(abandon)}>End this task</AnswerChip>}
               </AnswerChips>}
             </section>

@@ -23,7 +23,7 @@ import { ManagedReads } from "../src/managedReads.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, otherPassword, photos, reply, script, signIn, turns } from "./cloud.vibe";
+import { client, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
@@ -2837,6 +2837,19 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await refresh();
     await routeTo(review);
     await tap(button("Collapse"));
+    const localWrite = localStorage.setItem.bind(localStorage);
+    const sessionWrite = sessionStorage.setItem.bind(sessionStorage);
+    const unavailable = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (this === localStorage && key.startsWith("grace/guided-task-")) throw new DOMException("Storage full", "QuotaExceededError");
+      (this === localStorage ? localWrite : sessionWrite)(key, value);
+    });
+    try {
+      await tap(button("Start read plan"));
+      await routeTo(review.getByRole("status"));
+      expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    } finally {
+      unavailable.mockRestore();
+    }
     await tap(button("Start read plan"));
 
     await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
@@ -2850,7 +2863,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await expect.poll(receipts).toEqual([mailReceipt]);
 
     organization = "c";
-    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
     await expect.poll(receipts).toEqual([]);
     expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
     organization = "a";
@@ -2871,6 +2884,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await routeTo(recoveredPlan.getByText("Paused", { exact: true }));
     expect(await receipts()).toEqual([mailReceipt]);
     expect(await check()).toBe(false);
+    await tap(button("Home"));
     await tap(button(/^Email/));
     await tap(button(/Riverview Clinic/));
     await routeTo(page.getByText("Riverview Clinic message body"));
@@ -2998,7 +3012,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   }
 });
 
-it.each(["acknowledged", "lost"] as const)('Save a separately approved email appointment in the reviewed plan with its response %s (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (responseState) => {
+it.each(["acknowledged", "lost"] as const)('Save a separately approved appointment (%s) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (responseState) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const gmail = "owner@grace.test";
@@ -3040,17 +3054,6 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved email app
   const native = fakePlugin(() => ({ documentId: "example-main", frameScope: "main", result: {
     snapshotId: "example-snapshot", url: "https://example.org/", complete: true, readyState: "complete", blockers: [], elements: [],
   } }));
-  const request = window.fetch.bind(window);
-  let creates = 0;
-  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
-    const address = new URL(input instanceof Request ? input.url : input, window.location.href);
-    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
-    const creating = address.origin === new URL(cloud).origin && address.pathname.endsWith("/events") && method === "POST";
-    if (creating) creates++;
-    const response = await request(input, init);
-    if (creating && response.ok && responseState === "lost") throw new TypeError("Calendar response lost");
-    return response;
-  });
   let view = await cloudReadPlan(native, cloud, secret);
   const { routeTo, tap } = view;
   const restart = async () => {
@@ -3066,14 +3069,16 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved email app
   };
   const plan = page.getByRole("region", { name: "Task plan" });
   const receipt = page.getByText("Saved appointment: " + title, { exact: true });
-  const calendars = async () => {
+  const calendarState = async () => {
     const Kept = Schema.Struct({
+      calendarCreateRequests: Schema.Int,
       boxes: Schema.Array(Schema.Struct({ address: Schema.String, calendar: Schema.Array(Schema.Struct({ title: Schema.String, startAt: Schema.String, location: Schema.String })) })),
     });
     const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${secret}` } });
-    const { boxes } = Schema.decodeUnknownSync(Kept)(await response.json());
-    return boxes;
+    return Schema.decodeUnknownSync(Kept)(await response.json());
   };
+
+  const calendars = async () => (await calendarState()).boxes;
 
   try {
     await tap(button("Internet"));
@@ -3110,13 +3115,14 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved email app
     await say(prepare);
     const yes = button(approve);
     await routeTo(yes);
-    expect(await calendars()).toEqual(previous);
+    expect(await calendarState()).toEqual({ boxes: previous, calendarCreateRequests: 0 });
     expect(receipt.query()).toBeNull();
+    if (responseState === "lost") await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "createResponse"), client));
     await tap(yes);
     await expect.poll(calendars, { timeout: 10000 }).toEqual(previous.map((box) => box.address === gmail
       ? { ...box, calendar: [...box.calendar, { title, startAt: when.toISOString(), location: place }] }
       : box));
-    expect(creates).toBe(1);
+    expect((await calendarState()).calendarCreateRequests).toBe(1);
     const savedAttempt = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({
       value: Schema.fromJsonString(Schema.Struct({ checkpoint: Schema.Struct({
         save: Schema.Struct({ tag: Schema.Literal("GuidedSaveReconcile"), occurrence: Schema.String }),
@@ -3140,7 +3146,7 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved email app
       await restart();
       await tap(button("Ask Grace"));
       expect(plan.query()).toBeNull();
-      expect(creates).toBe(1);
+      expect((await calendarState()).calendarCreateRequests).toBe(1);
       return;
     }
     await tap(button("Open Calendar"));
@@ -3153,9 +3159,9 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved email app
     await tap(button("Expand"));
     await routeTo(plan.getByText("Open page: https://example.org/", { exact: true }));
     await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
+    expect((await calendarState()).calendarCreateRequests).toBe(1);
   } finally {
     await view.dispose();
-    provider.mockRestore();
     localStorage.clear();
   }
 });

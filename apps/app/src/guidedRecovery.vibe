@@ -2,7 +2,7 @@
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import {
-  Machine as Workspaces, guidedCheckpoint, guidedDetails, parseEvent, privateSurfaceActive,
+  Machine as Workspaces, canStartReadReview, startReadReview, guidedCheckpoint, guidedDetails, parseEvent, privateSurfaceActive,
   validGuidedCheckpoint, type GuidedCheckpoint, type GuidedStep, type Workspace
 } from "../gen/app__workspace.effect.vibe"
 import type { GuidedRecordName, GuidedTaskRecords } from "./preferencesPlugin.ts"
@@ -311,16 +311,29 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
           const check = actualScopes(true) catch () => undefined
           if (scopeFor(check, request.steps) !== scope || check?.session !== scopes?.session) return false
         }
+        if (!canStartReadReview(after, reviewRevision, "Person")) return false
         const existing = scope === undefined ? undefined : try checkpointOf(scope, saved?.value)
         if (existing !== undefined && (binding === undefined || binding.task !== existing.request.task || binding.revision !== saved?.revision)) return false
-        const sent = workspace.send({ type: "startReadReview", reviewRevision }, "Person") catch () => undefined
-        if (sent === undefined) return false
+        let held: BoundTask | undefined
         if (scope !== undefined) {
-          checked.add(scope)
-          const held = { task: request.task, scope, revision: saved?.revision ?? -1, saved: saved?.value ?? null }
+          if (!backend || saved === undefined) return false
+          held = { task: request.task, scope, revision: saved.revision, saved: saved.value ?? null }
+          const checkpoint = guidedCheckpoint(startReadReview(after, reviewRevision, "Person"))
+          if (!safeCheckpoint(checkpoint) || !(try save(held, checkpoint))) return false
+          const check = actualScopes(true) catch () => undefined
+          if (scopeFor(check, request.steps) !== scope || check?.session !== scopes?.session) {
+            try save(held, existing ?? null)
+            return false
+          }
+        }
+        const sent = workspace.send({ type: "startReadReview", reviewRevision }, "Person") catch () => undefined
+        if (sent === undefined) {
+          if (held !== undefined) try save(held, existing ?? null)
+          return false
+        }
+        if (held !== undefined) {
+          checked.add(held.scope)
           binding = held
-          const checkpoint = guidedCheckpoint(sent.state)
-          if (safeCheckpoint(checkpoint)) try save(held, checkpoint)
         }
         return true
       })

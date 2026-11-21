@@ -48,7 +48,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
