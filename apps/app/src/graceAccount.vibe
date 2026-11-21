@@ -1,6 +1,6 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed, webAccountId
+  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -261,9 +261,11 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     }
     if (operation.kind === "authorizeDevice") {
       const device = try Ref.get(attempt)
-      if (device === undefined || webAccountId((try setup.get()).graceAccount) !== operation.expectedAccountId) return false
-      const confirmed = setup.send({ type: "confirmTabletSignIn" }) catch () => undefined
-      if (confirmed === undefined || webAccountId(try refresh()) !== operation.expectedAccountId || !tabletSignInConfirmed(try setup.get())) return false
+      if (device === undefined) return false
+      const confirmed = setup.send({ type: "confirmTabletSignIn", accountId: operation.expectedAccountId }) catch () => undefined
+      if (confirmed === undefined) return false
+      try refresh()
+      if (!tabletSignInConfirmed(try setup.get())) return false
       const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", { ...device, expectedAccountId: operation.expectedAccountId }), DeviceApproval)
       const destination = try Effect.try(() => new URL(redirectUrl))
       if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||

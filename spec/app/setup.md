@@ -499,7 +499,9 @@ a session, and with it a plan; this is the step rule's promise, not a
 separate law. A tablet asking to sign in is confirmed only by the person's
 own choice, while a web account is signed in, and the confirmation holds
 only while the reports name that signed-in account: any other report, even
-one that the account could not be checked, asks her again.
+one that the account could not be checked, asks her again. She confirms for
+the account she is shown, and may confirm again for that same account when
+the tablet's sign-in did not finish.
 
 A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
@@ -572,8 +574,9 @@ pure def canReportGraceService(s: Setup, report: GraceAccount, link: GoogleLink)
 pure def reportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
   { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def reportTabletSignIn(s: Setup, waiting: bool): Setup = { ...s, tabletSignIn: if (waiting) TabletSignInAsked else NoTabletSignIn }
-pure def canConfirmTabletSignIn(s: Setup): bool = tabletSignInAsked(s.tabletSignIn) and webAccountId(s.graceAccount) != ""
-pure def confirmTabletSignIn(s: Setup): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: webAccountId(s.graceAccount) }) }
+pure def canConfirmTabletSignIn(s: Setup, accountId: str): bool =
+  accountId != "" and accountId == webAccountId(s.graceAccount) and (tabletSignInAsked(s.tabletSignIn) or tabletSignInConfirmed(s))
+pure def confirmTabletSignIn(s: Setup, accountId: str): Setup = { ...s, tabletSignIn: TabletSignInConfirmed({ accountId: accountId }) }
 pure def tabletSignInConfirmed(s: Setup): bool =
   val t = s.tabletSignIn
   match t {
@@ -607,6 +610,7 @@ pure val reportValues: Set[GraceAccount] = Set(
   GraceSignedIn({ accountId: "other", email: "", plan: PlanActiveManaged })
 )
 pure val accountValues: Set[GraceAccount] = reportValues
+pure val accountIdValues: Set[str] = Set("", "known", "other")
 pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
   match account {
     | GraceSignedIn(info) => (info.plan == PlanActive or info.plan == PlanActiveManaged) implies not(mayStartCheckout(account))
@@ -794,16 +798,19 @@ The approval page is this application's own: it reads the native request's
 one action and the browser's signed-in account, and offers Approve only when
 the request is valid for the registered page and a signed-in account is
 shown that has not been reported changed or in need of a fresh sign-in.
-Approve sends that action with the shown account's identity in one request;
-the Grace service refuses it when the browser account is no longer that one,
-or the sign-in is not recent, and the page then asks her to sign in and
-choose again. Nothing is approved on a page that is not the registered one,
-after Cancel, for an account other than the one shown, or without a recent
-sign-in. The page returns to the tablet only to the registered callback,
-with the native request's own state and one code; the request it reads
-carries neither the recovery key nor any password. That the code is used
-once and only by the native request that asked for it is the Grace
-service's and the tablet's own exchange, and no rule here checks it.
+Nothing is approved on a page that is not the registered one, after Cancel,
+for an account other than the one shown, or without a recent sign-in; the
+rules below check exactly this.
+
+The rest is the page's and the Grace service's own exchange, and no rule
+here checks it: that Approve sends the action with the shown account's
+identity in one request; that the service refuses it when the browser
+account is no longer that one or the sign-in is not recent, and the page
+then asks her to sign in and choose again; that the page returns to the
+tablet only to the registered callback, with the native request's own state
+and one code; that the request it reads carries neither the recovery key nor
+any password; and that the code is used once and only by the native request
+that asked for it.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
