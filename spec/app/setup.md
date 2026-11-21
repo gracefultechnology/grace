@@ -5,7 +5,7 @@ in order: Wi-Fi, connecting an email account (with Not now), her preferred
 name, speaking pace and text size with a live preview, a short explanation
 of what Grace does, trying Talk, trying Type, closing Grace, bringing her
 back with Ask Grace, then Grace's own question, "What would you like to
-do?". English, one voice, no language picker and no wake word.
+do?". Set-up uses English and one voice. It offers no language or wake-word picker.
 
 This follows PRD ONB-01 to ONB-03 (`prototype/prd.md:923–927`), with three
 changes. Wi-Fi comes first on the launcher tablet, because thinking and
@@ -811,16 +811,17 @@ pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(regi
 
 ### Only the device-only profile or the current verified owner can open the vault
 
-An anonymous device profile can open an unbound vault. A verified account opens a bound vault only with the same current credential generation in the same deployment environment. A tablet with ambiguous active credentials closes the vault until it has one acknowledged account on its selected deployment. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only for the same account, with the same current credential generation in the same deployment environment. A tablet with ambiguous active credentials closes the vault until it has one acknowledged account on its selected deployment. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
 
 ```quint
 type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })
-type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ credentialId: str })
+type PasswordAccount = DevicePasswordAccount | InactivePasswordAccount | ActivePasswordAccount({ scope: str, credentialId: str })
 pure val passwordAccountValues: Set[PasswordAccount] = Set(
   DevicePasswordAccount, InactivePasswordAccount,
-  ActivePasswordAccount({ credentialId: "current-generation" }),
-  ActivePasswordAccount({ credentialId: "other-generation" }),
-  ActivePasswordAccount({ credentialId: "" }))
+  ActivePasswordAccount({ scope: "current-owner", credentialId: "current-generation" }),
+  ActivePasswordAccount({ scope: "other-owner", credentialId: "current-generation" }),
+  ActivePasswordAccount({ scope: "current-owner", credentialId: "other-generation" }),
+  ActivePasswordAccount({ scope: "current-owner", credentialId: "" }))
 pure val custodyValues: Set[PasswordCustody] = Set(
   DevicePasswordCustody,
   BoundPasswordCustody({ scope: "current-owner", generationId: "current-generation" }),
@@ -830,10 +831,13 @@ pure def passwordAdmission(custody: PasswordCustody, passwordAccount: PasswordAc
   match custody {
     | DevicePasswordCustody => match passwordAccount { | DevicePasswordAccount => true | _ => false }
     | BoundPasswordCustody(owner) => match passwordAccount {
-        | ActivePasswordAccount(active) => owner.scope != "" and owner.generationId != "" and owner.generationId == active.credentialId
+        | ActivePasswordAccount(active) => owner.scope != "" and owner.scope == active.scope and owner.generationId != "" and owner.generationId == active.credentialId
         | _ => false
       }
   }
+pure def lawAnotherScopeCannotOpenBoundPasswords(scope: str, other: str, generationId: str): bool =
+  scope != other implies not(passwordAdmission(BoundPasswordCustody({ scope: scope, generationId: generationId }),
+    ActivePasswordAccount({ scope: other, credentialId: generationId })))
 pure def lawSignedOutCannotOpenBoundPasswords(scope: str, generationId: str): bool =
   not(passwordAdmission(BoundPasswordCustody({ scope: scope, generationId: generationId }), DevicePasswordAccount))
 ```

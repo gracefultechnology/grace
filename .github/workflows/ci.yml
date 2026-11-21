@@ -567,7 +567,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
-          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar'
+          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website'
       - if: ${{ !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm verify --continue --summarize
       - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''

@@ -19,7 +19,7 @@ export const meta: ComponentMeta<PanelProps> = {
       children: (
         <>
           <div className="w-[74px] flex-none text-center">
-            <b className="block text-lg leading-[22px] tracking-[.06em] text-rose">SAT</b>
+            <b className="block text-control leading-[22px] tracking-[.06em] text-rose">SAT</b>
             <span className="block text-body-lg leading-7 font-bold">10 am</span>
           </div>
           <div className="w-0.5 self-stretch rounded-full bg-rose" />

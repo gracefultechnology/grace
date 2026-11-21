@@ -31,6 +31,10 @@ A user approves a revision; only its durable storage acknowledgment saves it.
 
 ### A new occurrence has no saved entry or scheduled reminder
 
+An appointment made from an email retains the source mailbox's registry ID and
+the provider's message reference, including when it is saved to the tablet's
+calendar. Zero records an occurrence without an identified source mailbox.
+
 ```quint
 type CalendarActor = CalendarUser | CalendarStore | CalendarClock
 type EntryKind = Appointment | Bill
@@ -39,7 +43,7 @@ type Recurrence = Once | Weekly | Monthly
 type StorageError = NoStorageError | SaveFailure | DeleteFailure
 type ReminderStatus = ReminderOff | ReminderWaiting | ReminderShown | ReminderDismissed
 type EntryIdentity = {
-  owner: str, calendarId: str, occurrenceId: str, sourceRef: str,
+  owner: str, calendarId: str, occurrenceId: str, sourceRef: str, sourceAccount: int,
   kind: EntryKind, billRef: str, billOrigin: str, billAccount: str
 }
 type EntryDetails = {
@@ -52,7 +56,7 @@ type Calendar = {
   revision: int, approvedRevision: int, storageError: StorageError, clock: int, reminder: ReminderStatus, remindAt: int
 }
 pure val noIdentity: EntryIdentity = {
-  owner: "", calendarId: "", occurrenceId: "", sourceRef: "",
+  owner: "", calendarId: "", occurrenceId: "", sourceRef: "", sourceAccount: 0,
   kind: Appointment, billRef: "", billOrigin: "", billAccount: ""
 }
 pure val noDetails: EntryDetails = {
@@ -64,7 +68,8 @@ pure val initial: Calendar = {
   hasSaved: false, revision: 0, approvedRevision: -1, storageError: NoStorageError, clock: 0, reminder: ReminderOff, remindAt: 0
 }
 pure def validIdentity(identity: EntryIdentity): bool =
-  identity.owner != "" and identity.calendarId != "" and identity.occurrenceId != "" and
+  identity.owner != "" and identity.calendarId != "" and identity.occurrenceId != "" and identity.sourceAccount >= 0 and
+  (identity.sourceAccount > 0 implies (identity.kind == Appointment and identity.sourceRef != "")) and
   (identity.kind == Bill implies (identity.sourceRef != "" and identity.billRef != "" and
     identity.billOrigin != "" and identity.billAccount != "")) and
   (identity.kind == Appointment implies
@@ -343,11 +348,11 @@ calendar entries, users, providers, duration or recurrence count.
 
 ```quint
 pure val appointmentIdentity: EntryIdentity = {
-  owner: "ownerA", calendarId: "calendarA", occurrenceId: "visitA", sourceRef: "manual",
+  owner: "ownerA", calendarId: "calendarA", occurrenceId: "visitA", sourceRef: "manual", sourceAccount: 0,
   kind: Appointment, billRef: "", billOrigin: "", billAccount: ""
 }
 pure val billIdentity: EntryIdentity = {
-  owner: "ownerA", calendarId: "calendarA", occurrenceId: "periodA", sourceRef: "messageA",
+  owner: "ownerA", calendarId: "calendarA", occurrenceId: "periodA", sourceRef: "messageA", sourceAccount: 0,
   kind: Bill, billRef: "billA", billOrigin: "https://biller.example", billAccount: "billerAccount"
 }
 pure val timedDetails: EntryDetails = {

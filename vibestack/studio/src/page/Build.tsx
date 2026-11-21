@@ -13,7 +13,7 @@ const elapsed = (job: JobView, now: number) => { const s = Math.round(((job.fini
 function Elapsed({ job }: { job: JobView }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (job.status !== "running") return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [job.status]);
-  return <span className="text-xs text-muted-foreground tabular-nums">{elapsed(job, now)}</span>;
+  return <span className="text-mark text-muted-foreground tabular-nums">{elapsed(job, now)}</span>;
 }
 
 type StageState = "idle" | "todo" | "active" | "running" | "ok" | "bad";
@@ -22,9 +22,9 @@ const NODE: Record<Exclude<StageState, "running">, string> = {
   ok: "border-ok bg-ok text-card", bad: "border-destructive bg-destructive text-card",
 };
 const Stage = ({ name, state, mark, label }: { name: string; state: StageState; mark: string | number; label: string }) => (
-  <div className="relative flex flex-col items-center gap-1.5 text-xs text-muted-foreground">
+  <div className="relative flex flex-col items-center gap-1.5 text-mark text-muted-foreground">
     {state === "running" ? <Spinner label={`${name}: running`} className="rounded-full bg-card text-primary" />
-      : <div role="img" aria-label={`${name}: ${label}`} title={label} className={cn("grid size-6 place-items-center rounded-full border-2 bg-card text-xs font-bold tabular-nums", NODE[state])}>{mark}</div>}
+      : <div role="img" aria-label={`${name}: ${label}`} title={label} className={cn("grid size-6 place-items-center rounded-full border-2 bg-card text-mark font-bold tabular-nums", NODE[state])}>{mark}</div>}
     {name}
   </div>
 );
@@ -32,7 +32,7 @@ const Stage = ({ name, state, mark, label }: { name: string; state: StageState; 
 const MARK: Record<Exclude<StageMark, "running">, [string, string]> = { passed: ["✓", "text-ok"], failed: ["✗", "text-destructive"], skipped: ["–", "text-muted-foreground"], "": ["·", "text-muted-foreground"] };
 /** The stages of the last check, or the one running, as one row of marks. */
 const Stages = ({ running }: { running: boolean }) => (
-  <ol aria-label="Stages" className="m-0 flex list-none flex-wrap gap-x-2.5 gap-y-1 p-0 text-xs text-muted-foreground">
+  <ol aria-label="Stages" className="m-0 flex list-none flex-wrap gap-x-2.5 gap-y-1 p-0 text-mark text-muted-foreground">
     {stagesOf(S.snap?.check?.results ?? [], running).map(({ stage, mark, simulated }) => {
       const label = `${stage}: ${mark || "not run"}${simulated ? `, ${simulated} obligations simulated only` : ""}`;
       return (
@@ -79,7 +79,7 @@ export function PublishDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       action={<><Icon name="check" />Publish</>} disabled={unsound.length > 0} onConfirm={() => void publish()}>
       {unsound.length > 0 && <Alert variant="destructive">{unsound.join(", ")}</Alert>}
       {dirty.map((spec) => (
-        <div key={spec.file} className="overflow-auto rounded-md border border-border font-mono text-xs leading-normal">
+        <div key={spec.file} className="overflow-auto rounded-md border border-border font-mono text-mark leading-normal">
           <div className="border-b border-border bg-muted px-2.5 py-1.5 font-semibold">{spec.deleted ? `${spec.file} (deleted)` : spec.orig === null ? `${spec.file} (new)` : spec.file}</div>
           {!spec.deleted && diff(spec.orig ?? "", publishedText(spec)!)}
         </div>
@@ -139,16 +139,16 @@ export function Build({ onPublish }: { onPublish: () => void }) {
 
       {manifest && (
         <div className="flex flex-col gap-2">
-          <ul className="m-0 flex max-h-60 list-none flex-col gap-1 overflow-auto p-0 text-sm">
+          <ul className="m-0 flex max-h-60 list-none flex-col gap-1 overflow-auto p-0 text-detail">
             {manifest.changes.map((c) => (
               <li key={`${c.action} ${c.kind} ${c.key}`} className="grid grid-cols-[14px_1fr] gap-1.5">
                 <span aria-label={c.action} className={cn("font-mono font-semibold", c.action === "added" ? "text-ok" : c.action === "deleted" ? "text-destructive" : "text-warn")}>{SIGN[c.action]}</span>
                 <span>{c.kind === "spec" ? c.key : c.key.replace(/^## /, "").replace(/^Story: /, "")}
-                  {c.what.length > 0 && <div className="text-xs text-muted-foreground">{c.what.join(" · ")}</div>}</span>
+                  {c.what.length > 0 && <div className="text-mark text-muted-foreground">{c.what.join(" · ")}</div>}</span>
               </li>
             ))}
           </ul>
-          {manifest.regenerate.length > 0 && <div className="text-xs text-muted-foreground">↻ {manifest.regenerate.map((r) => r.gen).join(", ")}</div>}
+          {manifest.regenerate.length > 0 && <div className="text-mark text-muted-foreground">↻ {manifest.regenerate.map((r) => r.gen).join(", ")}</div>}
           <div><Button variant="outline" size="sm" disabled={!can({ type: "markSynced" })} onClick={() => start("synced")}><Icon name="check" />Mark synced</Button></div>
         </div>
       )}
@@ -168,7 +168,7 @@ export function Build({ onPublish }: { onPublish: () => void }) {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Dot mark={snap.session.previewing ? "ok" : ""} label={snap.session.previewing ? "running" : "stopped"} />
-            <span className="flex-1 font-semibold">App {snap.app.script && <span className="font-mono text-xs font-normal text-muted-foreground">pnpm {snap.app.script}</span>}</span>
+            <span className="flex-1 font-semibold">App {snap.app.script && <span className="font-mono text-mark font-normal text-muted-foreground">pnpm {snap.app.script}</span>}</span>
             {snap.session.previewing && snap.app.url && <Button variant="outline" size="sm" asChild><a href={snap.app.url} target="_blank" rel="noreferrer"><Icon name="open" />Open</a></Button>}
             {snap.app.buildable && <Button variant="outline" size="sm" disabled={!can({ type: "build" })} onClick={() => start("build")}><Icon name="check" />Build</Button>}
             {snap.app.script && can({ type: "preview" }) && <Button variant="outline" size="sm" onClick={() => start("app", { start: true })}><Icon name="play" />Start</Button>}
@@ -180,13 +180,13 @@ export function Build({ onPublish }: { onPublish: () => void }) {
 
       {job && (
         <div className="overflow-hidden rounded-lg border border-border">
-          <div className="flex items-center gap-2 border-b border-border py-1.5 pr-2 pl-3 text-sm">
+          <div className="flex items-center gap-2 border-b border-border py-1.5 pr-2 pl-3 text-detail">
             <Dot mark={job.status === "running" ? "dirty" : job.status === "passed" ? "ok" : "bad"} label={job.status} />
             <span className="flex-1 font-semibold">{job.label}</span>
             <Elapsed job={job} />
             {job.status === "running" && can({ type: "stop" }) && <IconButton name="stop" label="Stop" onClick={() => start("stop")} />}
           </div>
-          <pre ref={logRef} className="m-0 max-h-80 overflow-auto bg-muted px-3 py-2 font-mono text-xs leading-normal break-words whitespace-pre-wrap">{job.log.join("\n") || "…"}</pre>
+          <pre ref={logRef} className="m-0 max-h-80 overflow-auto bg-muted px-3 py-2 font-mono text-mark leading-normal break-words whitespace-pre-wrap">{job.log.join("\n") || "…"}</pre>
         </div>
       )}
 
@@ -199,20 +199,20 @@ export function Build({ onPublish }: { onPublish: () => void }) {
           </div>
         )}
         {jobs.check?.status === "failed" && !check?.finished && (
-          <details open className="text-xs"><summary className="cursor-pointer text-destructive">The check did not finish</summary><Code className="mt-1 max-h-65 whitespace-pre-wrap">{jobs.check.log.join("\n")}</Code></details>
+          <details open className="text-mark"><summary className="cursor-pointer text-destructive">The check did not finish</summary><Code className="mt-1 max-h-65 whitespace-pre-wrap">{jobs.check.log.join("\n")}</Code></details>
         )}
-        {check?.next && <div className="text-sm">{check.next}</div>}
+        {check?.next && <div className="text-detail">{check.next}</div>}
         {blocking.map((r) => {
           const at = locate(r);
           // A failure about a rule or spec opens it, with what the check found under it (./Spec.tsx); any other shows it here.
-          return at ? <Button key={`${r.stage} ${r.summary}`} variant="ghost" size="sm" className="h-auto justify-start py-1 text-left text-xs whitespace-normal text-destructive" onClick={() => reveal(at.file, at.key)}>{r.stage}: {r.summary}</Button>
-            : <details key={`${r.stage} ${r.summary}`} className="text-xs"><summary className="cursor-pointer text-destructive">{r.stage}: {r.summary}</summary>{r.detail && <Code className="mt-1 max-h-65 whitespace-pre-wrap">{r.detail}</Code>}</details>;
+          return at ? <Button key={`${r.stage} ${r.summary}`} variant="ghost" size="sm" className="h-auto justify-start py-1 text-left text-mark whitespace-normal text-destructive" onClick={() => reveal(at.file, at.key)}>{r.stage}: {r.summary}</Button>
+            : <details key={`${r.stage} ${r.summary}`} className="text-mark"><summary className="cursor-pointer text-destructive">{r.stage}: {r.summary}</summary>{r.detail && <Code className="mt-1 max-h-65 whitespace-pre-wrap">{r.detail}</Code>}</details>;
         })}
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" disabled={!can({ type: "check" })} onClick={() => start("check")}><Icon name="play" />Run check</Button>
           <Button variant="outline" size="sm" disabled={!review} onClick={() => setAsking("review")}><Icon name="check" />Review</Button>
           <ReviewDialog open={asking === "review"} onOpenChange={() => setAsking(undefined)} />
-          {check?.finished !== undefined && <span className="text-xs text-muted-foreground">{new Date(check.finished).toLocaleTimeString()}</span>}
+          {check?.finished !== undefined && <span className="text-mark text-muted-foreground">{new Date(check.finished).toLocaleTimeString()}</span>}
         </div>
       </div>
     </aside>

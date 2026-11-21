@@ -13,7 +13,7 @@ export function Textarea({ invalid = false, className, ...props }: TextareaProps
       aria-invalid={invalid || undefined}
       className={cn(
         focusRing,
-        "field-sizing-content min-h-9 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive",
+        "field-sizing-content min-h-9 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-detail text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive",
         className,
       )}
       {...props}

@@ -169,6 +169,8 @@ pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
 pure def privateSurfaceActive(w: Workspace): bool =
   w.device.surface == S::Passwords or privateSignInActive(w)
+pure def localPasswordCommands(device: S::Shell): bool =
+  device.surface == S::Home and device.homePage == S::PasswordsCard
 pure def mayAssist(w: Workspace): bool =
   not(privateSignInActive(w)) and w.device.connectivity == S::Online and S::mayRequestReasoning(w.device) and
   S::mayObserveBrowser(w.device) and A::isVisible(w.assistant)
@@ -184,7 +186,11 @@ pure def quietCommitment(p: CM::Commitment): CM::Commitment =
   else if (CM::canInvalidate(p, T::Host)) CM::invalidate(p, T::Host) else p
 pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Workspace =
   val leavesSurface = device.surface != w.device.surface or device.readiness != S::Ready
-  val assistant = quietAssistant(w.assistant)
+  val quiet = quietAssistant(w.assistant)
+  val crossesPasswordCommands = localPasswordCommands(device) != localPasswordCommands(w.device)
+  val assistant = if (crossesPasswordCommands) {
+    ...quiet, conversation: C::editDraft(quiet.conversation, "", C::ConversationUser), keyboard: A::NoKeyboard
+  } else quiet
   {
     ...w, device: device,
     browser: if (leavesSurface and browser.editingAddress) B::dismissAddress(browser) else browser,
@@ -414,10 +420,11 @@ pure val choiceValues = Set(
 
 Home retains all browser tabs. Close browser resets the tabs and returns Home.
 Close Grace hides its window and retains the website. All three preserve the
-task, transcript and draft while pausing unfinished work and stopping speech.
+task and transcript while pausing unfinished work and stopping speech.
 Returning to an application or reopening Grace reveals that same paused task.
-Leaving the surface or sleeping dismisses keyboard focus while retaining the
-draft. Opening Grace ends an active address-editor focus; browser address entry
+Leaving the surface or sleeping dismisses keyboard focus. The draft survives
+these interruptions unless the person enters or leaves the Passwords card.
+Opening Grace ends an active address-editor focus. Browser address entry
 still works independently while Grace is closed.
 Choosing Home or Settings moves expanded chat into the lower pane, including
 when the selected surface is already open. Compact chat stays compact and
@@ -479,7 +486,9 @@ The pure interaction dispatcher calls existing assistant operations. User
 controls are authenticated as user input and service callbacks as runtime
 input. Typing, answer chips, speech, replies, failures, reading, Repeat and
 keyboard/window controls all update this workspace's actual conversation.
-Every accepted interaction cancels obsolete wake timers.
+Every accepted interaction cancels obsolete wake timers. On the Passwords Home card
+the guide handles recognized commands directly. Free text, transcribed words and
+conversation replies cannot enter the general reasoning interaction.
 
 Newly submitted content and geometry changes invalidate browser targets and
 payment review. Active work rechecks; already paused work stays paused. A
@@ -495,7 +504,7 @@ A fully classified payment approval uses its separate atomic route below.
 
 pure def canInteract(w: Workspace, input: I::Interaction, by: WorkspaceActor): bool =
   (by == Person or by == Host) and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
-  (I::needsReasoning(input) implies S::mayRequestReasoning(w.device)) and
+  (I::needsReasoning(input) implies (not(localPasswordCommands(w.device)) and S::mayRequestReasoning(w.device))) and
   (I::targetsWebsite(input) implies w.device.surface == S::Browser) and
   (I::needsCurrentGuidance(input) implies guidanceIsCurrent(w)) and
   I::canInteract(w.assistant, input, if (by == Person) C::ConversationUser else C::ConversationRuntime)
@@ -623,6 +632,9 @@ pure val guidanceReportValues = Set(
 
 Choosing Wi-Fi on the rail moves expanded chat into the lower pane, just as
 Home and Settings do. The Wi-Fi popover still toggles on each tap.
+An interruption keeps the task, checkpoint, goal and transcript and stops the
+current voice turn. Entering or leaving the Passwords card clears the draft.
+Other interruptions preserve it.
 
 ```quint
 pure def canChooseHomePage(w: Workspace, page: S::HomePage, by: WorkspaceActor): bool =
@@ -654,7 +666,9 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
   implies after.assistant.taskId == before.assistant.taskId and
     after.assistant.goal == before.assistant.goal and after.assistant.checkpoint == before.assistant.checkpoint and
     after.assistant.conversation.messages == before.assistant.conversation.messages and
-    after.assistant.conversation.draft == before.assistant.conversation.draft and
+    after.assistant.conversation.draft ==
+      (if (localPasswordCommands(before.device) != localPasswordCommands(after.device)) ""
+       else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
 ```
 
@@ -1115,8 +1129,10 @@ a nonempty ordered sequence of outcomes for the items the person opens. The revi
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
 The host records the account and linked source that the offer uses. The person must still be under that same authority when accepting the review, resuming it or confirming a read. Reconnecting the same linked account can renew access without changing the owner. Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
-this plan. Opening the app does not approve an external change. The
-browser’s opening revision identifies a document loaded later in the plan.
+this plan. Grace invites the person to review only after the offer is recorded
+for the current turn and authority. If the host refuses the offer, Grace says
+she could not prepare the plan. Opening the app does not approve an external
+change. The browser’s opening revision identifies a document loaded later in the plan.
 With permission and an active compact Browser step, the person can ask
 Grace to highlight a link on the loaded page. The host binds the
 highlighted destination to this step and its current page context. A
@@ -1210,9 +1226,17 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 ### Only a current observation of the next outcome advances the plan
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing result leaves the instruction in place, and Grace says why the check did not count: what she could not find, that the page changed or is covered, or that the item already satisfied an earlier step. A named browser step only accepts a dedicated observation of the approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. When the main content has no level-one heading, it reads the first one outside navigation, sidebars, the page banner and footers. It compares the heading with the reviewed name after normalizing Unicode, spacing, letter case and apostrophes inside a word. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry, and Grace says why the check did not count: what she could not find, that the page changed or is covered, or that the item already satisfied an earlier step. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. When the main content has no level-one heading, it reads the first one outside navigation, sidebars, the page banner and footers. It compares the heading with the reviewed name after normalizing Unicode, spacing, letter case and apostrophes inside a word. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
 ```quint
+type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField
+pure def ordinaryGuidedPage(loaded: bool, sameUrl: bool, coveringBlocker: bool, controls: List[GuidedPageField]): bool =
+  loaded and sameUrl and not(coveringBlocker) and controls.every(controlKind => controlKind == NavigationPageField)
+pure def publicGuidedLink(outsideForms: bool, hasPrivateAddressState: bool): bool =
+  outsideForms and not(hasPrivateAddressState)
+pure def lawBrowserReadingRequiresOrdinaryEvidence(loaded: bool, sameUrl: bool, coveringBlocker: bool, controls: List[GuidedPageField]): bool =
+  ordinaryGuidedPage(loaded, sameUrl, coveringBlocker, controls) implies
+    (loaded and sameUrl and not(coveringBlocker) and controls.every(controlKind => controlKind == NavigationPageField))
 pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
   | SaveMailAppointment => true
   | _ => false

@@ -2,6 +2,7 @@
 import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
+import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
@@ -64,12 +65,14 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
           }} />
       ) : page === "BrightnessSettings" ? (
         <SettingsBrightness brightness={preferences.brightness} onBrightnessChange={(value) => preview(brightnessChoice(preferences, value))}
-          nightDim={preferences.nightDimming} />
+          nightDim={preferences.nightDimming} nightDimHint="From 9 pm to 7 am, easier on the eyes"
+          onNightDimChange={(nightDimming) => preview({ ...preferences, nightDimming })} />
       ) : page === "VoiceSettings" ? (
-        <SettingsVoice speeds={paceOptions.map((pace) => ({ value: pace, label: pace }))} speed={preferences.pace}
+        <><SettingsVoice speeds={paceOptions.map((pace) => ({ value: pace, label: pace }))} speed={preferences.pace}
           onSpeedChange={(value) => {
             if (value === "Slower" || value === "Normal" || value === "Faster") preview({ ...preferences, pace: value });
           }} speaks={preferences.voiceOutput} onSpeaksChange={(value) => preview({ ...preferences, voiceOutput: value })} wake="unavailable" />
+          <PageText>{voiceDisclosure}</PageText></>
       ) : page === "NetworkSettings" ? (
         <Wifi />
       ) : page === "AboutSettings" ? (

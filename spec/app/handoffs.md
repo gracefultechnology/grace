@@ -120,7 +120,7 @@ pure val mailValues = Set(E::initial, photoMailbox,
     bill: { ref: "bill", origin: "https://utility.example", account: "account", confirmed: true } })
 pure val entryValues = Set(C::initial,
   { ...C::initial, phase: C::Saved, hasSaved: true,
-    identity: { owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", sourceRef: "message",
+    identity: { owner: "owner", calendarId: "calendar", occurrenceId: "calendar-entry", sourceRef: "message", sourceAccount: 0,
       kind: C::Bill, billRef: "bill", billOrigin: "https://utility.example", billAccount: "account" },
     committed: { ...C::noDetails, title: "Bill", startAt: 1, endAt: 2, timezone: "UTC" } })
 pure val openingValues = Set(

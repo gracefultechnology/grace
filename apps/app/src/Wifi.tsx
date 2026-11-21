@@ -13,11 +13,11 @@ export type WifiRuntime = ManagedRuntime.ManagedRuntime<WifiPage | Machine, neve
 
 const device: WifiRuntime | undefined = wifiPlugin && ManagedRuntime.make(wifiPage(wifiPlugin));
 
-const statuses: Readonly<Record<Discovery, WifiStatus>> = {
+const statuses: Readonly<Record<Discovery["tag"], WifiStatus>> = {
   Scanning: "scanning", WifiOff: "off", NetworksFound: "ready",
   LocationAccessNeeded: "none", ExplainingLocation: "none", LocationRefused: "none", LocationOff: "none", NoNetworks: "none",
 };
-const reasons: Readonly<Partial<Record<Discovery, string>>> = {
+const reasons: Readonly<Partial<Record<Discovery["tag"], string>>> = {
   LocationAccessNeeded: "Grace needs your permission to look for networks.",
   ExplainingLocation: "The tablet uses its location only to find Wi-Fi networks nearby.",
   LocationRefused: "Android can show the networks nearby.",
@@ -75,25 +75,30 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
   if (n.phase === "PrivateEntry") return <PrivateEntry key={n.version} n={n} name={name} person={person} join={(password) => run(page.join(password))} />;
 
   const connected = online ? identified ?? unnamed : undefined;
+  const offersById = new Map(offers.map((offer) => [offer.network.id, offer]));
+  const nearby = n.discovery.tag === "NetworksFound" ? n.discovery.networks.flatMap((network) => {
+    const offer = offersById.get(network.id);
+    return offer && (!online || network.id !== identified?.id) ? [row(offer)] : [];
+  }) : [];
   const action = listAction(n.discovery);
   const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
   const said = notice(n, name);
   return (
     <>
-      <WifiNetworkList status={statuses[n.discovery]} current={connected} networks={offers.filter((offer) => !online || offer.network.id !== identified?.id).map(row)}
+      <WifiNetworkList status={statuses[n.discovery.tag]} current={connected} networks={nearby}
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
         connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? n.selected.id : undefined}
         failed={n.phase === "JoinFailed" ? n.selected.id : undefined} onRetry={() => run(page.retry())}
         onTurnOn={() => run(page.openPanel())} onFix={onFix}
         onSelect={(picked) => {
-          const offer = offers.find((candidate) => candidate.network.id === picked);
+          const offer = offersById.get(picked);
           if (offer && can({ type: "choose", network: offer.network }, "Person")) run(page.choose(offer));
         }}
-        noneLabel={reasons[n.discovery]}
+        noneLabel={reasons[n.discovery.tag]}
         action={action !== "NoAction" && <Button variant="prominent" size="pill" onClick={act}>{actionLabels[action]}</Button>} />
       {said && <Alert variant={n.phase === "JoinFailed" ? "caution" : "info"} className="mt-4">{said}</Alert>}
       {n.phase === "PortalEntry" && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>Open the sign-in page</Button>}
-      {!online && n.discovery !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
+      {!online && n.discovery.tag !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
     </>
   );
 }

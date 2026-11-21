@@ -1,6 +1,7 @@
-// spec/app/browser.md, "Story: Sign in privately on a website"
+// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/workspace.md, "Only a current observation of the next outcome advances the plan"
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"
 import type { Rect } from "../gen/app__surface.effect.vibe"
+import { ordinaryGuidedPage, type GuidedPageField } from "../gen/app__workspace.effect.vibe"
 import type { Load } from "../gen/app__browser.effect.vibe"
 import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../gen/app__websiteRequests.effect.vibe"
 import { type SurfacePlugin, identity } from "./surfacePlugin.ts"
@@ -12,10 +13,57 @@ import {
 import { webPage } from "./webPage.vibe"
 import { foldApostrophes } from "./words.ts"
 
+export const privateFormRecovery = "Choose Turn off browser reading. Finish the form yourself in this tab. When the form is gone, choose Allow Grace to read this browser, then Resume Grace and try again."
+
+type PageElement = LinkObservation["result"]["elements"][number]
+
+function pageField(element: PageElement): GuidedPageField {
+  if (element.sensitive) return "PrivatePageField"
+  const type = element.type ?? ""
+  const search = element.role === "searchbox" || type === "search" ||
+    ((type === "" || type === "text") &&
+      /^(q|query|search)$/iu.test(element.fieldName ?? "") &&
+      /^search(?:\s+(?:this\s+)?(?:site|website))?$/iu.test(element.label?.trim() ?? ""))
+  if (search) return "NavigationPageField"
+  if (element.tag === "textarea" || element.role === "textbox" ||
+      (element.tag !== "input" && element.tag !== "select" && element.edited !== undefined) ||
+      (element.tag === "input" && !["hidden", "submit", "button", "reset", "checkbox", "radio", "image"].includes(type)))
+    return "UnknownPageField"
+  return "NavigationPageField"
+}
+
+function idleAccountForm(elements: readonly PageElement[], index: number): boolean {
+  const group = elements.filter((element) => element.form?.index === index)
+  if (group.some((element) => element.focused !== false || element.edited === true || element.hasInput === true)) return false
+  const fields = group.filter((element) => pageField(element) !== "NavigationPageField")
+  const password = fields.filter((field) => field.sensitive === "password" && field.type === "password")
+  const account = fields.filter((field) => field.sensitive === null &&
+    field.tag === "input" && (field.type == null || ["text", "email"].includes(field.type)) &&
+    /^(?:user(?:name|id)?|login|email(?:address)?|account(?:id)?|log)$/iu.test((field.fieldName ?? "").replace(/[_.-]/gu, "")))
+  if (index < 0 || account.length !== 1 || !fields.every((field) => field.edited === false && field.hasInput === false)) return false
+  if (password.length === 1 && fields.length === 2) return true
+  const identifier = account[0]
+  return fields.length === 1 && identifier?.fieldName === "username" &&
+    /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(identifier.label?.trim() ?? "") &&
+    group.some((element) => /\b(?:sign[ -]?in|log[ -]?in)\b/iu.test(element.form?.name ?? "") ||
+      (element.submits === true && /^(?:sign in|log in|login|continue)$/iu.test(element.label?.trim().replace(/[\s\p{P}\p{S}]+$/gu, "") ?? "")))
+}
+
+export function guidedPageState(observation: LinkObservation | undefined, url: string, linksOnly = false): "Ordinary" | "PublicLinks" | "PrivateForm" | "Unavailable" {
+  if (observation === undefined || observation.result.readyState !== "complete" || observation.result.url !== url) return "Unavailable"
+  const { blockers, elements } = observation.result
+  if (blockers.some((blocker) => blocker.covers !== "partial")) return "Unavailable"
+  const fields = elements.map(pageField)
+  if (ordinaryGuidedPage(true, true, false, fields)) return "Ordinary"
+  if (linksOnly && elements.every((element, position) => fields[position] === "NavigationPageField" ||
+      (element.form != null && idleAccountForm(elements, element.form.index)))) return "PublicLinks"
+  return "PrivateForm"
+}
+
 export error PageFailed { cause: unknown }
 
 export data PageEvent {
-  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load }
+  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load; back: boolean; forward: boolean }
   Crashed { id: PageId }
   Started { id: PageId; url: Url | undefined }
   Asked { id: PageId; key: RequestKey; ask: Ask; topFrame: boolean; said: string }
@@ -109,7 +157,7 @@ function surfaceEvents(plugin: SurfacePlugin) {
   const heard = Stream.callback<Heard>((queue) => acquireRelease(
     Effect.orDie(tryPromise(() => Promise.all([
       plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => e.exists === false ? undefined : PageEvent.Changed({
-        id: e.id, url: e.currentUrl ?? undefined, loading: e.progress !== undefined && e.progress < 100,
+        id: e.id, url: e.currentUrl ?? undefined, back: e.canGoBack === true, forward: e.canGoForward === true, loading: e.progress !== undefined && e.progress < 100,
         result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
       }))),
       plugin.addListener("surfaceCrashed", hear(queue, SurfaceCrashed, (e) => PageEvent.Crashed({ id: e.id }))),

@@ -79,10 +79,9 @@ export default {
         "tailwindcss"
       ]
     },
-    "apps/*": {
+    "apps/app": {
       "entry": [
         "test/**/*.test.{ts,tsx,vibe}",
-        "test/drivers/*.ts",
         "src/**/*.{schema,contract}.{ts,vibe}"
       ],
       "project": [

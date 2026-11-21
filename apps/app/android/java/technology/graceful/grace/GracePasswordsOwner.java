@@ -4,6 +4,7 @@ import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
+import com.getcapacitor.JSObject;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.nio.file.LinkOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import java.util.Locale;
 import org.json.JSONObject;
 
 final class GracePasswordsOwner {
@@ -61,6 +63,18 @@ final class GracePasswordsOwner {
  static synchronized CloudDeviceAccount.Session stableSession(Context context) throws Exception {
   if (changingAccount) throw new IllegalStateException("Account change in progress");
   return GraceAccount.session(context);
+ }
+
+ static JSObject accountStatus(CloudDeviceAccount.Session session) {
+  if (session == null) return new JSObject().put("kind", "signedOut");
+  String profile = "standalone-production".equals(BuildConfig.CLOUD_PROFILE) ? "" : BuildConfig.CLOUD_PROFILE + "\u0000";
+  String identity = "grace-voice-disclosure\u0000" + profile + session.organizationId() + "\u0000" + session.accountId();
+  try {
+   byte[] digest = MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));
+   var scope = new StringBuilder(64);
+   for (byte value : digest) scope.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+   return new JSObject().put("kind", "signedIn").put("voiceDisclosureScope", scope.toString());
+  } catch (NoSuchAlgorithmException unsupported) { throw new IllegalStateException(unsupported); }
  }
 
  static String storageOwner(CloudDeviceAccount.Session session) {

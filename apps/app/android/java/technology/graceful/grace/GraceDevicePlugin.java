@@ -49,11 +49,11 @@ public class GraceDevicePlugin extends Plugin {
  }
 
  @PluginMethod public void getDevice(PluginCall call) {
-  getBridge().executeOnMainThread(() -> call.resolve(new JSObject()
+  call.resolve(new JSObject()
    .put("volume", volume())
    .put("brightness", brightness())
    .put("battery", battery())
-   .put("screenOn", getContext().getSystemService(PowerManager.class).isInteractive())));
+   .put("screenOn", getContext().getSystemService(PowerManager.class).isInteractive()));
  }
 
  @PluginMethod public void setVolume(PluginCall call) {

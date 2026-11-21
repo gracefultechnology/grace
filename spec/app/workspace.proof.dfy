@@ -141,6 +141,63 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
   }
 }
 
+lemma PopoverInvariant(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  requires inv(w)
+  requires canTogglePopover(w, popover, by_)
+  ensures inv(togglePopover(w, popover, by_))
+{
+  ComponentInvariants(w);
+  app__shell_togglePopover_ensures(w.device, popover);
+  var device := app__shell_togglePopover(w.device, popover);
+  InterruptedInvariant(device, w.browser, w);
+  CompactRailInvariant(interrupted(device, w.browser, w), popover.WifiPopover?);
+}
+
+lemma PopoverTransitionFacts(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  requires inv(w)
+  requires canTogglePopover(w, popover, by_)
+  ensures stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_))
+{
+}
+
+lemma togglePopover_ensures(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysExecutionRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentRegistryIsCanonical(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentAssociation(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedCommitmentCannotSubmit(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOneTask(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedTogether(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysRecordingHasPermission(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOperationHasVisibleTask(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysEvidenceVersionsAreNonnegative(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysWakeRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysActiveWakePausesWebsiteWork(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPreferencesRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysDeviceRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysBrowserRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysAssistantRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentUsesCanonicalIdentity(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCurrentBeforeAction(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentReviewUsesCurrentContext(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), []))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), []))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_)))
+{
+  hide *;
+  reveal inv;
+  if inv(w) && canTogglePopover(w, popover, by_) {
+    PopoverInvariant(w, popover, by_);
+    PopoverTransitionFacts(w, popover, by_);
+  }
+}
+
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysExecutionRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentRules(openGrace(w, by_)))
@@ -1523,6 +1580,72 @@ lemma lawRestartKeepsCommitmentRecords_ensures(w: Workspace, by_: WorkspaceActor
   }
 }
 
+lemma LifecycleRestartPreservation(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  requires inv(w) && canChangeLifecycle(w, lifecycle, by_)
+  requires lifecycle.RestartDevice?
+  ensures inv(changeLifecycle(w, lifecycle, by_))
+  ensures stepInterruptionsKeepTask(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, changeLifecycle(w, lifecycle, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+{
+  ComponentInvariants(w);
+  app__shell_restart_ensures(w.device);
+  app__browser_closeBrowser_ensures(w.browser);
+  RestartedAssistantInvariant(w.assistant);
+  if app__execution_canRetire(w.execution, app__execution_ExecutionActor.BrowserBridge) {
+    app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+  }
+  app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
+  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  RegistryRestart(w, lifecycle, by_);
+  if w.commitment.stage.Empty? && w.commitment.fresh_ {
+    assert currentCommitmentContext(w);
+    assert app__assistant_unfinished(w.assistant);
+    assert w.assistant.taskId != "";
+    assert w.commitmentTask != "";
+    assert false;
+  }
+  var after := changeLifecycle(w, lifecycle, by_);
+  assert inv(after);
+}
+
+lemma LifecycleAdvancePreservation(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  requires inv(w) && canChangeLifecycle(w, lifecycle, by_)
+  requires !lifecycle.RestartDevice?
+  ensures inv(changeLifecycle(w, lifecycle, by_))
+  ensures stepInterruptionsKeepTask(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, changeLifecycle(w, lifecycle, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+{
+  ComponentInvariants(w);
+  match lifecycle {
+    case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
+    case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
+    case RetryStartup => app__shell_retryStartup_ensures(w.device);
+    case SleepDevice => app__shell_sleep_ensures(w.device);
+    case WakeDevice => app__shell_wake_ensures(w.device);
+    case RestartDevice => assert false;
+  }
+  var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
+    else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
+    else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
+    else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
+    else if lifecycle.WakeDevice? then app__shell_wake(w.device)
+    else app__shell_restart(w.device);
+  InterruptedInvariant(device, w.browser, w);
+  var stopped := interrupted(device, w.browser, w);
+  if lifecycle.SleepDevice? && app__assistant_isVisible(stopped.assistant) {
+    assert !app__assistant_unfinished(stopped.assistant) || stopped.assistant.activity.Paused?;
+    CloseQuietWorkspace(stopped);
+  }
+  var after := changeLifecycle(w, lifecycle, by_);
+  assert inv(after);
+}
+
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysExecutionRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentRules(changeLifecycle(w, lifecycle, by_)))
@@ -1550,49 +1673,10 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
 {
   if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
-    ComponentInvariants(w);
     if lifecycle.RestartDevice? {
-      app__shell_restart_ensures(w.device);
-      app__browser_closeBrowser_ensures(w.browser);
-      RestartedAssistantInvariant(w.assistant);
-      if app__execution_canRetire(w.execution, app__execution_ExecutionActor.BrowserBridge) {
-        app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
-      }
-      app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
-      app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
-      RegistryRestart(w, lifecycle, by_);
-      if w.commitment.stage.Empty? && w.commitment.fresh_ {
-        assert currentCommitmentContext(w);
-        assert app__assistant_unfinished(w.assistant);
-        assert w.assistant.taskId != "";
-        assert w.commitmentTask != "";
-        assert false;
-      }
-      var after := changeLifecycle(w, lifecycle, by_);
-      assert inv(after);
+      LifecycleRestartPreservation(w, lifecycle, by_);
     } else {
-      match lifecycle {
-        case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
-        case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
-        case RetryStartup => app__shell_retryStartup_ensures(w.device);
-        case SleepDevice => app__shell_sleep_ensures(w.device);
-        case WakeDevice => app__shell_wake_ensures(w.device);
-        case RestartDevice => assert false;
-      }
-      var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
-        else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
-        else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
-        else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
-        else if lifecycle.WakeDevice? then app__shell_wake(w.device)
-        else app__shell_restart(w.device);
-      InterruptedInvariant(device, w.browser, w);
-      var stopped := interrupted(device, w.browser, w);
-      if lifecycle.SleepDevice? && app__assistant_isVisible(stopped.assistant) {
-        assert !app__assistant_unfinished(stopped.assistant) || stopped.assistant.activity.Paused?;
-        CloseQuietWorkspace(stopped);
-      }
-      var after := changeLifecycle(w, lifecycle, by_);
-      assert inv(after);
+      LifecycleAdvancePreservation(w, lifecycle, by_);
     }
   }
 }

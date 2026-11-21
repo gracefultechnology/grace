@@ -9,7 +9,7 @@ import { looker, render, sendable } from "./context.vibe"
 import { Conversation } from "./conversation.vibe"
 import { withhold } from "./private.ts"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { ManagedReads, guidedAuthority } from "./managedReads.vibe"
+import { ManagedReads, guidedAuthority, guidedOwner } from "./managedReads.vibe"
 import { ReplyControls } from "./replyControls.vibe"
 import { Reply } from "./reply.schema.ts"
 import { webView } from "./surfacePlugin.ts"
@@ -160,10 +160,16 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
           const supported = plan.steps.every((item) => typeof item === "string"
             ? item === "ReadBrowser" || item === "ReadChangedBrowser" || item === "ReadStatement"
             : item.kind === "ReachNamedPage")
-          const offer = reply.actions.length === 1 && supported && safe === reply.text && !reply.isQuestion && fromPerson(origin)
-          const applied = offer ? try agent.apply([plan], { generation: token, workVersion, origin, authority }) : []
-          const prepared = applied.length === 1 && applied.every((a) => a.outcome === "Applied")
-          const words = prepared ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
+          const eligible = reply.actions.length === 1 && supported && safe === reply.text && !reply.isQuestion && fromPerson(origin)
+          const applied = eligible ? try agent.apply([plan], { generation: token, workVersion, origin, authority }) : []
+          const current = try workspace.get()
+          if (privateSurfaceActive(current) || current.assistant.workVersion !== workVersion ||
+              !sameContext(replyControlContext(current), request.context) || current.assistant.conversation.turn !== "Thinking" || current.assistant.conversation.messages.at(-1)?.text !== message.text) return
+          const { review } = current
+          const offered = applied.some((item) => item.outcome === "Applied") &&
+            review.generation === token && review.workVersion === workVersion &&
+            review.request.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), review.request.steps)
+          const words = offered ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
           workspace.send({ type: "interact", input: { tag: "Respond", token, text: words,
             isQuestion: false, answers: [], audible: false } }, "Host") catch () => undefined
           return

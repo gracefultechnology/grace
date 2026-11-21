@@ -65,7 +65,7 @@ export function CalendarEventRow({
       {...props}
     >
       <span className="w-[92px] flex-none text-center">
-        <span className="block text-label leading-[22px] font-bold tracking-[.06em] text-muted-foreground uppercase">{dayLabel}</span>
+        <span className="block text-control leading-[22px] font-bold tracking-[.06em] text-muted-foreground uppercase">{dayLabel}</span>
         <span className="block text-body-lg leading-7 font-bold text-chrome">{startLabel}</span>
       </span>
       <span className={cn("w-[3px] flex-none self-stretch rounded-full", important ? "bg-alert" : "bg-lavender")}>{important && <span className="sr-only">{importantLabel}</span>}</span>

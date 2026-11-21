@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { relative } from "node:path"
 import js from "@eslint/js"
+import designTokens from "@repo/design-system/tokens.json" with { type: "json" }
 import react from "@eslint-react/eslint-plugin"
 import tailwind from "eslint-plugin-better-tailwindcss"
 import boundaries from "eslint-plugin-boundaries"
@@ -88,7 +89,7 @@ const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-u
 
 export default defineConfig(
   // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
-  globalIgnores(["vendor/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
+  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
@@ -169,7 +170,7 @@ export default defineConfig(
   // vibestack/design/eslint.ts: token classes only, read from the theme `pnpm --filter @repo/design-system build` writes.
   {
     files: tsx,
-    extends: [designSystem({ tailwind, tokens: parseTokens(JSON.parse(readFileSync(`${design}/tokens.json`, "utf8"))), entryPoint: `${import.meta.dirname}/${design}/generated/theme.css` })],
+    extends: [designSystem({ tailwind, tokens: parseTokens(designTokens), entryPoint: `${import.meta.dirname}/${design}/generated/theme.css` })],
     settings: { "better-tailwindcss": { cwd: design } },
   },
   // @repo/ui holds the form controls and dialogs every interface uses.
