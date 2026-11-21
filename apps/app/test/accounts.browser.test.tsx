@@ -5,10 +5,10 @@ import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } f
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import { client, expire, otherPassword, reply, signIn } from "./cloud.vibe";
-import { mount } from "./screen.tsx";
+import { mount, actOnScreen } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+actOnScreen();
 const cloud = inject("cloud");
 const outlook = "margaret@outlook.com";
 const riverview = "margaret@riverview.net";
@@ -32,7 +32,7 @@ const decoded = (body: BodyInit | null | undefined) => typeof body === "string" 
 
 let secret = "";
 
-beforeAll(async () => {
+beforeAll(() => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
@@ -44,8 +44,6 @@ beforeAll(async () => {
     return opened(url, ...rest);
   };
   watcher.observe(document.body, { childList: true, subtree: true });
-  environment.IS_REACT_ACT_ENVIRONMENT = true;
-  await page.viewport(1280, 800);
 });
 beforeEach(async () => {
   localStorage.clear();
@@ -59,7 +57,6 @@ beforeEach(async () => {
 });
 afterAll(() => {
   watcher.disconnect();
-  environment.IS_REACT_ACT_ENVIRONMENT = false;
   globalThis.fetch = fetched;
   window.open = opened;
 });

@@ -4,7 +4,7 @@
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, inject, it, onTestFinished, vi } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
