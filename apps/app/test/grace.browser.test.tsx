@@ -178,7 +178,7 @@ it('Save the clinic appointment (spec/app/calendars.md, "Story: Ask Grace to put
   // spec/app/calendars.md, "An appointment from an email names that email, goes to its account’s calendar, and is asked once"
   await person({ type: "setUse", id: 1, use: { mail: true, calendar: false, contacts: true } });
   await say("Open Ruth's email.", { text: "Ruth asks about lunch on Sunday.", actions: [{ kind: "showInbox" }, { kind: "openMessage", message: "Ruth" }] });
-  expect(toldGrace()).toContain("proposeFromMessage was not done: it is already in her calendar");
+  expect(toldGrace()).toContain("proposeFromMessage was not done: it is already in their calendar");
   await expect.element(page.getByRole("heading", { name: "Lunch on Sunday?" })).toBeVisible();
   await say("Add lunch with Ruth.", { text: "Lunch with Ruth, the day after tomorrow at noon. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
     actions: [{ kind: "proposeFromMessage", title: "Lunch with Ruth", day: dateOf(today + 2), time: "12:00" }] });

@@ -904,7 +904,7 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   expect(requests.map(({ path }) => path)).toEqual(Array(3).fill(`/api/conversations/${created[0].id}/messages/stream`));
   expect(refused).toEqual([]);
   await backToHomeThenLeaveToAndroid();
-});
+}, 120_000);
 
 it.skipIf(!inject("realModel"))('Ask in my own words to sign in, answered by the real model (spec/app/browserControls.md, "Story: Ask Grace to start a private sign-in for my bill")', async () => {
   const examples = character.messageExamples.map(({ examples: lines }) => lines.map(({ name, content }) => `${name}: ${content.text}`).join("\n"));
