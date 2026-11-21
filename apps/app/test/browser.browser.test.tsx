@@ -299,8 +299,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const browserObservationTimeoutMs = 15_000;
     const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number }[] = [];
     outcome.hops = hops;
+    const menuRetries: { documentId: string; instruction: string }[] = [];
+    outcome.menuRetries = menuRetries;
+    const actionsTaken = () => hops.length + disclosures.length + menuRetries.length + Number(outcome.nameCorrection !== undefined);
     let previous = initial;
-    while (hops.length + disclosures.length < (named ? 8 : 1)) {
+    while (actionsTaken() < (named ? 8 : 1)) {
       try {
         await userEvent.click(showLink);
       } catch (error) {
@@ -324,18 +327,28 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           if (failure) {
             const instruction = failure.textContent ?? "The link could not be highlighted";
             const [, branch, leaf] = instruction.match(/^The open menu (?:“[^”]+” › )*“([^”]+)” calls this link “([^”]+)”\.?$/u) ?? [];
-            if (!branch || !leaf || outcome.nameCorrection || ![branch, leaf].every(label => words(label).length > 0 && words(label).every(word => namedWords.has(word))))
-              throw new Error(instruction);
-            await userEvent.click(page.getByRole("button", { name: `Use “${leaf}” for this step`, exact: true }));
-            await expect.poll(() => plan.getByText(`Find and check “${leaf}”.`, { exact: true }).query() !== null, {
+            if (branch && leaf && !outcome.nameCorrection && [branch, leaf].every(label => words(label).length > 0 && words(label).every(word => namedWords.has(word)))) {
+              expect(actionsTaken()).toBeLessThan(7);
+              await userEvent.click(page.getByRole("button", { name: `Use “${leaf}” for this step`, exact: true }));
+              await expect.poll(() => plan.getByText(`Find and check “${leaf}”.`, { exact: true }).query() !== null, {
+                timeout: Math.max(1, guidanceDeadline - performance.now()),
+              }).toBe(true);
+              outcome.nameCorrection = { original: named.subject, branch, leaf, instruction, documentId: previous.documentId };
+              await userEvent.click(showLink);
+            } else {
+              const nextMenu = page.getByRole("button", { name: "Try another menu", exact: true });
+              if (nextMenu.query() === null) throw new Error(instruction);
+              expect(actionsTaken()).toBeLessThan(7);
+              await userEvent.click(nextMenu);
+              menuRetries.push({ documentId: previous.documentId, instruction });
+            }
+            await expect.poll(() => guidanceFailure.query()?.textContent !== instruction, {
               timeout: Math.max(1, guidanceDeadline - performance.now()),
             }).toBe(true);
-            outcome.nameCorrection = { original: named.subject, branch, leaf, instruction, documentId: previous.documentId };
-            await userEvent.click(showLink);
             continue;
           }
           if (linkGuidance.query() !== null) break;
-          expect(hops.length + disclosures.length).toBeLessThan(7);
+          expect(actionsTaken()).toBeLessThan(7);
           const instruction = menuGuidance.element().textContent;
           if (!instruction || instruction === lastInstruction) throw new Error("Grace did not present fresh submenu guidance");
           outcome.menuInstruction = instruction;
