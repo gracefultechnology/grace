@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, Latch, Layer, ManagedRuntime, Option, Schema } from "effect";
+import { Effect, Fiber, Latch, Layer, ManagedRuntime, Option, Result, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,14 +11,14 @@ import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } f
 import { activeTab, tabUrl } from "../gen/app__browser.ts";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
-import { Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
+import { machineOver, Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
-import { GuidedRecovery } from "../src/guidedRecovery.vibe";
+import { guidedRecovery, GuidedRecovery } from "../src/guidedRecovery.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { ManagedReads } from "../src/managedReads.vibe";
@@ -2301,6 +2301,36 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     await sync();
     await sync();
     expect(Object.keys(localStorage).some((key) => key.startsWith("grace/guided-task-"))).toBe(false);
+
+    let held = await runtime.runPromise(workspace.get());
+    const writing = Latch.makeUnsafe();
+    const finish = Latch.makeUnsafe();
+    const queued = await Effect.runPromise(machineOver(() => Effect.sync(() => held), (next) => Effect.gen(function*() {
+      if (held.device.surface === "Email" && next.device.surface === "Browser") {
+        writing.openUnsafe();
+        yield* finish.await;
+      }
+      held = next;
+    })));
+    const { state: email } = await Effect.runPromise(queued.send({ type: "visit", destination: "Email" }, "Person"));
+    const selected = { task: email.assistant.taskId, version: email.assistant.workVersion };
+    await runtime.runPromise(Effect.gen(function*() {
+      const recovery = yield* GuidedRecovery;
+      yield* recovery.keepProgress();
+      const handoff = yield* Effect.forkChild(queued.send({ type: "openReleasedEmailLink", release: {
+        link: "https://utility.example/bill", deviceVersion: email.device.contextVersion, browserRevision: email.browser.revision,
+      } }, "Host"));
+      yield* writing.await;
+      const end = yield* Effect.forkChild(Effect.result(recovery.abandon(selected)), { startImmediately: true });
+      finish.openUnsafe();
+      yield* Fiber.join(handoff);
+      const verdict = yield* Fiber.join(end);
+      expect(Result.isFailure(verdict) ? verdict.failure._tag : "Ended").toBe("Rejected");
+      const { device, assistant } = yield* queued.get();
+      expect([device.surface, assistant.taskId, assistant.activity, assistant.workVersion]).toEqual([
+        "Browser", selected.task, "Paused", selected.version + 1,
+      ]);
+    }).pipe(Effect.provide(guidedRecovery(false, undefined).pipe(Layer.provide(Layer.succeed(Workspaces, queued))))));
 
     readable = true;
     lost = true;
