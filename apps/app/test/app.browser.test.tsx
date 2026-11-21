@@ -2457,6 +2457,9 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
     const request = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (request.origin !== window.location.origin) return browserFetch(input, init);
     switch (request.pathname) {
+      case "/api/product/files/scope": return Promise.resolve(Response.json({
+        accountId: "guide-owner", owner: "1".repeat(64), session: "2".repeat(64),
+      }));
       case "/api/auth/session": return Promise.resolve(Response.json({ account: { id: "guide-owner", email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));

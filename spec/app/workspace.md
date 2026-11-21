@@ -1193,7 +1193,8 @@ pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): b
   by == Host and mayGuideReadLink(w) and link.url != "" and link.task == w.assistant.taskId and
   link.version == w.assistant.workVersion and link.generation == w.assistant.conversation.generation and
   link.deviceVersion == w.device.contextVersion and link.browserRevision == w.browser.revision and
-  link.stepIndex == w.plan.receipts.length()
+  link.stepIndex == w.plan.receipts.length() and
+  ((w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "") implies link.url == w.plan.linkUrl)
 pure def setGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url, nameCorrection: NoGuidedNameCorrection } }
 pure def guidedLinkObserved(w: Workspace): bool =
@@ -1237,7 +1238,7 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 ### Only the person can revise the next named page to an observed public link label
 
-While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace must still check the exact approved heading on the loaded destination.
+While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. A later hint can use that approved link. Binding a different link needs another approval. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace must still check the exact approved heading on the loaded destination.
 
 ```quint
 pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
@@ -1281,6 +1282,9 @@ pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: Guide
 }
 pure def lawANameCorrectionNeedsItsCurrentPersonOffer(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
   (by != Person or not(guidedNameCorrectionCurrent(w, correction))) implies not(canConfirmGuidedNameCorrection(w, correction, by))
+pure def lawGuidanceKeepsTheApprovedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): bool =
+  (w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "" and link.url != w.plan.linkUrl)
+    implies not(canSetGuidedLink(w, link, by))
 pure val correctionValues = Set(
   { owner: "tablet", task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
     stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://biller.example/",
