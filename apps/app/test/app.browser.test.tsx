@@ -2435,8 +2435,10 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   let documentId = "directory";
   let heading = "Example";
   let domRevision = 1;
+  let replacement: "idle" | "armed" | "observed" | "replaced" = "idle";
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      if (replacement === "armed") replacement = "observed";
       return { documentId, frameScope: "main", result: {
         snapshotId: documentId, domRevision, url, title: heading, text: heading,
         complete: true, readyState: "complete", blockers: [],
@@ -2457,9 +2459,12 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
     const request = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (request.origin !== window.location.origin) return browserFetch(input, init);
     switch (request.pathname) {
-      case "/api/product/files/scope": return Promise.resolve(Response.json({
-        accountId: "guide-owner", owner: "1".repeat(64), session: "2".repeat(64),
-      }));
+      case "/api/product/files/scope":
+        if (replacement === "observed") {
+          documentId = "replacement-directory";
+          replacement = "replaced";
+        }
+        return Promise.resolve(Response.json({ accountId: "guide-owner", owner: "1".repeat(64), session: "2".repeat(64) }));
       case "/api/auth/session": return Promise.resolve(Response.json({ account: { id: "guide-owner", email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
@@ -2497,9 +2502,10 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
     await routeTo(status("Open submenu guidance"));
     await routeTo(offer);
 
-    documentId = "replacement-directory";
+    replacement = "armed";
     await tap(offer);
     await routeTo(status("Link unavailable").getByText("The page or task changed. Ask me again on the page you want."));
+    expect(replacement).toBe("replaced");
     await expect.element(pending(requested)).toHaveAttribute("aria-current", "step");
     expect(pageReceipt.query()).toBeNull();
 

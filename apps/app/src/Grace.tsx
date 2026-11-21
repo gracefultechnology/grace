@@ -77,7 +77,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [guidedCheck, setGuidedCheck] = useState<{ key: string; phase: "checking" | "retry" | "privateForm" }>();
-  const [linkFeedback, setLinkFeedback] = useState<{ key: string; result?: BrowserGuidance }>();
+  const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
   if (assistant.presentation === "Closed") return null;
@@ -135,18 +135,19 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     ? `I couldn’t verify “${details?.subject}” on this page. Check the page again or try another link.`
     : checkRetries[stepKind] ?? pageRetry;
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
-  const nameOffer = workspace && feedback?.result?.kind === "Menu" ? currentGuidedNameCorrection(workspace) : undefined;
-  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" && feedback?.result?.kind === "Menu" &&
-    feedback.result.alternateHref === nameOffer.value.href ? nameOffer.value : undefined;
+  const alternateHref = feedback?.result && "alternateHref" in feedback.result ? feedback.result.alternateHref : undefined;
+  const nameOffer = workspace && alternateHref ? currentGuidedNameCorrection(workspace) : undefined;
+  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" && alternateHref === nameOffer.value.href ? nameOffer.value : undefined;
   const chooseSiteName = () => {
     if (!correction) return;
     const refused = () => setLinkFeedback((current) => current === feedback
-      ? { key: guideKey, result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
+      ? { key: guideKey, attempt: Symbol(), result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
     void confirmGuidedName(correction).then((accepted) => { if (!accepted) refused(); }, refused);
   };
   const showLink = () => {
-    setLinkFeedback({ key: guideKey });
-    const report = (result: BrowserGuidance) => setLinkFeedback((current) => current?.key === guideKey ? { key: guideKey, result } : current);
+    const attempt = Symbol();
+    setLinkFeedback({ key: guideKey, attempt });
+    const report = (result: BrowserGuidance) => setLinkFeedback((current) => current?.attempt === attempt ? { ...current, result } : current);
     void pointAtReadLink(report).then(report, () => report({ kind: "Unavailable", words: "I could not highlight a link on this page." }));
   };
 

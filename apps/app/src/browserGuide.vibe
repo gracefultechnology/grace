@@ -11,7 +11,7 @@ import { NativePage, guidedPageState, privateFormRecovery } from "./nativePage.v
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
 
-export type BrowserGuidance = { kind: "Link" | "Unavailable"; words: string } | { kind: "Menu"; words: string; alternateHref?: string }
+export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string }
 
 export service BrowserGuide {
   point(onMenu: (guidance: BrowserGuidance) => void): BrowserGuidance!!
@@ -170,16 +170,18 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const start = try currentContext()
       if (!shown || !start || shown.key !== start.key || shown.alternateHref !== correction.href ||
           !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
-      const sameAccount = tryPromise(() => shown.account.current()) catch () => false
-      const canObserve = sameAccount && active === shown && (try currentContext())?.key === shown.key &&
-        canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")
-      const fresh = canObserve ? (page.observeLinks(shown.id) catch () => undefined) : undefined
-      const state = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
-      const valid = fresh !== undefined && fresh.documentId === correction.documentId &&
-        (state === "Ordinary" || state === "PublicOnly") && hasPublicName(fresh, start.url, correction.label, correction.href)
-      const currentAccount = valid && (tryPromise(() => shown.account.current()) catch () => false)
+      effect function observesOfferedName() {
+        const sameAccount = tryPromise(() => shown.account.current()) catch () => false
+        if (!sameAccount || active !== shown || (try currentContext())?.key !== shown.key ||
+            !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
+        const fresh = page.observeLinks(shown.id) catch () => undefined
+        const state = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
+        return fresh !== undefined && fresh.documentId === correction.documentId &&
+          (state === "Ordinary" || state === "PublicOnly") && hasPublicName(fresh, start.url, correction.label, correction.href)
+      }
+      const witnessed = (try observesOfferedName()) && (try observesOfferedName())
       if (active !== shown) return false
-      if (currentAccount && (try currentContext())?.key === start.key) {
+      if (witnessed && (try currentContext())?.key === start.key) {
         const accepted = workspace.send({ type: "confirmGuidedNameCorrection", correction }, "Person") catch () => undefined
         if (accepted !== undefined) return true
       }
@@ -318,8 +320,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             if (visible.length === 1) { disclosed = opened; break }
           }
           if (disclosed === undefined) {
+            if (active !== menuGuide || (try currentContext())?.key !== start.key) return changed
             page.clearGuide(start.id) catch () => undefined
-            return unavailableBecause(`I couldn’t see “${target}” in the open menu. You can try another menu.`)
+            return { kind: "Unavailable", words: `I couldn’t see “${target}” in the open menu. You can try another menu.`, alternateHref }
           }
           continue
         }
