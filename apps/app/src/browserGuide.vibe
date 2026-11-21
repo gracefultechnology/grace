@@ -1,7 +1,7 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
-import { Machine as Workspaces, mayGuideReadLink, nextOutcome, publicGuidedLink, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, canConfirmGuidedNameCorrection, mayGuideReadLink, nextOutcome, publicGuidedLink, type GuidedNameCorrection, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, decodeClefResult, type ClefDecisionRequest, type ClefDecisionResponse } from "@elizaos/cloud/clef-decisions"
 import { accountFetch, apiOrigin, browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -11,10 +11,11 @@ import { comparableName, NativePage, guidedPageState, privateFormRecovery } from
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
 
-export type BrowserGuidance = { kind: "Link" | "Menu" | "Unavailable"; words: string }
+export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string }
 
 export service BrowserGuide {
   point(onMenu: (guidance: BrowserGuidance) => void): BrowserGuidance!!
+  confirmName(correction: GuidedNameCorrection): boolean!!
 }
 
 function unavailableBecause(words: string): BrowserGuidance { return { kind: "Unavailable", words } }
@@ -37,7 +38,9 @@ function context(w: Workspace, authority: GuidedAuthority) {
     stepIndex: w.plan.receipts.length, deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision }
   const key = JSON.stringify([w.plan.owner, step, tab.id, tab.loadVersion])
   const outcome = nextOutcome(w.plan)
-  return { key, step, id: PageId.make(`tab-${tab.id}`), url, goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "",
+  const approvedHref = w.plan.nameOverride.stepIndex === step.stepIndex ? w.plan.linkUrl : undefined
+  return { key, step, owner: w.plan.owner, approvedHref, loadVersion: tab.loadVersion, id: PageId.make(`tab-${tab.id}`), url,
+    goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "",
     instruction: outcome.tag === "ReadStatement" ? choiceContext + statementContext : choiceContext }
 }
 
@@ -98,6 +101,12 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
   })
 }
 
+function hasPublicName(snapshot: LinkObservation, url: URL, label: string, href: string): boolean {
+  if (!label || label.length > 128 || label.includes("…") || url.search || url.hash) return false
+  const matches = links(snapshot, url, label, true).filter((link) => link.exact && link.pointable)
+  return matches.length === 1 && matches[0]?.label === label && matches[0].href === href && !matches[0].samePage
+}
+
 type ChoiceRequest = Extract<ClefDecisionRequest, { kind: "choice" }>
 export type GuideDecision = (request: ChoiceRequest, signal?: AbortSignal) => Promise<ClefDecisionResponse>
 type DecisionSession = {
@@ -139,7 +148,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   const setup = try Setup
   const authority = effect () => guidedAuthority(try setup.get(), webView.window.location.hash)
   const currentContext = effect () => context(try workspace.get(), try authority())
-  let active: { id: PageId; key: string; account: DecisionSession } | undefined
+  let active: { id: PageId; key: string; account: DecisionSession; alternateHref?: string } | undefined
   try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
     const old = active
     if (old !== undefined && context(state, try authority())?.key !== old.key) {
@@ -158,6 +167,33 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   })
   try addFinalizer(() => active === undefined ? Effect.void : Effect.ignore(page.clearGuide(active.id)))
   return {
+    confirmName: effect (correction) => {
+      const shown = active
+      const start = try currentContext()
+      if (!shown || !start || shown.key !== start.key || shown.alternateHref !== correction.href ||
+          !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
+      const observesOfferedName = effect () => {
+        const sameAccount = tryPromise(() => shown.account.current()) catch () => false
+        if (!sameAccount || active !== shown || (try currentContext())?.key !== shown.key ||
+            !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
+        const fresh = page.observeLinks(shown.id) catch () => undefined
+        const state = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
+        return fresh !== undefined && fresh.documentId === correction.documentId &&
+          (state === "Ordinary" || state === "PublicOnly") && hasPublicName(fresh, start.url, correction.label, correction.href)
+      }
+      const witnessed = (try observesOfferedName()) && (try observesOfferedName())
+      const sameAccount = witnessed && (tryPromise(() => shown.account.current()) catch () => false)
+      if (active !== shown) return false
+      if (sameAccount && (try currentContext())?.key === start.key) {
+        const accepted = workspace.send({ type: "confirmGuidedNameCorrection", correction }, "Person") catch () => undefined
+        if (accepted !== undefined) return true
+      }
+      if (active === shown) {
+        active = undefined
+        page.clearGuide(shown.id) catch () => undefined
+      }
+      return false
+    },
     point: effect (onMenu) => {
       const previous = active
       active = undefined
@@ -190,7 +226,8 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if (snapshot === undefined) return unobservable
         const availability = guidedPageState(snapshot, start.url.href, "GuidePublicLinks")
         if (availability !== "Ordinary" && availability !== "PublicOnly") return availability === "PrivateForm" ? privateForm : unobservable
-        const observed = links(snapshot, start.url, target, availability === "PublicOnly")
+        const observed = links(snapshot, start.url, target, availability === "PublicOnly" || start.approvedHref !== undefined)
+          .filter((link) => start.approvedHref === undefined || (link.href === start.approvedHref && link.exact))
         const exact = observed.filter((link) => link.exact)
         if (disclosed !== undefined && exact.length === 0) return changed
         if (exact.length > 1) return unavailableBecause(`More than one link is named “${target}”. Open the one you mean.`)
@@ -211,7 +248,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
                   !(await account.current()) || (await runPromise(currentContext()))?.key !== start.key) return { retry: false, stopped: changed }
               const state = guidedPageState(fresh.value, start.url.href, "GuidePublicLinks")
               if (state !== "Ordinary" && state !== "PublicOnly") return { retry: false, stopped: state === "PrivateForm" ? privateForm : unobservable }
-              const currentLinks = links(fresh.value, start.url, target, state === "PublicOnly")
+              const currentLinks = links(fresh.value, start.url, target, state === "PublicOnly" || start.approvedHref !== undefined)
               if (!candidates.every(candidate => currentLinks.some(current =>
                 current.href === candidate.href && current.description === candidate.description &&
                 current.pointable === candidate.pointable && current.selector === candidate.selector)))
@@ -236,7 +273,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if (current === undefined || current.documentId !== snapshot.documentId) return changed
         const state = guidedPageState(current, start.url.href, "GuidePublicLinks")
         if (state !== "Ordinary" && state !== "PublicOnly") return state === "PrivateForm" ? privateForm : unobservable
-        const matches = links(current, start.url, target, state === "PublicOnly").filter((link) =>
+        const matches = links(current, start.url, target, state === "PublicOnly" || start.approvedHref !== undefined).filter((link) =>
           disclosed !== undefined ? link.exact && link.pointable : link.href === winner.href && link.selector === winner.selector)
         const node = matches.length === 1 ? matches[0] : undefined
         if (!node || node.href !== winner.href || (try currentContext())?.key !== start.key) return changed
@@ -252,7 +289,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           if (fresh === undefined || fresh.documentId !== snapshot.documentId || (try currentContext())?.key !== start.key) return changed
           const freshState = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
           if (freshState !== "Ordinary" && freshState !== "PublicOnly") return freshState === "PrivateForm" ? privateForm : unobservable
-          const shown = links(fresh, start.url, target, freshState === "PublicOnly").find((link) => link.href === node.href && link.selector === node.selector)
+          const shown = links(fresh, start.url, target, freshState === "PublicOnly" || start.approvedHref !== undefined).find((link) => link.href === node.href && link.selector === node.selector)
           if (shown === undefined) return changed
           pointed = page.pointAt(start.id, fresh.documentId, {
             kind: "show", id: fresh.result.snapshotId, snapshotId: fresh.result.snapshotId,
@@ -266,13 +303,18 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           return changed
         }
         if (opensMenu) {
-          const menuGuide = { id: start.id, key: start.key, account }
+          const correction: GuidedNameCorrection = { ...start.step, owner: start.owner, loadVersion: start.loadVersion,
+            documentId: current.documentId, url: start.url.href, href: node.href, original: start.target, label: node.label }
+          const offered = hasPublicName(current, start.url, node.label, node.href)
+            ? (workspace.send({ type: "offerGuidedNameCorrection", correction }, "Host") catch () => undefined) : undefined
+          const alternateHref = offered === undefined ? undefined : node.href
+          const menuGuide = { id: start.id, key: start.key, account, alternateHref }
           active = menuGuide
           const hover = Effect.try(supportsPointerHover) catch () => false
           const words = hover
             ? `Move the pointer over “${winner.label}” and keep it there while I highlight the next link.`
             : `Open the website’s “${winner.label}” menu and leave it open while I highlight the next link.`
-          try Effect.sync(() => onMenu({ kind: "Menu", words }))
+          try Effect.sync(() => onMenu({ kind: "Menu", words, alternateHref }))
           const selector = `:is(${winner.selector}):is(:hover,:focus-within,[aria-expanded="true"])`
           while ((try Clock.currentTimeMillis) < expiresAt) {
             try Effect.sleep("500 millis")
@@ -290,8 +332,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
             if (visible.length === 1) { disclosed = opened; break }
           }
           if (disclosed === undefined) {
+            if (active !== menuGuide || (try currentContext())?.key !== start.key) return changed
             page.clearGuide(start.id) catch () => undefined
-            return unavailableBecause(`I couldn’t see “${target}” in the open menu. You can try another menu.`)
+            return { kind: "Unavailable", words: `I couldn’t see “${target}” in the open menu. You can try another menu.`, alternateHref }
           }
           continue
         }

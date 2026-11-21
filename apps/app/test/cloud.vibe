@@ -1,6 +1,7 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 
 import { Base64Url } from "effect/encoding"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import policy from "../agent/policy.json" with { type: "json" }
 
 type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number }
@@ -88,8 +89,10 @@ type Account = {
   sessions: Session[]
   outage: boolean
   mailFault?: "dispatch" | "lookupMissing"
+  calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate"
   sendLookups: string[]
   script: Scripted[]
+  decision?: ScriptedDecision
   turns: (Turn & { id: number; context: string })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
   consents: string[]
@@ -151,10 +154,11 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; answer: string }
-schema Script { replies: Scripted[] }
+schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
+schema Script { replies: Scripted[]; decision?: ScriptedDecision }
 schema SessionQuery { sessionId: string }
 schema GoogleAuthorization { state: Uuid; response_type: "code"; client_id: "grace-browser-fixture"; redirect_uri: Url; scope: Filled }
 schema GoogleCallback { state: Uuid; code: Uuid }
@@ -447,6 +451,7 @@ effect function store(site: string) {
   const issued = try Ref.make(0)
   const googleCodes = try Ref.make(new Map<string, GoogleConsent>())
   const googleLinks = try Ref.make(new Map<string, string>())
+  const calendarCreates = try SynchronizedRef.make(new Map<string, { intent: string; event: Appointment }>())
   const origin = effect {
     const request = try HttpServerRequest.HttpServerRequest
     return `http://${request.headers["host"]}`
@@ -801,20 +806,41 @@ effect function store(site: string) {
   }
 
   effect function addAppointment(fixed?: Slug) {
-    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
+    const fields = try HttpServerRequest.schemaBodyJson(NewAppointment)
+    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = fields
     const { key, box: found } = try connection(fixed, grantId)
-    const token = (try Ref.get(googleLinks)).get(found.grantId)
-    if (token !== undefined) {
+    const fault = (try caller()).calendarFault
+    if (fault !== undefined) try change(key, (a) => ({ ...a, calendarFault: undefined }))
+    if (fault === "beforeCreate") throw new Unavailable()
+    if (fault === "refuseCreate") throw new BadAddress()
+    const create = effect {
+      const token = (try Ref.get(googleLinks)).get(found.grantId)
+      if (token === undefined) return try recordAppointment(key, found, fields)
       const raw = try Schema.decodeUnknownEffect(GoogleEventReference)(try googleRequest("POST", `${googleCalendar}/${encodeURIComponent(calendarId ?? "primary")}/events`, token, {
         summary: title, description, location, start: { dateTime: startAt, timeZone }, end: { dateTime: endAt, timeZone }, attendees
       }))
       const current = try connection(fixed, grantId)
       const added = current.box.calendar.find((event) => event.externalId === raw.id)
       if (!added) throw new Missing()
-      return try HttpServerResponse.json({ event: shown(added, timeZone) }, { status: 201 })
+      return added
     }
-    const added = try recordAppointment(key, found, { calendarId, title, description, location, startAt, endAt, timeZone, attendees })
-    return try HttpServerResponse.json({ event: shown(added, timeZone.trim()) }, { status: 201 })
+    const insert = effect {
+      if (fixed !== "google") return try create
+      const idempotency = (try HttpServerRequest.HttpServerRequest).headers["idempotency-key"]
+      if (idempotency === undefined) throw new ProviderFailed()
+      const mutation = JSON.stringify([key, idempotency])
+      const intent = JSON.stringify([found.grantId, fields])
+      return try SynchronizedRef.modifyEffect(calendarCreates, effect (receipts) => {
+        const known = receipts.get(mutation)
+        if (known !== undefined && known.intent !== intent) throw new Rebound()
+        if (known !== undefined) return [known.event, receipts] as const
+        const event = try create
+        return [event, new Map(receipts).set(mutation, { intent, event })] as const
+      })
+    }
+    const saved = try insert
+    if (fault === "createResponse") throw new Unavailable()
+    return try HttpServerResponse.json({ event: shown(saved, timeZone) }, { status: 201 })
   }
 
   effect function recordAppointment(key: string, found: Box, { title, description, location, startAt, endAt, timeZone, calendarId, attendees }: typeof NewAppointment.Type) {
@@ -1060,15 +1086,15 @@ effect function store(site: string) {
 
   effect function outage() {
     const { key } = try signedIn()
-    const { down, mailFault } = try HttpServerRequest.schemaBodyJson(Outage)
-    try change(key, (a) => ({ ...a, outage: down, mailFault }))
+    const { down, mailFault, calendarFault } = try HttpServerRequest.schemaBodyJson(Outage)
+    try change(key, (a) => ({ ...a, outage: down, mailFault, calendarFault }))
     return try HttpServerResponse.json({ ok: true })
   }
 
   effect function script() {
     const { key } = try signedIn()
-    const { replies } = try HttpServerRequest.schemaBodyJson(Script)
-    try change(key, (a) => ({ ...a, script: [...a.script, ...replies] }))
+    const { replies, decision } = try HttpServerRequest.schemaBodyJson(Script)
+    try change(key, (a) => ({ ...a, script: [...a.script, ...replies], decision: decision ?? a.decision }))
     return try HttpServerResponse.json({ ok: true })
   }
 
@@ -1096,12 +1122,13 @@ effect function store(site: string) {
   }
 
   effect function decide() {
-    try signedIn()
+    const { decision } = try signedIn()
     const body = try HttpServerRequest.schemaBodyJson(Schema.Struct({
       kind: Schema.Literal("choice"), goal: Schema.String,
       candidates: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String }))
     }))
-    const choice = body.goal.includes("help page") ? body.candidates.find((candidate) => candidate.label === "Help center")?.id ?? null : null
+    const choice = decision && body.goal.includes(decision.goalIncludes)
+      ? body.candidates.find((candidate) => decision.labels.includes(candidate.label))?.id ?? null : null
     const winner = choice ?? "none"
     const probabilities = Object.fromEntries([...body.candidates.map(({ id }) => id), "none"].map(id => [id, id === winner ? 1 : 0]))
     return try HttpServerResponse.json({ status: "ok", kind: "choice", model: "fixture", choice, confidence: 1, probabilities })
@@ -1267,7 +1294,7 @@ export function cloud(site: string) {
   return Layer.mergeAll(HttpRouter.addAll(store(site)), HttpRouter.middleware(cors, { global: true }))
 }
 
-export const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+export const client = Layer.mergeAll(KeyValueStore.layerMemory, FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
 
 effect function post(cloud: string, path: string, body: object, key?: string) {
   const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${cloud}${path}`), body)
@@ -1301,16 +1328,16 @@ export effect function parts(cloud: string, key: string, said: string) {
   return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)
 }
 
-export effect function script(cloud: string, key: string, replies: readonly Scripted[]) {
-  try post(cloud, "/fake/chat/script", { replies }, key)
+export effect function script(cloud: string, key: string, replies: readonly Scripted[], decision?: ScriptedDecision) {
+  try post(cloud, "/fake/chat/script", { replies, decision }, key)
 }
 
 export effect function expire(cloud: string, key: string, address: string) {
   try post(cloud, "/fake/expire", { address }, key)
 }
 
-export effect function outage(cloud: string, key: string, down: boolean, mailFault?: "dispatch" | "lookupMissing") {
-  try post(cloud, "/fake/outage", { down, mailFault }, key)
+export effect function outage(cloud: string, key: string, down: boolean, fault?: "dispatch" | "lookupMissing" | "createResponse" | "beforeCreate" | "refuseCreate") {
+  try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
 }
 
 export effect function sentMail(cloud: string, key: string) {

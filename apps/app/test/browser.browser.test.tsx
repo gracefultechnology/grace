@@ -294,7 +294,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
-    const hops: { url: string; documentId: string; checked: boolean; reason?: string | null }[] = [];
+    const browserObservationTimeoutMs = 15_000;
+    const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number; reason?: string | null }[] = [];
     outcome.hops = hops;
     let previous = initial;
     while (hops.length + disclosures.length < (named ? 8 : 1)) {
@@ -350,16 +351,17 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       await expect.poll(() => {
         const tab = workspace().browser.tabs[0];
         return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-      }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
+      }, { timeout: browserObservationTimeoutMs }).toEqual({ address: landed.url, arrived: true });
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
-      await expect.element(resume.or(check).first()).toBeVisible();
+      await expect.element(resume.or(check).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
       if (resume.query() !== null) await userEvent.click(resume);
       await userEvent.click(check);
-      await expect.element(finished.or(continuing).first()).toBeVisible();
+      const checkReturnedAt = performance.now();
+      await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
       const checked = finished.query() !== null;
       const reason = continuing.query()?.textContent;
-      hops.push({ url: landed.url, documentId: landed.documentId, checked, reason });
+      hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
       if (checked) break;
       expect(named).toBeDefined();
       expect([`I couldn’t verify “${named?.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);

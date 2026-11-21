@@ -18,7 +18,7 @@ import type { HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
-import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { type Event, type GuidedNameCorrection, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
 import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import type { FileLibrary } from "./fileLibrary.vibe";
@@ -80,6 +80,7 @@ export function useWorkspace() {
     resumeReadPlan: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.resumeReadPlan())),
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
+    confirmGuidedName: (correction: GuidedNameCorrection) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.confirmName(correction))),
     privateHistory: (tab: number) => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (layer) => Effect.map(layer.get(), (state) => historyFor(state, tab)))),
     stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
