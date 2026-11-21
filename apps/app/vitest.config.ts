@@ -469,7 +469,7 @@ export default defineConfig(async (env) => {
     typeof entry === "object" && "test" in entry && entry.test?.browser
       ? {
           ...entry,
-          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "pdf-lib"] },
+          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/testing", "pdf-lib"] },
           test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
         }
       : entry);
