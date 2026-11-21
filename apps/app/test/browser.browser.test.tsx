@@ -214,8 +214,21 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, gradeWholeCohort, requiredStep }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
+  const receiptFailure = (failure: unknown) => {
+    const detail = failure instanceof Error ? failure.message : String(failure);
+    const firstLine = detail.split(/[\r\n]/u, 1)[0] ?? "";
+    return firstLine
+      .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "gu"), "")
+      .replace(/[\p{Cc}\p{Cf}]/gu, "")
+      .replace(/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s"'<>]+/giu, "[redacted URL]")
+      .replace(/\b(?:bearer|basic)\s+[^\s,;]+/giu, "[redacted authorization]")
+      .replace(/\b(?:password|passwd|secret|token|cookie|authorization|api[-_ ]?key)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu, "[redacted credential]")
+      .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}(?::[^\s,;]+)?/giu, "[redacted identity]")
+      .replace(/\b(?:sk-|github_pat_|gh[pousr]_|xox[baprs]-)[\w.-]+|\b[\w+=/-]{24,}(?:\.[\w+=/-]{8,})*/gu, "[redacted token]")
+      .trim().slice(0, 240) || "Benchmark step failed";
+  };
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
@@ -232,7 +245,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         native.started(actual.url);
         native.finished(actual.url);
       } catch (error) {
-        outcome.browserBoundaryFailure = { operation: "createSurface", url: request.url, detail: error instanceof Error ? error.message : String(error) };
+        outcome.browserBoundaryFailure = { operation: "createSurface", url: request.url, detail: receiptFailure(error) };
         throw error;
       }
     },
@@ -277,6 +290,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep === "ReachNamedPage") {
       outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
+      if (exploratory && !named && reviewed.length > 0) {
+        outcome.miss = "missing-reviewed-step";
+        return;
+      }
       expect(named).toBeDefined();
       expect(reviewed).toHaveLength(1);
     }
@@ -289,15 +306,31 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
+    const words = (label: string) => (label.toLowerCase().replace(/[’']s\b/gu, "").match(/[\p{L}\p{N}]+/gu) ?? [])
+      .map(word => word === "men" ? "man" : word === "women" ? "woman" : word.replace(/s$/u, ""));
+    const namedWords = new Set(words(named?.subject ?? ""));
+    const labelMatchesGoal = (label: string | undefined) => {
+      const tokens = label === undefined ? [] : words(label);
+      return tokens.length > 0 && tokens.every(word => namedWords.has(word));
+    };
     const visited = new Set([initial.url]);
     const disclosed = new Set<string>();
-    const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
+    const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
     const browserObservationTimeoutMs = 15_000;
     const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number }[] = [];
     outcome.hops = hops;
+    const menuRetries: { documentId: string; instruction: string }[] = [];
+    outcome.menuRetries = menuRetries;
+    const actionLimit = named ? 8 : 1;
+    const actionsTaken = () => hops.length + disclosures.length + menuRetries.length + Number(outcome.nameCorrection !== undefined);
+    const stopAtActionLimit = () => {
+      if (!exploratory || !named || actionsTaken() !== actionLimit) return false;
+      outcome.miss = "action-budget-exhausted";
+      return true;
+    };
     let previous = initial;
-    while (hops.length + disclosures.length < (named ? 8 : 1)) {
+    while (actionsTaken() < actionLimit) {
       try {
         await userEvent.click(showLink);
       } catch (error) {
@@ -309,29 +342,89 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         throw error;
       }
       if (named) {
-        await expect.poll(() => menuGuidance.query() !== null || linkGuidance.query() !== null || guidanceFailure.query() !== null, { timeout: 45_000 }).toBe(true);
-        if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The link could not be highlighted");
-        if (menuGuidance.query() !== null) {
-          expect(disclosed.has(previous.documentId)).toBe(false);
-          outcome.menuInstruction = menuGuidance.query()?.textContent
+        let lastInstruction: string | undefined;
+        while (true) {
+          if (stopAtActionLimit()) return;
+          expect(actionsTaken()).toBeLessThan(actionLimit);
+          await expect.poll(() => {
+            const instruction = menuGuidance.query()?.textContent;
+            return linkGuidance.query() !== null || guidanceFailure.query() !== null ||
+              (typeof instruction === "string" && instruction !== lastInstruction);
+          }, { timeout: lastInstruction === undefined ? 45_000 : 50_000 }).toBe(true);
+          const failure = guidanceFailure.query();
+          if (failure) {
+            const instruction = failure.textContent ?? "The link could not be highlighted";
+            const [, branch, leaf] = instruction.match(/^The open menu (?:“[^”]+” › )*“([^”]+)” calls this link “([^”]+)”\.?$/u) ?? [];
+            const branchMatches = labelMatchesGoal(branch);
+            const leafMatches = labelMatchesGoal(leaf);
+            const offeredControl = leaf ? `Use “${leaf}” for this step` : undefined;
+            const approval = offeredControl ? page.getByRole("button", { name: offeredControl, exact: true }) : undefined;
+            if (branch && leaf && approval && !outcome.nameCorrection && branchMatches && leafMatches) {
+              await userEvent.click(approval);
+              await expect.poll(() => plan.getByText(`Find and check “${leaf}”.`, { exact: true }).query() !== null, {
+                timeout: 45_000,
+              }).toBe(true);
+              outcome.nameCorrection = { original: named.subject, branch, leaf, instruction, documentId: previous.documentId };
+              await userEvent.click(showLink);
+            } else {
+              const last = disclosures.at(-1);
+              const nextMenu = page.getByRole("button", { name: "Try another menu", exact: true });
+              if (exploratory && branch && leaf && approval && offeredControl && approval.query() !== null &&
+                  (!branchMatches || !leafMatches) && last?.documentId === previous.documentId && last.label === branch) {
+                await expect.element(approval).toBeVisible();
+                outcome.rejectedNameCorrection = {
+                  original: named.subject, branch, leaf, offeredControl, branchMatches, leafMatches,
+                  documentId: previous.documentId, instruction,
+                };
+                if (nextMenu.query() === null) {
+                  outcome.miss = "rejected-scoped-leaf";
+                  return;
+                }
+              }
+              if (nextMenu.query() === null) {
+                if (exploratory && last?.documentId === previous.documentId &&
+                    (instruction === `I couldn’t see “${named.subject}” in the open menu. You can try another menu.` ||
+                     instruction === `I couldn’t find “${named.subject}” in the “${last.label}” menu.`)) {
+                  outcome.miss = "target-absent-from-open-menu";
+                  outcome.guideResult = instruction;
+                  return;
+                }
+                throw new Error(instruction);
+              }
+              await userEvent.click(nextMenu);
+              menuRetries.push({ documentId: previous.documentId, instruction });
+            }
+            await expect.poll(() => guidanceFailure.query()?.textContent !== instruction, {
+              timeout: 45_000,
+            }).toBe(true);
+            continue;
+          }
+          if (linkGuidance.query() !== null) break;
+          const instruction = menuGuidance.element().textContent;
+          if (!instruction || instruction === lastInstruction) throw new Error("Grace did not present fresh submenu guidance");
+          outcome.menuInstruction = instruction;
+          outcome.menuInteraction = { instruction, documentId: previous.documentId, status: "awaiting-hover" };
           await expect.poll(async () => {
-            const result = await transport({ kind: "hoverGuide" })
-            outcome.menuInteraction = result
-            if (result.reason) throw new Error(typeof result.reason === "string" ? result.reason : JSON.stringify(result.reason))
-            return result.disclosed === true
-          }, { timeout: 15000 }).toBe(true)
+            const result = await transport({ kind: "hoverGuide" });
+            outcome.menuInteraction = result;
+            if (result.reason) throw new Error(typeof result.reason === "string" ? result.reason : JSON.stringify(result.reason));
+            return result.disclosed === true;
+          }, { timeout: 15_000 }).toBe(true);
           const evidence = Schema.decodeUnknownSync(Schema.Struct({
             disclosed: Schema.Literal(true), url: Schema.NonEmptyString, documentId: Schema.NonEmptyString,
-            snapshotId: Schema.NonEmptyString, pointer: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
+            snapshotId: Schema.NonEmptyString, label: Schema.NonEmptyString,
+            pointer: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
             before: Schema.Int, after: Schema.Int,
           }))(outcome.menuInteraction);
           expect(evidence.url).toBe(previous.url);
           expect(evidence.documentId).toBe(previous.documentId);
+          expect(instruction).toContain(`“${evidence.label}”`);
           expect(evidence.after).toBeGreaterThan(evidence.before);
-          disclosed.add(evidence.documentId);
-          disclosures.push(evidence);
-          await expect.poll(() => linkGuidance.query() !== null || guidanceFailure.query() !== null, { timeout: 50_000 }).toBe(true);
-          if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The submenu link could not be highlighted");
+          const disclosureId = JSON.stringify([evidence.documentId, evidence.snapshotId]);
+          expect(disclosed.has(disclosureId)).toBe(false);
+          disclosed.add(disclosureId);
+          disclosures.push({ ...evidence, instruction });
+          lastInstruction = instruction;
         }
       }
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
@@ -342,6 +435,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }, { timeout: 30_000 }).toBe(true);
       const landed = await read();
       outcome.destination = { url: landed.url, documentId: landed.documentId };
+      if (exploratory && visited.has(landed.url)) {
+        outcome.miss = "repeated-address";
+        return;
+      }
       expect(visited.has(landed.url)).toBe(false);
       visited.add(landed.url);
       const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
@@ -365,10 +462,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       expect(workspace().plan.receipts).toHaveLength(0);
       previous = landed;
     }
+    if (!hops.at(-1)?.checked && stopAtActionLimit()) return;
     await expect.element(finished).toBeVisible();
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
-    outcome.failure = error instanceof Error ? error.message : String(error);
+    outcome.failure = receiptFailure(error);
     if (!gradeWholeCohort) throw error;
   } finally {
     await transport({ kind: "receipt", outcome });
