@@ -229,8 +229,8 @@ it("Connect the email I already use", async () => {
   await toasted("Riverview connected");
 
   // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"
-  expect(told()).toContain("Margaret chose Outlook. Outlook’s own sign-in page is open on the tablet; she types her own email address and password there, and you cannot see it.");
-  expect(told()).toContain(`Margaret connected her Outlook email (${outlook}) to the tablet.`);
+  expect(told()).toContain("The person chose Outlook. Outlook’s own sign-in page is open on the tablet; they type their own email address and password there, and you cannot see it.");
+  expect(told()).toContain(`The person connected their Outlook email (${outlook}) to the tablet.`);
 
   // spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"
   const kept = Object.keys(localStorage).map((key) => localStorage.getItem(key) ?? "").join("\n");
@@ -349,8 +349,8 @@ it("Choose what each email brings and take it off the tablet", async () => {
   // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"
   await closeSettings();
   await askGrace("Is my email working now?");
-  expect(told()).toContain("Margaret signed in to Outlook again.");
-  expect(told()).toContain("Margaret signed in to Riverview again.");
-  expect(told()).toContain("Margaret chose Yahoo.");
+  expect(told()).toContain("The person signed in to Outlook again.");
+  expect(told()).toContain("The person signed in to Riverview again.");
+  expect(told()).toContain("The person chose Yahoo.");
   expect(told()).not.toContain(otherPassword);
 }, 600_000);

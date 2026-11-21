@@ -68,6 +68,8 @@ export function actOnScreen() {
 }
 
 export function tabletView(runtime: Runtime) {
+  const outside = environment.IS_REACT_ACT_ENVIRONMENT;
+  environment.IS_REACT_ACT_ENVIRONMENT = true;
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   return {
@@ -76,6 +78,7 @@ export function tabletView(runtime: Runtime) {
       await act(() => Promise.resolve(root.unmount()));
       await runtime.dispose();
       host.remove();
+      environment.IS_REACT_ACT_ENVIRONMENT = outside;
     },
   };
 }
