@@ -33,7 +33,7 @@ public final class PrivateViewPlugin extends Plugin {
 
  @PluginMethod public void openEmail(PluginCall call) {
   getActivity().runOnUiThread(() -> {
-   if (!browser || !getActivity().hasWindowFocus()) {
+   if (!browser || vault || !getActivity().hasWindowFocus()) {
     call.reject("Private sign-in is unavailable");
     return;
    }
