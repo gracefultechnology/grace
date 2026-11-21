@@ -387,11 +387,14 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return false
       if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : false
+      let detailsDigest = ""
       if (read === "SaveMailAppointment") {
         if (found.source.tag !== "CurrentAppointment") return false
         const { key, occurrence } = found.source
         const view = sourceAt(scene.calendars, key).view
-        if (!(try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed))) return false
+        detailsDigest = try news.verifySaved(key, view, occurrence, entryAt(view, occurrence).committed)
+        if (detailsDigest === "" || (current.plan.saveRecovery.tag === "GuidedSaveUntouched" &&
+            detailsDigest !== current.plan.calendarApproval.detailsDigest)) return false
       }
       const keyBytes = new TextEncoder().encode(JSON.stringify([found.source.tag, ...found.identity]))
       const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
@@ -430,7 +433,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (read === "SaveMailAppointment" && savedCheckpoint.tag === "GuidedSaveReconcile") {
         const { occurrence, owner, calendar, mailDigest } = savedCheckpoint
         const accepted = workspace.send({ type: "reconcileGuidedSave", recoveryCheck: {
-          report, saved: { occurrence, owner, calendar, mailDigest }
+          report, saved: { occurrence, owner, calendar, mailDigest, detailsDigest }
         } }, "Host") catch () => undefined
         if (accepted !== undefined) try recovery.keepProgress()
         return accepted !== undefined

@@ -13,6 +13,7 @@ import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import { Machine as Notices } from "../gen/app__notices.effect.vibe"
 import { NoticeHost } from "./notices.vibe"
+import { Digest } from "effect/crypto"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { day, dayOf, instant, midnight, navigation, windowOf } from "./calendarWindow.vibe"
 import { usesManagedSurfaces } from "./managedReads.vibe"
@@ -167,7 +168,7 @@ export service CalendarNews {
   readonly recoveryRefreshes: Stream.Stream<number>
   publish(report: CalendarReport): void!!
   openRecoveredSaveList(owner: string, calendar: string): boolean!!
-  verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): boolean!!
+  verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): string!!
   readonly notes: Watched<CalendarNote | undefined>
   readonly recoveredDrafts: Watched<{ task: string; occurrences: readonly string[] } | undefined>
   open(key: number, id: string, how: Opening): void!!
@@ -345,7 +346,47 @@ const consented = (p: Pending): CalendarEvent | undefined => match (p.ask) {
   when { tag: "NoAsk" }: undefined;
 }
 
+function approvedDetailsDigest(digest: typeof Digest.Digest.Service, details: EntryDetails) {
+  return digest.digestHex(Digest.sha256, new TextEncoder().encode(JSON.stringify([
+    details.title, details.startAt, details.endAt, details.timezone, details.location, details.notes, details.allDay
+  ])))
+}
+
+effect function mayApplyProposal(p: Pending, target: number, w: Workspace) {
+  if (p.ask.tag !== "AddAsk" || p.ask.review.entry.identity.sourceRef === "" ||
+      !hasNext(w.plan) || !isAppointmentSave(nextOutcome(w.plan))) return true
+  if (target === tablet || !guidedSavePending(w)) return false
+  const source = w.plan.mail
+  const shelf = try Instances
+  const mail = target === source.account ? shelf.mail(source.account) catch () => undefined : undefined
+  const current = mail === undefined ? undefined : try mail.get()
+  const storedMessage = current === undefined ? undefined : messageRecord(current, source.ref)
+  const content = current === undefined ? undefined : shelf.content(source.account, source.ref)
+  if (current === undefined || current.connection !== "Connected" || !current.canRead || current.owner !== source.owner ||
+      current.account !== source.address || !storedMessage?.loaded || storedMessage.revision !== source.revision || content?.version !== source.version) return false
+  const { identity, details } = p.ask.review.entry
+  const approval = {
+    task: w.assistant.taskId, account: target, owner: identity.owner, calendar: identity.calendarId,
+    sourceRef: identity.sourceRef, provisional: identity.occurrenceId, proposal: p.revision,
+    title: details.title, starts: details.startAt, ends: details.endAt, timezone: details.timezone, location: details.location, notes: details.notes,
+    detailsDigest: try approvedDetailsDigest(try Digest.Digest, details)
+  }
+  const workspace = try Workspaces
+  const armed = workspace.send({ type: "expectGuidedCalendar", approval }, "Host") catch () => undefined
+  const account = (try (try Accounts).get()).accounts.find((source) => source.id === target && source.address === identity.owner)
+  const connector = try Effect.serviceOption(Connector)
+  if (armed === undefined || account === undefined || Option.isNone(connector) ||
+      !(try (try GuidedRecovery).flushSave(w.assistant.taskId, w.assistant.workVersion)) ||
+      !(try connector.value.calendar(account).fenceGuidedCreate(identity, approval.task))) return false
+  const proposal = try (try Proposal).get()
+  const live = try workspace.get()
+  return proposal.revision === p.revision && proposal.agreed === p.agreed &&
+    live.assistant.taskId === approval.task && live.assistant.workVersion === w.assistant.workVersion &&
+    live.plan.calendarApproval.proposal === approval.proposal && guidedSavePending(live)
+}
+
 export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect {
+  const digest = try Digest.Digest
   const connector = try Effect.serviceOption(Connector)
   const registry = try Accounts
   const shelf = try Instances
@@ -541,38 +582,8 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     const target = targetOf(p.ask)
     const kept = target === tablet || (linked && shownKeys(try registry.get()).includes(target))
     const box = kept ? shelf.calendar(target) catch () => undefined : undefined
-    const w = try workspace.get()
-    const guidedAdd = p.ask.tag === "AddAsk" && p.ask.review.entry.identity.sourceRef !== "" &&
-      hasNext(w.plan) && isAppointmentSave(nextOutcome(w.plan))
-    let mayApply = !guidedAdd
-    if (guidedAdd && p.ask.tag === "AddAsk" && box !== undefined && target !== tablet && guidedSavePending(w)) {
-      const source = w.plan.mail
-      const mail = target === source.account ? shelf.mail(source.account) catch () => undefined : undefined
-      const current = mail === undefined ? undefined : try mail.get()
-      const storedMessage = current === undefined ? undefined : messageRecord(current, source.ref)
-      const content = current === undefined ? undefined : shelf.content(source.account, source.ref)
-      if (current !== undefined && current.connection === "Connected" && current.canRead && current.owner === source.owner &&
-          current.account === source.address && storedMessage?.loaded && storedMessage.revision === source.revision && content?.version === source.version) {
-        const { identity, details } = p.ask.review.entry
-        const approval = {
-          task: w.assistant.taskId, account: target, owner: identity.owner, calendar: identity.calendarId,
-          sourceRef: identity.sourceRef, provisional: identity.occurrenceId, proposal: p.revision,
-          title: details.title, starts: details.startAt, ends: details.endAt, timezone: details.timezone, location: details.location, notes: details.notes
-        }
-        const armed = workspace.send({ type: "expectGuidedCalendar", approval }, "Host") catch () => undefined
-        const account = (try registry.get()).accounts.find((source) => source.id === target && source.address === identity.owner)
-        if (armed !== undefined && account !== undefined && Option.isSome(connector) &&
-            (try recovery.flushSave(w.assistant.taskId, w.assistant.workVersion)) &&
-            (try connector.value.calendar(account).fenceGuidedCreate(identity, approval.task))) {
-          const current = try proposals.get()
-          const live = try workspace.get()
-          mayApply = current.revision === p.revision && current.agreed === p.agreed &&
-            live.assistant.taskId === approval.task && live.assistant.workVersion === w.assistant.workVersion &&
-            live.plan.calendarApproval.proposal === approval.proposal && guidedSavePending(live)
-        }
-      }
-    }
-    const applied = !mayApply || box === undefined || event === undefined ? false : Effect.as(box.send(event, "ViewConsent"), true) catch () => false
+    const applied = box === undefined || event === undefined || !(try mayApplyProposal(p, target, try workspace.get())) ? false :
+      Effect.as(box.send(event, "ViewConsent"), true) catch () => false
     proposals.send({ type: "settleAsk", revision: p.revision }, "Host") catch () => undefined
     if (!applied) try publish({ refused: p.ask })
     try logInfo("Her yes to Grace's calendar question", { ask: p.ask.tag, applied })
@@ -612,8 +623,9 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     },
     verifySaved: effect (key, view, occurrence, expected) => {
       const account = (try registry.get()).accounts.find((candidate) => candidate.id === key && candidate.use.calendar && candidate.address === view.owner)
-      if (!linked || account === undefined || Option.isNone(connector)) return false
-      return connector.value.calendar(account).verifySaved(view, occurrence, expected) catch () => false
+      if (!linked || account === undefined || Option.isNone(connector)) return ""
+      const saved = connector.value.calendar(account).verifySaved(view, occurrence, expected) catch () => undefined
+      return saved === undefined ? "" : try approvedDetailsDigest(digest, saved)
     },
     notes: {
       subscribe: (listener) => {
@@ -634,7 +646,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     },
     reminderAt: (subject) => known.get(subject)
   }
-})
+}).pipe(Layer.provide(Digest.layerWebCrypto))
 
 export const calendarFeeds = Layer.effectDiscard(effect {
   const registry = try Accounts

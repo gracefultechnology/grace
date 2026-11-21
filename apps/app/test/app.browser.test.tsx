@@ -10,7 +10,7 @@ import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
 import { App } from "../src/App.tsx";
@@ -2205,20 +2205,21 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
   let view = tabletView(runtime);
   const sync = () => runtime.runPromise(Effect.flatMap(GuidedRecovery, (recovery) => recovery.keepProgress()));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  const legacySave = { tag: "GuidedSaveReconcile", occurrence: "old-provider-id", owner: "mail", calendar: "primary", mailDigest: "prior-mail" } as const;
+  const checkpoint: GuidedCheckpoint = {
+    request: { owner: "tablet", task: "receipt-retry", goal: "Save my appointment", steps: [{ tag: "ReadMail" }, { tag: "SaveMailAppointment" }] },
+    receipts: [{ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }], workVersion: 4,
+    correction: { tag: "NoGuidedCheckpointCorrection" },
+    save: { ...legacySave, occurrence: "", detailsDigest: "" },
+  };
   const restoreTask = (workspace: Workspaces.Shape, task: string) => act(() => runtime.runPromise(
-    workspace.send({ type: "restoreGuided", recovery: {
-      owner: "tablet",
-      checkpoint: {
-        request: { owner: "tablet", task, goal: "Save my appointment", steps: [{ tag: "ReadMail" }, { tag: "SaveMailAppointment" }] },
-        receipts: [{ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }], workVersion: 4,
-        correction: { tag: "NoGuidedCheckpointCorrection" },
-        save: { tag: "GuidedSaveReconcile", occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail" },
-      },
-    } }, "Store")));
+    workspace.send({ type: "restoreGuided", recovery: { owner: "tablet", checkpoint: {
+      ...checkpoint, request: { ...checkpoint.request, task },
+    } } }, "Store")));
   try {
     await view.render();
     const workspace = await runtime.runPromise(Workspaces);
-    await restoreTask(workspace, "receipt-retry");
+    await restoreTask(workspace, checkpoint.request.task);
     await tap("Ask Grace");
     await sync();
     await sync();
@@ -2275,6 +2276,18 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     })).toEqual({ revision: tombstone.revision + 1, outcome: "Abandoned" });
     pendingProgress?.();
     expect(persisted()).toEqual({ revision: tombstone.revision + 1, value: "" });
+
+    delayProgress = false;
+    await view.dispose();
+    const { scope } = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ scope: Schema.String })))(first.value);
+    set(key, JSON.stringify({ revision: persisted().revision + 1, value: JSON.stringify({ version: 1, scope, checkpoint: { ...checkpoint, save: legacySave } }) }));
+    runtime = ManagedRuntime.make(application(undefined));
+    view = tabletView(runtime);
+    await view.render();
+    await tap("Ask Grace");
+    await expect.element(page.getByText(/The save was interrupted/)).toBeVisible();
+    expect(page.getByRole("button", { name: "Resume Grace" }).query()).toBeNull();
+    expect(page.getByRole("button", { name: "Check saved appointment" }).query()).toBeNull();
   } finally {
     await view.dispose();
     read.mockRestore();
@@ -3280,10 +3293,25 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
         save: Schema.Struct({ tag: Schema.Literal("GuidedSaveReconcile"), occurrence: Schema.String }),
       }) })),
     })));
-    await expect.poll(() => Object.keys(localStorage).filter((key) => key.startsWith("grace/guided-task-")).some((key) => {
-      const record = savedAttempt(localStorage.getItem(key));
-      return Option.isSome(record) && Boolean(record.value.value.checkpoint.save.occurrence) === (responseState === "acknowledged");
-    })).toBe(true);
+    const savedOccurrence = () => {
+      for (const key of Object.keys(localStorage).filter((key) => key.startsWith("grace/guided-task-"))) {
+        const record = savedAttempt(localStorage.getItem(key));
+        if (Option.isSome(record)) return record.value.value.checkpoint.save.occurrence;
+      }
+    };
+    await expect.poll(() => {
+      const occurrence = savedOccurrence();
+      return occurrence !== undefined && Boolean(occurrence) === (responseState === "acknowledged");
+    }).toBe(true);
+    const changeLocation = async (location: string) => {
+      const occurrence = Schema.decodeUnknownSync(Schema.NonEmptyString)(savedOccurrence());
+      const response = await fetch(new URL("/api/v1/eliza/google/calendar/events/" + encodeURIComponent(occurrence), cloud), {
+        method: "PATCH", headers, body: JSON.stringify({ calendarId: "primary", location }),
+      });
+      expect(response.ok).toBe(true);
+    };
+    const editedPlace = "North clinic, suite 17";
+    if (responseState === "acknowledged") await changeLocation(editedPlace);
     await restart();
     await tap(button("Ask Grace"));
     await routeTo(plan.getByText("Paused", { exact: true }));
@@ -3326,10 +3354,23 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
       expect((await calendarState()).calendarCreateRequests).toBe(1);
       return;
     }
-    await tap(button("Open Calendar"));
-    await tap(page.getByText(title, { exact: true }).first());
-    await tap(button("Resume Grace"));
-    await tap(button("Check saved appointment"));
+    const checkSelected = async (location: string) => {
+      await tap(button("Open Calendar"));
+      await tap(page.getByText(title, { exact: true }).first());
+      await routeTo(page.getByText(location, { exact: true }).first());
+      await tap(button("Resume Grace"));
+      await tap(button("Check saved appointment"));
+    };
+    await checkSelected(editedPlace);
+    await routeTo(page.getByText(/I couldn’t verify the saved appointment|Planned checks complete/));
+    expect(plan.getByText("Planned checks complete", { exact: true }).query()).toBeNull();
+    await expect.element(page.getByRole("status", { name: "Task check result" })).toBeVisible();
+    expect(receipt.query()).toBeNull();
+    await changeLocation(place);
+    await restart();
+    await tap(button("Ask Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    await checkSelected(place);
     await routeTo(plan.getByText("Planned checks complete", { exact: true }));
     await routeTo(receipt);
     expect((await calendars()).flatMap((box) => box.calendar).filter((entry) => entry.title === title)).toHaveLength(1);

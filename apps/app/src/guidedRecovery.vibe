@@ -12,13 +12,16 @@ import { guidedAuthority, guidedOwner } from "./managedReads.vibe"
 import { withhold } from "./private.ts"
 import { webView } from "./surfacePlugin.ts"
 
-const Scope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
-const NativeStatus = Schema.Union([Schema.Struct({ kind: Schema.Literal("signedIn"), voiceDisclosureScope: Scope }),
+const DigestHex = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
+const NativeStatus = Schema.Union([Schema.Struct({ kind: Schema.Literal("signedIn"), voiceDisclosureScope: DigestHex }),
   Schema.Struct({ kind: Schema.Literal("signedOut") })])
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const RecordValue = Schema.Struct({ revision: Revision, value: Schema.optional(Schema.NullOr(Schema.String)) })
 schema Written { revision: Revision }
-const Envelope = Schema.fromJsonString(Schema.Struct({ version: Schema.Literal(1), scope: Scope, checkpoint: Schema.Unknown }))
+const Envelope = Schema.fromJsonString(Schema.Struct({ version: Schema.Literal(1), scope: DigestHex, checkpoint: Schema.Unknown }))
+const legacySave = Schema.is(Schema.Struct({ save: Schema.Struct({
+  tag: Schema.Literal("GuidedSaveReconcile"), occurrence: Schema.String, detailsDigest: Schema.optionalKey(Schema.Never)
+}) }))
 const needsMailOrCalendar = (steps: readonly GuidedStep[]) => steps.some((step) => {
   const { surface } = guidedDetails(step)
   return surface === "Email" || surface === "Calendar"
@@ -26,7 +29,8 @@ const needsMailOrCalendar = (steps: readonly GuidedStep[]) => steps.some((step) 
 
 function safeCheckpoint(checkpoint: GuidedCheckpoint) {
   if (!Number.isSafeInteger(checkpoint.workVersion + 2) || !validGuidedCheckpoint(checkpoint)) return false
-  const { request, receipts, correction } = checkpoint
+  const { request, receipts, correction, save } = checkpoint
+  if (save.tag === "GuidedSaveReconcile" && save.detailsDigest !== "" && !Schema.is(DigestHex)(save.detailsDigest)) return false
   const publicText = (text: string) => text.length <= 32768 && withhold({ text, passwords: [] }) === text
   if (!publicText(request.goal) || !request.steps.every((step) => publicText(guidedDetails(step).subject)) ||
       !receipts.every((receipt) => publicText(receipt.evidence))) return false
@@ -67,7 +71,9 @@ effect function checkpointOf(scope: string, value: string | null | undefined) {
   if (!value) return undefined
   const envelope = Schema.decodeUnknownEffect(Envelope)(value) catch () => undefined
   if (envelope?.scope !== scope) return undefined
-  const event = parseEvent({ type: "restoreGuided", recovery: { owner: "", checkpoint: envelope.checkpoint } })
+  const raw = envelope.checkpoint
+  const checkpoint = legacySave(raw) ? { ...raw, save: { ...raw.save, occurrence: "", detailsDigest: "" } } : raw
+  const event = parseEvent({ type: "restoreGuided", recovery: { owner: "", checkpoint } })
   if (event?.type !== "restoreGuided" || !safeCheckpoint(event.recovery.checkpoint)) return undefined
   return event.recovery.checkpoint
 }

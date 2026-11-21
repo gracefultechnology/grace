@@ -75,7 +75,7 @@ export type CalendarConnection = {
   readonly isGuidedCreateFenced: (identity: Calendar["identity"], task: string) => boolean!Unreachable
   readonly fenceGuidedCreate: (identity: Calendar["identity"], task: string) => boolean!!
   readonly write: (entry: Calendar, view: CalendarView, guidedFirstDispatch?: boolean) => StoreReceipt!NeedsSignIn
-  readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => boolean!ConnectorFailure
+  readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => (EntryDetails | undefined)!ConnectorFailure
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
 }
 
@@ -463,10 +463,11 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     verifySaved: effect (view, occurrence, expected) => {
       const feed = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
       const saved = feed.find((row) => row.externalId === occurrence)
-      if (saved === undefined) return false
+      if (saved === undefined) return undefined
       const timezone = saved.timezone ?? view.timezone
       const { startAt, endAt, verified } = schedule(zones, saved, timezone)
-      return verified && sameDetails(details(saved, startAt, endAt, timezone, expected), expected)
+      const observed = details(saved, startAt, endAt, timezone, expected)
+      return verified && sameDetails(observed, expected) ? observed : undefined
     },
     write: effect (entry, _view, guidedFirstDispatch = false) => {
       const revision = entry.revision

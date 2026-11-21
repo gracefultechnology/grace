@@ -55,7 +55,7 @@ type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | 
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
   task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
-  title: str, starts: int, ends: int, timezone: str, location: str, notes: str
+  title: str, starts: int, ends: int, timezone: str, location: str, notes: str, detailsDigest: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
 type GuidedNameCorrection = {
@@ -65,8 +65,8 @@ type GuidedNameCorrection = {
 type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
 type GuidedNameOverride = { stepIndex: int, label: str }
 type GuidedCheckpointCorrection = NoGuidedCheckpointCorrection | GuidedCheckpointCorrectionBound({ label: str, url: str })
-type GuidedSaveReference = { occurrence: str, owner: str, calendar: str, mailDigest: str }
-type GuidedCheckpointSave = GuidedSaveUntouched | GuidedSaveReconcile({ occurrence: str, owner: str, calendar: str, mailDigest: str })
+type GuidedSaveReference = { occurrence: str, owner: str, calendar: str, mailDigest: str, detailsDigest: str }
+type GuidedCheckpointSave = GuidedSaveUntouched | GuidedSaveReconcile({ occurrence: str, owner: str, calendar: str, mailDigest: str, detailsDigest: str })
 type GuidedCheckpoint = {
   request: GuidedRequest, receipts: List[GuidedReceipt], workVersion: int,
   correction: GuidedCheckpointCorrection, save: GuidedCheckpointSave
@@ -99,7 +99,7 @@ pure def emptyReview(revision: int): GuidedReview = {
 pure val noGuidedMail: GuidedMail = { account: 0, owner: "", address: "", ref: "", generation: 0, revision: 0, version: "" }
 pure val noGuidedApproval: GuidedCalendarApproval = {
   task: "", account: 0, owner: "", calendar: "", sourceRef: "", provisional: "", proposal: -1,
-  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: ""
+  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: "", detailsDigest: ""
 }
 pure val noGuidedNameOverride: GuidedNameOverride = { stepIndex: -1, label: "" }
 pure val emptyPlan: GuidedPlan = {
@@ -920,7 +920,7 @@ pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: Unex
   implies not(canUnexpectedPage(w, unexpected, by))
 pure def hasRecoveredSaveReference(save: GuidedCheckpointSave): bool = match save {
   | GuidedSaveUntouched => false
-  | GuidedSaveReconcile(ref) => ref.occurrence != ""
+  | GuidedSaveReconcile(ref) => ref.occurrence != "" and ref.detailsDigest != ""
 }
 pure def canResume(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canResume(w.assistant, C::ConversationUser) and
@@ -1178,8 +1178,10 @@ unapproved link or permission. A calendar save that had entered the approved
 write flow keeps only a reconciliation marker and an adopted occurrence
 reference under its original account and calendar when available. A known
 occurrence can be checked against a fresh provider read under its matching
-source identity. Without an occurrence reference, the save stays paused for
-explicit replacement review. If Calendar still shows the draft fenced to that
+source identity. The checkpoint keeps a digest of the reviewed appointment details.
+The provider must still report those details for Grace to confirm the save.
+Without an occurrence reference or an original details digest, the save stays
+paused for explicit replacement review. If Calendar still shows the draft fenced to that
 task, it explains that the appointment may already be saved. The person can
 return to the list to check the provider’s calendar, and the draft cannot
 submit again. A future calendar save needs
@@ -1193,7 +1195,7 @@ pure def guidedCheckpoint(w: Workspace): GuidedCheckpoint = {
     GuidedCheckpointCorrectionBound({ label: w.plan.nameOverride.label, url: w.plan.linkUrl }) else NoGuidedCheckpointCorrection,
   save: if (w.plan.calendarApproval.proposal >= 0 and isAppointmentSave(nextOutcome(w.plan)))
     GuidedSaveReconcile({ occurrence: w.plan.savedOccurrence, owner: w.plan.calendarApproval.owner,
-      calendar: w.plan.calendarApproval.calendar, mailDigest: priorGuidedMail(w.plan).digest }) else w.plan.saveRecovery
+      calendar: w.plan.calendarApproval.calendar, mailDigest: priorGuidedMail(w.plan).digest, detailsDigest: w.plan.calendarApproval.detailsDigest }) else w.plan.saveRecovery
 }
 pure def validGuidedCheckpoint(checkpoint: GuidedCheckpoint): bool =
   val request = checkpoint.request
@@ -1213,7 +1215,7 @@ pure def validGuidedCheckpoint(checkpoint: GuidedCheckpoint): bool =
   }) and (match save {
     | GuidedSaveUntouched => true
     | GuidedSaveReconcile(ref) => isAppointmentSave(pending) and ref.owner != "" and ref.calendar != "" and
-      ref.mailDigest != "" and ref.mailDigest == savedMail.digest
+      ref.mailDigest != "" and ref.mailDigest == savedMail.digest and (ref.occurrence == "" or ref.detailsDigest != "")
   })
 pure def canRestoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
   by == Store and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
@@ -1271,10 +1273,10 @@ pure val recoveryValues = Set(
     request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) } } },
   { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
     request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
-    save: GuidedSaveReconcile({ occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail" }) } },
+    save: GuidedSaveReconcile({ occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } },
   { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
     request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
-    save: GuidedSaveReconcile({ occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail" }) } })
+    save: GuidedSaveReconcile({ occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } })
 pure val fenceValues = Set({ task: "recovered", version: 5 }, { task: "recovered", version: 6 }, { task: "other", version: 5 })
 ```
 
@@ -1574,22 +1576,22 @@ pure def rebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: Workspac
 pure def canReconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
   val saved = recoveryCheck.saved
   guidedReadContextCurrent(w, recoveryCheck.report, by) and isAppointmentSave(recoveryCheck.report.step) and
-  w.assistant.activity == A::Rechecking and saved.occurrence != "" and
-  w.plan.saveRecovery == GuidedSaveReconcile({ occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest })
+  w.assistant.activity == A::Rechecking and saved.occurrence != "" and saved.detailsDigest != "" and
+  w.plan.saveRecovery == GuidedSaveReconcile({ occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest, detailsDigest: saved.detailsDigest })
 pure def reconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): Workspace =
   confirmGuided(w, recoveryCheck.report, by)
 pure def lawRecoveredSaveNeedsItsExactReadBack(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
   val saved = recoveryCheck.saved
   val sameSaved = w.plan.saveRecovery == GuidedSaveReconcile({
-    occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest
+    occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest, detailsDigest: saved.detailsDigest
   })
-  not(saved.occurrence != "" and sameSaved) implies not(canReconcileGuidedSave(w, recoveryCheck, by))
+  not(saved.occurrence != "" and saved.detailsDigest != "" and sameSaved) implies not(canReconcileGuidedSave(w, recoveryCheck, by))
 pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
   approval.task == w.assistant.taskId and approval.account == w.plan.mail.account and approval.account > 0 and
   approval.owner == w.plan.mail.address and approval.sourceRef == w.plan.mail.ref and approval.sourceRef != "" and
   approval.calendar != "" and approval.provisional != "" and approval.proposal > w.plan.calendarApproval.proposal and
-  approval.title != "" and approval.ends > approval.starts and approval.timezone != ""
+  approval.title != "" and approval.ends > approval.starts and approval.timezone != "" and approval.detailsDigest != ""
 pure def expectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, calendarApproval: approval } }
 pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): bool =
@@ -1621,15 +1623,16 @@ pure val weight_rebindGuidedMail = 8
 pure val weight_reconcileGuidedSave = 8
 pure val recoveredSaveReport: GuidedObservation = { owner: "tablet", task: "recovered", version: 7, deviceVersion: 2,
   browserRevision: 0, step: SaveMailAppointment, sourceKey: "saved-appointment", evidence: "Saved appointment: Visit" }
-pure val recoveredSaveRef: GuidedSaveReference = { occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail" }
+pure val recoveredSaveRef: GuidedSaveReference = { occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }
 pure val recoveryCheckValues = Set(
   { report: recoveredSaveReport, saved: recoveredSaveRef },
   { report: { ...recoveredSaveReport, version: 6 }, saved: recoveredSaveRef },
+  { report: recoveredSaveReport, saved: { ...recoveredSaveRef, detailsDigest: "edited-details" } },
   { report: recoveredSaveReport, saved: { ...recoveredSaveRef, owner: "other" } })
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" })
 pure val savedValues = Set({ approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" },
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" },
   occurrence: "saved", evidence: "Saved Visit" })
 ```
 
