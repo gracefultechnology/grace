@@ -118,11 +118,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const checkSurface = reopenMail ? "Email" : details?.surface;
   const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checkLabels[stepKind];
   const calendar = { type: "visit", destination: "Calendar" } as const;
-  const closeInterruptedDraft = async () => {
-    if (recoveredSave && !recoveredSave.occurrence) {
-      await runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(recoveredSave.owner, recoveredSave.calendar)));
-    }
-  };
+  const closeInterruptedDraft = () => ownsPlan && recoveredSave && !recoveredSave.occurrence
+    ? runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(recoveredSave.owner, recoveredSave.calendar)))
+    : Promise.resolve(true);
   const openRecoveryCalendar = async () => {
     await closeInterruptedDraft();
     await send(calendar);
@@ -146,7 +144,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const scopeKey = JSON.stringify([owner, assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision]);
   const endTask = () => {
     setEndFailure(undefined);
-    void closeInterruptedDraft().then(() => send(abandon)).then((result) => { if (Exit.isFailure(result)) setEndFailure(scopeKey); }, () => setEndFailure(scopeKey));
+    const finish = async () => {
+      if (!(await closeInterruptedDraft()) || Exit.isFailure(await send(abandon))) setEndFailure(scopeKey);
+    };
+    void finish().catch(() => setEndFailure(scopeKey));
   };
   const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const checking = canCheck && guidedCheck?.key === scopeKey ? guidedCheck : undefined;

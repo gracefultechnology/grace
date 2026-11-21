@@ -72,7 +72,7 @@ export type MailConnection = {
 
 export type CalendarConnection = {
   readonly feed: (view: CalendarView) => Stream.Stream<Published, ConnectorFailure>
-  readonly isGuidedCreateFenced: (identity: Calendar["identity"], task: string) => boolean!!
+  readonly isGuidedCreateFenced: (identity: Calendar["identity"], task: string) => boolean!Unreachable
   readonly fenceGuidedCreate: (identity: Calendar["identity"], task: string) => boolean!!
   readonly write: (entry: Calendar, view: CalendarView, guidedFirstDispatch?: boolean) => StoreReceipt!NeedsSignIn
   readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => boolean!ConnectorFailure
@@ -338,9 +338,9 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
     const scope = try scopeOf(account, identity)
     return Effect.as(storage.set(fenceKey(scope), task), true) catch () => false
   }
-  effect function isFenced(account: AccountRef, identity: Calendar["identity"], task: string): boolean!! {
+  effect function isFenced(account: AccountRef, identity: Calendar["identity"], task: string): boolean!Unreachable {
     const scope = try scopeOf(account, identity)
-    return Effect.map(storage.get(fenceKey(scope)), (value) => value === task) catch () => false
+    return Effect.map(storage.get(fenceKey(scope)), (value) => value === task) catch effect () => { throw new Unreachable() }
   }
   const bind = (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean, guidedFirstDispatch: boolean) => {
     const { owner, calendarId, occurrenceId } = entry.identity

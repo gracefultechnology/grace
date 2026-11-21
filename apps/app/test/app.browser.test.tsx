@@ -3235,6 +3235,18 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
       const save = page.getByRole("button", { name: "Save", exact: true });
       await routeTo(save);
       await expect.element(save).toBeDisabled();
+      const read = Storage.prototype.getItem;
+      const unavailableFence = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+        if (key.startsWith("calendar-guided-create:")) throw new Error("Calendar draft storage is unavailable");
+        return read.call(this, key);
+      });
+      try {
+        await tap(button("End this task"));
+        await routeTo(page.getByRole("status", { name: "End task result" }));
+        await expect.element(save).toBeDisabled();
+      } finally {
+        unavailableFence.mockRestore();
+      }
       await tap(page.getByRole("button", { name: "Back to Calendar", exact: true }));
       const today = new Date(when);
       today.setDate(today.getDate() - 4);

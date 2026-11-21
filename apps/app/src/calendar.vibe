@@ -166,7 +166,7 @@ export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
   readonly recoveryRefreshes: Stream.Stream<number>
   publish(report: CalendarReport): void!!
-  openRecoveredSaveList(owner: string, calendar: string): void!!
+  openRecoveredSaveList(owner: string, calendar: string): boolean!!
   verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): boolean!!
   readonly notes: Watched<CalendarNote | undefined>
   readonly recoveredDrafts: Watched<{ task: string; occurrences: readonly string[] } | undefined>
@@ -421,8 +421,9 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       const remote = connector.value.calendar(account)
       for (const entry of view.entries) {
         const { identity } = entry
-        if (entry.phase === "Editing" && !entry.hasSaved && identity.owner === marker.owner && identity.calendarId === marker.calendar &&
-            (try remote.isGuidedCreateFenced(identity, task))) occurrences.push(identity.occurrenceId)
+        if (entry.phase !== "Editing" || entry.hasSaved || identity.owner !== marker.owner || identity.calendarId !== marker.calendar) continue
+        const fenced = remote.isGuidedCreateFenced(identity, task) catch () => undefined
+        if (fenced !== false) occurrences.push(identity.occurrenceId)
       }
     }
     if ((try workspace.get()).assistant.taskId !== task) return
@@ -583,26 +584,31 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       const state = try workspace.get()
       const marker = state.plan.saveRecovery
       if (marker.tag !== "GuidedSaveReconcile" || marker.occurrence !== "" || marker.owner !== owner || marker.calendar !== calendar ||
-          !(try recovery.canAccess(state))) return
+          !(try recovery.canAccess(state))) return false
       const account = (try registry.get()).accounts.find((source) => source.use.calendar && source.address === owner)
-      if (account === undefined || Option.isNone(connector)) return
+      if (account === undefined) return true
       const box = shelf.calendar(account.id) catch () => undefined
-      if (box === undefined) return
+      if (box === undefined) return false
       const view = try box.get()
-      if (view.owner !== owner || view.calendarId !== calendar) return
       const entry = entryAt(view, view.selectedId)
       const { identity } = entry
-      if (entry.phase !== "Editing" || entry.hasSaved || identity.owner !== owner || identity.calendarId !== calendar ||
-          !(try connector.value.calendar(account).isGuidedCreateFenced(identity, state.assistant.taskId))) return
+      if (entry.phase !== "Editing" || entry.hasSaved || identity.owner !== owner || identity.calendarId !== calendar) return true
+      if (Option.isNone(connector)) return false
+      const fenced = connector.value.calendar(account).isGuidedCreateFenced(identity, state.assistant.taskId) catch () => undefined
+      if (fenced !== true) return fenced === false
       const ready = entry.approvedRevision === -1 ? view : Option.getOrUndefined(try Effect.orElseSucceed(timeout(
         Stream.runHead(Stream.filter(box.changes, (state) => entryAt(state, identity.occurrenceId).approvedRevision === -1)), "2 seconds"),
         () => Option.none()))
       const live = try workspace.get()
-      if (ready === undefined || ready.selectedId !== identity.occurrenceId || live.assistant.taskId !== state.assistant.taskId ||
-          live.assistant.workVersion !== state.assistant.workVersion) return
+      if (ready === undefined || live.assistant.taskId !== state.assistant.taskId ||
+          live.assistant.workVersion !== state.assistant.workVersion) return false
+      if (entryAt(ready, identity.occurrenceId).phase !== "Editing") return true
+      if (ready.selectedId !== identity.occurrenceId) return false
       if (!ready.opened) box.send({ type: "openCalendar", owner, calendarId: calendar, timezone: ready.timezone }, "ViewUser") catch () => undefined
       const dismissed = box.send({ type: "changeOccurrence", id: identity.occurrenceId, command: { tag: "CancelEditing" } }, "ViewUser") catch () => undefined
-      if (dismissed !== undefined) try PubSub.publish(recoveryRefreshes, account.id)
+      if (dismissed === undefined) return false
+      try PubSub.publish(recoveryRefreshes, account.id)
+      return true
     },
     verifySaved: effect (key, view, occurrence, expected) => {
       const account = (try registry.get()).accounts.find((candidate) => candidate.id === key && candidate.use.calendar && candidate.address === view.owner)
