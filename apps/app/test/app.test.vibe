@@ -408,7 +408,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const withReplacement = try rotated
       try Effect.try(() => assert.deepStrictEqual(withReplacement, [false, false]))
       const { connectionId: grantId } = (try googleOwnerGrants(secret))[0]
-      const upgraded = effect {
+      const upgraded = effect (receipt?: string) => {
         provide Layer.merge(KeyValueStore.layerMemory, Digest.layerWebCrypto) {
           const storage = try KeyValueStore.KeyValueStore
           const digest = try Digest.Digest
@@ -419,13 +419,17 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
             endAt: new Date(details.endAt).toISOString(), timeZone: details.timezone, calendarId: identity.calendarId, grantId }
           const fingerprint = try hash([body, identity.sourceAccount, identity.sourceRef, details.participant, details.seriesId, details.recurrence, details.reminderEnabled, details.leadTime, details.important])
           try storage.set("calendar-create:" + original, fingerprint)
+          if (receipt !== undefined) try storage.set("calendar-create:" + original + ":receipt", receipt)
           provide connectorAt(secret) {
             return try (try Connector).calendar(gmail).write(reapproved, view([reapproved]))
           }
         }
       }
-      const migrated = try upgraded
-      try Effect.try(() => assert.deepStrictEqual(migrated, added))
+      const migrated = try upgraded()
+      try outage(cloud, secret, false, "conflictCreate")
+      const received = try upgraded(added.providerId)
+      try outage(cloud, secret, false)
+      try Effect.try(() => assert.deepStrictEqual([migrated, received], [added, added]))
       const created = { owner: identity.owner, calendarId: identity.calendarId, localId: identity.occurrenceId, providerId: added.providerId ?? "", revision: added.revision }
       const pending = view([eyeCheck, reapproved])
       try Effect.try(() => assert.isTrue(canStoreCreated(pending, created, "ViewStore")))
