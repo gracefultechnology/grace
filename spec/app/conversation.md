@@ -28,8 +28,9 @@ Every new message goes at the end of the transcript. A reader at the end
 follows it; a reader of earlier messages keeps their place and sees that
 something new is unread. A message is hers, Grace's, or a line saying what
 Grace did. `streamed` counts the parts of the current reply that have arrived,
-and `origin` says who started the current turn: the person, or the host for a
-page event, a report of what was done elsewhere or Grace's opening line.
+and `origin` says who started the current turn: the person, with her words or
+with an Ask Grace button, or the host for a page event, a report of what was
+done elsewhere or Grace's opening line.
 
 The Mic switch starts off. An exchange ends when Grace's spoken reply is not a
 question, when no word is heard for eight seconds, or when the person taps
@@ -42,7 +43,7 @@ type ConversationActor = ConversationUser | ConversationRuntime
 type Turn = Ready | Listening | Thinking | Speaking | Paused
 type AudioOwner = HumanAudio | GraceAudio | WebsiteAudio
 type MessageAuthor = HumanMessage | GraceMessage | ActionMessage
-type TurnOrigin = HerRequest | PageEvent | ElsewhereReport | OpeningLine
+type TurnOrigin = HerRequest | AskedForHelp | PageEvent | ElsewhereReport | OpeningLine
 type Message = { author: MessageAuthor, text: str }
 pure val emptyHumanMessage: Message = { author: HumanMessage, text: "" }
 type Interruption = { message: int, spoken: int }
@@ -579,19 +580,23 @@ pure def stepReplyPartsWaitForTheWholeReply(before: Conversation, via: str, afte
 pure def sometimesReplyStreamed(c: Conversation): bool = c.streamed >= 2 and c.turn != Thinking
 ```
 
-### Grace may take a turn the person did not start, marked with where it came from
+### A turn may start without her words, marked with where it came from
 
 A page event, a report of what was done on another surface and Grace's
 opening line start a turn that is not hers. The opening line is the
 prototype's greeting by her first name, "What can I help with?", and comes
-only when the transcript is empty. Such a turn adds no message in her name,
-retires an open question without answering it, and starts only while Grace is
-idle with the microphone off. Whether the current turn was hers is what the
-request record reads.
+only when the transcript is empty. Her tap on an Ask Grace button, such as
+Email's or Settings' "Ask Grace to help", starts a turn that is hers, marked
+`AskedForHelp`: only she can start it, and the host tells Grace what she
+asked help with. Any of these turns adds no message in her name, retires an
+open question without answering it, and starts only while Grace is idle with
+the microphone off. Whether the current turn was hers is what the request
+record reads: Ask Grace is a tap of hers, and nothing the host starts is.
 
 ```quint
 pure def canHostTurn(c: Conversation, origin: TurnOrigin, by: ConversationActor): bool =
-  by == ConversationRuntime and origin != HerRequest and c.turn == Ready and not(c.voice) and
+  (if (origin == AskedForHelp) by == ConversationUser else by == ConversationRuntime) and
+  origin != HerRequest and c.turn == Ready and not(c.voice) and
   (origin == OpeningLine implies c.messages.length() == 0)
 pure def hostTurn(c: Conversation, origin: TurnOrigin, by: ConversationActor): Conversation =
   { ...c, turn: Thinking, generation: c.generation + 1, streamed: 0, origin: origin,
@@ -600,6 +605,7 @@ pure def stepHostTurnsNeverSpeakForHer(before: Conversation, via: str, after: Co
   via == "hostTurn" implies after.messages == before.messages and after.origin != HerRequest and not(after.voice)
 pure def sometimesOpeningLine(c: Conversation): bool =
   c.origin == OpeningLine and c.messages.length() == 1 and c.turn != Thinking
+pure def sometimesAskedForHelp(c: Conversation): bool = c.origin == AskedForHelp and c.turn == Thinking
 ```
 
 ### What Grace did is written in the transcript, wherever it was done

@@ -131,15 +131,26 @@ function sender(s: Scene, account: number, ref: string) {
   return c === undefined ? "an email" : `${cleaned(c.from)}’s email ${quoted(cleaned(c.subject))}`
 }
 
+function counted(n: number, one: string) {
+  return `${n} ${one}${n === 1 ? "" : "s"}`
+}
+
+function attached(m: Mailbox, ref: string) {
+  const assets = m.assets.filter((a) => a.container === ref)
+  const photos = assets.filter((a) => a.kind === "Photo").length
+  return [...photos === 0 ? [] : [counted(photos, "photo")], ...assets.filter((a) => a.kind === "Pdf").map((a) => cleaned(a.name))]
+}
+
 function flags(s: Scene, account: number, record: MessageRecord): string {
   const ref = record.identity.ref
   const box = s.mail.find((m) => m.account === account)?.mailbox
-  const said = [
-    record.unread && "unread",
-    s.content(account, ref)?.attachment === true && "with attachments",
-    box !== undefined && box.warning.evidence !== "" && box.warning.ref === ref && "the tablet found it looks like a scam when it was opened"
-  ].filter((f) => f !== false)
-  return said.length === 0 ? "" : ` (${said.join(", ")})`
+  const known = box === undefined ? [] : attached(box, ref)
+  const notes = [
+    ...record.unread ? ["unread"] : [],
+    ...known.length > 0 ? [`with ${known.join(" and ")}`] : s.content(account, ref)?.attachment === true ? ["with attachments"] : [],
+    ...box !== undefined && box.warning.evidence !== "" && box.warning.ref === ref ? ["the tablet found it looks like a scam when it was opened"] : []
+  ]
+  return notes.length === 0 ? "" : ` (${notes.join(", ")})`
 }
 
 function always(s: Scene, now: number): readonly string[] {
@@ -160,17 +171,19 @@ function always(s: Scene, now: number): readonly string[] {
   ]
 }
 
+const linkPattern = /https?:\/\/\S*[^\s.,;:!?)\]'"]/
+
 function reading(s: Scene, account: number, m: Mailbox): Part {
   const c = s.content(account, m.messageRef)
-  const files = m.assets.filter((a) => a.kind === "Pdf").map((a) => a.name)
-  const photos = m.assets.filter((a) => a.kind === "Photo").length
+  const files = m.assets.filter((a) => a.kind === "Pdf").map((a) => cleaned(a.name))
+  const photos = photoAssets(m).length
   const scam = showsScamWarning(m)
-  const linked = c !== undefined && /https?:\/\//.test(c.body)
+  const linked = linkPattern.test(c?.body ?? "")
   return {
     lines: [
       `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "her"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(cleaned(c?.body ?? ""))}.`,
       ...files.length === 0 ? [] : [`Attached: ${files.join(", ")}.`],
-      ...photos === 0 ? [] : [`${photos} photo${photos === 1 ? "" : "s"} attached.`],
+      ...photos === 0 ? [] : [`${counted(photos, "photo")} attached.`],
       ...scam ? ["The caution strip says this email looks like a scam."] : []
     ],
     targets: ["mbody", ...scam ? ["caution"] : [], ...linked ? ["link"] : [], ...files.length > 0 ? ["file"] : [], ...photos > 0 ? ["saveall"] : []]
@@ -179,8 +192,10 @@ function reading(s: Scene, account: number, m: Mailbox): Part {
 
 function viewing(s: Scene, account: number, m: Mailbox): Part {
   const file = m.assets.find((a) => a.sourceRef === m.attachmentRef)
-  const what = file === undefined ? "an attachment" : file.kind === "Photo" ? `photo ${photoPosition(m) + 1} of ${photoAssets(m).length}` : `the PDF ${quoted(cleaned(file.name))}`
-  return { lines: [`Email is showing ${what} from ${sender(s, account, m.messageRef)}; Back returns to the email.`], targets: [] }
+  const what = file === undefined ? "an attachment from it is open" : file.kind === "Photo"
+    ? `a photo is open full size, ${photoPosition(m) + 1} of ${photoAssets(m).length}`
+    : `${quoted(cleaned(file.name))} is open, with Save to Files`
+  return { lines: [`Email is showing ${sender(s, account, m.messageRef)}: ${what}. Back returns to the email.`], targets: [] }
 }
 
 function composing(s: Scene, account: number, m: Mailbox): Part {

@@ -30,7 +30,7 @@ model has no string building.
 ### Only Margaret's own current turn makes Grace act, on any screen
 
 An action is routed only for a request from Margaret's own turn, typed, said
-or tapped, in the conversation's current generation and for the current
+or tapped, an Ask Grace button included, in the conversation's current generation and for the current
 work. A turn the host made, from an email, a page, a file, the device or
 Grace's own words, is refused whatever it asks, and so is a turn a newer one
 has replaced. Grace may act from any screen.

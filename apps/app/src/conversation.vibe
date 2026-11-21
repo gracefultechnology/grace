@@ -1,4 +1,4 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Grace may take a turn the person did not start, marked with where it came from"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "A turn may start without her words, marked with where it came from"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
 import { Digest } from "effect/crypto"
@@ -14,7 +14,7 @@ import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.e
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
-import { Agent } from "./agent.vibe"
+import { Agent, type GraceAction } from "./agent.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { type Help, helpWith, type Last, looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
@@ -42,6 +42,8 @@ export service Conversation {
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
 const hostStarted = "(Margaret has not spoken: the tablet started this turn. Answer what it just told you happened.)"
+const helpAsked = "(Margaret tapped Ask Grace: what she wants help with is what the tablet just told you.)"
+const askedForHelp = { tag: "HostTurn", turnOrigin: "AskedForHelp" } as const
 
 schema Delta { content?: string }
 schema Choice { delta: Delta }
@@ -50,6 +52,15 @@ schema Chunk { choices: Choice[] }
 error Unanswered { status: number }
 
 const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+function screened(text: string, answers: readonly string[], actions: readonly GraceAction[]) {
+  const safe = (words: string) => withhold({ text: words, passwords: [] })
+  return {
+    text: safe(text),
+    answers: answers.every((answer) => safe(answer) === answer) ? [...answers] : [],
+    actions: actions.map((action): GraceAction => action.kind === "guide" ? { ...action, title: safe(action.title) } : action)
+  }
+}
+
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
   const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
@@ -283,7 +294,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const news = try Ref.get(told)
     const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}` }
-    const started = w.assistant.conversation.origin === "HerRequest" ? [] : [{ role: "user", content: hostStarted }]
+    const { origin } = w.assistant.conversation
+    const started = origin === "HerRequest" ? [] : [{ role: "user", content: origin === "AskedForHelp" ? helpAsked : hostStarted }]
     const said = ask(link, [system, ...outgoing, ...started]) catch () => undefined
     const reply = try decoded(said)
     if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
@@ -291,7 +303,9 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length, authority))
   }
 
-  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, unread: readonly string[], seen: number, authority: GuidedAuthority) {
+  effect function respond(token: number, workVersion: number, reply: typeof Reply.Type, unread: readonly string[], seen: number, authority: GuidedAuthority) {
+    const { text, answers, actions } = try Effect.orDie(Effect.try(() => screened(reply.text, reply.answers, reply.actions)))
+    const { isQuestion } = reply
     const before = try workspace.get()
     if (privateSurfaceActive(before) || before.assistant.conversation.generation !== token ||
         before.assistant.conversation.turn !== "Thinking") return
@@ -317,7 +331,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
-  effect function take(input: PersonTurn, origin: Origin) {
+  effect function take(input: PersonTurn | typeof askedForHelp, origin: Origin) {
     const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
     if (taken === undefined) return false
     try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, origin })
@@ -427,7 +441,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     say: (input) => take(input, origins[input.tag]),
     help: effect (need) => {
       try tell(helpWith(need, try registry.get()))
-      if (link !== undefined) workspace.send({ type: "interact", input: { tag: "HostTurn", turnOrigin: "PageEvent" } }, "Host") catch () => undefined
+      if (link !== undefined) try take(askedForHelp, "Tapped")
     }
   }
 }).pipe(Layer.provide(Layer.merge(client, Digest.layerWebCrypto)))

@@ -27,7 +27,7 @@ pending-request, saving or outcome record is built here.
 
 ### A request records its turn, the work it belongs to and where the turn came from
 
-A turn comes from the person when she typed it, said it or tapped an answer.
+A turn comes from the person when she typed it, said it, tapped an answer or tapped Ask Grace.
 Words heard while a page plays sound are the page's, not hers. Every other
 turn is made by the host: from a page, an email, a file, a device event, or
 Grace's own words, such as her opening line or her report of what she did on

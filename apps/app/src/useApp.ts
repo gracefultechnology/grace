@@ -72,7 +72,7 @@ export function usePasswordGuide() {
 const pointings: Record<GuidanceKind, GuidePointing["kind"]> = { Look: "point", Tap: "instruction", Done: "confirm" };
 const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
 
-const hostTurn = { type: "interact", input: { tag: "HostTurn", turnOrigin: "PageEvent" } } as const;
+const askedForHelp = { type: "interact", input: { tag: "HostTurn", turnOrigin: "AskedForHelp" } } as const;
 
 function guideOn<Target extends string>(workspace: Workspace | undefined, idOf: (target: string) => Target | undefined, onClose?: () => void): Guide<Target> | undefined {
   if (workspace === undefined || !guidanceVisible(workspace) || !guidanceMayShow(workspace.assistant)) return undefined;
@@ -99,7 +99,7 @@ export function useWorkspace() {
     send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
     guide: <Target extends string>(idOf: (target: string) => Target | undefined) =>
       guideOn(workspace, idOf, workspace && offer({ type: "interact", input: { tag: "DismissGuidance", revision: workspace.assistant.guidance.revision } })),
-    askGrace: (need: Help) => can({ type: "openGrace" }, "Person") || can(compact, "Person") || can(hostTurn, "Host") ? () => void help(need) : undefined,
+    askGrace: (need: Help) => can({ type: "openGrace" }, "Person") || can(compact, "Person") || can(askedForHelp, "Person") ? () => void help(need) : undefined,
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
     current,
     /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */

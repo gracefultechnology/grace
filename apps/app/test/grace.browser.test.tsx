@@ -298,7 +298,7 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
 });
 
 it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect the email I already use")', async () => {
-  const { say, window, secret } = await start();
+  const { say, window, secret, visit } = await start();
   const form = (name: string) => page.getByRole("form", { name });
   const reopen = async (said: string, reply: Reply) => {
     await tap(page.getByRole("button", { name: "Close Settings" }));
@@ -312,20 +312,29 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await expect.element(page.getByText("Tap your Gmail")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close this tip" }));
   await expect.element(page.getByText("Tap your Gmail")).not.toBeInTheDocument();
+  // spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+  await say("Show me again.", { text: "Here it is again.", actions: [{ kind: "guide", target: "acc-1", emphasis: "instruction", title: "Tap your Gmail, not card 4111 1111 1111 1111" }] });
+  await expect.element(page.getByText(/^Tap your Gmail, not card [* ]+$/)).toBeVisible();
+  expect(document.body.textContent).not.toContain("4111");
+  await tap(page.getByRole("button", { name: "Close this tip" }));
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(page.getByRole("button", { name: new RegExp(gmail) }));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   await tap(page.getByRole("dialog", { name: "Remove Gmail from this tablet?" }).getByRole("button", { name: "Remove from tablet" }));
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
 
-  // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/conversation.md, "Grace may take a turn the person did not start, marked with where it came from"
-  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "AboutSettings" }] };
+  // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/conversation.md, "A turn may start without her words, marked with where it came from"; spec/app/request.md, "A request records its turn, the work it belongs to and where the turn came from"
+  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "EmailCalendarSettings" }] };
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{ answer: JSON.stringify(which) }]), client));
-  await tap(page.getByRole("region", { name: "Settings" }).getByRole("button", { name: "Ask Grace", exact: true }));
+  await tap(page.getByRole("button", { name: "Close Settings" }));
+  await visit("Email");
+  await expect.element(page.getByText("Not sure which?")).not.toBeInTheDocument();
+  await tap(page.getByRole("button", { name: "Ask Grace to help" }));
   expect(await window()).toBe("Compact");
   await expect.element(page.getByText("I can help. Which email do you use?")).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Outlook or Hotmail" })).toBeVisible();
   expect(toldGrace()).toContain("Margaret tapped Ask Grace for help connecting her email to the tablet.");
+  expect(toldGrace()).toContain("Margaret tapped Ask Grace: what she wants help with is what the tablet just told you.");
   expect(toldGrace()).toContain(`Margaret removed her Gmail email (${gmail}) from the tablet.`);
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
