@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
-import { type Setup as SetupState, Machine as Setup, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
+import { type Setup as SetupState, Machine as Setup, isSelectedVersion, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
@@ -416,11 +416,11 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if (saved.operationId || saved.recipient || saved.subject || saved.text) return false
       try keepMailDraft(accountId, email, { recipient: proposal.recipient, subject: proposal.subject, text: proposal.text }, proposal.replyTo)
     } else if (proposal.kind === "trash") {
-      if (shown.kind !== "mail" || shown.selected?.message.externalId !== proposal.id || shown.selected.message.metadata?.historyId !== proposal.version ||
+      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", proposal.id, proposal.version) ||
         !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
     } else {
       if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange") ||
-        (proposal.id !== undefined && (shown.selected?.externalId !== proposal.id || shown.selected.etag !== proposal.version))) return false
+        (proposal.id !== undefined && !(shown.selected && isSelectedVersion(shown.selected.externalId, shown.selected.etag ?? "", proposal.id, proposal.version ?? "")))) return false
       if (proposal.kind === "removeAppointment" && proposal.series) {
         if (!(try series({ accountId, grant }, proposal.id))) return false
       }
@@ -455,13 +455,13 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, kind)) return undefined
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
-    if (action.kind === "trash" && (shown.kind !== "mail" || shown.selected?.message.externalId !== action.id ||
-      shown.selected.message.metadata?.historyId !== action.version)) return undefined
+    if (action.kind === "trash" && (shown.kind !== "mail" || !shown.selected ||
+      !isSelectedVersion(shown.selected.message.externalId, shown.selected.message.metadata?.historyId ?? "", action.id, action.version))) return undefined
     if (action.kind === "appointment" && action.action !== "create") {
       if (shown.kind !== "calendar") return undefined
       const target = action.seriesFor === undefined ? shown.selected
         : shown.selected?.externalId === action.seriesFor && shown.selected.seriesId === action.id ? shown.series : undefined
-      if (target?.externalId !== action.id || target.etag !== action.version) return undefined
+      if (!target || !isSelectedVersion(target.externalId, target.etag ?? "", action.id, action.version)) return undefined
     }
     const operationId = try Effect.try(() => webView.window.crypto.randomUUID())
     const common = { accountId, grantId: grant, operationId }
