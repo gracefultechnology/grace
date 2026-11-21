@@ -1,6 +1,6 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed, webAccountId
+  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -32,6 +32,7 @@ export const webOrigin = import.meta.env.VITE_GRACE_CLOUD_WEB_ORIGIN || "https:/
 const deviceAttemptKey = "grace-device-sign-in"
 const deviceChallenge = /^[A-Za-z0-9_-]{43}$/
 const deviceState = /^[A-Za-z0-9_-]{43,128}$/
+const deviceCode = /^[a-f0-9]{64}$/
 
 effect function pendingDevice() {
   const candidate = Effect.try(() => {
@@ -212,6 +213,7 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
   const setup = try Setup
   const workspace = try Workspaces
   const gate = try Semaphore.make(1)
+  const tabletHandoff = try Semaphore.make(1)
   const attempt = try Ref.make(native ? undefined : (try pendingDevice()))
   if ((try Ref.get(attempt)) !== undefined) {
     setup.send({ type: "reportTabletSignIn", waiting: true }) catch () => undefined
@@ -261,16 +263,24 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
     }
     if (operation.kind === "authorizeDevice") {
       const device = try Ref.get(attempt)
-      if (device === undefined || webAccountId((try setup.get()).graceAccount) !== operation.expectedAccountId) return false
-      const confirmed = setup.send({ type: "confirmTabletSignIn" }) catch () => undefined
-      if (confirmed === undefined || webAccountId(try refresh()) !== operation.expectedAccountId || !tabletSignInConfirmed(try setup.get())) return false
+      if (device === undefined) return false
+      const confirmed = setup.send({ type: "confirmTabletSignIn", accountId: operation.expectedAccountId }) catch () => undefined
+      if (confirmed === undefined) return false
+      const stillConfirmed = effect () => (try Ref.get(attempt)) === device && tabletSignInConfirmed(try setup.get())
+      try refresh()
+      if (!(try tabletHandoff.withPermit(stillConfirmed()))) return false
       const { redirectUrl } = try decode(try accepted(transport, "/api/auth/device/authorize", "POST", { ...device, expectedAccountId: operation.expectedAccountId }), DeviceApproval)
       const destination = try Effect.try(() => new URL(redirectUrl))
-      if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" ||
-        destination.searchParams.get("state") !== device.state || !destination.searchParams.get("code")) return false
-      try dismissDevice()
-      try Effect.try(() => webView.window.location.assign(destination))
-      return true
+      const states = destination.searchParams.getAll("state")
+      const codes = destination.searchParams.getAll("code")
+      if (destination.origin !== webOrigin || destination.pathname !== "/android/auth/callback" || destination.username !== "" || destination.password !== "" || destination.href.includes("#") ||
+        states.length !== 1 || states[0] !== device.state || codes.length !== 1 || !deviceCode.test(codes[0] ?? "")) return false
+      return try tabletHandoff.withPermit(effect {
+        if (!(try stillConfirmed())) return false
+        try transport.openExternal(destination)
+        try dismissDevice()
+        return true
+      })
     }
     if (operation.kind === "manageAccount") return false
     const original = (try setup.get()).graceAccount
@@ -329,5 +339,5 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
       () => gate.withPermit(refresh()),
     )
   }
-  return { run: effect (operation) => gate.withPermit(perform(operation)) catch () => false }
+  return { run: effect (operation) => (operation.kind === "cancelDevice" && !native ? tabletHandoff : gate).withPermit(perform(operation)) catch () => false }
 })
