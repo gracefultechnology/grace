@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/browser.md, "Story: Enter a website and understand loading or failure"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 import { Effect, ManagedRuntime, Schema } from "effect";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, type TestContext } from "vitest";
@@ -148,6 +148,35 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await userEvent.click(page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: `Close ${host}` }));
   await expect.poll(() => ({ tabs: workspace().browser.tabs.length, top: onTop(frames().find((frame) => !frame.hidden) ?? null) })).toEqual({ tabs: 2, top: true });
 
+  const id = workspace().browser.selected;
+  const readable = new URL("./site/index.html", import.meta.url).href;
+  await visit(readable, id);
+  const instruction = shown(id)?.contentDocument?.querySelector<HTMLAnchorElement>('a[href="instruction.html"]');
+  if (!instruction) throw new Error("The local website did not offer its instruction page");
+  instruction.click();
+  await expect.element(address).toHaveValue(instruction.href);
+  await expect.poll(() => tab(id)?.load).toBe("Loaded");
+  const prior = tab(id)!;
+  expect(prior.history.slice(-2)).toEqual([readable, instruction.href]);
+  const instructionPage = shown(id)?.contentDocument;
+  if (!instructionPage) throw new Error("The instruction page is unreadable");
+  instructionPage.location.assign(new URL("index.html", site).href);
+  await expect.poll(() => {
+    const after = tab(id)!;
+    return shown(id)?.contentDocument === null && after.loadVersion > prior.loadVersion && after.load === "Loaded";
+  }).toBe(true);
+  expect(tab(id)?.history).toEqual(prior.history);
+  await expect.element(address).toHaveAccessibleDescription("");
+
+  const unavailable = new URL(site);
+  unavailable.protocol = "https:";
+  await address.fill(unavailable.href);
+  await enter();
+  await expect.poll(() => {
+    const active = tab(id);
+    return shown(id)?.src === unavailable.href && active?.load !== "Loading" && active?.secure === false;
+  }).toBe(true);
+
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
 });
@@ -184,7 +213,7 @@ function androidPagePluginAtItsBoundary(overrides: Partial<SurfacePlugin> = {}) 
     refused,
     called: (method: string) => calls.filter(([m]) => m === method).map(([, options]) => options),
     started: (url = "") => emit("pageStarted", { url }),
-    finished: (url: string) => emit("navigationChanged", { exists: true, currentUrl: url, progress: 100 }),
+    finished: (url: string) => emit("navigationChanged", { exists: true, currentUrl: url, progress: 100, pageError: null, securityBlocked: false }),
     crashed: () => emit("surfaceCrashed", {}),
   };
 }
@@ -560,17 +589,21 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
 
   device.refused.creates = 1;
   await userEvent.click(page.getByRole("button", { name: "Internet" }));
+  await expect.element(address).toHaveAccessibleDescription("");
   await userEvent.type(address, "example.com{Enter}");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "LoadFailed", address: "https://example.com/" });
+  await expect.element(address).toHaveAccessibleDescription("");
   expect(device.called("createSurface")).toHaveLength(1);
   await userEvent.click(page.getByRole("button", { name: "Try again" }));
   await expect.poll(() => device.called("createSurface")).toHaveLength(2);
   device.started("https://example.com/");
   device.finished("https://example.com/");
   await expect.poll(at).toEqual({ url: "https://example.com/", load: "Loaded", address: "https://example.com/" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
 
   device.started("https://example.com/b");
   await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loading", address: "https://example.com/b" });
+  await expect.element(address).toHaveAccessibleDescription("");
   device.started("https://example.com/next");
   await expect.poll(at).toEqual({ url: "https://example.com/next", load: "Loading", address: "https://example.com/next" });
   device.finished("https://example.com/next");
@@ -585,4 +618,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   device.started("https://example.com/b");
   device.finished("https://example.com/b");
   await expect.poll(at).toEqual({ url: "https://example.com/b", load: "Loaded", address: "https://example.com/b" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
+  await userEvent.fill(address, "https://another.example/");
+  await expect.element(address).toHaveAccessibleDescription("");
 });
