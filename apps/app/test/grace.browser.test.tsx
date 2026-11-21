@@ -218,7 +218,7 @@ it('Save the clinic appointment (spec/app/calendars.md, "Story: Ask Grace to put
   // spec/app/calendars.md, "An appointment from an email names that email, goes to its account’s calendar, and is asked once"
   await person({ type: "setUse", id: 1, use: { mail: true, calendar: false, contacts: true } });
   await say("Open Ruth's email.", { text: "Ruth asks about lunch on Sunday.", actions: [{ kind: "showInbox" }, { kind: "openMessage", message: "Ruth" }] });
-  expect(toldGrace()).toContain("proposeFromMessage was not done: it is already in her calendar");
+  expect(toldGrace()).toContain("proposeFromMessage was not done: it is already in their calendar");
   await expect.element(page.getByRole("heading", { name: "Lunch on Sunday?" })).toBeVisible();
   await say("Add lunch with Ruth.", { text: "Lunch with Ruth, the day after tomorrow at noon. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"],
     actions: [{ kind: "proposeFromMessage", title: "Lunch with Ruth", day: dateOf(today + 2), time: "12:00" }] });
@@ -312,8 +312,8 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   expect(await window()).toBe("Compact");
   await expect.element(page.getByText("I can help. Which email do you use?")).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Outlook or Hotmail" })).toBeVisible();
-  expect(toldGrace()).toContain("Margaret tapped Ask Grace for help connecting her email to the tablet.");
-  expect(toldGrace()).toContain(`Margaret removed her Gmail email (${gmail}) from the tablet.`);
+  expect(toldGrace()).toContain("The person tapped Ask Grace for help connecting their email to the tablet.");
+  expect(toldGrace()).toContain(`The person removed their Gmail email (${gmail}) from the tablet.`);
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
 
@@ -327,13 +327,13 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await tap(form("Other email").getByRole("button", { name: "Next" }));
   await tap(form("Mail settings").getByRole("button", { name: "Ask Grace" }));
   await say("What are these?", { text: "They are the addresses your email company uses. They are not secret.", actions: [] });
-  expect(toldGrace()).toContain("Her email company said the password she typed was wrong.");
-  expect(toldGrace()).toContain("Margaret tapped Ask Grace while connecting her riverview.net email");
+  expect(toldGrace()).toContain("Their email company said the password they typed was wrong.");
+  expect(toldGrace()).toContain("The person tapped Ask Grace while connecting their riverview.net email");
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(form("Mail settings").getByRole("button", { name: "Connect" }));
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();
   await reopen("Is my email on now?", { text: "Yes, your Riverview email is on the tablet.", actions: [] });
-  expect(toldGrace()).toContain(`Margaret connected her Riverview email (${riverview}) to the tablet.`);
+  expect(toldGrace()).toContain(`The person connected their Riverview email (${riverview}) to the tablet.`);
   expect(toldGrace()).not.toContain(otherPassword);
   expect(toldGrace()).not.toContain("Not-the-password-7");
 });

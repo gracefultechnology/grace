@@ -1,11 +1,14 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
 import { assert, it } from "@effect/vitest"
 import { Digest } from "effect/crypto"
 import { ExperimentalNodeLocks } from "vibelang-runtime/experimental/platform-node"
 import { inject } from "vitest"
+import { Client } from "pg"
+import { googleRequest } from "../../../vendor/eliza/packages/cloud/src/google.vibe"
 import { approveSave, beginEdit, create, edit, initial as noEntry, save, saveFailed, type Calendar } from "../gen/app__calendar.effect.vibe"
 import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
+import { accountRequests, googleChanges, googleReads, googleRoute } from "../src/cloudRequests.vibe"
 import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
 import { Stored } from "../src/connector.schema.ts"
 import { client, expire, otherPassword, outage, parts, reply, script, sentMail, sessions, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
@@ -563,4 +566,23 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       }))
     }
   }
+})
+
+it.live("Read the Google mail and calendar I connected: the pinned Eliza Cloud routes every Google read and change Grace makes, and the status, connect and disconnect of her Google link", () => effect {
+  const env = { PUBLIC_API_ORIGIN: "https://api.grace.test", WEB_ORIGIN: "https://app.grace.test" }
+  const storage = try Effect.try(() => new Client())
+  try tryPromise(() => storage.end())
+  const requests = [
+    ...googleReads.map((route) => [googleRoute + route, "GET"] as const),
+    ...googleChanges.map((route) => [googleRoute + route, "POST"] as const),
+    ...Object.entries(accountRequests).filter(([path]) => path.startsWith(googleRoute)),
+  ]
+  const unrouted = try Effect.forEach(requests, ([path, method]) => effect {
+    const sent = HttpClientRequest.make(method)(env.PUBLIC_API_ORIGIN + path, { headers: { origin: env.WEB_ORIGIN } })
+    const request = try HttpServerRequest.toWeb(HttpServerRequest.fromClientRequest(sent))
+    const response = try tryPromise(() => googleRequest(request, env, storage, "account"))
+    const { error } = try Schema.decodeUnknownEffect(Schema.Struct({ error: Schema.optional(Schema.String) }))(try tryPromise(() => response.json()))
+    return error === "route_not_found" ? [method + " " + path] : []
+  })
+  try Effect.try(() => assert.deepStrictEqual(unrouted.flat(), []))
 })

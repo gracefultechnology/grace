@@ -2,7 +2,7 @@
 import { Effect, ManagedRuntime, Stream } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine as Notices } from "../gen/app__notices.effect.vibe";
 import { type Event as ProposalEvent, Machine as Proposals, addVisit } from "../gen/app__proposal.effect.vibe";
@@ -13,9 +13,10 @@ import { NoticeHost, type Reply } from "../src/notices.vibe";
 import { mount, signInToGrace } from "./screen.tsx";
 import "../src/main.css";
 
+beforeAll(() => page.viewport(1280, 800));
+
 describe('spec/app/notices.md, "Story: See one message at a time, in the order things happened"', () => {
   it("See one message at a time", async () => {
-    await page.viewport(1280, 800);
     const network = { online: true };
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
     const reach = (online: boolean) => {

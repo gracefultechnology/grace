@@ -1,16 +1,18 @@
 // spec/app/browserControls.md, "Story: Ask Grace to start a private sign-in for my bill"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { directSignInRequest } from "../gen/app__browserControls.effect.vibe"
-import { type Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { type Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { type NativePage } from "./nativePage.vibe"
 
+export function privateSignInRequest(w: Workspace) {
+  const parsed = URL.parse(tabUrl(activeTab(w.browser)))
+  if (w.device.surface !== "Browser" || parsed === null || parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return undefined
+  return { tag: "RequestPrivateSignIn" as const, id: w.browser.selected, revision: w.browser.revision, origin: parsed.origin }
+}
+
 export effect function requestedPrivateSignIn(words: string, tab: number, revision: number, workspace: Workspaces.Shape, native: NativePage.Shape): boolean!! {
-  if (!directSignInRequest(words.trim().toLowerCase().replace(/[.!?]+$/, ""))) return false
-  if (!native.privateSignIn) return false
-  const now = try workspace.get()
-  if (now.device.surface !== "Browser" || now.browser.selected !== tab || now.browser.revision !== revision) return false
-  const parsed = URL.parse(tabUrl(activeTab(now.browser)))
-  if (parsed === null || parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return false
-  const browserInput = { tag: "RequestPrivateSignIn" as const, id: tab, revision, origin: parsed.origin }
+  if (!directSignInRequest(words.trim().toLowerCase().replace(/[.!?]+$/, "")) || !native.privateSignIn) return false
+  const browserInput = privateSignInRequest(try workspace.get())
+  if (browserInput === undefined || browserInput.id !== tab || browserInput.revision !== revision) return false
   return Effect.as(workspace.send({ type: "changePage", browserInput }, "Person"), true) catch () => false
 }

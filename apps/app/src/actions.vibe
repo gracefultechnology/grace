@@ -5,6 +5,7 @@ import { webView } from "./surfacePlugin.ts"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import { type AgentAction, type Route, route, type World } from "../gen/app__agentActions.effect.vibe"
 import { withhold } from "./private.ts"
+import { quotedAt } from "./words.ts"
 import { type EntryDetails, type Recurrence, withStart } from "../gen/app__calendar.effect.vibe"
 import { entryAt, type EntrySeed } from "../gen/app__calendarView.effect.vibe"
 import { calendarContext, sourceAt, targetCalendar } from "../gen/app__calendars.effect.vibe"
@@ -282,8 +283,13 @@ export const agent = Layer.effect(Agent, effect {
     if (words === undefined) return "NotHerTurn"
     const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
     if (!eligible) return "OwnerRefused"
-    if (action.steps.some((step) => typeof step !== "string" && !words.includes(step.target))) return "OwnerRefused"
-    const steps = action.steps.map((step): GuidedStep => typeof step === "string" ? { tag: step } : { tag: "ReachNamedPage", subject: step.target })
+    const named = (target: string): GuidedStep | undefined => {
+      const at = quotedAt(words, target)
+      return at < 0 ? undefined : { tag: "ReachNamedPage", subject: words.slice(at, at + target.length) }
+    }
+    const offered = action.steps.map((step): GuidedStep | undefined => typeof step === "string" ? { tag: step } : named(step.target))
+    const steps = offered.filter((step) => step !== undefined)
+    if (steps.length !== offered.length) return "OwnerRefused"
     const owner = request.authority === undefined ? undefined : guidedOwner(request.authority, steps)
     if (owner === undefined || owner !== guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), steps)) return "OwnerRefused"
     const offer = { owner, task: fresh, generation: request.generation, workVersion: request.workVersion, steps }

@@ -55,7 +55,7 @@ type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | 
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
   task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
-  title: str, starts: int, ends: int, timezone: str, location: str, notes: str
+  title: str, starts: int, ends: int, timezone: str, location: str, notes: str, detailsDigest: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
 type GuidedNameCorrection = {
@@ -64,10 +64,19 @@ type GuidedNameCorrection = {
 }
 type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
 type GuidedNameOverride = { stepIndex: int, label: str }
+type GuidedCheckpointCorrection = NoGuidedCheckpointCorrection | GuidedCheckpointCorrectionBound({ label: str, url: str })
+type GuidedSaveReference = { occurrence: str, owner: str, calendar: str, mailDigest: str, detailsDigest: str }
+type GuidedCheckpointSave = GuidedSaveUntouched | GuidedSaveReconcile({ occurrence: str, owner: str, calendar: str, mailDigest: str, detailsDigest: str })
+type GuidedCheckpoint = {
+  request: GuidedRequest, receipts: List[GuidedReceipt], workVersion: int,
+  correction: GuidedCheckpointCorrection, save: GuidedCheckpointSave
+}
+type GuidedRecovery = { owner: str, checkpoint: GuidedCheckpoint }
+type GuidedFence = { task: str, version: int }
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
   mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
-  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride
+  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride, saveRecovery: GuidedCheckpointSave
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
@@ -76,6 +85,7 @@ type GuidedObservation = {
 }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
+type GuidedSaveRecoveryCheck = { report: GuidedObservation, saved: GuidedSaveReference }
 type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
 type GuidedReview = { revision: int, generation: int, workVersion: int, request: GuidedRequest }
 type GuidedLink = {
@@ -89,13 +99,13 @@ pure def emptyReview(revision: int): GuidedReview = {
 pure val noGuidedMail: GuidedMail = { account: 0, owner: "", address: "", ref: "", generation: 0, revision: 0, version: "" }
 pure val noGuidedApproval: GuidedCalendarApproval = {
   task: "", account: 0, owner: "", calendar: "", sourceRef: "", provisional: "", proposal: -1,
-  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: ""
+  title: "", starts: 0, ends: 0, timezone: "", location: "", notes: "", detailsDigest: ""
 }
 pure val noGuidedNameOverride: GuidedNameOverride = { stepIndex: -1, label: "" }
 pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
   mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
-  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride
+  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -307,7 +317,8 @@ not evidence of authentication and must be reobserved. Callback generations
 advance rather than returning to initial zeroes. Confirmed preferences and
 every canonical payment record survive; a volatile payment observation restores
 from its durable outcome, including Unknown. Restart never reports a completed
-task or retries a payment.
+task or retries a payment. A separately authenticated recovery can restore a
+reviewed guided checkpoint after startup.
 
 ```quint
 pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
@@ -910,9 +921,14 @@ pure def unexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: Work
 pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
   (unexpected.id != w.browser.selected or unexpected.revision != w.browser.revision)
   implies not(canUnexpectedPage(w, unexpected, by))
+pure def hasRecoveredSaveReference(save: GuidedCheckpointSave): bool = match save {
+  | GuidedSaveUntouched => false
+  | GuidedSaveReconcile(ref) => ref.occurrence != "" and ref.detailsDigest != ""
+}
 pure def canResume(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canResume(w.assistant, C::ConversationUser) and
-  (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == ""
+  (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == "" and
+    (w.plan.saveRecovery == GuidedSaveUntouched or hasRecoveredSaveReference(w.plan.saveRecovery))
    else mayAssist(w) and X::canResume(w.execution, X::User))
 pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::resume(w.assistant, C::ConversationUser),
@@ -1143,10 +1159,134 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
     commitmentTask: "", commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeUser) }
 ```
 
+### An authenticated restart restores the reviewed plan paused at its next outcome
+
+For a plan bound to a verified owner, Start records the first checkpoint before guidance begins. If the device cannot store it, the reviewed plan stays available for the person to retry. If a delayed write arrives before the retry, Grace can use it only when the full checkpoint matches that same review and owner. When the person ends a saved task under that owner, Grace clears its checkpoint before closing the task. If the device cannot confirm the checkpoint or matching Calendar draft was cleared, the task stays open and the person can try again. An earlier delayed write cannot reopen a task after End succeeds.
+
+A durable checkpoint keeps the reviewed owner, task and goal, the ordered
+outcomes and the ordered prefix of confirmed receipts. Receipt identifiers
+are opaque source digests. A confirmed correction keeps the exact replacement
+name and the public link the person approved with it. The host stores the
+checkpoint under the authenticated account that reviewed it. The authenticated
+store may recover that checkpoint only into an empty workspace for the same
+owner. An account change retires a guided task only when the host names its
+current task and work version.
+
+Grace restores the next instruction with a work version newer than the saved
+one. Recovery starts closed and paused. Opening Grace waits for an explicit
+Resume with the current authority. An observation must use the new work
+version and current app, page and permission. The checkpoint contains no
+queued work, browser session, selected private source, page observation,
+unapproved link or permission. A calendar save that had entered the approved
+write flow keeps only a reconciliation marker and an adopted occurrence
+reference under its original account and calendar when available. A known
+occurrence can be checked against a fresh provider read under its matching
+source identity. The checkpoint keeps a digest of the reviewed appointment details.
+The provider must still report those details for Grace to confirm the save.
+Without an occurrence reference or an original details digest, the save stays
+paused for explicit replacement review. If Calendar still shows the draft fenced to that
+task, it explains that the appointment may already be saved. The person can
+return to the list to check the provider’s calendar, and the draft cannot
+submit again. A future calendar save needs
+fresh observation of the original mail receipt and its own separate approval.
+
+```quint
+pure def guidedCheckpoint(w: Workspace): GuidedCheckpoint = {
+  request: { owner: w.plan.owner, task: w.assistant.taskId, goal: w.plan.originalAsk, steps: w.plan.steps },
+  receipts: w.plan.receipts, workVersion: w.assistant.workVersion,
+  correction: if (w.plan.nameOverride.stepIndex == w.plan.receipts.length() and w.plan.nameOverride.label != "" and w.plan.linkUrl != "")
+    GuidedCheckpointCorrectionBound({ label: w.plan.nameOverride.label, url: w.plan.linkUrl }) else NoGuidedCheckpointCorrection,
+  save: if (w.plan.calendarApproval.proposal >= 0 and isAppointmentSave(nextOutcome(w.plan)))
+    GuidedSaveReconcile({ occurrence: w.plan.savedOccurrence, owner: w.plan.calendarApproval.owner,
+      calendar: w.plan.calendarApproval.calendar, mailDigest: priorGuidedMail(w.plan).digest, detailsDigest: w.plan.calendarApproval.detailsDigest }) else w.plan.saveRecovery
+}
+pure def validGuidedCheckpoint(checkpoint: GuidedCheckpoint): bool =
+  val request = checkpoint.request
+  val index = checkpoint.receipts.length()
+  val pending = request.steps.nthOr(index, noGuidedStep)
+  val correction = checkpoint.correction
+  val savedMail = priorGuidedMail({ ...emptyPlan, steps: request.steps, receipts: checkpoint.receipts })
+  val save = checkpoint.save
+  request.owner != "" and request.task != "" and request.goal != "" and checkpoint.workVersion >= 0 and
+  index < request.steps.length() and
+  request.steps.every(checkpointStep => hasGuidedAdapter(checkpointStep) and guidedDetails(checkpointStep).subject != "" and guidedDetails(checkpointStep).outcome != "") and
+  checkpoint.receipts.every(retained => retained.sourceKey != "" and retained.evidence != "" and
+    checkpoint.receipts.select(prior => prior.sourceKey == retained.sourceKey).length() == 1) and
+  (match correction {
+    | NoGuidedCheckpointCorrection => true
+    | GuidedCheckpointCorrectionBound(binding) => isNamedDestination(pending) and binding.label != "" and binding.url != ""
+  }) and (match save {
+    | GuidedSaveUntouched => true
+    | GuidedSaveReconcile(ref) => isAppointmentSave(pending) and ref.owner != "" and ref.calendar != "" and
+      ref.mailDigest != "" and ref.mailDigest == savedMail.digest and (ref.occurrence == "" or ref.detailsDigest != "")
+  })
+pure def canRestoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
+  by == Store and w.device.readiness == S::Ready and not(privateSurfaceActive(w)) and
+  w.assistant.activity == A::NoTask and w.assistant.presentation == A::Closed and
+  w.execution.phase == X::Idle and w.commitmentTask == "" and w.plan.owner == "" and
+  recovery.owner == recovery.checkpoint.request.owner and validGuidedCheckpoint(recovery.checkpoint)
+pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): Workspace =
+  val checkpoint = recovery.checkpoint
+  val request = checkpoint.request
+  val nextIndex = checkpoint.receipts.length()
+  val recoveredPlan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps, receipts: checkpoint.receipts,
+    openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save }
+  val correction = checkpoint.correction
+  val plan: GuidedPlan = match correction {
+    | NoGuidedCheckpointCorrection => recoveredPlan
+    | GuidedCheckpointCorrectionBound(binding) => { ...recoveredPlan,
+      nameOverride: { stepIndex: nextIndex, label: binding.label }, linkStep: nextIndex, linkUrl: binding.url }
+  }
+  val earlier = restartedAssistant(w.assistant)
+  val version = if (earlier.workVersion > checkpoint.workVersion) earlier.workVersion else checkpoint.workVersion + 1
+  { ...w, plan: plan, review: emptyReview(w.review.revision + 1),
+    assistant: { ...earlier, activity: A::Paused, taskId: request.task, goal: request.goal,
+      checkpoint: if (checkpoint.save == GuidedSaveUntouched) guidedDetails(nextOutcome(plan)).outcome
+        else if (hasRecoveredSaveReference(checkpoint.save)) "Open the saved appointment in Calendar to check it."
+        else "Check whether the appointment was already saved before starting another plan.",
+      workVersion: version },
+    commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost) }
+pure def canDiscardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): bool =
+  by == Host and w.plan.owner != "" and fence.task == w.assistant.taskId and fence.version == w.assistant.workVersion
+pure def discardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): Workspace = {
+  ...w, plan: emptyPlan, review: emptyReview(w.review.revision + 1),
+  assistant: restartedAssistant(w.assistant), commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost)
+}
+pure def lawOtherOwnersCannotRestoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
+  recovery.owner != recovery.checkpoint.request.owner implies not(canRestoreGuided(w, recovery, by))
+pure def lawRestoredGuidanceWaitsForACurrentRead(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): bool =
+  val after = restoreGuided(w, recovery, by)
+  canRestoreGuided(w, recovery, by) implies (
+    after.assistant.presentation == A::Closed and after.assistant.activity == A::Paused and
+    after.assistant.workVersion > recovery.checkpoint.workVersion and after.assistant.operation == "" and
+    after.plan.steps == recovery.checkpoint.request.steps and after.plan.receipts == recovery.checkpoint.receipts and
+    after.plan.mail == noGuidedMail and after.plan.calendarApproval == noGuidedApproval and
+    after.browser == w.browser and after.execution == w.execution and not(canRestoreGuided(after, recovery, by)))
+pure def sometimesRecoveredGuidanceIsPaused(w: Workspace): bool =
+  w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.activity == A::Paused and w.assistant.presentation == A::Closed
+pure val guidedCheckpointSample: GuidedCheckpoint = {
+  request: { owner: "tablet", task: "recovered", goal: "Read the message then check the website", steps: List(ReadMail, ReadBrowser) },
+  receipts: List({ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }), workVersion: 4,
+  correction: NoGuidedCheckpointCorrection, save: GuidedSaveUntouched
+}
+pure val recoveryValues = Set(
+  { owner: "tablet", checkpoint: guidedCheckpointSample },
+  { owner: "other", checkpoint: guidedCheckpointSample },
+  { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
+    request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) } } },
+  { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
+    request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
+    save: GuidedSaveReconcile({ occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } },
+  { owner: "tablet", checkpoint: { ...guidedCheckpointSample,
+    request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
+    save: GuidedSaveReconcile({ occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } })
+pure val fenceValues = Set({ task: "recovered", version: 5 }, { task: "recovered", version: 6 }, { task: "other", version: 5 })
+```
+
 ### A read plan offered in chat waits for the person to start it
 
 The conversation host validates the current human request before it offers
-a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. Each completed check keeps its local source identity and readable evidence. Different items may have the same displayed text. Reopening one unchanged item cannot satisfy a second check for another item. The workspace
+a nonempty ordered sequence of outcomes for the items the person opens. The reviewed plan retains every proposed step, including sequences longer than four. Each completed check keeps its local source identity and readable evidence. Different items may have the same displayed text. Reopening one unchanged item cannot satisfy a second check for another item. Each view of a page that routes by its address fragment, such as #/billing, is its own item; a fragment that only marks a place on the page is not. The workspace
 checks its current conversation and work versions and takes the goal
 directly from the current person’s words, including any restrictions.
 The host records the account and linked source that the offer uses. The person must still be under that same authority when accepting the review, resuming it or confirming a read. Reconnecting the same linked account can renew access without changing the owner. Reading the selected items does not establish other requested outcomes. Only a person accepting the displayed revision may start
@@ -1158,18 +1298,23 @@ With permission and an active compact Browser step, the person can ask
 Grace to highlight a link on the loaded page. The host binds the
 highlighted destination to this step and its current page context. A
 highlight does not record a read or navigate the page. Visiting a
-different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a page that shows the bill, statement or account activity, and to avoid a link that only starts a payment. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
 
 When the person permits observation and a secure site is loaded, the chat planner can see that the current tab already has a website open and the public hostname. The browser keeps the full address and document contents local when reporting that context.
 
 When the person names a browser destination, the reviewed step shows the
-name quoted from the current request. Checking a page opened along the way
+name quoted from the current request. The quoted name may differ from the person's words only by a typographic apostrophe inside a word, and the reviewed step keeps the person's spelling. Any other difference refuses the plan, and Grace says the plan could not be prepared. Checking a page opened along the way
 does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
-For a requested statement read, the host reads the current visible document locally. The document must identify itself as the current or latest bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter. A previous balance, minimum payment or statement issue date supplies a different fact. The host rereads the document identity, revision and values before confirming the step. An ambiguous or incomplete statement leaves the step open.
+For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. A previous balance, minimum payment, current or running balance, a loan's remaining balance, credit limit, pending charge or statement issue date supplies a different fact, and a label with no value beside it supplies none. The host rereads the document identity, address and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
 
 ```quint
+pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =
+  due.union(if (remaining.size() > 0) remaining else balances)
+pure def lawRemainingBalanceReplacesStatementBalance(due: Set[str], balances: Set[str], remaining: Set[str], value: str): bool =
+  (remaining.size() > 0 and not(due.contains(value)) and not(remaining.contains(value))) implies
+    not(statementAmounts(due, balances, remaining).contains(value))
 pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
   amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
 pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
@@ -1245,6 +1390,8 @@ pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 
 While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. A later hint can use that approved link. Binding a different link needs another approval. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace checks that the active tab has reached the approved address before requesting an observation of the destination. It then verifies the exact approved heading.
 
+When the person opens a navigation menu, Grace can point to a visible child of that menu and guide the person through further nested menus. Each choice stays in the observed branch of the current document. When the open branch has no matching link, the person can ask Grace to try another menu on the same document. If the destination uses a different label, Grace shows its parent menus and asks the person to approve that particular link. The final check requires the approved address and the visible primary heading.
+
 ```quint
 pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
   val tab = B::activeTab(w.browser)
@@ -1300,7 +1447,7 @@ pure val correctionValues = Set(
 
 ### Only a current observation of the next outcome advances the plan
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. An untouched newsletter opt-in with one clearly labeled blank email input and a Subscribe button allows Grace to point to an independently observed public link outside every form, or verify the public document identity or its main heading outside forms. The address used for that evidence must have no credentials, query or fragment. This permission supplies no statement or general page-content evidence. Missing field evidence, a focused or filled text input, and an additional unrecognized control keep the opt-in private. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. An untouched newsletter opt-in with one clearly labeled blank email input and a Subscribe button allows Grace to point to an independently observed public link outside every form, or verify the public document identity or its main heading outside forms. The address used for that evidence must have no credentials, query or fragment. This permission supplies no statement or general page-content evidence. Missing field evidence, a focused or filled text input, and an additional unrecognized control keep the opt-in private. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry, and Grace says why the check did not count: what she could not find, that the page changed or is covered, or that the item already satisfied an earlier step. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. When the main content has no level-one heading, it reads the first one outside navigation, sidebars, the page banner and footers. It compares the heading with the reviewed name after normalizing Unicode, spacing, letter case and apostrophes inside a word. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
 ```quint
 type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField | IdleOptInField | IdleLoginField
@@ -1323,7 +1470,8 @@ pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
   | SaveMailAppointment => true
   | _ => false
 }
-pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+pure def usedSource(plan: GuidedPlan, sourceKey: str): bool = plan.receipts.some(receipt => receipt.sourceKey == sourceKey)
+pure def guidedReadContextCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   by == Host and not(privateSurfaceActive(w)) and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
   A::isVisible(w.assistant) and w.device.readiness == S::Ready and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
@@ -1332,14 +1480,16 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and
   report.step == nextOutcome(w.plan) and guidedDetails(report.step).surface == w.device.surface and
   (guidedDetails(report.step).surface == S::Browser implies w.device.observationAllowed) and guidedLinkObserved(w) and
-  report.sourceKey != "" and report.evidence != "" and not(w.plan.receipts.some(receipt => receipt.sourceKey == report.sourceKey)) and
+  report.sourceKey != "" and report.evidence != "" and not(usedSource(w.plan, report.sourceKey))
+pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  guidedReadContextCurrent(w, report, by) and w.plan.saveRecovery == GuidedSaveUntouched and
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
-    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride }
+    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
     if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
@@ -1411,13 +1561,46 @@ pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: Workspa
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
 pure def guidedSavePending(w: Workspace): bool =
   hasNext(w.plan) and isAppointmentSave(nextOutcome(w.plan)) and
-  w.execution.phase == X::Idle and w.commitmentTask == ""
+  w.execution.phase == X::Idle and w.commitmentTask == "" and w.plan.saveRecovery == GuidedSaveUntouched
+type PriorGuidedMail = { index: int, digest: str }
+pure def priorGuidedMail(plan: GuidedPlan): PriorGuidedMail =
+  plan.receipts.foldl({ index: 0, digest: "" }, (prior, receipt) => {
+    index: prior.index + 1,
+    digest: if (plan.steps.nthOr(prior.index, noGuidedStep) == ReadMail) receipt.sourceKey else prior.digest
+  })
+pure def canRebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
+  val report = mailCheck.report
+  val mail = mailCheck.mail
+  by == Host and guidedSavePending(w) and not(privateSurfaceActive(w)) and
+  w.plan.mail == noGuidedMail and w.device.surface == S::Email and w.device.readiness == S::Ready and
+  A::isVisible(w.assistant) and w.assistant.activity == A::Rechecking and w.assistant.replacementId == "" and
+  w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
+  report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
+  report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and report.step == ReadMail and
+  report.sourceKey != "" and report.sourceKey == priorGuidedMail(w.plan).digest and report.evidence != "" and
+  mail.account > 0 and mail.owner != "" and mail.address != "" and mail.ref != "" and
+  mail.generation >= 0 and mail.revision >= 0
+pure def rebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
+  { ...w, plan: { ...w.plan, mail: mailCheck.mail } }
+pure def canReconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
+  val saved = recoveryCheck.saved
+  guidedReadContextCurrent(w, recoveryCheck.report, by) and isAppointmentSave(recoveryCheck.report.step) and
+  w.assistant.activity == A::Rechecking and saved.occurrence != "" and saved.detailsDigest != "" and
+  w.plan.saveRecovery == GuidedSaveReconcile({ occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest, detailsDigest: saved.detailsDigest })
+pure def reconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, recoveryCheck.report, by)
+pure def lawRecoveredSaveNeedsItsExactReadBack(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
+  val saved = recoveryCheck.saved
+  val sameSaved = w.plan.saveRecovery == GuidedSaveReconcile({
+    occurrence: saved.occurrence, owner: saved.owner, calendar: saved.calendar, mailDigest: saved.mailDigest, detailsDigest: saved.detailsDigest
+  })
+  not(saved.occurrence != "" and saved.detailsDigest != "" and sameSaved) implies not(canReconcileGuidedSave(w, recoveryCheck, by))
 pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   by == Host and guidedSavePending(w) and w.plan.savedOccurrence == "" and
   approval.task == w.assistant.taskId and approval.account == w.plan.mail.account and approval.account > 0 and
   approval.owner == w.plan.mail.address and approval.sourceRef == w.plan.mail.ref and approval.sourceRef != "" and
   approval.calendar != "" and approval.provisional != "" and approval.proposal > w.plan.calendarApproval.proposal and
-  approval.title != "" and approval.ends > approval.starts and approval.timezone != ""
+  approval.title != "" and approval.ends > approval.starts and approval.timezone != "" and approval.detailsDigest != ""
 pure def expectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, calendarApproval: approval } }
 pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): bool =
@@ -1428,16 +1611,37 @@ pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, b
     (w.plan.savedOccurrence == saved.occurrence and w.plan.savedEvidence == "" and saved.evidence != ""))
 pure def observeGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, savedOccurrence: saved.occurrence, savedEvidence: saved.evidence } }
+pure def lawUncertainGuidedSaveCannotAuthorizeAnotherWrite(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
+  (hasNext(w.plan) and w.plan.saveRecovery != GuidedSaveUntouched) implies
+    not(canExpectGuidedCalendar(w, approval, by)) and
+    (not(hasRecoveredSaveReference(w.plan.saveRecovery)) implies not(canResume(w, by)))
 pure def lawOtherMailCannotBindAGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
   (approval.sourceRef != w.plan.mail.ref or approval.account != w.plan.mail.account) implies
     not(canExpectGuidedCalendar(w, approval, by))
 pure def lawMissingSaveCannotConfirmCalendar(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   (isAppointmentSave(report.step) and (w.plan.savedOccurrence == "" or w.plan.savedEvidence == "")) implies not(canConfirmGuided(w, report, by))
-pure val mailCheckValues = Set({ report: sampleReport, mail: { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" } })
+pure val guidedMailSample: GuidedMail = { ...noGuidedMail, account: 1, owner: "tablet", address: "mail", ref: "invite", version: "test" }
+pure val mailCheckValues = Set(
+  { report: sampleReport, mail: guidedMailSample },
+  { report: { owner: "tablet", task: "recovered", version: 7, deviceVersion: 2, browserRevision: 0,
+    step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample },
+  { report: { owner: "tablet", task: "recovered", version: 6, deviceVersion: 2, browserRevision: 0,
+    step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample })
+pure val weight_restoreGuided = 6
+pure val weight_rebindGuidedMail = 8
+pure val weight_reconcileGuidedSave = 8
+pure val recoveredSaveReport: GuidedObservation = { owner: "tablet", task: "recovered", version: 7, deviceVersion: 2,
+  browserRevision: 0, step: SaveMailAppointment, sourceKey: "saved-appointment", evidence: "Saved appointment: Visit" }
+pure val recoveredSaveRef: GuidedSaveReference = { occurrence: "prior-save", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }
+pure val recoveryCheckValues = Set(
+  { report: recoveredSaveReport, saved: recoveredSaveRef },
+  { report: { ...recoveredSaveReport, version: 6 }, saved: recoveredSaveRef },
+  { report: recoveredSaveReport, saved: { ...recoveredSaveRef, detailsDigest: "edited-details" } },
+  { report: recoveredSaveReport, saved: { ...recoveredSaveRef, owner: "other" } })
 pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" })
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" })
 pure val savedValues = Set({ approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
-  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC" },
+  sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" },
   occurrence: "saved", evidence: "Saved Visit" })
 ```
 

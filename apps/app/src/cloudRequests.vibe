@@ -1,0 +1,26 @@
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Read the Google mail and calendar I connected"
+export const accountRequests = {
+  "/api/product/files/scope": "GET",
+  "/api/auth/providers": "GET",
+  "/api/auth/session": "GET",
+  "/api/auth/refresh": "POST",
+  "/api/auth/logout": "POST",
+  "/api/auth/device/authorize": "POST",
+  "/api/auth/email/send": "POST",
+  "/api/auth/email/verify": "POST",
+  "/api/auth/sms/send": "POST",
+  "/api/auth/sms/verify": "POST",
+  "/api/v1/billing/subscription": "GET",
+  "/api/v1/billing/checkout": "POST",
+  "/api/v1/billing/portal": "POST",
+  "/api/v1/eliza/google/status": "GET",
+  "/api/v1/eliza/google/connect/initiate": "POST",
+  "/api/v1/eliza/google/disconnect": "POST",
+} as const satisfies Record<string, "GET" | "POST">
+export type AccountRequest = keyof typeof accountRequests
+
+export const googleRoute = "/api/v1/eliza/google/"
+export const googleReads = ["gmail/triage", "gmail/read", "gmail/attachment", "gmail/send/status", "calendar/feed", "calendar/series", "calendar/reminder/event"] as const
+export const googleChanges = ["gmail/trash", "gmail/send", "calendar/change", "calendar/reminder"] as const
+export type GoogleRead = typeof googleReads[number]
+export type GoogleChange = typeof googleChanges[number]
