@@ -8,7 +8,7 @@ import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected,
 import { type Event as CalendarEvent, selectedOccurrence } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
-import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
+import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, minutesOf, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
 import type { ReminderNotice } from "./Notices.tsx";
 import { type CalendarInstance, useAccounts, useCalendarNote, useDraft, useProposal, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
@@ -30,6 +30,7 @@ const short = (n: number, today: number) => (n === today ? "Today" : weekdays[(d
 const whoWhere = (d: EntryDetails) => (d.participant ? [d.participant, d.location.split(" · ")[0]].filter(Boolean).join(" · ") : d.location);
 const reminderOf = (d: EntryDetails): Reminder => (!d.reminderEnabled ? "No" : d.leadTime >= 24 * hour ? "Day before" : "1 hour before");
 const reminderLine = (d: EntryDetails) => ({ No: "No reminder", "Day before": "Reminder day before", "1 hour before": "Reminder 1 hour before" })[reminderOf(d)];
+const withKept = (offered: number[], kept: number[]) => [...new Set([...offered, ...kept])].sort((x, y) => x - y);
 const span = (d: EntryDetails) => `${timeLabel(d.startAt)} to ${timeLabel(d.endAt)}`;
 
 function period(mode: "WeekView" | "MonthView", anchor: number) {
@@ -230,10 +231,10 @@ function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: E
     })?.();
   };
   const approve: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "ApproveEntry", revision: entry.revision } };
-  const start = new Date(d.startAt);
-  const minutes = start.getHours() * 60 + start.getMinutes();
-  const days = Array.from({ length: 21 }, (_, i) => today + i);
-  const times = Array.from({ length: 25 }, (_, i) => 7 * 60 + 30 * i);
+  const minutes = minutesOf(d.startAt);
+  const kept = entry.hasSaved ? [entry.committed.startAt, d.startAt] : [d.startAt];
+  const days = withKept(Array.from({ length: 21 }, (_, i) => today + i), kept.map(dayOf));
+  const times = withKept(Array.from({ length: 25 }, (_, i) => 7 * 60 + 30 * i), kept.map(minutesOf));
   return (
     <CalendarApp {...browsing} view="form" onBack={offer(box, { type: "changeOccurrence", id, command: { tag: "CancelEditing" } })}
       canSave={box.can(approve)} onSave={offer(box, approve)}
@@ -245,7 +246,7 @@ function Form({ box, entry, today, browsing }: { box: CalendarInstance; entry: E
         day: {
           value: longDate(dayOf(d.startAt)), selected: String(dayOf(d.startAt)), open: pick === "day",
           onOpenChange: (o) => setPick(o ? "day" : null),
-          choices: days.map((n) => ({ value: String(n), label: n - today < 7 ? `${relative(n, today)} · ${say(n, { month: "short", day: "numeric" })}` : longDate(n) })),
+          choices: days.map((n) => ({ value: String(n), label: relative(n, today) === longDate(n) ? longDate(n) : `${relative(n, today)} · ${say(n, { month: "short", day: "numeric" })}` })),
           onPick: (n) => { setPick(null); change(startingAt(instant(Number(n), minutes))); },
         },
         time: {

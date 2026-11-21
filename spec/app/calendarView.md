@@ -19,7 +19,9 @@ Date conversion is performed by a timezone-aware calendar adapter. A period has
 real local calendar boundaries: months are not 30 days and weeks across DST are
 not necessarily 168 hours. Grid rows cover every date in the displayed month.
 The prototype's five-row grid, 21-day picker and fixed sample date do not limit
-this model. UI sorts each day's rows by start time and shows their occurrence IDs.
+this model: the form's Day and Time lists are the prototype's 21 days from
+today and half hours from 7 am to 7 pm, plus the appointment's own day and
+time, so a form never moves an appointment she did not move. UI sorts each day's rows by start time and shows their occurrence IDs.
 
 ## Story: Browse my calendar and open an exact occurrence
 
@@ -726,7 +728,8 @@ with no comma (`Grace Prototype.html:2275`). See details opens
 Calendar on that exact occurrence's detail (`Grace Prototype.html:2228`). It is
 refused while a form is being edited or a deletion is being stored, so it never
 discards an edit. It leaves the reminder shown; Dismiss on the banner, toast or
-detail dismisses it. This deliberately departs from the prototype, whose See
+detail dismisses it, and Snooze in the detail hides it and shows it again ten
+minutes later. This deliberately departs from the prototype, whose See
 details also clears the banner (`X.banner=null`, `Grace Prototype.html:2228`):
 the story asks that opening the event not dismiss its reminder, so the banner is
 back on Home until the person dismisses it. The detail is the ordinary one, so
