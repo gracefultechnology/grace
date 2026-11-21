@@ -31,6 +31,17 @@ type Sent = Record<string, unknown> & { graceShown: boolean };
 const hostNavigation = ["navigate", "goBack", "goForward", "reloadSurface"];
 const graceWindow = () => document.querySelector<HTMLElement>("section[aria-label='Grace']");
 
+function refuseUnservedApi(network: typeof window.fetch) {
+  const unserved: string[] = [];
+  onTestFinished(() => expect(unserved, "Grace called /api/ routes this Cloud does not serve").toEqual([]));
+  return (input: RequestInfo | URL, options?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input, window.location.href);
+    if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/")) return network(input, options);
+    unserved.push(url.pathname);
+    return Promise.resolve(Response.json({ error: "route_not_found" }, { status: 404 }));
+  };
+}
+
 /**
  * The plugin as the test sees it: every call, and the routing requests not yet answered; `android.allows` is Android's
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
@@ -1165,6 +1176,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let replyFromOwner = false;
   let unconfirmed: string | undefined;
   const fetch = window.fetch.bind(window);
+  const unserved = refuseUnservedApi(fetch);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
@@ -1309,7 +1321,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           accountId: person.id, nextPageToken: null,
           events,
         });
-      default: return fetch(input, options);
+      default: return unserved(input, options);
     }
   });
 
@@ -2165,6 +2177,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let connected = true;
   let historyId = "one";
   const fetch = window.fetch.bind(window);
+  const unserved = refuseUnservedApi(fetch);
   const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     if (url.origin === new URL(cloud).origin) return fetch(input, options);
@@ -2198,7 +2211,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/v1/eliza/google/calendar/feed":
         expect(url.searchParams.get("grantId")).toBe(grant);
         return respond({ accountId: person.id, events: [person === firstOwner ? appointment : otherAppointment], nextPageToken: null });
-      default: return fetch(input, options);
+      default: return unserved(input, options);
     }
   });
   const browserUrl = "https://example.org/";
