@@ -415,7 +415,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const upgraded = effect (format: "revision" | "damaged-revision" | "occurrence", receipt?: string) => {
         const key = format === "occurrence" ? alternateKey : secret
         const { connectionId: grantId } = (try googleOwnerGrants(key))[0]
-        provide Layer.merge(KeyValueStore.layerMemory, Digest.layerWebCrypto) {
+        provide Layer.merge(Layer.fresh(KeyValueStore.layerMemory), Digest.layerWebCrypto) {
           const storage = try KeyValueStore.KeyValueStore
           const digest = try Digest.Digest
           const hash = (fields: readonly unknown[]) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(JSON.stringify(fields))),
